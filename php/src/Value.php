@@ -56,9 +56,23 @@ final class Value
     }
 
     /** @param array{neg:bool,digits:string,scale:int}|string $d */
+    /**
+     * A string is canonicalised and validated: "007" becomes "7", and anything
+     * that is not a number is E_NOT_NUM here rather than a TEXT value that fails
+     * later somewhere else. Internal callers pass a decimal record, not a string.
+     *
+     * @param array{neg:bool,digits:string,scale:int}|string $d
+     */
     public static function num($d): self
     {
-        return new self(self::TEXT, is_string($d) ? $d : Dec::format($d));
+        if (!is_string($d)) {
+            return new self(self::TEXT, Dec::format($d));
+        }
+        $parsed = Dec::parse($d);
+        if ($parsed === null) {
+            fail('E_NOT_NUM', 'not a number: ' . json_encode($d));
+        }
+        return new self(self::TEXT, Dec::format($parsed));
     }
 
     public static function int(int $n): self
@@ -79,6 +93,31 @@ final class Value
     }
 
     // --- children -----------------------------------------------------------
+
+    /**
+     * Kind predicates. The recommended way to branch on kind in every host,
+     * because it is the one spelling that reads the same in all four. These
+     * test the value's own kind and do not apply scalar context.
+     */
+    public function isNone(): bool
+    {
+        return $this->kind === self::NONE;
+    }
+
+    public function isText(): bool
+    {
+        return $this->kind === self::TEXT;
+    }
+
+    public function isBin(): bool
+    {
+        return $this->kind === self::BIN;
+    }
+
+    public function isBool(): bool
+    {
+        return $this->kind === self::BOOL;
+    }
 
     public function size(): int
     {

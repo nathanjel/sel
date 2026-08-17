@@ -40,7 +40,7 @@ console.log('   0.1+0.2:  ', evaluate('0.10 + 0.20').asText(), '  (JS says', 0.1
 
 console.log('4. reading results');
 const v = evaluate('SPLIT("a,b,c", ",")');
-console.log('   count:  ', v.size);
+console.log('   count:  ', v.size());
 console.log('   keys:   ', v.keys().join(','));
 console.log('   [2]:    ', v.get('2').asText());
 console.log('   scalar: ', v.asText());                  // scalar context: first child

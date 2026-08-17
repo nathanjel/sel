@@ -159,7 +159,7 @@ function evalList(node, ctx) {
   let n = 0;
   for (const item of node.items) {
     const v = evalNode(item, ctx);
-    if (v.kind === NONE && v.size > 0) {
+    if (v.kind === NONE && v.size() > 0) {
       for (const child of v.values()) out.set(String(++n), child.clone());
     } else {
       out.set(String(++n), v.clone());
@@ -243,7 +243,7 @@ function concat(l, r, lp, rp) {
 }
 
 function isIn(needle, hay) {
-  if (hay.size === 0) return hay.eql(needle);
+  if (hay.size() === 0) return hay.eql(needle);
   for (const child of hay.values()) if (child.eql(needle)) return true;
   return false;
 }

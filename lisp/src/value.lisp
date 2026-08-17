@@ -96,6 +96,16 @@ tail, count and index that keep lookup and append O(1)."
 
 ;;; --- children --------------------------------------------------------------
 
+;;; Kind predicates. The recommended way to branch on kind in every host,
+;;; because it is the one spelling that reads the same in all four: the kind
+;;; *values* are a keyword here, a string in JS, a class constant in PHP and an
+;;; enum in C++, so only a predicate can be documented uniformly. These test the
+;;; value's own kind and do not apply scalar context.
+(defun value-none-p (v) (eq (value-kind v) :none))
+(defun value-text-p (v) (eq (value-kind v) :text))
+(defun value-bin-p (v) (eq (value-kind v) :bin))
+(defun value-bool-p (v) (eq (value-kind v) :bool))
+
 (defun value-size (v) (value-count v))
 
 (defun value-has (v key) (and (%value-cell v key) t))

@@ -87,10 +87,10 @@ function unescape(lit, at) {
 // failure report reads as "want X, got Y" in one language.
 function describe(value) {
   switch (value.kind) {
-    case 'TEXT': return value.size ? `tree ${value.dump()}` : `text ${JSON.stringify(value.scalar)}`;
-    case 'BIN': return value.size ? `tree ${value.dump()}` : `bin ${value.dump().slice(1)}`;
-    case 'BOOL': return value.size ? `tree ${value.dump()}` : `bool ${value.scalar ? 'TRUE' : 'FALSE'}`;
-    default: return value.size ? `tree ${value.dump()}` : 'none';
+    case 'TEXT': return value.size() ? `tree ${value.dump()}` : `text ${JSON.stringify(value.scalar)}`;
+    case 'BIN': return value.size() ? `tree ${value.dump()}` : `bin ${value.dump().slice(1)}`;
+    case 'BOOL': return value.size() ? `tree ${value.dump()}` : `bool ${value.scalar ? 'TRUE' : 'FALSE'}`;
+    default: return value.size() ? `tree ${value.dump()}` : 'none';
   }
 }
 
@@ -116,19 +116,19 @@ function check(expect, value, error, at) {
 
   switch (form) {
     case 'text':
-      if (value.kind !== 'TEXT' || value.size) return `wanted text, got ${describe(value)}`;
+      if (value.kind !== 'TEXT' || value.size()) return `wanted text, got ${describe(value)}`;
       return value.scalar === unescape(rest, at) ? null : `got ${describe(value)}`;
     case 'num':
-      if (value.kind !== 'TEXT' || value.size) return `wanted a number, got ${describe(value)}`;
+      if (value.kind !== 'TEXT' || value.size()) return `wanted a number, got ${describe(value)}`;
       return value.scalar === rest ? null : `got ${describe(value)}`;
     case 'bin':
-      if (value.kind !== 'BIN' || value.size) return `wanted binary, got ${describe(value)}`;
+      if (value.kind !== 'BIN' || value.size()) return `wanted binary, got ${describe(value)}`;
       return value.dump().slice(1) === rest ? null : `got ${describe(value)}`;
     case 'bool':
-      if (value.kind !== 'BOOL' || value.size) return `wanted a boolean, got ${describe(value)}`;
+      if (value.kind !== 'BOOL' || value.size()) return `wanted a boolean, got ${describe(value)}`;
       return (value.scalar ? 'TRUE' : 'FALSE') === rest ? null : `got ${describe(value)}`;
     case 'none':
-      return (value.kind === 'NONE' && value.size === 0) ? null : `got ${describe(value)}`;
+      return (value.kind === 'NONE' && value.size() === 0) ? null : `got ${describe(value)}`;
     case 'tree':
       return value.dump() === rest ? null : `got tree ${value.dump()}`;
     default:

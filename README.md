@@ -99,7 +99,7 @@ From a package manager — the package is `sel-lang` on all of them:
 ```
 npm install sel-lang
 composer require nathanjel/sel-lang
-vcpkg install sel-lang            # or: conan install --requires sel-lang/0.1.1
+vcpkg install sel-lang            # or: conan install --requires sel-lang/0.1.2
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
 ```
 
@@ -222,7 +222,7 @@ rule.run(ctx).asText();                            // "over budget"
 evaluate('0.10 + 0.20').asText();                  // "0.30"  (JS says 0.30000000000000004)
 
 const v = evaluate('SPLIT("a,b,c", ",")');
-v.size;                  // 3        — a getter here, a method in PHP
+v.size();                // 3        — a method, as in every other host
 v.get('2').asText();     // "b"
 v.toNative();            // {"1":"a","2":"b","3":"c"}
 
@@ -230,7 +230,30 @@ try { evaluate('IF(1, "a", "b")'); }
 catch (e) { if (e instanceof SelError) console.log(e.code); }   // E_NOT_BOOL
 ```
 
-The only API difference between these two is `v.size` versus `$v->size()`.
+The APIs are deliberately parallel, and `tools/check-api.sh` holds them to it —
+48 probes run through each host's own binding and diffed. `size()` is a method
+in all four, not a getter in one of them, and the only remaining difference is
+the one a language forces: how each spells a kind.
+
+**Branch on kind with the predicates**, which read the same everywhere:
+
+```js
+if (v.isText()) { ... }              // JS
+```
+```php
+if ($v->isText()) { ... }            // PHP
+```
+```cpp
+if (v.is_text()) { ... }             // C++
+```
+```lisp
+(when (sel:value-text-p v) ...)      ; Lisp
+```
+
+The kind *values* cannot be uniform — they are a string in JS, a class constant
+in PHP, an enum in C++ and a keyword in Lisp — so the constants are exported in
+each host (`Value.BOOL`, `Value::BOOL`, `sel::Kind::Bool`, `:bool`) for code
+that would rather switch than branch, but the predicates are the portable form.
 
 **Pass money as strings, not native numbers.** A JS `number` or a PHP `float` has
 already lost the exactness SEL exists to preserve; `Value::fromNative` rejects
@@ -531,11 +554,15 @@ it passes the same suite; `tools/impls.sh` is where it registers itself, and
 tools/check.sh
 ```
 
-Six layers, each catching what the others miss:
+Seven layers, each catching what the others miss:
 
 - **Conformance** — the normative suite, run by every implementation.
 - **Unit tests** — for the layers underneath the suite, where a bug otherwise
   shows up as a hundred confusing conformance failures instead of one message.
+- **Host API parity** — the same probes through each host's own binding, diffed.
+  Every other layer drives the language through `compile().run()`, so without
+  this the four APIs could drift apart while staying green — which is exactly
+  how the kind constants came to be reachable in PHP and unreachable in JS.
 - **Documentation** — every `=>` example in these docs is executed, by every
   implementation. Documentation that cannot be checked is documentation that
   drifts.

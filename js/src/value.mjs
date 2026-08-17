@@ -17,11 +17,38 @@ export class Value {
     this.children = null;   // Map<string, Value>, created on demand
   }
 
+  // The kind constants, mirrored as statics so `Value.BOOL` works the way
+  // `Value::BOOL` does in PHP. They are also exported from sel.mjs — without
+  // that, a consumer of the published package had no route to them at all and
+  // had to hardcode the string 'BOOL'.
+  static get NONE() { return NONE; }
+  static get TEXT() { return TEXT; }
+  static get BIN() { return BIN; }
+  static get BOOL() { return BOOL; }
+
+  // Kind predicates. The recommended way to branch on kind in every host,
+  // because it is the one spelling that reads the same in all four: the kind
+  // *values* are a string here, a class constant in PHP, an enum in C++ and a
+  // keyword in Lisp, so only a predicate can be documented uniformly.
+  // These test the value's own kind and do not apply scalar context.
+  isNone() { return this.kind === NONE; }
+  isText() { return this.kind === TEXT; }
+  isBin() { return this.kind === BIN; }
+  isBool() { return this.kind === BOOL; }
+
   static none() { return new Value(NONE, null); }
   static text(s) { return new Value(TEXT, s); }
   static bin(b) { return new Value(BIN, b instanceof Uint8Array ? b : Uint8Array.from(b)); }
   static bool(b) { return new Value(BOOL, !!b); }
-  static num(d) { return new Value(TEXT, typeof d === 'string' ? d : D.format(d)); }
+  // A string is canonicalised and validated: "007" becomes "7", and anything
+  // that is not a number is E_NOT_NUM here rather than a TEXT value that fails
+  // later somewhere else. Internal callers pass a decimal record, not a string.
+  static num(d) {
+    if (typeof d !== 'string') return new Value(TEXT, D.format(d));
+    const parsed = D.parse(d);
+    if (parsed === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(d)}`, null);
+    return new Value(TEXT, D.format(parsed));
+  }
   static int(n) { return new Value(TEXT, D.format(D.fromInt(n))); }
 
   // Builds a list keyed "1".."n". Used by `,` and by list-returning built-ins.
@@ -33,7 +60,10 @@ export class Value {
 
   // --- children -------------------------------------------------------------
 
-  get size() { return this.children ? this.children.size : 0; }
+  // A method, not a getter, so it reads the same as $v->size(), v.size() and
+  // (sel:value-size v) in the other three hosts. tools/check-api.sh keeps it
+  // that way.
+  size() { return this.children ? this.children.size : 0; }
   has(key) { return this.children ? this.children.has(key) : false; }
   get(key) { return this.children ? this.children.get(key) : undefined; }
   keys() { return this.children ? Array.from(this.children.keys()) : []; }
@@ -100,7 +130,7 @@ export class Value {
 
   // Non-throwing probe for ISNUM.
   looksNumeric() {
-    if (this.kind === NONE && this.size === 0) return false;
+    if (this.kind === NONE && this.size() === 0) return false;
     let v;
     try { v = this.scalarSource(null); } catch { return false; }
     return v.kind === TEXT && D.parse(v.scalar) !== null;
@@ -127,8 +157,8 @@ export class Value {
     } else if (this.kind === BIN) {
       if (!bytesEqual(this.scalar, other.scalar)) return false;
     }
-    if (this.size !== other.size) return false;
-    if (this.size === 0) return true;
+    if (this.size() !== other.size()) return false;
+    if (this.size() === 0) return true;
     const a = this.entries(), b = other.entries();
     for (let i = 0; i < a.length; i++) {
       if (a[i][0] !== b[i][0]) return false;      // key order is normative
@@ -147,7 +177,7 @@ export class Value {
       case BIN: s = 'b' + bytesToHex(this.scalar); break;
       case BOOL: s = this.scalar ? 'TRUE' : 'FALSE'; break;
     }
-    if (this.size === 0) return s;
+    if (this.size() === 0) return s;
     const parts = this.entries().map(([k, v]) => `${quoteDump(k)}=${v.dump()}`);
     return s + '{' + parts.join(', ') + '}';
   }
@@ -179,7 +209,7 @@ export class Value {
       this.kind === TEXT ? this.scalar :
       this.kind === BIN ? this.scalar :
       this.kind === BOOL ? this.scalar : null;
-    if (this.size === 0) return scalar;
+    if (this.size() === 0) return scalar;
     const obj = {};
     for (const [k, v] of this.children) obj[k] = v.toNative();
     return scalar === null ? obj : { _: scalar, ...obj };

@@ -31,18 +31,18 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.1.1 -m "SEL 0.1.1"
-git push origin v0.1.1
+git tag -a v0.1.2 -m "SEL 0.1.2"
+git push origin v0.1.2
 ```
 
 Versions live in five places. Keep them in step:
 
 ```
-package.json                     "version": "0.1.1"
-cpp/conanfile.py                 version = "0.1.1"
-cpp/vcpkg.json                   "version-semver": "0.1.1"
-cpp/CMakeLists.txt               project(... VERSION 0.1.1 ...)
-lisp/sel-lang.asd                :version "0.1.1"
+package.json                     "version": "0.1.2"
+cpp/conanfile.py                 version = "0.1.2"
+cpp/vcpkg.json                   "version-semver": "0.1.2"
+cpp/CMakeLists.txt               project(... VERSION 0.1.2 ...)
+lisp/sel-lang.asd                :version "0.1.2"
 ```
 
 `composer.json` deliberately carries **no** `version` field — Packagist infers it
@@ -133,7 +133,7 @@ conan create cpp/ --build=missing
 To publish, either upload to your own remote:
 
 ```
-conan upload sel-lang/0.1.1 -r <remote> --confirm
+conan upload sel-lang/0.1.2 -r <remote> --confirm
 ```
 
 or open a pull request against

@@ -9,6 +9,7 @@ tools/check.sh              everything
 tools/check-docs.sh         every worked example in the documentation
 tools/check-decimal.sh      every decimal core against Python's `decimal`
 tools/e2e.sh                one rule set through every host API
+tools/check-api.sh          the same API probes through every host binding
 tools/fuzz.sh               seeded differential fuzzing, N-way
 ```
 
@@ -26,6 +27,7 @@ the four consumers.
 | `conformance [file…]` | `conformance/*.selt` | a human report | non-zero on any failure |
 | `batch [--show] <corpus>` | a corpus file | one canonical line per program | 0 unless it cannot read the corpus |
 | `e2e` | `examples/order-validation.sel` | the scenario report | 0 |
+| `api` | nothing | the API parity report, one `NN name = value` line per probe | 0 |
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
 
 All four run from the repository root and take paths relative to it.

@@ -91,6 +91,16 @@ class Value {
 
   Kind kind() const { return kind_; }
 
+  // Kind predicates. The recommended way to branch on kind in every host,
+  // because it is the one spelling that reads the same in all four: the kind
+  // *values* are an enum here, a string in JS, a class constant in PHP and a
+  // keyword in Lisp, so only a predicate can be documented uniformly. These
+  // test the value's own kind and do not apply scalar context.
+  bool is_none() const { return kind_ == Kind::None; }
+  bool is_text() const { return kind_ == Kind::Text; }
+  bool is_bin() const { return kind_ == Kind::Bin; }
+  bool is_bool() const { return kind_ == Kind::Bool; }
+
   // --- children. Insertion-ordered; re-assigning a key keeps its position.
   std::size_t size() const { return children_.size(); }
   bool has(const std::string& key) const;

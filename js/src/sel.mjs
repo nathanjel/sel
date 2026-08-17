@@ -3,7 +3,7 @@
 import './builtins/index.mjs';
 import { parse } from './parser.mjs';
 import { Context, evalNode } from './eval.mjs';
-import { Value } from './value.mjs';
+import { Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { SelError } from './errors.mjs';
 import { names } from './registry.mjs';
 
@@ -106,4 +106,7 @@ export function evaluate(source, context) {
 
 export function functionNames() { return names(); }
 
-export { Value, SelError, Context };
+// The kind constants travel with the Value class. Leaving them out of this
+// re-export meant `import { BOOL } from 'sel-lang'` failed and `Value.BOOL` was
+// undefined, so branching on kind required the literal string 'BOOL'.
+export { Value, SelError, Context, NONE, TEXT, BIN, BOOL };

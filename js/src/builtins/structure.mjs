@@ -1,7 +1,7 @@
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
 
-define({ name: 'COUNT', min: 1, max: 1, fn: (args) => Value.int(args.val(0).size) });
+define({ name: 'COUNT', min: 1, max: 1, fn: (args) => Value.int(args.val(0).size()) });
 
 define({
   name: 'INDEXES', min: 1, max: 1,

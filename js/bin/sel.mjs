@@ -11,7 +11,7 @@ import { createInterface } from 'node:readline';
 import { compile, Value, SelError, functionNames } from '../src/sel.mjs';
 
 function show(v) {
-  if (v.size === 0) {
+  if (v.size() === 0) {
     if (v.kind === 'TEXT') return v.scalar;
     if (v.kind === 'BOOL') return v.scalar ? 'TRUE' : 'FALSE';
     if (v.kind === 'BIN') return `bin:${v.dump().slice(1)}`;

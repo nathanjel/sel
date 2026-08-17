@@ -11,7 +11,7 @@
 # so consumers need nothing on their include path but sel.hpp itself.
 
 cmake_minimum_required(VERSION 3.20)
-project(sel-lang VERSION 0.1.1 LANGUAGES CXX
+project(sel-lang VERSION 0.1.2 LANGUAGES CXX
         DESCRIPTION "A small expression language that evaluates identically on every host"
         HOMEPAGE_URL "https://github.com/nathanjel/sel")
 
@@ -88,7 +88,7 @@ install(FILES ../LICENSE DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/licenses/sel-l
 option(SEL_BUILD_TOOLS "Build the SEL CLI and test harness" OFF)
 
 if(SEL_BUILD_TOOLS)
-  foreach(tool sel conformance batch e2e)
+  foreach(tool sel conformance batch e2e api)
     add_executable(sel-${tool} bin/${tool}.cpp)
     target_link_libraries(sel-${tool} PRIVATE sel-lang)
   endforeach()

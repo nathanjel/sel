@@ -118,7 +118,7 @@ define({
   name: 'LTB', min: 1, max: 1,
   fn: (args) => {
     const v = args.val(0);
-    const items = v.size > 0 ? v.values() : [v];
+    const items = v.size() > 0 ? v.values() : [v];
     const out = new Uint8Array(items.length);
     items.forEach((item, i) => {
       const d = item.asDecimal(args.posOf(0));

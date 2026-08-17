@@ -12,7 +12,7 @@ BUILD    := build
 
 # Tools that use only the public interface, and link the library normally. This
 # is also the check that sel.hpp is sufficient on its own.
-LINKED := conformance batch e2e sel
+LINKED := conformance batch e2e sel api
 # Whitebox tools, which include the translation unit to reach the decimal core
 # and the other internals. They must not also link it.
 WHITEBOX := check-decimal

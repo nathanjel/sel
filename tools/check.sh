@@ -25,7 +25,7 @@ echo "implementations: $IMPLS"
 # nothing with nothing.
 if [ -n "$MISSING" ]; then
   echo "MISSING: $MISSING — not built, or the runtime is missing"
-  echo "         build them (cd cpp && make) or set SEL_IMPLS to say so deliberately"
+  echo "         build them (cd cpp && make; npm run build) or set SEL_IMPLS to say so"
   status=1
 fi
 
@@ -40,6 +40,7 @@ for impl in $IMPLS; do
   step "unit tests ($impl)" impl_unit "$impl"
 done
 
+step "host API parity" ./tools/check-api.sh
 step "documentation examples" ./tools/check-docs.sh
 step "decimal vs python oracle" ./tools/check-decimal.sh "${DECIMAL_COUNT:-4000}"
 step "end to end, every host API" ./tools/e2e.sh

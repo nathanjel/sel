@@ -18,7 +18,7 @@ function shape(args) {
 // empty — that is what FILTER returns when nothing matched, and ALL over it must
 // be TRUE rather than a scalar-context failure.
 function elements(value) {
-  if (value.size > 0) return value.entries();
+  if (value.size() > 0) return value.entries();
   return value.kind === NONE ? [] : [['1', value]];
 }
 

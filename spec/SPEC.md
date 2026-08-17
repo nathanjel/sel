@@ -663,7 +663,20 @@ Sel.compile(source)          -> Program        # throws on syntax error
 Program.run(context)         -> Value
 Program.dependencies()       -> array of variable names, upper case
 Value.text/bin/num/bool/list/fromNative/toNative
+Value.isNone/isText/isBin/isBool               # kind predicates
 ```
+
+**Constructors validate at the boundary.** `Value.text` raises `E_UTF8` on input
+that is not valid UTF-8, and `Value.num` canonicalises its argument (§4.1) and
+raises `E_NOT_NUM` when it is not a number. Host code is the one place bad data
+can enter, so it is the place to reject it: a `Value.num("x")` that quietly
+produced a non-numeric TEXT would fail later, somewhere else, with a position
+pointing at an innocent expression.
+
+**Branching on kind uses the predicates.** The kind *values* are a string in JS,
+a class constant in PHP, an enum in C++ and a keyword in Lisp, so only a
+predicate can be written the same way in all four. The constants remain
+available in each host for code that would rather switch than branch.
 
 `dependencies()` returns every variable the program reads, determined statically
 without evaluating it. This is possible only because SEL has no dynamic symbol

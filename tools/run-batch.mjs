@@ -31,7 +31,7 @@ function readCorpus(text) {
 // The rendering bin/sel uses, so a documentation example can be pasted into the
 // CLI and produce exactly what the documentation claims.
 function render(v) {
-  if (v.size === 0) {
+  if (v.size() === 0) {
     if (v.kind === 'TEXT') return v.scalar;
     if (v.kind === 'BOOL') return v.scalar ? 'TRUE' : 'FALSE';
     if (v.kind === 'BIN') return `bin:${v.dump().slice(1)}`;

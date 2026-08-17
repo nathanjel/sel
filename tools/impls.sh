@@ -54,6 +54,20 @@ impl_e2e() {
   esac
 }
 
+# The host API surface: same probes, each through its own binding. See
+# tools/check-api.sh.
+impl_api() {
+  local impl="$1"; shift
+  case "$impl" in
+    js)   node tools/api.mjs "$@" ;;
+    js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node tools/api.mjs "$@" ;;
+    php)  php tools/api.php "$@" ;;
+    cpp)  cpp/build/api "$@" ;;
+    lisp) lisp/bin/api "$@" ;;
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
 impl_decimal() {
   local impl="$1"; shift
   case "$impl" in
@@ -86,7 +100,10 @@ impl_unit() {
 impl_available() {
   case "$1" in
     js)   command -v node >/dev/null 2>&1 ;;
-    js-bundle) [ -f dist/sel.mjs ] ;;
+    # Present *and* newer than every source file it is built from. A stale
+    # bundle is a different implementation from the one in js/src, and it should
+    # say so rather than fail later with a confusing TypeError.
+    js-bundle) [ -f dist/sel.mjs ] && [ -z "$(find js/src -newer dist/sel.mjs -print -quit 2>/dev/null)" ] ;;
     php)  command -v php  >/dev/null 2>&1 ;;
     cpp)  [ -x cpp/build/conformance ] ;;
     lisp) command -v sbcl >/dev/null 2>&1 && [ -x lisp/bin/conformance ] ;;
