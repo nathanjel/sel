@@ -9,7 +9,11 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { compile, Value, SelError } from '../src/sel.mjs';
+// SEL_JS_ENTRY aims this runner at a different build of the implementation —
+// tools/impls.sh sets it to dist/sel.mjs so the bundle is held to the same
+// suite as the source. Dynamic import because the specifier is not a constant.
+const { compile, Value, SelError } =
+  await import(process.env.SEL_JS_ENTRY ?? '../src/sel.mjs');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SUITE = resolve(HERE, '../../conformance');

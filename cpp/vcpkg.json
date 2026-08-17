@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "sel-lang",
-  "version-semver": "0.1.0",
+  "version-semver": "0.1.1",
   "description": [
     "A small expression language for validation rules.",
     "One rule file evaluates identically on PHP, JavaScript, C++23 and Common Lisp, held to a normative spec by a conformance suite and a differential fuzzer that runs all four and compares them byte for byte.",

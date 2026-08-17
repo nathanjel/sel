@@ -55,7 +55,7 @@ oracle.txt
 programs.json
 /tmp-*
 
-# --- Editors and OS
+# --- Editors, tools and OS
 .DS_Store
 Thumbs.db
 *.swp
@@ -66,3 +66,23 @@ Thumbs.db
 .idea/
 .vscode/
 *.sublime-workspace
+
+# --- Rescue and patch debris
+# An abandoned edit once left a zero-byte js/src/eval.mjs.orig behind, and
+# `git add -A` committed it into a tagged release. npm happens to exclude *.orig
+# by default, but Packagist, vcpkg and every GitHub source tarball ship the git
+# tree verbatim, so it reached those. These patterns are the cheap insurance.
+*.orig
+*.bak
+*.rej
+*.tmp
+*.old
+*.save
+*.patch
+*.diff
+*.log
+
+# --- Generated JS bundle
+# Built by `npm run build` and by prepublishOnly; never committed. A generated
+# file in version control is a file that goes stale.
+dist/

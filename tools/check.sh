@@ -35,7 +35,7 @@ done
 
 for impl in $IMPLS; do
   case "$impl" in
-    js|php) continue ;;   # no separate unit tests; the suite is the test
+    js|js-bundle|php) continue ;;   # no separate unit tests; the suite is the test
   esac
   step "unit tests ($impl)" impl_unit "$impl"
 done

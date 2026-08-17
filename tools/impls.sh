@@ -7,7 +7,7 @@
 #
 # Override to narrow a run:   SEL_IMPLS="js cpp" tools/fuzz.sh
 
-SEL_IMPLS="${SEL_IMPLS:-js php cpp lisp}"
+SEL_IMPLS="${SEL_IMPLS:-js js-bundle php cpp lisp}"
 
 # The first implementation in the list is the reference the others are diffed
 # against in fuzz.sh. It is only a reporting convenience: a disagreement is a
@@ -22,6 +22,7 @@ impl_conformance() {
   local impl="$1"; shift
   case "$impl" in
     js)   node js/bin/conformance.mjs "$@" ;;
+    js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node js/bin/conformance.mjs "$@" ;;
     php)  php php/bin/conformance "$@" ;;
     cpp)  cpp/build/conformance "$@" ;;
     lisp) lisp/bin/conformance "$@" ;;
@@ -33,6 +34,7 @@ impl_batch() {
   local impl="$1"; shift
   case "$impl" in
     js)   node tools/run-batch.mjs "$@" ;;
+    js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node tools/run-batch.mjs "$@" ;;
     php)  php tools/run-batch.php "$@" ;;
     cpp)  cpp/build/batch "$@" ;;
     lisp) lisp/bin/batch "$@" ;;
@@ -44,6 +46,7 @@ impl_e2e() {
   local impl="$1"; shift
   case "$impl" in
     js)   node examples/e2e.mjs "$@" ;;
+    js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node examples/e2e.mjs "$@" ;;
     php)  php examples/e2e.php "$@" ;;
     cpp)  cpp/build/e2e "$@" ;;
     lisp) lisp/bin/e2e "$@" ;;
@@ -55,6 +58,9 @@ impl_decimal() {
   local impl="$1"; shift
   case "$impl" in
     js)   node tools/check-decimal.mjs "$@" ;;
+    # The oracle is a whitebox check on js/src/decimal.mjs, which the bundle
+    # inlines verbatim. Running it twice would test the same code.
+    js-bundle) echo "js-bundle: decimal core is js/src/decimal.mjs, covered above" ;;
     php)  php tools/check-decimal.php "$@" ;;
     cpp)  cpp/build/check-decimal "$@" ;;
     lisp) lisp/bin/check-decimal "$@" ;;
@@ -67,7 +73,7 @@ impl_decimal() {
 impl_unit() {
   local impl="$1"; shift
   case "$impl" in
-    js|php) return 0 ;;
+    js|js-bundle|php) return 0 ;;
     cpp)    [ -x cpp/build/unit ] && cpp/build/unit ;;
     lisp)   lisp/bin/test ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
@@ -80,6 +86,7 @@ impl_unit() {
 impl_available() {
   case "$1" in
     js)   command -v node >/dev/null 2>&1 ;;
+    js-bundle) [ -f dist/sel.mjs ] ;;
     php)  command -v php  >/dev/null 2>&1 ;;
     cpp)  [ -x cpp/build/conformance ] ;;
     lisp) command -v sbcl >/dev/null 2>&1 && [ -x lisp/bin/conformance ] ;;

@@ -1,6 +1,6 @@
 {
   "name": "sel-lang",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A small expression language for validation rules — one rule file evaluates identically on JavaScript, PHP, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness.",
   "keywords": [
     "validation",
@@ -25,7 +25,9 @@
   "type": "module",
   "exports": {
     ".": "./js/src/sel.mjs",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./bundle": "./dist/sel.mjs",
+    "./bundle.min": "./dist/sel.min.mjs"
   },
   "bin": {
     "sel": "js/bin/sel.mjs"
@@ -37,6 +39,7 @@
     "./js/src/builtins/*.mjs"
   ],
   "files": [
+    "dist/",
     "js/src/",
     "js/bin/",
     "docs/",
@@ -48,9 +51,12 @@
     "README.md"
   ],
   "scripts": {
+    "build": "node tools/build-js-bundle.mjs",
+    "prepublishOnly": "node tools/build-js-bundle.mjs",
     "test": "node js/bin/conformance.mjs",
     "check": "tools/check.sh"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }

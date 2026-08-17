@@ -99,7 +99,7 @@ From a package manager — the package is `sel-lang` on all of them:
 ```
 npm install sel-lang
 composer require nathanjel/sel-lang
-vcpkg install sel-lang            # or: conan install --requires sel-lang/0.1.0
+vcpkg install sel-lang            # or: conan install --requires sel-lang/0.1.1
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
 ```
 

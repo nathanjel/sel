@@ -6,7 +6,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { compile, Value, SelError } from '../js/src/sel.mjs';
+// SEL_JS_ENTRY aims this runner at a different build of the implementation —
+// tools/impls.sh sets it to dist/sel.mjs so the bundle is held to the same
+// suite as the source. Dynamic import because the specifier is not a constant.
+const { compile, Value, SelError } =
+  await import(process.env.SEL_JS_ENTRY ?? '../js/src/sel.mjs');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(HERE, 'order-validation.sel'), 'utf8');
