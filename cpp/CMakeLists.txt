@@ -11,7 +11,7 @@
 # so consumers need nothing on their include path but sel.hpp itself.
 
 cmake_minimum_required(VERSION 3.20)
-project(sel-lang VERSION 0.1.3 LANGUAGES CXX
+project(sel-lang VERSION 0.1.4 LANGUAGES CXX
         DESCRIPTION "A small expression language that evaluates identically on every host"
         HOMEPAGE_URL "https://github.com/nathanjel/sel")
 
