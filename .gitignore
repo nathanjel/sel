@@ -43,6 +43,9 @@ package-lock.json
 # --- Package manager build output
 # Conan and vcpkg both build out of tree; these are their defaults.
 cpp/test_package/build/
+# Conan's CMakeToolchain writes this next to any conanfile it is run against,
+# including the test package. Generated, not source.
+CMakeUserPresets.json
 conan.lock
 CONAN_*
 vcpkg_installed/
