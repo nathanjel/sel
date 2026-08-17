@@ -1,6 +1,6 @@
 {
   "name": "sel-lang",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A small expression language for validation rules — one rule file evaluates identically on JavaScript, PHP, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness.",
   "keywords": [
     "validation",

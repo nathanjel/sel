@@ -11,7 +11,7 @@
 # so consumers need nothing on their include path but sel.hpp itself.
 
 cmake_minimum_required(VERSION 3.20)
-project(sel-lang VERSION 0.1.2 LANGUAGES CXX
+project(sel-lang VERSION 0.1.3 LANGUAGES CXX
         DESCRIPTION "A small expression language that evaluates identically on every host"
         HOMEPAGE_URL "https://github.com/nathanjel/sel")
 
@@ -78,7 +78,14 @@ install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/sel-langConfigVersion.cmake"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sel-lang)
 
-install(FILES ../LICENSE DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/licenses/sel-lang)
+# At the repository root normally; at this directory's root when a package
+# manager has exported just cpp/ plus the licence.
+foreach(candidate "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE" "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+  if(EXISTS "${candidate}")
+    install(FILES "${candidate}" DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/licenses/sel-lang)
+    break()
+  endif()
+endforeach()
 
 # --- harness ------------------------------------------------------------------
 #

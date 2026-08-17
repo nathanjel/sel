@@ -31,18 +31,18 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.1.2 -m "SEL 0.1.2"
-git push origin v0.1.2
+git tag -a v0.1.3 -m "SEL 0.1.3"
+git push origin v0.1.3
 ```
 
 Versions live in five places. Keep them in step:
 
 ```
-package.json                     "version": "0.1.2"
-cpp/conanfile.py                 version = "0.1.2"
-cpp/vcpkg.json                   "version-semver": "0.1.2"
-cpp/CMakeLists.txt               project(... VERSION 0.1.2 ...)
-lisp/sel-lang.asd                :version "0.1.2"
+package.json                     "version": "0.1.3"
+cpp/conanfile.py                 version = "0.1.3"
+cpp/vcpkg.json                   "version-semver": "0.1.3"
+cpp/CMakeLists.txt               project(... VERSION 0.1.3 ...)
+lisp/sel-lang.asd                :version "0.1.3"
 ```
 
 `composer.json` deliberately carries **no** `version` field — Packagist infers it
@@ -126,14 +126,28 @@ because the collision is unlikely and loud rather than silent.
 Conan Center does **not** have SRELL, so the vendored copy is what makes the
 recipe build at all. See the note below.
 
+Conan needs a profile before its first use, or it refuses with *"The default
+build profile doesn't exist"* — that is Conan asking to be initialised, not a
+problem with the recipe:
+
 ```
+conan profile detect          # once, per machine
 conan create cpp/ --build=missing
 ```
+
+`conan create` also builds and runs `cpp/test_package/`, which links the
+packaged library through the exported CMake target and nothing else, so a
+recipe that produces an unusable package fails there rather than downstream.
+
+The recipe does **not** gate on the consumer's `compiler.cppstd`. A stock
+`conan profile detect` yields `gnu20`, and the library reaches C++23 through
+`target_compile_features` in CMakeLists.txt, so refusing to build on the default
+profile would only make the package unusable out of the box.
 
 To publish, either upload to your own remote:
 
 ```
-conan upload sel-lang/0.1.2 -r <remote> --confirm
+conan upload sel-lang/0.1.3 -r <remote> --confirm
 ```
 
 or open a pull request against

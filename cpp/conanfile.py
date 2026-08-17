@@ -17,7 +17,7 @@ import os
 
 class SelConan(ConanFile):
     name = "sel-lang"
-    version = "0.1.2"
+    version = "0.1.3"
     license = "MIT"
     author = "Marcin Gałczyński"
     url = "https://github.com/nathanjel/sel"
@@ -29,20 +29,28 @@ class SelConan(ConanFile):
     topics = ("expression-language", "validation", "rules", "decimal", "interpreter")
 
     package_type = "static-library"
+    # The library compiles as C++23 via target_compile_features in CMakeLists,
+    # so it does not gate on the consumer's cppstd setting — a stock
+    # `conan profile detect` produces gnu20, and refusing to build on that would
+    # make the package unusable out of the box.
     settings = "os", "compiler", "build_type", "arch"
     options = {"fPIC": [True, False]}
     default_options = {"fPIC": True}
 
-    exports_sources = "CMakeLists.txt", "sel.hpp", "sel.cpp", "third_party/*", "../LICENSE"
+    def export_sources(self):
+        # A method rather than the exports_sources attribute, because the licence
+        # lives at the repository root and the attribute cannot reference a
+        # parent directory ("copy() it is not possible to use relative patterns
+        # starting with '..'"). It lands at the root of the source folder, which
+        # is why CMakeLists.txt looks for it in both places.
+        for pattern in ("CMakeLists.txt", "sel.hpp", "sel.cpp", "third_party/*"):
+            copy(self, pattern, self.recipe_folder, self.export_sources_folder)
+        copy(self, "LICENSE",
+             os.path.join(self.recipe_folder, ".."), self.export_sources_folder)
 
     def config_options(self):
         if self.settings.os == "Windows":
             del self.options.fPIC
-
-    def validate(self):
-        # The implementation is C++23; there is no fallback path.
-        from conan.tools.build import check_min_cppstd
-        check_min_cppstd(self, 23)
 
     def layout(self):
         cmake_layout(self)
@@ -61,8 +69,7 @@ class SelConan(ConanFile):
     def package(self):
         cmake = CMake(self)
         cmake.install()
-        copy(self, "LICENSE",
-             src=os.path.join(self.source_folder, ".."),
+        copy(self, "LICENSE", src=self.source_folder,
              dst=os.path.join(self.package_folder, "licenses"))
         copy(self, "LICENSE.txt",
              src=os.path.join(self.source_folder, "third_party", "srell"),
