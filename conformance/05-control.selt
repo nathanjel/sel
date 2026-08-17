@@ -1,0 +1,232 @@
+% IF and ABORT — the whole of SEL's control flow.
+
+### name: ctl.if.true-branch
+--- source
+IF(1 > 0, "yes", "no")
+--- expect
+text "yes"
+===
+### name: ctl.if.false-branch
+--- source
+IF(1 > 2, "yes", "no")
+--- expect
+text "no"
+===
+### name: ctl.if.two-arg-false-yields-empty-text
+--- source
+IF(1 > 2, "yes")
+--- expect
+text ""
+===
+### name: ctl.if.untaken-branch-not-evaluated
+--- note
+The point of the AST calling convention: the untaken branch never runs, so its
+error never happens.
+--- source
+IF(1 > 0, "safe", 1 / 0)
+--- expect
+text "safe"
+===
+### name: ctl.if.condition-must-be-bool
+--- source
+IF(1, "yes", "no")
+--- expect
+error E_NOT_BOOL at 1:4
+===
+### name: ctl.if.side-effect-happens-once
+--- source
+N = 0; IF(TRUE, N = N + 1, N = N + 100); N
+--- expect
+num 1
+===
+### name: ctl.if.sequence-branch-needs-parens
+--- note
+`;` binds looser than `,`, so a sequenced branch takes its own parentheses.
+--- source
+IF(TRUE, (A = 1; A + 1), 0)
+--- expect
+num 2
+===
+### name: ctl.if.arity
+--- source
+IF(TRUE)
+--- expect
+error E_ARITY at 1:1
+===
+% COND — flat multi-branch selection, with IF's laziness and a mandatory default.
+
+### name: ctl.cond.first-match
+--- source
+COND(TRUE, "a", TRUE, "b", "z")
+--- expect
+text "a"
+===
+### name: ctl.cond.later-match
+--- source
+COND(FALSE, "a", TRUE, "b", "z")
+--- expect
+text "b"
+===
+### name: ctl.cond.default
+--- source
+COND(FALSE, "a", FALSE, "b", "z")
+--- expect
+text "z"
+===
+### name: ctl.cond.ordering
+--- setup
+SCORE = 85
+--- source
+COND(SCORE >= 90, "A", SCORE >= 80, "B", SCORE >= 70, "C", "F")
+--- expect
+text "B"
+===
+### name: ctl.cond.untaken-result-not-evaluated
+--- source
+COND(TRUE, "safe", TRUE, 1 / 0, 1 / 0)
+--- expect
+text "safe"
+===
+### name: ctl.cond.conditions-after-match-not-evaluated
+--- source
+COND(TRUE, "safe", 1 / 0 == 0, "x", "z")
+--- expect
+text "safe"
+===
+### name: ctl.cond.default-not-evaluated-when-matched
+--- source
+COND(TRUE, "safe", ABORT("never"))
+--- expect
+text "safe"
+===
+### name: ctl.cond.side-effect-happens-once
+--- source
+N = 0; COND(FALSE, N = N + 100, TRUE, N = N + 1, N = N + 500); N
+--- expect
+num 1
+===
+### name: ctl.cond.condition-must-be-bool
+--- source
+COND(1, "a", "z")
+--- expect
+error E_NOT_BOOL at 1:6
+===
+### name: ctl.cond.even-arity-rejected
+--- note
+An even count would let one miscounted comma shift every pair by one and still
+compile, so the default is mandatory and its absence is a compile-time error.
+--- source
+COND(TRUE, "a", FALSE, "b")
+--- expect
+error E_ARITY at 1:1
+===
+### name: ctl.cond.too-few-arguments
+--- source
+COND(TRUE, "a")
+--- expect
+error E_ARITY at 1:1
+===
+### name: ctl.cond.nested-in-aggregate
+--- source
+JOIN(MAP((0, 5, 200), COND(_ == 0, "empty", _ > 99, "bulk", "ok")), ",")
+--- expect
+text "empty,ok,bulk"
+===
+### name: ctl.cond.equivalent-to-if-ladder
+--- setup
+X = 3
+--- source
+COND(X == 1, "one", X == 2, "two", "many") $== IF(X == 1, "one", IF(X == 2, "two", "many"))
+--- expect
+bool TRUE
+===
+
+### name: ctl.abort
+--- source
+ABORT("nope")
+--- expect
+error E_ABORT
+===
+### name: ctl.abort.not-reached
+--- source
+IF(FALSE, ABORT("nope"), "fine")
+--- expect
+text "fine"
+===
+### name: ctl.unknown-function
+--- source
+NOSUCH(1)
+--- expect
+error E_UNKNOWN_FUNC at 1:1
+===
+### name: ctl.arity-checked-at-compile-time
+--- note
+Arity is a compile-time error, so it fires even inside a branch that would
+never run.
+--- source
+IF(FALSE, LEN(), "fine")
+--- expect
+error E_ARITY
+===
+### name: assign.target-index-has-side-effects
+--- note
+The index expressions of an assignment target are evaluated, once each, left to
+right, before the right-hand side. In C++ this crashed: the walk held a pointer
+into the container's child vector across an evaluation that could grow it, and
+the pointer dangled. Found by review, not by the fuzzer, because the generator
+never emitted an assignment whose target had side effects.
+--- source
+A[(Z = "1")][1] = 5
+--- expect
+num 5
+===
+### name: assign.right-hand-side-rebuilds-the-target
+--- note
+The right-hand side may destroy the levels the target walk just created. The
+assignment must still complete rather than dereferencing a level that has gone.
+--- source
+A[1][1] = (A = 2)
+--- expect
+num 2
+===
+### name: assign.base-exists-before-the-index-runs
+--- note
+Assigning to A[k] creates A first, so an index expression that reads A sees the
+empty value the walk just created — the level creation is interleaved with the
+key evaluation, not done before or after it.
+--- source
+A[COUNT(A)] = 1; A
+--- expect
+tree -{"0"=t"1"}
+===
+### name: assign.stores-at-the-path-not-the-old-container
+--- note
+The right-hand side replaced A entirely. The assignment stores into the A that
+exists when the store happens — it is not silently discarded into the value A
+used to be. See spec/SPEC.md §5.7.
+--- source
+A[1] = (A = 2); A
+--- expect
+tree t"2"{"1"=t"2"}
+===
+### name: assign.index-expr-replaces-the-container
+--- source
+A = (1, 2); A[(A = 5)] = 9; A
+--- expect
+tree t"5"{"5"=t"9"}
+===
+### name: assign.index-expr-rebuilds-the-container
+--- source
+A[(A=(9,9))["1"]] = 3; COUNT(A)
+--- expect
+num 3
+===
+### name: assign.compound-target-replaced-by-rhs
+--- note
+The compound form reads the target before the right-hand side runs, so the
+arithmetic uses the old value, but the store still lands at the path.
+--- source
+A = 1; A += (A = 5); A
+--- expect
+num 6
+===

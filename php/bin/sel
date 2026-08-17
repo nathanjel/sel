@@ -1,0 +1,87 @@
+#!/usr/bin/env php
+<?php
+// SEL command line: evaluate an expression, a file, or start a REPL.
+//
+//   sel -e 'EXPR'          evaluate and print
+//   sel file.sel           evaluate a file
+//   sel --deps -e 'EXPR'   print the variables the expression reads
+//   sel                    REPL, keeping one context across lines
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/bootstrap.php';
+
+use Sel\Sel;
+use Sel\SelError;
+use Sel\Value;
+
+function show(Value $v): string
+{
+    if ($v->size() === 0) {
+        if ($v->kind === Value::TEXT) {
+            return (string) $v->scalar;
+        }
+        if ($v->kind === Value::BOOL) {
+            return $v->scalar ? 'TRUE' : 'FALSE';
+        }
+        if ($v->kind === Value::BIN) {
+            return 'bin:' . bin2hex((string) $v->scalar);
+        }
+    }
+    return $v->dump();
+}
+
+function report(SelError $e): void
+{
+    fwrite(STDERR, "{$e->code} at line {$e->line} column {$e->col}: {$e->getMessage()}\n");
+}
+
+$argvRest = array_slice($argv, 1);
+$wantDeps = in_array('--deps', $argvRest, true);
+$args = array_values(array_filter($argvRest, static fn (string $a): bool => $a !== '--deps'));
+
+if (($args[0] ?? '') === '--functions') {
+    echo implode("\n", Sel::functionNames()), "\n";
+    exit(0);
+}
+
+$source = null;
+if (($args[0] ?? '') === '-e') {
+    $source = $args[1] ?? '';
+} elseif ($args) {
+    $source = file_get_contents($args[0]);
+}
+
+if ($source !== null) {
+    try {
+        $program = Sel::compile($source);
+        if ($wantDeps) {
+            echo implode("\n", $program->dependencies()), "\n";
+        } else {
+            echo show($program->run(Value::none())), "\n";
+        }
+    } catch (SelError $e) {
+        report($e);
+        exit(1);
+    }
+    exit(0);
+}
+
+// REPL: one context for the whole session, so assignments persist.
+$root = Value::none();
+while (true) {
+    $line = readline('sel> ');
+    if ($line === false) {
+        echo "\n";
+        break;
+    }
+    if (trim($line) === '') {
+        continue;
+    }
+    readline_add_history($line);
+    try {
+        echo show(Sel::compile($line)->run($root)), "\n";
+    } catch (SelError $e) {
+        report($e);
+    }
+}

@@ -1,0 +1,145 @@
+% Aggregates: iteration without loops, by evaluating one AST per element.
+
+### name: agg.all.true
+--- source
+ALL((1, 2, 3), _ > 0)
+--- expect
+bool TRUE
+===
+### name: agg.all.false
+--- source
+ALL((1, -2), _ > 0)
+--- expect
+bool FALSE
+===
+### name: agg.all.empty-list-is-true
+--- source
+ALL(FILTER((1, 2), _ > 5), _ > 0)
+--- expect
+bool TRUE
+===
+### name: agg.all.short-circuits
+--- note
+The element that would divide by zero is never reached.
+--- source
+ALL((0, 1), _ > 0 AND 1 / _ > 0)
+--- expect
+bool FALSE
+===
+### name: agg.any.true
+--- source
+ANY((1, -2), _ < 0)
+--- expect
+bool TRUE
+===
+### name: agg.any.empty-list-is-false
+--- source
+ANY(FILTER((1, 2), _ > 5), _ > 0)
+--- expect
+bool FALSE
+===
+### name: agg.map
+--- source
+MAP((1, 2), _ * 2)
+--- expect
+tree -{"1"=t"2", "2"=t"4"}
+===
+### name: agg.map.renumbers
+--- source
+A["x"] = 1; A["y"] = 2; MAP(A, _ * 10)
+--- expect
+tree -{"1"=t"10", "2"=t"20"}
+===
+### name: agg.filter.preserves-keys
+--- source
+FILTER((1, 2, 3, 4), _ % 2 == 0)
+--- expect
+tree -{"2"=t"2", "4"=t"4"}
+===
+### name: agg.filter.empty
+--- source
+FILTER((1, 2), _ > 5)
+--- expect
+none
+===
+### name: agg.sum
+--- source
+SUM((1.5, 2.5), _)
+--- expect
+num 4.0
+===
+### name: agg.sum.of-expression
+--- source
+A[1]["q"] = 2; A[1]["p"] = 3.50; A[2]["q"] = 1; A[2]["p"] = 1.00; SUM(A, _["q"] * _["p"])
+--- expect
+num 8.00
+===
+### name: agg.join
+--- source
+JOIN((1, 2, 3), "-")
+--- expect
+text "1-2-3"
+===
+### name: agg.join.scalar-is-one-element
+--- source
+JOIN("x", "-")
+--- expect
+text "x"
+===
+### name: agg.key-binder
+--- source
+A["x"] = 1; A["y"] = 2; JOIN(MAP(A, _K), ",")
+--- expect
+text "x,y"
+===
+### name: agg.named-binder
+--- source
+ALL((1, 2), ITEM, ITEM > 0)
+--- expect
+bool TRUE
+===
+### name: agg.named-binder.must-be-a-name
+--- source
+ALL((1, 2), 1, _ > 0)
+--- expect
+error E_EXPECT_SYMBOL at 1:13
+===
+### name: agg.binder.shadows-then-restores
+--- source
+IT = "outer"; X = ALL((1, 2), IT, IT > 0); IT
+--- expect
+text "outer"
+===
+### name: agg.binder.not-assignable
+--- source
+ALL((1, 2), _ = 5)
+--- expect
+error E_BAD_ASSIGN
+===
+### name: agg.nested
+--- source
+A[1] = (1, 2); A[2] = (3, 4); ALL(A, ROW, ALL(ROW, _ > 0))
+--- expect
+bool TRUE
+===
+### name: agg.scalar-is-one-element-list
+--- source
+ALL(5, _ > 0)
+--- expect
+bool TRUE
+===
+### name: agg.body-must-be-bool
+--- source
+ALL((1, 2), _)
+--- expect
+error E_NOT_BOOL
+===
+### name: agg.realistic-validation
+--- setup
+ITEMS[1]["SKU"] = "A-1"; ITEMS[1]["QTY"] = 2;
+ITEMS[2]["SKU"] = "B-7"; ITEMS[2]["QTY"] = 0
+--- source
+IF(ALL(ITEMS, _["QTY"] > 0), "ok", "line with zero quantity: " & JOIN(MAP(FILTER(ITEMS, _["QTY"] == 0), _["SKU"]), ", "))
+--- expect
+text "line with zero quantity: B-7"
+===

@@ -1,0 +1,58 @@
+# Build output. Everything in the repository is source; nothing generated is
+# committed, so a fresh clone plus `tools/check.sh` is the whole story.
+
+# --- C++
+cpp/build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+# CMake, if you build that way instead of with the Makefile
+cpp/cmake-build*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+
+# --- Common Lisp
+# ASDF normally caches fasls under ~/.cache/common-lisp, but some setups keep
+# them beside the source.
+*.fasl
+*.fas
+*.lib
+*.dx32fsl
+*.dx64fsl
+*.lx32fsl
+*.lx64fsl
+.cache/
+# A saved core, if anyone builds one to speed the wrappers up
+lisp/bin/*.core
+
+# --- PHP and JS
+# Both hosts are dependency-free by design; if either of these appears,
+# something has gone wrong rather than something needs ignoring.
+vendor/
+node_modules/
+
+# --- Harness scratch
+# tools/*.sh work in mktemp directories, so nothing should land here — these are
+# for the times you run a tool by hand.
+*.selc
+oracle.txt
+programs.json
+/tmp-*
+
+# --- Editors and OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+.idea/
+.vscode/
+*.sublime-workspace

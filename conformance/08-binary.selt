@@ -1,0 +1,162 @@
+% Binary built-ins. TEXT converts to BIN through UTF-8 and nothing else.
+
+### name: bin.blen
+--- note
+Six code points, ten UTF-8 bytes.
+--- source
+BLEN("Zażółć")
+--- expect
+num 10
+===
+### name: bin.to-utf8
+--- source
+TO_UTF8("ż")
+--- expect
+bin c5bc
+===
+### name: bin.from-utf8
+--- source
+FROM_UTF8(FROM_HEX("c5bc"))
+--- expect
+text "ż"
+===
+### name: bin.from-utf8.invalid
+--- source
+FROM_UTF8(FROM_HEX("c080"))
+--- expect
+error E_UTF8
+===
+### name: bin.from-utf8.surrogate-bytes
+--- source
+FROM_UTF8(FROM_HEX("eda080"))
+--- expect
+error E_UTF8
+===
+### name: bin.from-utf8.truncated
+--- source
+FROM_UTF8(FROM_HEX("c5"))
+--- expect
+error E_UTF8
+===
+### name: bin.to-hex
+--- source
+TO_HEX("AB")
+--- expect
+text "4142"
+===
+### name: bin.from-hex
+--- source
+FROM_HEX("4142")
+--- expect
+bin 4142
+===
+### name: bin.from-hex.uppercase
+--- source
+FROM_HEX("FF00")
+--- expect
+bin ff00
+===
+### name: bin.from-hex.odd-length
+--- source
+FROM_HEX("abc")
+--- expect
+error E_BAD_ARG
+===
+### name: bin.from-hex.not-hex
+--- source
+FROM_HEX("zz")
+--- expect
+error E_BAD_ARG
+===
+### name: bin.base64.encode
+--- source
+ENCODE_BASE64("hello")
+--- expect
+text "aGVsbG8="
+===
+### name: bin.base64.encode-two-pad
+--- source
+ENCODE_BASE64("a")
+--- expect
+text "YQ=="
+===
+### name: bin.base64.encode-empty
+--- source
+"[" & ENCODE_BASE64("") & "]"
+--- expect
+text "[]"
+===
+### name: bin.base64.roundtrip
+--- source
+FROM_UTF8(DECODE_BASE64(ENCODE_BASE64("Zażółć")))
+--- expect
+text "Zażółć"
+===
+### name: bin.base64.decode
+--- source
+DECODE_BASE64("aGVsbG8=")
+--- expect
+bin 68656c6c6f
+===
+### name: bin.base64.decode-bad-character
+--- source
+DECODE_BASE64("aGV_bG8=")
+--- expect
+error E_BAD_ARG
+===
+### name: bin.base64.decode-unpadded
+--- source
+DECODE_BASE64("aGVsbG8")
+--- expect
+error E_BAD_ARG
+===
+### name: bin.crc32
+--- note
+The check value of CRC-32/ISO-HDLC for "123456789".
+--- source
+CRC32("123456789")
+--- expect
+text "cbf43926"
+===
+### name: bin.crc32.empty
+--- source
+CRC32("")
+--- expect
+text "00000000"
+===
+### name: bin.crc32.utf8
+--- source
+CRC32("ż")
+--- expect
+text "3583ce53"
+===
+### name: bin.btl
+--- source
+BTL("AB")
+--- expect
+tree -{"1"=t"65", "2"=t"66"}
+===
+### name: bin.ltb
+--- source
+LTB((65, 66))
+--- expect
+bin 4142
+===
+### name: bin.ltb.out-of-range
+--- source
+LTB((65, 256))
+--- expect
+error E_RANGE
+===
+### name: bin.ltb.fractional
+--- source
+LTB((65, 1.5))
+--- expect
+error E_RANGE
+===
+### name: bin.roundtrip-btl-ltb
+--- source
+FROM_UTF8(LTB(BTL("Zażółć")))
+--- expect
+text "Zażółć"
+===

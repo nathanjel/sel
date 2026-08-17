@@ -1,0 +1,148 @@
+% Lexical structure: comments, literals, escapes, interpolation, identifiers.
+
+### name: lex.comment
+--- source
+1 + 1  # this is ignored
+--- expect
+num 2
+===
+### name: lex.comment.hash-in-text
+--- source
+"a#b"
+--- expect
+text "a#b"
+===
+### name: lex.ident.case-insensitive
+--- setup
+Total = 5
+--- source
+TOTAL + total
+--- expect
+num 10
+===
+### name: lex.escapes
+--- source
+"a\\b\"c\nd\te\rf"
+--- expect
+text "a\\b\"c\nd\te\rf"
+===
+### name: lex.escape.brace
+--- source
+"\{not interpolated\}"
+--- expect
+text "{not interpolated}"
+===
+### name: lex.escape.codepoint
+--- source
+"\u{17C}\u{1F44D}"
+--- expect
+text "ż👍"
+===
+### name: lex.escape.unknown
+--- source
+"a\qb"
+--- expect
+error E_ESCAPE
+===
+### name: lex.escape.surrogate-rejected
+--- source
+"\u{D800}"
+--- expect
+error E_RANGE
+===
+### name: lex.raw.no-escapes
+--- source
+'a\db\\c'
+--- expect
+text "a\\db\\\\c"
+===
+### name: lex.raw.doubled-quote
+--- source
+'it''s'
+--- expect
+text "it's"
+===
+### name: lex.raw.no-interpolation
+--- source
+'{A}'
+--- expect
+text "{A}"
+===
+### name: lex.text.unterminated
+--- source
+"abc
+--- expect
+error E_UNTERMINATED
+===
+
+% Interpolation lowers to `&` and keeps empty segments, so it always goes
+% through the checks in §5.2.
+
+### name: lex.interp.basic
+--- setup
+A = 3
+--- source
+"value {A} here"
+--- expect
+text "value 3 here"
+===
+### name: lex.interp.expression
+--- setup
+A = 3
+--- source
+"{A + 1}"
+--- expect
+text "4"
+===
+### name: lex.interp.nested-text
+--- setup
+A = 2
+--- source
+"x{ IF(A > 1, "big", "small") }y"
+--- expect
+text "xbigy"
+===
+### name: lex.interp.brace-inside-nested-text
+--- source
+"{ "a}b" }"
+--- expect
+text "a}b"
+===
+### name: lex.interp.applies-scalar-context
+--- setup
+A = (7, 8)
+--- source
+"{A}"
+--- expect
+text "7"
+===
+### name: lex.interp.rejects-bool
+--- source
+"{1 == 1}"
+--- expect
+error E_NOT_TEXT
+===
+### name: lex.interp.empty
+--- source
+"a{}b"
+--- expect
+error E_SYNTAX
+===
+### name: lex.interp.unterminated
+--- source
+"a{1+1"
+--- expect
+error E_UNTERMINATED
+===
+### name: lex.number.no-trailing-dot
+--- source
+1.
+--- expect
+error E_SYNTAX
+===
+### name: lex.unknown-character
+--- source
+1 @ 2
+--- expect
+error E_SYNTAX at 1:3
+===

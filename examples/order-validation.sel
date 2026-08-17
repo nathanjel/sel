@@ -1,0 +1,25 @@
+# Order form validation. One rule set, run on the PHP backend and the JS
+# frontend against the same data, and required to give the same answer.
+#
+# Reads: CUSTOMER, ITEMS, POSTCODE, CREDIT_LIMIT
+# Yields: "ok, ..." when the order is acceptable, otherwise the reason.
+
+TOTAL = SUM(ITEMS, _["QTY"] * _["PRICE"]);
+
+EMPTY_LINES = FILTER(ITEMS, _["QTY"] <= 0);
+
+BAD_SKUS = JOIN(MAP(FILTER(ITEMS, NOT RMATCH('^[A-Z]{2}-\d{4}$', _["SKU"])), _["SKU"]), ", ");
+
+# Indexed by position on purpose: lists are 1-based, and both hosts must agree
+# that ITEMS[1] is the first line.
+FIRST_SKU = IF(COUNT(ITEMS) > 0, ITEMS[1]["SKU"], "-");
+
+# Checks run in order and stop at the first that fires. Only the matching
+# message is evaluated, so the interpolations below it never run.
+COND(TRIM(CUSTOMER) $== "",                 "customer is required",
+     NOT RMATCH('^\d{2}-\d{3}$', POSTCODE), "postcode {POSTCODE} is not in the form 12-345",
+     COUNT(ITEMS) == 0,                     "the order has no lines",
+     COUNT(EMPTY_LINES) > 0,                "{COUNT(EMPTY_LINES)} line(s) have no quantity",
+     BAD_SKUS $!= "",                       "malformed SKU: {BAD_SKUS}",
+     TOTAL > CREDIT_LIMIT,                  "total {TOTAL} exceeds the credit limit of {CREDIT_LIMIT}",
+                                            "ok, first line {FIRST_SKU}")

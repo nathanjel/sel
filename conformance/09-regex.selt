@@ -1,0 +1,440 @@
+% The portable regex subset. Patterns are usually written as raw 'literals' so
+% backslashes need no doubling.
+
+### name: re.match
+--- source
+RMATCH('^\d{3}$', "123")
+--- expect
+bool TRUE
+===
+### name: re.match.false
+--- source
+RMATCH('^\d{3}$', "12x")
+--- expect
+bool FALSE
+===
+### name: re.match.anchors-whole-subject
+--- note
+PCRE's $ also matches before a trailing newline unless the D modifier is set;
+SEL anchors to the very end in both hosts.
+--- source
+RMATCH('^abc$', "abc\n")
+--- expect
+bool FALSE
+===
+### name: re.dot-matches-newline
+--- note
+Dotall is permanently on, so `.` means "any code point" in both engines.
+--- source
+RMATCH('^a.b$', "a\nb")
+--- expect
+bool TRUE
+===
+### name: re.dot-counts-code-points
+--- source
+RMATCH('^.$', "👍")
+--- expect
+bool TRUE
+===
+### name: re.digit-class-is-ascii
+--- note
+Neither engine makes \d Unicode-aware under the u flag; an Arabic-Indic digit
+must not match.
+--- source
+RMATCH('^\d$', "\u{0661}")
+--- expect
+bool FALSE
+===
+### name: re.find
+--- source
+RFIND('ż', "Zażółć")
+--- expect
+num 3
+===
+### name: re.find.code-point-offsets
+--- note
+PHP reports byte offsets and JS reports UTF-16 offsets; SEL reports neither.
+--- source
+RFIND('a', "👍ża")
+--- expect
+num 3
+===
+### name: re.find.not-found
+--- source
+RFIND('q', "abc")
+--- expect
+num 0
+===
+### name: re.groups
+--- source
+RGROUPS('(\d+)-(\d+)', "10-20")
+--- expect
+tree -{"1"=t"10-20", "2"=t"10", "3"=t"20"}
+===
+### name: re.groups.no-match
+--- source
+RGROUPS('(z)', "abc")
+--- expect
+none
+===
+### name: re.groups.non-participating
+--- source
+RGROUPS('(a)|(b)', "a")
+--- expect
+tree -{"1"=t"a", "2"=t"a", "3"=t""}
+===
+### name: re.replace
+--- source
+RREPLACE('(a)(b)', "$2$1", "abab")
+--- expect
+text "baba"
+===
+### name: re.replace.whole-match
+--- source
+RREPLACE('\d+', "[$0]", "a12b3")
+--- expect
+text "a[12]b[3]"
+===
+### name: re.replace.literal-dollar
+--- source
+RREPLACE('a', "$$", "a")
+--- expect
+text "$"
+===
+### name: re.replace.js-specials-are-literal
+--- note
+JS would treat $& as the whole match; SEL understands $0-$9 and $$ only.
+--- source
+RREPLACE('a', "x$&y", "a")
+--- expect
+text "x$&y"
+===
+### name: re.replace.zero-width
+--- source
+RREPLACE('x*', "-", "ab")
+--- expect
+text "-a-b-"
+===
+### name: re.flag.i
+--- source
+RMATCH('^a+$', "AAA", "i")
+--- expect
+bool TRUE
+===
+### name: re.flag.i.rejects-non-ascii-pattern
+--- source
+RMATCH('ą', "Ą", "i")
+--- expect
+error E_BAD_ARG
+===
+### name: re.flag.m-not-offered
+--- source
+RMATCH('^a$', "a", "m")
+--- expect
+error E_BAD_ARG
+===
+### name: re.flag.unknown
+--- source
+RMATCH('a', "a", "x")
+--- expect
+error E_BAD_ARG
+===
+
+% Everything below is rejected at compile time rather than being allowed to mean
+% different things in PCRE and ECMAScript.
+
+### name: re.reject.lookahead
+--- source
+RMATCH('(?=a)', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.lookbehind
+--- source
+RMATCH('(?<=a)b', "ab")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.posix-class
+--- source
+RMATCH('[[:alpha:]]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.unicode-property
+--- source
+RMATCH('\p{L}', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.backreference
+--- source
+RMATCH('(a)\1', "aa")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.possessive
+--- source
+RMATCH('a++', "aa")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.atomic-group
+--- source
+RMATCH('(?>a)', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.inline-modifier
+--- source
+RMATCH('(?i)a', "A")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.anchor-escape
+--- source
+RMATCH('\Aa', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.unsupported-escape
+--- source
+RMATCH('\xff', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.bare-brace
+--- source
+RMATCH('a{b', 'a{b')
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.accept.escaped-brace
+--- source
+RMATCH('^a\{b$', 'a{b')
+--- expect
+bool TRUE
+===
+### name: re.accept.non-capturing-group
+--- source
+RMATCH('^(?:ab)+$', "abab")
+--- expect
+bool TRUE
+===
+### name: re.accept.lazy-quantifier
+--- source
+RREPLACE('<.+?>', "-", "<a><b>")
+--- expect
+text "--"
+===
+### name: re.accept.alternation-and-class
+--- source
+RMATCH('^[a-c]+|z$', "abc")
+--- expect
+bool TRUE
+===
+### name: re.reject.word-boundary
+--- note
+PHP's u modifier enables PCRE2's UCP, so `é` is a word character there and is not
+in ECMAScript. A word boundary therefore cannot be made portable and is refused
+rather than allowed to differ between backend and frontend.
+--- source
+RFIND('\bb', "a b")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.vertical-tab-escape
+--- note
+PCRE reads \v as any vertical whitespace; ECMAScript reads it as U+000B.
+--- source
+RMATCH('a\vb', "a\u{0B}b")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.negated-escape-in-class
+--- source
+RMATCH('[\D]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.leading-bracket-in-class
+--- note
+PCRE reads a leading ] as a literal; ECMAScript reads [] as an empty class.
+--- source
+RMATCH('[]]', "]")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.accept.escaped-bracket-in-class
+--- source
+RMATCH('^[\]]$', "]")
+--- expect
+bool TRUE
+===
+### name: re.word-class-is-ascii
+--- note
+Under PHP's UCP, an unrewritten \w would match an accented letter.
+--- source
+RMATCH('^\w$', "é")
+--- expect
+bool FALSE
+===
+### name: re.space-class-is-ascii
+--- note
+Both engines' native \s match U+00A0; SEL's expanded ASCII form does not.
+--- source
+RMATCH('^\s$', "\u{00A0}")
+--- expect
+bool FALSE
+===
+### name: re.class-escape-inside-class
+--- source
+RMATCH('^[\d.]+$', "3.14")
+--- expect
+bool TRUE
+===
+### name: re.negated-class-escape
+--- source
+RMATCH('^\D+$', "abc")
+--- expect
+bool TRUE
+===
+### name: re.realistic.postcode
+--- setup
+CODE = "31-874"
+--- source
+RMATCH('^\d{2}-\d{3}$', CODE)
+--- expect
+bool TRUE
+===
+### name: re.icase.folds-kelvin-sign
+--- note
+The i flag uses *simple* case folding, the same as ECMAScript's `u` mode and
+PCRE2's `ui`. Exactly two non-ASCII code points fold to an ASCII letter —
+U+212A KELVIN SIGN to "k" and U+017F LATIN SMALL LETTER LONG S to "s" — and an
+implementation whose host folds only ASCII will silently disagree here. That is
+the whole reason these cases exist: the pattern is ASCII, so `i` is permitted,
+but the *subject* still reaches the engine's folding rules.
+--- source
+RMATCH('^k$', "\u{212A}", "i")
+--- expect
+bool TRUE
+===
+### name: re.icase.folds-long-s
+--- source
+RMATCH('^s$', "\u{017F}", "i")
+--- expect
+bool TRUE
+===
+### name: re.icase.no-full-folding
+--- note
+Full case folding would make U+00DF match "ss". Simple folding does not, and
+simple folding is what all hosts must do.
+--- source
+RMATCH('^ss$', "\u{00DF}", "i")
+--- expect
+bool FALSE
+===
+### name: re.icase.dotted-capital-i-does-not-fold
+--- note
+U+0130 has only a full and a Turkic folding, no simple one, so it does not match
+"i" even under the i flag.
+--- source
+RMATCH('^i$', "\u{0130}", "i")
+--- expect
+bool FALSE
+===
+### name: re.icase.angstrom-does-not-fold-to-ascii
+--- source
+RMATCH('^a$', "\u{212B}", "i")
+--- expect
+bool FALSE
+===
+### name: re.icase.position-is-the-original-subject
+--- source
+RFIND('k', "x\u{212A}y", "i")
+--- expect
+num 2
+===
+### name: re.icase.groups-return-the-original-text
+--- note
+The match is found by folding, but what comes back is the subject's own
+characters — not the folded form used to find it.
+--- source
+RGROUPS('(k)', "\u{212A}", "i")
+--- expect
+tree -{"1"=t"K", "2"=t"K"}
+===
+### name: re.icase.replace-splices-the-original
+--- source
+RREPLACE('k', "-", "a\u{212A}b", "i")
+--- expect
+text "a-b"
+===
+### name: re.replace.caret-matches-only-at-the-start
+--- note
+RREPLACE walks to each subsequent match by continuing the scan from an offset.
+`^` must still mean "the start of the subject", not "the start of this scan" —
+cl-ppcre binds \A to the scan offset, which made this replace every character.
+--- source
+RREPLACE('^a', "X", "aaa")
+--- expect
+text "Xaa"
+===
+### name: re.replace.empty-caret-matches-once
+--- source
+RREPLACE('^', "X", "abc")
+--- expect
+text "Xabc"
+===
+### name: re.replace.caret-inside-alternation
+--- source
+RREPLACE('(^|x)a', "[$1]", "aaa")
+--- expect
+text "[]aa"
+===
+### name: re.replace.caret-alternation-tail
+--- source
+RREPLACE('a|^', "X", "bab")
+--- expect
+text "XbXb"
+===
+### name: re.quantifier.reversed-bounds-rejected
+--- note
+{2,1} is empty and every engine but cl-ppcre rejects it outright, so the subset
+checker has to reject it explicitly rather than delegating.
+--- source
+RMATCH('a{2,1}', "aa")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.quantifier.reversed-bounds-rejected-in-rfind
+--- source
+RFIND('a{3,1}', "aa")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.quantifier.bound-at-the-cap
+--- note
+65535 is PCRE2's own hard limit rather than a number SEL chose; above it PCRE
+refuses to compile at all, so no larger cap could be honoured on a PHP host.
+--- source
+RMATCH('a{65535}', "a")
+--- expect
+bool FALSE
+===
+### name: re.quantifier.bound-beyond-the-cap
+--- source
+RMATCH('a{65536}', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.quantifier.enormous-bound
+--- note
+ECMAScript and cl-ppcre accept this and simply never match; PCRE2 and SRELL
+reject it. The subset checker settles it rather than delegating.
+--- source
+RMATCH('a{99999999999}', "a")
+--- expect
+error E_REGEX_SYNTAX
+===

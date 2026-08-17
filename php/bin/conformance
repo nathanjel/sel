@@ -1,0 +1,242 @@
+#!/usr/bin/env php
+<?php
+// Conformance runner. The suite in conformance/ is normative; this program has
+// no opinions of its own beyond the file format in conformance/README.md.
+//
+// Note that expectation strings are unescaped by this file's own tiny escape
+// reader, not by SEL's lexer — the suite must not validate the lexer with the
+// lexer.
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/bootstrap.php';
+
+use Sel\Sel;
+use Sel\SelError;
+use Sel\Utf8;
+use Sel\Value;
+
+const SUITE = __DIR__ . '/../../conformance';
+
+/** @return list<array<string,mixed>> */
+function parse_selt(string $text, string $file): array
+{
+    $cases = [];
+    $cur = -1;
+    $section = null;
+    foreach (explode("\n", $text) as $idx => $line) {
+        $at = $file . ':' . ($idx + 1);
+        if (str_starts_with($line, '### ')) {
+            if (preg_match('/^###\s+name:\s*(\S+)\s*$/', $line, $m) !== 1) {
+                throw new RuntimeException("{$at}: malformed case header");
+            }
+            $cases[] = ['name' => $m[1], 'at' => $at, 'setup' => null, 'source' => null, 'expect' => null];
+            $cur = count($cases) - 1;
+            $section = null;
+            continue;
+        }
+        if ($line === '===') {
+            $cur = -1;
+            $section = null;
+            continue;
+        }
+        if (str_starts_with($line, '--- ')) {
+            if ($cur < 0) {
+                throw new RuntimeException("{$at}: section outside a case");
+            }
+            $section = trim(substr($line, 4));
+            if (in_array($section, ['setup', 'source', 'expect'], true)) {
+                $cases[$cur][$section] = [];
+            } elseif ($section !== 'note') {
+                throw new RuntimeException("{$at}: unknown section {$section}");
+            }
+            continue;
+        }
+        if ($cur < 0 || $section === null || $section === 'note') {
+            continue;                              // header text, ignored
+        }
+        $cases[$cur][$section][] = $line;
+    }
+
+    foreach ($cases as &$c) {
+        if ($c['source'] === null) {
+            throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- source");
+        }
+        if ($c['expect'] === null) {
+            throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- expect");
+        }
+        $c['setup'] = $c['setup'] === null ? null : trim(implode("\n", $c['setup']));
+        $c['source'] = trim(implode("\n", $c['source']));
+        $c['expect'] = trim(implode("\n", $c['expect']));
+    }
+    return $cases;
+}
+
+function unescape_literal(string $lit, string $at): string
+{
+    if (strlen($lit) < 2 || $lit[0] !== '"' || $lit[strlen($lit) - 1] !== '"') {
+        throw new RuntimeException("{$at}: expected a quoted string, got {$lit}");
+    }
+    $body = substr($lit, 1, -1);
+    $out = '';
+    for ($i = 0, $n = strlen($body); $i < $n; $i++) {
+        if ($body[$i] !== '\\') {
+            $out .= $body[$i];
+            continue;
+        }
+        $e = $body[++$i];
+        $out .= match ($e) {
+            '\\' => '\\',
+            '"' => '"',
+            'n' => "\n",
+            't' => "\t",
+            'r' => "\r",
+            'u' => (function () use ($body, &$i) {
+                $hex = substr($body, $i + 1, 4);
+                $i += 4;
+                return Utf8::chr((int) hexdec($hex));
+            })(),
+            default => throw new RuntimeException("{$at}: bad escape \\{$e}"),
+        };
+    }
+    return $out;
+}
+
+/** Describes an actual result in the same vocabulary the expectations use. */
+function describe_value(Value $v): string
+{
+    if ($v->size() > 0) {
+        return 'tree ' . $v->dump();
+    }
+    return match ($v->kind) {
+        Value::TEXT => 'text ' . json_encode($v->scalar),
+        Value::BIN => 'bin ' . bin2hex((string) $v->scalar),
+        Value::BOOL => 'bool ' . ($v->scalar ? 'TRUE' : 'FALSE'),
+        default => 'none',
+    };
+}
+
+function check_expect(string $expect, ?Value $value, ?SelError $error, string $at): ?string
+{
+    $space = strpos($expect, ' ');
+    $form = $space === false ? $expect : substr($expect, 0, $space);
+    $rest = $space === false ? '' : trim(substr($expect, $space + 1));
+
+    if ($form === 'error') {
+        if ($error === null) {
+            return "expected {$expect}, got value " . describe_value($value);
+        }
+        if (preg_match('/^(\S+)(?:\s+at\s+(\d+):(\d+))?$/', $rest, $m) !== 1) {
+            throw new RuntimeException("{$at}: malformed error expectation");
+        }
+        if ($error->code !== $m[1]) {
+            return "expected {$m[1]}, got {$error->code} ({$error->getMessage()})";
+        }
+        if (isset($m[2])) {
+            $gotAt = "{$error->line}:{$error->col}";
+            $wantAt = "{$m[2]}:{$m[3]}";
+            if ($gotAt !== $wantAt) {
+                return "expected {$m[1]} at {$wantAt}, got it at {$gotAt}";
+            }
+        }
+        return null;
+    }
+
+    if ($error !== null) {
+        return "expected {$expect}, got {$error->code} ({$error->getMessage()})";
+    }
+
+    switch ($form) {
+        case 'text':
+            if ($value->kind !== Value::TEXT || $value->size() > 0) {
+                return 'wanted text, got ' . describe_value($value);
+            }
+            return $value->scalar === unescape_literal($rest, $at) ? null : 'got ' . describe_value($value);
+        case 'num':
+            if ($value->kind !== Value::TEXT || $value->size() > 0) {
+                return 'wanted a number, got ' . describe_value($value);
+            }
+            return $value->scalar === $rest ? null : 'got ' . describe_value($value);
+        case 'bin':
+            if ($value->kind !== Value::BIN || $value->size() > 0) {
+                return 'wanted binary, got ' . describe_value($value);
+            }
+            return bin2hex((string) $value->scalar) === $rest ? null : 'got ' . describe_value($value);
+        case 'bool':
+            if ($value->kind !== Value::BOOL || $value->size() > 0) {
+                return 'wanted a boolean, got ' . describe_value($value);
+            }
+            return ($value->scalar ? 'TRUE' : 'FALSE') === $rest ? null : 'got ' . describe_value($value);
+        case 'none':
+            return ($value->kind === Value::NONE && $value->size() === 0) ? null : 'got ' . describe_value($value);
+        case 'tree':
+            return $value->dump() === $rest ? null : 'got tree ' . $value->dump();
+        default:
+            throw new RuntimeException("{$at}: unknown expectation form {$form}");
+    }
+}
+
+// --- running ----------------------------------------------------------------
+
+$files = array_slice($argv, 1);
+if (!$files) {
+    $files = glob(SUITE . '/*.selt');
+    sort($files);
+}
+
+$pass = 0;
+$failures = [];
+$suiteErrors = [];
+$seen = [];
+
+foreach ($files as $file) {
+    $short = basename($file);
+    foreach (parse_selt(file_get_contents($file), $short) as $c) {
+        if (isset($seen[$c['name']])) {
+            $suiteErrors[] = "{$c['at']}: duplicate case name {$c['name']} (also {$seen[$c['name']]})";
+            continue;
+        }
+        $seen[$c['name']] = $c['at'];
+
+        $root = Value::none();
+        if ($c['setup'] !== null && $c['setup'] !== '') {
+            try {
+                Sel::compile($c['setup'])->run($root);
+            } catch (SelError $e) {
+                // A broken setup is a suite bug, not a failing implementation.
+                $suiteErrors[] = "{$c['at']}: {$c['name']}: setup failed: {$e}";
+                continue;
+            }
+        }
+
+        $value = null;
+        $error = null;
+        try {
+            $value = Sel::compile($c['source'])->run($root);
+        } catch (SelError $e) {
+            $error = $e;
+        }
+
+        $problem = check_expect($c['expect'], $value, $error, $c['at']);
+        if ($problem === null) {
+            $pass++;
+        } else {
+            $failures[] = $c + ['problem' => $problem];
+        }
+    }
+}
+
+foreach ($failures as $f) {
+    echo "FAIL {$f['name']}  ({$f['at']})\n";
+    echo '     source: ' . str_replace("\n", "\n             ", $f['source']) . "\n";
+    echo "     want:   {$f['expect']}\n";
+    echo "     {$f['problem']}\n";
+}
+foreach ($suiteErrors as $e) {
+    echo "SUITE {$e}\n";
+}
+
+$nf = count($failures);
+$ns = count($suiteErrors);
+echo "\n{$pass} passed, {$nf} failed, {$ns} suite errors\n";
+exit($nf + $ns > 0 ? 1 : 0);

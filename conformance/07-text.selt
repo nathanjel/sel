@@ -1,0 +1,252 @@
+% Text built-ins. Everything counts code points; positions are 1-based and 0
+% means "not found".
+
+### name: txt.len
+--- source
+LEN("Zażółć")
+--- expect
+num 6
+===
+### name: txt.len.astral
+--- note
+Two code points, four UTF-8 bytes, three UTF-16 units. LEN counts code points.
+--- source
+LEN("👍a")
+--- expect
+num 2
+===
+### name: txt.left
+--- source
+LEFT("Zażółć", 3)
+--- expect
+text "Zaż"
+===
+### name: txt.left.astral
+--- source
+LEFT("👍ab", 1)
+--- expect
+text "👍"
+===
+### name: txt.left.beyond-end
+--- source
+LEFT("ab", 9)
+--- expect
+text "ab"
+===
+### name: txt.right
+--- source
+RIGHT("👍ab", 2)
+--- expect
+text "ab"
+===
+### name: txt.substr
+--- source
+SUBSTR("abcdef", 3, 2)
+--- expect
+text "cd"
+===
+### name: txt.substr.to-end
+--- source
+SUBSTR("abcdef", 4)
+--- expect
+text "def"
+===
+### name: txt.substr.is-one-based
+--- source
+SUBSTR("abc", 0, 1)
+--- expect
+error E_RANGE
+===
+### name: txt.find
+--- source
+FIND("ż", "Zażółć")
+--- expect
+num 3
+===
+### name: txt.find.not-found-is-zero
+--- source
+FIND("q", "abc")
+--- expect
+num 0
+===
+### name: txt.find.from
+--- source
+FIND("a", "banana", 4)
+--- expect
+num 4
+===
+### name: txt.find.empty-needle
+--- source
+FIND("", "abc")
+--- expect
+error E_BAD_ARG
+===
+### name: txt.replace
+--- source
+REPLACE("a", "X", "banana")
+--- expect
+text "bXnXnX"
+===
+### name: txt.replace.non-overlapping
+--- source
+REPLACE("aa", "b", "aaaa")
+--- expect
+text "bb"
+===
+### name: txt.replace.empty-needle
+--- source
+REPLACE("", "x", "abc")
+--- expect
+error E_BAD_ARG
+===
+### name: txt.split
+--- source
+SPLIT("a,b,c", ",")
+--- expect
+tree -{"1"=t"a", "2"=t"b", "3"=t"c"}
+===
+### name: txt.split.trailing-separator
+--- source
+SPLIT("a,", ",")
+--- expect
+tree -{"1"=t"a", "2"=t""}
+===
+### name: txt.split.empty-separator
+--- source
+SPLIT("abc", "")
+--- expect
+error E_BAD_ARG
+===
+### name: txt.trim
+--- source
+"[" & TRIM("  a b \t") & "]"
+--- expect
+text "[a b]"
+===
+### name: txt.ltrim
+--- source
+"[" & LTRIM("  a  ") & "]"
+--- expect
+text "[a  ]"
+===
+### name: txt.rtrim
+--- source
+"[" & RTRIM("  a  ") & "]"
+--- expect
+text "[  a]"
+===
+### name: txt.upper.ascii-only
+--- note
+Ä is left alone on purpose: PHP's strtoupper and JS's toUpperCase cannot be
+made to agree above ASCII, so SEL does not pretend they can.
+--- source
+UPPER("aÄz")
+--- expect
+text "AÄZ"
+===
+### name: txt.lower.ascii-only
+--- source
+LOWER("AÄZ")
+--- expect
+text "aÄz"
+===
+### name: txt.backwards
+--- source
+BACKWARDS("ab👍")
+--- expect
+text "👍ba"
+===
+### name: txt.repeat
+--- source
+REPEAT("ab", 3)
+--- expect
+text "ababab"
+===
+### name: txt.repeat.zero
+--- source
+"[" & REPEAT("ab", 0) & "]"
+--- expect
+text "[]"
+===
+### name: txt.padl
+--- source
+PADL("7", 3, "0")
+--- expect
+text "007"
+===
+### name: txt.padr.multichar-fill
+--- source
+PADR("x", 5, "ab")
+--- expect
+text "xabab"
+===
+### name: txt.pad.no-truncation
+--- source
+PADL("abcd", 2, "0")
+--- expect
+text "abcd"
+===
+### name: txt.char
+--- source
+CHAR(128077)
+--- expect
+text "👍"
+===
+### name: txt.char.out-of-range
+--- source
+CHAR(1114112)
+--- expect
+error E_RANGE
+===
+### name: txt.char.surrogate
+--- source
+CHAR(55296)
+--- expect
+error E_RANGE
+===
+### name: txt.code
+--- source
+CODE("👍a")
+--- expect
+num 128077
+===
+### name: txt.code.empty
+--- source
+CODE("")
+--- expect
+error E_RANGE
+===
+### name: txt.rejects-binary
+--- note
+Text functions do not silently decode bytes; FROM_UTF8 is the explicit door.
+--- source
+LEN(FROM_HEX("41"))
+--- expect
+error E_NOT_TEXT
+===
+### name: txt.substr.length-beyond-any-string
+--- note
+A length larger than the string returns the rest of it. In C++ the count
+saturates at the maximum integer, so `start + len` was signed overflow and
+returned "" instead.
+--- source
+SUBSTR("abcdef", 2, 9223372036854775807)
+--- expect
+text "bcdef"
+===
+### name: txt.find.start-beyond-any-string
+--- source
+FIND("ab", "abc", 9223372036854775807)
+--- expect
+num 0
+===
+### name: num.round.scale-out-of-range
+--- note
+A scale no implementation could allocate must fail loudly rather than being
+truncated into a small one. C++ cast it to int, wrapping 4294967296 to 0 and
+answering `2` with total confidence.
+--- source
+ROUND(1.5, 4294967296)
+--- expect
+error E_RANGE
+===

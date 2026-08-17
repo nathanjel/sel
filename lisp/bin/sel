@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# See sel.lisp beside this wrapper. Run from the repository root.
+here="$(cd "$(dirname "$0")" && pwd)"
+exec sbcl --noinform --disable-debugger --non-interactive \
+  --load "$here/boot.lisp" \
+  --load "$here/sel.lisp" \
+  --eval '(sel-cli:main)' \
+  --end-toplevel-options "$@"

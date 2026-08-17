@@ -1,0 +1,224 @@
+% Precedence, associativity, and the operator families.
+
+### name: op.prec.mul-over-add
+--- source
+2 + 3 * 4
+--- expect
+num 14
+===
+### name: op.prec.concat-looser-than-add
+--- source
+"a" & 1 + 2
+--- expect
+text "a3"
+===
+### name: op.prec.concat-tighter-than-compare
+--- source
+"a" & "b" $== "ab"
+--- expect
+bool TRUE
+===
+### name: op.prec.not-looser-than-compare
+--- note
+NOT binds looser than comparison, unlike C-family `!`. NOT 1 == 2 is NOT (1 == 2).
+--- source
+NOT 1 == 2
+--- expect
+bool TRUE
+===
+### name: op.prec.not-tighter-than-and
+--- source
+NOT TRUE AND FALSE
+--- expect
+bool FALSE
+===
+### name: op.prec.assign-looser-than-compare
+--- source
+A = 1 == 1; A
+--- expect
+bool TRUE
+===
+### name: op.prec.comma-looser-than-assign
+--- note
+A=3,4 is (A=3), 4 — a two element list, with A set to 3 along the way.
+--- source
+A = 3, 4
+--- expect
+tree -{"1"=t"3", "2"=t"4"}
+===
+### name: op.prec.semicolon-looser-than-comma
+--- source
+(1, 2; 3, 4)
+--- expect
+tree -{"1"=t"3", "2"=t"4"}
+===
+### name: op.compare.no-chaining
+--- source
+1 < 2 < 3
+--- expect
+error E_SYNTAX at 1:7
+===
+### name: op.unary-minus
+--- source
+- 2 - -3
+--- expect
+num 1
+===
+
+### name: op.concat.text
+--- source
+"A" & "B"
+--- expect
+text "AB"
+===
+### name: op.concat.number-is-text
+--- source
+2 & "A"
+--- expect
+text "2A"
+===
+### name: op.concat.bin-wins
+--- source
+"A" & FROM_HEX("42")
+--- expect
+bin 4142
+===
+### name: op.concat.rejects-bool
+--- source
+"a" & TRUE
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: op.arith.rejects-text
+--- source
+3 + "A"
+--- expect
+error E_NOT_NUM at 1:5
+===
+
+### name: op.text-compare.bytewise
+--- source
+"A" $< "B"
+--- expect
+bool TRUE
+===
+### name: op.text-compare.astral-is-byte-order
+--- note
+JS compares strings in UTF-16 order natively, which would make this FALSE.
+The spec requires UTF-8 byte order, where U+1F44D sorts after U+FFFD.
+--- source
+"\u{FFFD}" $< "\u{1F44D}"
+--- expect
+bool TRUE
+===
+
+### name: op.logic.and
+--- source
+TRUE AND FALSE
+--- expect
+bool FALSE
+===
+### name: op.logic.and-short-circuits
+--- source
+FALSE AND (1 / 0 == 0)
+--- expect
+bool FALSE
+===
+### name: op.logic.or-short-circuits
+--- source
+TRUE OR (1 / 0 == 0)
+--- expect
+bool TRUE
+===
+### name: op.logic.xor
+--- source
+TRUE XOR TRUE
+--- expect
+bool FALSE
+===
+### name: op.logic.no-truthiness
+--- source
+"x" AND TRUE
+--- expect
+error E_NOT_BOOL at 1:1
+===
+### name: op.logic.not
+--- source
+NOT FALSE
+--- expect
+bool TRUE
+===
+
+### name: op.bitwise.and
+--- source
+FROM_HEX("f0") BAND FROM_HEX("31")
+--- expect
+bin 30
+===
+### name: op.bitwise.or
+--- source
+FROM_HEX("f0") BOR FROM_HEX("0f")
+--- expect
+bin ff
+===
+### name: op.bitwise.xor
+--- source
+FROM_HEX("ff") BXOR FROM_HEX("80")
+--- expect
+bin 7f
+===
+### name: op.bitwise.length-mismatch
+--- source
+FROM_HEX("00") BOR FROM_HEX("0102")
+--- expect
+error E_LEN_MISMATCH
+===
+
+### name: op.assign.returns-value
+--- source
+A = 2
+--- expect
+num 2
+===
+### name: op.assign.compound
+--- source
+A = 1; A += 2; A *= 3; A
+--- expect
+num 9
+===
+### name: op.assign.compound-concat
+--- source
+A = "x"; A &= "y"; A
+--- expect
+text "xy"
+===
+### name: op.assign.compound-needs-target
+--- source
+A += 1
+--- expect
+error E_UNDEF_VAR
+===
+### name: op.assign.copies-by-value
+--- source
+A = (1, 2); B = A; B[1] = 9; A[1]
+--- expect
+num 1
+===
+### name: op.assign.bad-target
+--- source
+3 = 4
+--- expect
+error E_BAD_ASSIGN at 1:1
+===
+### name: op.seq.yields-last
+--- source
+1; 2; 3
+--- expect
+num 3
+===
+### name: op.seq.trailing-semicolon
+--- source
+1; 2;
+--- expect
+num 2
+===

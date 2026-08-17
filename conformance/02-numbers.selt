@@ -1,0 +1,277 @@
+% Exact decimal arithmetic. Scale is part of the value and is never stripped by
+% + - or *; division reports its minimal scale when exact.
+
+### name: num.canon.leading-zeros
+--- source
+007
+--- expect
+num 7
+===
+### name: num.canon.keeps-scale
+--- source
+2.50
+--- expect
+num 2.50
+===
+### name: num.canon.negative-zero
+--- source
+-0.00
+--- expect
+num 0.00
+===
+### name: num.no-implicit-trim
+--- source
+" 2" + 1
+--- expect
+error E_NOT_NUM at 1:1
+===
+### name: num.bool-is-not-a-number
+--- source
+TRUE + 1
+--- expect
+error E_NOT_NUM at 1:1
+===
+
+### name: num.add.scale
+--- source
+2.50 + 2.50
+--- expect
+num 5.00
+===
+### name: num.add.no-float-drift
+--- source
+0.1 + 0.2
+--- expect
+num 0.3
+===
+### name: num.mul.scale
+--- source
+1.5 * 1.5
+--- expect
+num 2.25
+===
+### name: num.sub.negative
+--- source
+1 - 3
+--- expect
+num -2
+===
+### name: num.big.exact
+--- source
+123456789012345678901234567890 * 987654321
+--- expect
+num 121932631124828532112482853211126352690
+===
+### name: num.unary-minus
+--- source
+-2 * 3
+--- expect
+num -6
+===
+
+### name: num.div.exact-integer
+--- source
+4 / 2
+--- expect
+num 2
+===
+### name: num.div.exact-minimal-scale
+--- source
+10 / 4
+--- expect
+num 2.5
+===
+### name: num.div.exact-eighth
+--- source
+1 / 8
+--- expect
+num 0.125
+===
+### name: num.div.inexact-third
+--- source
+1 / 3
+--- expect
+num 0.3333333333
+===
+### name: num.div.inexact-rounds-half-away
+--- source
+2 / 3
+--- expect
+num 0.6666666667
+===
+### name: num.div.zero
+--- source
+1 / 0
+--- expect
+error E_DIV_ZERO
+===
+
+### name: num.mod.positive
+--- source
+5 % 3
+--- expect
+num 2
+===
+### name: num.mod.sign-of-dividend
+--- source
+-5 % 3
+--- expect
+num -2
+===
+### name: num.mod.fractional
+--- source
+5.5 % 2
+--- expect
+num 1.5
+===
+
+### name: num.round.half-away-positive
+--- source
+ROUND(2.5, 0)
+--- expect
+num 3
+===
+### name: num.round.half-away-negative
+--- source
+ROUND(-2.5, 0)
+--- expect
+num -3
+===
+### name: num.round.scales-up
+--- source
+ROUND(1, 3)
+--- expect
+num 1.000
+===
+### name: num.trunc
+--- source
+TRUNC(-2.9)
+--- expect
+num -2
+===
+### name: num.floor.negative
+--- source
+FLOOR(-2.5)
+--- expect
+num -3
+===
+### name: num.ceil.negative
+--- source
+CEIL(-2.5)
+--- expect
+num -2
+===
+### name: num.abs
+--- source
+ABS(-2.50)
+--- expect
+num 2.50
+===
+### name: num.sign
+--- source
+SIGN(-0.1) & SIGN(0) & SIGN(9)
+--- expect
+text "-101"
+===
+### name: num.power
+--- source
+POWER(2.5, 2)
+--- expect
+num 6.25
+===
+### name: num.power.zero
+--- source
+POWER(7.7, 0)
+--- expect
+num 1
+===
+### name: num.min-max
+--- source
+MIN(3, 1, 2) & "/" & MAX(3, 1, 2)
+--- expect
+text "1/3"
+===
+### name: num.isnum
+--- source
+ISNUM("2.5") & "" & ISNUM("x")
+--- expect
+error E_NOT_TEXT
+===
+### name: num.isnum.true
+--- source
+ISNUM("2.5")
+--- expect
+bool TRUE
+===
+### name: num.isnum.untrimmed-is-false
+--- source
+ISNUM(" 2")
+--- expect
+bool FALSE
+===
+### name: num.compare.numeric-ignores-scale
+--- source
+"5.00" == "5"
+--- expect
+bool TRUE
+===
+### name: num.compare.text-sees-scale
+--- source
+"5.00" $== "5"
+--- expect
+bool FALSE
+===
+### name: num.unicode-digits-are-not-numbers
+--- note
+A number is ASCII digits and nothing else (§4). Several hosts have a
+Unicode-aware notion of "digit" close to hand — SBCL's DIGIT-CHAR-P and PCRE's
+UCP-enabled \d both accept U+0661 ARABIC-INDIC DIGIT ONE — and reaching for it
+makes this parse as 1. The differential fuzzer caught exactly that.
+--- source
+"\u{0661}" + 1
+--- expect
+error E_NOT_NUM
+===
+### name: num.unicode-digits-are-not-numeric
+--- source
+ISNUM("\u{0661}")
+--- expect
+bool FALSE
+===
+### name: num.unicode-digits-in-hex
+--- note
+The same trap in FROM_HEX, whose digits are also ASCII-only.
+--- source
+FROM_HEX("0\u{0661}")
+--- expect
+error E_BAD_ARG
+===
+### name: num.round.scale-beyond-the-cap
+--- note
+spec/SPEC.md §6.4. Before this cap, the four hosts failed four different ways:
+a host RangeError in JS, memory exhaustion in PHP and Lisp, and — after a
+32-bit cast — a confident wrong answer in C++.
+--- source
+ROUND(1.5, 4294967296)
+--- expect
+error E_RANGE
+===
+### name: num.power.exponent-beyond-the-cap
+--- note
+POWER(10, 4294967299) returned 1000 in JS, because the decimal core halved the
+exponent with `>>=`, which truncates to 32 bits. The exponent is a count, and
+counts here are 64-bit.
+--- source
+POWER(10, 4294967299)
+--- expect
+error E_RANGE
+===
+### name: num.power.exponent-above-32-bits-is-exact
+--- note
+The guard is a documented cap, not an accident of integer width: an exponent
+just inside 32-bit range must still compute exactly rather than wrapping.
+--- source
+POWER(10, 40)
+--- expect
+num 10000000000000000000000000000000000000000
+===
