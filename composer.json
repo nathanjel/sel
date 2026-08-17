@@ -1,0 +1,45 @@
+{
+  "name": "nathanjel/sel-lang",
+  "description": "A small expression language for validation rules — one rule file evaluates identically on PHP, JavaScript, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness.",
+  "type": "library",
+  "keywords": [
+    "validation",
+    "rules",
+    "rule-engine",
+    "expression-language",
+    "interpreter",
+    "decimal",
+    "shared-validation"
+  ],
+  "homepage": "https://github.com/nathanjel/sel",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Marcin Gałczyński"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/nathanjel/sel/issues",
+    "source": "https://github.com/nathanjel/sel"
+  },
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "files": [
+      "php/src/bootstrap.php"
+    ]
+  },
+  "scripts": {
+    "test": "php php/bin/conformance",
+    "check": "tools/check.sh"
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "extra": {
+    "branch-alias": {
+      "dev-main": "0.1.x-dev"
+    }
+  }
+}

@@ -4,5 +4,5 @@
 here="$(cd "$(dirname "$0")" && pwd)"
 exec sbcl --noinform --disable-debugger --non-interactive \
   --load "$here/boot.lisp" \
-  --eval '(let ((*standard-output* (make-broadcast-stream))) (funcall (find-symbol "QUICKLOAD" "QL") :sel/tests))' \
+  --eval '(let ((*standard-output* (make-broadcast-stream))) (funcall (find-symbol "QUICKLOAD" "QL") :sel-lang/tests))' \
   --eval '(unless (funcall (find-symbol "RUN!" "FIVEAM") (find-symbol "SEL" "SEL-TESTS")) (sb-ext:exit :code 1))'

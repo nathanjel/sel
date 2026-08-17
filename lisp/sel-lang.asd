@@ -12,10 +12,13 @@
 ;;;; code point layer. That holds on SBCL, CCL, ECL and CLISP; it would not hold
 ;;;; on an implementation with UTF-16 strings.
 
-(defsystem "sel"
+(defsystem "sel-lang"
   :description "SEL — a small expression language that evaluates identically on every host"
   :author "Marcin Gałczyński"
   :license "MIT"
+  :version "0.1.0"
+  :homepage "https://github.com/nathanjel/sel"
+  :source-control (:git "https://github.com/nathanjel/sel.git")
   :depends-on ("cl-ppcre")
   :serial t
   :components
@@ -41,13 +44,13 @@
                    (:file "binary")
                    (:file "regex")))
      (:file "sel"))))
-  :in-order-to ((test-op (test-op "sel/tests"))))
+  :in-order-to ((test-op (test-op "sel-lang/tests"))))
 
-(defsystem "sel/tests"
+(defsystem "sel-lang/tests"
   :description "Unit tests for the layers underneath the conformance suite"
   :author "Marcin Gałczyński"
   :license "MIT"
-  :depends-on ("sel" "fiveam")
+  :depends-on ("sel-lang" "fiveam")
   :serial t
   :components
   ((:module "tests"

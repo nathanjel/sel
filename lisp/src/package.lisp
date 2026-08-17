@@ -35,7 +35,6 @@
    #:as-text
    #:as-bytes
    #:as-bool
-   #:as-num
    #:looks-numeric
    #:from-native
    #:to-native

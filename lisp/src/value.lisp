@@ -15,10 +15,48 @@
 
 (in-package #:sel)
 
+;;; Insertion order is normative, so the children are a list. Looking a key up
+;;; would then be an ASSOC scan and appending an NCONC walk, which makes building
+;;; an n-element list O(n²) — the JS and PHP hosts get ordered-plus-O(1) for free
+;;; from a Map and from PHP's ordered hash array, and TAIL and INDEX are how this
+;;; host gets the same.
+;;;
+;;; TAIL is the last cons of CHILDREN, so appending is O(1). INDEX maps a key to
+;;; its cons cell and is built only once a value has enough children to be worth
+;;; a hash table — almost every value in a program has none. COUNT is kept
+;;; because LENGTH on a list is itself O(n).
+(defconstant +index-threshold+ 16)
+
 (defstruct (value (:constructor %make-value (kind scalar children)))
   (kind :none :type keyword)     ; :none :text :bin :bool
   (scalar nil)
-  (children nil :type list))     ; list of (key . value), insertion-ordered
+  (children nil :type list)      ; list of (key . value), insertion-ordered
+  (tail nil :type list)          ; last cons of CHILDREN
+  (count 0 :type fixnum)
+  (index nil))                   ; key -> cons cell, once COUNT reaches the threshold
+
+(defun %value-with-children (kind scalar entries)
+  "Build a value from an ordered list of (key . value) conses, wiring up the
+tail, count and index that keep lookup and append O(1)."
+  (let ((v (%make-value kind scalar entries)))
+    (setf (value-tail v) (last entries)
+          (value-count v) (length entries))
+    (when (>= (value-count v) +index-threshold+)
+      (%build-index v))
+    v))
+
+(defun %build-index (v)
+  (let ((idx (make-hash-table :test #'equal :size (* 2 (value-count v)))))
+    (dolist (cell (value-children v))
+      (setf (gethash (car cell) idx) cell))
+    (setf (value-index v) idx)))
+
+(defun %value-cell (v key)
+  "The cons cell for KEY, or NIL."
+  (let ((idx (value-index v)))
+    (if idx
+        (gethash key idx)
+        (assoc key (value-children v) :test #'string=))))
 
 (defun make-none () (%make-value :none nil nil))
 
@@ -58,13 +96,11 @@
 
 ;;; --- children --------------------------------------------------------------
 
-(defun value-size (v) (length (value-children v)))
+(defun value-size (v) (value-count v))
 
-(defun value-has (v key)
-  (and (assoc key (value-children v) :test #'string=) t))
+(defun value-has (v key) (and (%value-cell v key) t))
 
-(defun value-get (v key)
-  (cdr (assoc key (value-children v) :test #'string=)))
+(defun value-get (v key) (cdr (%value-cell v key)))
 
 (defun value-keys (v) (mapcar #'car (value-children v)))
 (defun value-values (v) (mapcar #'cdr (value-children v)))
@@ -72,16 +108,19 @@
 
 (defun value-set (v key child)
   "Re-assigning an existing key keeps its original position."
-  (let ((cell (assoc key (value-children v) :test #'string=)))
+  (let ((cell (%value-cell v key)))
     (if cell
         (setf (cdr cell) child)
-        (setf (value-children v)
-              (nconc (value-children v) (list (cons key child))))))
-  v)
-
-(defun value-delete (v key)
-  (setf (value-children v)
-        (remove key (value-children v) :key #'car :test #'string=))
+        (let ((new (list (cons key child))))
+          (if (value-tail v)
+              (setf (cdr (value-tail v)) new)
+              (setf (value-children v) new))
+          (setf (value-tail v) new)
+          (incf (value-count v))
+          (let ((idx (value-index v)))
+            (if idx
+                (setf (gethash key idx) (car new))
+                (when (>= (value-count v) +index-threshold+) (%build-index v)))))))
   v)
 
 ;;; --- scalar context (§3.2) -------------------------------------------------
@@ -128,10 +167,6 @@
     (or (dec-parse (value-scalar s))
         (fail "E_NOT_NUM" (format nil "not a number: ~s" (value-scalar s)) at))))
 
-(defun as-num (v &optional at)
-  "The canonical decimal string."
-  (dec-format (as-dec v at)))
-
 ;;; The non-throwing probe, as ISNUM uses.
 (defun looks-numeric (v)
   (if (and (eq (value-kind v) :none) (null (value-children v)))
@@ -147,10 +182,11 @@
 
 (defun value-copy (v)
   "Assignment copies by value: two variables never share structure (§5.7)."
-  (%make-value (value-kind v)
-               (if (eq (value-kind v) :bin) (copy-seq (value-scalar v)) (value-scalar v))
-               (loop for (k . child) in (value-children v)
-                     collect (cons k (value-copy child)))))
+  (%value-with-children
+   (value-kind v)
+   (if (eq (value-kind v) :bin) (copy-seq (value-scalar v)) (value-scalar v))
+   (loop for (k . child) in (value-children v)
+         collect (cons k (value-copy child)))))
 
 ;;; --- structural equality (§5.4) --------------------------------------------
 

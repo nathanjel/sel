@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "sel-lang",
+  "version-semver": "0.1.0",
+  "description": [
+    "A small expression language for validation rules.",
+    "One rule file evaluates identically on PHP, JavaScript, C++23 and Common Lisp, held to a normative spec by a conformance suite and a differential fuzzer that runs all four and compares them byte for byte.",
+    "Exact decimal arithmetic, no floating point, no truthiness, code-point-accurate text, and a regex subset both PCRE and ECMAScript agree on."
+  ],
+  "homepage": "https://github.com/nathanjel/sel",
+  "license": "MIT",
+  "supports": "!uwp",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "features": {
+    "system-srell": {
+      "description": "Link vcpkg's SRELL instead of the vendored copy. Must be the pinned release (2026.05); run the conformance suite before trusting it.",
+      "dependencies": [
+        "srell"
+      ]
+    }
+  },
+  "overrides": [
+    {
+      "name": "srell",
+      "version": "2026.05"
+    }
+  ]
+}

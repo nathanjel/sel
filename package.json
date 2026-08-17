@@ -1,0 +1,56 @@
+{
+  "name": "sel-lang",
+  "version": "0.1.0",
+  "description": "A small expression language for validation rules — one rule file evaluates identically on JavaScript, PHP, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness.",
+  "keywords": [
+    "validation",
+    "rules",
+    "rule-engine",
+    "expression-language",
+    "interpreter",
+    "decimal",
+    "exact-arithmetic",
+    "isomorphic",
+    "shared-validation"
+  ],
+  "homepage": "https://github.com/nathanjel/sel#readme",
+  "bugs": "https://github.com/nathanjel/sel/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nathanjel/sel.git",
+    "directory": "js"
+  },
+  "license": "MIT",
+  "author": "Marcin Gałczyński",
+  "type": "module",
+  "exports": {
+    ".": "./js/src/sel.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "sel": "js/bin/sel.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": [
+    "./js/src/builtins/*.mjs"
+  ],
+  "files": [
+    "js/src/",
+    "js/bin/",
+    "docs/",
+    "spec/",
+    "examples/order-validation.sel",
+    "examples/host-js.mjs",
+    "examples/integration-js.mjs",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node js/bin/conformance.mjs",
+    "check": "tools/check.sh"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

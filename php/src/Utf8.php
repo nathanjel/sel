@@ -65,15 +65,6 @@ final class Utf8
         }
     }
 
-    public static function isValid(string $b): bool
-    {
-        try {
-            self::validate($b);
-            return true;
-        } catch (SelError) {
-            return false;
-        }
-    }
 
     /**
      * Splits valid UTF-8 into single-code-point strings. The lexer and the text
@@ -146,15 +137,6 @@ final class Utf8
             . chr(0x80 | ($cp & 0x3f));
     }
 
-    /** @param list<int> $cps */
-    public static function fromCodePoints(array $cps): string
-    {
-        $out = '';
-        foreach ($cps as $cp) {
-            $out .= self::chr($cp);
-        }
-        return $out;
-    }
 
     /** Converts a byte offset, as preg_* reports, into a code point index. */
     public static function cpIndex(string $s, int $byteOffset): int

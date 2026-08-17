@@ -32,10 +32,20 @@ Testing/
 lisp/bin/*.core
 
 # --- PHP and JS
-# Both hosts are dependency-free by design; if either of these appears,
-# something has gone wrong rather than something needs ignoring.
+# Neither implementation has runtime dependencies, but a consumer or a local
+# `composer install` still produces these.
 vendor/
 node_modules/
+composer.lock
+package-lock.json
+*.tgz
+
+# --- Package manager build output
+# Conan and vcpkg both build out of tree; these are their defaults.
+cpp/test_package/build/
+conan.lock
+CONAN_*
+vcpkg_installed/
 
 # --- Harness scratch
 # tools/*.sh work in mktemp directories, so nothing should land here — these are

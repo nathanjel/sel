@@ -19,7 +19,15 @@
 // compile substantially and removes the only part of the library SEL can never
 // use. See third_party/srell/PINNED.md.
 #define SRELL_NO_UNICODE_PROPERTY
+#if defined(SEL_SYSTEM_SRELL)
+// Opt-in, for package managers that carry SRELL themselves. It must be the same
+// release as third_party/srell/PINNED.md records: the regex engine is what makes
+// this host agree with the JavaScript one, so a different one is a different
+// language. Run tools/check.sh before trusting a build with this defined.
+#include <srell.hpp>
+#else
 #include "third_party/srell/srell.hpp"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -592,12 +600,28 @@ Value Value::list(std::vector<Value> values) {
   return v;
 }
 
+void Value::build_index() {
+  index_.clear();
+  index_.reserve(children_.size() * 2);
+  for (std::size_t i = 0; i < children_.size(); i++) index_.emplace(children_[i].first, i);
+}
+
 std::vector<Value::Entry>::iterator Value::find(const std::string& key) {
+  if (!index_.empty()) {
+    auto it = index_.find(key);
+    return it == index_.end() ? children_.end()
+                              : children_.begin() + static_cast<std::ptrdiff_t>(it->second);
+  }
   return std::find_if(children_.begin(), children_.end(),
                       [&](const Entry& e) { return e.first == key; });
 }
 
 std::vector<Value::Entry>::const_iterator Value::find(const std::string& key) const {
+  if (!index_.empty()) {
+    auto it = index_.find(key);
+    return it == index_.end() ? children_.end()
+                              : children_.begin() + static_cast<std::ptrdiff_t>(it->second);
+  }
   return std::find_if(children_.begin(), children_.end(),
                       [&](const Entry& e) { return e.first == key; });
 }
@@ -625,16 +649,16 @@ std::vector<std::string> Value::keys() const {
 Value& Value::set(std::string key, Value value) {
   auto it = find(key);
   if (it != children_.end()) {
-    it->second = std::move(value);
-  } else {
-    children_.emplace_back(std::move(key), std::move(value));
+    it->second = std::move(value);   // re-assignment keeps the original position
+    return *this;
+  }
+  children_.emplace_back(std::move(key), std::move(value));
+  if (!index_.empty()) {
+    index_.emplace(children_.back().first, children_.size() - 1);
+  } else if (children_.size() >= INDEX_THRESHOLD) {
+    build_index();
   }
   return *this;
-}
-
-void Value::erase(const std::string& key) {
-  auto it = find(key);
-  if (it != children_.end()) children_.erase(it);
 }
 
 // The value that supplies the scalar: itself, or its first child, recursively.
@@ -671,21 +695,6 @@ bool Value::as_bool(Pos pos) const {
   const Value& v = scalar_source(pos);
   if (v.kind_ == Kind::Bool) return v.bool_;
   throw SelError("E_NOT_BOOL", "expected a boolean — SEL has no truthiness", pos);
-}
-
-std::string Value::as_num(Pos pos) const {
-  const Value& v = scalar_source(pos);
-  if (v.kind_ != Kind::Text) {
-    throw SelError("E_NOT_NUM",
-                   std::string("expected a number, got ") +
-                       (v.kind_ == Kind::Bin ? "bin" : v.kind_ == Kind::Bool ? "bool" : "none"),
-                   pos);
-  }
-  Dec d;
-  if (!sel::dec_parse(v.scalar_, d)) {
-    throw SelError("E_NOT_NUM", "not a number: \"" + v.scalar_ + "\"", pos);
-  }
-  return dec_format(d);
 }
 
 bool Value::looks_numeric() const {

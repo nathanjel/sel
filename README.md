@@ -94,7 +94,17 @@ The division never happens. That single idea, borrowed from
 
 ## Install
 
-Copy the directory for your host into your project.
+From a package manager — the package is `sel-lang` on all of them:
+
+```
+npm install sel-lang
+composer require nathanjel/sel-lang
+vcpkg install sel-lang            # or: conan install --requires sel-lang/0.1.0
+(ql:quickload :sel-lang)          # Quicklisp / Ultralisp
+```
+
+Or copy the directory for your host into your project, which needs no package
+manager at all and is still the primary story:
 
 ```php
 require 'path/to/php/src/bootstrap.php';    // PHP 8.1+, no extensions required
@@ -106,13 +116,17 @@ import { compile, Value } from './path/to/js/src/sel.mjs';   // any ESM runtime
 #include "sel.hpp"                          // compile sel.cpp alongside; C++23
 ```
 ```lisp
-(ql:quickload :sel)                         ; SBCL; depends on cl-ppcre
+(ql:quickload :sel-lang)                    ; SBCL; depends on cl-ppcre
 ```
 
 PHP and JS need nothing at all — no Composer, no npm, no build step. C++ is a
 two-file drop-in, `cpp/sel.hpp` and `cpp/sel.cpp`, plus the vendored and pinned
-`cpp/third_party/srell/` (BSD-2). Common Lisp is an ordinary ASDF system whose one
-dependency is cl-ppcre (BSD-2).
+`cpp/third_party/srell/` (BSD-2); it also installs as a CMake package, so
+`find_package(sel-lang)` and `sel-lang::sel-lang` work. Common Lisp is an
+ordinary ASDF system whose one dependency is cl-ppcre (BSD-2).
+
+Publishing details, and why SRELL is vendored rather than resolved, are in
+[PACKAGING.md](PACKAGING.md).
 
 PHP needs no `mbstring`, no `bcmath`, no `gmp`, and C++ never touches
 `std::regex` or `<locale>` — the UTF-8 codec and the decimal arithmetic are
@@ -259,7 +273,7 @@ conformance suite. A `CMakeLists.txt` is there for projects that prefer it.
 An ordinary ASDF system. Its one dependency is cl-ppcre.
 
 ```lisp
-(ql:quickload :sel)
+(ql:quickload :sel-lang)
 
 (defparameter *rule* (sel:compile-source "IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")"))
 
@@ -277,7 +291,7 @@ An ordinary ASDF system. Its one dependency is cl-ppcre.
 and 5/2 are the same ratio and different SEL values — and a float has no exact
 decimal form at all. Pass decimal strings.
 
-Run the tests with `(asdf:test-system :sel)`, or `lisp/bin/test`.
+Run the tests with `(asdf:test-system :sel-lang)`, or `lisp/bin/test`.
 
 ## One rule, one answer: a worked example
 

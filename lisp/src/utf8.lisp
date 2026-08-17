@@ -15,9 +15,6 @@
 (deftype octet () '(unsigned-byte 8))
 (deftype octets () '(vector (unsigned-byte 8)))
 
-(defun make-octets (&optional (size 0))
-  (make-array size :element-type 'octet :adjustable t :fill-pointer size))
-
 (defun octets-from-list (list)
   (make-array (length list) :element-type 'octet :initial-contents list))
 

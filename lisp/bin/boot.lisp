@@ -24,7 +24,7 @@
 
 (handler-case
     (let ((*standard-output* (make-broadcast-stream)))   ; quiet the build chatter
-      (funcall (find-symbol "QUICKLOAD" "QL") :sel))
+      (funcall (find-symbol "QUICKLOAD" "QL") :sel-lang))
   (error (e)
     (format *error-output* "~&cannot load the SEL system: ~a~%" e)
     (sb-ext:exit :code 2)))

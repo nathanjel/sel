@@ -15,11 +15,13 @@
 #ifndef SEL_HPP
 #define SEL_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -33,8 +35,6 @@ struct Pos {
   int line = 0;
   int col = 0;
   int offset = 0;
-
-  bool known() const { return line > 0; }
 };
 
 // Every failure. `code` is a stable identifier from spec/errors.md and part of
@@ -99,7 +99,6 @@ class Value {
   std::vector<std::string> keys() const;
   const std::vector<Entry>& entries() const { return children_; }
   Value& set(std::string key, Value value);
-  void erase(const std::string& key);
 
   // --- scalar context (spec/SPEC.md §3.2). Each throws SelError on a mismatch,
   // reporting `pos` when one is supplied.
@@ -107,8 +106,6 @@ class Value {
   const std::string& as_text(Pos pos = {}) const;    // TEXT only
   const std::string& as_bytes(Pos pos = {}) const;   // TEXT or BIN, as bytes
   bool as_bool(Pos pos = {}) const;
-  // The canonical decimal string; E_NOT_NUM when it is not a number.
-  std::string as_num(Pos pos = {}) const;
   // Non-throwing probe, as ISNUM uses.
   bool looks_numeric() const;
 
@@ -131,8 +128,21 @@ class Value {
   Kind kind_ = Kind::None;
   std::string scalar_;   // TEXT: UTF-8 bytes. BIN: raw bytes. Otherwise empty.
   bool bool_ = false;    // BOOL only.
-  std::vector<Entry> children_;
 
+  // Insertion order is normative, so the children are a vector. Lookup by key
+  // would then be a linear scan, which makes building an n-element list O(n²) —
+  // the JS and PHP hosts get ordered-plus-O(1) for free from a Map and from
+  // PHP's ordered hash array, and this is how C++ gets the same.
+  //
+  // The index is built only once a value has enough children to be worth it:
+  // almost every Value in a program has none, and they are copied constantly,
+  // so an unordered_map in each would cost far more than the scan it saves.
+  // Positions are stable because nothing ever removes a child.
+  static constexpr std::size_t INDEX_THRESHOLD = 16;
+  std::vector<Entry> children_;
+  std::unordered_map<std::string, std::size_t> index_;
+
+  void build_index();
   std::vector<Entry>::iterator find(const std::string& key);
   std::vector<Entry>::const_iterator find(const std::string& key) const;
 };

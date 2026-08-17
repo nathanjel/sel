@@ -39,16 +39,6 @@ export function fromCodePoints(cps) {
   return out;
 }
 
-export function cpLength(str, pos) {
-  return toCodePoints(str, pos).length;
-}
-
-// start is 0-based here; the 1-based convention belongs to the built-ins.
-export function cpSlice(str, start, len, pos) {
-  const cps = toCodePoints(str, pos);
-  return fromCodePoints(cps.slice(start, len === undefined ? undefined : start + len));
-}
-
 // --- bytes ------------------------------------------------------------------
 
 export function encodeUtf8(str, pos) {
