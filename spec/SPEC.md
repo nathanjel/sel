@@ -170,6 +170,46 @@ Reading a missing key is `E_NO_KEY`. Reading an undefined variable is
 
 Assigning to `A[k]` creates `A` and any intermediate levels if absent.
 
+### 3.4 Identity
+
+Evaluating an expression yields a value, **not a snapshot of one**. A variable
+reference yields the value that variable holds — the same value — so a mutation
+performed by a later sub-expression is visible through a reference obtained
+earlier:
+
+```
+A = 1; A[A["k"] = "k"]      ==>   t"k"
+```
+
+The index expression created the key, and the pending read finds it. The same
+rule covers an aggregate binder, which names the element rather than a copy of
+it, and the compound assignment forms, which hold their target across the
+evaluation of the right-hand side.
+
+**Assignment is the only operation that copies.** `=` deep-copies its
+right-hand side (§5.7), which is what stops two variables from sharing
+structure, and `,` (§5.9) and the aggregates copy what they collect for the same
+reason. Nothing else copies — an implementation that copies anywhere else will
+disagree with this section, and an implementation that copies nowhere will
+disagree with §5.7.
+
+**Rebinding a variable does not affect a value already yielded.** `A = …` makes
+the name refer to a different value; a reference obtained before it still refers
+to the old one:
+
+```
+A = (1, 2); A[(A = (A, 9)); "3"]      ==>   !E_NO_KEY
+```
+
+The index expression rebound `A` to a three-element list, but the pending read
+still holds the two-element value `A` had when it was evaluated, and that has no
+key `"3"`. Contrast with the first example, where the index expression *mutated*
+the value rather than replacing it.
+
+This is the read-side counterpart of the argument in §5.7: a value that has been
+detached from the tree is not a value anything should still be reading through,
+and a mutation nothing can observe is as bad as a write nothing can read.
+
 ---
 
 ## 4. Numbers
@@ -340,7 +380,7 @@ A[1] = (A = 2); A       ==>   t"2"{"1"=t"2"}
 The alternative — keeping hold of the container object found during the walk and
 writing into it — discards the assignment silently whenever that object has since
 been detached from the tree, and a write that nothing can ever read is a worse
-answer than a visible one.
+answer than a visible one. §3.4 states the read-side half of the same rule.
 
 The compound forms `+= -= *= /= %= &=` read the target, apply the matching binary
 operator, and store back. The target must already exist.
@@ -402,6 +442,15 @@ Parser nesting depth and evaluation depth are capped (implementation-defined,
 at least 200) and exceeding either is `E_DEPTH`. This is a denial-of-service
 guard, not a language feature.
 
+**Every construct that can nest is counted, including prefix operators.** A
+chain of `NOT` or unary `-` recurses in the parser without passing through a
+parenthesis, a call or an index, so it is easy to leave out of the count — and
+leaving it out is not a cosmetic bug. Uncounted, `-` repeated about twenty
+thousand times raised a host-level `RangeError` on the JS host and **segfaulted
+the C++ one**, which is precisely the failure this cap exists to prevent. The
+error is reported at the operator that crossed the limit, not at the start of
+the chain.
+
 Three arguments name a size rather than a value, and a large one asks for more
 work or more memory than any host has. Each is capped, and exceeding the cap is
 an ordinary SEL error rather than a host failure:
@@ -416,8 +465,8 @@ The quantifier cap is PCRE2's own hard limit rather than a number of SEL's
 choosing: above 65 535 PCRE refuses to compile the pattern at all, so no cap
 above it could be honoured on a PHP host.
 
-These caps exist because without them the four hosts fail in four different
-ways, and one of them fails *quietly*: `ROUND(1.5, 4294967296)` exhausted memory
+These caps exist because without them each host fails in its own way, and one
+of them fails *quietly*: `ROUND(1.5, 4294967296)` exhausted memory
 on two hosts and raised a host-level `RangeError` on a third, while
 `POWER(10, 4294967299)` returned `1000` in JS — a confident wrong answer, caused
 by a shift that silently truncates the exponent to 32 bits. A rule that asks for
@@ -673,10 +722,13 @@ can enter, so it is the place to reject it: a `Value.num("x")` that quietly
 produced a non-numeric TEXT would fail later, somewhere else, with a position
 pointing at an innocent expression.
 
-**Branching on kind uses the predicates.** The kind *values* are a string in JS,
-a class constant in PHP, an enum in C++ and a keyword in Lisp, so only a
-predicate can be written the same way in all four. The constants remain
-available in each host for code that would rather switch than branch.
+**Branching on kind uses the predicates.** The kind *values* are a string in JS
+and Python, a class constant in PHP, an enum in C++ and a keyword in Lisp, so
+only a predicate can be written the same way in all five. The constants remain
+available in each host for code that would rather switch than branch. Method
+names follow each host's convention — `isText` in JS and PHP, `is_text` in C++
+and Python, `value-text-p` in Lisp — and `tools/check-api.sh` runs the same
+numbered probes through every binding to keep the *answers* identical.
 
 `dependencies()` returns every variable the program reads, determined statically
 without evaluating it. This is possible only because SEL has no dynamic symbol

@@ -3,7 +3,7 @@
 For people writing rules. If you are implementing SEL, or arguing about what it
 should do, `spec/` is the normative text and this is not.
 
-Every `=>` example below is executed against both hosts by `tools/check-docs.sh`,
+Every `=>` example below is executed against every host by `tools/check-docs.sh`,
 so nothing here can quietly stop being true.
 
 - [Mental model](#mental-model)
@@ -675,7 +675,8 @@ At run time:
 ## Gotchas
 
 **`UPPER` and `LOWER` only touch A–Z.** PHP's `strtoupper` is byte- and
-locale-based; JS's `toUpperCase` applies full Unicode mapping. They cannot be
+locale-based; JS's `toUpperCase` and Python's `str.upper` apply full Unicode
+mapping, and the latter can change a string's length. They cannot be
 reconciled without shipping a case table, and a language whose whole job is
 agreeing across hosts would rather be visibly limited than quietly wrong.
 
@@ -687,7 +688,7 @@ characters.
 **Index keys are literal.** `A[1]` and `A[1.0]` are different keys, because the
 index's text is the key.
 
-**`\d` is ASCII.** Both hosts rewrite `\d`, `\w` and `\s` into explicit ASCII
+**`\d` is ASCII.** Every host rewrites `\d`, `\w` and `\s` into explicit ASCII
 classes before compiling, so an Arabic-Indic digit does not match:
 
 ```sel

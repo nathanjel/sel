@@ -8,7 +8,7 @@
 // `prepublishOnly` so the published tarball always carries one made from the
 // tagged source, and `dist/` is gitignored. A generated file in version control
 // is a file that goes stale, and a stale bundle would be a fifth implementation
-// disagreeing with the other four while sitting outside the test bench.
+// disagreeing with the other hosts while sitting outside the test bench.
 //
 // It does not sit outside the bench here: tools/impls.sh registers the bundle as
 // `js-bundle`, so tools/check.sh runs the conformance suite, the documentation

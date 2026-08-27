@@ -21,7 +21,7 @@ echo "implementations: $IMPLS"
 # An incomplete roster must never reach "ALL GREEN". Every differential layer
 # degrades quietly to a no-op when there is nothing to compare against — e2e
 # skips its only iteration, the fuzzer finds every one-element list unanimous —
-# so a run with three of four hosts missing would otherwise pass having compared
+# so a run with most of the hosts missing would otherwise pass having compared
 # nothing with nothing.
 if [ -n "$MISSING" ]; then
   echo "MISSING: $MISSING — not built, or the runtime is missing"
@@ -40,6 +40,7 @@ for impl in $IMPLS; do
   step "unit tests ($impl)" impl_unit "$impl"
 done
 
+step "manifest versions" ./tools/check-version.sh
 step "host API parity" ./tools/check-api.sh
 step "documentation examples" ./tools/check-docs.sh
 step "decimal vs python oracle" ./tools/check-decimal.sh "${DECIMAL_COUNT:-4000}"

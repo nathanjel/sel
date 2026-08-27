@@ -19,10 +19,10 @@ COND(TRIM(CUSTOMER) $== "",                 "customer is required",
                                             "ok")
 ```
 
-That file is the rule. It runs unchanged on **PHP**, **JavaScript**, **C++23**
-and **Common Lisp**, and all four are held to the same written specification by
-a test suite that runs every one of them and compares the results byte for byte
-— including *where* a rule failed, not just whether it did.
+That file is the rule. It runs unchanged on **Python**, **PHP**, **JavaScript**,
+**C++23** and **Common Lisp**, and all five are held to the same written
+specification by a test suite that runs every one of them and compares the
+results byte for byte — including *where* a rule failed, not just whether it did.
 
 It is deliberately small. There is no floating point (so money stays exact), no
 truthiness (so an empty string is never accidentally "false"), no loops, and no
@@ -51,6 +51,7 @@ glance.
 - [Why](#why)
 - [Install](#install)
 - [Quick start](#quick-start)
+- [Calling it from Python](#calling-it-from-python)
 - [Calling it from PHP](#calling-it-from-php)
 - [Calling it from JS](#calling-it-from-js)
 - [Calling it from C++](#calling-it-from-c)
@@ -73,10 +74,10 @@ character in it.
 
 The usual fixes do not really fix it. A shared JSON schema handles shapes but not
 "the total must not exceed the credit limit". A rules engine drags in a runtime
-you now have to deploy in four places. Generating code from a common source means
-maintaining four generators.
+you now have to deploy in every one of them. Generating code from a common
+source means maintaining a generator per target.
 
-SEL is one rule, one artifact, executed by four interpreters held to a shared
+SEL is one rule, one artifact, executed by five interpreters held to a shared
 conformance suite and a differential fuzzer. Where the host languages cannot be
 made to agree, SEL refuses the feature rather than picking a winner.
 
@@ -97,15 +98,19 @@ The division never happens. That single idea, borrowed from
 From a package manager — the package is `sel-lang` on all of them:
 
 ```
+pip install sel-lang
 npm install sel-lang
 composer require nathanjel/sel-lang
-vcpkg install sel-lang            # or: conan install --requires sel-lang/0.1.4
+vcpkg install sel-lang            # or: conan install --requires sel-lang/0.3.0
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
 ```
 
 Or copy the directory for your host into your project, which needs no package
 manager at all and is still the primary story:
 
+```python
+from sel import compile, Value            # Python 3.10+, no dependencies
+```
 ```php
 require 'path/to/php/src/bootstrap.php';    // PHP 8.1+, no extensions required
 ```
@@ -119,8 +124,9 @@ import { compile, Value } from './path/to/js/src/sel.mjs';   // any ESM runtime
 (ql:quickload :sel-lang)                    ; SBCL; depends on cl-ppcre
 ```
 
-PHP and JS need nothing at all — no Composer, no npm, no build step. C++ is a
-two-file drop-in, `cpp/sel.hpp` and `cpp/sel.cpp`, plus the vendored and pinned
+Python, PHP and JS need nothing at all — no pip, no Composer, no npm, no build
+step; copying `python/sel/`, `php/src/` or `js/src/` into a project works. C++ is
+a two-file drop-in, `cpp/sel.hpp` and `cpp/sel.cpp`, plus the vendored and pinned
 `cpp/third_party/srell/` (BSD-2); it also installs as a CMake package, so
 `find_package(sel-lang)` and `sel-lang::sel-lang` work. Common Lisp is an
 ordinary ASDF system whose one dependency is cl-ppcre (BSD-2).
@@ -128,9 +134,12 @@ ordinary ASDF system whose one dependency is cl-ppcre (BSD-2).
 Publishing details, and why SRELL is vendored rather than resolved, are in
 [PACKAGING.md](PACKAGING.md).
 
-PHP needs no `mbstring`, no `bcmath`, no `gmp`, and C++ never touches
-`std::regex` or `<locale>` — the UTF-8 codec and the decimal arithmetic are
-hand-written in all four precisely so the hosts cannot drift apart.
+PHP needs no `mbstring`, no `bcmath`, no `gmp`; C++ never touches `std::regex`
+or `<locale>`; and Python never touches `decimal` — the UTF-8 codec and the
+decimal arithmetic are hand-written in all five precisely so the hosts cannot
+drift apart. In Python's case there is a second reason: `tools/decimal-oracle.py`
+generates the decimal test cases *from* the `decimal` module, and a host built on
+it would be marking its own homework.
 
 ## Quick start
 
@@ -151,6 +160,79 @@ sel> A = (1, 2, 3)
 sel> SUM(A, _)
 6
 ```
+
+## Calling it from Python
+
+```python
+from sel import compile, evaluate, Value, SelError
+
+# Compile once, at boot. A Program is immutable and reusable.
+rule = compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")')
+
+# Run per request.
+ctx = Value.from_native({'QTY': '3', 'PRICE': '19.99', 'LIMIT': '50.00'})
+rule.run(ctx).as_text()                   # "over budget"
+```
+
+Nested data. A list becomes a 1-based SEL list, so `ITEMS[1]` is the first line —
+the same as in PHP and JS:
+
+```python
+order = Value.from_native({
+    'CUSTOMER': 'Zażółć',
+    'ITEMS': [
+        {'SKU': 'AB-1234', 'QTY': '3', 'PRICE': '19.99'},
+        {'SKU': 'CD-5678', 'QTY': '1', 'PRICE': '5.01'},
+    ],
+})
+compile('ITEMS[1]["SKU"]').run(order).as_text()                    # "AB-1234"
+compile('SUM(ITEMS, _["QTY"] * _["PRICE"])').run(order).as_text()  # "64.98"
+```
+
+**Pass money as strings.** `from_native` refuses a `float` outright rather than
+guess a decimal form for one, because `19.99` is already not 19.99 by the time
+Python hands it over:
+
+```python
+Value.from_native({'PRICE': 19.99})
+# TypeError: cannot convert float 19.99 to SEL — pass a string such as "19.99"
+```
+
+Reading results, and reading back what a rule assigned — `run()` mutates the
+context you hand it:
+
+```python
+v = evaluate('SPLIT("a,b,c", ",")')
+v.size()                # 3
+v.keys()                # ['1', '2', '3']
+v.get('2').as_text()    # "b"
+v.as_text()             # "a"   — scalar context takes the first
+v.to_native()           # {'1': 'a', '2': 'b', '3': 'c'}
+
+ctx = Value.from_native({'QTY': '3', 'PRICE': '19.99'})
+compile('NET = QTY*PRICE; VAT = ROUND(NET*0.23,2); GROSS = NET+VAT').run(ctx)
+ctx.get('GROSS').as_text()      # "73.76"
+```
+
+`len(v)`, `v['2']` and `'2' in v` also work, for code that would rather read as
+Python than as the shared API. They are conveniences on top of it, not a
+replacement: `size()`, `get()` and `has()` are the spellings that appear in
+every host.
+
+Errors carry a stable code and the position of the node that actually failed:
+
+```python
+try:
+    evaluate('3 + "A"')
+except SelError as e:
+    print(f'{e.code} at {e.line}:{e.col}')
+# E_NOT_NUM at 1:5   — points at the "A", not at the +
+```
+
+The method names are snake_case here and camelCase in PHP and JS, which is the
+only difference between the bindings; `tools/check-api.sh` runs the same numbered
+probes through all five and diffs the answers, so "the only difference" is
+measured rather than asserted.
 
 ## Calling it from PHP
 
@@ -232,8 +314,9 @@ catch (e) { if (e instanceof SelError) console.log(e.code); }   // E_NOT_BOOL
 
 The APIs are deliberately parallel, and `tools/check-api.sh` holds them to it —
 48 probes run through each host's own binding and diffed. `size()` is a method
-in all four, not a getter in one of them, and the only remaining difference is
-the one a language forces: how each spells a kind.
+in all five, not a property in one of them, and the only remaining differences
+are the ones a language forces: how each spells a kind, and camelCase in PHP and
+JS against snake_case in C++ and Python.
 
 **Branch on kind with the predicates**, which read the same everywhere:
 
@@ -291,6 +374,11 @@ says so rather than the arithmetic quietly disagreeing with the backend.
 `make` builds the CLI and the harness; `make test` runs the unit tests and the
 conformance suite. A `CMakeLists.txt` is there for projects that prefer it.
 
+**`Value` is a handle.** Copying one is cheap and the copies refer to the same
+value, as they do in every other host; `clone()` is the deep copy. If you are
+upgrading from 0.2.0 or earlier, that is the one thing that changed: `Value b =
+a;` no longer isolates `b`, and `a.clone()` does.
+
 ## Calling it from Common Lisp
 
 An ordinary ASDF system. Its one dependency is cl-ppcre.
@@ -347,8 +435,8 @@ inspectable outcome to the convenient one.
 
 Nobody sensible writes `A[1] = (A = 2)` on purpose. It matters because rules grow
 in layers — an index computed by a helper, a value produced by another rule — and
-the day two of those layers touch the same variable, all four implementations
-still answer identically instead of three agreeing and one being subtly special.
+the day two of those layers touch the same variable, all five implementations
+still answer identically instead of four agreeing and one being subtly special.
 
 Two smaller consequences of the same rule, which are much more likely to come up:
 
@@ -362,7 +450,7 @@ The first works because `A` is created *before* the index expression runs, so
 value (`1`) for the arithmetic, but still stores at the path afterwards — so you
 get `1 + 5`.
 
-Every line above is executed by all four implementations on every commit; that
+Every line above is executed by all five implementations on every commit; that
 is what the `=>` marks mean throughout this document.
 
 ## Integration patterns
@@ -502,21 +590,35 @@ Cross-host agreement is the whole product, and three things threaten it. Each is
 handled structurally rather than hopefully. The rule throughout: **never use the
 host's own idea of anything the language defines.**
 
-**Numbers.** There is no floating point. Arithmetic is exact decimal on digit
-strings, hand-written in all four, because none has a usable exact type that
-carries scale — PHP has no bigint and BCMath is optional, JS has doubles, C++ has
-doubles, and a Lisp ratio cannot tell `2.50` from `2.5`. Scale is part of the
-value, so `2.50 + 2.50` is `5.00` and `0.10 + 0.20 > 0.30` is false everywhere.
+**Numbers.** There is no floating point. Arithmetic is exact decimal, written by
+hand in all five, because no host has a usable exact type that carries scale —
+PHP has no bigint and BCMath is optional, JS has doubles, C++ has doubles, and a
+Lisp ratio cannot tell `2.50` from `2.5`. Python's `decimal` *would* do the job,
+and is still not used: it is the oracle the other cores are checked against, so a
+host built on it would be marking its own homework. Scale is part of the value,
+so `2.50 + 2.50` is `5.00` and `0.10 + 0.20 > 0.30` is false everywhere.
 
 **Text.** UTF-8 is encoded and decoded by hand, so every length and offset counts
 code points rather than PHP's bytes, JS's UTF-16 units or C++'s `char`s. Text
 comparison is specified as UTF-8 byte order, because JS's native comparison is
 UTF-16 order and Lisp's is code-point order, and both disagree with it above
 U+FFFF. `UPPER`/`LOWER` are ASCII-only on purpose — `strtoupper`,
-`toUpperCase`, `std::toupper` and `string-upcase` cannot be reconciled without
-shipping a case table, and SEL would rather be visibly limited than quietly
-wrong. Even "digit" is defined here: SBCL's `DIGIT-CHAR-P` accepts U+0661
-ARABIC-INDIC DIGIT ONE, so every implementation tests for `0`–`9` explicitly.
+`toUpperCase`, `std::toupper`, `string-upcase` and Python's `str.upper` cannot be
+reconciled without shipping a case table, and the last of those can even change a
+string's length (`"ß".upper()` is `"SS"`); SEL would rather be visibly limited
+than quietly wrong. Even "digit" is defined here: SBCL's `DIGIT-CHAR-P` accepts
+U+0661 ARABIC-INDIC DIGIT ONE and Python's `int()` accepts both that and
+`"1_2"`, so every implementation tests for `0`–`9` explicitly.
+
+**Identity.** Evaluating an expression yields a value, not a snapshot of one, so
+a mutation made by a later sub-expression is visible through a reference taken
+earlier — `A[A["k"] = "k"]` finds the key its own index expression just created.
+Assignment is the only thing that copies. Every host aliases by default and
+deep-copies at exactly five places, which is a rule rather than an accident of
+each language's object model: the C++ `Value` was a deep-copying type until
+0.3.0 and disagreed with the other four in six different ways, one of which
+returned a wrong number rather than an error. It is a handle now, with an
+explicit `clone()`, like the other four (§3.4).
 
 **Regex.** Patterns are checked against a PCRE ∩ ECMAScript subset at compile
 time, and `\d`, `\w`, `\s` are rewritten into explicit ASCII classes rather than
@@ -526,8 +628,13 @@ outright, because a word boundary depends on the engine's idea of a word
 character and no rewrite fixes that. The engine underneath differs by host and
 each one is bent to the same shape: JS uses `RegExp` with `us`, PHP `preg` with
 `usD`, C++ the vendored SRELL (an ECMAScript engine, so it agrees with JS by
-construction), and Lisp cl-ppcre with `^`/`$` lowered to `\A`/`\z`, because Perl
-lets `$` match before a trailing newline and SEL does not.
+construction), and Lisp cl-ppcre and Python `re` with `^`/`$` lowered to `\A` and
+`\z`/`\Z`, because Perl and PCRE let `$` match before a trailing newline and SEL
+does not. Case-insensitive matching needed a correction in both directions:
+cl-ppcre folds neither of the two non-ASCII code points that simple-fold to an
+ASCII letter, and Python's `re` folds those two *and* two more (U+0130 and U+0131
+both fold to `i` there and nowhere else), so both hosts pre-fold the subject to
+land on the same set.
 
 ## Layout
 
@@ -535,6 +642,8 @@ lets `$` match before a trailing newline and SEL does not.
 spec/          SPEC.md, grammar.md, errors.md — normative
 conformance/   *.selt — normative; every implementation must pass
 docs/          LANGUAGE.md (rule authors), EXTENDING.md (contributors)
+               PARSER-MIGRATION.md (temporary; deleted at 1.0.0)
+python/        sel/ (package sel), bin/, tests/
 php/           src/ (namespace Sel\), bin/sel, bin/conformance
 js/            src/ (ESM), bin/sel.mjs, bin/conformance.mjs
 cpp/           sel.hpp + sel.cpp (the drop-in), third_party/srell/, bin/, tests/
@@ -544,9 +653,9 @@ tools/         fuzzer, decimal oracle, doc checker, check scripts
 ```
 
 When implementations disagree, `spec/` and `conformance/` decide which is wrong —
-no implementation is the reference. A future Python or Rust port is finished when
-it passes the same suite; `tools/impls.sh` is where it registers itself, and
-`tools/README.md` describes the four entry points it has to provide.
+no implementation is the reference. A future Rust or Go port is finished when it
+passes the same suite; `tools/impls.sh` is where it registers itself, and
+`tools/README.md` describes the five entry points it has to provide.
 
 ## Checking it
 
@@ -561,7 +670,7 @@ Seven layers, each catching what the others miss:
   shows up as a hundred confusing conformance failures instead of one message.
 - **Host API parity** — the same probes through each host's own binding, diffed.
   Every other layer drives the language through `compile().run()`, so without
-  this the four APIs could drift apart while staying green — which is exactly
+  this the five APIs could drift apart while staying green — which is exactly
   how the kind constants came to be reachable in PHP and unreachable in JS.
 - **Documentation** — every `=>` example in these docs is executed, by every
   implementation. Documentation that cannot be checked is documentation that
@@ -594,5 +703,5 @@ copyright notice travels with it.
 Two third-party components keep their own (also permissive) licences: **SRELL**,
 which is vendored into the C++ implementation, and **cl-ppcre**, which the Common
 Lisp system depends on. Both are BSD 2-Clause, and both are listed in
-[LICENSE](LICENSE). The PHP and JS implementations have no dependencies at all,
-so shipping them is just the MIT notice.
+[LICENSE](LICENSE). The Python, PHP and JS implementations have no dependencies
+at all, so shipping them is just the MIT notice.

@@ -96,16 +96,40 @@ A=1; A[2]="x"; A    ->  t"1"{"2"=t"x"}
 ## Running
 
 ```
-node js/bin/conformance.mjs        [file…]
-php  php/bin/conformance           [file…]
+node js/bin/conformance.mjs                              [file…]
+php  php/bin/conformance                                 [file…]
+cpp/build/conformance                                    [file…]
+lisp/bin/conformance                                     [file…]
+PYTHONPATH=$PWD/python python3 python/bin/conformance.py [file…]
 ```
 
-With no arguments both run every `conformance/*.selt`. Both exit non-zero on any
+With no arguments each runs every `conformance/*.selt`. All exit non-zero on any
 failure and print, for each, the case name, the expectation, and what was
-actually produced.
+actually produced. `tools/check.sh` runs the lot; `tools/impls.sh` is the roster
+they come from.
+
+## The files
+
+`01`–`10` are grouped by language feature. Two more are grouped by *failure*
+instead, because misuse is a surface of its own and organising it by feature
+scattered it into a dozen places where nobody could see what was missing:
+
+| File | Holds | Naming |
+|---|---|---|
+| `11-arity.selt` | every function, one argument below its minimum and one above its maximum | `arity.<function>.too-few` / `.too-many` |
+| `12-misuse.selt` | wrong types, wrong values, wrong shapes — grouped by the `Args` accessor that rejects the argument | `mis.<accessor-or-area>.<detail>` |
+
+Both pin `at line:col` on every case. For `11` that is the call's position; for
+`12` it is the *argument's*, which is the innermost-failure promise in
+`spec/errors.md` being held to. A new built-in lands with its two arity cases and
+its type cases in the same change as its implementation.
 
 ## Adding cases
 
 A new built-in lands together with its cases in the same change. When the two
 hosts disagree, add the minimal case that reproduces it **before** fixing either
 one — that case is the durable part of the fix.
+
+Before adding a case, check that its source is not already in the suite under
+another name: names are checked for uniqueness by the runner, sources are not,
+and a duplicate pair survived in the suite for exactly that reason.

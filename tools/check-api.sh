@@ -4,7 +4,7 @@
 # conformance/ checks the language; this checks the layer above it — that the
 # host APIs offer the same operations and give the same answers. It exists
 # because nothing did: every other layer drives the language through
-# compile().run() and compares dump(), so four hosts could drift arbitrarily in
+# compile().run() and compares dump(), so the hosts could drift arbitrarily in
 # API shape and stay green. They did, and a developer found it rather than the
 # harness — the kind constants were reachable in PHP and unreachable in JS.
 

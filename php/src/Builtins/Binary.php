@@ -41,7 +41,7 @@ final class Binary
                 if (strlen($s) % 2 !== 0) {
                     fail('E_BAD_ARG', 'FROM_HEX needs an even number of digits', $a->posOf(0));
                 }
-                if ($s !== '' && preg_match('/^[0-9a-fA-F]+$/', $s) !== 1) {
+                if ($s !== '' && preg_match('/^[0-9a-fA-F]+$/D', $s) !== 1) {
                     fail('E_BAD_ARG', 'FROM_HEX: ' . json_encode($s) . ' is not hex', $a->posOf(0));
                 }
                 return Value::bin($s === '' ? '' : (string) hex2bin($s));

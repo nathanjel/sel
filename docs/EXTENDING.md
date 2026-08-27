@@ -28,6 +28,7 @@ js/src/          implement
 php/src/         implement
 cpp/sel.cpp      implement
 lisp/src/        implement
+python/sel/      implement
 tools/check.sh   all green, or it isn't done
 ```
 
@@ -46,23 +47,31 @@ The hosts are deliberately structured the same, file for file, so they can be
 read side by side. C++ is one translation unit, so its column names the section
 comment (`// --- decimal`) rather than a file.
 
-| Concern | JS | PHP | C++ (`cpp/sel.cpp`) | Lisp |
-|---|---|---|---|---|
-| Errors | `js/src/errors.mjs` | `php/src/SelError.php` | `--- errors` | `lisp/src/errors.lisp` |
-| UTF-8 codec | `js/src/utf8.mjs` | `php/src/Utf8.php` | `--- utf8` | `lisp/src/utf8.lisp` |
-| Exact decimal | `js/src/decimal.mjs` | `php/src/Dec.php` | `--- decimal` | `lisp/src/decimal.lisp` |
-| The value | `js/src/value.mjs` | `php/src/Value.php` | `--- value` | `lisp/src/value.lisp` |
-| Function table | `js/src/registry.mjs` | `php/src/Registry.php` | `--- registry` | `lisp/src/registry.lisp` |
-| Tokeniser | `js/src/lexer.mjs` | `php/src/Lexer.php` | `--- lexer` | `lisp/src/lexer.lisp` |
-| Parser | `js/src/parser.mjs` | `php/src/Parser.php` | `--- parser` | `lisp/src/parser.lisp` |
-| Evaluator | `js/src/eval.mjs` | `php/src/Evaluator.php` | `--- eval` | `lisp/src/eval.lisp` |
-| Argument framework | `js/src/eval.mjs` (`Args`) | `php/src/Args.php` | `--- eval` (`Args`) | `lisp/src/eval.lisp` (`args-*`) |
-| Built-ins | `js/src/builtins/*.mjs` | `php/src/Builtins/*.php` | `--- builtins` | `lisp/src/builtins/*.lisp` |
-| Host API | `js/src/sel.mjs` | `php/src/Sel.php` | `cpp/sel.hpp` | `lisp/src/sel.lisp` |
+| Concern | JS | PHP | C++ (`cpp/sel.cpp`) | Lisp | Python |
+|---|---|---|---|---|---|
+| Errors | `js/src/errors.mjs` | `php/src/SelError.php` | `--- errors` | `lisp/src/errors.lisp` | `python/sel/errors.py` |
+| UTF-8 codec | `js/src/utf8.mjs` | `php/src/Utf8.php` | `--- utf8` | `lisp/src/utf8.lisp` | `python/sel/utf8.py` |
+| Exact decimal | `js/src/decimal.mjs` | `php/src/Dec.php` | `--- decimal` | `lisp/src/decimal.lisp` | `python/sel/decimal.py` |
+| The value | `js/src/value.mjs` | `php/src/Value.php` | `--- value` | `lisp/src/value.lisp` | `python/sel/value.py` |
+| Function table | `js/src/registry.mjs` | `php/src/Registry.php` | `--- registry` | `lisp/src/registry.lisp` | `python/sel/registry.py` |
+| Tokeniser | `js/src/lexer.mjs` | `php/src/Lexer.php` | `--- lexer` | `lisp/src/lexer.lisp` | `python/sel/lexer.py` |
+| Parser | `js/src/parser.mjs` | `php/src/Parser.php` | `--- parser` | `lisp/src/parser.lisp` | `python/sel/parser.py` |
+| Evaluator | `js/src/eval.mjs` | `php/src/Evaluator.php` | `--- eval` | `lisp/src/eval.lisp` | `python/sel/eval.py` |
+| Argument framework | `js/src/eval.mjs` (`Args`) | `php/src/Args.php` | `--- eval` (`Args`) | `lisp/src/eval.lisp` (`args-*`) | `python/sel/eval.py` (`Args`) |
+| Built-ins | `js/src/builtins/*.mjs` | `php/src/Builtins/*.php` | `--- builtins` | `lisp/src/builtins/*.lisp` | `python/sel/builtins/*.py` |
+| Host API | `js/src/sel.mjs` | `php/src/Sel.php` | `cpp/sel.hpp` | `lisp/src/sel.lisp` | `python/sel/__init__.py` |
 
 PHP has no autoloader; add any new file to `php/src/bootstrap.php`. JS built-ins
-are imported from `js/src/builtins/index.mjs`. Both must happen before parsing,
-because unknown function names are a **compile-time** error.
+are imported from `js/src/builtins/index.mjs` and Python's from
+`python/sel/builtins/__init__.py`. All three must happen before parsing, because
+unknown function names are a **compile-time** error.
+
+**One host does not match the table's spirit, on purpose.**
+`python/sel/parser.py` is precedence climbing, where the other four transcribe
+`spec/grammar.md` one function per production. It is the pilot for moving all
+five to that shape: see [PARSER-MIGRATION.md](PARSER-MIGRATION.md), which is a
+working document that gets deleted when the last host is converted. Read it
+before touching any parser.
 
 ---
 
@@ -92,7 +101,7 @@ does not take, or a body it runs once per element. That is the property the AST
 calling convention exists to provide, and it is also where all the sharp edges
 are.
 
-Both lanes are worked below, end to end, in all four implementations. Neither
+Both lanes are worked below, end to end, in all five implementations. Neither
 example is part of core SEL, so both can be lifted as-is.
 
 ---
@@ -209,10 +218,27 @@ In the matching `lisp/src/builtins/*.lisp`:
                          (case (mod n 10) (1 "st") (2 "nd") (3 "rd") (t "th"))))))))
 ```
 
-A new file must be added to the `:components` list in `lisp/sel.asd`, and to
-`php/src/bootstrap.php` on the PHP side — neither has an autoloader.
+#### 7. Python
 
-#### 7. Check
+In the matching `python/sel/builtins/*.py`:
+
+```python
+def _ord_suffix(a, ctx):
+    n = a.non_neg_int(0)
+    tens = n % 100
+    if 11 <= tens <= 13:
+        return Value.text(f'{n}th')
+    return Value.text(f'{n}' + {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th'))
+
+
+define('ORD_SUFFIX', 1, 1, fn=_ord_suffix)
+```
+
+A new file must be added to the `:components` list in `lisp/sel-lang.asd`, to
+`php/src/bootstrap.php` on the PHP side, and to the imports in
+`python/sel/builtins/__init__.py` — none of the three has an autoloader.
+
+#### 8. Check
 
 ```
 tools/check.sh
@@ -412,7 +438,35 @@ no-children rule from point 4 above, written once.
   :lazy t :binds t)
 ```
 
-All four return `t"8"` for `FIRST((1, 8, 3, 9), _ > 5)`, `t""` for no match, and
+#### Python
+
+```python
+def _first(args, ctx):
+    three = args.count() == 3
+    binder = args.symbol(1) if three else '_'
+    body = args.node(2 if three else 1)
+
+    lst = args.val(0)
+    items = elements(lst)          # the shared no-children helper, point 4
+
+    for key, item in items:
+        ctx.push_frame({binder: item, '_K': Value.text(key)})
+        try:
+            if args.eval_node(body).as_bool(body.pos):
+                return item.clone()
+        finally:
+            ctx.pop_frame()
+    return Value.text('')
+
+
+define('FIRST', 2, 3, lazy=True, binds=True, fn=_first)
+```
+
+`try/finally` is point 2, and it is the same shape as JS's `finally`, PHP's
+`finally`, Lisp's `unwind-protect` and the explicit `catch(...)`-and-rethrow C++
+needs. `elements()` is the shared helper next to the core aggregates.
+
+All five return `t"8"` for `FIRST((1, 8, 3, 9), _ > 5)`, `t""` for no match, and
 `E_NOT_BOOL` at column 14 for `FIRST((1,8), _)` — which is what
 `tools/check.sh` is for.
 
@@ -460,11 +514,11 @@ actually wrong.
 |---|---|
 | `Value.text/bin/bool/num/int/none/list` | constructors |
 | `.kind` | `NONE` `TEXT` `BIN` `BOOL` |
-| `.size` (JS) / `->size()` (PHP) | child count |
+| `.size()` | child count — a method in every host, and `tools/check-api.sh` has a probe to keep it one |
 | `.get/set/has/keys/values/entries` | children, insertion-ordered |
 | `.asText/asBytes/asBool/asDecimal(pos)` | applies scalar context, throws on mismatch |
 | `.scalarSource(pos)` | the value supplying the scalar |
-| `.clone()` (JS) / `->copy()` (PHP) | deep copy — assignment uses this |
+| `.clone()` / `->copy()` | deep copy — assignment uses this, and only four other places do (see the traps) |
 | `.eql(other)` | structural equality, key order significant |
 | `.dump()` | canonical form; **must** be byte-identical across hosts |
 
@@ -493,19 +547,32 @@ semantics, including which kinds it accepts and which error it raises.
 **3. Conformance cases** — in `03-operators.selt`, covering precedence against
 its neighbours, associativity, and the failure modes.
 
-**4. Every tokeniser** — `OPERATORS` in `js/src/lexer.mjs` and
-`php/src/Lexer.php`, `operators()` in `cpp/sel.cpp`, `+operators+` in
-`lisp/src/lexer.lisp`. Same list, same order, longest first. Getting this wrong
-makes `//` lex as two `/` tokens and the failure will look like a parser bug.
+**4. Every tokeniser** — `OPERATORS` in `js/src/lexer.mjs`,
+`php/src/Lexer.php` and `python/sel/lexer.py`, `operators()` in `cpp/sel.cpp`,
+`+operators+` in `lisp/src/lexer.lisp`. Same list, same order, longest first.
+Getting this wrong makes `//` lex as two `/` tokens and the failure will look
+like a parser bug.
 
-**5. Every parser** — `parseMultiplicative` already loops over a list, so:
+**5. Every parser** — and this is the one step where the hosts currently differ.
+
+In the four transcribed parsers, `parseMultiplicative` already loops over a list:
 
 ```js
 parseMultiplicative() { return this.parseOpBinary(['*', '/', '%', '//'], () => this.parseUnary()); }
 ```
 
-A *new* precedence level means a new method in every parser, wired into the
+A *new* precedence level means a new method in each of those, wired into the
 chain in the same place, and mirrored in `grammar.md`.
+
+In `python/sel/parser.py` it is a row in a table instead:
+
+```python
+INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }
+```
+
+and a new precedence level is a new `BP_` constant with the ones above it
+renumbered — no new function, and nothing to wire into a chain. That asymmetry
+is temporary and deliberate; see the note under "Where everything lives".
 
 **6. Every evaluator** — a branch in `evalBinary` / `eval_binary` /
 `eval-binary`. Use the operand's own position for type errors and the operator's
@@ -575,6 +642,12 @@ The case is the part that lasts.
 Every item here is a real divergence that was found in this codebase, not a
 hypothetical.
 
+The first group applies everywhere; the Python group at the end is separated only
+because that host is the newest and its traps are the least worn-in. Both hosts
+whose regex engine follows Perl — Lisp and Python — appear in both groups.
+
+### Any host
+
 **Never use the host's regex flags naively.** PHP's `u` modifier turns on PCRE2's
 UCP, so `\d` matches Arabic-Indic digits and `\w` matches `é`; ECMAScript's `u`
 does not. Both hosts therefore *rewrite* `\d`, `\w`, `\s` into explicit ASCII
@@ -628,12 +701,33 @@ report the *left* operand's position. Writing `bytes_compare(l.as_bytes(lp),
 r.as_bytes(rp))` reported the right one. Bind each coerced operand to a named
 local first; `eval_binary` says so in a comment for the next person.
 
-**Watch C++ pointer invalidation.** `Value`'s children live in a `std::vector`,
-so a pointer into it dies when the tree grows. The other hosts can hold a live
-reference to an assignment target across the evaluation of the right-hand side;
-C++ resolves the target to a *path* and walks it again afterwards. Index
-expressions are still evaluated exactly once, in order, before the right-hand
-side — that ordering is observable too.
+**A value is not a snapshot.** Evaluating an expression yields the value itself,
+so a mutation made by a later sub-expression is visible through a reference
+obtained earlier (§3.4) — `A[A["k"] = "k"]` finds the key its own index
+expression just created. Every host aliases by default and copies at exactly
+five places: `,` collecting a child, `,` collecting a value, the assignment
+store, `MAP` collecting a result, and `FILTER` collecting an element. If you add
+a built-in that stores one value inside another, it belongs on that list, and if
+you add a copy anywhere else you have invented a divergence.
+
+C++ is the host where this is easy to get wrong, because `Value` is a handle
+over a `shared_ptr` and copying it *looks* like a deep copy. It is not: use
+`clone()`. Up to and including 0.2.0 the C++ `Value` really did deep-copy on
+assignment, which made it disagree with the other four in six ways — three
+`E_NO_KEY`s where an index expression created the key its own base then read,
+an `E_NO_SCALAR` from a compound assignment reading its target across the
+right-hand side, a wrong tree from an aggregate binder that named a copy rather
+than the element, and one confidently wrong number. There is no
+cycle collector behind the handle, so the five clone sites are also what stops
+`A[1] = A` from leaking; `cd cpp && make asan` runs the suite under the leak
+checker to keep that true.
+
+**Resolving an assignment target to a path is not a C++ workaround.** Every host
+walks the target chain into a list of keys and re-derives from the root
+afterwards, and they do it for the reason in §5.7 — the store lands at that path
+in the tree *as it exists once the right-hand side has run* — not because of any
+host's pointer rules. Index expressions are still evaluated exactly once, in
+order, before the right-hand side; that ordering is observable too.
 
 **Watch cl-ppcre's anchors.** It follows Perl, where `$` also matches before a
 trailing newline — the same reason the PHP host needs PCRE's `D` modifier. The
@@ -645,6 +739,60 @@ replacements are sliced from the original.
 
 **Watch `E_DEPTH`.** Every host caps parse and evaluation nesting at 200. If you
 add recursion, it must be counted, or a hostile rule becomes a stack overflow.
+This is not hypothetical and the rule was already broken once: `parseNot` and
+`parseUnary` recursed into themselves without passing through either of the two
+functions that track depth, so a chain of prefix operators was bounded by
+nothing. `-` repeated about twenty thousand times raised a `RangeError` in JS and
+**segfaulted the C++ host** through its public CLI. Count the nesting *only when
+the operator is actually consumed*, or every other expression loses a level and
+`lim.parse-depth` moves.
+
+### Python
+
+**Never call `round()`, and never let a float in.** Python's `round()` is half to
+even — `round(2.5)` is 2 — and SEL rounds half away from zero everywhere. `/` on
+ints produces a float, and `math` takes floats. `python/sel/decimal.py` uses `int`
+and `//` only, and `Value.from_native` refuses a float outright rather than guess
+a decimal form for it.
+
+**Never use Python's idea of a digit.** `"٣".isdigit()` is true and `int("٣")` is
+3; `int(" 12 ")` strips whitespace and `int("1_2")` is 12. Number literals,
+`\u{...}` escapes, hex and quantifier bounds are ASCII by specification, so
+nothing may reach `int()` before an explicit ASCII check has passed. It is the
+SBCL `DIGIT-CHAR-P` trap wearing a different hat, with two extra brims.
+
+**Never use `str.splitlines()`.** It also breaks on `\v`, `\f`, `\x1c`–`\x1e`,
+U+0085, U+2028 and U+2029. The `.selt` reader, the corpus reader and the oracle
+reader all use `.split('\n')`; the corpus rule is *exactly one* trailing newline
+removed, so `.rstrip('\n')` is wrong too.
+
+**Never use `str.upper()`/`str.lower()`.** They apply full Unicode mapping and
+can change a string's length: `"ß".upper()` is `"SS"`. `UPPER`/`LOWER` are
+ASCII-only by decision.
+
+**Never use `str.strip()`.** It takes the Unicode whitespace property; SEL's
+whitespace is exactly space, tab, CR and LF.
+
+**Watch `re.IGNORECASE`.** It folds *four* non-ASCII code points onto ASCII
+letters — U+212A and U+017F, which is correct, and U+0130 and U+0131, which is
+not: nothing else folds those onto `i`. The fix is `re.ASCII | re.IGNORECASE` to
+turn all four off, then folding the two correct ones in the subject by hand. That
+is safe only because both are one code point mapping to one code point, so
+offsets survive; group text and replacements are still sliced from the
+**original** subject. Do not add U+00DF to that table — it folds to `ss` only
+under *full* folding, which changes length.
+
+**Watch Python's `$`.** Like PCRE's and Perl's, it matches before a trailing
+newline. `^` and `$` are lowered to `\A` and `\Z` after the shared validator has
+run, never inside it — `\A` is not ECMAScript and would break the JS host.
+
+**Watch `bool` being an `int`.** `isinstance(True, int)` is true, so
+`from_native` must test for `bool` first or `True` becomes the TEXT value `"1"`.
+
+**Watch the stdlib's leniency.** `base64.b64decode` ignores characters outside
+the alphabet unless asked not to, and even then disagrees about padding. SEL
+specifies exactly which inputs are `E_BAD_ARG`, so base64 is written out by hand
+like everything else.
 
 ---
 
@@ -660,6 +808,18 @@ C++ has to be built first, or it is skipped with a note:
 cd cpp && make            builds build/{sel,conformance,batch,e2e,check-decimal}
 cd cpp && make test       unit tests, then the suite
 lisp/bin/test             the Lisp unit tests
+PYTHONPATH=$PWD/python pytest python/tests    the Python unit tests
+```
+
+`python-wheel` is not in the default roster because it needs building first, the
+way C++ does. It runs the same suite through the *installed* package rather than
+the source tree, which is the only layer that catches a packaging mistake:
+
+```
+python3 -m build --outdir dist/python
+python3 -m venv python/.venv-wheel
+python/.venv-wheel/bin/pip install dist/python/*.whl
+SEL_IMPLS="python-wheel" tools/check.sh
 ```
 
 Individually, while iterating:
@@ -669,6 +829,7 @@ node js/bin/conformance.mjs           the suite, JS
 php  php/bin/conformance              the suite, PHP
 cpp/build/conformance                 the suite, C++
 lisp/bin/conformance                  the suite, Lisp
+PYTHONPATH=$PWD/python python3 python/bin/conformance.py   the suite, Python
 node js/bin/conformance.mjs conformance/07-text.selt      one file
 tools/check-docs.sh                   the => examples in the docs
 tools/check-decimal.sh 20000          decimal vs Python's decimal
@@ -697,13 +858,21 @@ node js/bin/sel.mjs
 php  php/bin/sel
 cpp/build/sel
 lisp/bin/sel
+PYTHONPATH=$PWD/python python3 -m sel
 ```
 
 ## Adding an implementation
 
-Register it in `tools/impls.sh` and give it the four entry points described in
-`tools/README.md` — a conformance runner, a corpus batch runner, an e2e driver
-and a decimal-oracle checker. Everything else in `tools/` iterates that list, so
-nothing else needs changing. The `.selt` and corpus formats are line-oriented
-precisely so that a new port needs no parser beyond the one it is already
-writing.
+Register it in `tools/impls.sh` and give it the five entry points described in
+`tools/README.md` — a conformance runner, a corpus batch runner, an e2e driver,
+an API-parity probe and a decimal-oracle checker. Everything else in `tools/`
+iterates that list, so nothing else needs changing. The `.selt` and corpus
+formats are line-oriented precisely so that a new port needs no parser beyond
+the one it is already writing.
+
+The Python host is the most recent one and was written from the JS sources; its
+commit is a reasonable template for the shape and order of the work. Port in
+dependency order — errors, UTF-8, decimal, value, registry, lexer, parser,
+evaluator, built-ins, host API — and get `tools/check-decimal.sh` green before
+anything depends on the decimal core, because it is the slowest layer to debug
+afterwards.

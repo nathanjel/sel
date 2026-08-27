@@ -250,7 +250,9 @@ error E_BAD_ARG
 --- note
 spec/SPEC.md §6.4. Before this cap, the four hosts failed four different ways:
 a host RangeError in JS, memory exhaustion in PHP and Lisp, and — after a
-32-bit cast — a confident wrong answer in C++.
+32-bit cast that wrapped 4294967296 to 0 — C++ answering `2` with total
+confidence. A scale no implementation could allocate has to fail loudly rather
+than be truncated into a small one.
 --- source
 ROUND(1.5, 4294967296)
 --- expect
@@ -274,4 +276,24 @@ just inside 32-bit range must still compute exactly rather than wrapping.
 POWER(10, 40)
 --- expect
 num 10000000000000000000000000000000000000000
+===
+### name: num.not-a-number.trailing-newline
+--- note
+§4 says there is no implicit trimming, and a trailing newline is as untrimmed as
+a trailing space. It gets its own case because it is the one whitespace character
+a host can accept by accident: in Python and PCRE — but not in ECMAScript — a
+regex `$` matches both at the end of the subject and just before a final
+newline, so an anchored number pattern applied with a prefix match silently lets
+it through. That is the same divergence the regex built-ins lower `^`/`$` to
+`\A`/`\Z` for, one layer further down, in a host's own source.
+--- source
+"5\n" + 1
+--- expect
+error E_NOT_NUM
+===
+### name: num.not-a-number.leading-newline
+--- source
+"\n5" + 1
+--- expect
+error E_NOT_NUM
 ===

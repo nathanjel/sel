@@ -89,3 +89,13 @@ Thumbs.db
 # Built by `npm run build` and by prepublishOnly; never committed. A generated
 # file in version control is a file that goes stale.
 dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+python/.venv-wheel/
+# `python -m build` writes here; dist/ itself already holds the JS bundle, so
+# the Python artefacts are kept in their own subdirectory (see PACKAGING.md).
+dist/python/
+.pytest_cache/

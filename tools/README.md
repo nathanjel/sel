@@ -2,7 +2,7 @@
 
 Five layers, run together by `tools/check.sh`. Everything here iterates
 `tools/impls.sh` rather than naming hosts, so a new implementation joins by
-adding one entry there and providing the four entry points below.
+adding one entry there and providing the five entry points below.
 
 ```
 tools/check.sh              everything
@@ -10,13 +10,20 @@ tools/check-docs.sh         every worked example in the documentation
 tools/check-decimal.sh      every decimal core against Python's `decimal`
 tools/e2e.sh                one rule set through every host API
 tools/check-api.sh          the same API probes through every host binding
+tools/check-version.sh      every manifest declares the same version
+cd cpp && make asan         the C++ suite under the address and leak sanitizers
 tools/fuzz.sh               seeded differential fuzzing, N-way
 ```
 
 Only the JS side owns generators: `gen-programs.mjs` (fuzz corpus),
 `extract-docs.mjs` (documentation corpus) and `decimal-oracle.py` (Python) run
 once and feed every implementation. A port never re-implements a generator, only
-the four consumers.
+the five consumers.
+
+`decimal-oracle.py` being Python is worth one sentence now that a Python host
+exists: `python/sel/decimal.py` deliberately does **not** use the `decimal`
+module, so the oracle remains a genuinely independent opinion for that host
+rather than a comparison of the standard library with itself.
 
 ---
 
@@ -30,7 +37,20 @@ the four consumers.
 | `api` | nothing | the API parity report, one `NN name = value` line per probe | 0 |
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
 
-All four run from the repository root and take paths relative to it.
+All five run from the repository root and take paths relative to it.
+
+| Role | js | php | cpp | lisp | python |
+|---|---|---|---|---|---|
+| `conformance` | `js/bin/conformance.mjs` | `php/bin/conformance` | `cpp/build/conformance` | `lisp/bin/conformance` | `python/bin/conformance.py` |
+| `batch` | `tools/run-batch.mjs` | `tools/run-batch.php` | `cpp/build/batch` | `lisp/bin/batch` | `python/bin/batch.py` |
+| `e2e` | `examples/e2e.mjs` | `examples/e2e.php` | `cpp/build/e2e` | `lisp/bin/e2e` | `examples/e2e.py` |
+| `api` | `tools/api.mjs` | `tools/api.php` | `cpp/build/api` | `lisp/bin/api` | `python/bin/api.py` |
+| `check-decimal` | `tools/check-decimal.mjs` | `tools/check-decimal.php` | `cpp/build/check-decimal` | `lisp/bin/check-decimal` | `python/bin/check-decimal.py` |
+
+Two implementations in `tools/impls.sh` are the same code reached a second way:
+`js-bundle` runs `dist/sel.mjs`, and `python-wheel` runs the built wheel from a
+venv. Both are guarded on being newer than the sources they were built from, and
+both exist to catch the failures that only packaging can produce.
 
 ---
 
@@ -82,10 +102,17 @@ human reading only; records are matched positionally.
 That sentence is normative for the readers, and it is fussier than it looks: a
 trailing newline moves the position SEL reports for an end-of-input error, so a
 reader that keeps one where another drops one produces a phantom disagreement
-that looks like an interpreter bug. Three of the four readers got this wrong at
-least once — PHP stripped two (PCRE's `$` matches before a final newline and the
-replace is global), Lisp stripped none, and C++ swallowed a record's *leading*
-blank line. A record may contain blank lines, including leading ones.
+that looks like an interpreter bug. Three of the first four readers got this
+wrong at least once — PHP stripped two (PCRE's `$` matches before a final
+newline and the replace is global), Lisp stripped none, and C++ swallowed a
+record's *leading* blank line. A record may contain blank lines, including
+leading ones.
+
+Python has two ways to join the list. `str.splitlines()` also breaks on `\v`,
+`\f`, `\x1c`-`\x1e`, U+0085, U+2028 and U+2029, so it would split records that
+contain any of them — and the suite contains such characters deliberately.
+`str.rstrip('\n')` strips *every* trailing newline rather than exactly one.
+`python/bin/batch.py` uses `.split('\n')` and removes one, and says so.
 
 A program containing a line that itself begins with `### ` splits into two
 records. Every reader does this identically, so it over-counts rather than

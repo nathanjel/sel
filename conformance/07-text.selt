@@ -240,13 +240,20 @@ FIND("ab", "abc", 9223372036854775807)
 --- expect
 num 0
 ===
-### name: num.round.scale-out-of-range
+### name: txt.find.is-one-based
 --- note
-A scale no implementation could allocate must fail loudly rather than being
-truncated into a small one. C++ cast it to int, wrapping 4294967296 to 0 and
-answering `2` with total confidence.
+FIND's optional start is 1-based like SUBSTR's, and 0 is out of its domain
+rather than a synonym for the beginning. The sibling case is
+txt.substr.is-one-based; this one had no coverage at all until the arity and
+misuse sweep went looking for the gaps its own template left.
 --- source
-ROUND(1.5, 4294967296)
+FIND("a", "banana", 0)
 --- expect
-error E_RANGE
+error E_RANGE at 1:21
+===
+### name: txt.find.negative-start
+--- source
+FIND("a", "banana", -1)
+--- expect
+error E_RANGE at 1:21
 ===

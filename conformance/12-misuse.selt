@@ -1,0 +1,1047 @@
+% Misuse: wrong types, wrong values, wrong shapes.
+%
+% Arity lives in 11-arity.selt; this file is everything else you can do wrong.
+% It is organised by the Args accessor that rejects the argument, because that is
+% the layer the error actually comes from — see docs/EXTENDING.md, "The Args API".
+%
+% Every case pins `at line:col`. The position is the promise: spec/errors.md says
+% an error is raised at the innermost point of failure, so a bad argument must
+% report *that argument's* position and not the call's. That promise had almost
+% no coverage before this file, and it is exactly what drifts — the C++ host once
+% reported the right operand's position for a left operand's type error, because
+% argument evaluation order is unspecified there.
+%
+% Every expectation here was confirmed identical across all five implementations
+% before being written down. None of these is one host's opinion.
+
+%
+% --- text(i) — E_NOT_TEXT
+%
+% Every built-in argument that goes through Args::text(). BOOL and BIN are the
+% two kinds that reach it and cannot satisfy it.
+### name: mis.not-text.len
+--- source
+LEN(TRUE)
+--- expect
+error E_NOT_TEXT at 1:5
+===
+### name: mis.not-text.left
+--- source
+LEFT(TRUE, 1)
+--- expect
+error E_NOT_TEXT at 1:6
+===
+### name: mis.not-text.right
+--- source
+RIGHT(TRUE, 1)
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: mis.not-text.substr
+--- source
+SUBSTR(TRUE, 1)
+--- expect
+error E_NOT_TEXT at 1:8
+===
+### name: mis.not-text.find-needle
+--- source
+FIND(TRUE, "a")
+--- expect
+error E_NOT_TEXT at 1:6
+===
+### name: mis.not-text.find-hay
+--- source
+FIND("a", TRUE)
+--- expect
+error E_NOT_TEXT at 1:11
+===
+### name: mis.not-text.replace-needle
+--- source
+REPLACE(TRUE, "a", "b")
+--- expect
+error E_NOT_TEXT at 1:9
+===
+### name: mis.not-text.replace-with
+--- source
+REPLACE("a", TRUE, "b")
+--- expect
+error E_NOT_TEXT at 1:14
+===
+### name: mis.not-text.replace-hay
+--- source
+REPLACE("a", "b", TRUE)
+--- expect
+error E_NOT_TEXT at 1:19
+===
+### name: mis.not-text.split-hay
+--- source
+SPLIT(TRUE, ",")
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: mis.not-text.split-sep
+--- source
+SPLIT("a", TRUE)
+--- expect
+error E_NOT_TEXT at 1:12
+===
+### name: mis.not-text.trim
+--- source
+TRIM(TRUE)
+--- expect
+error E_NOT_TEXT at 1:6
+===
+### name: mis.not-text.ltrim
+--- source
+LTRIM(TRUE)
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: mis.not-text.rtrim
+--- source
+RTRIM(TRUE)
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: mis.not-text.upper
+--- source
+UPPER(TRUE)
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: mis.not-text.lower
+--- source
+LOWER(TRUE)
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: mis.not-text.backwards
+--- source
+BACKWARDS(TRUE)
+--- expect
+error E_NOT_TEXT at 1:11
+===
+### name: mis.not-text.repeat
+--- source
+REPEAT(TRUE, 2)
+--- expect
+error E_NOT_TEXT at 1:8
+===
+### name: mis.not-text.padl
+--- source
+PADL(TRUE, 3, "x")
+--- expect
+error E_NOT_TEXT at 1:6
+===
+### name: mis.not-text.padl-fill
+--- source
+PADL("a", 3, TRUE)
+--- expect
+error E_NOT_TEXT at 1:14
+===
+### name: mis.not-text.padr
+--- source
+PADR(TRUE, 3, "x")
+--- expect
+error E_NOT_TEXT at 1:6
+===
+### name: mis.not-text.padr-fill
+--- source
+PADR("a", 3, TRUE)
+--- expect
+error E_NOT_TEXT at 1:14
+===
+### name: mis.not-text.code
+--- source
+CODE(TRUE)
+--- expect
+error E_NOT_TEXT at 1:6
+===
+### name: mis.not-text.from-hex
+--- source
+FROM_HEX(TRUE)
+--- expect
+error E_NOT_TEXT at 1:10
+===
+### name: mis.not-text.decode-base64
+--- source
+DECODE_BASE64(TRUE)
+--- expect
+error E_NOT_TEXT at 1:15
+===
+### name: mis.not-text.abort
+--- source
+ABORT(TRUE)
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: mis.not-text.has-key
+--- source
+HAS((1), TRUE)
+--- expect
+error E_NOT_TEXT at 1:10
+===
+### name: mis.not-text.join-sep
+--- source
+JOIN((1), TRUE)
+--- expect
+error E_NOT_TEXT at 1:11
+===
+### name: mis.not-text.rmatch-pat
+--- source
+RMATCH(TRUE, "a")
+--- expect
+error E_NOT_TEXT at 1:8
+===
+### name: mis.not-text.rmatch-subj
+--- source
+RMATCH("a", TRUE)
+--- expect
+error E_NOT_TEXT at 1:13
+===
+### name: mis.not-text.rmatch-flags
+--- source
+RMATCH("a", "b", TRUE)
+--- expect
+error E_NOT_TEXT at 1:18
+===
+### name: mis.not-text.rfind-pat
+--- source
+RFIND(TRUE, "a")
+--- expect
+error E_NOT_TEXT at 1:7
+===
+### name: mis.not-text.rfind-subj
+--- source
+RFIND("a", TRUE)
+--- expect
+error E_NOT_TEXT at 1:12
+===
+### name: mis.not-text.rfind-flags
+--- source
+RFIND("a", "b", TRUE)
+--- expect
+error E_NOT_TEXT at 1:17
+===
+### name: mis.not-text.rgroups-pat
+--- source
+RGROUPS(TRUE, "a")
+--- expect
+error E_NOT_TEXT at 1:9
+===
+### name: mis.not-text.rgroups-subj
+--- source
+RGROUPS("a", TRUE)
+--- expect
+error E_NOT_TEXT at 1:14
+===
+### name: mis.not-text.rgroups-flags
+--- source
+RGROUPS("a", "b", TRUE)
+--- expect
+error E_NOT_TEXT at 1:19
+===
+### name: mis.not-text.rreplace-pat
+--- source
+RREPLACE(TRUE, "a", "b")
+--- expect
+error E_NOT_TEXT at 1:10
+===
+### name: mis.not-text.rreplace-with
+--- source
+RREPLACE("a", TRUE, "b")
+--- expect
+error E_NOT_TEXT at 1:15
+===
+### name: mis.not-text.rreplace-subj
+--- source
+RREPLACE("a", "b", TRUE)
+--- expect
+error E_NOT_TEXT at 1:20
+===
+### name: mis.not-text.rreplace-flags
+--- source
+RREPLACE("a", "b", "c", TRUE)
+--- expect
+error E_NOT_TEXT at 1:25
+===
+### name: mis.not-text.len-of-bin
+--- note
+BIN is not TEXT even though both are 'strings' in most host languages.
+FROM_UTF8 is the explicit conversion; there is no implicit one.
+--- source
+LEN(TO_UTF8("x"))
+--- expect
+error E_NOT_TEXT at 1:5
+===
+### name: mis.not-text.upper-of-bin
+--- source
+UPPER(TO_UTF8("x"))
+--- expect
+error E_NOT_TEXT at 1:7
+===
+
+%
+% --- bytes(i) — E_NOT_BIN
+%
+% TEXT is accepted here and encoded as UTF-8, so BOOL is the kind that fails.
+### name: mis.not-bin.blen
+--- source
+BLEN(TRUE)
+--- expect
+error E_NOT_BIN at 1:6
+===
+### name: mis.not-bin.to-utf8
+--- source
+TO_UTF8(TRUE)
+--- expect
+error E_NOT_BIN at 1:9
+===
+### name: mis.not-bin.from-utf8
+--- source
+FROM_UTF8(TRUE)
+--- expect
+error E_NOT_BIN at 1:11
+===
+### name: mis.not-bin.to-hex
+--- source
+TO_HEX(TRUE)
+--- expect
+error E_NOT_BIN at 1:8
+===
+### name: mis.not-bin.encode-base64
+--- source
+ENCODE_BASE64(TRUE)
+--- expect
+error E_NOT_BIN at 1:15
+===
+### name: mis.not-bin.crc32
+--- source
+CRC32(TRUE)
+--- expect
+error E_NOT_BIN at 1:7
+===
+### name: mis.not-bin.btl
+--- source
+BTL(TRUE)
+--- expect
+error E_NOT_BIN at 1:5
+===
+
+%
+% --- bool(i) — E_NOT_BOOL
+%
+% There is no truthiness anywhere in SEL, in functions or in operators.
+### name: mis.not-bool.if-text
+--- source
+IF("x", 1, 2)
+--- expect
+error E_NOT_BOOL at 1:4
+===
+### name: mis.not-bool.if-num
+--- note
+1 is not true. SEL has no truthiness, so a condition that is not BOOL is an
+error rather than a coercion.
+--- source
+IF(1, 1, 2)
+--- expect
+error E_NOT_BOOL at 1:4
+===
+### name: mis.not-bool.cond-first
+--- source
+COND("x", 1, 2)
+--- expect
+error E_NOT_BOOL at 1:6
+===
+### name: mis.not-bool.cond-second
+--- source
+COND(FALSE, 1, "x", 2, 3)
+--- expect
+error E_NOT_BOOL at 1:16
+===
+### name: mis.not-bool.all-body
+--- source
+ALL((1), _)
+--- expect
+error E_NOT_BOOL at 1:10
+===
+### name: mis.not-bool.any-body
+--- source
+ANY((1), _)
+--- expect
+error E_NOT_BOOL at 1:10
+===
+### name: mis.not-bool.filter-body
+--- source
+FILTER((1), _)
+--- expect
+error E_NOT_BOOL at 1:13
+===
+### name: mis.not-bool.and-right
+--- source
+TRUE AND "x"
+--- expect
+error E_NOT_BOOL at 1:10
+===
+### name: mis.not-bool.or-left
+--- source
+"x" OR TRUE
+--- expect
+error E_NOT_BOOL at 1:1
+===
+### name: mis.not-bool.xor-left
+--- source
+1 XOR TRUE
+--- expect
+error E_NOT_BOOL at 1:1
+===
+### name: mis.not-bool.not-operand
+--- source
+NOT 1
+--- expect
+error E_NOT_BOOL at 1:5
+===
+
+%
+% --- dec(i) — E_NOT_NUM
+%
+% Numbers are TEXT that parses as a number (§4). BOOL, BIN and text that does not
+% parse all fail here.
+### name: mis.not-num.abs-bool
+--- source
+ABS(TRUE)
+--- expect
+error E_NOT_NUM at 1:5
+===
+### name: mis.not-num.abs-text
+--- source
+ABS("x")
+--- expect
+error E_NOT_NUM at 1:5
+===
+### name: mis.not-num.abs-untrimmed
+--- note
+No implicit trimming: " 2" is text that happens to look numeric, and
+accepting it would make whitespace silently significant (§4).
+--- source
+ABS(" 2")
+--- expect
+error E_NOT_NUM at 1:5
+===
+### name: mis.not-num.abs-bin
+--- source
+ABS(TO_UTF8("1"))
+--- expect
+error E_NOT_NUM at 1:5
+===
+### name: mis.not-num.sign
+--- source
+SIGN(TRUE)
+--- expect
+error E_NOT_NUM at 1:6
+===
+### name: mis.not-num.ceil
+--- source
+CEIL(TRUE)
+--- expect
+error E_NOT_NUM at 1:6
+===
+### name: mis.not-num.floor
+--- source
+FLOOR(TRUE)
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.trunc
+--- source
+TRUNC(TRUE)
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.round-value
+--- source
+ROUND(TRUE, 0)
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.power-base
+--- source
+POWER(TRUE, 2)
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.min
+--- source
+MIN(TRUE)
+--- expect
+error E_NOT_NUM at 1:5
+===
+### name: mis.not-num.min-later
+--- source
+MIN(1, TRUE)
+--- expect
+error E_NOT_NUM at 1:8
+===
+### name: mis.not-num.max
+--- source
+MAX(TRUE)
+--- expect
+error E_NOT_NUM at 1:5
+===
+### name: mis.not-num.max-later
+--- source
+MAX(1, TRUE)
+--- expect
+error E_NOT_NUM at 1:8
+===
+### name: mis.not-num.sum-body
+--- source
+SUM((1), _ & "x")
+--- expect
+error E_NOT_NUM at 1:12
+===
+### name: mis.not-num.add
+--- source
+1 + TRUE
+--- expect
+error E_NOT_NUM at 1:5
+===
+### name: mis.not-num.mul
+--- source
+TRUE * 1
+--- expect
+error E_NOT_NUM at 1:1
+===
+
+%
+% --- int(i) — E_NOT_INT
+%
+% A whole number was required and a fraction was given. Had no coverage at all
+% before this file.
+### name: mis.not-int.substr-start
+--- source
+SUBSTR("abc", 1.5)
+--- expect
+error E_NOT_INT at 1:15
+===
+### name: mis.not-int.find-from
+--- source
+FIND("a", "abc", 1.5)
+--- expect
+error E_NOT_INT at 1:18
+===
+### name: mis.not-int.char
+--- source
+CHAR(1.5)
+--- expect
+error E_NOT_INT at 1:6
+===
+### name: mis.not-int.left
+--- note
+A fractional count is E_NOT_INT, distinct from E_RANGE: the value is the wrong
+shape rather than out of bounds.
+--- source
+LEFT("abc", 1.5)
+--- expect
+error E_NOT_INT at 1:13
+===
+### name: mis.not-int.right
+--- source
+RIGHT("abc", 1.5)
+--- expect
+error E_NOT_INT at 1:14
+===
+### name: mis.not-int.substr-len
+--- source
+SUBSTR("abc", 1, 1.5)
+--- expect
+error E_NOT_INT at 1:18
+===
+### name: mis.not-int.repeat
+--- source
+REPEAT("a", 1.5)
+--- expect
+error E_NOT_INT at 1:13
+===
+### name: mis.not-int.padl
+--- source
+PADL("a", 1.5, "x")
+--- expect
+error E_NOT_INT at 1:11
+===
+### name: mis.not-int.padr
+--- source
+PADR("a", 1.5, "x")
+--- expect
+error E_NOT_INT at 1:11
+===
+### name: mis.not-int.round-scale
+--- source
+ROUND(1, 1.5)
+--- expect
+error E_NOT_INT at 1:10
+===
+### name: mis.not-int.power-exp
+--- source
+POWER(2, 1.5)
+--- expect
+error E_NOT_INT at 1:10
+===
+
+%
+% --- nonNegInt(i) — E_RANGE
+%
+% Same accessor as above, one step further: an integer that is negative.
+### name: mis.range.left
+--- note
+A negative count is E_RANGE, not a silent clamp to zero. nonNegInt() raises it
+against the argument's own position.
+--- source
+LEFT("abc", -1)
+--- expect
+error E_RANGE at 1:13
+===
+### name: mis.range.right
+--- source
+RIGHT("abc", -1)
+--- expect
+error E_RANGE at 1:14
+===
+### name: mis.range.substr-len
+--- source
+SUBSTR("abc", 1, -1)
+--- expect
+error E_RANGE at 1:18
+===
+### name: mis.range.repeat
+--- source
+REPEAT("a", -1)
+--- expect
+error E_RANGE at 1:13
+===
+### name: mis.range.padl
+--- source
+PADL("a", -1, "x")
+--- expect
+error E_RANGE at 1:11
+===
+### name: mis.range.padr
+--- source
+PADR("a", -1, "x")
+--- expect
+error E_RANGE at 1:11
+===
+### name: mis.range.round-scale
+--- source
+ROUND(1, -1)
+--- expect
+error E_RANGE at 1:10
+===
+### name: mis.range.power-exp
+--- source
+POWER(2, -1)
+--- expect
+error E_RANGE at 1:10
+===
+
+%
+% --- symbol(i) — E_EXPECT_SYMBOL
+%
+% The three-argument aggregate form takes a bare identifier, checked by looking at
+% the AST node rather than at a value.
+### name: mis.symbol.all-num
+--- source
+ALL((1), 1, TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:10
+===
+### name: mis.symbol.all-grouped
+--- note
+(X) is a grouped expression, not a bare name. The binder form is an AST shape
+check, and parenthesising it defeats the check rather than satisfying it.
+--- source
+ALL((1), (X), TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:11
+===
+### name: mis.symbol.any
+--- source
+ANY((1), 1, TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:10
+===
+### name: mis.symbol.map
+--- source
+MAP((1), 1, _)
+--- expect
+error E_EXPECT_SYMBOL at 1:10
+===
+### name: mis.symbol.filter
+--- source
+FILTER((1), 1, TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:13
+===
+### name: mis.symbol.sum
+--- source
+SUM((1), 1, _)
+--- expect
+error E_EXPECT_SYMBOL at 1:10
+===
+### name: mis.symbol.all-text
+--- source
+ALL((1), "X", TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:10
+===
+
+%
+% --- values outside their permitted range — E_RANGE
+%
+### name: mis.domain.char-negative
+--- source
+CHAR(-1)
+--- expect
+error E_RANGE at 1:6
+===
+### name: mis.domain.ltb-too-big
+--- source
+LTB((256))
+--- expect
+error E_RANGE at 1:6
+===
+### name: mis.domain.ltb-negative
+--- source
+LTB((-1))
+--- expect
+error E_RANGE at 1:6
+===
+### name: mis.domain.ltb-fraction
+--- source
+LTB((1.5))
+--- expect
+error E_RANGE at 1:6
+===
+### name: mis.domain.round-scale-cap
+--- source
+ROUND(1.5, 1000001)
+--- expect
+error E_RANGE at 1:12
+===
+### name: mis.domain.power-cap
+--- source
+POWER(2, 100001)
+--- expect
+error E_RANGE at 1:10
+===
+
+%
+% --- well-typed but unusable — E_BAD_ARG
+%
+### name: mis.badarg.base64-bad
+--- source
+DECODE_BASE64("!!!!")
+--- expect
+error E_BAD_ARG at 1:15
+===
+
+%
+% --- value-level failures
+%
+### name: mis.value.mod-zero
+--- source
+1 % 0
+--- expect
+error E_DIV_ZERO at 1:3
+===
+### name: mis.value.band-mismatch
+--- source
+FROM_HEX("00") BAND FROM_HEX("0102")
+--- expect
+error E_LEN_MISMATCH at 1:16
+===
+### name: mis.value.bxor-mismatch
+--- source
+FROM_HEX("00") BXOR FROM_HEX("0102")
+--- expect
+error E_LEN_MISMATCH at 1:16
+===
+### name: mis.value.from-utf8-invalid
+--- source
+FROM_UTF8(FROM_HEX("ff"))
+--- expect
+error E_UTF8 at 1:11
+===
+### name: mis.value.from-utf8-truncated
+--- note
+A truncated multi-byte sequence is invalid UTF-8, not a partial character to be
+salvaged.
+--- source
+FROM_UTF8(FROM_HEX("e28c"))
+--- expect
+error E_UTF8 at 1:11
+===
+
+%
+% --- lookup failures
+%
+### name: mis.lookup.undef-var
+--- source
+NOPE_VAR
+--- expect
+error E_UNDEF_VAR at 1:1
+===
+### name: mis.lookup.no-key
+--- source
+A = 1; A["nope"]
+--- expect
+error E_NO_KEY at 1:9
+===
+### name: mis.lookup.no-scalar
+--- note
+FILTER returns a childless NONE when nothing matched. Scalar context on it has
+nothing to reach for, which is E_NO_SCALAR rather than an empty string.
+--- source
+FILTER((1, 2), _ > 5) + 1
+--- expect
+error E_NO_SCALAR at 1:1
+===
+
+%
+% --- reserved words — E_RESERVED
+%
+% Each of the eleven reserved words, as a variable and as an aggregate binder.
+%
+% Six of these do NOT raise E_RESERVED, and that is the point of having them:
+% three of the eleven never reach the reserved-word check at all. NOT is a
+% prefix operator, so `NOT = 1` fails in the grammar first; TRUE and FALSE lex
+% as boolean literals rather than identifiers, so they fail the assignment
+% target check or the binder shape check instead. The template that generated
+% this section assumed one code for all eleven; the words that break the
+% assumption are worth pinning precisely because they break it.
+### name: mis.reserved.var-and
+--- source
+AND = 1
+--- expect
+error E_RESERVED at 1:1
+===
+### name: mis.reserved.binder-and
+--- note
+A reserved word is rejected as an aggregate binder for the same reason it is
+rejected as a variable — the binder introduces a name.
+--- source
+ALL((1), AND, TRUE)
+--- expect
+error E_RESERVED at 1:10
+===
+### name: mis.reserved.var-or
+--- source
+OR = 1
+--- expect
+error E_RESERVED at 1:1
+===
+### name: mis.reserved.binder-or
+--- source
+ALL((1), OR, TRUE)
+--- expect
+error E_RESERVED at 1:10
+===
+### name: mis.reserved.var-not
+--- note
+NOT is a prefix operator, so this fails in the grammar
+before any reserved-word check runs.
+--- source
+NOT = 1
+--- expect
+error E_SYNTAX at 1:5
+===
+### name: mis.reserved.binder-not
+--- note
+Same: the binder position is parsed as an expression,
+and NOT there is a prefix operator with nothing to apply.
+--- source
+ALL((1), NOT, TRUE)
+--- expect
+error E_SYNTAX at 1:13
+===
+### name: mis.reserved.var-xor
+--- source
+XOR = 1
+--- expect
+error E_RESERVED at 1:1
+===
+### name: mis.reserved.binder-xor
+--- source
+ALL((1), XOR, TRUE)
+--- expect
+error E_RESERVED at 1:10
+===
+### name: mis.reserved.var-eql
+--- source
+EQL = 1
+--- expect
+error E_RESERVED at 1:1
+===
+### name: mis.reserved.binder-eql
+--- source
+ALL((1), EQL, TRUE)
+--- expect
+error E_RESERVED at 1:10
+===
+### name: mis.reserved.var-in
+--- source
+IN = 1
+--- expect
+error E_RESERVED at 1:1
+===
+### name: mis.reserved.binder-in
+--- source
+ALL((1), IN, TRUE)
+--- expect
+error E_RESERVED at 1:10
+===
+### name: mis.reserved.var-band
+--- source
+BAND = 1
+--- expect
+error E_RESERVED at 1:1
+===
+### name: mis.reserved.binder-band
+--- source
+ALL((1), BAND, TRUE)
+--- expect
+error E_RESERVED at 1:10
+===
+### name: mis.reserved.var-bor
+--- source
+BOR = 1
+--- expect
+error E_RESERVED at 1:1
+===
+### name: mis.reserved.binder-bor
+--- source
+ALL((1), BOR, TRUE)
+--- expect
+error E_RESERVED at 1:10
+===
+### name: mis.reserved.var-bxor
+--- source
+BXOR = 1
+--- expect
+error E_RESERVED at 1:1
+===
+### name: mis.reserved.binder-bxor
+--- source
+ALL((1), BXOR, TRUE)
+--- expect
+error E_RESERVED at 1:10
+===
+### name: mis.reserved.var-true
+--- note
+TRUE lexes as a boolean literal, not an identifier, so
+the assignment target check rejects it before the reserved-word check.
+--- source
+TRUE = 1
+--- expect
+error E_BAD_ASSIGN at 1:1
+===
+### name: mis.reserved.binder-true
+--- note
+TRUE is a boolean literal, so the binder is not a bare
+name — E_EXPECT_SYMBOL, not E_RESERVED.
+--- source
+ALL((1), TRUE, TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:10
+===
+### name: mis.reserved.var-false
+--- note
+As var-true.
+--- source
+FALSE = 1
+--- expect
+error E_BAD_ASSIGN at 1:1
+===
+### name: mis.reserved.binder-false
+--- note
+As binder-true.
+--- source
+ALL((1), FALSE, TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:10
+===
+
+%
+% --- assignment targets — E_BAD_ASSIGN
+%
+### name: mis.badassign.literal-target
+--- source
+1 = 2
+--- expect
+error E_BAD_ASSIGN at 1:1
+===
+### name: mis.badassign.call-target
+--- source
+LEN("a") = 1
+--- expect
+error E_BAD_ASSIGN at 1:1
+===
+### name: mis.badassign.grouped-target
+--- note
+(A) = 1 is rejected even though A = 1 is fine. The target must be an identifier
+followed by index operations, and grouping makes it an expression.
+--- source
+(A) = 1
+--- expect
+error E_BAD_ASSIGN at 1:2
+===
+### name: mis.badassign.compound-literal
+--- source
+1 += 2
+--- expect
+error E_BAD_ASSIGN at 1:1
+===
+
+%
+% --- malformed token streams — E_SYNTAX
+%
+### name: mis.syntax.trailing-operator
+--- source
+1 +
+--- expect
+error E_SYNTAX at 1:4
+===
+### name: mis.syntax.unclosed-paren
+--- source
+(1
+--- expect
+error E_SYNTAX at 1:3
+===
+### name: mis.syntax.unclosed-call
+--- source
+LEN(1
+--- expect
+error E_SYNTAX at 1:6
+===
+### name: mis.syntax.unclosed-bracket
+--- source
+A[1
+--- expect
+error E_SYNTAX at 1:4
+===
+### name: mis.syntax.stray-close
+--- source
+1)
+--- expect
+error E_SYNTAX at 1:2
+===
+
+%
+% --- compile-time name resolution
+%
+### name: mis.compile.unknown-func-lower
+--- source
+nosuch(1)
+--- expect
+error E_UNKNOWN_FUNC at 1:1
+===

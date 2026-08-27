@@ -104,10 +104,23 @@ class Parser {
   }
 
   // negation = "NOT" negation | comparison
+  //
+  // Counted. A prefix operator recurses into itself without passing through
+  // parseSequence or parsePrimary, which are the only two places depth is
+  // tracked — so an unbounded chain of them used to reach the host's own stack
+  // limit instead of E_DEPTH. That was a segfault in the C++ host and a
+  // RangeError here, from a rule that is just `-` repeated. parseUnary below has
+  // the identical hazard. The counter is entered only when a prefix operator is
+  // actually consumed, so every other expression's trip point is unchanged.
   parseNot() {
     if (this.atWord('NOT')) {
       const op = this.next();
-      return { t: 'un', op: 'NOT', x: this.parseNot(), pos: op };
+      this.enter(op);
+      try {
+        return { t: 'un', op: 'NOT', x: this.parseNot(), pos: op };
+      } finally {
+        this.leave();
+      }
     }
     return this.parseComparison();
   }
@@ -151,10 +164,16 @@ class Parser {
   }
 
   // unary = "-" unary | postfix
+  // Counted, for the reason given on parseNot.
   parseUnary() {
     if (this.atOp('-')) {
       const op = this.next();
-      return { t: 'un', op: 'NEG', x: this.parseUnary(), pos: op };
+      this.enter(op);
+      try {
+        return { t: 'un', op: 'NEG', x: this.parseUnary(), pos: op };
+      } finally {
+        this.leave();
+      }
     }
     return this.parsePostfix();
   }
