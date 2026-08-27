@@ -4,18 +4,18 @@
 // Every implementation runs the same numbered probes through its *own* binding
 // and prints one `NN name = value` line each; tools/check-api.sh diffs the
 // reports. Where the language layer is checked by conformance/, this checks the
-// layer above it: that the four host APIs offer the same operations and give the
+// layer above it: that the host APIs offer the same operations and give the
 // same answers.
 //
 // It exists because nothing did. The conformance suite drives everything through
 // compile().run() and compares dump(), and the e2e drivers only ever call
-// asText() and dump() — so four hosts could drift arbitrarily in API shape and
+// asText() and dump() — so the hosts could drift arbitrarily in API shape and
 // every layer stayed green. That is exactly what happened: the kind constants
 // were exported in PHP and unreachable in JS, and a developer found it, not the
 // harness.
 //
 // A probe belongs here when it is part of the host contract in spec/SPEC.md §8.
-// Keep the four drivers in the same order with the same names; the diff is the
+// Keep every driver in the same order with the same names; the diff is the
 // whole mechanism.
 
 const { compile, evaluate, Value, SelError, functionNames, NONE, TEXT, BIN, BOOL } =

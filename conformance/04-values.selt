@@ -160,3 +160,98 @@ bool FALSE
 --- expect
 bool TRUE
 ===
+%
+% --- identity and aliasing (spec/SPEC.md §3.4)
+%
+% Evaluating an expression yields a value, not a snapshot of one, so a mutation
+% made by a later sub-expression is visible through a reference obtained
+% earlier. Assignment is the only thing that copies.
+%
+% Four of these were found by the differential fuzzer, on seeds outside the
+% default run. Every host but one already agreed on all eight; the C++ host
+% deep-copied on the read path where the others alias, which made three of them
+% E_NO_KEY, one E_NO_SCALAR, and one — the last — a confidently wrong value.
+% Two are controls that already passed everywhere: they are here to stop a fix
+% for the others from over-reaching.
+### name: alias.index-expr-creates-the-key-it-reads
+--- note
+The index expression creates the key that the pending read then finds. This is
+§3.4's first paragraph, and the smallest case that shows it.
+--- source
+A = 1; A[A["k"] = "k"]
+--- expect
+text "k"
+===
+### name: alias.index-base-from-a-call
+--- note
+The base is not a variable or an index chain, so it cannot be recovered by
+re-walking a path — IF returns the value of its argument, and that value is the
+same one the index expression mutates. An implementation that fixes the case
+above by resolving a path will still fail this one.
+--- source
+A = 1; IF(TRUE, A, A)[A["k"] = "k"]
+--- expect
+text "k"
+===
+### name: alias.index-base-grouped
+--- note
+Parenthesising the base groups it; it does not copy it.
+--- source
+A = 1; (A)[A["k"] = "k"]
+--- expect
+text "k"
+===
+### name: alias.index-base-is-a-real-copy
+--- note
+CONTROL — this already passes everywhere and must keep passing. B was assigned
+from A, and assignment is the one operation that copies (§5.7), so mutating A
+must not be visible through B. If a fix for the cases above makes this succeed,
+the fix has confused aliasing with re-reading.
+--- source
+A = 1; B = (A); B[A["k"] = "k"]
+--- expect
+error E_NO_KEY at 1:18
+===
+### name: alias.aggregate-binder-is-the-element
+--- note
+The binder names the element, not a copy of it, so a body that mutates the list
+changes what a later read of the binder sees. The first element gains a child
+before COUNT(X) runs on it; the second does not, because the mutation targets
+element 1 both times.
+--- source
+A = (1,2); MAP(A, X, (A[1]["c"] = 9) & COUNT(X))
+--- expect
+tree -{"1"=t"91", "2"=t"90"}
+===
+### name: alias.compound-target-read-across-the-rhs
+--- note
+The compound forms hold their target across the evaluation of the right-hand
+side, so a right-hand side that adds a child to the target changes what scalar
+context then finds. A[x] starts as a childless NONE — scalar context on it would
+be E_NO_SCALAR — and the right-hand side gives it the child that makes the
+concatenation succeed.
+--- source
+A = 1; A["x"] = FILTER(1, FALSE); A["x"] &= (A["x"]["c"] = "z")
+--- expect
+text "zz"
+===
+### name: alias.rebinding-is-not-visible-to-a-pending-read
+--- note
+CONTROL — this already passes everywhere and must keep passing. It is the other
+half of §3.4: the index expression rebound A to a three-element list, but the
+pending read still holds the two-element value A had when it was evaluated, and
+that has no key "3". Mutating a value is visible; replacing a variable is not.
+--- source
+A = (1,2); A[(A = (A, 9)); "3"]
+--- expect
+error E_NO_KEY at 1:13
+===
+### name: alias.compound-inside-an-index
+--- note
+The one that returns a wrong answer rather than an error when a host gets this
+wrong, which is why it is worth having even though it overlaps the cases above.
+--- source
+A = 1; A["k"] = 1; A[(A["k"] += 1); "k"]
+--- expect
+num 2
+===

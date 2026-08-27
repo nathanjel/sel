@@ -290,7 +290,9 @@ final class Lexer
             if ($j >= $to) {
                 fail('E_UNTERMINATED', 'unterminated \\u{...} escape', $pos);
             }
-            if ($hex === '' || strlen($hex) > 6 || preg_match('/^[0-9a-fA-F]+$/', $hex) !== 1) {
+            // /D for the reason in Dec.php: a trailing newline would otherwise
+            // satisfy `$` and `\u{41<newline>}` would be accepted here alone.
+            if ($hex === '' || strlen($hex) > 6 || preg_match('/^[0-9a-fA-F]+$/D', $hex) !== 1) {
                 fail('E_ESCAPE', "bad \\u{{$hex}} escape", $pos);
             }
             $cp = (int) hexdec($hex);

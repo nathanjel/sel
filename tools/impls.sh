@@ -7,7 +7,14 @@
 #
 # Override to narrow a run:   SEL_IMPLS="js cpp" tools/fuzz.sh
 
-SEL_IMPLS="${SEL_IMPLS:-js js-bundle php cpp lisp}"
+SEL_IMPLS="${SEL_IMPLS:-js js-bundle php cpp lisp python}"
+
+# Where python-wheel looks for its interpreter: a venv with the built wheel
+# installed, so the *package* is held to the same suite as the source tree.
+#   python3 -m build --outdir dist/python
+#   python3 -m venv python/.venv-wheel
+#   python/.venv-wheel/bin/pip install dist/python/*.whl
+SEL_PY_WHEEL_BIN="${SEL_PY_WHEEL_BIN:-$PWD/python/.venv-wheel/bin/python3}"
 
 # The first implementation in the list is the reference the others are diffed
 # against in fuzz.sh. It is only a reporting convenience: a disagreement is a
@@ -26,6 +33,8 @@ impl_conformance() {
     php)  php php/bin/conformance "$@" ;;
     cpp)  cpp/build/conformance "$@" ;;
     lisp) lisp/bin/conformance "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 python/bin/conformance.py "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/conformance.py "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -38,6 +47,8 @@ impl_batch() {
     php)  php tools/run-batch.php "$@" ;;
     cpp)  cpp/build/batch "$@" ;;
     lisp) lisp/bin/batch "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 python/bin/batch.py "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/batch.py "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -50,6 +61,8 @@ impl_e2e() {
     php)  php examples/e2e.php "$@" ;;
     cpp)  cpp/build/e2e "$@" ;;
     lisp) lisp/bin/e2e "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 examples/e2e.py "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" examples/e2e.py "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -64,6 +77,8 @@ impl_api() {
     php)  php tools/api.php "$@" ;;
     cpp)  cpp/build/api "$@" ;;
     lisp) lisp/bin/api "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 python/bin/api.py "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/api.py "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -78,6 +93,10 @@ impl_decimal() {
     php)  php tools/check-decimal.php "$@" ;;
     cpp)  cpp/build/check-decimal "$@" ;;
     lisp) lisp/bin/check-decimal "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 python/bin/check-decimal.py "$@" ;;
+    # The oracle is a whitebox check on python/sel/decimal.py, which the wheel
+    # ships verbatim. Running it twice would test the same code.
+    python-wheel) echo "python-wheel: decimal core is python/sel/decimal.py, covered above" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -88,6 +107,17 @@ impl_unit() {
   local impl="$1"; shift
   case "$impl" in
     js|js-bundle|php) return 0 ;;
+    # `python3 -m pytest`, not `pytest`: the binary is often only on a venv's
+    # PATH while the module is importable by the interpreter we actually use.
+    python)
+      python3 -c 'import pytest' 2>/dev/null || {
+        echo "python: pytest not installed, unit tests skipped"; return 0; }
+      PYTHONPATH="$PWD/python" python3 -m pytest -q python/tests ;;
+    # Deliberately not given PYTHONPATH: these run against the installed package.
+    python-wheel)
+      "$SEL_PY_WHEEL_BIN" -c 'import pytest' 2>/dev/null || {
+        echo "python-wheel: pytest not installed in the venv, unit tests skipped"; return 0; }
+      "$SEL_PY_WHEEL_BIN" -m pytest -q python/tests ;;
     cpp)    [ -x cpp/build/unit ] && cpp/build/unit ;;
     lisp)   lisp/bin/test ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
@@ -107,6 +137,25 @@ impl_available() {
     php)  command -v php  >/dev/null 2>&1 ;;
     cpp)  [ -x cpp/build/conformance ] ;;
     lisp) command -v sbcl >/dev/null 2>&1 && [ -x lisp/bin/conformance ] ;;
+    python) command -v python3 >/dev/null 2>&1 ;;
+    # Present *and* newer than every source file it was built from, the same
+    # guard js-bundle has. A stale wheel is a different implementation from the
+    # one in python/sel, and it should say so rather than fail confusingly later.
+    #
+    # The comparison is against the *installed package*, not against the venv's
+    # interpreter: the interpreter is a symlink to system Python whose mtime a
+    # reinstall never touches, so guarding on it marked the wheel stale forever
+    # after the first source edit — the guard could go off but never reset.
+    # js-bundle compares against dist/sel.mjs, which is the artefact its build
+    # rewrites; this is the same idea, spelled for pip.
+    python-wheel)
+      installed="$(echo python/.venv-wheel/lib/python*/site-packages/sel/__init__.py)"
+      # -name '*.py': python/sel also holds __pycache__, whose mtime moves every
+      # time the *source* implementation runs. Comparing against the directory
+      # tree meant that running `python` marked `python-wheel` stale, so the two
+      # could never both be available in one check.sh run.
+      [ -n "${SEL_PY_WHEEL_BIN:-}" ] && [ -x "$SEL_PY_WHEEL_BIN" ] && [ -f "$installed" ] \
+        && [ -z "$(find python/sel -name '*.py' -newer "$installed" -print -quit 2>/dev/null)" ] ;;
     *)    return 1 ;;
   esac
 }

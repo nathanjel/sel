@@ -173,11 +173,23 @@ final class Parser
     }
 
     /** @return array<string,mixed> */
+    // Counted. A prefix operator recurses into itself without passing through
+    // parseSequence or parsePrimary, which are the only two places depth is
+    // tracked — so an unbounded chain of them used to reach the host's own stack
+    // limit instead of E_DEPTH. That was a segfault in the C++ host, from a rule
+    // that is just `-` repeated. parseUnary below has the identical hazard. The
+    // counter is entered only when a prefix operator is actually consumed, so
+    // every other expression's trip point is unchanged.
     private function parseNot(): array
     {
         if ($this->atWord('NOT')) {
             $op = $this->next();
-            return ['t' => 'un', 'op' => 'NOT', 'x' => $this->parseNot(), 'pos' => $op];
+            $this->enter($op);
+            try {
+                return ['t' => 'un', 'op' => 'NOT', 'x' => $this->parseNot(), 'pos' => $op];
+            } finally {
+                $this->leave();
+            }
         }
         return $this->parseComparison();
     }
@@ -262,11 +274,17 @@ final class Parser
     }
 
     /** @return array<string,mixed> */
+    // Counted, for the reason given on parseNot.
     private function parseUnary(): array
     {
         if ($this->atOp('-')) {
             $op = $this->next();
-            return ['t' => 'un', 'op' => 'NEG', 'x' => $this->parseUnary(), 'pos' => $op];
+            $this->enter($op);
+            try {
+                return ['t' => 'un', 'op' => 'NEG', 'x' => $this->parseUnary(), 'pos' => $op];
+            } finally {
+                $this->leave();
+            }
         }
         return $this->parsePostfix();
     }

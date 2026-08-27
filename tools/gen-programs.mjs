@@ -202,7 +202,7 @@ function sizedCall(d) {
   // nest was a mistake worth recording: POWER over a POWER over a 20-digit
   // literal multiplies the digit count each time, and schoolbook multiplication
   // is quadratic in it, so a handful of such programs took the fuzz run from two
-  // seconds to over seven minutes in all four hosts at once. The point of these
+  // seconds to over seven minutes in every host at once. The point of these
   // programs is which side of a documented cap an argument falls on, and a
   // literal tests that exactly as well.
   const over = () => pick(['1000001', '4294967296', '4294967299', '9223372036854775807']);

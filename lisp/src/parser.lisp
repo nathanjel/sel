@@ -144,11 +144,20 @@
     left))
 
 ;;; negation = "NOT" negation | comparison
+;;;
+;;; Counted. A prefix operator recurses into itself without passing through
+;;; parse-sequence or parse-primary, which are the only two places depth is
+;;; tracked — so an unbounded chain of them reached the host's own stack limit
+;;; instead of E_DEPTH, and in the C++ host that was a segfault from a rule that
+;;; is just `-` repeated. parse-unary below had the identical hazard. Entered
+;;; only when a prefix operator is actually consumed, so every other
+;;; expression's trip point is unchanged.
 (defun parse-not (p)
   (if (p-at-word p "NOT")
       (let* ((op (p-next p))
              (n (make-node :un (token-pos op))))
-        (setf (node-s n) "NOT" (node-l n) (parse-not p))
+        (with-depth (p (token-pos op))
+          (setf (node-s n) "NOT" (node-l n) (parse-not p)))
         n)
       (parse-comparison p)))
 
@@ -194,11 +203,13 @@
           (setf left n))))))
 
 ;;; unary = "-" unary | postfix
+;;; Counted, for the reason given on parse-not.
 (defun parse-unary (p)
   (if (p-at-op p "-")
       (let* ((op (p-next p))
              (n (make-node :un (token-pos op))))
-        (setf (node-s n) "NEG" (node-l n) (parse-unary p))
+        (with-depth (p (token-pos op))
+          (setf (node-s n) "NEG" (node-l n) (parse-unary p)))
         n)
       (parse-postfix p)))
 

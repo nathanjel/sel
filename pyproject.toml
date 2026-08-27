@@ -1,0 +1,73 @@
+# The Python host's manifest. It lives at the repository root for the same
+# reason package.json and composer.json do: each names the subtree it ships and
+# nothing else. See PACKAGING.md.
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sel-lang"
+version = "0.3.0"
+description = "A small expression language for validation rules — one rule file evaluates identically on Python, JavaScript, PHP, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Marcin Gałczyński" }]
+requires-python = ">=3.10"
+
+# None. The regex subset is small enough that the standard library covers it
+# after the anchor rewrite, so there is nothing to resolve, pin or audit.
+dependencies = []
+
+keywords = [
+    "validation", "rules", "rule-engine", "expression-language",
+    "interpreter", "decimal", "exact-arithmetic", "isomorphic",
+    "shared-validation",
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Interpreters",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/nathanjel/sel#readme"
+Repository = "https://github.com/nathanjel/sel"
+Issues = "https://github.com/nathanjel/sel/issues"
+Documentation = "https://github.com/nathanjel/sel/blob/main/docs/LANGUAGE.md"
+
+# Installs a `sel` command, the same name the npm package installs. `python -m sel`
+# always works and is the spelling to prefer if both are on one machine.
+[project.scripts]
+sel = "sel._cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/sel"]
+
+[tool.hatch.build.targets.sdist]
+# What npm's `files` ships, in Python spelling: the package, the normative
+# documents, and enough of the harness to see what "identically" is measured by.
+include = [
+    "python/",
+    "docs/",
+    "spec/",
+    "conformance/",
+    "examples/order-validation.sel",
+    "examples/e2e.py",
+    "examples/host-python.py",
+    "LICENSE",
+    "README.md",
+    "PACKAGING.md",
+    "pyproject.toml",
+]

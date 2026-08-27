@@ -146,3 +146,13 @@ error E_SYNTAX
 --- expect
 error E_SYNTAX at 1:3
 ===
+### name: lex.escape.unicode-trailing-newline
+--- note
+The hex digits of a \u{...} escape are ASCII and nothing else, a newline
+included. Same accident as num.not-a-number.trailing-newline: an anchored hex
+pattern matched as a prefix accepts a trailing newline in Python and PCRE.
+--- source
+"\u{41\n}"
+--- expect
+error E_ESCAPE
+===

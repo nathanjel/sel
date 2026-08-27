@@ -1,0 +1,641 @@
+% Arity, every function, both edges.
+%
+% E_ARITY is a compile-time error raised from parseCall before a single argument
+% is evaluated, so the filler arguments are deliberately meaningless — `1` parses
+% and never runs. The position is the *call's*, which is why every case pins it:
+% this is the cheapest cross-host position check in the suite, and there are 54
+% functions behind it.
+%
+% Generated shape, maintained by hand. A new built-in lands with its two cases
+% here in the same change; tools/check-api.sh will tell you the count moved.
+
+### name: arity.abort.too-few
+--- source
+ABORT()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.abort.too-many
+--- source
+ABORT(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.abs.too-few
+--- source
+ABS()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.abs.too-many
+--- source
+ABS(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.all.too-few
+--- source
+ALL(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.all.too-many
+--- source
+ALL(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.any.too-few
+--- source
+ANY(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.any.too-many
+--- source
+ANY(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.backwards.too-few
+--- source
+BACKWARDS()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.backwards.too-many
+--- source
+BACKWARDS(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.blen.too-few
+--- source
+BLEN()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.blen.too-many
+--- source
+BLEN(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.btl.too-few
+--- source
+BTL()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.btl.too-many
+--- source
+BTL(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.ceil.too-few
+--- source
+CEIL()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.ceil.too-many
+--- source
+CEIL(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.char.too-few
+--- source
+CHAR()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.char.too-many
+--- source
+CHAR(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.code.too-few
+--- source
+CODE()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.code.too-many
+--- source
+CODE(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.cond.too-few
+--- source
+COND(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.count.too-few
+--- source
+COUNT()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.count.too-many
+--- source
+COUNT(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.crc32.too-few
+--- source
+CRC32()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.crc32.too-many
+--- source
+CRC32(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.decode-base64.too-few
+--- source
+DECODE_BASE64()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.decode-base64.too-many
+--- source
+DECODE_BASE64(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.encode-base64.too-few
+--- source
+ENCODE_BASE64()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.encode-base64.too-many
+--- source
+ENCODE_BASE64(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.filter.too-few
+--- source
+FILTER(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.filter.too-many
+--- source
+FILTER(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.find.too-few
+--- source
+FIND(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.find.too-many
+--- source
+FIND(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.floor.too-few
+--- source
+FLOOR()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.floor.too-many
+--- source
+FLOOR(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.from-hex.too-few
+--- source
+FROM_HEX()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.from-hex.too-many
+--- source
+FROM_HEX(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.from-utf8.too-few
+--- source
+FROM_UTF8()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.from-utf8.too-many
+--- source
+FROM_UTF8(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.has.too-few
+--- source
+HAS(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.has.too-many
+--- source
+HAS(1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.if.too-few
+--- source
+IF(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.if.too-many
+--- source
+IF(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.indexes.too-few
+--- source
+INDEXES()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.indexes.too-many
+--- source
+INDEXES(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.isnum.too-few
+--- source
+ISNUM()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.isnum.too-many
+--- source
+ISNUM(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.join.too-few
+--- source
+JOIN(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.join.too-many
+--- source
+JOIN(1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.left.too-few
+--- source
+LEFT(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.left.too-many
+--- source
+LEFT(1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.len.too-few
+--- source
+LEN()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.len.too-many
+--- source
+LEN(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.lower.too-few
+--- source
+LOWER()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.lower.too-many
+--- source
+LOWER(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.ltb.too-few
+--- source
+LTB()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.ltb.too-many
+--- source
+LTB(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.ltrim.too-few
+--- source
+LTRIM()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.ltrim.too-many
+--- source
+LTRIM(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.map.too-few
+--- source
+MAP(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.map.too-many
+--- source
+MAP(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.max.too-few
+--- source
+MAX()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.min.too-few
+--- source
+MIN()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.padl.too-few
+--- source
+PADL(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.padl.too-many
+--- source
+PADL(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.padr.too-few
+--- source
+PADR(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.padr.too-many
+--- source
+PADR(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.power.too-few
+--- source
+POWER(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.power.too-many
+--- source
+POWER(1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.repeat.too-few
+--- source
+REPEAT(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.repeat.too-many
+--- source
+REPEAT(1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.replace.too-few
+--- source
+REPLACE(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.replace.too-many
+--- source
+REPLACE(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rfind.too-few
+--- source
+RFIND(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rfind.too-many
+--- source
+RFIND(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rgroups.too-few
+--- source
+RGROUPS(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rgroups.too-many
+--- source
+RGROUPS(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.right.too-few
+--- source
+RIGHT(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.right.too-many
+--- source
+RIGHT(1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rmatch.too-few
+--- source
+RMATCH(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rmatch.too-many
+--- source
+RMATCH(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.round.too-few
+--- source
+ROUND(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.round.too-many
+--- source
+ROUND(1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rreplace.too-few
+--- source
+RREPLACE(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rreplace.too-many
+--- source
+RREPLACE(1, 1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rtrim.too-few
+--- source
+RTRIM()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.rtrim.too-many
+--- source
+RTRIM(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.sign.too-few
+--- source
+SIGN()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.sign.too-many
+--- source
+SIGN(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.split.too-few
+--- source
+SPLIT(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.split.too-many
+--- source
+SPLIT(1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.substr.too-few
+--- source
+SUBSTR(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.substr.too-many
+--- source
+SUBSTR(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.sum.too-few
+--- source
+SUM(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.sum.too-many
+--- source
+SUM(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.to-hex.too-few
+--- source
+TO_HEX()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.to-hex.too-many
+--- source
+TO_HEX(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.to-utf8.too-few
+--- source
+TO_UTF8()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.to-utf8.too-many
+--- source
+TO_UTF8(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.trim.too-few
+--- source
+TRIM()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.trim.too-many
+--- source
+TRIM(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.trunc.too-few
+--- source
+TRUNC()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.trunc.too-many
+--- source
+TRUNC(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.upper.too-few
+--- source
+UPPER()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.upper.too-many
+--- source
+UPPER(1, 1)
+--- expect
+error E_ARITY at 1:1
+===

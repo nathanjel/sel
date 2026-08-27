@@ -1,11 +1,13 @@
 # Publishing
 
 The package is called **`sel-lang`** on every registry. `sel` was already taken
-in three of the four: an npm CSS-selector library, and a `projects/sel` entry in
-quicklisp-projects (GrammaTech's Software Evolution Library).
+in most of them: an npm CSS-selector library, a `projects/sel` entry in
+quicklisp-projects (GrammaTech's Software Evolution Library), and a `sel` project
+on PyPI.
 
 | Registry | Name | Manifest |
 |---|---|---|
+| PyPI | `sel-lang` | `pyproject.toml` |
 | npm | `sel-lang` | `package.json` |
 | Packagist | `nathanjel/sel-lang` | `composer.json` |
 | Quicklisp / Ultralisp | `sel-lang` | `lisp/sel-lang.asd` |
@@ -24,29 +26,98 @@ the README.
 ## Before any release
 
 ```
-tools/check.sh          # must print ALL GREEN with all four implementations
+tools/check.sh                                    # ALL GREEN, full roster
+SEL_IMPLS="$SEL_IMPLS python-wheel" tools/check.sh # and through the built wheel
+tools/check-version.sh 0.3.0                      # every manifest agrees
 ```
+
+The first must print `ALL GREEN` with every implementation present — a partial
+roster is refused rather than quietly passing, because every differential layer
+degrades to a no-op when there is nothing to compare against.
 
 Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.1.4 -m "SEL 0.1.4"
-git push origin v0.1.4
+git tag -a v0.3.0 -m "SEL 0.3.0"
+git push origin v0.3.0
 ```
 
-Versions live in five places. Keep them in step:
+Versions live in six places. Keep them in step:
 
 ```
-package.json                     "version": "0.1.4"
-cpp/conanfile.py                 version = "0.1.4"
-cpp/vcpkg.json                   "version-semver": "0.1.4"
-cpp/CMakeLists.txt               project(... VERSION 0.1.4 ...)
-lisp/sel-lang.asd                :version "0.1.4"
+package.json                     "version": "0.3.0"
+pyproject.toml                   version = "0.3.0"
+cpp/conanfile.py                 version = "0.3.0"
+cpp/vcpkg.json                   "version-semver": "0.3.0"
+cpp/CMakeLists.txt               project(... VERSION 0.3.0 ...)
+lisp/sel-lang.asd                :version "0.3.0"
 ```
+
+`python/sel/__init__.py` carries `__version__` and is checked against
+`pyproject.toml` by `tools/check-version.sh`, so it is one place fewer to
+remember rather than one more.
 
 `composer.json` deliberately carries **no** `version` field — Packagist infers it
 from the git tag, and hard-coding it there is a known way to publish a lie.
+
+---
+
+## PyPI
+
+```
+python3 -m build --outdir dist/python
+python3 -m twine check dist/python/*
+python3 -m twine upload dist/python/*
+```
+
+**Build into `dist/python`, not `dist`.** The repository root's `dist/` already
+holds the JavaScript bundle; letting `build` write beside it would mix two
+languages' artefacts in one directory and eventually upload the wrong thing.
+
+The wheel ships `python/sel/` and nothing else — the package, its `py.typed`
+marker and the licence, about 50 kB. The sdist adds `docs/`, `spec/`,
+`conformance/` and the Python examples, mirroring what npm's `files` whitelists.
+
+The package has **no runtime dependencies**, and that is a property worth
+keeping: the regex subset is small enough that `re` covers it after the anchor
+rewrite, and the decimal core is deliberately hand-written (see below). Python
+and JavaScript are the only two hosts with neither a vendored engine nor an
+external one.
+
+Verify the built package rather than the source tree, which is what the
+`python-wheel` implementation in `tools/impls.sh` is for:
+
+```
+python3 -m venv python/.venv-wheel
+python/.venv-wheel/bin/pip install dist/python/*.whl
+SEL_IMPLS="python-wheel" tools/check.sh
+```
+
+That runs the whole conformance suite, the API probes and the fuzzer through the
+*installed* package. It is the only layer that catches a packaging mistake — a
+sub-package left out of the wheel, a missing `py.typed`, an entry point that
+names a module the wheel does not contain — because every other layer imports
+from `python/`.
+
+### Two things to know
+
+**The `sel` console script collides with npm's.** Both packages install a command
+called `sel`. There is no good way around it and no attempt is made to hide it:
+`python -m sel` always works and is the spelling to prefer on a machine that has
+both. It is the same trade as the `SEL` package name in Common Lisp — an unlikely
+collision, made loud rather than silent.
+
+**`python/sel/decimal.py` does not use the `decimal` module**, and must not start
+to. `tools/decimal-oracle.py` generates this project's decimal test cases *from*
+`decimal`, as an independent third opinion on cores that were all written from
+one spec by one hand. A host built on `decimal` would turn `tools/check-decimal.sh`
+into a comparison of the standard library with itself — still printing
+"0 mismatches", while verifying nothing at all for that host.
+
+For automated releases, PyPI's Trusted Publishing (OIDC from a CI workflow)
+removes the need for a long-lived token; a manual `twine upload` with an API
+token is equally fine and is what the commands above assume.
 
 ---
 
@@ -121,6 +192,22 @@ because the collision is unlikely and loud rather than silent.
 
 ---
 
+## A note for C++ consumers upgrading to 0.3.0
+
+`sel::Value` became a handle: copying one now aliases, and `clone()` is the deep
+copy. Every signature in `sel.hpp` is unchanged, so this compiles silently — the
+break is behavioural, not a build error, which is the awkward kind.
+
+```cpp
+Value b = a;            // 0.2.0: an independent deep copy
+                        // 0.3.0: the same value as a
+Value b = a.clone();    // an independent deep copy, both versions
+```
+
+The interpreter needed this to agree with the other four hosts (spec/SPEC.md
+§3.4), and it makes copies cheap. Code that builds each value fresh and moves it
+into place — the idiom `cpp/bin/e2e.cpp` already uses — needs no change at all.
+
 ## Conan
 
 Conan Center does **not** have SRELL, so the vendored copy is what makes the
@@ -147,7 +234,7 @@ profile would only make the package unusable out of the box.
 To publish, either upload to your own remote:
 
 ```
-conan upload sel-lang/0.1.4 -r <remote> --confirm
+conan upload sel-lang/0.3.0 -r <remote> --confirm
 ```
 
 or open a pull request against

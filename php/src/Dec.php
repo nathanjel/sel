@@ -156,7 +156,14 @@ final class Dec
      */
     public static function parse(string $text): ?array
     {
-        if (preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $text) !== 1) {
+        // The D modifier. Without it PCRE's `$` matches both at the end of the
+        // subject and immediately before a single trailing newline, so "5\n"
+        // parsed as a number here and as E_NOT_NUM everywhere else — and then
+        // the newline was carried into the digit string and arithmetic on it
+        // produced an out-of-range digit, which formatted as punctuation:
+        // `"5\n" + 1` answered `5)`. It is the same PCRE behaviour the regex
+        // built-ins already use `D` for, one layer further down.
+        if (preg_match('/^-?[0-9]+(\.[0-9]+)?$/D', $text) !== 1) {
             return null;
         }
         $neg = $text[0] === '-';

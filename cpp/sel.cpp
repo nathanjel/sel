@@ -547,12 +547,29 @@ std::string quote_dump(std::string_view s);
 struct Internals {
   static Value raw(Kind kind, std::string scalar, bool b) {
     Value v;
-    v.kind_ = kind;
-    v.scalar_ = std::move(scalar);
-    v.bool_ = b;
+    v.p_->kind = kind;
+    v.p_->scalar = std::move(scalar);
+    v.p_->boolean = b;
     return v;
   }
 };
+
+Value::Value() : p_(std::make_shared<Impl>()) {}
+
+// The deep copy. Recursive, because children are handles too: copying the
+// vector alone would share every subtree.
+Value Value::clone() const {
+  Value out;
+  out.p_->kind = p_->kind;
+  out.p_->scalar = p_->scalar;
+  out.p_->boolean = p_->boolean;
+  out.p_->children.reserve(p_->children.size());
+  for (const Entry& e : p_->children) {
+    out.p_->children.emplace_back(e.first, e.second.clone());
+  }
+  out.p_->index = p_->index;
+  return out;
+}
 
 namespace {
 
@@ -601,61 +618,61 @@ Value Value::list(std::vector<Value> values) {
 }
 
 void Value::build_index() {
-  index_.clear();
-  index_.reserve(children_.size() * 2);
-  for (std::size_t i = 0; i < children_.size(); i++) index_.emplace(children_[i].first, i);
+  p_->index.clear();
+  p_->index.reserve(p_->children.size() * 2);
+  for (std::size_t i = 0; i < p_->children.size(); i++) p_->index.emplace(p_->children[i].first, i);
 }
 
 std::vector<Value::Entry>::iterator Value::find(const std::string& key) {
-  if (!index_.empty()) {
-    auto it = index_.find(key);
-    return it == index_.end() ? children_.end()
-                              : children_.begin() + static_cast<std::ptrdiff_t>(it->second);
+  if (!p_->index.empty()) {
+    auto it = p_->index.find(key);
+    return it == p_->index.end() ? p_->children.end()
+                              : p_->children.begin() + static_cast<std::ptrdiff_t>(it->second);
   }
-  return std::find_if(children_.begin(), children_.end(),
+  return std::find_if(p_->children.begin(), p_->children.end(),
                       [&](const Entry& e) { return e.first == key; });
 }
 
 std::vector<Value::Entry>::const_iterator Value::find(const std::string& key) const {
-  if (!index_.empty()) {
-    auto it = index_.find(key);
-    return it == index_.end() ? children_.end()
-                              : children_.begin() + static_cast<std::ptrdiff_t>(it->second);
+  if (!p_->index.empty()) {
+    auto it = p_->index.find(key);
+    return it == p_->index.end() ? p_->children.end()
+                              : p_->children.begin() + static_cast<std::ptrdiff_t>(it->second);
   }
-  return std::find_if(children_.begin(), children_.end(),
+  return std::find_if(p_->children.begin(), p_->children.end(),
                       [&](const Entry& e) { return e.first == key; });
 }
 
-bool Value::has(const std::string& key) const { return find(key) != children_.end(); }
+bool Value::has(const std::string& key) const { return find(key) != p_->children.end(); }
 
 const Value* Value::get(const std::string& key) const {
   auto it = find(key);
-  return it == children_.end() ? nullptr : &it->second;
+  return it == p_->children.end() ? nullptr : &it->second;
 }
 
 Value* Value::get(const std::string& key) {
   auto it = find(key);
-  return it == children_.end() ? nullptr : &it->second;
+  return it == p_->children.end() ? nullptr : &it->second;
 }
 
 std::vector<std::string> Value::keys() const {
   std::vector<std::string> out;
-  out.reserve(children_.size());
-  for (const auto& e : children_) out.push_back(e.first);
+  out.reserve(p_->children.size());
+  for (const auto& e : p_->children) out.push_back(e.first);
   return out;
 }
 
 // Re-assigning an existing key keeps its original position — order is normative.
 Value& Value::set(std::string key, Value value) {
   auto it = find(key);
-  if (it != children_.end()) {
+  if (it != p_->children.end()) {
     it->second = std::move(value);   // re-assignment keeps the original position
     return *this;
   }
-  children_.emplace_back(std::move(key), std::move(value));
-  if (!index_.empty()) {
-    index_.emplace(children_.back().first, children_.size() - 1);
-  } else if (children_.size() >= INDEX_THRESHOLD) {
+  p_->children.emplace_back(std::move(key), std::move(value));
+  if (!p_->index.empty()) {
+    p_->index.emplace(p_->children.back().first, p_->children.size() - 1);
+  } else if (p_->children.size() >= INDEX_THRESHOLD) {
     build_index();
   }
   return *this;
@@ -665,11 +682,11 @@ Value& Value::set(std::string key, Value value) {
 const Value& Value::scalar_source(Pos pos) const {
   const Value* v = this;
   int guard = 0;
-  while (v->kind_ == Kind::None) {
-    if (v->children_.empty()) {
+  while (v->p_->kind == Kind::None) {
+    if (v->p_->children.empty()) {
       throw SelError("E_NO_SCALAR", "value has no scalar and no children", pos);
     }
-    v = &v->children_.front().second;
+    v = &v->p_->children.front().second;
     if (++guard > 1000) throw SelError("E_DEPTH", "scalar context nested too deeply", pos);
   }
   return *v;
@@ -677,8 +694,8 @@ const Value& Value::scalar_source(Pos pos) const {
 
 const std::string& Value::as_text(Pos pos) const {
   const Value& v = scalar_source(pos);
-  if (v.kind_ == Kind::Text) return v.scalar_;
-  if (v.kind_ == Kind::Bin) {
+  if (v.p_->kind == Kind::Text) return v.p_->scalar;
+  if (v.p_->kind == Kind::Bin) {
     throw SelError("E_NOT_TEXT", "expected text, got binary (use FROM_UTF8)", pos);
   }
   throw SelError("E_NOT_TEXT", "expected text, got boolean", pos);
@@ -687,18 +704,18 @@ const std::string& Value::as_text(Pos pos) const {
 // TEXT already holds its UTF-8 bytes, so this is free for both kinds.
 const std::string& Value::as_bytes(Pos pos) const {
   const Value& v = scalar_source(pos);
-  if (v.kind_ == Kind::Bin || v.kind_ == Kind::Text) return v.scalar_;
+  if (v.p_->kind == Kind::Bin || v.p_->kind == Kind::Text) return v.p_->scalar;
   throw SelError("E_NOT_BIN", "expected binary or text, got boolean", pos);
 }
 
 bool Value::as_bool(Pos pos) const {
   const Value& v = scalar_source(pos);
-  if (v.kind_ == Kind::Bool) return v.bool_;
+  if (v.p_->kind == Kind::Bool) return v.p_->boolean;
   throw SelError("E_NOT_BOOL", "expected a boolean — SEL has no truthiness", pos);
 }
 
 bool Value::looks_numeric() const {
-  if (kind_ == Kind::None && children_.empty()) return false;
+  if (p_->kind == Kind::None && p_->children.empty()) return false;
   const Value* v;
   try {
     v = &scalar_source();
@@ -706,39 +723,39 @@ bool Value::looks_numeric() const {
     return false;
   }
   Dec d;
-  return v->kind_ == Kind::Text && sel::dec_parse(v->scalar_, d);
+  return v->p_->kind == Kind::Text && sel::dec_parse(v->p_->scalar, d);
 }
 
 // Same kind, equal scalars with numbers *not* normalised, children with the same
 // keys in the same order, pairwise EQL.
 bool Value::eql(const Value& other) const {
-  if (kind_ != other.kind_) return false;
-  if (kind_ == Kind::Text || kind_ == Kind::Bin) {
-    if (scalar_ != other.scalar_) return false;
-  } else if (kind_ == Kind::Bool) {
-    if (bool_ != other.bool_) return false;
+  if (p_->kind != other.p_->kind) return false;
+  if (p_->kind == Kind::Text || p_->kind == Kind::Bin) {
+    if (p_->scalar != other.p_->scalar) return false;
+  } else if (p_->kind == Kind::Bool) {
+    if (p_->boolean != other.p_->boolean) return false;
   }
-  if (children_.size() != other.children_.size()) return false;
-  for (std::size_t i = 0; i < children_.size(); i++) {
-    if (children_[i].first != other.children_[i].first) return false;   // order is normative
-    if (!children_[i].second.eql(other.children_[i].second)) return false;
+  if (p_->children.size() != other.p_->children.size()) return false;
+  for (std::size_t i = 0; i < p_->children.size(); i++) {
+    if (p_->children[i].first != other.p_->children[i].first) return false;   // order is normative
+    if (!p_->children[i].second.eql(other.p_->children[i].second)) return false;
   }
   return true;
 }
 
 std::string Value::dump() const {
   std::string s;
-  switch (kind_) {
+  switch (p_->kind) {
     case Kind::None: s = "-"; break;
-    case Kind::Text: s = "t" + sel::quote_dump(scalar_); break;
-    case Kind::Bin: s = "b" + sel::to_hex(scalar_); break;
-    case Kind::Bool: s = bool_ ? "TRUE" : "FALSE"; break;
+    case Kind::Text: s = "t" + sel::quote_dump(p_->scalar); break;
+    case Kind::Bin: s = "b" + sel::to_hex(p_->scalar); break;
+    case Kind::Bool: s = p_->boolean ? "TRUE" : "FALSE"; break;
   }
-  if (children_.empty()) return s;
+  if (p_->children.empty()) return s;
   s += "{";
-  for (std::size_t i = 0; i < children_.size(); i++) {
+  for (std::size_t i = 0; i < p_->children.size(); i++) {
     if (i > 0) s += ", ";
-    s += sel::quote_dump(children_[i].first) + "=" + children_[i].second.dump();
+    s += sel::quote_dump(p_->children[i].first) + "=" + p_->children[i].second.dump();
   }
   return s + "}";
 }
@@ -1338,9 +1355,23 @@ class Parser {
   }
 
   // negation = "NOT" negation | comparison
+  //
+  // Counted. A prefix operator recurses into itself without passing through
+  // parse_sequence or parse_primary, which are the only two places depth is
+  // tracked — so an unbounded chain of them reached this host's own stack limit
+  // instead of E_DEPTH, and `--------...1` at about twenty thousand characters
+  // segfaulted the process. parse_unary below had the identical hazard. C++ has
+  // no `finally`, so the counter is released by the same RAII guard
+  // parse_primary uses. Entered only when a prefix operator is actually
+  // consumed, so every other expression's trip point is unchanged.
   NodePtr parse_not() {
     if (at_word("NOT")) {
       const Token op = next();
+      enter(op.pos);
+      struct Leave {
+        Parser* p;
+        ~Leave() { p->leave(); }
+      } leave_guard{this};
       auto n = make(NT::Un, op.pos);
       n->s = "NOT";
       n->l = parse_not();
@@ -1399,9 +1430,15 @@ class Parser {
   }
 
   // unary = "-" unary | postfix
+  // Counted, for the reason given on parse_not.
   NodePtr parse_unary() {
     if (at_op("-")) {
       const Token op = next();
+      enter(op.pos);
+      struct Leave {
+        Parser* p;
+        ~Leave() { p->leave(); }
+      } leave_guard{this};
       auto n = make(NT::Un, op.pos);
       n->s = "NEG";
       n->l = parse_unary();
@@ -1689,9 +1726,12 @@ Value eval_list(const Node& node, Context& ctx) {
   for (const auto& item : node.items) {
     Value v = eval_node(*item, ctx);
     if (v.kind() == Kind::None && v.size() > 0) {
-      for (const auto& child : v.entries()) out.set(std::to_string(++n), child.second);
+      // Cloned, not aliased: `,` copies what it collects (§5.9), so the list it
+      // builds does not share structure with the values that fed it. Two of the
+      // five places anything in this file clones — js/src/eval.mjs:163,165.
+      for (const auto& child : v.entries()) out.set(std::to_string(++n), child.second.clone());
     } else {
-      out.set(std::to_string(++n), std::move(v));
+      out.set(std::to_string(++n), v.clone());
     }
   }
   return out;
@@ -1806,11 +1846,20 @@ Value* walk_create(Context& ctx, const std::vector<std::string>& path, std::size
 // as it goes — the order the other hosts use, and observable, because a later
 // index expression can read the level an earlier one just created.
 //
-// The awkward part is C++-specific. `Value::children_` is a std::vector, so any
-// pointer into it dies when the tree grows, and evaluating an index expression
-// can run arbitrary code that grows it. So the walk keeps only the path built so
-// far and re-derives the pointer from the root after every evaluation. The depth
-// is a handful of levels, so the repeated walk costs nothing worth measuring.
+// The walk keeps only the path built so far and re-derives from the root after
+// every evaluation. That is **not** a C++ workaround — every host does it, and
+// js/src/eval.mjs and python/sel/eval.py say so in the same words. It is
+// spec/SPEC.md §5.7: the store lands at the path in the tree as it exists once
+// the right-hand side has run, so holding the container found during the walk
+// would silently discard the assignment whenever that container has since been
+// detached. The depth is a handful of levels; the repeated walk costs nothing
+// worth measuring.
+//
+// (Before 0.3.0 this comment claimed the re-derivation was needed because
+// `children_` is a std::vector and a pointer into it dies when the tree grows.
+// That was true of the pointer and false as an explanation: the other hosts do
+// the same thing for the semantic reason above. Value is a handle now, so the
+// pointer half of the story has gone entirely.)
 std::vector<std::string> resolve_target(const Node& target, Context& ctx) {
   std::vector<const Node*> chain;
   const Node* n = &target;
@@ -1849,7 +1898,13 @@ Value eval_assign(const Node& node, Context& ctx) {
 
   Value value;
   if (node.s == "=") {
-    value = eval_node(*node.r, ctx);
+    // Cloned here, where the value is produced, and not at the store below.
+    // `=` copies by value (§5.7), and the assignment *evaluates to* that copy —
+    // so cloning late would return something that still aliases the right-hand
+    // side, and `A[1] = A` would answer with the A the store had just mutated
+    // instead of the value that was assigned. js/src/eval.mjs:262 clones in
+    // exactly this position, for exactly this reason.
+    value = eval_node(*node.r, ctx).clone();
   } else {
     const Value* current = walk_create(ctx, path, path.size() - 1)->get(key);
     if (!current) fail("E_UNDEF_VAR", node.s + " needs an existing target", node.l->pos);
@@ -1877,7 +1932,9 @@ Value eval_assign(const Node& node, Context& ctx) {
   }
 
   // Re-derived after the right-hand side ran, which may have replaced or
-  // deleted any level along the path.
+  // deleted any level along the path. `value` is already an independent copy in
+  // both branches — cloned above for `=`, freshly constructed for the compound
+  // forms — so the store aliases nothing and cannot build a cycle.
   walk_create(ctx, path, path.size() - 1)->set(key, value);
   return value;
 }
@@ -2082,7 +2139,7 @@ void register_aggregates() {
                 std::vector<Value> out;
                 walk(a, ctx, [&out](const Value& r, const std::string&, const Value&,
                                     const Node&) -> std::optional<Value> {
-                  out.push_back(r);
+                  out.push_back(r.clone());
                   return std::nullopt;
                 });
                 return Value::list(std::move(out));
@@ -2094,7 +2151,7 @@ void register_aggregates() {
                 Value out = Value::none();
                 walk(a, ctx, [&out](const Value& r, const std::string& key, const Value& item,
                                     const Node& body) -> std::optional<Value> {
-                  if (r.as_bool(body.pos)) out.set(key, item);
+                  if (r.as_bool(body.pos)) out.set(key, item.clone());
                   return std::nullopt;
                 });
                 return out;

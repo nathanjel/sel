@@ -2,6 +2,7 @@
 #
 #   make          build everything into build/
 #   make test     unit tests, then the conformance suite
+#   make asan     the same, with the address and leak sanitizers
 #
 # The drop-in is sel.hpp + sel.cpp + third_party/srell/. Everything under bin/
 # and tests/ is this repository's harness, not part of what you copy.
@@ -41,6 +42,20 @@ $(BUILD):
 test: $(BUILD)/unit $(BUILD)/conformance
 	$(BUILD)/unit
 	cd .. && cpp/$(BUILD)/conformance
+
+# Value is a handle over a shared_ptr, and nothing behind that collects cycles:
+# a value that contained itself would leak. It cannot, because every path that
+# stores one value inside another clones first — but that is an invariant now
+# rather than something the type guarantees, so it gets checked. LeakSanitizer
+# reports a cycle as a leak, which is exactly the signal wanted here.
+.PHONY: asan
+asan: | $(BUILD)
+	$(CXX) -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+	  -o $(BUILD)/unit-asan tests/unit.cpp
+	$(CXX) -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+	  -o $(BUILD)/conformance-asan bin/conformance.cpp sel.cpp
+	$(BUILD)/unit-asan
+	cd .. && cpp/$(BUILD)/conformance-asan
 
 clean:
 	rm -rf $(BUILD)

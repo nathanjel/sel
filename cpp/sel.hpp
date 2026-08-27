@@ -71,11 +71,28 @@ enum class Kind { None, Text, Bin, Bool };
 // A value may have a scalar, children, both, or neither. TEXT holds validated
 // UTF-8 bytes and BIN holds arbitrary bytes: the same C++ type, told apart by
 // the kind, which makes as_bytes() on TEXT free.
+//
+// **`Value` is a handle.** Copying one is cheap and the copies refer to the
+// same underlying value, exactly as a `Value` object does in the JS, PHP,
+// Python and Lisp hosts. `clone()` is the deep copy. This is not a performance
+// decision: spec/SPEC.md §3.4 says evaluating an expression yields a value
+// rather than a snapshot of one, so that `A[A["k"] = "k"]` finds the key its
+// own index expression just created, and a type with deep-copy assignment
+// cannot express that. Assignment is the only operation in the language that
+// copies (§5.7), and the interpreter spells that with clone() at the five
+// places the other four hosts spell it.
+//
+//     Value a = ctx.get("A");     // a and A are the same value
+//     a.set("k", ...);            // visible through ctx
+//     Value b = a.clone();        // b is independent
+//
+// If you are embedding SEL and were relying on `Value b = a;` to isolate `b`,
+// that is the one thing this type changed in 0.3.0: write `a.clone()`.
 class Value {
  public:
   using Entry = std::pair<std::string, Value>;
 
-  Value() : kind_(Kind::None) {}
+  Value();
 
   static Value none();
   static Value text(std::string utf8);        // E_UTF8 if not valid UTF-8
@@ -89,25 +106,25 @@ class Value {
   // A list keyed "1".."n", as `,` builds.
   static Value list(std::vector<Value> values);
 
-  Kind kind() const { return kind_; }
+  Kind kind() const { return p_->kind; }
 
   // Kind predicates. The recommended way to branch on kind in every host,
   // because it is the one spelling that reads the same in all four: the kind
   // *values* are an enum here, a string in JS, a class constant in PHP and a
   // keyword in Lisp, so only a predicate can be documented uniformly. These
   // test the value's own kind and do not apply scalar context.
-  bool is_none() const { return kind_ == Kind::None; }
-  bool is_text() const { return kind_ == Kind::Text; }
-  bool is_bin() const { return kind_ == Kind::Bin; }
-  bool is_bool() const { return kind_ == Kind::Bool; }
+  bool is_none() const { return p_->kind == Kind::None; }
+  bool is_text() const { return p_->kind == Kind::Text; }
+  bool is_bin() const { return p_->kind == Kind::Bin; }
+  bool is_bool() const { return p_->kind == Kind::Bool; }
 
   // --- children. Insertion-ordered; re-assigning a key keeps its position.
-  std::size_t size() const { return children_.size(); }
+  std::size_t size() const { return p_->children.size(); }
   bool has(const std::string& key) const;
   const Value* get(const std::string& key) const;
   Value* get(const std::string& key);
   std::vector<std::string> keys() const;
-  const std::vector<Entry>& entries() const { return children_; }
+  const std::vector<Entry>& entries() const { return p_->children; }
   Value& set(std::string key, Value value);
 
   // --- scalar context (spec/SPEC.md §3.2). Each throws SelError on a mismatch,
@@ -120,8 +137,8 @@ class Value {
   bool looks_numeric() const;
 
   // The raw scalar without applying scalar context. Empty for NONE.
-  const std::string& scalar() const { return scalar_; }
-  bool boolean_scalar() const { return bool_; }
+  const std::string& scalar() const { return p_->scalar; }
+  bool boolean_scalar() const { return p_->boolean; }
 
   // --- structural equality, as EQL uses: same kind, equal scalars with numbers
   // *not* normalised, and children with the same keys in the same order.
@@ -132,12 +149,13 @@ class Value {
   // ordering is a real failure.
   std::string dump() const;
 
+  // A deep copy, sharing nothing with this value. What `=` does in the language
+  // (§5.7), and what `,` and the aggregates do with what they collect. Copying
+  // a Value does *not* do this — see the note on the class.
+  Value clone() const;
+
  private:
   friend struct Internals;
-
-  Kind kind_ = Kind::None;
-  std::string scalar_;   // TEXT: UTF-8 bytes. BIN: raw bytes. Otherwise empty.
-  bool bool_ = false;    // BOOL only.
 
   // Insertion order is normative, so the children are a vector. Lookup by key
   // would then be a linear scan, which makes building an n-element list O(n²) —
@@ -145,12 +163,26 @@ class Value {
   // PHP's ordered hash array, and this is how C++ gets the same.
   //
   // The index is built only once a value has enough children to be worth it:
-  // almost every Value in a program has none, and they are copied constantly,
-  // so an unordered_map in each would cost far more than the scan it saves.
-  // Positions are stable because nothing ever removes a child.
+  // almost every Value in a program has none, so an unordered_map in each would
+  // cost far more than the scan it saves. Positions are stable because nothing
+  // ever removes a child.
+  struct Impl {
+    Kind kind = Kind::None;
+    std::string scalar;   // TEXT: UTF-8 bytes. BIN: raw bytes. Otherwise empty.
+    bool boolean = false;  // BOOL only.
+    std::vector<Entry> children;
+    std::unordered_map<std::string, std::size_t> index;
+  };
+
   static constexpr std::size_t INDEX_THRESHOLD = 16;
-  std::vector<Entry> children_;
-  std::unordered_map<std::string, std::size_t> index_;
+
+  // Never null. Shared between handles; clone() is what breaks the sharing.
+  //
+  // There is no cycle collector behind this, so a value that contained itself
+  // would leak. It cannot: every path that stores one value inside another
+  // clones first, which is the same five places the other hosts clone. `make
+  // asan` runs the suite with the leak checker to keep that true.
+  std::shared_ptr<Impl> p_;
 
   void build_index();
   std::vector<Entry>::iterator find(const std::string& key);

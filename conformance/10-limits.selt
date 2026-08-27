@@ -64,3 +64,36 @@ first element rather than the list.
 --- expect
 text "7"
 ===
+### name: lim.prefix-depth-neg
+--- note
+Prefix operators recurse into themselves without passing through the two
+functions that track nesting, so a chain of them used to be counted by nothing
+at all. It reached the host's own stack limit instead of E_DEPTH: a RangeError
+in JS and a *segfault* in C++, from a rule that is only `-` repeated. The
+position is the operator that crossed the limit, not the start of the chain.
+--- source
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------1
+--- expect
+error E_DEPTH at 1:200
+===
+### name: lim.prefix-depth-not
+--- note
+The same hole, through the other prefix operator. NOT is four columns wide, so
+the limit falls at a different column than it does for `-` — which is the point
+of pinning both.
+--- source
+NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT NOT TRUE
+--- expect
+error E_DEPTH at 1:797
+===
+### name: lim.prefix-depth-does-not-shift-parens
+--- note
+The prefix counter is entered only when a prefix operator is actually consumed,
+so it must not move the trip point for anything else. This is lim.parse-depth's
+expectation restated as a regression guard: if adding prefix counting had cost
+every expression a level, this case would fail and lim.parse-depth would too.
+--- source
+((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+--- expect
+error E_DEPTH at 1:101
+===

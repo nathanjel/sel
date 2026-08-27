@@ -33,4 +33,4 @@ Third-party components, which keep their own licences:
                             A declared dependency of the Common Lisp system, not
                             vendored — installed by Quicklisp at build time.
 
-The PHP and JS implementations have no dependencies at all.
+The Python, PHP and JS implementations have no dependencies at all.
