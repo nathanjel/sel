@@ -91,6 +91,31 @@ in one defect.
 So the honest total is **seventeen**, and the row that matters is unchanged:
 the suite that asserts what the author believed found one of them.
 
+### And then a second dialect was added
+
+The checks above were built against one server. SQLite was written next, which is
+the first real test of whether they generalise rather than describing MariaDB.
+They found four more defects on the first day, and the shape of the four is the
+answer:
+
+| Defect | Found by | What it was |
+|---|---|---|
+| `arity` was enforced by nobody | oracle | documented since M1 as how a dialect narrows an entry; the generator validated the field and no code read it |
+| BOOL literals were parameterised | fuzz | `1 = '1'` is `0` in SQLite, so `TRUE XOR TRUE` was TRUE in `params` and FALSE inline |
+| `RIGHT(x, 0)` returned `x` | fuzz | `substr(X, -0)` is `substr(X, 0)`, which behaves like `substr(X, 1)` |
+| `CHAR`/`CODE` had no oracle expression | coverage gate | no dialect had supported them, so nothing in the corpus reached them |
+
+The first two are **not SQLite defects**. They were defects in the shared layer
+that MariaDB happened not to expose — MariaDB coerces `'1'` to `1` and enforces
+nothing about argument counts, so both sat there through three reviews, seventeen
+mutations and eleven thousand fuzz programs. A second dialect is a second opinion
+about the code every dialect shares, which is a different thing from a second set
+of templates.
+
+The fourth is the coverage gate doing exactly what §3 said it would: SQLite
+supports two entries MariaDB refuses, and the gate demanded expressions for them
+before the dialect could be called done.
+
 ---
 
 ## 3. Class A — the map claims a semantic equivalence that nothing checks

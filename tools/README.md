@@ -56,10 +56,15 @@ All of them run from the repository root and take paths relative to it.
 SEL_SQL_MARIADB_DSN='mysql:unix_socket=/var/lib/mysql/mysql.sock;dbname=sel_oracle;charset=utf8mb4'
 SEL_SQL_MARIADB_USER=you
 SEL_SQL_MARIADB_PASS=
+SEL_SQL_SQLITE_DSN='sqlite::memory:'
 ```
 
-With no DSN it prints a skip and succeeds, so a fresh clone stays green. The
-named schema must exist and must be disposable: the row oracle drops and
+One per target dialect, and the oracle runs every target it has a DSN for. With
+no DSN a dialect prints a skip and succeeds, so a fresh clone stays green — and
+SQLite needs nothing installed beyond `pdo_sqlite`, so in practice there is
+always at least one server to ask.
+
+A named schema must exist and must be disposable: the row oracle drops and
 recreates its tables on every run. See `sql/oracle/README.md`.
 
 | Role | js | php | cpp | lisp | python |

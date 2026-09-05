@@ -54,14 +54,14 @@
       "name": "bindings-unwalked",
       "was": "Code review. Returning the pool ignores reordering templates and repeated slots.",
       "file": "php/src/Sql/Fragment.php",
-      "from": "        $out = [];\n        foreach ($this->parts as $p) {\n            if (!is_string($p) && !$this->isNumeric($p)) {\n                $out[] = $this->params[$p - 1];\n            }\n        }\n        return $out;",
+      "from": "        $out = [];\n        foreach ($this->parts as $p) {\n            if (!is_string($p) && !$this->isInline($p)) {\n                $out[] = $this->params[$p - 1];\n            }\n        }\n        return $out;",
       "to": "        return $this->params;"
     },
     {
       "name": "number-becomes-a-placeholder",
       "was": "The params-mode defect the fuzz lane found: no coercion of a bound string reproduces a bare decimal literal.",
       "file": "php/src/Sql/Fragment.php",
-      "from": "if ($mode !== 'inline' && $kind === 'NUM') {",
+      "from": "if ($mode !== 'inline' && $this->isInline($p)) {",
       "to": "if (false) {"
     },
     {
@@ -147,6 +147,48 @@
       "file": "sql/dialects/ansi.json",
       "from": "\"binaryLiteral\": \"X'{hex}'\",",
       "to": "\"binaryLiteral\": \"X'00{hex}'\","
+    },
+    {
+      "name": "sqlite-numbers-unquoted",
+      "was": "The decision the whole sqlite dialect turns on. Bare 2.50 is a REAL that prints as 2.5, so `2.50 $== 2.5` becomes TRUE where SEL says FALSE.",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"numericLiteral\": \"'{0}'\",",
+      "to": "\"numericLiteral\": \"{0}\","
+    },
+    {
+      "name": "sqlite-comparison-stops-coercing",
+      "was": "The consequence of quoting numbers: without the cast, two quoted numbers compare as text and 2.50 == 2.5 is FALSE where SEL says TRUE.",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"num\": \"({numericCast:0} = {numericCast:1})\",",
+      "to": "\"num\": \"({0} = {1})\","
+    },
+    {
+      "name": "sqlite-integer-division",
+      "was": "SQLite's / between integers is INTEGER division: 10 / 4 is 2 where SEL says 2.5. A different operation, not an imprecise one.",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"tpl\": \"({0} * 1.0 / {1})\",",
+      "to": "\"tpl\": \"({0} / {1})\","
+    },
+    {
+      "name": "sqlite-right-of-zero",
+      "was": "Found by the fuzz lane on sqlite's first run. substr(X, -0) is substr(X, 0), which behaves like substr(X, 1), so RIGHT(\"a\", 0) answered \"a\".",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"tpl\": \"substr({0}, -{1}, {1})\",",
+      "to": "\"tpl\": \"substr({0}, -{1})\","
+    },
+    {
+      "name": "arity-not-enforced",
+      "was": "sql/MAP.md has documented `arity` as narrowing a dialect's accepted argument counts since M1. The generator validated the field and nothing enforced it, so a narrowed entry took the call anyway and dropped the arguments its template did not name.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (isset($entry['arity'])) {\n            [$min, $max] = $entry['arity'];",
+      "to": "        if (false) {\n            [$min, $max] = $entry['arity'];"
+    },
+    {
+      "name": "bool-becomes-a-placeholder",
+      "was": "Found by the fuzz lane on sqlite. 1 = '1' is 0 in SQLite -- INTEGER and TEXT are different storage classes -- so a BOOL bound as a string made TRUE XOR TRUE answer TRUE in params mode and FALSE inline.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "        return $kind === 'NUM' || $kind === 'BOOL';",
+      "to": "        return $kind === 'NUM';"
     }
   ]
 }

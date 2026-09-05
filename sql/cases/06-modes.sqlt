@@ -126,6 +126,10 @@ S $== "?"
 (CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('?' AS CHAR) COLLATE utf8mb4_bin)
 ===
 ### name: mode.params.order-follows-the-text-not-the-tree
+--- note
+The condition is a BOOL literal and inlines; only the two branches bind. Their
+order in `params` follows the TEXT, which is what Fragment::bindings() walking
+the output is for.
 --- dialect
 mariadb
 --- mode
@@ -133,9 +137,28 @@ params
 --- source
 COND(TRUE, "a", "b")
 --- expect
-CASE WHEN ? THEN ? ELSE ? END
+CASE WHEN TRUE THEN ? ELSE ? END
 --- params
-TRUE, t"a", t"b"
+t"a", t"b"
+===
+### name: mode.params.a-bool-is-never-a-placeholder
+--- note
+A BOOL renders as Map::lexical('true'|'false') -- a token out of the dialect
+document, not out of a rule -- so there is nothing for a placeholder to protect.
+Binding it as a string breaks SQLite outright: 1 = '1' is 0 there, because
+INTEGER and TEXT are different storage classes and no affinity applies to a bare
+parameter. TRUE XOR TRUE answered TRUE in params mode and FALSE inline until
+this. Found by the fuzz lane on sqlite's first run.
+--- dialect
+sqlite
+--- mode
+params
+--- source
+TRUE XOR TRUE
+--- expect
+((1) <> (1))
+--- params
+
 ===
 ### name: mode.params.literal-needle-in-a-list
 --- note

@@ -1,6 +1,6 @@
 # SEL → SQL translation
 
-**Status: M1, M2 and M3 built (see §14); M4 onward is plan.** This document is the
+**Status: M1–M4 and the SQLite half of M5 are built (see §14); MySQL, PostgreSQL and the Python port are plan.** This document is the
 design for the SQL layer. It is written in the same register as `spec/SPEC.md` — where it and a
 future implementation disagree, resolve it here first — but it is *not* part of
 the language spec. Nothing here changes how a SEL program evaluates. It
@@ -1668,19 +1668,50 @@ differ only in how the failure arrives.
 Every one of these is a real, known divergence. They are listed once, here, so
 that nobody has to rediscover them, and each maps to a `caveat` name.
 
+The rows below marked **(verified)** were checked against a running server by
+`sql/oracle/`. The rest are read from documentation and are claims until a
+dialect that needs them exists — which is not a formality: the `CHAR`/`CODE` row
+of an earlier draft said SQLite's spelling "differs by build", and SQLite turned
+out to support both exactly as SEL means them.
+
 | Caveat | What differs |
 |---|---|
 | — (structural) | **No short-circuit.** `FALSE AND (1/0)` is `FALSE` in SEL; SQL may evaluate both sides and raise. Rules that lean on short-circuiting as a guard change meaning. |
 | — (structural) | **NULL.** SEL has no null. Any nullable column makes three-valued logic reachable. Aggregate skeletons use `IS [NOT] TRUE` to fold NULL to false; nothing else does. A translated rule is only as sound as the schema's nullability. |
-| `unicode-case` | `UPPER`/`LOWER` are ASCII-only in SEL. MySQL and PostgreSQL apply full Unicode case mapping; SQLite happens to agree with SEL. |
-| `division-scale` | SEL's `/` yields ten fractional digits, half away from zero. MySQL's DECIMAL division adds four; PostgreSQL's `/` on integers **truncates** (so `postgresql.json` casts both operands to `numeric`); SQLite divides in floating point. |
-| `rounding-mode` | SEL rounds half away from zero everywhere. MySQL and PostgreSQL agree on `DECIMAL`/`numeric`; SQLite's `round()` is floating point and does not. |
-| `modulo-integer` | SQLite's `%` is integer-only, so `5.5 % 2` is not `1.5`. |
+| `unicode-case` | `UPPER`/`LOWER` are ASCII-only in SEL. MySQL and PostgreSQL apply full Unicode case mapping. **(verified)** SQLite agrees with SEL exactly, so `sqlite.json` overrides the caveat away rather than inheriting it. |
+| `division-scale` | SEL's `/` yields ten fractional digits, half away from zero. MySQL's DECIMAL division adds four; PostgreSQL's `/` on integers **truncates** (so `postgresql.json` will cast both operands to `numeric`). |
+| `decimal-float` | **(verified)** SQLite has no exact decimal type: arithmetic is int64 or IEEE double. Not a scale difference — a different number system. `0.1 + 0.2` is `0.30000000000000004` there and `0.3` in SEL, and no template fixes it, so every arithmetic entry carries this and `strict` refuses the lot. |
+| `rounding-mode` | SEL rounds half away from zero everywhere. MySQL and PostgreSQL agree on `DECIMAL`/`numeric`. |
+| `modulo-integer` | **(verified)** SQLite truncates both operands to integers before `%`, so `5.5 % 2` is `1.0` rather than `1.5`. |
+| `numeric-scale` | **(verified)** The value is equal and the scale is not. MariaDB's `LEAST(17, 123.456)` is `17.000` where SEL's `MIN` returns `17` — invisible until the result is read as text. |
 | `power-float` | `POWER` returns a float in every dialect; SEL's is exact. |
 | `text-collation` | The `$` family is bytewise in SEL. The `textCollate` lexical entry forces a binary collation; a column with an incompatible declared collation can still defeat it. |
 | `regex-engine` | SEL's regex subset is what PCRE and ECMAScript agree on. MySQL 8.0.4+ and MariaDB use ICU/PCRE, PostgreSQL uses POSIX ARE — the subset mostly survives, lazy quantifiers and some classes do not. SQLite has no `REGEXP` without a user function and refuses outright. |
 | `concat-null` | `CONCAT` / `\|\|` yields NULL if any operand is NULL; SEL's `&` cannot. |
-| — (refused) | `BAND`/`BOR`/`BXOR` — no portable byte-string bitwise operator exists. `ABORT` — a control-flow effect, not a value. `SPLIT`, `INDEXES`, `BTL`, `RGROUPS` — list-valued. `CHAR`/`CODE` on SQLite where the spelling differs by build. |
+| — (refused) | `BAND`/`BOR`/`BXOR` — no portable byte-string bitwise operator exists. `ABORT` — a control-flow effect, not a value. `SPLIT`, `INDEXES`, `BTL`, `RGROUPS` — list-valued. **(verified)** `CHAR`/`CODE` on MariaDB, whose `ORD` and `CHAR` read bytes rather than code points — SQLite's `unicode()` and `char()` are code points and are mapped there. |
+
+### 11.1 Divergences a caveat cannot express
+
+A caveat says "the value may differ". These two say something else: **a rule that
+would *fail* in SEL may quietly *succeed* in SQL.** Both are SQLite; both are
+verified; neither is fixable at translation time, because the guard SEL applies
+is a run-time check on a value nobody has yet.
+
+| SEL | SQLite |
+|---|---|
+| `1 / 0` raises `E_DIV_ZERO` | answers `NULL` |
+| `"abc" == 1` raises `E_NOT_NUM` | `CAST('abc' AS NUMERIC)` is `0`, so the comparison is simply false |
+
+The `NULL` case is partly contained: an aggregate body folds through
+`IS [NOT] TRUE`, and `asCondition` wraps an `UNKNOWN` fragment in `isTrue`, so a
+NULL reaching a `WHERE` rejects its row rather than being read as true. A `BOOL`
+fragment renders bare, which is correct for every value SEL can produce and
+becomes row-rejection for a NULL that SEL could not have produced at all.
+
+There is no containment for the second. It is stated here because the honest
+version of "SEL and SQL agree" is "they agree on every value SEL would have
+accepted", and a rule whose job is to *reject* bad input is exactly the rule that
+notices the difference.
 
 `IN` deserves its own note. SEL's `IN` is `EQL`-based and therefore structural —
 it compares kind, scalar bytes and children. SQL's `IN` is a value comparison
@@ -1881,15 +1912,46 @@ covering `lex.*`, `op.*`, `func.*`, `norm.*`, `refuse.*`; `php/bin/sqlt`;
 **M3 — PHP does aggregates. DONE.** Stage 2, all three shapes, the FILTER rewrites,
 the `agg.*` cases.
 
-**M4 — PHP + MariaDB end to end. NEXT.** `examples/sql-php.php` against a real
-MariaDB: a schema, an order-validation rule, the rule pushed into a `WHERE`,
-the same rule evaluated in PHP over the unfiltered rows, and an assertion that
-the two select the same ids. **This is the gate.** Nothing below starts until
-it passes.
+**M4 — PHP + MariaDB end to end. DONE**, and delivered somewhere other than
+planned. The gate was "a schema, a rule pushed into a `WHERE`, the same rule
+evaluated in PHP over the same rows, and an assertion that the two select the
+same ids". That is `sql/oracle/rows.json` and `sql/oracle/fixture-*.sql`, run by
+`php/bin/sqlo rows` — a committed, re-runnable check in `tools/check.sh` rather
+than an `examples/sql-php.php` nobody would run twice. The first version of it
+was an example, and it is the reason `docs/SQL-TESTING.md` §9 exists: it lived in
+a scratch directory and its results were cited in three commit messages nobody
+could reproduce.
 
-**M5 — MySQL, PostgreSQL and SQLite maps.** Data and cases only; the translator does
-not change. If it does, that is a bug in the M1 design and should be fixed as
-one.
+**M4½ — the checks the layer was missing. DONE.** Six items from
+`docs/SQL-TESTING.md`: the semantic oracle, its coverage gate, the SQL fuzz lane,
+executable documentation, mutation testing, and the emitter's narrowed literal
+path. Not in the original plan, and it found seventeen defects in code that had
+already passed three reviews.
+
+**M5 — MySQL, PostgreSQL and SQLite maps. SQLite DONE**; MySQL and PostgreSQL to
+come.
+
+The plan said "data and cases only; the translator does not change. If it does,
+that is a bug in the M1 design and should be fixed as one." The translator
+changed three times for SQLite, and the plan's own test is the right way to score
+them:
+
+- **`arity` was never enforced.** `sql/MAP.md` §4.1 has documented it since M1 as
+  "how PostgreSQL refuses the three-argument form its `POSITION` cannot express
+  — graceful degradation as data, with no host code involved". There was no host
+  code involved and no degradation either: the generator validated the field and
+  nothing read it. A bug, exactly as the plan predicted, found the hour SQLite
+  was written. It was about to do the same nothing for PostgreSQL.
+- **BOOL literals were parameterised.** `1 = '1'` is `0` in SQLite, so
+  `TRUE XOR TRUE` answered TRUE in `params` mode and FALSE inline. A bug in M2's
+  render model, not new design.
+- **`numericLiteral`** is the one genuine addition to the map's surface: one
+  lexical key so a dialect can say how it spells a number. SQLite needs it
+  because it has no decimal type at all, which is not something ANSI, MySQL or
+  PostgreSQL will ask for.
+
+So: two M1/M2 defects the second dialect exposed, and one new key. The prediction
+held.
 
 **M6 — Python port.** Transcribed from the PHP, generated map consumed as-is,
 the same `sql/cases/` suite passing byte-identically. That equality is the

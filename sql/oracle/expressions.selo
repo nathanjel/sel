@@ -239,6 +239,23 @@ BACKWARDS("abc")
 BACKWARDS("zażółć")
 BACKWARDS("")
 
+% --- code points -------------------------------------------------------------
+%
+% Refused by mariadb, whose ORD and CHAR read bytes rather than code points, and
+% supported by sqlite, whose unicode() and char() are what SEL means. Added
+% because the coverage gate demanded them the day sqlite was written: nothing in
+% the corpus reached an entry no other dialect had.
+
+### entry: funcs.CODE
+CODE("a")
+CODE("é")
+CODE("ż")
+
+### entry: funcs.CHAR
+CHAR(97)
+CHAR(233)
+CHAR(380)
+
 % --- numbers ----------------------------------------------------------------
 
 ### entry: funcs.ABS

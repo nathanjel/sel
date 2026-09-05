@@ -134,7 +134,7 @@ function compare(Value $sel, $db, string $kind): ?string
             $want = $sel->asText();
             $got = (string) $db;
             $a = Dec::parse($want);
-            $b = Dec::parse($got);
+            $b = Dec::parse(plain_number($got));
             if ($a === null || $b === null) {
                 return "SEL={$want} DB={$got} (not both numbers)";
             }
@@ -156,6 +156,37 @@ function compare(Value $sel, $db, string $kind): ?string
     }
 }
 
+/**
+ * A server's number in a form Dec::parse accepts.
+ *
+ * SQLite prints a large REAL as `1.2345678901234567e+19`, and Dec::parse rejects
+ * scientific notation because SEL has none. Without this the comparator would
+ * answer "not both numbers" and report a DIFFER on every large-number
+ * expression, which is a defect in the CHECK rather than in the translation --
+ * the value may well be right, and if it is wrong the caveat is what should say
+ * so, not a parse failure.
+ *
+ * The expansion is exact: it moves the point, it does not round. A value that
+ * lost precision inside the server has already lost it, and that difference is
+ * what decimal-float declares.
+ */
+function plain_number(string $text): string
+{
+    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]+))?[eE]([-+]?[0-9]+)$/', $text, $m) !== 1) {
+        return $text;
+    }
+    [, $sign, $int, $frac, $exp] = $m + [3 => ''];
+    $digits = $int . $frac;
+    $point = strlen($int) + (int) $exp;
+    if ($point <= 0) {
+        return $sign . '0.' . str_repeat('0', -$point) . $digits;
+    }
+    if ($point >= strlen($digits)) {
+        return $sign . $digits . str_repeat('0', $point - strlen($digits));
+    }
+    return $sign . substr($digits, 0, $point) . '.' . substr($digits, $point);
+}
+
 // --- expressions ------------------------------------------------------------
 
 /**
@@ -170,7 +201,7 @@ function compare(Value $sel, $db, string $kind): ?string
  * That is not hypothetical, it is how 23 green comparisons hid the defect that
  * Fragment::bindings() now exists to prevent.
  */
-function run_expressions(PDO $pdo, string $dialect, bool $verbose): array
+function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
 {
     $cases = parse_selo((string) file_get_contents(ORACLE . '/expressions.selo'),
         'expressions.selo');
@@ -248,7 +279,7 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose): array
     foreach ($bad as [$c, $sql, $why]) {
         printf("DIFFER  %s   (%s)\n        %s\n        %s\n", $c['src'], $c['at'], $sql, $why);
     }
-    printf("expressions: %d agree, %d differ, %d refused, %d inexact-by-declaration"
+    printf("{$label}expressions: %d agree, %d differ, %d refused, %d inexact-by-declaration"
         . " (%d expressions, %d groups)\n",
         $stats['ok'], count($bad), $stats['refused'], $stats['caveat'],
         count($cases), count($entries));
@@ -327,7 +358,7 @@ function bind_value(Value $v): string
  * agree about nothing, so a rule that does not discriminate is a failure of the
  * fixture and is reported as one.
  */
-function run_rows(PDO $pdo, string $dialect, bool $verbose): array
+function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
 {
     $spec = json_decode((string) file_get_contents(ORACLE . '/rows.json'), true);
     if (!is_array($spec)) {
@@ -342,7 +373,16 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose): array
     // anything starting with --" rule then drops the statement with it. That is
     // how this loaded nothing at all the first time, and it did not error — it
     // reported nine rules disagreeing over zero rows.
-    $sql = (string) file_get_contents(ORACLE . '/' . $spec['fixture']);
+    // Per dialect: the DDL is the one thing in this file that cannot be
+    // portable, because the type systems are what differ.
+    $fixture = is_array($spec['fixture'])
+        ? ($spec['fixture'][$dialect] ?? null)
+        : $spec['fixture'];
+    if ($fixture === null) {
+        echo "{$label}rows: no fixture for {$dialect}, skipped\n";
+        return ['failed' => 0];
+    }
+    $sql = (string) file_get_contents(ORACLE . '/' . $fixture);
     $sql = preg_replace('/^\s*--.*$/m', '', $sql) ?? '';
     $statements = 0;
     foreach (explode(';', $sql) as $stmt) {
@@ -352,7 +392,7 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose): array
         }
     }
     if ($statements === 0) {
-        throw new RuntimeException("{$spec['fixture']} contained no statements");
+        throw new RuntimeException("{$fixture} contained no statements");
     }
 
     $ctx = load_context($pdo, $spec['context']);
@@ -360,10 +400,22 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose): array
 
     $bad = [];
     $ok = 0;
+    $refused = 0;
     foreach ($spec['rules'] as $rule) {
         try {
             $program = Sel::compile($rule['sel']);
             $frag = Sql::translate($program, $dialect, $spec['bindings']);
+        } catch (SqlError $e) {
+            // A rule this dialect cannot express is an outcome, not a failure.
+            // sqlite has no REGEXP, so the SKU-format rule simply is not a rule
+            // it can be asked -- and saying so is the whole point of refusal.
+            $refused++;
+            if ($verbose) {
+                printf("  refused  %-28s %s\n", $rule['name'], $e->code);
+            }
+            continue;
+        }
+        try {
             $sql = str_replace('{}', $frag->asCondition(), $spec['select']);
             $db = array_map('intval', $pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN));
         } catch (Throwable $e) {
@@ -408,7 +460,8 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose): array
     foreach ($bad as [$name, $sql, $why]) {
         printf("DIFFER  %s\n        %s\n        %s\n", $name, $sql, $why);
     }
-    printf("rows: %d rules agree, %d differ, over %d orders\n", $ok, count($bad), $total);
+    printf("{$label}rows: %d rules agree, %d differ, %d refused, over %d orders\n",
+        $ok, count($bad), $refused, $total);
 
     return ['failed' => count($bad)];
 }
@@ -481,7 +534,7 @@ function load_context(PDO $pdo, array $spec): array
  * and it is an abstention. A syntax error is never that. It means the layer
  * emitted something that is not SQL, which no input should be able to cause.
  */
-function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose): array
+function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose, string $label = ''): array
 {
     $programs = [];
     $cur = null;
@@ -580,7 +633,7 @@ function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose): arr
     }
 
     $compared = $n['agree'] + count($bad) + $n['caveat'];
-    printf("fuzz: %d programs — %d agree, %d differ, %d inexact-by-declaration; "
+    printf("{$label}fuzz: %d programs — %d agree, %d differ, %d inexact-by-declaration; "
         . "%d refused, %d do not evaluate, %d out of range\n",
         count($programs), $n['agree'], count($bad), $n['caveat'],
         $n['refused'], $n['sel-error'], $n['out-of-range']);
@@ -622,7 +675,7 @@ function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose): arr
  *
  * This needs no database, so it runs whether or not a DSN is set.
  */
-function run_coverage(string $dialect, bool $verbose): array
+function run_coverage(string $dialect, bool $verbose, string $label = ''): array
 {
     $exclusions = [];
     $file = ORACLE . '/coverage.json';
@@ -710,7 +763,7 @@ function run_coverage(string $dialect, bool $verbose): array
             printf("  excluded %-24s %s\n", $name, $why);
         }
     }
-    printf("coverage: %d of %d supported %s entries reached, %d excluded by reason\n",
+    printf("{$label}coverage: %d of %d supported %s entries reached, %d excluded by reason\n",
         $supported - count($missing), $supported, $dialect, count($exclusions));
 
     return ['failed' => count($missing) + count($problems)];
@@ -719,12 +772,12 @@ function run_coverage(string $dialect, bool $verbose): array
 // --- main -------------------------------------------------------------------
 
 $mode = 'all';
-$dialect = 'mariadb';
+$only = null;
 $corpus = null;
 $verbose = false;
 foreach (array_slice($argv, 1) as $arg) {
     if (str_starts_with($arg, '--dialect=')) {
-        $dialect = substr($arg, 10);
+        $only = substr($arg, 10);
     } elseif ($arg === '--verbose' || $arg === '-v') {
         $verbose = true;
     } elseif (str_starts_with($arg, '--corpus=')) {
@@ -739,61 +792,79 @@ foreach (array_slice($argv, 1) as $arg) {
     }
 }
 
-// Coverage is a question about the map and the corpus, not about a server, so
-// it runs whether or not there is a database — which matters: it is the check
-// that says an entry was never asked about, and that is exactly the state a
-// machine with no database would otherwise leave unexamined.
+// Every target, not one with a flag. A dialect nobody runs the oracle against is
+// a dialect whose map is a set of claims, and the point of adding a second one
+// was to find out whether the checks generalise -- so they have to run over
+// whatever targets exist rather than over the one that was written first.
+$targets = Sql::dialects();
+if ($only !== null) {
+    if (!in_array($only, $targets, true)) {
+        fwrite(STDERR, "sqlo: {$only} is not a target dialect; have "
+            . implode(', ', $targets) . "\n");
+        exit(2);
+    }
+    $targets = [$only];
+}
+
 $failed = 0;
-try {
-    if ($mode === 'coverage' || $mode === 'all') {
-        $failed += run_coverage($dialect, $verbose)['failed'];
-    }
-} catch (RuntimeException $e) {
-    fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");
-    exit(2);
-}
-if ($mode === 'coverage') {
-    exit($failed === 0 ? 0 : 1);
-}
+foreach ($targets as $dialect) {
+    $label = count($targets) > 1 ? "{$dialect}: " : '';
 
-$env = 'SEL_SQL_' . strtoupper(str_replace('-', '_', $dialect));
-$dsn = getenv($env . '_DSN');
-if ($dsn === false || $dsn === '') {
-    echo "sqlo: {$env}_DSN is not set, the database oracles are skipped\n";
-    exit($failed === 0 ? 0 : 1);
-}
-
-try {
-    $pdo = new PDO($dsn, (string) (getenv($env . '_USER') ?: ''),
-        (string) (getenv($env . '_PASS') ?: ''), [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            // Not negotiable. With emulation on, the driver inlines the values
-            // client-side and `params` mode stops being a second rendering at
-            // all — it becomes `inline` with extra steps, and the binding-order
-            // defect it exists to catch passes.
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
-} catch (Throwable $e) {
-    fwrite(STDERR, "sqlo: cannot connect ({$env}_DSN): {$e->getMessage()}\n");
-    exit(1);
-}
-
-try {
-    if ($mode === 'expressions' || $mode === 'all') {
-        $failed += run_expressions($pdo, $dialect, $verbose)['failed'];
-    }
-    if ($mode === 'rows' || $mode === 'all') {
-        $failed += run_rows($pdo, $dialect, $verbose)['failed'];
-    }
-    if ($mode === 'fuzz') {
-        if ($corpus === null || !is_file($corpus)) {
-            fwrite(STDERR, "sqlo fuzz needs --corpus=FILE\n");
-            exit(2);
+    // Coverage is a question about the map and the corpus, not about a server,
+    // so it runs whether or not there is a database — which matters: it is the
+    // check that says an entry was never asked about, and that is exactly the
+    // state a machine with no database would otherwise leave unexamined.
+    try {
+        if ($mode === 'coverage' || $mode === 'all') {
+            $failed += run_coverage($dialect, $verbose, $label)['failed'];
         }
-        $failed += run_fuzz($pdo, $dialect, $corpus, $verbose)['failed'];
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");
+        exit(2);
     }
-} catch (RuntimeException $e) {
-    fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");
-    exit(2);
+    if ($mode === 'coverage') {
+        continue;
+    }
+
+    $env = 'SEL_SQL_' . strtoupper(str_replace('-', '_', $dialect));
+    $dsn = getenv($env . '_DSN');
+    if ($dsn === false || $dsn === '') {
+        echo "{$label}{$env}_DSN is not set, the database oracles are skipped\n";
+        continue;
+    }
+
+    try {
+        $pdo = new PDO($dsn, (string) (getenv($env . '_USER') ?: ''),
+            (string) (getenv($env . '_PASS') ?: ''), [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                // Not negotiable. With emulation on, the driver inlines the
+                // values client-side and `params` mode stops being a second
+                // rendering at all — it becomes `inline` with extra steps, and
+                // the binding-order defect it exists to catch passes.
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+    } catch (Throwable $e) {
+        fwrite(STDERR, "sqlo: cannot connect ({$env}_DSN): {$e->getMessage()}\n");
+        exit(1);
+    }
+
+    try {
+        if ($mode === 'expressions' || $mode === 'all') {
+            $failed += run_expressions($pdo, $dialect, $verbose, $label)['failed'];
+        }
+        if ($mode === 'rows' || $mode === 'all') {
+            $failed += run_rows($pdo, $dialect, $verbose, $label)['failed'];
+        }
+        if ($mode === 'fuzz') {
+            if ($corpus === null || !is_file($corpus)) {
+                fwrite(STDERR, "sqlo fuzz needs --corpus=FILE\n");
+                exit(2);
+            }
+            $failed += run_fuzz($pdo, $dialect, $corpus, $verbose, $label)['failed'];
+        }
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");
+        exit(2);
+    }
 }
 exit($failed === 0 ? 0 : 1);

@@ -26,10 +26,18 @@ tools/check-sql-oracle.sh
 ```
 
 The environment variable is named for the dialect: `SEL_SQL_<DIALECT>_DSN`, with
-`_USER` and `_PASS` beside it. With no DSN the check prints a skip and succeeds —
-a checkout with no database stays green, the same way one with no C++ toolchain
-does. The named schema must exist and must be disposable: the row oracle drops
-and recreates its tables every run.
+`_USER` and `_PASS` beside it. Every **target** dialect is run, not one named by
+a flag — a dialect nobody asks a server about is a dialect whose map is a set of
+claims. With no DSN a dialect prints a skip and succeeds, so a checkout with no
+database stays green; SQLite needs nothing beyond `pdo_sqlite`, so in practice
+there is always one server to ask:
+
+```
+SEL_SQL_SQLITE_DSN='sqlite::memory:' tools/check-sql-oracle.sh
+```
+
+A named schema must exist and must be disposable: the row oracle drops and
+recreates its tables every run.
 
 ## `expressions.selo`
 

@@ -115,7 +115,7 @@ final class Fragment
     {
         $out = [];
         foreach ($this->parts as $p) {
-            if (!is_string($p) && !$this->isNumeric($p)) {
+            if (!is_string($p) && !$this->isInline($p)) {
                 $out[] = $this->params[$p - 1];
             }
         }
@@ -123,26 +123,36 @@ final class Fragment
     }
 
     /**
-     * True for a slot holding a NUM-form literal, which is never parameterised.
+     * True for a slot rendered as a literal in every mode, never as a parameter.
      *
-     * No coercion of a bound string reproduces a bare decimal literal, and that
-     * is not a gap to be patched — it is what the two things are. MariaDB reads
-     * `2.50` as DECIMAL with scale 2 and `12345678901234567890.12345` as DECIMAL
-     * with 25 digits; a string parameter is untyped, and every way of giving it a
-     * type picks the wrong one. `CAST(? AS DECIMAL(65,10))` pads the scale, so
-     * TRIM(2.50) answered "2.5000000000". `(? + 0)` drops the scale and floats
-     * above seventeen digits. Without either, `(? = ?)` compares two strings and
-     * 2.50 = 2.5 is FALSE.
+     * Two forms qualify, for the same underlying reason: **neither carries any
+     * character the caller chose**, so there is nothing for a placeholder to
+     * protect, and both are damaged by being sent as a string.
      *
-     * So a NUM literal is rendered as itself in every mode. That costs nothing
-     * params mode was protecting: after Emit::numericLiteral the characters it
-     * can contain are digits, one `.` and a leading `-`, by construction, which
-     * is the one value form that provably cannot carry a quote or a comment.
+     * NUM, because no coercion of a bound string reproduces a bare numeric
+     * literal. MariaDB reads `2.50` as DECIMAL with scale 2 and
+     * `12345678901234567890.12345` as DECIMAL with 25 digits; a parameter is
+     * untyped, and every way of giving it a type picks the wrong one.
+     * `CAST(? AS DECIMAL(65,10))` pads the scale, so `TRIM(2.50)` answered
+     * "2.5000000000". `(? + 0)` drops the scale and floats above seventeen
+     * digits. With neither, `(? = ?)` compares two strings and 2.50 = 2.5 is
+     * FALSE. After Emit::numericLiteral the characters a NUM literal can contain
+     * are digits, one `.` and a leading `-`, by construction — and then whatever
+     * quoting the dialect's `numericLiteral` adds, which is also the map's.
+     *
+     * BOOL, because the token is `Map::lexical($dialect, 'true'|'false')` — it
+     * comes out of the dialect document, not out of a rule. Binding it as a
+     * string breaks SQLite outright: `1 = '1'` is **0** there, since INTEGER and
+     * TEXT are different storage classes and no affinity applies to a bare
+     * parameter, so `TRUE XOR TRUE` answered TRUE in params mode and FALSE
+     * inline. Found by the fuzz lane on sqlite's first run.
+     *
      * Everything else is still bound.
      */
-    private function isNumeric(int $slot): bool
+    private function isInline(int $slot): bool
     {
-        return ($this->paramKinds[$slot - 1] ?? 'TEXT') === 'NUM';
+        $kind = $this->paramKinds[$slot - 1] ?? 'TEXT';
+        return $kind === 'NUM' || $kind === 'BOOL';
     }
 
     /** True when nothing about this translation is inexact. */
@@ -161,8 +171,8 @@ final class Fragment
                 continue;
             }
             $kind = $this->paramKinds[$p - 1] ?? 'TEXT';
-            if ($mode !== 'inline' && $kind === 'NUM') {
-                // Never a placeholder; see isNumeric(). It does not advance $nth
+            if ($mode !== 'inline' && $this->isInline($p)) {
+                // Never a placeholder; see isInline(). It does not advance $nth
                 // either, because it emits no placeholder for a binding to land
                 // in.
                 $out .= Emit::literal($this->dialect, $this->params[$p - 1], $kind);

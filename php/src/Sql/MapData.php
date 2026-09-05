@@ -32,6 +32,7 @@ final class MapData
                 'true' => 'TRUE',
                 'false' => 'FALSE',
                 'binaryLiteral' => 'X\'{hex}\'',
+                'numericLiteral' => '{0}',
                 'textCollate' => '',
                 'numericCast' => 'CAST({0} AS DECIMAL(38,10))',
                 'binaryCast' => 'CAST({0} AS BINARY)',
@@ -310,6 +311,7 @@ final class MapData
                 'true' => 'TRUE',
                 'false' => 'FALSE',
                 'binaryLiteral' => 'X\'{hex}\'',
+                'numericLiteral' => '{0}',
                 'textCollate' => ' COLLATE utf8mb4_bin',
                 'numericCast' => 'CAST({0} AS DECIMAL(65,10))',
                 'binaryCast' => 'CAST({0} AS BINARY)',
@@ -675,6 +677,7 @@ final class MapData
                 'true' => 'TRUE',
                 'false' => 'FALSE',
                 'binaryLiteral' => 'X\'{hex}\'',
+                'numericLiteral' => '{0}',
                 'textCollate' => ' COLLATE utf8mb4_bin',
                 'numericCast' => 'CAST({0} AS DECIMAL(65,10))',
                 'binaryCast' => 'CAST({0} AS BINARY)',
@@ -1017,6 +1020,340 @@ final class MapData
                     'tpl' => '({needle} IN (SELECT {body} FROM {from} WHERE {corr}))',
                 ],
                 'join' => 'GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL\'s JOIN concatenates in insertion order',
+            ],
+        ],
+        'sqlite' => [
+            'dialect' => 'sqlite',
+            'extends' => 'ansi',
+            'version' => '3.35',
+            'target' => true,
+            'lexical' => [
+                'identQuote' => '"',
+                'identEscape' => '""',
+                'textQuote' => '\'',
+                'textEscape' => [
+                    '\'' => '\'\'',
+                ],
+                'true' => '1',
+                'false' => '0',
+                'binaryLiteral' => 'x\'{hex}\'',
+                'numericLiteral' => '\'{0}\'',
+                'textCollate' => '',
+                'numericCast' => 'CAST({0} AS NUMERIC)',
+                'binaryCast' => 'CAST({0} AS BLOB)',
+                'isTrue' => '(({0}) IS TRUE)',
+                'isNotTrue' => '(({0}) IS NOT TRUE)',
+                'placeholder' => '?',
+                'textCast' => 'CAST({0} AS TEXT)',
+            ],
+            'ops' => [
+                '+' => [
+                    'tpl' => '({0} + {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                '-' => [
+                    'tpl' => '({0} - {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                '*' => [
+                    'tpl' => '({0} * {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                '/' => [
+                    'tpl' => '({0} * 1.0 / {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                '%' => [
+                    'tpl' => '({0} % {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'modulo-integer',
+                ],
+                'NEG' => [
+                    'tpl' => '(-{0})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                '&' => [
+                    'variants' => [
+                        'text' => '({0} || {1})',
+                        'bin' => '({0} || {1})',
+                    ],
+                    'ret' => '@concat',
+                ],
+                'AND' => [
+                    'tpl' => '({0} AND {1})',
+                    'ret' => 'BOOL',
+                ],
+                'OR' => [
+                    'tpl' => '({0} OR {1})',
+                    'ret' => 'BOOL',
+                ],
+                'NOT' => [
+                    'tpl' => '(NOT {0})',
+                    'ret' => 'BOOL',
+                ],
+                'XOR' => [
+                    'tpl' => '(({0}) <> ({1}))',
+                    'ret' => 'BOOL',
+                ],
+                '==' => [
+                    'variants' => [
+                        'num' => '({numericCast:0} = {numericCast:1})',
+                        'coerce' => '({numericCast:0} = {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '!=' => [
+                    'variants' => [
+                        'num' => '({numericCast:0} <> {numericCast:1})',
+                        'coerce' => '({numericCast:0} <> {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '<' => [
+                    'variants' => [
+                        'num' => '({numericCast:0} < {numericCast:1})',
+                        'coerce' => '({numericCast:0} < {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '<=' => [
+                    'variants' => [
+                        'num' => '({numericCast:0} <= {numericCast:1})',
+                        'coerce' => '({numericCast:0} <= {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '>' => [
+                    'variants' => [
+                        'num' => '({numericCast:0} > {numericCast:1})',
+                        'coerce' => '({numericCast:0} > {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '>=' => [
+                    'variants' => [
+                        'num' => '({numericCast:0} >= {numericCast:1})',
+                        'coerce' => '({numericCast:0} >= {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$==' => [
+                    'variants' => [
+                        'text' => '({0} = {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$!=' => [
+                    'variants' => [
+                        'text' => '({0} <> {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$<' => [
+                    'variants' => [
+                        'text' => '({0} < {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$<=' => [
+                    'variants' => [
+                        'text' => '({0} <= {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$>' => [
+                    'variants' => [
+                        'text' => '({0} > {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$>=' => [
+                    'variants' => [
+                        'text' => '({0} >= {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                'EQL' => [
+                    'variants' => [
+                        'text' => '({0} = {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                'IN' => [
+                    'variants' => [
+                        'scalar' => '({0} = {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                'BAND' => 'SQLite\'s & is integer-only and has no meaning over blobs',
+                'BOR' => 'SQLite\'s | is integer-only and has no meaning over blobs',
+                'BXOR' => 'SQLite has no XOR operator at all, over integers or blobs',
+            ],
+            'funcs' => [
+                'LEN' => [
+                    'tpl' => 'length({0})',
+                    'ret' => 'NUM',
+                ],
+                'SUBSTR' => [
+                    'tpl' => [
+                        '2' => 'substr({0}, {1})',
+                        '3' => 'substr({0}, {1}, {2})',
+                    ],
+                    'ret' => 'TEXT',
+                ],
+                'UPPER' => [
+                    'tpl' => 'upper({0})',
+                    'ret' => 'TEXT',
+                ],
+                'LOWER' => [
+                    'tpl' => 'lower({0})',
+                    'ret' => 'TEXT',
+                ],
+                'TRIM' => [
+                    'tpl' => 'trim({0}, \' 	
+\')',
+                    'ret' => 'TEXT',
+                ],
+                'LTRIM' => [
+                    'tpl' => 'ltrim({0}, \' 	
+\')',
+                    'ret' => 'TEXT',
+                ],
+                'RTRIM' => [
+                    'tpl' => 'rtrim({0}, \' 	
+\')',
+                    'ret' => 'TEXT',
+                ],
+                'ABS' => [
+                    'tpl' => 'abs({0})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                'CEIL' => [
+                    'tpl' => 'ceil({0})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                'FLOOR' => [
+                    'tpl' => 'floor({0})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                'POWER' => [
+                    'tpl' => 'pow({0}, {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'power-float',
+                ],
+                'LEFT' => [
+                    'tpl' => 'substr({0}, 1, {1})',
+                    'ret' => 'TEXT',
+                ],
+                'RIGHT' => [
+                    'tpl' => 'substr({0}, -{1}, {1})',
+                    'ret' => 'TEXT',
+                ],
+                'FIND' => [
+                    'tpl' => 'instr({1}, {0})',
+                    'ret' => 'NUM',
+                    'arity' => [2, 2],
+                ],
+                'REPLACE' => [
+                    'tpl' => 'replace({2}, {0}, {1})',
+                    'ret' => 'TEXT',
+                ],
+                'SPLIT' => 'yields a list, and a SQL expression is a scalar',
+                'BACKWARDS' => 'SQLite has no reverse(); reversing text needs a recursive CTE, which is a statement rather than an expression',
+                'REPEAT' => 'SQLite has no repeat(); printf can pad with one character but cannot repeat a string',
+                'PADL' => 'SQLite has no LPAD; printf(\'%*s\') pads with spaces only and cannot take SEL\'s fill string',
+                'PADR' => 'SQLite has no RPAD; printf(\'%-*s\') pads with spaces only and cannot take SEL\'s fill string',
+                'CHAR' => [
+                    'tpl' => 'char({0})',
+                    'ret' => 'TEXT',
+                ],
+                'CODE' => [
+                    'tpl' => 'unicode({0})',
+                    'ret' => 'NUM',
+                ],
+                'SIGN' => [
+                    'tpl' => 'sign({0})',
+                    'ret' => 'NUM',
+                ],
+                'TRUNC' => [
+                    'tpl' => 'trunc({0})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                'ROUND' => [
+                    'tpl' => 'round({0}, {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                'MIN' => [
+                    'tpl' => 'min({*})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                'MAX' => [
+                    'tpl' => 'max({*})',
+                    'ret' => 'NUM',
+                    'caveat' => 'decimal-float',
+                ],
+                'ISNUM' => 'SQLite has no REGEXP, and CAST answers 0 for \'abc\' rather than saying it is not a number, so there is no expression that asks SEL\'s question',
+                'BLEN' => [
+                    'tpl' => 'length({binaryCast:0})',
+                    'ret' => 'NUM',
+                ],
+                'TO_UTF8' => [
+                    'tpl' => 'CAST({0} AS BLOB)',
+                    'ret' => 'BIN',
+                ],
+                'FROM_UTF8' => [
+                    'tpl' => 'CAST({binaryCast:0} AS TEXT)',
+                    'ret' => 'TEXT',
+                ],
+                'TO_HEX' => [
+                    'tpl' => 'lower(hex({binaryCast:0}))',
+                    'ret' => 'TEXT',
+                ],
+                'FROM_HEX' => 'unhex() arrived in SQLite 3.41 and this document targets 3.35; there is no portable expression that builds a blob from hex text',
+                'ENCODE_BASE64' => 'SQLite has no base64 function in a default build',
+                'DECODE_BASE64' => 'SQLite has no base64 function in a default build',
+                'CRC32' => 'SQLite has no CRC32 function in a default build',
+                'BTL' => 'yields a list, and a SQL expression is a scalar',
+                'LTB' => 'takes a list, and a SQL expression is a scalar',
+                'RMATCH' => 'SQLite has no REGEXP function unless the application registers one; a default build raises "no such function: REGEXP"',
+                'RFIND' => 'SQLite has no REGEXP function unless the application registers one; a default build raises "no such function: REGEXP"',
+                'RREPLACE' => 'regular expressions are not ANSI; set per dialect',
+                'RGROUPS' => 'yields a list, and a SQL expression is a scalar',
+            ],
+            'skel' => [
+                'case' => [
+                    'tpl' => 'CASE {branches} ELSE {else} END',
+                ],
+                'caseBranch' => [
+                    'tpl' => 'WHEN {cond} THEN {then}',
+                ],
+                'all' => [
+                    'tpl' => 'NOT EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS NOT TRUE)',
+                ],
+                'any' => [
+                    'tpl' => 'EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS TRUE)',
+                ],
+                'sum' => [
+                    'tpl' => '(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})',
+                ],
+                'count' => [
+                    'tpl' => '(SELECT COUNT(*) FROM {from} WHERE {corr})',
+                ],
+                'inRelation' => [
+                    'tpl' => '({needle} IN (SELECT {body} FROM {from} WHERE {corr}))',
+                ],
+                'join' => 'LISTAGG is SQL:2016 and is spelled differently by every server that has it',
             ],
         ],
     ];

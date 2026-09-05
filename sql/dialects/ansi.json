@@ -12,6 +12,7 @@
     "true": "TRUE",
     "false": "FALSE",
     "binaryLiteral": "X'{hex}'",
+    "numericLiteral": "{0}",
     "textCollate": "",
     "numericCast": "CAST({0} AS DECIMAL(38,10))",
     "binaryCast": "CAST({0} AS BINARY)",

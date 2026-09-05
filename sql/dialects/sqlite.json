@@ -1,0 +1,257 @@
+{
+  "dialect": "sqlite",
+  "extends": "ansi",
+  "version": "3.35",
+  "target": true,
+  "lexical": {
+    "identQuote": "\"",
+    "identEscape": "\"\"",
+    "textQuote": "'",
+    "textEscape": {
+      "'": "''"
+    },
+    "true": "1",
+    "false": "0",
+    "binaryLiteral": "x'{hex}'",
+    "numericLiteral": "'{0}'",
+    "textCollate": "",
+    "textCast": "CAST({0} AS TEXT)",
+    "numericCast": "CAST({0} AS NUMERIC)",
+    "binaryCast": "CAST({0} AS BLOB)",
+    "isTrue": "(({0}) IS TRUE)",
+    "isNotTrue": "(({0}) IS NOT TRUE)",
+    "placeholder": "?"
+  },
+  "ops": {
+    "+": {
+      "tpl": "({0} + {1})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "-": {
+      "tpl": "({0} - {1})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "*": {
+      "tpl": "({0} * {1})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "/": {
+      "tpl": "({0} * 1.0 / {1})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "%": {
+      "tpl": "({0} % {1})",
+      "ret": "NUM",
+      "caveat": "modulo-integer"
+    },
+    "NEG": {
+      "tpl": "(-{0})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "==": {
+      "variants": {
+        "num": "({numericCast:0} = {numericCast:1})",
+        "coerce": "({numericCast:0} = {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    "!=": {
+      "variants": {
+        "num": "({numericCast:0} <> {numericCast:1})",
+        "coerce": "({numericCast:0} <> {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    "<": {
+      "variants": {
+        "num": "({numericCast:0} < {numericCast:1})",
+        "coerce": "({numericCast:0} < {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    "<=": {
+      "variants": {
+        "num": "({numericCast:0} <= {numericCast:1})",
+        "coerce": "({numericCast:0} <= {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    ">": {
+      "variants": {
+        "num": "({numericCast:0} > {numericCast:1})",
+        "coerce": "({numericCast:0} > {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    ">=": {
+      "variants": {
+        "num": "({numericCast:0} >= {numericCast:1})",
+        "coerce": "({numericCast:0} >= {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    "&": {
+      "variants": {
+        "text": "({0} || {1})",
+        "bin": "({0} || {1})"
+      },
+      "ret": "@concat"
+    },
+    "BAND": "SQLite's & is integer-only and has no meaning over blobs",
+    "BOR": "SQLite's | is integer-only and has no meaning over blobs",
+    "BXOR": "SQLite has no XOR operator at all, over integers or blobs"
+  },
+  "funcs": {
+    "UPPER": {
+      "tpl": "upper({0})",
+      "ret": "TEXT"
+    },
+    "LOWER": {
+      "tpl": "lower({0})",
+      "ret": "TEXT"
+    },
+    "LEN": {
+      "tpl": "length({0})",
+      "ret": "NUM"
+    },
+    "LEFT": {
+      "tpl": "substr({0}, 1, {1})",
+      "ret": "TEXT"
+    },
+    "RIGHT": {
+      "tpl": "substr({0}, -{1}, {1})",
+      "ret": "TEXT"
+    },
+    "SUBSTR": {
+      "tpl": {
+        "2": "substr({0}, {1})",
+        "3": "substr({0}, {1}, {2})"
+      },
+      "ret": "TEXT"
+    },
+    "FIND": {
+      "tpl": "instr({1}, {0})",
+      "ret": "NUM",
+      "arity": [
+        2,
+        2
+      ]
+    },
+    "REPLACE": {
+      "tpl": "replace({2}, {0}, {1})",
+      "ret": "TEXT"
+    },
+    "TRIM": {
+      "tpl": "trim({0}, ' \t\r\n')",
+      "ret": "TEXT"
+    },
+    "LTRIM": {
+      "tpl": "ltrim({0}, ' \t\r\n')",
+      "ret": "TEXT"
+    },
+    "RTRIM": {
+      "tpl": "rtrim({0}, ' \t\r\n')",
+      "ret": "TEXT"
+    },
+    "BACKWARDS": "SQLite has no reverse(); reversing text needs a recursive CTE, which is a statement rather than an expression",
+    "REPEAT": "SQLite has no repeat(); printf can pad with one character but cannot repeat a string",
+    "PADL": "SQLite has no LPAD; printf('%*s') pads with spaces only and cannot take SEL's fill string",
+    "PADR": "SQLite has no RPAD; printf('%-*s') pads with spaces only and cannot take SEL's fill string",
+    "CODE": {
+      "tpl": "unicode({0})",
+      "ret": "NUM"
+    },
+    "CHAR": {
+      "tpl": "char({0})",
+      "ret": "TEXT"
+    },
+    "SIGN": {
+      "tpl": "sign({0})",
+      "ret": "NUM"
+    },
+    "ABS": {
+      "tpl": "abs({0})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "CEIL": {
+      "tpl": "ceil({0})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "FLOOR": {
+      "tpl": "floor({0})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "TRUNC": {
+      "tpl": "trunc({0})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "ROUND": {
+      "tpl": "round({0}, {1})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "MIN": {
+      "tpl": "min({*})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "MAX": {
+      "tpl": "max({*})",
+      "ret": "NUM",
+      "caveat": "decimal-float"
+    },
+    "POWER": {
+      "tpl": "pow({0}, {1})",
+      "ret": "NUM",
+      "caveat": "power-float"
+    },
+    "ISNUM": "SQLite has no REGEXP, and CAST answers 0 for 'abc' rather than saying it is not a number, so there is no expression that asks SEL's question",
+    "BLEN": {
+      "tpl": "length({binaryCast:0})",
+      "ret": "NUM"
+    },
+    "TO_UTF8": {
+      "tpl": "CAST({0} AS BLOB)",
+      "ret": "BIN"
+    },
+    "FROM_UTF8": {
+      "tpl": "CAST({binaryCast:0} AS TEXT)",
+      "ret": "TEXT"
+    },
+    "TO_HEX": {
+      "tpl": "lower(hex({binaryCast:0}))",
+      "ret": "TEXT"
+    },
+    "FROM_HEX": "unhex() arrived in SQLite 3.41 and this document targets 3.35; there is no portable expression that builds a blob from hex text",
+    "ENCODE_BASE64": "SQLite has no base64 function in a default build",
+    "DECODE_BASE64": "SQLite has no base64 function in a default build",
+    "CRC32": "SQLite has no CRC32 function in a default build",
+    "RMATCH": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\"",
+    "RFIND": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\""
+  },
+  "notes": {
+    "purpose": "SQLite 3.35 or later. 3.35 is where the math functions can be built in, which ceil, floor, trunc, sign and pow all need (SQLITE_ENABLE_MATH_FUNCTIONS); a build without them refuses at run time rather than here, which is the one thing this document cannot check for you.",
+    "two-directions": "This dialect is the map earning its keep in both directions. SQLite matches SEL more closely than MariaDB does in four places, so four things MariaDB needs a caveat or a refusal for are plain entries here: comparison is case-sensitive by default, upper() and lower() are ASCII-only exactly as SEL specifies, unicode() and char() are real code points, and length() counts code points. It matches SEL much less closely in one, and that one is arithmetic.",
+    "decimal-float": "SQLite has no exact decimal type: arithmetic is int64 or IEEE double. That is not a scale difference, it is a different number system, so every arithmetic entry carries the caveat and `strict` refuses the lot. 0.1 + 0.2 is 0.30000000000000004 here and 0.3 in SEL, and no template fixes that.",
+    "numericLiteral": "A number is emitted as TEXT, which is the whole reason that lexical key exists. SQLite has no representation preserving 2.50's scale -- the literal 2.50 is a REAL and prints as 2.5 -- so `2.50 $== 2.5` would be TRUE here and FALSE in SEL. Quoted, SEL's exact characters survive, and SQLite's dynamic typing still reads them as a number wherever one is wanted: '2.50' + '2.50' is 5.0 just as 2.50 + 2.50 is.",
+    "comparison-always-coerces": "The consequence of the above, and why every comparison entry gives `num` and `coerce` the same template. Two quoted numbers would otherwise compare as text, and SEL's == is numeric. CAST('2.50' AS NUMERIC) = CAST('2.5' AS NUMERIC) is 1, which is what SEL says.",
+    "textCollate": "Empty, and not an omission. SQLite's default collation is BINARY, so 'A' = 'a' is already 0 -- what SEL says, and what MariaDB needed COLLATE utf8mb4_bin to be talked into. textCast is still needed: without it two numeric operands are compared as numbers.",
+    "division": "The * 1.0 in the / template is not decoration. SQLite's / between two integers is INTEGER division -- 10 / 4 is 2 where SEL says 2.5 -- which is a different operation rather than an imprecise one. Forcing one operand to REAL makes it the same operation, inexactly, which is what the caveat then declares.",
+    "modulo": "SQLite truncates both operands to integers before %: 5.5 % 2 is 1.0 where SEL says 1.5. That is exactly what the modulo-integer caveat names, so it is used rather than decimal-float.",
+    "trim": "trim(X, Y) strips any character appearing in Y, so SEL's exact set -- space, tab, CR, LF -- is expressible directly. mysql-family needs REGEXP_REPLACE for the same thing.",
+    "code-points": "CODE and CHAR are supported here and refused by mysql-family. SQLite's unicode() and char() are code points, which is what SEL means; MariaDB's ORD and CHAR are byte sequences, which is not.",
+    "minmax": "min() and max() take one argument here, so no arity-keyed template is needed. LEAST and GREATEST do not, which is what the `*` fallback exists for.",
+    "join": "Not overridden, so ansi's refusal stands. SQLite's group_concat specifies no order without an ORDER BY inside it, and a relation binding has no key to order by -- the same reason mysql-family refuses it.",
+    "not-caveatable": "Two divergences cannot be expressed as a caveat because they are about failure rather than value. 1/0 is NULL here and E_DIV_ZERO in SEL, and CAST('abc' AS NUMERIC) is 0 here where SEL raises E_NOT_NUM. A rule that would ERROR in SEL may quietly EVALUATE in SQLite. See §11 of docs/SQL-TRANSLATION.md.",
+    "right": "substr(X, -N) alone is wrong for N = 0: -0 is 0, and substr(X, 0) behaves like substr(X, 1), so RIGHT(\"a\", 0) answered \"a\" where SEL says \"\". The explicit length pins it. Found by the fuzz lane on sqlite's first run."
+  }
+}

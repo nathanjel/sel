@@ -1154,6 +1154,28 @@ final class Translator
             return ($entry['builder'])($this->emit, $args, ['pos' => $pos]);
         }
 
+        // The map's `arity` narrows SEL's own for this dialect, and sql/MAP.md
+        // §4.1 gives it a job: "how PostgreSQL refuses the three-argument form
+        // its POSITION cannot express while MariaDB still accepts it -- graceful
+        // degradation as data, with no host code involved." There was no host
+        // code involved, and there was no degradation either: the field was
+        // validated by the generator and enforced by nobody, so a narrowed entry
+        // took the call anyway and filled the template it had, silently dropping
+        // the arguments the template did not name.
+        //
+        // Found the hour sqlite was written, by the oracle: FIND("a","banana",3)
+        // is 4 in SEL and instr('banana','a') is 2. The same field was about to
+        // do the same nothing for postgresql.
+        if (isset($entry['arity'])) {
+            [$min, $max] = $entry['arity'];
+            $n = count($args);
+            if ($n < $min || $n > $max) {
+                refuse('E_SQL_UNSUPPORTED',
+                    "{$what} takes {$min} to {$max} argument(s) in dialect "
+                    . "{$this->dialect}, and this call has {$n}", $pos);
+            }
+        }
+
         if (isset($entry['since'])
             && !Map::versionAtLeast(Map::version($this->dialect), $entry['since'])) {
             refuse('E_SQL_DIALECT',

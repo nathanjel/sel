@@ -61,7 +61,7 @@ final class Emit
             return str_replace('{hex}', bin2hex($v->asBytes($pos)), $tpl);
         }
         if ($form === 'NUM') {
-            return self::numericLiteral($v, $pos);
+            return self::numericLiteral($dialect, $v, $pos);
         }
         return self::textLiteral($dialect, $v->asText($pos));
     }
@@ -90,7 +90,7 @@ final class Emit
      * because scale is part of a SEL number (spec §4.1) and part of what SQL
      * DECIMAL arithmetic reads.
      */
-    private static function numericLiteral(Value $v, ?array $pos): string
+    private static function numericLiteral(string $dialect, Value $v, ?array $pos): string
     {
         $text = $v->asText($pos);
         $d = \Sel\Dec::parse($text);
@@ -100,6 +100,21 @@ final class Emit
                 . Value::quoteDump($text) . ' is not', $pos);
         }
         $n = \Sel\Dec::format($d);
+
+        // How the dialect spells a number is the dialect's business, and one of
+        // them has to spell it as text. SQLite has no exact decimal: 2.50 is a
+        // REAL that prints as 2.5, so `2.50 $== 2.5` would be TRUE there and
+        // FALSE in SEL. Quoted, the exact characters survive, and SQLite's
+        // dynamic typing reads them as a number wherever a number is wanted --
+        // which is why sqlite also coerces both sides of every numeric
+        // comparison. The wrapper is applied AFTER Dec::format, so the
+        // digits-by-construction guarantee is unaffected: it decides how to
+        // spell a number that has already been proved to be one.
+        $wrap = Map::lexical($dialect, 'numericLiteral');
+        if (is_string($wrap) && $wrap !== '{0}') {
+            return str_replace('{0}', $n, $wrap);
+        }
+
         // A negative number is parenthesised so that unary minus in front of it
         // cannot produce `--`. MariaDB reads that as double negation and gets
         // the right answer by luck; PostgreSQL and SQLite read it as the start
