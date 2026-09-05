@@ -101,7 +101,7 @@ V > 1
 --- error
 E_SQL_SHAPE 1:1
 ===
-### name: refuse.unknown-field-of-a-relation
+### name: refuse.indexing-a-relation-binding
 --- dialect
 mariadb
 --- bindings
@@ -109,7 +109,7 @@ mariadb
 --- source
 ITEMS["price"] > 1
 --- error
-E_SQL_BINDING 1:6
+E_SQL_SHAPE 1:6
 ===
 ### name: refuse.alias-collision
 --- dialect

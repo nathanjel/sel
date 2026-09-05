@@ -324,15 +324,47 @@ HAS((1, 2), "2")
 --- expect
 TRUE
 ===
-### name: agg.has.relation-field
+### name: agg.has.relation-is-refused
+--- note
+This case used to assert FALSE for HAS(ITEMS, "price"), and FALSE was the right
+answer for the wrong reason. HAS(x, k) was folded by looking k up in the
+binding's declared fields, which asks a different question from SEL's: a
+relation is a list of row maps, so its keys are "1", "2", ... and never a field
+name. The half this case pinned was accidentally right and both other halves
+were wrong -- HAS(ITEMS, "QTY") answered TRUE where SEL says FALSE, and
+HAS(SKUS, "1") answered FALSE where SEL says TRUE.
+
+The positional direction cannot be answered here at all: it needs the row count.
+So refusing is the only honest outcome for either.
 --- dialect
 mariadb
 --- bindings
 {"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
 --- source
 HAS(ITEMS, "price")
+--- error
+E_SQL_SHAPE
+===
+### name: agg.has.relation-field-name-is-refused-too
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+HAS(ITEMS, "QTY")
+--- error
+E_SQL_SHAPE
+===
+### name: agg.has.a-list-still-answers
+--- note
+The fold is still right for what it was written for: a static list has known
+keys and HAS over one is a constant.
+--- dialect
+mariadb
+--- source
+HAS((1, 2), "2")
 --- expect
-FALSE
+TRUE
 ===
 ### name: agg.refuse.k-on-a-relation
 --- note
@@ -450,4 +482,98 @@ mariadb
 COUNT(FILTER(ITEMS, I, I["qty"] <= 0))
 --- expect
 (SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+===
+### name: agg.relation.bare-binder-over-a-multi-field-row
+--- note
+The guard `IN` got at M4 and nothing else did. A row of a relation with more
+than one field is a MAP in SEL, and a map is not the value of one of its
+fields: ANY(ITEMS, _ $== "AB-1000") is [] in SEL, because comparing a map
+against text is structurally false for every row, and was [1] on all four
+servers. Byte for byte the multi-field IN defect, reached through the bare
+binder instead.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "scalar": "SKU", "fields": {"QTY": {"column": "qty", "type": "NUM"}, "SKU": {"column": "sku", "type": "TEXT"}}}}
+--- source
+ANY(ITEMS, _ $== "AB-1000")
+--- error
+E_SQL_SHAPE
+===
+### name: agg.relation.bare-binder-over-a-one-field-row
+--- note
+And the half that must keep working: one field is genuinely a scalar, so the
+scalar declaration means what it says.
+--- dialect
+mariadb
+--- bindings
+{"SKUS": {"kind": "relation", "from": "order_items", "alias": "s2", "scalar": "SKU", "fields": {"SKU": {"table": "s2", "column": "sku", "type": "TEXT"}}}}
+--- source
+ANY(SKUS, _ $== "AB-1000")
+--- expect
+EXISTS (SELECT 1 FROM `order_items` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_bin = CAST('AB-1000' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)
+===
+### name: agg.relation.row-is-not-a-scalar-source
+--- note
+source()'s scalar-rule fallback swallowed a row: COUNT(I) folded to 0 where SEL
+says 2, HAS(I, "QTY") to FALSE where SEL says TRUE, and ANY(I, ...) iterated
+nothing where SEL iterates the row's values.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "scalar": "SKU", "fields": {"QTY": {"column": "qty", "type": "NUM"}, "SKU": {"column": "sku", "type": "TEXT"}}}}
+--- source
+ANY(ITEMS, I, COUNT(I) == 2)
+--- error
+E_SQL_SHAPE
+===
+### name: agg.relation.nested-in-itself
+--- note
+Both subqueries carry the binding's fixed alias, so the inner FROM shadows the
+outer and the predicate becomes `oi`.`qty` > `oi`.`qty` -- constantly false, and
+[] on all four servers where SEL answers with every order whose lines differ.
+Bindings::checkAliases dedupes across distinct binding NAMES, and this is one
+name, so it could never fire. Re-aliasing is not available: `correlate` is
+host-written SQL that spells the alias itself.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"column": "qty", "type": "NUM"}}}}
+--- source
+ANY(ITEMS, I, ANY(ITEMS, J, J["QTY"] > I["QTY"]))
+--- error
+E_SQL_SHAPE
+===
+### name: agg.relation.two-relations-nest-fine
+--- note
+Distinct aliases are unaffected, which is the line the refusal draws.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}, "SKUS": {"kind": "relation", "from": "skus", "alias": "s2", "scalar": "SKU", "fields": {"SKU": {"table": "s2", "column": "sku", "type": "TEXT"}}}}
+--- source
+ANY(ITEMS, I, ANY(SKUS, S, S $== I["SKU"]))
+--- expect
+EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND (EXISTS (SELECT 1 FROM `skus` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_bin = CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)) IS TRUE)
+===
+### name: agg.count.list-yielding-call-is-not-a-scalar
+--- note
+SPLIT, BTL, RGROUPS and INDEXES are refused by every dialect document, and
+source() reached its scalar fallback without ever consulting the map:
+COUNT(SPLIT("a,b", ",")) folded to 0 where SEL says 2. The same functions refuse
+correctly under ALL, SUM, JOIN and FILTER, which is what made it hard to see.
+--- dialect
+mariadb
+--- source
+COUNT(SPLIT("a,b", ","))
+--- error
+E_SQL_SHAPE
+===
+### name: agg.has.list-yielding-call-is-not-a-scalar
+--- dialect
+sqlite
+--- source
+HAS(SPLIT("a,b", ","), 1)
+--- error
+E_SQL_SHAPE
 ===

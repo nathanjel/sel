@@ -228,22 +228,18 @@ final class Translator
         $key = $this->constantIndex($n['idx']);
 
         if ($b['kind'] === 'relation') {
-            if (preg_match('/^[0-9]+$/', $key) === 1) {
-                refuse('E_SQL_SHAPE',
-                    "{$obj['name']}[{$key}] asks for a row by position, and a "
-                    . 'relation has no first row without an ORDER BY that nothing '
-                    . 'here can supply', $n['pos']);
-            }
-            $field = strtoupper($key);
-            if (!isset($b['fields'][$field])) {
-                $known = array_keys($b['fields']);
-                sort($known);
-                refuse('E_SQL_BINDING',
-                    "{$obj['name']}[\"{$key}\"] is not a field of that relation"
-                    . ($known === [] ? '; it declares none' : '; it has ' . implode(', ', $known)),
-                    $n['pos']);
-            }
-            return $this->columnRef($b['fields'][$field]);
+            // The binding NAME, not a binder over it. SEL has no row here to
+            // index -- ITEMS is a list of rows -- so it raises E_NO_KEY, and
+            // this produced a bare column reference to a table no FROM clause
+            // mentions: `ITEMS["QTY"] > 0` emitted (`oi`.`qty` > 0), which every
+            // server rejects outright. Inside an aggregate body it was worse
+            // than invalid: ALL(ITEMS, I, ITEMS["QTY"] > 0) emitted SQL
+            // byte-identical to the binder form and ran and answered, for an
+            // expression SEL has no answer for.
+            refuse('E_SQL_SHAPE',
+                "{$obj['name']} is a relation, which is a list of rows; indexing it "
+                . 'names no value SEL can produce, so use an aggregate and index the '
+                . 'row its binder gives you', $n['pos']);
         }
         if ($b['kind'] === 'columns') {
             $i = (int) $key;
@@ -539,6 +535,41 @@ final class Translator
      * them reaches this path: the first two are folded before dispatch and the
      * third is refused. BTL is absent for the same reason — it yields a list.
      */
+    /**
+     * The functions whose result has children, so the scalar rule does not
+     * apply to them.
+     *
+     * Measured the same way as the two sets below: every non-lazy name in
+     * `Registry::names()` was called and the results with `size() > 0` kept.
+     * Every one of them is already refused by the dialect documents; the point
+     * of the list is that `source()` used to reach its scalar fallback without
+     * ever consulting the map, so COUNT and HAS folded to 0 and FALSE instead.
+     */
+    private const YIELDS_LIST = ['BTL' => 0, 'INDEXES' => 0, 'RGROUPS' => 0,
+                                 'SPLIT' => 0];
+
+    private static function yieldsList(string $name): bool
+    {
+        return isset(self::YIELDS_LIST[$name]);
+    }
+
+    /**
+     * The alias a relation binding renders under — its own, or the table name
+     * when it declares none. The same rule Bindings::checkAliases applies.
+     *
+     * @param array<string,mixed> $rel
+     */
+    private static function relationAlias(array $rel): string
+    {
+        $alias = $rel['alias'] ?? null;
+        if (is_string($alias) && $alias !== '') {
+            return $alias;
+        }
+        return is_array($rel['from'] ?? null)
+            ? (string) ($rel['from']['raw'] ?? '')
+            : (string) ($rel['from'] ?? '');
+    }
+
     private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,
                                      'FROM_UTF8' => 0, 'ISNUM' => 0, 'TO_HEX' => 0,
                                      'TO_UTF8' => 0];
@@ -753,6 +784,20 @@ final class Translator
                 return $this->columnRef($b->payload);
             case Binder::ROW:
                 $rel = $b->payload;
+                // The guard `IN` got and nothing else did. A row of a relation
+                // with more than one field is a MAP in SEL, and a map is not the
+                // value of one of its fields: `ANY(ITEMS, _ $== "AB-1000")` is []
+                // in SEL, because comparing a map against text is structurally
+                // false for every row, and was [1] on all four servers. That is
+                // byte for byte the multi-field IN defect, reached through the
+                // bare binder instead. A one-field relation is genuinely a
+                // scalar and keeps working.
+                if (count($rel['fields']) > 1) {
+                    refuse('E_SQL_SHAPE',
+                        "{$n['name']} is a row of a relation with "
+                        . count($rel['fields']) . ' fields, which is a map in SEL and '
+                        . 'not one value; name the field you mean', $n['pos']);
+                }
                 $scalar = isset($rel['scalar']) ? strtoupper((string) $rel['scalar']) : null;
                 if ($scalar === null || !isset($rel['fields'][$scalar])) {
                     refuse('E_SQL_SHAPE',
@@ -870,9 +915,21 @@ final class Translator
                 if ($bound->shape === Binder::NONE) {
                     refuse('E_SQL_SHAPE', (string) $bound->reason, $src['pos']);
                 }
-                // A column or a row is one value, so it is a one-element list
-                // containing itself — spec §7.3, the same rule the evaluator
-                // applies. This is what makes ALL(V, ALL(V, …)) work.
+                // A column is one value, so it is a one-element list containing
+                // itself — spec §7.3, the same rule the evaluator applies. This
+                // is what makes ALL(V, ALL(V, …)) work.
+                //
+                // A multi-field ROW is not one value, and applying the scalar
+                // rule to it answered for a different question: COUNT(I) folded
+                // to 0 where SEL says 3, HAS(I, "QTY") to FALSE where SEL says
+                // TRUE, and ANY(I, …) iterated nothing where SEL iterates the
+                // row's values.
+                if ($bound->shape === Binder::ROW && count($bound->payload['fields']) > 1) {
+                    refuse('E_SQL_SHAPE',
+                        "{$src['name']} is a row of a multi-field relation, which is "
+                        . 'a map with one child per field; SQL has no way to iterate '
+                        . 'or count that', $src['pos']);
+                }
                 return self::staticSource(['1' => $bound], true);
             }
             $b = $this->bindings->get($src['name'], $src['pos']);
@@ -897,7 +954,21 @@ final class Translator
             }
         }
 
-        // Anything else that is one value: the scalar rule again.
+        // Anything else that is one value: the scalar rule again — but only if
+        // it IS one value. A call that yields a list is not, and treating one as
+        // a scalar is how three map refusals were bypassed:
+        // COUNT(SPLIT("a,b", ",")) folded to 0 where SEL says 2, and
+        // HAS(SPLIT(…), 1) to FALSE where SEL says TRUE. The same functions
+        // refuse correctly under ALL, SUM, JOIN and FILTER, which is what made
+        // it hard to see. The refusal string in the dialect document says
+        // "yields a list, and a SQL expression is a scalar"; this is the path
+        // that never asked it.
+        if ($src['t'] === 'call' && self::yieldsList($src['name'])) {
+            refuse('E_SQL_SHAPE',
+                "{$src['name']} yields a list, and the scalar rule does not apply "
+                . 'to it; SQL has no way to count or index what it produces',
+                $src['pos']);
+        }
         return self::staticSource(['1' => Binder::node($src)], true);
     }
 
@@ -1068,6 +1139,33 @@ final class Translator
      */
     private function withRow(array $src, string $binderName, callable $render): Fragment
     {
+        // A relation nested inside itself reuses its own fixed alias, and the
+        // inner FROM shadows the outer one:
+        //
+        //   ANY(ITEMS, I, ANY(ITEMS, J, J["QTY"] > I["QTY"]))
+        //   EXISTS (SELECT 1 FROM order_items oi WHERE … AND
+        //     EXISTS (SELECT 1 FROM order_items oi WHERE … AND oi.qty > oi.qty))
+        //
+        // so the predicate is constantly false and all four servers answered []
+        // where SEL answers [1,4,5]. Bindings::checkAliases dedupes across
+        // *distinct* binding names, and this is one name, so it could never
+        // fire. Re-aliasing is not available as a fix: `correlate` is host-written
+        // SQL that spells the alias itself. Two different relations with
+        // distinct aliases nest correctly and are unaffected.
+        $alias = $this->relationAlias($src['relation']);
+        foreach ($this->frames as $frame) {
+            foreach ($frame as $binder) {
+                if ($binder->shape === Binder::ROW
+                    && $this->relationAlias($binder->payload) === $alias) {
+                    refuse('E_SQL_SHAPE',
+                        "this relation is already open as {$alias} further out, and a "
+                        . 'subquery reusing its own alias shadows the outer row rather '
+                        . 'than comparing against it; the correlation names the alias, '
+                        . 'so it cannot be renamed here', $src['pos'] ?? null);
+                }
+            }
+        }
+
         $row = Binder::row($src['relation']);
         $frame = [$binderName => $row,
                   '_K' => Binder::none('a row of a relation has no key: SQL rows are '
@@ -1170,9 +1268,20 @@ final class Translator
                 'HAS over a FILTER would have to know at translation time which '
                 . 'elements the filter kept', $n['pos']);
         }
-        $found = $src['shape'] === 'relation'
-            ? isset($src['relation']['fields'][strtoupper($key)])
-            : (!$src['scalarRule'] && isset($src['elements'][$key]));
+        // A relation is a list of row maps, so its keys are "1", "2", … and
+        // never a field name — the row oracle's own load_context builds it that
+        // way. Answering from the declared fields asked a different question and
+        // got both directions wrong: HAS(ITEMS, "QTY") was TRUE where SEL says
+        // FALSE, and HAS(SKUS, "1") was FALSE where SEL says TRUE. The
+        // positional direction cannot be answered here at all — it needs the row
+        // count — so refusal is the only honest outcome for either.
+        if ($src['shape'] === 'relation') {
+            refuse('E_SQL_SHAPE',
+                'HAS over a relation asks whether it has a key, and a relation is a '
+                . 'list of rows whose keys are positions; the answer needs the row '
+                . 'count, which no expression here knows', $n['pos']);
+        }
+        $found = !$src['scalarRule'] && isset($src['elements'][$key]);
         return $this->literal(Value::bool($found), 'BOOL');
     }
 

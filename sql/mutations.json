@@ -399,6 +399,48 @@
       "file": "php/src/Sql/Translator.php",
       "from": "    private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,",
       "to": "    private const BIN_ARGUMENT_OK = ['CRC32' => 0, 'ENCODE_BASE64' => 0,"
+    },
+    {
+      "name": "bare-binder-takes-the-scalar-field",
+      "was": "The multi-field guard IN got at M4 and the bare binder did not. ANY(ITEMS, _ $== \"AB-1000\") is [] in SEL -- a row is a map and comparing a map against text is structurally false -- and was [1] on all four servers.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "                if (count($rel['fields']) > 1) {\n                    refuse('E_SQL_SHAPE',\n                        \"{$n['name']} is a row of a relation with \"",
+      "to": "                if (false) {\n                    refuse('E_SQL_SHAPE',\n                        \"{$n['name']} is a row of a relation with \""
+    },
+    {
+      "name": "relation-row-gets-the-scalar-rule",
+      "was": "source()'s scalar fallback swallowing a multi-field row: COUNT(I) folded to 0 where SEL says 3, HAS(I,\"QTY\") to FALSE where SEL says TRUE.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "                if ($bound->shape === Binder::ROW && count($bound->payload['fields']) > 1) {",
+      "to": "                if (false) {"
+    },
+    {
+      "name": "list-yielding-call-gets-the-scalar-rule",
+      "was": "The same fallback reaching a call that yields a list, which bypassed the SPLIT/BTL/RGROUPS refusals under COUNT and HAS: COUNT(SPLIT(\"a,b\", \",\")) folded to 0 where SEL says 2.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($src['t'] === 'call' && self::yieldsList($src['name'])) {",
+      "to": "        if (false) {"
+    },
+    {
+      "name": "has-over-a-relation-answers-from-fields",
+      "was": "HAS folded by looking the key up in the binding's declared fields, which asks a different question from SEL's: HAS(ITEMS,\"QTY\") was TRUE where SEL says FALSE, HAS(SKUS,\"1\") was FALSE where SEL says TRUE.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($src['shape'] === 'relation') {\n            refuse('E_SQL_SHAPE',\n                'HAS over a relation asks whether it has a key",
+      "to": "        if (false) {\n            refuse('E_SQL_SHAPE',\n                'HAS over a relation asks whether it has a key"
+    },
+    {
+      "name": "relation-nests-inside-itself",
+      "was": "A relation nested in itself reusing its own fixed alias, so the inner FROM shadows the outer: the predicate became `oi`.`qty` > `oi`.`qty` and all four servers answered [] where SEL answers with every order whose lines differ.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "                if ($binder->shape === Binder::ROW\n                    && $this->relationAlias($binder->payload) === $alias) {",
+      "to": "                if (false) {"
+    },
+    {
+      "name": "relation-binding-can-be-indexed",
+      "was": "index() resolving a relation BINDING to a bare column reference. Outside an aggregate that is invalid SQL -- the alias is in no FROM clause. Inside one it emitted SQL byte-identical to the binder form and answered, where SEL raises E_NO_KEY.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            refuse('E_SQL_SHAPE',\n                \"{$obj['name']} is a relation, which is a list of rows; indexing it \"",
+      "to": "            return $this->columnRef($b['fields'][strtoupper($key)] ?? reset($b['fields']));\n            refuse('E_SQL_SHAPE',\n                \"{$obj['name']} is a relation, which is a list of rows; indexing it \""
     }
   ]
 }

@@ -75,15 +75,37 @@ V[5]
 --- error
 E_SQL_BINDING 1:2
 ===
-### name: bind.relation.field-is-a-column-reference
+### name: bind.relation.cannot-be-indexed-by-field
+--- note
+This case used to expect `(`oi`.`qty` > 0)`, which is not SQL any server will
+run: `oi` appears in no FROM clause, so MariaDB says "Unknown column 'oi.qty'"
+and PostgreSQL "missing FROM-clause entry". SEL agrees it means nothing --
+ITEMS is a list of row maps, so its keys are positions and ITEMS["QTY"] is
+E_NO_KEY.
+
+Inside an aggregate body it was worse than invalid. ALL(ITEMS, I, ITEMS["QTY"] >
+0) -- the binding name where the binder belongs -- emitted SQL byte-identical to
+the binder form, ran, and answered, for an expression SEL has no answer for.
 --- dialect
 mariadb
 --- bindings
 {"I": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
 --- source
 I["qty"] > 0
+--- error
+E_SQL_SHAPE
+===
+### name: bind.relation.field-through-its-binder
+--- note
+The supported spelling, unchanged.
+--- dialect
+mariadb
+--- bindings
+{"I": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ALL(I, R, R["qty"] > 0)
 --- expect
-(`oi`.`qty` > 0)
+NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND ((`oi`.`qty` > 0)) IS NOT TRUE)
 ### name: bind.value.num-must-already-be-canonical
 --- note
 This case used to expect `(7 + 1)`, and the reasoning it carried is still true:
