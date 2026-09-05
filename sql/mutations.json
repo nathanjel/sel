@@ -287,6 +287,69 @@
       "file": "php/src/Sql/Translator.php",
       "from": "        $f = $this->dispatch($n);\n        Constants::validate($n);",
       "to": "        static $in = false;\n        if ($in) {\n            return $this->dispatch($n);\n        }\n        $in = true;\n        try {\n            $f = $this->dispatch($n);\n        } finally {\n            $in = false;\n        }\n        Constants::validate($n);"
+    },
+    {
+      "name": "caveated-entry-answers-anything",
+      "was": "A caveat does not narrow what an entry may answer; it suspends the oracle's verdict for it. ansi's LOWER already carries unicode-case, so every disagreement it produces is reported as inexact-by-declaration and passes -- and no .sqlt case names LOWER on any dialect. The entry can therefore return the wrong function's answer. This is Class A with the check switched off by a field that was added for an honest reason.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"LOWER\": {\n      \"tpl\": \"LOWER({0})\",",
+      "to": "    \"LOWER\": {\n      \"tpl\": \"UPPER({0})\","
+    },
+    {
+      "name": "exactness-invented",
+      "was": "The reverse of mysql-family-multiply-claims-exactness, and the direction almost nothing checks: isExact() is only ever used to EXCUSE a difference, so declaring a caveat an entry does not need leaves the string unchanged and an agreeing caveated entry still counted as agreeing. CAUGHT, by sqlite.strict.allows-text -- the one case in 273 that puts $== under strict. That is the whole of what stops it: see exactness-invented-where-nothing-is-strict, which is the same edit one entry over and survives.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"$==\": {\n      \"variants\": {\n        \"text\": \"({0} = {1})\"\n      },\n      \"ret\": \"BOOL\"\n    },",
+      "to": "    \"$==\": {\n      \"variants\": {\n        \"text\": \"({0} = {1})\"\n      },\n      \"ret\": \"BOOL\",\n      \"caveat\": \"text-collation\"\n    },"
+    },
+    {
+      "name": "entry-withdrawn-silently",
+      "was": "Withdrawing a working entry, the way ansi already withdraws the ones it cannot spell. A refusal is an outcome the oracle counts and never fails on, and the coverage gate measures Map::entry() LOOKUPS, which a withdrawn entry still performs -- while Map::entries() stops counting it as supported, so the denominator shrinks to match. Twenty of mariadb's sixty-seven supported entries have no .sqlt case at all, and every one of them can be turned off like this.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"ABS\": {\n      \"tpl\": \"ABS({0})\",\n      \"ret\": \"NUM\"\n    },",
+      "to": "    \"ABS\": \"withdrawn: ABS of a DECIMAL widens the result type on some servers\","
+    },
+    {
+      "name": "text-quote-escape-halved",
+      "was": "The injection sql/cases/01-lexical.sqlt exists to stop, one dialect over. Every case in that file is --- dialect mariadb, so postgresql's and sqlite's quoting have no witness anywhere; and no expression in the corpus or in rows.json contains an apostrophe, so nothing ever asks either. lex.text.single-quote-doubles is the case that would have caught this, written for the wrong dialect.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "    \"textEscape\": {\n      \"'\": \"''\"\n    },",
+      "to": "    \"textEscape\": {\n      \"'\": \"'\"\n    },"
+    },
+    {
+      "name": "family-leaf-diverges-where-no-case-looks",
+      "was": "mysql.json's own notes say \"adding an override to one leaf without the other fails the suite\", citing MIRRORS in php/bin/sqlt. That holds only for entries some mariadb case reaches. No case reaches TRUNC, so this override makes MySQL emit a different string from MariaDB for it and the mirror never looks. Semantically identical, so the oracle agrees on both leaves -- which is the point: the family's claim is about BYTES.",
+      "file": "sql/dialects/mysql.json",
+      "from": "  \"notes\": {",
+      "to": "  \"funcs\": {\n    \"TRUNC\": { \"tpl\": \"TRUNCATE({0},0)\", \"ret\": \"NUM\" }\n  },\n  \"notes\": {"
+    },
+    {
+      "name": "placeholder-ordinal-counts-inlined-slots",
+      "was": "The binding-order defect from M2, in the one form the suite cannot see. bindings() walks the output and skips inlined slots; join() must number placeholders the same way or the nth value lands in the wrong placeholder. Every shipped dialect spells its placeholder `?`, which carries no ordinal, so the error is invisible there -- and the one case that registers a numbered placeholder, pg.params.numbered-for-a-libpq-host, has no NUM or BOOL literal in front of its bound ones. Neither does the single --- mode debug case.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "            $kind = $this->paramKinds[$p - 1] ?? 'TEXT';\n            if ($mode !== 'inline' && $this->isInline($p)) {\n                // Never a placeholder; see isInline(). It does not advance $nth\n                // either, because it emits no placeholder for a binding to land\n                // in.\n                $out .= Emit::literal($this->dialect, $this->params[$p - 1], $kind);\n                continue;\n            }\n            $nth++;",
+      "to": "            $kind = $this->paramKinds[$p - 1] ?? 'TEXT';\n            $nth++;\n            if ($mode !== 'inline' && $this->isInline($p)) {\n                $out .= Emit::literal($this->dialect, $this->params[$p - 1], $kind);\n                continue;\n            }"
+    },
+    {
+      "name": "mirror-compares-mariadb-with-itself",
+      "was": "A check on a check, which is what §7 of docs/SQL-TESTING.md is about, and the PHP array-union trap this layer has already shipped twice. `+` keeps the LEFT operand for a duplicated key, so swapping the operands makes the mirror re-run every mariadb case AS mariadb. The pass count is unchanged, the \"also checked against a mirrored dialect\" line still prints the same number, and the only thing that makes mysql.json safe to leave empty has stopped happening.",
+      "file": "php/bin/sqlt",
+      "from": "        $problem = run_case(['dialect' => $mirror] + $c);",
+      "to": "        $problem = run_case($c + ['dialect' => $mirror]);"
+    },
+    {
+      "name": "min-claims-exactness",
+      "was": "Same shape as mysql-family-multiply-claims-exactness and, unlike it, unfalsifiable by the comparator. LEAST(17, 123.456) is 17.000 and SEL's MIN(17, 123.456) is 17, which is what numeric-scale declares -- but no corpus line mixes scales in MIN, and if one did, sqlo's compare() reads a NUM fragment through Dec::cmp, where 17.000 and 17 are one number. Only an expression that reads a computed number as TEXT can see this caveat doing anything.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "        \"*\": \"LEAST({*})\"\n      },\n      \"ret\": \"NUM\",\n      \"caveat\": \"numeric-scale\"",
+      "to": "        \"*\": \"LEAST({*})\"\n      },\n      \"ret\": \"NUM\""
+    },
+    {
+      "name": "exactness-invented-where-nothing-is-strict",
+      "was": "exactness-invented, moved one entry over. That one was caught, by the single case in the suite that puts $== under strict -- sqlite.strict.allows-text. Six strict cases exist in 273, between them pinning the exactness of four entries; every other entry can be declared inexact for free. LEN is one, and after this the oracle can no longer fail on it.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\",\n      \"ret\": \"NUM\"\n    },",
+      "to": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\",\n      \"ret\": \"NUM\",\n      \"caveat\": \"length-units\"\n    },"
     }
   ]
 }
