@@ -16,14 +16,20 @@ final class Normalise
      * @param array<string,mixed> $ast
      * @return array<string,mixed>
      */
-    public static function run(array $ast): array
+    /**
+     * @param array<string,mixed> $ast
+     * @param array<string,bool>  $constNames value-binding names, Constants::scope
+     * @return array<string,mixed>
+     */
+    public static function run(array $ast, array $constNames = [],
+                               ?\Sel\Context $ctx = null): array
     {
         $stmts = $ast['t'] === 'seq' ? $ast['items'] : [$ast];
         $result = array_pop($stmts);
         $defs = [];                                  // NAME => node
 
         foreach ($stmts as $s) {
-            self::record($s, $defs);
+            self::record($s, $defs, $constNames, $ctx);
         }
         return self::substitute($result, $defs, []);
     }
@@ -33,8 +39,10 @@ final class Normalise
      *
      * @param array<string,mixed> $s
      * @param array<string, array<string,mixed>> $defs
+     * @param array<string,bool> $constNames
      */
-    private static function record(array $s, array &$defs): void
+    private static function record(array $s, array &$defs, array $constNames = [],
+                                   ?\Sel\Context $ctx = null): void
     {
         if ($s['t'] !== 'assign') {
             refuse('E_SQL_ASSIGN',
@@ -68,6 +76,18 @@ final class Normalise
         $name = $t['name'];
 
         $value = self::substitute($s['value'], $defs, []);
+
+        // Validated here, and only here, because after this the subtree may be
+        // gone: a definition nothing reads is dropped, so `A = 1 / 0; TRUE`
+        // translated to `TRUE` and every server answered TRUE where SEL raises
+        // E_DIV_ZERO. An indexed assignment builds a `clist`, which the
+        // constant test refuses to walk and COUNT/HAS never render, so
+        // `R[1] = 1 / 0; COUNT(R)` was `1`. §11.4's fourth bullet says a
+        // constant subtree is checked wherever it appears; these were the two
+        // places it did not appear by the time anything looked.
+        if (Constants::isConstant($value, $constNames)) {
+            Constants::validate($value, $ctx);
+        }
 
         if ($keys === []) {
             if (isset($defs[$name])) {

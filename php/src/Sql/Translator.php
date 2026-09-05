@@ -42,6 +42,10 @@ final class Translator
     private array $frames = [];
     /** @var array<string,bool> */
     private array $caveats = [];
+    /** Value-binding names that count as constant leaves; see Constants::scope. */
+    /** @var array<string,bool> */
+    private array $constNames = [];
+    private ?\Sel\Context $constCtx = null;
 
     /** @param array<string,mixed> $options */
     public function __construct(string $dialect, Bindings $bindings, array $options = [])
@@ -62,7 +66,8 @@ final class Translator
         $this->paramKinds = [];
         $this->caveats = [];
         $this->frames = [];
-        $f = $this->node(Normalise::run($ast));
+        [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
+        $f = $this->node(Normalise::run($ast, $this->constNames, $this->constCtx));
 
         return new Fragment($f->parts, $f->kind, $this->dialect,
             $this->params, $this->paramKinds, array_keys($this->caveats));
@@ -99,12 +104,12 @@ final class Translator
     private function node(array $n): Fragment
     {
         if (!in_array($n['t'], ['bin', 'un', 'call'], true)
-            || !Constants::isConstant($n)) {
+            || !Constants::isConstant($n, $this->constNames)) {
             return $this->dispatch($n);
         }
 
         $f = $this->dispatch($n);
-        Constants::validate($n);
+        Constants::validate($n, $this->constCtx);
 
         return $f;
     }

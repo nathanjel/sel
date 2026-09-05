@@ -386,3 +386,95 @@ LEFT("abc", 2.0)
 --- expect
 left(CAST('abc' AS TEXT), CAST(2.0 AS INTEGER))
 ===
+### name: const.binding.value-is-a-constant-the-translator-has
+--- note
+§5.4 calls a value binding "a constant supplied at translation time, inlined as
+a literal", and Translator::variable hands it straight to literal(). So this is
+exactly as knowable as LEFT("abc", -1) -- and before the check learned about
+bindings it was exactly as wrong: SEL raised E_RANGE and the four servers
+answered '', '', 'ab' and ''. §11.4's headline defect, still open through the
+documented way a host passes a parameter.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "-1", "type": "NUM"}}
+--- source
+LEFT("abc", X)
+--- error
+E_SQL_INVALID
+===
+### name: const.binding.value-zero-divisor
+--- dialect
+postgresql
+--- bindings
+{"Z": {"kind": "value", "value": "0", "type": "NUM"}}
+--- source
+1 / Z
+--- error
+E_SQL_INVALID
+===
+### name: const.binding.value-that-is-not-a-number
+--- note
+MariaDB and MySQL answer 1.0, SQLite 1, PostgreSQL raises. SEL says E_NOT_NUM.
+--- dialect
+mariadb
+--- bindings
+{"S": {"kind": "value", "value": "abc"}}
+--- source
+S + 1
+--- error
+E_SQL_INVALID
+===
+### name: const.binding.a-column-is-still-not-constant
+--- note
+The line between the two: a value binding is a value the translator has, a
+column is not. This is the residual risk of §11.4 and it stays.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+1 / N
+--- expect
+(1 / `n`)
+===
+### name: const.assign.value-is-validated-where-it-is-recorded
+--- note
+Stage 1 drops a definition nothing reads, so this translated to `TRUE` and every
+server answered TRUE where SEL raises at the assignment. Validated in
+Normalise::record, before substitute, because after that the subtree is gone.
+--- dialect
+mariadb
+--- source
+A = 1 / 0; TRUE
+--- error
+E_SQL_INVALID
+===
+### name: const.assign.unread-definition-is-still-checked
+--- dialect
+sqlite
+--- source
+A = LEFT("abc", -1); TRUE
+--- error
+E_SQL_INVALID
+===
+### name: const.assign.indexed-value-is-checked
+--- note
+An indexed assignment builds a clist, which the constant test refuses to walk
+and COUNT never renders -- so the division was invisible twice over and the
+answer was 1.
+--- dialect
+mariadb
+--- source
+R[1] = 1 / 0; COUNT(R)
+--- error
+E_SQL_INVALID
+===
+### name: const.assign.a-valid-assignment-still-inlines
+--- dialect
+mariadb
+--- source
+A = 2 + 3; A * 2
+--- expect
+((2 + 3) * 2)
+===

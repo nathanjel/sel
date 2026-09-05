@@ -599,3 +599,25 @@ POWER(10, 40)
 0.00000000000000000000000000000001 * 2
 0.000000000000000000000000000000000000001 * 2
 0.00000000000000000000000000000001 == 0.00000000000000000000000000000002
+
+% --- a value binding is a constant the translator has -----------------------
+%
+% §5.4 calls it "a constant supplied at translation time, inlined as a literal".
+% So these are exactly as knowable as the literal forms above, and until the
+% constant check learned about bindings they were exactly as wrong: SEL raised
+% and the servers answered ''/''/'ab'/''. The last two lines are the other half
+% -- a value binding that is fine must still translate.
+
+### bindings: {"X": {"kind": "value", "value": "-1", "type": "NUM"}, "Z": {"kind": "value", "value": "0", "type": "NUM"}, "S": {"kind": "value", "value": "abc"}}
+
+### entry: mixed:edge-value-binding-is-constant
+!E_RANGE LEFT("abc", X)
+!E_RANGE SUBSTR("abc", X)
+!E_RANGE REPEAT("x", X)
+!E_DIV_ZERO 1 / Z
+!E_DIV_ZERO 5 % Z
+!E_NOT_NUM S + 1
+S & "!"
+LEN(S)
+
+### bindings: {}

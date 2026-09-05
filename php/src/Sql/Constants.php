@@ -31,9 +31,48 @@ namespace Sel\Sql;
 use Sel\Context;
 use Sel\Evaluator;
 use Sel\SelError;
+use Sel\Value;
 
 final class Constants
 {
+    /**
+     * The value bindings, as a name set and an evaluation context.
+     *
+     * A `value` binding is a constant the translator *has* — §5.4 calls it "a
+     * constant supplied at translation time, inlined as a literal", and
+     * Translator::variable hands it straight to literal(). So `LEFT("abc", X)`
+     * with X bound to "-1" is exactly as knowable as `LEFT("abc", -1)`, and
+     * before this it was exactly as wrong: SEL raised E_RANGE and the four
+     * servers answered '', '', 'ab' and ''. §11.4's headline defect, still open
+     * through the documented way a host passes a parameter.
+     *
+     * Only scalars are lifted. A list-valued binding is what an aggregate
+     * iterates and its shape is the translator's business, not the evaluator's.
+     *
+     * @return array{0: array<string,bool>, 1: Context}
+     */
+    public static function scope(?Bindings $bindings): array
+    {
+        $names = [];
+        $root = Value::none();
+        if ($bindings === null) {
+            return [$names, new Context($root)];
+        }
+        foreach ($bindings->names() as $name) {
+            $b = $bindings->get($name);
+            if (($b['kind'] ?? null) !== 'value') {
+                continue;
+            }
+            $v = $b['value'];
+            if (!($v instanceof Value) || $v->isNone() || $v->size() > 0) {
+                continue;
+            }
+            $names[$name] = true;
+            $root->set($name, $v);
+        }
+        return [$names, new Context($root)];
+    }
+
     /**
      * Whether every leaf under $n is a literal.
      *
@@ -156,10 +195,10 @@ final class Constants
      *
      * @param array<string,mixed> $n
      */
-    public static function validate(array $n): void
+    public static function validate(array $n, ?Context $ctx = null): void
     {
         try {
-            Evaluator::evalNode($n, new Context());
+            Evaluator::evalNode($n, $ctx ?? new Context());
         } catch (SelError $e) {
             refuse('E_SQL_INVALID',
                 "SEL rejects this expression ({$e->code}: {$e->getMessage()}), so "

@@ -350,6 +350,20 @@
       "file": "sql/dialects/ansi.json",
       "from": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\",\n      \"ret\": \"NUM\"\n    },",
       "to": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\",\n      \"ret\": \"NUM\",\n      \"caveat\": \"length-units\"\n    },"
+    },
+    {
+      "name": "value-binding-is-not-constant",
+      "was": "The constant check not knowing about value bindings, which is how it shipped. §5.4 calls a value binding a constant inlined as a literal, so LEFT(\"abc\", X) with X bound to -1 is as knowable as LEFT(\"abc\", -1) and was as wrong. Killed by the mixed:edge-value-binding-is-constant corpus group.",
+      "file": "php/src/Sql/Constants.php",
+      "from": "            $names[$name] = true;\n            $root->set($name, $v);",
+      "to": "            $root->set($name, $v);"
+    },
+    {
+      "name": "assignment-value-not-validated",
+      "was": "Stage 1 recording a definition without validating it. A definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to TRUE and every server answered TRUE where SEL raises. Killed by the const.assign.* cases.",
+      "file": "php/src/Sql/Normalise.php",
+      "from": "        if (Constants::isConstant($value, $constNames)) {\n            Constants::validate($value, $ctx);\n        }",
+      "to": "        // if (Constants::isConstant($value, $constNames)) {}"
     }
   ]
 }
