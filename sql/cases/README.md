@@ -56,3 +56,27 @@ Categories:
 | `dialect` | targets, bases, versions and runtime registration |
 | `strict` | caveats made fatal |
 | `refuse` | everything that cannot be translated, and where it fails |
+
+## How the cases are read
+
+**No host reads this directory.** `tools/gen-sql-cases.mjs` parses every `.sqlt`
+file and emits `php/bin/CaseData.php` and `python/bin/case_data.py`, which the
+runners load as code — the same relationship `sql/dialects/*.json` has with the
+generated dialect map. `tools/check-sql-cases.sh` fails if either generated file
+is stale, so editing a case means regenerating:
+
+    node tools/gen-sql-cases.mjs
+
+It works this way because the alternative did not. Each runner used to parse the
+files itself and decode the `--- bindings` block with its own JSON parser, and
+PHP's decoder represents a JSON object and a JSON array as the same type while
+Python's tells them apart — so the two hosts disagreed about what `"items": {…}`
+meant, and the two mappings had to be patched separately to agree. One reader
+cannot disagree with itself.
+
+A `--- bindings` block is emitted as **constructor calls**, so a malformed one is
+refused by the host's own `Binding` constructor rather than by the tool — which
+is what the cases asserting `E_SQL_BINDING` are for. A JSON *number* is refused
+by the generator itself: PHP's decoder turns a 20-digit integer into a float,
+Python keeps it exact, and JS cannot tell `1.0` from `1`, so a number is written
+as a string with `"type": "NUM"` beside it.

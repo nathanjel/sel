@@ -30,6 +30,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../src/Sql/bootstrap.php';
+require_once __DIR__ . '/json-bindings.php';
 
 use Sel\Dec;
 use Sel\Sel;
@@ -339,7 +340,7 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
             // SEL's.
             try {
                 $sql = Sql::translate(Sel::compile($c['src']), $dialect,
-                    $c['bindings'])->asValue();
+                    bindings_from_json($c['bindings'], $c['at']))->asValue();
                 $bad[] = [$c, $sql, "SEL rejects this with {$c['rejects']} and "
                     . 'the translation succeeded; the server would answer something'];
             } catch (SqlError $e2) {
@@ -351,7 +352,8 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
             continue;
         }
         try {
-            $frag = Sql::translate(Sel::compile($c['src']), $dialect, $c['bindings']);
+            $frag = Sql::translate(Sel::compile($c['src']), $dialect,
+                bindings_from_json($c['bindings'], $c['at']));
         } catch (SqlError $e) {
             // A refusal is an outcome, not a failure: the corpus is allowed to
             // contain things a dialect cannot do, and saying so is the point.
@@ -535,7 +537,11 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
     // `raw` is where a host writes SQL the map cannot know, so it is the one
     // thing in this file that cannot be portable. A raw value written as an
     // object is a per-dialect table; resolve it before anything sees it.
-    $bindings = resolve_raw($spec['bindings'], $dialect, $label);
+    // resolve_raw picks the per-dialect `raw` first, then the typed
+    // constructors judge the result -- so a rows.json rule with a malformed
+    // binding is a suite error here rather than SQL at the server.
+    $bindings = bindings_from_json(
+        resolve_raw($spec['bindings'], $dialect, $label), $label);
 
     $ctx = load_context($pdo, $spec['context']);
     $total = count($ctx);
@@ -882,7 +888,8 @@ function run_coverage(string $dialect, bool $verbose, string $label = ''): array
     foreach ($cases as $c) {
         Map::traceOn();
         try {
-            Sql::translate(Sel::compile($c['src']), $dialect, $c['bindings']);
+            Sql::translate(Sel::compile($c['src']), $dialect,
+                bindings_from_json($c['bindings'], $c['at']));
         } catch (Throwable $e) {
             // A refusal still looked the entry up, which is what is being
             // counted: the corpus reached it and the map said no.
@@ -901,7 +908,7 @@ function run_coverage(string $dialect, bool $verbose, string $label = ''): array
         Map::traceOn();
         try {
             Sql::translate(Sel::compile($rule['sel']), $dialect,
-                resolve_raw($spec['bindings'], $dialect, $label));
+                bindings_from_json(resolve_raw($spec['bindings'], $dialect, $label), $label));
         } catch (Throwable $e) {
         }
         foreach (Map::traceOff() as $e) {

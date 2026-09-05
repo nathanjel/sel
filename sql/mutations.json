@@ -65,11 +65,11 @@
       "to": "if (false) {"
     },
     {
-      "name": "union-instead-of-merge",
-      "was": "Code review. PHP's + keeps the LEFT value, so field-name normalisation was discarded and every lookup failed.",
-      "file": "php/src/Sql/Bindings.php",
-      "from": "return array_merge($b, [",
-      "to": "return $b + ["
+      "name": "field-names-are-not-normalised",
+      "was": "Was `union-instead-of-merge`: PHP's `+` keeps the LEFT value, so a relation binding's field-name normalisation was discarded and every lookup failed. That defect is now unrepresentable -- Binding builds the record rather than merging into one the host supplied, so there is no left operand to win. What remains worth guarding is the normalisation itself: consumers look fields up upper-cased, and a binding declaring `qty` must answer to `QTY`.",
+      "file": "php/src/Sql/Binding.php",
+      "from": "            $out[strtoupper((string) $name)] = $b->spec;",
+      "to": "            $out[(string) $name] = $b->spec;"
     },
     {
       "name": "concat-treated-as-comparison",
@@ -241,10 +241,10 @@
     },
     {
       "name": "raw-binding-unchecked",
-      "was": "(string) on an array yields \"Array\" plus a warning, and that string is then spliced into a correlated subquery as if it were a join condition.",
-      "file": "php/src/Sql/Bindings.php",
-      "from": "                if (isset($b['correlate'])) {\n                    if (!is_array($b['correlate']) || !isset($b['correlate']['raw'])\n                        || !is_string($b['correlate']['raw'])) {",
-      "to": "                if (false) {\n                    if (!is_array($b['correlate']) || !isset($b['correlate']['raw'])\n                        || !is_string($b['correlate']['raw'])) {"
+      "was": "(string) on an array yields \"Array\" plus a warning, and that string is then spliced into a correlated subquery as if it were a join condition. The check moved from Bindings' hand-validation into the Binding constructor, where the shape cannot get past the door -- and it has to be an explicit check rather than a parameter type, because Python, JS and Lisp do not enforce declarations.",
+      "file": "php/src/Sql/Binding.php",
+      "from": "            self::checkString(\"a relation binding's correlate\", $correlate);",
+      "to": "            $correlate = $correlate;"
     },
     {
       "name": "constant-validation-removed",
@@ -334,8 +334,8 @@
       "name": "mirror-compares-mariadb-with-itself",
       "was": "A check on a check, which is what §7 of docs/SQL-TESTING.md is about, and the PHP array-union trap this layer has already shipped twice. `+` keeps the LEFT operand for a duplicated key, so swapping the operands makes the mirror re-run every mariadb case AS mariadb. The pass count is unchanged, the \"also checked against a mirrored dialect\" line still prints the same number, and the only thing that makes mysql.json safe to leave empty has stopped happening.",
       "file": "php/bin/sqlt",
-      "from": "        $mirrorCase = ['dialect' => $mirror] + $c;",
-      "to": "        $mirrorCase = $c + ['dialect' => $mirror];"
+      "from": "    $mirrorCase = ['dialect' => $mirror] + $c;",
+      "to": "    $mirrorCase = $c + ['dialect' => $mirror];"
     },
     {
       "name": "min-claims-exactness",

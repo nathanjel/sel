@@ -548,10 +548,52 @@ Python is the same three calls, snake-cased: `map.define_dialect`,
 ## 5. Bindings
 
 The host answers `dependencies()` with a **bindings map**: upper-case SEL name →
-a record saying where that name lives in the schema. Any name still read after
+a `Binding` saying where that name lives in the schema. Any name still read after
 stage 1 that has no binding is `E_SQL_UNBOUND`. Nothing is inferred; a rule that
 reads `TOTAL` against a schema that never heard of it must fail loudly, not
 guess a column.
+
+**A Binding is built by a constructor, in code. It is never decoded from a
+document, and no host in this project parses one.** That is not a style
+preference; it is the fix for a defect class the layer actually shipped. The API
+used to take a nested map shaped like JSON and validate that shape by hand in
+each host — and PHP's decoder represents a JSON object and a JSON array as the
+same type while Python's tells them apart, so `items` given as an object was
+accepted by one host and refused by the other, `from` given as an array was
+refused by one and spliced into an identifier by the other. Neither answer was a
+decision anybody made. A constructor makes the whole class **unrepresentable**
+rather than refusable:
+
+```php
+$bindings = [
+    'TOTAL' => Binding::column('total', 'o', 'NUM'),
+    'ITEMS' => Binding::relation('order_items', 'oi',
+        fields: ['QTY' => Binding::column('qty', type: 'NUM')],
+        correlate: '`oi`.`order_id` = `o`.`id`'),
+];
+```
+
+```python
+bindings = {
+    'TOTAL': Binding.column('total', 'o', 'NUM'),
+    'ITEMS': Binding.relation('order_items', 'oi',
+        fields={'QTY': Binding.column('qty', type='NUM')},
+        correlate='`oi`.`order_id` = `o`.`id`'),
+}
+```
+
+An application whose bindings come from a schema file, a config or an ORM
+**generates these calls** — the same relationship `sql/dialects/*.json` has with
+the generated dialect map, and the same one `sql/cases/*.sqlt` has with the
+generated case tables. One program reads the source; every host loads code.
+
+The checks live in the constructor *bodies* rather than in parameter types, and
+that is deliberate: PHP would enforce a `string` parameter and refuse an array
+with a `TypeError`, but Python's annotations enforce nothing at run time, JS has
+no types to declare and Lisp's are advisory. A guarantee written as a signature
+is a guarantee three of the six hosts do not make. Written in the body it is the
+same refusal, with the same `E_SQL_BINDING` code, everywhere — and `SqlError` is
+the class an application catches, where a `TypeError` is not.
 
 Four kinds.
 
@@ -2047,18 +2089,17 @@ require __DIR__ . '/../php/src/bootstrap.php';
 require __DIR__ . '/../php/src/Sql/bootstrap.php';
 
 use Sel\Sel;
+use Sel\Sql\Binding;
 use Sel\Sql\Sql;
 
 $program = Sel::compile('TOTAL > 100 AND ALL(ITEMS, I, I["qty"] > 0)');
 
 // dependencies() says what must be bound: ['ITEMS', 'TOTAL']
 $bindings = [
-    'TOTAL' => ['kind' => 'column', 'table' => 'o', 'column' => 'total', 'type' => 'NUM'],
-    'ITEMS' => [
-        'kind' => 'relation', 'from' => 'order_items', 'alias' => 'oi',
-        'correlate' => ['raw' => '`oi`.`order_id` = `o`.`id`'],
-        'fields' => ['QTY' => ['column' => 'qty', 'type' => 'NUM']],
-    ],
+    'TOTAL' => Binding::column('total', 'o', 'NUM'),
+    'ITEMS' => Binding::relation('order_items', 'oi',
+        fields: ['QTY' => Binding::column('qty', type: 'NUM')],
+        correlate: '`oi`.`order_id` = `o`.`id`'),
 ];
 
 $frag = Sql::tryTranslate($program, 'mysql', $bindings);
@@ -2084,7 +2125,14 @@ Python — the same call, the same bindings, the host's spelling:
 
 ```python
 import sel
-from sel.sql import Sql
+from sel.sql import Binding, Sql
+
+bindings = {
+    'TOTAL': Binding.column('total', 'o', 'NUM'),
+    'ITEMS': Binding.relation('order_items', 'oi',
+        fields={'QTY': Binding.column('qty', type='NUM')},
+        correlate='`oi`.`order_id` = `o`.`id`'),
+}
 
 program = sel.compile('TOTAL > 100 AND ALL(ITEMS, I, I["qty"] > 0)')
 frag = Sql.try_translate(program, 'mysql', bindings)
@@ -2093,11 +2141,10 @@ if frag is None:
 cur.execute(f'SELECT o.id FROM orders o WHERE {frag.as_condition()}')
 ```
 
-`bindings` is the same structure in both, because it is JSON either way — the
-`.sqlt` cases pass one literal `--- bindings` block to both hosts. Given the
-bindings above, `frag.as_condition()` is byte for byte the SQL shown for PHP.
-That is not a claim about care taken; it is `sql/cases/*.sqlt` run under two
-runners, and `tools/check-sql-cases.sh` asserting the two read the same cases.
+The two are the same calls in two spellings, and `frag.as_condition()` is byte
+for byte the SQL shown for PHP. That is not a claim about care taken: it is
+`sql/cases/*.sqlt` run under two runners, from one generated table that
+`tools/check-sql-cases.sh` keeps current.
 
 ---
 

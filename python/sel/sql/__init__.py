@@ -16,12 +16,13 @@ from typing import Any
 
 from . import map
 from ._map import DIALECTS
+from .binding import Binding
 from .bindings import Bindings
 from .errors import SqlError
 from .fragment import Fragment
 from .translator import Translator
 
-__all__ = ['DIALECTS', 'Bindings', 'Fragment', 'Sql', 'SqlError', 'map']
+__all__ = ['DIALECTS', 'Binding', 'Bindings', 'Fragment', 'Sql', 'SqlError', 'map']
 
 
 class Sql:

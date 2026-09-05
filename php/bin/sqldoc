@@ -30,22 +30,24 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/sqlt-format.php';
+require_once __DIR__ . '/CaseData.php';
 
 const INDENT = '    ';
 
-/** @return array<string, array<string,mixed>> */
+/**
+ * Every case, by name.
+ *
+ * From the generated table rather than from the .sqlt files: one program reads
+ * sql/cases, and this is not it. A second reader is a second thing to drift, and
+ * drifting documentation is the defect this file exists to catch.
+ *
+ * @return array<string, array<string,mixed>>
+ */
 function load_cases(): array
 {
     $out = [];
-    foreach (glob(SUITE . '/*.sqlt') ?: [] as $file) {
-        foreach (parse_sqlt((string) file_get_contents($file), basename($file)) as $c) {
-            if (isset($out[$c['name']])) {
-                throw new RuntimeException("two cases are named {$c['name']}: "
-                    . "{$out[$c['name']]['at']} and {$c['at']}");
-            }
-            $out[$c['name']] = $c;
-        }
+    foreach (sql_cases() as $c) {
+        $out[$c['name']] = $c;
     }
     return $out;
 }
@@ -118,12 +120,7 @@ if ($files === []) {
     $files = [__DIR__ . '/../../docs/SQL-TRANSLATION.md'];
 }
 
-try {
-    $cases = load_cases();
-} catch (RuntimeException $e) {
-    fwrite(STDERR, "sqldoc: SUITE ERROR {$e->getMessage()}\n");
-    exit(2);
-}
+$cases = load_cases();
 
 $checked = 0;
 $bad = [];
