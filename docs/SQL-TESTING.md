@@ -445,19 +445,43 @@ immediately.
 
 ### Fix — mutation testing, as a committed tool
 
-`tools/mutate-sql.sh`: a list of known-dangerous mutations to the SQL layer —
-drop the `textCollate` from a comparison, splice a fragment twice, swap two
-template arguments, return the params pool unwalked, use `+` where `array_merge`
-is meant — each applied to a copy of the tree, with the suite expected to **fail**
-for every one. A mutation the suite survives is a hole, reported by name.
+*Built as `tools/mutate-sql.sh`, with the mutations as data in
+`sql/mutations.json`.* Eighteen of them, each a defect this layer has actually
+shipped or a plausible neighbour: drop the `textCollate`, swap `INSTR`'s
+arguments, return the params pool unwalked, use `+` where `array_merge` is meant,
+add `&` to the byte-comparison list, upper-case every registration key, drop the
+`(?s)` prefix, choose the regex flag by argument count. Each is applied to a copy
+of the tree and the checks run in order — `sqlt`, `sqldoc`, then the three oracle
+modes — until one fails. The first that does is reported, because it answers
+"what would have told you" with the cheapest true answer.
 
-The precedent is already in the repository: `tools/gen-sql-map.mjs`'s validation
-was checked by planting seventeen malformed entries and confirming each was
-caught. That worked, it took ten minutes, and it is the only check in the SQL
-layer whose adequacy is known rather than assumed.
+Three properties make it a check rather than a gesture:
 
-**Would have caught:** the fact that the first slot invariant was a no-op —
-before it was committed and trusted.
+- **A stale pattern is a suite error, not a pass.** If `from` does not occur
+  exactly once the mutation is reported as stale, because a pattern that matches
+  nothing would otherwise be scored by whatever the checks say about *unmutated*
+  code — this tool's own failure mode, and the reason it exists.
+- **The mutation is proved to have landed**, by re-reading the file.
+- **No database means skipped, not caught.** A mutation that survives `sqlt` and
+  `sqldoc` on a machine with no DSN is reported as skipped, because the check
+  that would have caught it did not run.
+
+**It found two holes on its first complete run**, both in refusals added an hour
+earlier from fuzz findings: removing the mixed-kind refusal and removing the
+BOOL-comparison guard each survived every check. Nothing pinned them — the fuzz
+lane had found the defects, the fixes went in, and no case was written. Then
+fixing the first hole exposed a second: the case pinning the BOOL guard used
+`0 IN FALSE`, which is lowered by `inOperator`, so deleting the same guard from
+`binary()` still survived. Two paths, one rule, one case.
+
+That is the pattern the whole document is about, arriving one more time: **a fix
+without a case is a fix that lasts until someone tidies the code.** The mutation
+runner is what turns "we fixed that" into something checkable.
+
+The precedent was already in the repository: `tools/gen-sql-map.mjs`'s validation
+was checked by planting seventeen malformed entries. That worked, it took ten
+minutes, and it was the only check in the SQL layer whose adequacy was known
+rather than assumed.
 
 ---
 

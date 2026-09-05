@@ -15,6 +15,7 @@ cd cpp && make asan         the C++ suite under the address and leak sanitizers
 tools/fuzz.sh               seeded differential fuzzing, N-way
 tools/check-sql-map.sh      the dialect map, regenerated and diffed
 tools/check-sql-docs.sh     the design document quotes cases that run
+tools/mutate-sql.sh         break the SQL layer on purpose; the checks must notice
 tools/check-sql-oracle.sh   translated SQL against a real database
 tools/fuzz-sql.sh           seeded SQL differential fuzzing against a database
 ```

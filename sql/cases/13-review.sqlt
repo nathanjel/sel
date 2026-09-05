@@ -204,3 +204,86 @@ FIND("a", "banana")
 INSTR(?, ?)
 --- params
 t"banana", t"a"
+### name: kinds.branches-must-agree
+--- note
+Found by the fuzz lane; pinned here because the mutation runner showed nothing
+else would notice if the refusal were removed. SEL answers the BOOL TRUE, whose
+text is "TRUE"; the CASE answers 1. Nothing casts one to the other and no caveat
+says "a boolean becomes 1".
+--- dialect
+mariadb
+--- source
+IF(TRUE, TRUE, "A-1")
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.unknown-still-unifies-with-anything
+--- note
+The other half of the rule. UNKNOWN is what an undeclared column type is for,
+and it must keep unifying, or every mixed branch over a plain column would be
+refused.
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c"}}
+--- source
+IF(TRUE, C, "x")
+--- expect
+CASE WHEN TRUE THEN `c` ELSE 'x' END
+===
+### name: kinds.bool-is-not-byte-comparable-with-a-number
+--- note
+Found by the fuzz lane; pinned here for the same reason. CAST(0 AS CHAR) and
+CAST(FALSE AS CHAR) are both '0', so NOT (0 IN FALSE) was TRUE in SEL and FALSE
+on the server. EQL and IN are structural: a kind mismatch is FALSE forever.
+--- dialect
+mariadb
+--- source
+0 IN FALSE
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.two-bools-compare-fine
+--- note
+'1' against '0' is exactly right, so the refusal must not be wider than the
+defect.
+--- dialect
+mariadb
+--- source
+TRUE EQL FALSE
+--- expect
+(CAST(TRUE AS CHAR) COLLATE utf8mb4_bin = CAST(FALSE AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: kinds.an-unknown-operand-is-the-accepted-limit
+--- note
+Where the binding did not declare a type, nothing here can decide either. That
+is the limit, and it passes rather than guessing.
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c"}}
+--- source
+C EQL TRUE
+--- expect
+(CAST(`c` AS CHAR) COLLATE utf8mb4_bin = CAST(TRUE AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: kinds.bool-is-not-byte-comparable-directly
+--- note
+The same rule on the other path. `IN` is lowered by inOperator and $==/EQL by
+binary(), and the mutation runner found that only one of the two was pinned:
+removing the guard from binary() survived every check.
+--- dialect
+mariadb
+--- source
+0 EQL FALSE
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.bool-is-not-byte-comparable-with-text
+--- dialect
+mariadb
+--- source
+"x" $== TRUE
+--- error
+E_SQL_SHAPE
+===

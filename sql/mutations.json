@@ -1,0 +1,145 @@
+{
+  "note": [
+    "Defects this layer has actually shipped, or plausible neighbours of them,",
+    "written back into the code on purpose. tools/mutate-sql.sh applies each one",
+    "to a copy of the tree and requires some check to notice.",
+    "",
+    "Every other tool here answers 'is the code right?'. This answers 'would we",
+    "know if it weren't?', which is a different question and the one that was",
+    "never asked. The slot invariant added after the code review was a no-op: it",
+    "was committed, trusted, and did not fire when the bug it existed for was put",
+    "back by hand. Nothing said so, because nothing tried.",
+    "",
+    "`from` must occur exactly once. A pattern that matches nothing is a suite",
+    "error, never a pass -- a stale pattern would otherwise be scored by whatever",
+    "the checks say about unmutated code, which is this tool's own failure mode."
+  ],
+  "mutations": [
+    {
+      "name": "collation-dropped",
+      "was": "M1. MariaDB's REGEXP and = follow the operand's collation, which is case-insensitive by default, so \"A\" $== \"a\" was TRUE on the server and FALSE in SEL.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"textCollate\": \" COLLATE utf8mb4_bin\",",
+      "to": "\"textCollate\": \"\","
+    },
+    {
+      "name": "find-args-swapped",
+      "was": "The reordering template that made Fragment::bindings() walk the output rather than return the pool.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"2\": \"INSTR({1}, {0})\",",
+      "to": "\"2\": \"INSTR({0}, {1})\","
+    },
+    {
+      "name": "binary-operand-not-cast",
+      "was": "Found by the fuzz lane. HEX(1) hexes the number and answers \"1\"; SEL's TO_HEX(1) is \"31\".",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"tpl\": \"LOWER(HEX({binaryCast:0}))\"",
+      "to": "\"tpl\": \"LOWER(HEX({0}))\""
+    },
+    {
+      "name": "pad-truncates-again",
+      "was": "Found by the oracle. LPAD('7777', 2, '0') is '77'; SEL's PADL returns \"7777\".",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"tpl\": \"IF(CHAR_LENGTH({0}) >= {1}, {0}, LPAD({0}, {1}, {2}))\"",
+      "to": "\"tpl\": \"LPAD({0}, {1}, {2})\""
+    },
+    {
+      "name": "min-of-one-argument",
+      "was": "Found by the oracle. LEAST and GREATEST are variadic but need two arguments; SEL's MIN takes one.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"tpl\": { \"1\": \"{0}\", \"*\": \"LEAST({*})\" }",
+      "to": "\"tpl\": \"LEAST({*})\""
+    },
+    {
+      "name": "bindings-unwalked",
+      "was": "Code review. Returning the pool ignores reordering templates and repeated slots.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "        $out = [];\n        foreach ($this->parts as $p) {\n            if (!is_string($p) && !$this->isNumeric($p)) {\n                $out[] = $this->params[$p - 1];\n            }\n        }\n        return $out;",
+      "to": "        return $this->params;"
+    },
+    {
+      "name": "number-becomes-a-placeholder",
+      "was": "The params-mode defect the fuzz lane found: no coercion of a bound string reproduces a bare decimal literal.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "if ($mode !== 'inline' && $kind === 'NUM') {",
+      "to": "if (false) {"
+    },
+    {
+      "name": "union-instead-of-merge",
+      "was": "Code review. PHP's + keeps the LEFT value, so field-name normalisation was discarded and every lookup failed.",
+      "file": "php/src/Sql/Bindings.php",
+      "from": "return array_merge($b, [",
+      "to": "return $b + ["
+    },
+    {
+      "name": "concat-treated-as-comparison",
+      "was": "Class F. The collation fix keyed on the variant name `text`, which `&` also uses.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "static $ops = ['$==' => 0,",
+      "to": "static $ops = ['&' => 0, '$==' => 0,"
+    },
+    {
+      "name": "define-upper-cases-everything",
+      "was": "Code review. Skeleton names are camel-case, so upper-casing every key made runtime skel registration silently dead.",
+      "file": "php/src/Sql/Map.php",
+      "from": "$section === 'funcs' ? strtoupper($key) : $key",
+      "to": "strtoupper($key)"
+    },
+    {
+      "name": "negative-literal-unparenthesised",
+      "was": "MariaDB reads -- as double negation and gets the right answer by luck; PostgreSQL and SQLite read it as a comment.",
+      "file": "php/src/Sql/Emit.php",
+      "from": "return str_starts_with($n, '-') ? '(' . $n . ')' : $n;",
+      "to": "return $n;"
+    },
+    {
+      "name": "relation-slots-collide",
+      "was": "Item 6 absorbed: the three relation skeletons merge two slot maps that were disjoint by inspection and by nothing else.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "return ['from' => [$from],",
+      "to": "return ['body' => ['x'], 'from' => [$from],"
+    },
+    {
+      "name": "arity-fallback-ignored",
+      "was": "The `*` key added for MIN. Without it an unbounded arity resolves no template.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "if (!isset($tpl[$n]) && isset($tpl['*'])) {",
+      "to": "if (false) {"
+    },
+    {
+      "name": "kinds-unify-loosely",
+      "was": "Found by the fuzz lane. IF(TRUE, TRUE, \"A-1\") is \"TRUE\" in SEL and 1 on the server.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            } elseif ($kind !== $f->kind) {\n                refuse('E_SQL_SHAPE',",
+      "to": "            } elseif ($kind !== $f->kind) {\n                return 'UNKNOWN';\n            } elseif (false) {\n                refuse('E_SQL_SHAPE',"
+    },
+    {
+      "name": "bool-compared-to-a-number",
+      "was": "Found by the fuzz lane. CAST(0 AS CHAR) and CAST(FALSE AS CHAR) are both '0'.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            self::requireComparableKinds($l, $r, $op, $n['pos']);\n",
+      "to": ""
+    },
+    {
+      "name": "bool-compared-to-a-number-in-a-list",
+      "was": "The same guard on the IN path. inOperator and binary() lower different operators, and the mutation runner found only one of the two was pinned.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            self::requireComparableKinds($l, $r, 'IN', $n['pos']);\n",
+      "to": ""
+    },
+    {
+      "name": "regex-dotall-dropped",
+      "was": "M1. Dotall is permanently on in SEL and off by default in the server.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "$inline = '(?s)';",
+      "to": "$inline = '';"
+    },
+    {
+      "name": "regex-flag-by-count",
+      "was": "Code review. Choosing the case-insensitive template by argument count made RMATCH(p, s, \"\") match case-insensitively.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        $text = (string) $flags['v'];\n",
+      "to": "        $text = 'i';\n"
+    }
+  ]
+}
