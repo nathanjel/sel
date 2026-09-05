@@ -3,16 +3,12 @@
   "extends": "mysql-family",
   "version": "8.4",
   "target": true,
-
   "notes": {
-    "purpose": "MySQL 8.4. It overrides nothing, and that is the finding rather than the starting point: this leaf was written empty on purpose, and the oracle was asked whether the claim held. It did. 223 of the corpus's expressions agree, the same 6 are refused, all 10 row rules agree, and 6,000 generated programs produce numbers identical to MariaDB's, entry for entry.",
-
+    "purpose": "MySQL 8.4. It overrides nothing, and that is the finding rather than the starting point: this leaf was written empty on purpose, and the oracle was asked whether the claim held. It did. The corpus agrees entry for entry, the same expressions are refused, all 10 row rules agree, and 6,000 generated programs produce numbers identical to MariaDB's.",
     "how-it-was-authored": "By writing `extends: mysql-family` and nothing else, regenerating, and running php/bin/sqlo against a real MySQL 8.4.11. That is the reverse of how mariadb.json was authored -- read the manual, write the templates, hope -- and it is the cheaper order once an oracle exists: the server enumerates the differences instead of a person trying to remember them. There were none.",
-
     "version": "8.4 is the minimum this document assumes and what every `since` is compared against. The regex functions the family relies on -- REGEXP_INSTR, REGEXP_REPLACE -- arrived in 8.0.4, so a 5.7 leaf would need most of the regex family refused; it is not written because nobody has probed one.",
-
     "sql_mode": "Verified on 8.4.11 with the shipped default: ONLY_FULL_GROUP_BY, STRICT_TRANS_TABLES, NO_ZERO_IN_DATE, NO_ZERO_DATE, ERROR_FOR_DIVISION_BY_ZERO, NO_ENGINE_SUBSTITUTION. The family's textEscape assumption is that NO_BACKSLASH_ESCAPES is off, which it is. ERROR_FOR_DIVISION_BY_ZERO governs INSERT and UPDATE, not SELECT: SELECT 1/0 is still NULL here, exactly as on MariaDB, which is the divergence docs/SQL-TRANSLATION.md §11.1 records.",
-
-    "identical-by-check": "php/bin/sqlt re-runs every mariadb case under mysql and requires the same string, the same error and the same parameters -- see MIRRORS there. So this file staying empty is not an assumption anybody has to remember: adding an override to one leaf without the other fails the suite."
+    "identical-by-check": "php/bin/sqlt re-runs every mariadb case under mysql and requires the same string, the same error and the same parameters -- see MIRRORS there. So this file staying empty is not an assumption anybody has to remember: adding an override to one leaf without the other fails the suite.",
+    "where-they-do-differ": "One place, found by extending the corpus past the range a rule normally reaches: DECIMAL caps the scale of a product, at 30 here and at 38 on MariaDB, so 0.00000000000000000000000000000001 * 2 is 2e-32 on MariaDB and zero here. That is declared by the scale-limit caveat on mysql-family's `*` rather than by an override on this leaf, because both servers truncate and only the digit they stop at differs -- the corpus carries one expression past each boundary so the caveat is seen doing work on both. So `identical to MariaDB's` above means identical below 30 fractional digits, and this file is still empty."
   }
 }

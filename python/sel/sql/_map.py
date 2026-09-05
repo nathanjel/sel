@@ -327,6 +327,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "*": {
                 "tpl": "({0} * {1})",
                 "ret": "NUM",
+                "caveat": "scale-limit",
             },
             "/": {
                 "tpl": "({0} / {1})",
@@ -693,6 +694,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "*": {
                 "tpl": "({0} * {1})",
                 "ret": "NUM",
+                "caveat": "scale-limit",
             },
             "/": {
                 "tpl": "({0} / {1})",
@@ -1059,6 +1061,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "*": {
                 "tpl": "({0} * {1})",
                 "ret": "NUM",
+                "caveat": "scale-limit",
             },
             "/": {
                 "tpl": "({0} / {1})",
@@ -1829,6 +1832,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "coerce": "({numericCast:0} = {numericCast:1})",
                 },
                 "ret": "BOOL",
+                "caveat": "decimal-float",
             },
             "!=": {
                 "variants": {
@@ -1836,6 +1840,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "coerce": "({numericCast:0} <> {numericCast:1})",
                 },
                 "ret": "BOOL",
+                "caveat": "decimal-float",
             },
             "<": {
                 "variants": {
@@ -1843,6 +1848,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "coerce": "({numericCast:0} < {numericCast:1})",
                 },
                 "ret": "BOOL",
+                "caveat": "decimal-float",
             },
             "<=": {
                 "variants": {
@@ -1850,6 +1856,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "coerce": "({numericCast:0} <= {numericCast:1})",
                 },
                 "ret": "BOOL",
+                "caveat": "decimal-float",
             },
             ">": {
                 "variants": {
@@ -1857,6 +1864,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "coerce": "({numericCast:0} > {numericCast:1})",
                 },
                 "ret": "BOOL",
+                "caveat": "decimal-float",
             },
             ">=": {
                 "variants": {
@@ -1864,6 +1872,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "coerce": "({numericCast:0} >= {numericCast:1})",
                 },
                 "ret": "BOOL",
+                "caveat": "decimal-float",
             },
             "$==": {
                 "variants": {

@@ -16,6 +16,11 @@
     "textCast": "CAST({0} AS CHAR)"
   },
   "ops": {
+    "*": {
+      "tpl": "({0} * {1})",
+      "ret": "NUM",
+      "caveat": "scale-limit"
+    },
     "&": {
       "variants": {
         "text": "CONCAT({0}, {1})",
@@ -191,6 +196,7 @@
     "regex-caveat": "What the caveat still covers, after the collation and dotall fixes: MariaDB's $ also matches immediately before a trailing newline, where SEL's anchors to the end of the subject and nothing else. Verified on 11.8: SELECT 'abc\\n' REGEXP '^abc$' is 1 where SEL says FALSE. \\z fixes it, but only by rewriting the pattern, which is possible only when the pattern is a literal — so it is a caveat rather than a template.",
     "regex-literal-only": "Both the pattern and the flags must be literals. The pattern is rewritten through Sel\\Builtins\\Regex::portableSource before it is emitted — \\d becomes [0-9] and so on, per spec 7.8 — and a pattern taken from a column cannot be rewritten. The flag must be a literal because it selects the template.",
     "RREPLACE": "Refused in mysql-family, and MariaDB inherits the refusal even though it has had REGEXP_REPLACE since 10.0.5. The obstacle is the replacement string, not the function: SEL spells a capture $1 and MariaDB spells it \\1, and $$ means a literal $ where MariaDB has no such rule. Rewriting is possible when the replacement is a literal, which is a translator feature and not something the map can express.",
-    "regex-verified-on-both": "RMATCH lived in mariadb.json until a real MySQL 8.4 could be asked, because a spelling nobody has probed on both servers is not something the FAMILY layer may claim -- that layer means 'verified to agree'. It does: on MySQL 8.4.11, ('abc' COLLATE utf8mb4_bin REGEXP '(?s)^[a-z]+$') is 1, ('ABC' ...) is 0, ('a\\nc' ... REGEXP '(?s)^a.c$') is 1 and the Arabic-Indic digit does not match [0-9] -- the same four answers MariaDB 11.8 gives. MySQL uses ICU and MariaDB uses PCRE2, and the inline (?s) modifier is accepted by both."
+    "regex-verified-on-both": "RMATCH lived in mariadb.json until a real MySQL 8.4 could be asked, because a spelling nobody has probed on both servers is not something the FAMILY layer may claim -- that layer means 'verified to agree'. It does: on MySQL 8.4.11, ('abc' COLLATE utf8mb4_bin REGEXP '(?s)^[a-z]+$') is 1, ('ABC' ...) is 0, ('a\\nc' ... REGEXP '(?s)^a.c$') is 1 and the Arabic-Indic digit does not match [0-9] -- the same four answers MariaDB 11.8 gives. MySQL uses ICU and MariaDB uses PCRE2, and the inline (?s) modifier is accepted by both.",
+    "scale-limit": "The * entry repeats ansi's template and adds a caveat, which is the only reason it is written here at all. DECIMAL has a maximum result scale and SEL has none, so a product needing more fractional digits than the server keeps is truncated to it -- not rounded near the answer, truncated to zero when every surviving digit is one. 0.00000000000000000000000000000001 * 2 is 0.00000000000000000000000000000002 in SEL and on MariaDB, and 0.000000000000000000000000000000 on MySQL 8.4: the boundary is 30 there and 38 on MariaDB, and the corpus carries one expression past each so the caveat is visibly doing work on both leaves rather than only on one. It sits on the family and not on the mysql leaf because both servers truncate; only the digit they stop at differs. It is not on ansi because ansi is the base a future dialect inherits, and a dialect with an exact numeric type should not inherit a declared imprecision. + and - do not truncate on either server -- the result scale is the larger operand's -- and / already declares division-scale for the same shape of loss."
   }
 }

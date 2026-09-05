@@ -332,6 +332,7 @@ final class MapData
                 '*' => [
                     'tpl' => '({0} * {1})',
                     'ret' => 'NUM',
+                    'caveat' => 'scale-limit',
                 ],
                 '/' => [
                     'tpl' => '({0} / {1})',
@@ -698,6 +699,7 @@ final class MapData
                 '*' => [
                     'tpl' => '({0} * {1})',
                     'ret' => 'NUM',
+                    'caveat' => 'scale-limit',
                 ],
                 '/' => [
                     'tpl' => '({0} / {1})',
@@ -1064,6 +1066,7 @@ final class MapData
                 '*' => [
                     'tpl' => '({0} * {1})',
                     'ret' => 'NUM',
+                    'caveat' => 'scale-limit',
                 ],
                 '/' => [
                     'tpl' => '({0} / {1})',
@@ -1834,6 +1837,7 @@ final class MapData
                         'coerce' => '({numericCast:0} = {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
+                    'caveat' => 'decimal-float',
                 ],
                 '!=' => [
                     'variants' => [
@@ -1841,6 +1845,7 @@ final class MapData
                         'coerce' => '({numericCast:0} <> {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
+                    'caveat' => 'decimal-float',
                 ],
                 '<' => [
                     'variants' => [
@@ -1848,6 +1853,7 @@ final class MapData
                         'coerce' => '({numericCast:0} < {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
+                    'caveat' => 'decimal-float',
                 ],
                 '<=' => [
                     'variants' => [
@@ -1855,6 +1861,7 @@ final class MapData
                         'coerce' => '({numericCast:0} <= {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
+                    'caveat' => 'decimal-float',
                 ],
                 '>' => [
                     'variants' => [
@@ -1862,6 +1869,7 @@ final class MapData
                         'coerce' => '({numericCast:0} > {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
+                    'caveat' => 'decimal-float',
                 ],
                 '>=' => [
                     'variants' => [
@@ -1869,6 +1877,7 @@ final class MapData
                         'coerce' => '({numericCast:0} >= {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
+                    'caveat' => 'decimal-float',
                 ],
                 '$==' => [
                     'variants' => [

@@ -40,7 +40,8 @@ const LOWERED = new Set([
 // sql/MAP.md §4.6. Closed, so Fragment::$caveats is something an application
 // can branch on rather than a bag of prose.
 const CAVEATS = new Set([
-  'unicode-case', 'division-scale', 'numeric-scale', 'decimal-float', 'rounding-mode',
+  'unicode-case', 'division-scale', 'numeric-scale', 'scale-limit', 'decimal-float',
+  'rounding-mode',
   'modulo-integer',
   'power-float', 'text-collation', 'regex-engine', 'concat-null',
   'trim-charset', 'length-units', 'input-laxity',

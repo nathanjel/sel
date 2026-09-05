@@ -58,42 +58,48 @@
         "num": "({numericCast:0} = {numericCast:1})",
         "coerce": "({numericCast:0} = {numericCast:1})"
       },
-      "ret": "BOOL"
+      "ret": "BOOL",
+      "caveat": "decimal-float"
     },
     "!=": {
       "variants": {
         "num": "({numericCast:0} <> {numericCast:1})",
         "coerce": "({numericCast:0} <> {numericCast:1})"
       },
-      "ret": "BOOL"
+      "ret": "BOOL",
+      "caveat": "decimal-float"
     },
     "<": {
       "variants": {
         "num": "({numericCast:0} < {numericCast:1})",
         "coerce": "({numericCast:0} < {numericCast:1})"
       },
-      "ret": "BOOL"
+      "ret": "BOOL",
+      "caveat": "decimal-float"
     },
     "<=": {
       "variants": {
         "num": "({numericCast:0} <= {numericCast:1})",
         "coerce": "({numericCast:0} <= {numericCast:1})"
       },
-      "ret": "BOOL"
+      "ret": "BOOL",
+      "caveat": "decimal-float"
     },
     ">": {
       "variants": {
         "num": "({numericCast:0} > {numericCast:1})",
         "coerce": "({numericCast:0} > {numericCast:1})"
       },
-      "ret": "BOOL"
+      "ret": "BOOL",
+      "caveat": "decimal-float"
     },
     ">=": {
       "variants": {
         "num": "({numericCast:0} >= {numericCast:1})",
         "coerce": "({numericCast:0} >= {numericCast:1})"
       },
-      "ret": "BOOL"
+      "ret": "BOOL",
+      "caveat": "decimal-float"
     },
     "&": {
       "variants": {
@@ -252,6 +258,7 @@
     "minmax": "min() and max() take one argument here, so no arity-keyed template is needed. LEAST and GREATEST do not, which is what the `*` fallback exists for.",
     "join": "Not overridden, so ansi's refusal stands. SQLite's group_concat specifies no order without an ORDER BY inside it, and a relation binding has no key to order by -- the same reason mysql-family refuses it.",
     "not-caveatable": "Two divergences cannot be expressed as a caveat because they are about failure rather than value. 1/0 is NULL here and E_DIV_ZERO in SEL, and CAST('abc' AS NUMERIC) is 0 here where SEL raises E_NOT_NUM. A rule that would ERROR in SEL may quietly EVALUATE in SQLite. See §11 of docs/SQL-TRANSLATION.md.",
-    "right": "substr(X, -N) alone is wrong for N = 0: -0 is 0, and substr(X, 0) behaves like substr(X, 1), so RIGHT(\"a\", 0) answered \"a\" where SEL says \"\". The explicit length pins it. Found by the fuzz lane on sqlite's first run."
+    "right": "substr(X, -N) alone is wrong for N = 0: -0 is 0, and substr(X, 0) behaves like substr(X, 1), so RIGHT(\"a\", 0) answered \"a\" where SEL says \"\". The explicit length pins it. Found by the fuzz lane on sqlite's first run.",
+    "comparison-is-exact-to-int64": "And why the six numeric comparisons carry decimal-float even though their templates look exact. CAST(text AS NUMERIC) yields an INTEGER while the value fits in int64 and a REAL once it does not, so comparison is exact through 19 digits and float at 20: CAST('99999999999999999999' AS NUMERIC) = CAST('99999999999999999998' AS NUMERIC) is 1, and SEL says FALSE. Probed digit by digit rather than reasoned about. The byte comparisons -- $==, $<, and the rest -- are separate entries with no cast and stay exact, and so does IN, which uses textCast. The cost is that the oracle stops failing the build on sqlite comparison; mysql-family and postgresql still do, which is the four-dialect corpus paying for the caveat."
   }
 }

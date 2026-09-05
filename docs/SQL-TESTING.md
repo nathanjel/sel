@@ -140,11 +140,51 @@ above it. Nothing errors. No string is wrong. `pg_typeof(sign(13))` is
 `double precision`, so an expression that reads as exact stops being exact, and
 the only thing that was ever going to notice is a server being asked.
 
-**The running total across four dialects is twenty-four**, and the pattern in the
-last eight is worth more than the count: **each new server found defects in the
-code all servers share, not in its own templates.** SQLite found two, PostgreSQL
-found one, and a fourth would probably find another. That is an argument for
-adding dialects even where nobody needs them.
+### And then the corpus was pushed to the edges
+
+The four dialects had agreed on 233 expressions. The corpus was then extended
+with the values nobody writes on purpose — zero, empty, very long, negative,
+fractional where a count belongs, and numbers past what a server's decimal type
+can hold — and it found three more.
+
+| Defect | What it was |
+|---|---|
+| the translator never asked whether the expression was **valid** | seventeen expressions where SEL raises and every server answers something |
+| SQLite's numeric comparison claimed exactness it does not have | exact through 19 digits, IEEE double at 20 |
+| `mysql-family`'s `*` claimed exactness it does not have | DECIMAL caps a product's scale, at 30 on MySQL and 38 on MariaDB |
+
+The first is the largest single defect in this document, and it is not a defect
+in any dialect — it is one question the whole layer had never been asked.
+`LEFT("abc", -1)` is not a SEL expression; SEL raises `E_RANGE`. It translated
+cleanly into all four dialects, and MariaDB answered `''`, PostgreSQL answered
+`'ab'` and SQLite answered `'abc'`. Three servers, three answers, none of them
+SEL's, reported as success. Sixteen more behaved the same way, including
+`1 / 0`, which the document had been recording as an unfixable divergence
+(§11.2) when for literal operands it was entirely fixable.
+
+The fix reuses `Evaluator::evalNode`: where every leaf of a subtree is a
+literal, the translator hands it to SEL and refuses what SEL refuses. One copy
+of the argument rules, in the evaluator, asked rather than reimplemented — which
+is the same lesson as Class A, one level up. The corpus grew a line form for it,
+`!E_RANGE LEFT("abc", -1)`, and thirty-one such lines now assert that a
+translation *does not* happen.
+
+The other two are a smaller and more interesting pattern: a caveat is a claim,
+and until an expression exists that crosses the boundary the claim is being
+made about, nothing checks it. Both were found by writing the expression that
+crosses it. And both were affordable *because* there are four dialects —
+PostgreSQL's `numeric` needs neither caveat, so a defect in the shared code
+behind multiplication or comparison still turns the build red there. A caveat
+costs build-failure on one dialect; with four, that is a discount rather than a
+hole.
+
+**The running total across four dialects is twenty-seven**, and the pattern in
+the last eleven is worth more than the count: **each new server, and then each
+new region of the input space, found defects in the code all servers share, not
+in the templates that provoked them.** SQLite found two, PostgreSQL found one,
+the edges found one more — every time, in the layer underneath. That is an
+argument for adding dialects even where nobody needs them, and for pushing the
+corpus into values no rule would ever contain.
 
 ---
 
@@ -677,6 +717,14 @@ the beliefs.
 defects, which means review works — and it also means review is currently
 load-bearing. The point of items 1–6 is to make the next review work harder for
 its findings, not to replace it.
+
+**Do not assume the corpus covers the input space because it covers the map.**
+The coverage gate proves every entry is reached. It cannot prove the values
+reaching it are interesting, and for four milestones they were not: every
+argument in the corpus was in range, every number was of ordinary size, every
+string was short and non-empty. Full coverage and an untested edge are the same
+green. Three of the twenty-seven were found by nothing more than writing down
+the values a person would never write on purpose.
 
 **Do not add a static analyser expecting it to catch these.** PHPStan would flag
 none of the twelve. They are semantic — a wrong claim about a server, a wrong

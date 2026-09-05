@@ -19,6 +19,7 @@ require_once __DIR__ . '/Emit.php';
 require_once __DIR__ . '/Fragment.php';
 require_once __DIR__ . '/Binder.php';
 require_once __DIR__ . '/Bindings.php';
+require_once __DIR__ . '/Constants.php';
 require_once __DIR__ . '/Normalise.php';
 require_once __DIR__ . '/Translator.php';
 require_once __DIR__ . '/Sql.php';

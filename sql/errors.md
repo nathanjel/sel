@@ -34,6 +34,7 @@ second reporting channel, no `explain()` API.
 | `E_SQL_UNBOUND` | a variable is read that the bindings do not name |
 | `E_SQL_BINDING` | a binding is malformed, names an unknown field, or collides with another relation's alias |
 | `E_SQL_ASSIGN` | stage 1 refuses an assignment or a sequence: compound assignment, reassignment, a read before the write, an assignment inside an aggregate body or a call argument, a non-constant index on the target, or a non-assignment before the result expression |
+| `E_SQL_INVALID` | every argument is written down and SEL rejects the expression: an out-of-range length or position, a fractional count, text that is not a number, a zero divisor. The message carries SEL's own code and the position is SEL's own innermost failing node |
 | `E_SQL_SHAPE` | a list where a scalar is required; `_K` inside a relation body; a non-BOOL where a condition is required; an aggregate over something that is neither a list, a `columns` binding nor a `relation` binding; `asCondition()` on a non-BOOL fragment |
 
 ---
@@ -63,6 +64,21 @@ look again.
 For every other code the message is written at the raise site, and it names the
 thing that was wrong rather than the rule that was violated: `ITEMS is bound as
 a column, so ALL cannot iterate it` rather than `bad aggregate source`.
+
+`E_SQL_INVALID` is the one code whose message comes from somewhere else again:
+from SEL. The translator hands the constant subtree to SEL's own evaluator and
+quotes what comes back, so the reason a translation was refused is the reason
+the expression would have failed had nobody tried to translate it:
+
+```
+E_SQL_INVALID at 1:13: SEL rejects this expression (E_RANGE: LEFT argument 2
+must not be negative), so there is nothing to translate; a database would
+answer something rather than fail
+```
+
+It is raised only where the answer is knowable — every leaf a literal. The same
+mistake written with a column in it is not detected, and `docs/SQL-TRANSLATION.md`
+§11.4 says so rather than leaving it to be discovered.
 
 ---
 

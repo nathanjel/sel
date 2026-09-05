@@ -455,3 +455,133 @@ T == N
 BLEN(N)
 
 ### bindings: {}
+
+% --- edges: zero, empty, long, out of range ----------------------------------
+%
+% Everything above asks whether a translation gives SEL's answer. This block
+% asks the prior question -- whether the expression has an answer at all -- and
+% it exists because for a whole milestone nothing did. LEFT("abc", -1) is not a
+% SEL expression: SEL raises E_RANGE for it. It translated cleanly into all four
+% dialects, and MariaDB answered '', PostgreSQL answered 'ab' and SQLite
+% answered 'abc'. Three servers, three answers, none of them SEL's, from a
+% translation that reported success.
+%
+% A `!CODE expr` line says SEL rejects the expression with that code and no
+% dialect may translate it. See sql/oracle/README.md.
+
+### entry: mixed:edge-zero
+0 == -0
+"0.00" $== "0"
+-(0)
+0 * -1
+0 / 1
+0 % 5
+ABS(-0)
+SIGN(-0.0)
+CEIL(0.0)
+FLOOR(-0.0)
+TRUNC(-0.5)
+TRUNC(0.5)
+ROUND(0.00, 2)
+POWER(0, 0)
+POWER(0, 5)
+MIN(0, -0)
+0 & ""
+LEN("0")
+LEFT("abc", 0)
+RIGHT("abc", 0)
+
+### entry: mixed:edge-zero-divisor
+!E_DIV_ZERO 1 / 0
+!E_DIV_ZERO 5 % 0
+!E_DIV_ZERO 0 / 0
+!E_DIV_ZERO 2.50 % 0.0
+
+### entry: mixed:edge-empty-string
+LEN("")
+BLEN("")
+TRIM("")
+LTRIM("")
+RTRIM("")
+REPLACE("a", "b", "")
+FIND("a", "")
+"" & ""
+"" $== ""
+"" $< "a"
+SUBSTR("", 1)
+SUBSTR("abc", 4)
+UPPER("")
+LOWER("")
+TO_HEX(TO_UTF8(""))
+FROM_UTF8(TO_UTF8(""))
+
+### entry: mixed:edge-long-string
+LEN(REPEAT("ab", 500))
+LEN(REPEAT("z", 500))
+BLEN(REPEAT("z", 300))
+LEFT(REPEAT("ab", 500), 3)
+RIGHT(REPEAT("ab", 500), 3)
+SUBSTR(REPEAT("ab", 500), 999)
+FIND("ba", REPEAT("ab", 500))
+LEN(UPPER(REPEAT("ab", 400)))
+LEN(BACKWARDS(REPEAT("ab", 300)))
+LEN(TRIM(REPEAT(" ", 300) & "x"))
+
+### entry: mixed:edge-argument-out-of-range
+!E_RANGE LEFT("abc", -1)
+!E_RANGE RIGHT("abc", -1)
+!E_RANGE SUBSTR("abc", 0)
+!E_RANGE SUBSTR("abc", -1)
+!E_RANGE SUBSTR("abc", 1, -1)
+!E_RANGE PADL("x", -1, "0")
+!E_RANGE PADR("x", -1, "0")
+!E_RANGE REPEAT("x", -1)
+!E_RANGE FIND("a", "banana", 0)
+!E_RANGE FIND("a", "banana", -1)
+!E_RANGE ROUND(1.5, -1)
+!E_RANGE POWER(10, -2)
+!E_RANGE CHAR(-1)
+!E_RANGE CHAR(1114112)
+!E_RANGE CODE("")
+
+### entry: mixed:edge-integer-valued-decimal
+LEFT("abc", 2.0)
+RIGHT("abc", 2.0)
+SUBSTR("abc", 1.0)
+ROUND(1.5, 1.0)
+PADL("x", 3.0, "0")
+LEFT("abc", -0)
+LEFT("abc", 1.0 + 1.0)
+LEFT("abc", "2")
+
+### entry: mixed:edge-argument-not-an-integer
+!E_NOT_INT LEFT("abc", 2.7)
+!E_NOT_INT SUBSTR("abc", 1.5)
+!E_NOT_INT REPEAT("x", 2.5)
+!E_NOT_INT ROUND(1.234, 1.5)
+!E_NOT_INT PADL("x", 3.5, "0")
+!E_NOT_INT RIGHT("abc", 0.5)
+
+### entry: mixed:edge-argument-not-a-number
+!E_NOT_NUM LEFT("abc", " 2")
+!E_NOT_NUM SUBSTR("abc", "1 ")
+!E_NOT_NUM REPEAT("x", "")
+!E_BAD_ARG FIND("", "abc")
+!E_BAD_ARG PADL("x", 3, "")
+!E_BAD_ARG PADR("x", 3, "")
+
+### entry: mixed:edge-large-magnitude
+99999999999999999999999999999999999999 + 1
+99999999999999999999999999999999999999 * 2
+-99999999999999999999999999999999 - 1
+ABS(-99999999999999999999999999999999999999)
+POWER(10, 40)
+99999999999999999999 == 99999999999999999998
+99999999999999999999999999999999999999 == 99999999999999999999999999999999999998
+
+### entry: mixed:edge-small-magnitude
+0.00000000000000000000000000000001
+0.00000000000000000000000000000001 + 0
+0.00000000000000000000000000000001 * 2
+0.000000000000000000000000000000000000001 * 2
+0.00000000000000000000000000000001 == 0.00000000000000000000000000000002

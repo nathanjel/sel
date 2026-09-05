@@ -1644,6 +1644,7 @@ translated is not a wrong program.
 | `E_SQL_BINDING` | a malformed binding, an unknown field, an alias collision |
 | `E_SQL_ASSIGN` | an assignment or sequence stage 1 refuses |
 | `E_SQL_SHAPE` | a list where a scalar is required, `_K` on a relation, a non-BOOL condition, an aggregate over something untranslatable |
+| `E_SQL_INVALID` | every argument is a literal and SEL rejects the expression — see §11.4 |
 
 Two entry points, because both callers are real:
 
@@ -1684,6 +1685,7 @@ out to support both exactly as SEL means them.
 | `rounding-mode` | SEL rounds half away from zero everywhere. **(verified)** PostgreSQL agrees exactly — `round(2.5,0)` is `3` and `round(-2.5,0)` is `-3` — so `postgresql.json` carries no such caveat. MariaDB needs it. |
 | `modulo-integer` | **(verified)** SQLite truncates both operands to integers before `%`, so `5.5 % 2` is `1.0` rather than `1.5`. |
 | `numeric-scale` | **(verified)** The value is equal and the scale is not. MariaDB's `LEAST(17, 123.456)` is `17.000` where SEL's `MIN` returns `17` — invisible until the result is read as text. |
+| `scale-limit` | **(verified)** DECIMAL caps the scale of a product and SEL does not, so a result needing more fractional digits is truncated to the cap — to zero, when every surviving digit is one. `0.00000000000000000000000000000001 * 2` is `2e-32` in SEL and on MariaDB and `0.000000000000000000000000000000` on MySQL 8.4: the boundary is **30** there and **38** on MariaDB. It sits on `mysql-family` because both truncate; only the digit they stop at differs. `+` and `-` do not truncate on either, and `/` already declares `division-scale` for the same shape of loss. PostgreSQL's `numeric` has no such cap and carries no caveat, so a multiplication defect still fails the build there. |
 | `power-float` | `POWER` returns a float in every dialect; SEL's is exact. |
 | `text-collation` | The `$` family is bytewise in SEL. The `textCollate` lexical entry forces a binary collation; a column with an incompatible declared collation can still defeat it. |
 | `regex-engine` | SEL's regex subset is what PCRE and ECMAScript agree on. MySQL 8.0.4+ and MariaDB use ICU/PCRE, PostgreSQL uses POSIX ARE — the subset mostly survives, lazy quantifiers and some classes do not. SQLite has no `REGEXP` without a user function and refuses outright. |
@@ -1711,15 +1713,28 @@ quietly stops being exact, and only a server was ever going to say so.
 
 ### 11.2 Divergences a caveat cannot express
 
-A caveat says "the value may differ". These two say something else: **a rule that
-would *fail* in SEL may quietly *succeed* in SQL.** Both are SQLite; both are
-verified; neither is fixable at translation time, because the guard SEL applies
-is a run-time check on a value nobody has yet.
+A caveat says "the value may differ". These say something else: **a rule that
+would *fail* in SEL may quietly *succeed* in SQL** — or, once, the reverse. All
+are verified. None is fixable by a template, because the guard SEL applies is a
+run-time check on a value the translator does not have.
 
-| SEL | SQLite |
+| SEL | The server |
 |---|---|
-| `1 / 0` raises `E_DIV_ZERO` | answers `NULL` |
-| `"abc" == 1` raises `E_NOT_NUM` | `CAST('abc' AS NUMERIC)` is `0`, so the comparison is simply false |
+| `1 / 0` raises `E_DIV_ZERO` | MariaDB, MySQL and SQLite answer `NULL`; PostgreSQL raises |
+| `"abc" == 1` raises `E_NOT_NUM` | SQLite's `CAST('abc' AS NUMERIC)` is `0`, so the comparison is simply false |
+| `CHAR(0)` is the NUL code point | PostgreSQL's `chr(0)` raises *null character not permitted*: its `text` cannot hold one at all |
+
+`CHAR(0)` is the one that runs the other way — SEL has an answer and the server
+refuses — and it is here rather than fixed for the same reason as the others.
+It is not a caveat, because a caveat is about a value and this is about failure.
+Refusing `CHAR` outright would cost every legitimate use of it to prevent one
+input. And §11.4's check does not reach it, because that check asks SEL whether
+the expression is valid and SEL says it is.
+
+The first two rows have shrunk since they were written, and §11.4 is why: where
+both operands are literals, `1 / 0` is now refused rather than translated, and
+so is `LEFT("abc", " 2")`. What survives here is the same divergence with a
+column in it.
 
 The `NULL` case is partly contained: an aggregate body folds through
 `IS [NOT] TRUE`, and `asCondition` wraps an `UNKNOWN` fragment in `isTrue`, so a
@@ -1737,6 +1752,110 @@ it compares kind, scalar bytes and children. SQL's `IN` is a value comparison
 under a collation. For scalar operands under `textCollate` the two agree, and
 that is the only case the translator accepts: `IN` where either side has
 children is `E_SQL_SHAPE`.
+
+### 11.3 Where numbers stop being exact
+
+Three of the four servers have a boundary SEL does not have, and all three are
+declared rather than discovered. They are collected here because they are the
+same fact in three spellings — *the target's number type is finite* — and
+because each is only visible far outside the range a validation rule normally
+reaches, which is exactly why none of them was noticed until a corpus was
+written that went looking.
+
+| Dialect | Exact through | Beyond it |
+|---|---|---|
+| MariaDB | 38 fractional digits | a product truncates to 38 — `scale-limit` |
+| MySQL 8.4 | 30 fractional digits | a product truncates to 30 — `scale-limit` |
+| SQLite | 19 significant digits (int64) | arithmetic *and comparison* become IEEE double — `decimal-float` |
+| PostgreSQL | — | `numeric` is unbounded; no caveat, and it is the reason the other three can carry one |
+
+SQLite's comparison row is the one worth reading twice. `CAST('2.50' AS NUMERIC)
+= CAST('2.5' AS NUMERIC)` is exactly right and stays right through nineteen
+digits; at twenty, both sides become doubles and
+`99999999999999999999 = 99999999999999999998` is true. The template is not
+wrong and no template is right, so the six numeric comparison entries carry
+`decimal-float` and `strict` refuses them. The byte comparisons — `$==`, `$<`
+and the rest — are separate entries with no cast, and `IN` casts to text, so
+none of those loses exactness.
+
+The cost of a caveat is that the oracle stops *failing the build* on that entry
+for that dialect; it still compares and still reports. What makes that
+affordable is having four dialects: PostgreSQL declares neither of these
+caveats, so a defect in the shared code behind multiplication or comparison
+still turns the build red there. A three-dialect corpus could not have accepted
+either caveat this cheaply.
+
+### 11.4 The translator asks SEL first, where it can
+
+For four milestones the translator answered *can this be pushed into that
+database* without ever asking *is this a SEL expression*. `LEFT("abc", -1)` is
+not one — SEL raises `E_RANGE` — and it translated cleanly into all four
+dialects:
+
+| | answer |
+|---|---|
+| SEL | `E_RANGE` |
+| MariaDB, MySQL, SQLite | `''` |
+| PostgreSQL | `'ab'` |
+
+None of them SEL's, from a translation that reported success. Seventeen
+expressions behaved this way, and they did not agree with each other either —
+`SUBSTR("abc", -1)` is `'c'` on three servers and `'abc'` on PostgreSQL,
+`ROUND(1.5, -1)` is `0` on three and `2` on SQLite, `LEFT("abc", 2.7)` is
+`'abc'` on three and `'ab'` on SQLite. That is the core promise inverted: a
+translation that passes is supposed to mean the contract holds.
+
+Where every leaf of a subtree is a literal, the answer is knowable at
+translation time, so the translator hands the subtree to **SEL's own evaluator**
+and refuses what SEL refuses, with SEL's code and SEL's position:
+
+```
+E_SQL_INVALID at 1:13: SEL rejects this expression (E_RANGE: LEFT argument 2
+must not be negative), so there is nothing to translate; a database would
+answer something rather than fail
+```
+
+Four properties of the check, each of which is a decision:
+
+- **It is validation, not constant folding.** The value is computed and thrown
+  away. An expression that passes emits the SQL it always emitted — `LEFT("abc",
+  1 + 1)` is still `LEFT('abc', (1 + 1))`. Folding would have been the tempting
+  next step and would have blinded the oracle: an expression replaced by its
+  answer no longer exercises the server's version of the operation, which is the
+  only thing `sql/oracle/` exists to compare.
+- **It runs after the node translates, not before.** Every refusal the
+  translator already had keeps its own message. `TRUE + 1` is an expression SEL
+  rejects *and* a BOOL where a number is required; the second is the sentence an
+  author can act on, and it is the same sentence `FLAG + 1` gets, where no value
+  is known. `ABORT` and an unportable regex are refused by name on the way past
+  and never reach the check.
+- **It reuses `Evaluator::evalNode`.** There is one copy of SEL's argument
+  rules, in the evaluator, and this asks it. A second copy in the translator
+  would be a second thing to keep in step with the spec, and the defect being
+  fixed here is precisely what happens when the translator has its own opinion
+  about what SEL means.
+- **A constant subtree is checked wherever it appears, including where SEL's
+  own laziness would never reach it.** `FALSE AND (1 / 0 > 0)` is refused, even
+  though SEL answers `FALSE` without dividing and both MariaDB and PostgreSQL
+  were asked and short-circuit it too. The alternative was to check only the
+  outermost constant node, and that made `FALSE AND (1 / 0 > 0)` translate while
+  `F AND (1 / 0 > 0)`, with a column beside the same division, refused — one
+  expression, two answers, decided by whether the operand next to it happened to
+  be written down. §11.2's first row is the other half of the argument: SQL does
+  not promise not to evaluate the branch it does not take.
+- **It costs what evaluation costs.** `REPEAT(REPEAT("x", 3000), 3000)` is a
+  constant subtree and translating it now builds the nine-million-character
+  string once. Measured at parity with evaluating the same expression, and
+  bounded by the same limits, but it is no longer true that translation is
+  cheap regardless of what is being translated.
+
+**What it cannot do is check a value it does not have.** `LEFT(col, -1)` is
+exactly as wrong and translates, because `col` is a column and its value is not
+knowable here. Argument validation happens where SEL's does — at the value — and
+this reaches the subset of values that are written down. `-N` where `N` is a
+column is not a constant either, however much it looks like `-1`: the test is
+about leaves, not about shape. Both are pinned as cases in
+`sql/cases/16-constants.sqlt` so they are a decision rather than an oversight.
 
 ---
 
@@ -1947,20 +2066,33 @@ executable documentation, mutation testing, and the emitter's narrowed literal
 path. Not in the original plan, and it found seventeen defects in code that had
 already passed three reviews.
 
+**M5½ — the corpus pushed to the edges. DONE.** Zero, empty, very long,
+negative, fractional-where-a-count-belongs, and numbers past what a server's
+decimal type holds. It found three defects, one of them the largest single one
+in `docs/SQL-TESTING.md`: for four milestones the translator had never asked
+whether the expression it was translating was a **valid SEL expression**.
+`LEFT("abc", -1)` translated into all four dialects and they answered `''`,
+`''`, `'ab'` and `'abc'`; SEL raises `E_RANGE`. Seventeen expressions behaved
+that way. §11.4 is the fix — where every leaf is a literal, ask SEL's own
+evaluator — and §11.3 records the two number-range boundaries the same
+extension turned up. The corpus gained a line form, `!E_RANGE LEFT("abc", -1)`,
+that asserts a translation does **not** happen.
+
 **M5 — MySQL, PostgreSQL and SQLite maps. DONE.**
 
 MySQL was authored the other way round from every dialect before it: the leaf was
 written **empty** — `extends: mysql-family` and nothing else — and the oracle was
 asked whether the claim held rather than a person being asked to remember. It
-did, on MySQL 8.4.11: the same 223 expressions agree, the same 6 are refused, all
-10 row rules agree, and 6,000 generated programs give numbers identical to
-MariaDB's. One entry moved *up*: `RMATCH` had been sitting in `mariadb.json`
+did, on MySQL 8.4.11: the corpus agrees entry for entry, the same expressions are
+refused, all 10 row rules agree, and 6,000 generated programs give numbers
+identical to MariaDB's — identical, M5½ later established, below 30 fractional
+digits, which is where MySQL's DECIMAL stops and MariaDB's does not (§11.3). One entry moved *up*: `RMATCH` had been sitting in `mariadb.json`
 because at M1 there was no MySQL to check it against, and the family layer means
 "verified to agree", not "probably agrees".
 
 That the leaf stays empty is now a check rather than a memory. `php/bin/sqlt`
 re-runs every `mariadb` case under `mysql` and requires the same string, the same
-error and the same parameters — 186 of them — so an override added to one leaf
+error and the same parameters — 213 of them — so an override added to one leaf
 and not the other fails the suite. The alternative was a `14-mysql.sqlt` of
 copies, two hundred lines asserting that a copy is a copy.
 

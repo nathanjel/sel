@@ -99,8 +99,22 @@ function parse_selo(string $text, string $file): array
         if ($entry === null) {
             throw new RuntimeException("{$at}: expression before any `### entry:` header");
         }
+        // `!E_RANGE  LEFT("abc", -1)` — an expression SEL rejects, and every
+        // dialect must refuse rather than translate. Before the translator
+        // asked SEL about constant arguments this line could not have been
+        // written: LEFT("abc", -1) translated cleanly into all four dialects
+        // and they answered '', '', 'ab' and 'abc'. See docs/SQL-TESTING.md §8.
+        $rejects = null;
+        if (str_starts_with($line, '!')) {
+            if (preg_match('/^!(E_[A-Z_]+)\s+(\S.*)$/', $line, $m) !== 1) {
+                throw new RuntimeException("{$at}: a `!` line must be "
+                    . '`!E_CODE  <expression>`');
+            }
+            $rejects = $m[1];
+            $line = $m[2];
+        }
         $out[] = ['entry' => $entry, 'group' => $group, 'src' => $line, 'at' => $at,
-                  'bindings' => $bindings];
+                  'bindings' => $bindings, 'rejects' => $rejects];
     }
     return $out;
 }
@@ -224,7 +238,7 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
         throw new RuntimeException('the corpus is empty');
     }
 
-    $stats = ['ok' => 0, 'refused' => 0, 'caveat' => 0];
+    $stats = ['ok' => 0, 'refused' => 0, 'caveat' => 0, 'rejected' => 0];
     $bad = [];
     $entries = [];
 
@@ -232,8 +246,36 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
         $entries[$c['entry']] = ($entries[$c['entry']] ?? 0) + 1;
         try {
             $sel = Sel::compile($c['src'])->run(selo_context($c['bindings']));
+            if ($c['rejects'] !== null) {
+                $bad[] = [$c, '', "the corpus says SEL rejects this with {$c['rejects']}, "
+                    . 'and SEL evaluated it'];
+                continue;
+            }
         } catch (SelError $e) {
-            $bad[] = [$c, '', 'the corpus expression does not evaluate: ' . $e->getMessage()];
+            if ($c['rejects'] === null) {
+                $bad[] = [$c, '', 'the corpus expression does not evaluate: ' . $e->getMessage()];
+                continue;
+            }
+            if ($e->code !== $c['rejects']) {
+                $bad[] = [$c, '', "the corpus says SEL rejects this with {$c['rejects']}, "
+                    . "and SEL raised {$e->code}"];
+                continue;
+            }
+            // The assertion is on the translator, and it is the strong one: an
+            // expression SEL will not evaluate must not become SQL. A database
+            // has an answer for every one of these, and none of the answers is
+            // SEL's.
+            try {
+                $sql = Sql::translate(Sel::compile($c['src']), $dialect,
+                    $c['bindings'])->asValue();
+                $bad[] = [$c, $sql, "SEL rejects this with {$c['rejects']} and "
+                    . 'the translation succeeded; the server would answer something'];
+            } catch (SqlError $e2) {
+                $stats['rejected']++;
+                if ($verbose) {
+                    printf("  rejected %-52s %s -> %s\n", $c['src'], $c['rejects'], $e2->code);
+                }
+            }
             continue;
         }
         try {
@@ -294,10 +336,10 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
     foreach ($bad as [$c, $sql, $why]) {
         printf("DIFFER  %s   (%s)\n        %s\n        %s\n", $c['src'], $c['at'], $sql, $why);
     }
-    printf("{$label}expressions: %d agree, %d differ, %d refused, %d inexact-by-declaration"
-        . " (%d expressions, %d groups)\n",
+    printf("{$label}expressions: %d agree, %d differ, %d refused, %d inexact-by-declaration,"
+        . " %d rejected-by-SEL-and-not-translated (%d expressions, %d groups)\n",
         $stats['ok'], count($bad), $stats['refused'], $stats['caveat'],
-        count($cases), count($entries));
+        $stats['rejected'], count($cases), count($entries));
 
     return ['failed' => count($bad)];
 }

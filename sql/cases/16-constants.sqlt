@@ -1,0 +1,388 @@
+% Expressions SEL itself rejects, which the translator used to translate.
+%
+% For four milestones the translator answered "can this be pushed into that
+% database" without ever asking "is this a SEL expression". LEFT("abc", -1) is
+% not one -- SEL raises E_RANGE -- and it translated cleanly into all four
+% dialects, where MariaDB answered '', PostgreSQL answered 'ab' and SQLite
+% answered 'abc'. Three servers, three answers, none of them SEL's, reported as
+% a successful translation. That is the core promise inverted: a translation
+% that passes is supposed to mean the contract holds.
+%
+% Where every argument is written down, the answer is knowable here, so the
+% translator asks SEL's own evaluator and refuses what SEL refuses. The check is
+% validation and not constant folding: the value is computed and discarded, and
+% the SQL emitted for an expression that passes is byte-identical to what was
+% emitted before. Folding would have blinded the oracle, which exists to compare
+% the database's version of an operation against SEL's.
+%
+% Positions are asserted because they are the point: the position reported is
+% SEL's own innermost failing node, not the call this check was entered at.
+% `LEFT("abc", 1 - 2)` blames the `-`.
+
+### name: const.range.left-negative-length
+--- note
+The row this whole file exists for. Was `LEFT('abc', -1)` on every dialect.
+--- dialect
+mariadb
+--- source
+LEFT("abc", -1)
+--- error
+E_SQL_INVALID 1:13
+===
+### name: const.range.left-negative-length-postgresql
+--- note
+Same expression, different wrong answer: PostgreSQL's left(str, -1) drops the
+last character and returns 'ab'. A refusal shared by all four dialects is the
+only outcome that is SEL's.
+--- dialect
+postgresql
+--- source
+LEFT("abc", -1)
+--- error
+E_SQL_INVALID 1:13
+===
+### name: const.range.right-negative-length
+--- dialect
+mariadb
+--- source
+RIGHT("abc", -1)
+--- error
+E_SQL_INVALID 1:14
+===
+### name: const.range.substr-zero-position
+--- note
+SEL's string positions are 1-based, so 0 is out of range. SQLite and PostgreSQL
+answer 'abc' and MariaDB answers ''.
+--- dialect
+sqlite
+--- source
+SUBSTR("abc", 0)
+--- error
+E_SQL_INVALID 1:15
+===
+### name: const.range.substr-negative-position
+--- dialect
+mariadb
+--- source
+SUBSTR("abc", -1)
+--- error
+E_SQL_INVALID 1:15
+===
+### name: const.range.substr-negative-length
+--- note
+The one row where a server did fail rather than answer: PostgreSQL raises
+"negative substring length not allowed". Two of the four still answered.
+--- dialect
+postgresql
+--- source
+SUBSTR("abc", 1, -1)
+--- error
+E_SQL_INVALID 1:18
+===
+### name: const.range.padl-negative-width
+--- dialect
+mariadb
+--- source
+PADL("x", -1, "0")
+--- error
+E_SQL_INVALID 1:11
+===
+### name: const.range.repeat-negative-count
+--- dialect
+mariadb
+--- source
+REPEAT("x", -1)
+--- error
+E_SQL_INVALID 1:13
+===
+### name: const.range.find-zero-start
+--- dialect
+mariadb
+--- source
+FIND("a", "banana", 0)
+--- error
+E_SQL_INVALID 1:21
+===
+### name: const.range.round-negative-places
+--- note
+MariaDB rounds to tens and answers 0; SQLite ignores the sign and answers 2.
+--- dialect
+sqlite
+--- source
+ROUND(1.5, -1)
+--- error
+E_SQL_INVALID 1:12
+===
+### name: const.range.char-negative-code-point
+--- dialect
+sqlite
+--- source
+CHAR(-1)
+--- error
+E_SQL_INVALID 1:6
+===
+### name: const.range.code-of-empty-string
+--- dialect
+postgresql
+--- source
+CODE("")
+--- error
+E_SQL_INVALID 1:6
+===
+### name: const.range.power-negative-exponent
+--- note
+Every dialect answers 0.01, and SEL raises: POWER's exponent is a whole number
+because the result has to be exact.
+--- dialect
+mariadb
+--- source
+POWER(10, -2)
+--- error
+E_SQL_INVALID 1:11
+===
+### name: const.notint.left-fractional-length
+--- note
+MariaDB rounds 2.7 up to 3 and answers 'abc'; SQLite truncates to 2 and answers
+'ab'. Both are answers to a question SEL declines to ask.
+--- dialect
+mariadb
+--- source
+LEFT("abc", 2.7)
+--- error
+E_SQL_INVALID 1:13
+===
+### name: const.notint.substr-fractional-position
+--- dialect
+sqlite
+--- source
+SUBSTR("abc", 1.5)
+--- error
+E_SQL_INVALID 1:15
+===
+### name: const.notint.repeat-fractional-count
+--- dialect
+mariadb
+--- source
+REPEAT("x", 2.5)
+--- error
+E_SQL_INVALID 1:13
+===
+### name: const.notint.round-fractional-places
+--- dialect
+mariadb
+--- source
+ROUND(1.234, 1.5)
+--- error
+E_SQL_INVALID 1:14
+===
+### name: const.notint.padl-fractional-width
+--- dialect
+mariadb
+--- source
+PADL("x", 3.5, "0")
+--- error
+E_SQL_INVALID 1:11
+===
+### name: const.notnum.left-length-with-leading-space
+--- note
+Numbers are text in SEL (spec §4) and " 2" is not one of them. Every dialect
+trims and answers 'ab' -- input laxity that produces a value where SEL produces
+an error, which no caveat can express.
+--- dialect
+mariadb
+--- source
+LEFT("abc", " 2")
+--- error
+E_SQL_INVALID 1:13
+===
+### name: const.badarg.padl-empty-fill
+--- note
+An empty pad string cannot reach any width. MariaDB answers '' and PostgreSQL
+answers 'x'.
+--- dialect
+postgresql
+--- source
+PADL("x", 3, "")
+--- error
+E_SQL_INVALID 1:14
+===
+### name: const.divzero.divide
+--- note
+MariaDB and SQLite answer NULL, PostgreSQL raises. This is the divergence
+sqlite.json's `not-caveatable` note and §11.2 record, and where both operands
+are written down it stops being a divergence at all.
+--- dialect
+mariadb
+--- source
+1 / 0
+--- error
+E_SQL_INVALID 1:3
+===
+### name: const.divzero.modulo
+--- dialect
+sqlite
+--- source
+5 % 0
+--- error
+E_SQL_INVALID 1:3
+===
+### name: const.divzero.decimal-divisor
+--- note
+0.0 is zero, and being written with a scale does not make it a different
+divisor.
+--- dialect
+postgresql
+--- source
+2.50 % 0.0
+--- error
+E_SQL_INVALID 1:6
+===
+### name: const.computed.argument-is-folded-first
+--- note
+`1 - 2` is a constant subtree, so the argument it computes is knowable and the
+call is checked. The position blames the `-`, which is SEL's own innermost
+failing node rather than the call this check was entered at.
+--- dialect
+mariadb
+--- source
+LEFT("abc", 1 - 2)
+--- error
+E_SQL_INVALID 1:15
+===
+### name: const.aggregate.body-over-a-literal-list
+--- note
+An aggregate over a literal list is constant, binder and all, so the body is
+checked too -- once, at the aggregate, rather than once per unrolled element.
+--- dialect
+mariadb
+--- source
+ALL((1, 2), LEFT("ab", -1) $== _)
+--- error
+E_SQL_INVALID 1:24
+===
+### name: const.valid.still-translates
+--- note
+The other half of the promise. An expression SEL accepts is emitted exactly as
+it was before this check existed; nothing is folded away.
+--- dialect
+mariadb
+--- source
+LEFT("abc", 1 + 1)
+--- expect
+LEFT('abc', (1 + 1))
+===
+### name: const.valid.zero-length-is-not-out-of-range
+--- note
+0 is a legal length and -1 is not, and the check has to keep them apart.
+--- dialect
+mariadb
+--- source
+LEFT("abc", 0)
+--- expect
+LEFT('abc', 0)
+===
+### name: const.column.cannot-be-checked
+--- note
+The residual risk, pinned so it is a decision rather than an oversight. N is a
+column: its value is not known here, so nothing validates it and the database
+answers whatever it answers. Argument validation happens where SEL's does, at
+the value. See docs/SQL-TRANSLATION.md §11.4.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+LEFT("abc", N)
+--- expect
+LEFT('abc', `n`)
+===
+### name: const.column.negation-of-a-column-is-not-constant
+--- note
+`-N` looks like the literal `-1` and is not one. The constancy test is about
+leaves, not about shape.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+LEFT("abc", -N)
+--- expect
+LEFT('abc', (-`n`))
+===
+### name: const.abort.keeps-its-own-refusal
+--- note
+ABORT("x") is constant and raises, and reporting it as an expression SEL
+rejects would be true and useless. Refusals the translator already had are
+reached first, because the check runs after the node translates rather than
+before.
+--- dialect
+mariadb
+--- source
+ABORT("x")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: const.regex.keeps-its-own-refusal
+--- note
+Same ordering, second witness: an unportable pattern is refused by name on the
+way past and never reaches the constant check.
+--- dialect
+mariadb
+--- source
+RMATCH('\p{L}', "x")
+--- error
+E_SQL_UNSUPPORTED 1:8
+===
+### name: const.lazy.dead-branch-is-still-checked
+--- note
+SEL is lazy, so this whole expression is constant and evaluates to FALSE
+without ever dividing. Checking only the outermost constant node would accept
+it and put `(1 / 0)` in the SQL, while the same division beside a column was
+refused -- opposite answers for one expression, decided by whether the operand
+next to it happened to be written down. So every constant compound node is
+checked, not just the outermost. MariaDB and PostgreSQL both short-circuit and
+would not have raised; §11.2 records that SQL does not promise that.
+--- dialect
+mariadb
+--- source
+FALSE AND (1 / 0 > 0)
+--- error
+E_SQL_INVALID 1:14
+===
+### name: const.lazy.unselected-if-arm-is-still-checked
+--- note
+The same rule through IF rather than AND: SEL never evaluates the ELSE arm.
+--- dialect
+postgresql
+--- source
+IF(TRUE, "ok", LEFT("abc", -1))
+--- error
+E_SQL_INVALID 1:28
+===
+### name: const.lazy.unselected-arm-beside-a-column
+--- note
+And the case that made the asymmetry visible: with a column as the condition
+the IF is not constant, so the walk reaches the arm on its own. Both spellings
+now refuse, which is the point.
+--- dialect
+mariadb
+--- bindings
+{"F": {"kind": "column", "column": "f", "type": "BOOL"}}
+--- source
+IF(F, "ok", LEFT("abc", -1))
+--- error
+E_SQL_INVALID 1:25
+===
+### name: const.scale.integer-valued-decimal-is-an-integer
+--- note
+2.0 is a whole number written with a scale, and SEL accepts it where it rejects
+2.7. All four servers agree, so this is a case rather than a refusal -- pinned
+because the check has to keep `2.0` and `2.7` apart, and the obvious way to
+write it would not.
+--- dialect
+postgresql
+--- source
+LEFT("abc", 2.0)
+--- expect
+left(CAST('abc' AS TEXT), CAST(2.0 AS INTEGER))
+===

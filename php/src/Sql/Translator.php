@@ -70,8 +70,47 @@ final class Translator
 
     // --- the walk -----------------------------------------------------------
 
-    /** @param array<string,mixed> $n */
+    /**
+     * Ask SEL whether the expression is valid before asking the map whether it
+     * is translatable, wherever the arguments are literals and SEL can answer.
+     *
+     * Only compound nodes are worth checking — a literal cannot be out of range
+     * on its own — but *every* one of them, not just the outermost. Checking
+     * only the outermost looks like a free optimisation and is not, because SEL
+     * is lazy. `FALSE AND (1 / 0 > 0)` is constant and SEL answers FALSE
+     * without ever dividing, so validating the AND alone accepts it and
+     * `(1 / 0)` goes into the SQL — while `F AND (1 / 0 > 0)`, with a column in
+     * place of the FALSE, was refused, because then the AND is not constant and
+     * the walk reaches the division on its own. Same division, opposite answer,
+     * decided by whether the operand beside it happened to be written down.
+     *
+     * The dead branch is not currently a wrong answer: MariaDB and PostgreSQL
+     * were both asked, and both short-circuit `AND` and `CASE` rather than
+     * evaluating the arm they do not take. It is refused because §11.2's first
+     * row records that SQL does not promise that, and because a rule that
+     * refuses one of two identical divisions is not a rule.
+     *
+     * The cost is one evaluation per constant compound node rather than one per
+     * constant subtree — quadratic in the nesting depth of a tree of literals,
+     * which SEL expressions are not.
+     *
+     * @param array<string,mixed> $n
+     */
     private function node(array $n): Fragment
+    {
+        if (!in_array($n['t'], ['bin', 'un', 'call'], true)
+            || !Constants::isConstant($n)) {
+            return $this->dispatch($n);
+        }
+
+        $f = $this->dispatch($n);
+        Constants::validate($n);
+
+        return $f;
+    }
+
+    /** @param array<string,mixed> $n */
+    private function dispatch(array $n): Fragment
     {
         return match ($n['t']) {
             'num' => $this->literal(Value::num($n['v']), 'NUM'),

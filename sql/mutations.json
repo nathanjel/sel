@@ -245,6 +245,48 @@
       "file": "php/src/Sql/Bindings.php",
       "from": "                if (isset($b['correlate'])) {\n                    if (!is_array($b['correlate']) || !isset($b['correlate']['raw'])\n                        || !is_string($b['correlate']['raw'])) {",
       "to": "                if (false) {\n                    if (!is_array($b['correlate']) || !isset($b['correlate']['raw'])\n                        || !is_string($b['correlate']['raw'])) {"
+    },
+    {
+      "name": "constant-validation-removed",
+      "was": "M5. The translator answered 'can this be pushed down' without asking 'is this a SEL expression'. LEFT(\"abc\", -1) translated into all four dialects and they answered '', '', 'ab' and 'abc'. Killed by every `!` line in the corpus and by every case in 16-constants.sqlt.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        Constants::validate($n);",
+      "to": "        // Constants::validate($n);"
+    },
+    {
+      "name": "constant-negation-not-constant",
+      "was": "The constancy test walking `bin` but not `un`. Every out-of-range argument in the corpus is written `-1`, which is a NEG over a literal, so the check would have looked present and validated nothing that mattered.",
+      "file": "php/src/Sql/Constants.php",
+      "from": "            case 'un':\n                return self::isConstant($n['x'], $bound);",
+      "to": "            case 'un':\n                return false;"
+    },
+    {
+      "name": "constant-check-runs-before-dispatch",
+      "was": "Validating on the way in rather than on the way out. Every refusal the translator already had -- ABORT, an unportable regex, a BOOL where a number belongs -- would be replaced by the vaguer 'SEL rejects this expression'.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        $f = $this->dispatch($n);\n        Constants::validate($n);\n\n        return $f;",
+      "to": "        Constants::validate($n);\n        $f = $this->dispatch($n);\n\n        return $f;"
+    },
+    {
+      "name": "sqlite-comparison-claims-exactness",
+      "was": "M5. SQLite's CAST(text AS NUMERIC) is an INTEGER to 19 digits and a REAL at 20, so CAST('99999999999999999999' AS NUMERIC) = CAST('99999999999999999998' AS NUMERIC) is 1 where SEL says FALSE. Without the caveat the corpus's 20-digit comparison is a DIFFER.",
+      "file": "sql/dialects/sqlite.json",
+      "from": "        \"num\": \"({numericCast:0} = {numericCast:1})\",\n        \"coerce\": \"({numericCast:0} = {numericCast:1})\"\n      },\n      \"ret\": \"BOOL\",\n      \"caveat\": \"decimal-float\"",
+      "to": "        \"num\": \"({numericCast:0} = {numericCast:1})\",\n        \"coerce\": \"({numericCast:0} = {numericCast:1})\"\n      },\n      \"ret\": \"BOOL\""
+    },
+    {
+      "name": "mysql-family-multiply-claims-exactness",
+      "was": "M5. DECIMAL caps the result scale of a product at 30 on MySQL and 38 on MariaDB, and SEL has no cap, so 0.00000000000000000000000000000001 * 2 is 2e-32 in SEL and zero on MySQL. The corpus carries one expression past each boundary, so stripping the caveat is a DIFFER on both leaves and not just the one that found it.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "      \"caveat\": \"scale-limit\"",
+      "to": "      \"ret\": \"NUM\""
+    },
+    {
+      "name": "constant-check-outermost-only",
+      "was": "Checking only the outermost constant node, which is what the first version did. SEL is lazy, so FALSE AND (1 / 0 > 0) is constant and answers FALSE without dividing -- the AND passes, the division is never looked at, and (1 / 0) goes into the SQL. The same division beside a column was refused. Killed by the const.lazy.* cases. Not by the corpus: a `!` line asserts SEL raises, and SEL does not raise here -- it is lazy and answers FALSE. An expression SEL accepts and the translator refuses can only be asserted as a case.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        $f = $this->dispatch($n);\n        Constants::validate($n);",
+      "to": "        static $in = false;\n        if ($in) {\n            return $this->dispatch($n);\n        }\n        $in = true;\n        try {\n            $f = $this->dispatch($n);\n        } finally {\n            $in = false;\n        }\n        Constants::validate($n);"
     }
   ]
 }

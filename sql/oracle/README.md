@@ -93,6 +93,32 @@ The rule the runner applies:
 That is the caveat vocabulary earning its place: it is not documentation, it is
 the list of expressions this check is not allowed to fail on.
 
+### Lines SEL rejects
+
+A line may instead say what SEL refuses, and then the assertion is on the
+translator rather than on the server:
+
+```
+### entry: mixed:edge-argument-out-of-range
+!E_RANGE LEFT("abc", -1)
+!E_RANGE SUBSTR("abc", 0)
+```
+
+`!CODE expr` means **SEL raises `CODE` for this, and no dialect may translate
+it.** Three things are checked: that SEL does raise, that it raises that code,
+and — the one that matters — that `Sql::translate` refuses. Nothing is sent to
+the server, because the point is that nothing should be.
+
+These lines could not have been written before `docs/SQL-TRANSLATION.md` §11.4.
+`LEFT("abc", -1)` translated cleanly into all four dialects and they answered
+`''`, `''`, `'ab'` and `'abc'` — a translation reporting success for an
+expression SEL has no answer for. The corpus now carries thirty-one of them, and
+each is a line the old translator would have failed.
+
+A `!` line still traces the map entries it reaches, because the refusal happens
+after the node has been translated. So a group headed by one is not hollow and
+the coverage gate below still sees it.
+
 ## `coverage.json` — the gate
 
 `tools/check-sql-oracle.sh` also answers a question the other two cannot: *did
