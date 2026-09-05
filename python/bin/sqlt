@@ -34,8 +34,17 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# sqlt_format lives beside this script and is runner tooling, not part of the
+# package, so its directory is always added.
+sys.path.insert(0, _HERE)
+# The source tree is added only when `sel` is not already importable, so running
+# this under the wheel's interpreter grades the WHEEL rather than silently
+# shadowing it with python/sel/. Same probe as python/bin/conformance.py.
+try:
+    import sel as _sel_probe                                        # noqa: F401
+except ImportError:
+    sys.path.insert(1, os.path.join(_HERE, '..'))
 
 from sqlt_format import SUITE, SuiteError, decode_json, parse_sqlt  # noqa: E402
 

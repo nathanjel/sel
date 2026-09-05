@@ -110,7 +110,10 @@ impl_sql() {
   case "$impl" in
     php)  php php/bin/sqlt "$@" ;;
     js|js-bundle|cpp|lisp) return 0 ;;          # no SQL layer yet
-    python|python-wheel) return 0 ;;            # M6
+    python) PYTHONPATH="$PWD/python" python3 python/bin/sqlt "$@" ;;
+    # The runner adds python/ to sys.path only when `sel` is not already
+    # importable, so this grades the installed wheel and not the source tree.
+    python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlt "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
