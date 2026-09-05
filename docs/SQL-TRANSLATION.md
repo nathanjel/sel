@@ -1,6 +1,6 @@
 # SEL → SQL translation
 
-**Status: M1 and M2 built (see §14); M3 onward is plan.** This document is the
+**Status: M1, M2 and M3 built (see §14); M4 onward is plan.** This document is the
 design for the SQL layer. It is written in the same register as `spec/SPEC.md` — where it and a
 future implementation disagree, resolve it here first — but it is *not* part of
 the language spec. Nothing here changes how a SEL program evaluates. It
@@ -592,7 +592,7 @@ makes the user's motivating example work.
 `ALL(VALUES, V, V > 0)` unrolls over the items:
 
 ```sql
-((`x`.`a` > 0) AND (`x`.`b` > 0) AND (`x`.`c` > 0))
+(((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))
 ```
 
 which, dropped into a `WHERE`, is the `select a, b, c from x where a > 0 AND b > 0
@@ -674,11 +674,11 @@ ALL(VALUES, V, V > 0)
 
 ```sql
 -- Fragment::asCondition()
-((`x`.`a` > 0) AND (`x`.`b` > 0) AND (`x`.`c` > 0))
+(((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))
 
 -- in a statement the application builds
 SELECT a, b, c FROM x
- WHERE ((`x`.`a` > 0) AND (`x`.`b` > 0) AND (`x`.`c` > 0))
+ WHERE (((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))
 ```
 
 No subquery, no join, no correlation. The iteration happened at translation
@@ -720,7 +720,7 @@ case right (a NULL body makes `ALL` false rather than vacuously true).
 **And the third, for completeness — a literal list needs no binding at all:**
 
 ```
-ALL((1, 2, 3), _ > 0)     ->     ((1 > 0) AND (2 > 0) AND (3 > 0))
+ALL((1, 2, 3), _ > 0)     ->     (((1 > 0) AND (2 > 0)) AND (3 > 0))
 ```
 
 The rule that decides between them is mechanical and lives in stage 2: look at
@@ -789,8 +789,11 @@ The rules, in order:
    statically, to
 
    ```sql
-   ((1 > 0) AND (2 > 0) AND (3 > 0) AND (4 > 0))
+   (((1 > 0) AND (2 > 0)) AND ((3 > 0) AND (4 > 0)))
    ```
+
+   The parentheses nest because the outer fold is handed two composite
+   fragments, not four scalars — §7.1 says the same thing from the other end.
 
    Stage 2 treats `clist` and `list` identically as iteration sources (§7.1);
    the only thing that distinguishes them is that rule 6 leaves one alone.
@@ -835,89 +838,219 @@ final class Normalise
 
 ## 7. Stage 2 — lowering the aggregates
 
-Iteration is the interesting half of this whole exercise, and it has exactly
-three shapes. Which one applies is decided by what the aggregate's first
-argument *is* after stage 1 — not by what it might evaluate to.
+**This section is the M3 contract.** Iteration is the interesting half of the
+whole exercise, and everything below is stated as an input and an exact output
+so that it can be argued with before it is built.
+
+### 7.0 Where it happens, and how the shape is decided
+
+Aggregate lowering runs **inside the render walk**, not as an AST→AST pass
+before it. Two of the three shapes have to render — a relation becomes a
+subquery, which is characters — and the third needs the dialect's operator
+templates, which an AST rewrite has no access to. Writing half of it as a tree
+rewrite and half as rendering would put one rule in two places.
+
+Which of the three shapes applies is decided by **what the first argument is**,
+after stage 1 has done its inlining — never by what it might evaluate to:
+
+| First argument, after stage 1 | Shape |
+|---|---|
+| a `list` node, or a `clist` from indexed assignment | static unroll (§7.1) |
+| a `var` bound `kind: value` holding children | static unroll over those children |
+| a `var` bound `kind: columns` | columns unroll (§7.2) |
+| a `var` bound `kind: relation` | subquery (§7.3) |
+| anything else that renders to a scalar | a **one-element list containing itself**, per spec §7.3 |
+| a `var` bound `kind: value` holding a NONE with no children | the **empty list** |
+| `FILTER(...)` | absorbed first (§7.5), then re-dispatched on *its* source |
+| anything else | `E_SQL_SHAPE` |
+
+The scalar row is not a convenience. It is what spec §7.3 already says, and it
+is what makes `ALL(TOTAL, _ > 0)` mean the obvious thing when `TOTAL` is one
+column:
+
+```
+ALL(TOTAL, _ > 0)                    ->   (`o`.`total` > 0)
+```
 
 ### 7.1 Static list → unroll
 
-The first argument is a `list` node, or a `var` bound to `kind: value` holding a
-list, or an index into one.
-
 ```
-ALL(list, body)  ->  ((body[e1]) AND (body[e2]) AND …)      empty -> TRUE
-ANY(list, body)  ->  ((body[e1]) OR  (body[e2]) OR  …)      empty -> FALSE
-SUM(list, body)  ->  ((body[e1]) + (body[e2]) + …)          empty -> 0
-MAP / FILTER     ->  a list of fragments; legal only where a list is legal,
-                     which today means as another aggregate's first argument
-JOIN(list, sep)  ->  CONCAT(e1, sep, e2, sep, …) per the dialect's concat
-COUNT(list)      ->  the count, folded to a literal
+ALL(list, body)  ->  (body[e1] AND body[e2] AND …)      empty -> TRUE
+ANY(list, body)  ->  (body[e1] OR  body[e2] OR  …)      empty -> FALSE
+SUM(list, body)  ->  (body[e1] + body[e2] + …)          empty -> 0
+JOIN(list, sep)  ->  the dialect's concat, folded pairwise
+COUNT(list)      ->  the count, as a literal
 ```
 
-`body[e]` is the body rendered with the binder bound to that element's node and
-`_K` bound to a TEXT literal of its key.
+`body[e]` is the body rendered with the binder bound to that element and `_K`
+bound to a TEXT literal of its key.
 
-**An unroll folds n-ary; a written-out chain folds binary.** `ALL((a, b, c), …)`
-emits one `(x AND y AND z)`, because the fold has all its parts at once and
-joining them flat is both shorter and unambiguous. A hand-written `a AND b AND c`
-parses as two `bin` nodes and renders through the `AND` template twice, giving
-`((a AND b) AND c)`. The two spellings mean the same thing and are not expected
-to produce the same string; the difference is which code path built them, and it
-is worth knowing before someone reads it as a bug. Because binding is per element and the
-substitution is structural, nesting falls out for free — the inner `ALL` in the
-example above simply sees a `list` node as *its* first argument and unrolls
-again.
+**The fold is pairwise-left, through the operator's own binary template** — the
+same template a hand-written chain goes through. So `ALL((a, b, c), p)` and
+`p(a) AND p(b) AND p(c)` produce the same bytes, and there is no rule about
+which code path built an expression that anyone has to learn.
 
-Note that SEL's short-circuit guarantee (`FALSE AND (1/0)` is `FALSE`) does not
-survive: SQL's `AND` may evaluate either side. §11 lists this.
+An n-ary fold would give flatter output, and it was the first plan. It does not
+survive contact with the map: `AND` is spelled `({0} AND {1})`, and getting
+`(x AND y AND z)` out of that means either splitting the template on `{1}` to
+recover a separator, or adding a variadic-with-separator template form for the
+sake of three operators. Neither is worth flatter parentheses — and going
+pairwise stops `JOIN`, already pairwise below, being the odd one out.
+
+```
+ALL((1, 2, 3), _ > 0)
+    (((1 > 0) AND (2 > 0)) AND (3 > 0))
+
+ANY((1, 2), _ > 1)
+    ((1 > 1) OR (2 > 1))
+
+SUM((1, 2, 3), _ * 2)
+    (((1 * 2) + (2 * 2)) + (3 * 2))
+
+JOIN((1, 2, 3), "-")
+    CONCAT(CONCAT(CONCAT(CONCAT(1, '-'), 2), '-'), 3)
+```
+
+`JOIN` folds pairwise through the dialect's `&` template rather than through a
+variadic one, because `&` is what SEL's `JOIN` *is* and a variadic concat would
+need a new lexical key spelled two ways (`CONCAT(a, b, c)` here, `(a || b || c)`
+elsewhere). The nesting is ugly and the alternative is map surface for one
+function.
+
+**Nesting falls out.** The binder names an element, and if that element is
+itself a list node the inner aggregate simply dispatches on it again:
+
+```
+R[1] = (1, 2); R[2] = (3, 4); ALL(R, ROW, ALL(ROW, _ > 0))
+    (((1 > 0) AND (2 > 0)) AND ((3 > 0) AND (4 > 0)))
+```
+
+Note the shape of that output. The outer `ALL` folds **two composite
+fragments**, so the parentheses nest — this is not the flat four-way `AND` an
+earlier draft of §13.1 claimed, and the earlier claim was simply wrong: a fold
+combines the operands it is handed, not the ones inside them.
 
 ### 7.2 `columns` binding → unroll over columns
 
-Identical to §7.1 except the elements are column references rather than literal
-nodes, and `_K` is the ordinal as text. This is the case that produces the
-`where a > 0 AND b > 0 AND c > 0` shape.
+Identical to §7.1 with column references as the elements and `_K` bound to the
+ordinal as TEXT.
+
+```
+ALL(VALUES, V, V > 0)               VALUES = columns x.a, x.b, x.c
+    (((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))
+```
+
+which, dropped into a `WHERE`, is `SELECT a, b, c FROM x WHERE a > 0 AND b > 0
+AND c > 0`. No subquery and none needed: the iteration happened at translation
+time and left nothing behind.
+
+The two-level spelling from the brief works because §7.0's scalar rule catches
+the inner one — the binder names a single column, and an aggregate over a
+scalar is a one-element list:
+
+```
+ALL(VALUES, V, ALL(V, _ > 0))
+    (((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))
+```
 
 ### 7.3 `relation` binding → subquery
 
-The map's `skel` section supplies the skeleton (§4.6) and the lowering fills it:
+The map's `skel` section supplies the skeleton and the lowering fills it.
 
-| SEL | Skeleton |
-|---|---|
-| `ALL(rel, b)` | `all` — `NOT EXISTS (… WHERE corr AND (b) IS NOT TRUE)` |
-| `ANY(rel, b)` | `any` — `EXISTS (… WHERE corr AND (b) IS TRUE)` |
-| `SUM(rel, b)` | `sum` — `(SELECT COALESCE(SUM(b), 0) FROM … WHERE corr)` |
-| `COUNT(rel)` | `count` |
-| `JOIN(rel, s)` | `join` — `GROUP_CONCAT` / `STRING_AGG` per dialect |
-| `x IN rel` | `in` — `(x IN (SELECT scalar FROM … WHERE corr))` |
-| `MAP`, `FILTER`, `INDEXES` over a relation | `E_SQL_SHAPE` — they yield lists |
+| SEL | Skeleton | `{body}` is |
+|---|---|---|
+| `ALL(rel, b)` | `all` | the body |
+| `ANY(rel, b)` | `any` | the body |
+| `SUM(rel, b)` | `sum` | the body |
+| `COUNT(rel)` | `count` | — |
+| `JOIN(rel, s)` | `join` | refused on MariaDB; see below |
+| `x IN rel` | `inRelation` | the relation's `scalar` field |
 
-`IN` is the odd one in that table: it is a `bin` node, not a `call`, so its
-lowering lives on the operator path rather than the aggregate one, and `{body}`
-in the `in` skeleton is filled from the relation's `scalar` field rather than
-from a body argument there is no room to write.
+```
+ALL(ITEMS, I, I["qty"] > 0)
+    NOT EXISTS (SELECT 1 FROM `order_items` `oi`
+                WHERE `oi`.`order_id` = `o`.`id`
+                  AND ((`oi`.`qty` > 0)) IS NOT TRUE)
 
-`{corr}` fills with the binding's `correlate`, or with the dialect's `true`
-literal when the binding omits it — an uncorrelated relation is a subquery over
-the whole table, which is legal and occasionally what you want.
+SUM(ITEMS, I, I["qty"] * I["price"])
+    (SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0)
+       FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
 
-`IS NOT TRUE` rather than `NOT (…)` is the point of care here. SQL is
-three-valued and SEL is not: if the body is NULL for some row, `NOT (body)` is
-NULL, the `WHERE` rejects the row, and `NOT EXISTS` reports "all rows satisfy
-it" — silently the wrong answer for exactly the case a validation rule exists to
-catch. `IS NOT TRUE` folds NULL into false, so a NULL body makes `ALL` false,
-which is the conservative reading. All three target databases support
-`IS [NOT] TRUE` at the versions in scope.
+COUNT(ITEMS)
+    (SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
 
-`_K` inside a relation body is `E_SQL_SHAPE`. A row has no portable key, and
-inventing one (`ROW_NUMBER()`, the primary key) would be a guess about the
-schema this layer is careful never to make.
+SKU IN ITEMS                          ITEMS declares scalar: SKU
+    (`o`.`sku` IN (SELECT `oi`.`sku` FROM `order_items` `oi`
+                    WHERE `oi`.`order_id` = `o`.`id`))
+```
 
-Nested relations work: an inner `ALL` over a second relation binding produces a
-nested `EXISTS` correlated to the inner alias, provided the inner binding's
-`correlate` names it. Alias collision between two relations in one expression is
-`E_SQL_BINDING` — the host chose the aliases, so the host can fix them.
+`IS NOT TRUE` rather than `NOT (…)` is the point of care. SQL is three-valued
+and SEL is not: if the body is NULL for some row, `NOT (body)` is NULL, the
+`WHERE` rejects the row, and `NOT EXISTS` reports "every row satisfies it" —
+silently the wrong answer for exactly the case a validation rule exists to
+catch. `IS NOT TRUE` folds NULL into false, so a NULL body makes `ALL` false.
 
-### 7.4 One rewrite worth doing
+`{from}` fills with the quoted table and alias, or with the binding's
+`from: {raw: …}` when it carries a query of its own. `{corr}` fills with the
+binding's `correlate`, or with `lexical.true` when it has none — an
+uncorrelated relation is a subquery over the whole table, which is legal and
+occasionally what you want.
+
+`correlate` is `{raw: …}` and nothing else in M3. A structured join condition is
+a rabbit hole with no obvious floor, and the host wrote the aliases, so the host
+can write the predicate that joins them.
+
+**Nesting works and needs no machinery.** An inner relation's `correlate` names
+the outer alias, because the host wrote it:
+
+```
+ALL(ORDERS, O, ALL(LINES, L, L["qty"] > 0))
+    NOT EXISTS (SELECT 1 FROM `orders` `o` WHERE TRUE
+                  AND (NOT EXISTS (SELECT 1 FROM `lines` `l`
+                                    WHERE `l`.`order_id` = `o`.`id`
+                                      AND ((`l`.`qty` > 0)) IS NOT TRUE)) IS NOT TRUE)
+```
+
+Two relations sharing an alias in one expression is `E_SQL_BINDING`, checked
+before anything is rendered.
+
+### 7.4 The binder environment
+
+A stack of frames, `name => binder`, consulted **before** the bindings map —
+the same precedence `Sel\Context::lookup` gives an aggregate binder over a
+variable. A binder is one of three things, matching the three shapes:
+
+| Binder | `_` resolves to | `_["k"]` resolves to | `_K` |
+|---|---|---|---|
+| a static element | the element's AST node, re-entered | indexing that node | its key, as TEXT |
+| a column | that column reference | `E_SQL_SHAPE` | the ordinal, as TEXT |
+| a relation row | the relation's `scalar` field, or `E_SQL_SHAPE` if it declares none | the named field | **`E_SQL_SHAPE`** |
+
+The **scalar** row of §7.0 binds as a static element whose node is the first
+argument itself and whose key is `"1"`, matching what `Core::elements` does in
+the evaluator. That single row is what makes `ALL(TOTAL, _ > 0)` and the
+two-level `ALL(V, ALL(V, …))` above work, so it is not a special case in the
+lowering — it is a one-element list.
+
+A `value` binding holds `Value` children rather than AST nodes, so its elements
+are **synthesised into nodes** before binding: a child with children becomes a
+`clist`, and a scalar becomes a `text` or `num` node according to the binding's
+declared `type` — the same rule `declaredKind` already applies to the whole
+value in M2. Synthesising is smaller than a fourth binder shape and inherits
+M2's quoting decision rather than restating it.
+
+`_K` on a relation is refused because a row has no portable key. Inventing one —
+`ROW_NUMBER()`, the primary key — would be a guess about the schema this layer
+is careful never to make.
+
+Binders shadow, and nested aggregates shadow independently, exactly as spec
+§7.3 requires of the evaluator.
+
+### 7.5 `FILTER` absorption
+
+`FILTER` yields a list, so on its own it is refused. But "all the ones that
+match also satisfy" is one of the commonest shapes a real rule takes, so four
+combinations are absorbed:
 
 ```
 ALL(FILTER(L, p), q)   ->   ALL(L, (NOT (p)) OR (q))
@@ -926,38 +1059,410 @@ SUM(FILTER(L, p), q)   ->   SUM(L, CASE WHEN (p) THEN (q) ELSE 0 END)
 COUNT(FILTER(L, p))    ->   SUM(L, CASE WHEN (p) THEN 1 ELSE 0 END)
 ```
 
-`FILTER` yields a list, so it is otherwise unusable — but "all the ones that
-match also satisfy" is one of the most common shapes a real validation rule
-takes. These four rewrites cost a few dozen lines and turn `FILTER` from
-"always refused" into "usable wherever it was going to be consumed anyway". They
-are applied before the shape dispatch above, so the rewritten form then takes
-whichever of the three paths its list argument calls for.
+Absorption happens **in the dispatch, not as an AST rewrite**, for one specific
+reason: the `FILTER` and the enclosing aggregate may name their binders
+differently, and rewriting the tree would mean substituting one name for the
+other. Binding both names to the same element instead is three lines and cannot
+get the substitution wrong.
+
+Each rewrite is NULL-safe under the skeletons in §7.3. For `ALL`, a NULL `p`
+with a FALSE `q` gives a NULL body, which `IS NOT TRUE` includes — so the
+element is treated as having been in the filter and having failed, which is the
+conservative reading. For `ANY`, a NULL `p` gives a body that is not TRUE, so
+the `ANY` does not fire on it.
+
+After absorption the result is re-dispatched on `L` — and re-dispatch is what
+makes `FILTER(FILTER(L, p1), p2)` work too, since the inner one is absorbed on
+the way through and the predicates conjoin. All three shapes get the rewrite for
+free:
+
+```
+COUNT(FILTER(ITEMS, I, I["qty"] <= 0))
+    (SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0)
+       FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+```
+
+`MAP` as an aggregate's source is **not** absorbed in M3 and is refused with a
+reason. It would need real substitution rather than double binding, and one
+unabsorbed source is a smaller cost than a substitution pass written to serve a
+single case.
+
+#### The dream solution, for future research
+
+`FILTER` absorption works by double binding because a filter does not change
+what the element *is* — it only decides whether the element takes part. `MAP`
+does change it, and that is the whole difficulty: in `ALL(MAP(L, f), q)`, the
+`_` inside `q` names the *result of `f`*, and the `_` inside `f` names the
+original element. Two binders, two meanings, one name.
+
+The general mechanism that covers `MAP` and much else is a **let-binding in the
+fragment language**: rather than substituting `f` into every occurrence of `_`
+in `q`, bind it once.
+
+```
+ALL(MAP(L, f), q)   ->   ALL(L, LET _ = f IN q)
+```
+
+with `LET` lowering per shape:
+
+- **static and columns unroll** — no SQL construct needed at all. The unroll
+  already renders `f` once per element; binding `_` in the frame to the
+  *resulting Fragment* rather than to an AST node makes `q` see it. This is a
+  fourth binder shape (`FRAGMENT`) and perhaps twenty lines. It would also make
+  `SUM(MAP(L, f), _)` and the `JOIN(MAP(…), sep)` in
+  `examples/order-validation.sel` translate.
+- **relation** — a lateral derived table, which is what SQL's answer to `LET`
+  actually is:
+
+  ```sql
+  NOT EXISTS (SELECT 1 FROM order_items oi,
+                   LATERAL (SELECT f AS v) m
+               WHERE corr AND (q over m.v) IS NOT TRUE)
+  ```
+
+  MariaDB has no `LATERAL` (as of 11.8), PostgreSQL has had it since 9.3, and
+  SQLite has none. So the relation half is not portable today, and a dialect
+  that lacks it would have to fall back to substituting `f` textually — which
+  duplicates the expression once per mention of `_`, and duplicating a
+  subquery-valued `f` is a performance trap rather than a correctness one.
+
+Three things would have to be settled before building it, and none is obvious:
+
+1. **Where the duplication budget sits.** Textual substitution is simple and
+   can multiply work; `LATERAL` is clean and is not portable. A rule that picks
+   between them per dialect makes the same SEL source translate to structurally
+   different SQL, which the byte-exact suite would then have to encode per
+   dialect rather than once.
+2. **Whether `FRAGMENT` binders leak.** A Fragment holds parameter slots. Bind
+   one to a name used three times in `q` and the slots are spliced three times —
+   correct today, because splicing copies absolute indices rather than
+   renumbering (§9), but it is an invariant worth pinning with a case before
+   anything depends on it.
+3. **Whether it should be `MAP`-shaped at all.** `LET` is more general than
+   `MAP` absorption, and once it exists the obvious next question is whether
+   stage 1 should use it for the helper variables it currently inlines by
+   duplication — `A = 1 + 2; A * A` emits `(1 + 2)` twice today. That is a
+   larger and more interesting change than `MAP`, and it argues for designing
+   `LET` on its own terms rather than as an aggregate special case.
+
+The honest summary: the unroll half is small and worth doing whenever `MAP`
+becomes the thing people actually hit, and the relation half is blocked on
+`LATERAL` being available in the dialects that matter. Neither is M3.
+
+### 7.6 `COUNT`, `HAS`, `INDEXES`
+
+| | static / columns | relation | scalar |
+|---|---|---|---|
+| `COUNT(x)` | the count, as a literal | `count` skeleton | `0` — a scalar has no children (spec §7.4) |
+| `HAS(x, k)` | `TRUE`/`FALSE`, decided at translation time | `TRUE`/`FALSE` from the declared fields | `FALSE` |
+| `INDEXES(x)` | `E_SQL_SHAPE` — yields a list | same | same |
+
+`HAS` needs a **constant** key, for the same reason indexing does: which column
+it asks about has to be known before the query runs.
+
+### 7.7 What is refused, and where
+
+| Construct | Code | Because |
+|---|---|---|
+| `MAP` or `FILTER` in a value position | `E_SQL_SHAPE` | yields a list |
+| `MAP` as an aggregate's source | `E_SQL_SHAPE` | see §7.5 |
+| `INDEXES` anywhere | `E_SQL_SHAPE` | yields a list |
+| `_K` inside a relation body | `E_SQL_SHAPE` | a row has no portable key |
+| `rel[1]` — indexing a relation by position | `E_SQL_SHAPE` | rows have no order without an `ORDER BY`. A numeric key on a relation takes this branch **before** the field lookup, so the message is about ordering rather than a missing field |
+| `JOIN` over a relation, on MariaDB | `E_SQL_UNSUPPORTED` | `GROUP_CONCAT` does not specify an order, and SEL's `JOIN` concatenates in insertion order. The reason comes from the map |
+| a non-BOOL aggregate body for `ALL`/`ANY` | `E_SQL_SHAPE` | SEL has no truthiness |
+| a non-NUM aggregate body for `SUM` | `E_SQL_SHAPE` | symmetric with the above; `UNKNOWN` passes, as it does for BOOL |
+| `HAS(x, k)` with a non-constant `k` | `E_SQL_SHAPE` | which column it asks about must be known before the query runs |
+| two relations sharing an alias | `E_SQL_BINDING` | the correlation would name the wrong rows |
+
+### 7.8 Worked contract: the project's own rule
+
+`examples/order-validation.sel` is the honest test, and the honest result is
+that **it does not translate**. That is worth showing in full, because "which of
+my rules can be pushed down" is the question an application actually has.
+
+With `ITEMS` bound as a relation over `order_items oi` correlated on
+`oi.order_id = o.id`, fields `QTY`, `PRICE`, `SKU`, scalar `SKU`, and
+`CUSTOMER`, `POSTCODE`, `CREDIT_LIMIT` bound as columns of `o`:
+
+**What translates.** Each of these is a conjunct the host can compile on its
+own and push down:
+
+```
+COUNT(ITEMS) == 0
+    ((SELECT COUNT(*) FROM `order_items` `oi`
+       WHERE `oi`.`order_id` = `o`.`id`) = 0)
+
+COUNT(FILTER(ITEMS, _["QTY"] <= 0)) > 0
+    ((SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0)
+       FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > 0)
+
+SUM(ITEMS, _["QTY"] * _["PRICE"]) > CREDIT_LIMIT
+    ((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0)
+       FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+     > `o`.`credit_limit`)
+
+ALL(ITEMS, RMATCH('^[A-Z]{2}-\d{4}$', _["SKU"]))
+    NOT EXISTS (SELECT 1 FROM `order_items` `oi`
+                WHERE `oi`.`order_id` = `o`.`id`
+                  AND ((`oi`.`sku` COLLATE utf8mb4_bin
+                        REGEXP CONCAT('(?s)', '^[A-Z]{2}-[0-9]{4}$'))) IS NOT TRUE)
+```
+
+That last one is `\d` rewritten to `[0-9]` — see §7.10.
+
+**What does not, and why.** Two constructs in the rule need an order that a
+relation does not have:
+
+- `FIRST_SKU = IF(COUNT(ITEMS) > 0, ITEMS[1]["SKU"], "-")` — `ITEMS[1]` asks for
+  the first row of a set that has no first row. `E_SQL_SHAPE`.
+- `BAD_SKUS = JOIN(MAP(FILTER(ITEMS, …), _["SKU"]), ", ")` — `MAP` as a source,
+  and `JOIN` over a relation, which MariaDB cannot order.
+
+So `Sql::tryTranslate` on the whole rule returns `null`, and `Sql::translate`
+says which construct stopped it and where. **That is the design working**, not
+failing: the rule was written to produce a human-readable message naming a
+specific bad SKU, and a `WHERE` clause is not the place that job belongs.
+
+**The pattern this suggests.** An application pushes down the conjuncts it can
+to narrow the rows, then runs the whole rule on what comes back:
 
 ```php
-// php/src/Sql/Lower.php — the dispatch, condensed
-private function aggregate(array $node, Env $env): array
+$prefilters = ['COUNT(ITEMS) > 0', 'SUM(ITEMS, _["QTY"] * _["PRICE"]) <= CREDIT_LIMIT'];
+$where = [];
+foreach ($prefilters as $src) {
+    $f = Sql::tryTranslate(Sel::compile($src), 'mariadb', $bindings);
+    if ($f !== null) {
+        $where[] = $f->asCondition();
+    }
+}
+$sql = 'SELECT * FROM orders o' . ($where ? ' WHERE ' . implode(' AND ', $where) : '');
+// then evaluate the full rule in PHP over the rows that came back
+```
+
+This needs no new API — each conjunct is its own program — and it is worth
+naming because it is what "best effort" looks like in practice. Whole-expression
+refusal is about never emitting half a string; it was never about forbidding a
+caller from asking about half a rule.
+
+**Note what the prefilter above selects.** Pushing down
+`SUM(…) <= CREDIT_LIMIT` narrows to the orders that *pass* that check, so an
+order that exceeds its limit never reaches PHP and never receives its
+"exceeds the credit limit" message. That is right when the application wants
+the acceptable orders and wrong when it wants every order with its verdict. For
+the second job the prefilter has to be widened or dropped — pushing down a
+validation rule and pushing down a *search* are different tasks that happen to
+share a translator.
+
+### 7.9 Implementation shape
+
+A binder, and the stack the translator consults before its bindings:
+
+```php
+final class Binder
 {
-    [$binder, $body] = self::shape($node);
-    $src = $this->resolveSource($node['args'][0], $env);   // list | columns | relation
+    public const NODE = 'node';        // a static element: an AST node
+    public const COLUMN = 'column';    // one column reference
+    public const ROW = 'row';          // a row of a relation
 
-    switch ($src['shape']) {
-        case 'list':
-        case 'columns':
+    public string $shape;
+    /** @var array<string,mixed>|null */ public ?array $node;      // NODE
+    /** @var array<string,mixed>|null */ public ?array $column;    // COLUMN
+    /** @var array<string,mixed>|null */ public ?array $relation;  // ROW
+    public ?string $key;               // what _K yields; null on a relation
+}
+```
+
+The dispatch, which is the whole of §7.0 in one switch:
+
+```php
+private function aggregate(array $n): Fragment
+{
+    [$binder, $body] = self::shape($n);          // 2- and 3-argument forms
+    $src = $this->source($n['args'][0], $n);     // absorbs FILTER, then classifies
+
+    switch ($src->shape) {
+        case Source::STATIC_LIST:
+        case Source::COLUMNS:
             $parts = [];
-            foreach ($src['elements'] as $key => $elem) {
-                $parts[] = $this->lower($body, $env->bind($binder, $elem, (string) $key));
+            foreach ($src->elements as $key => $elem) {
+                $this->push([$binder => $elem, '_K' => Binder::key((string) $key)]);
+                try {
+                    $parts[] = $this->guarded($n['name'], $body, $src->filter);
+                } finally {
+                    $this->pop();
+                }
             }
-            return $this->fold($node['name'], $parts, $node['pos']);
+            return $this->fold($n['name'], $parts, $n['pos']);
 
-        case 'relation':
-            $inner = $env->bindRelation($binder, $src);
-            $skel  = $this->map->agg(self::SKELETON[$node['name']] ?? null, $node['pos']);
-            return $this->fillSkeleton($skel, $src, $this->lower($body, $inner));
+        case Source::RELATION:
+            $this->push([$binder => Binder::row($src->relation)]);
+            try {
+                $inner = $this->guarded($n['name'], $body, $src->filter);
+            } finally {
+                $this->pop();
+            }
+            return $this->skeletonFor($n['name'], $src->relation, $inner, $n['pos']);
     }
 }
 ```
 
----
+`guarded()` is where §7.5 lives: it renders the body, and when the source
+carried a filter predicate it renders that too — with both binder names bound to
+the same element — and combines the two per the aggregate.
+
+The fold, which is why this is not an AST rewrite — it needs the dialect's
+operator template, and a tree rewrite has no access to one:
+
+```php
+/** @param list<Fragment> $parts */
+private function fold(string $name, array $parts, array $pos): Fragment
+{
+    if ($parts === []) {
+        return match ($name) {                    // spec §7.3's empty cases
+            'ALL' => $this->literal(Value::bool(true), 'BOOL'),
+            'ANY' => $this->literal(Value::bool(false), 'BOOL'),
+            'SUM' => $this->literal(Value::num('0'), 'NUM'),
+            default => refuse('E_SQL_SHAPE', "{$name} over an empty list", $pos),
+        };
+    }
+    if (count($parts) === 1 && $name !== 'JOIN') {
+        return $parts[0];
+    }
+    // Pairwise-left through the operator's own template, which is the path a
+    // hand-written chain takes too — so the two produce the same bytes.
+    $op = ['ALL' => 'AND', 'ANY' => 'OR', 'SUM' => '+'][$name];
+    $acc = array_shift($parts);
+    foreach ($parts as $next) {
+        $acc = $this->apply('ops', $op, [$acc, $next], $pos);
+    }
+    return $acc;
+}
+```
+
+And the relation case, which is a named-slot fill of a skeleton the map owns:
+
+```php
+private function skeletonFor(string $name, array $rel, Fragment $body, array $pos): Fragment
+{
+    $skel = $this->skeleton(self::SKELETON[$name], $pos);   // refuses with the map's reason
+    $from = isset($rel['from']['raw'])
+        ? $rel['from']['raw'] . ($rel['alias'] ? ' ' . $this->emit->ident($rel['alias']) : '')
+        : $this->emit->ident($rel['from'])
+          . ($rel['alias'] ? ' ' . $this->emit->ident($rel['alias']) : '');
+    $corr = $rel['correlate']['raw'] ?? (string) $this->emit->lex('true');
+
+    return new Fragment(
+        $this->fillNamed($skel, ['from' => [$from], 'corr' => [$corr], 'body' => [$body]], $pos),
+        self::RETURNS[$name], $this->dialect);
+}
+```
+
+Nothing here is new machinery: `fillNamed`, `skeleton`, `Emit::ident` and the
+part-list splicing all shipped in M2 and are already exercised by `IF`/`COND`.
+
+### 7.10 Three M2 corrections that land with M3
+
+M3's own examples exercise three constructs M2 gets wrong. None is aggregate
+machinery — all three are map bugs — but §7.3's `SKU IN ITEMS` and §7.8's
+`RMATCH` inherit them, so they are fixed here rather than left for a later pass.
+
+**(a) `IN` compares without the collation, and a collation is not enough.**
+
+```
+"OPEN" IN ("open", "held")       SEL: FALSE
+    ('OPEN' IN ('open', 'held'))              MariaDB 11.8: 1
+```
+
+The `list` variant omits `{textCollate}` where the `scalar` variant has it, and
+the `inRelation` skeleton omits it too. Adding the collation fixes that case and
+uncovers a second, deeper one:
+
+```
+3.0 IN (3)                       SEL: FALSE      (IN is EQL-based, and EQL does
+                                                  not normalise numbers)
+    (3.0 COLLATE utf8mb4_bin = 3 COLLATE utf8mb4_bin)     MariaDB: 1
+```
+
+A collation does not make MariaDB compare two numeric literals as text; it
+compares them as numbers and `3.0 = 3`. **The whole `$` family, `EQL` and `IN`
+are affected**, because all of them are specified as byte comparisons and all of
+them can receive numbers. The fix is a new `textCast` lexical entry applied
+alongside `textCollate`:
+
+```jsonc
+"textCast": "CAST({0} AS CHAR)"
+```
+```
+"$==":  { "variants": { "text": "({textCast:0}{textCollate} = {textCast:1}{textCollate})" }, … }
+```
+
+Verified on 11.8: with the cast, `3.0` vs `3` is `0`, `'A'` vs `'a'` is `0`,
+`'OPEN' IN ('open')` is `0`, `3 IN (1, 3)` is `1`, and `CAST(2.50 AS CHAR)` is
+`2.50` — the scale survives, which it must, since scale is part of a SEL number.
+
+This is why `textCollate` alone was never sufficient and why the M2 differential
+did not catch it: every one of its 73 expressions compared operands the SEL
+parser had already given the same form.
+
+**(b) `RMATCH` and `RFIND` silently drop the `i` flag.**
+
+```
+RMATCH('^a$', "A", "i")          SEL: TRUE
+    ('A' COLLATE utf8mb4_bin REGEXP CONCAT('(?s)', '^a$'))    MariaDB: 0
+```
+
+The template names `{0}` and `{1}` only, `Emit::fill` ignores arguments a
+template does not mention, and the generator checks only that no slot exceeds
+the arity. Three arguments in, two used, no complaint anywhere.
+
+The flag is mappable — `(?si)` works on 11.8 — so the fix is an arity-keyed
+template whose three-argument form emits `(?si)`, plus the rule that the flag
+must be a **literal**, for the same reason the pattern must be (below).
+
+And the generator gains the check that would have caught it: **a single-string
+`tpl` on an entry whose effective arity spans more than one count is an error.**
+Either the entry narrows its `arity` or it supplies an arity-keyed `tpl`. That
+is a whole-class fix rather than a spot fix, and `FIND` and `SUBSTR` already
+have the arity-keyed form it asks for.
+
+**(c) `RMATCH` and `RFIND` emit the author's pattern verbatim.**
+
+Spec §7.8 requires `\d`, `\w` and `\s` to be *rewritten* into explicit ASCII
+classes before compiling, precisely because a library flag would otherwise
+decide what they mean. MariaDB's engine does not do that rewrite, and forcing a
+binary collation does not stop it. Verified on 11.8:
+
+```
+SELECT '٣' COLLATE utf8mb4_bin REGEXP '^\d$'   ->  1     SEL says FALSE
+SELECT 'é' COLLATE utf8mb4_bin REGEXP '^\w$'   ->  1     SEL says FALSE
+```
+
+The fix is not to copy the rewrite into the SQL layer. `Sel\Builtins\Regex`
+already has it, and a second copy is a second thing to keep in step. M3 exposes
+the existing one:
+
+```php
+// Sel\Builtins\Regex — the private validate() made reachable, unchanged.
+public static function portableSource(string $pattern, ?array $pos = null): string;
+```
+
+and the translator calls it on the pattern before emitting. Two consequences,
+both wanted:
+
+- A pattern SEL would reject is refused by the translator with the same
+  `E_REGEX_SYNTAX` at the same offset, rather than being handed to a database
+  that might accept it.
+- **The pattern must be a literal.** A pattern taken from a column cannot be
+  rewritten, so `RMATCH(PATTERN_COLUMN, x)` is `E_SQL_UNSUPPORTED`. This is a
+  narrowing of what M2 accepted, and what M2 accepted was unsound.
+
+All three are the same failure repeated: **an entry was written to look right
+rather than checked against the server.** The M1 probing caught four of these
+because it asked MariaDB; these three survived because the M2 differential
+compared only expressions whose operands the parser had already normalised. M3's
+cases add the asymmetric pairs — `"OPEN"` against `"open"`, `3.0` against `3`,
+a pattern with a flag — that the earlier corpus lacked.
 
 ## 8. Stage 3 — kind inference
 
@@ -1250,7 +1755,7 @@ postgresql
 --- source
 ALL(VALUES, V, V > 0)
 --- expect
-(("x"."a" > 0) AND ("x"."b" > 0) AND ("x"."c" > 0))
+((("x"."a" > 0) AND ("x"."b" > 0)) AND ("x"."c" > 0))
 ===
 ### name: agg.nested.static-after-inlining
 --- dialect
@@ -1258,7 +1763,7 @@ sqlite
 --- source
 R[1] = (1, 2); R[2] = (3, 4); ALL(R, ROW, ALL(ROW, _ > 0))
 --- expect
-((1 > 0) AND (2 > 0) AND (3 > 0) AND (4 > 0))
+(((1 > 0) AND (2 > 0)) AND ((3 > 0) AND (4 > 0)))
 ===
 ### name: refuse.split-is-a-list
 --- dialect
@@ -1343,10 +1848,10 @@ authored, validated and generated.
 covering `lex.*`, `op.*`, `func.*`, `norm.*`, `refuse.*`; `php/bin/sqlt`;
 `impl_sql` wired into `check.sh`.
 
-**M3 — PHP does aggregates. NEXT.** Stage 2, all three shapes, the FILTER rewrites,
+**M3 — PHP does aggregates. DONE.** Stage 2, all three shapes, the FILTER rewrites,
 the `agg.*` cases.
 
-**M4 — PHP + MariaDB end to end.** `examples/sql-php.php` against a real
+**M4 — PHP + MariaDB end to end. NEXT.** `examples/sql-php.php` against a real
 MariaDB: a schema, an order-validation rule, the rule pushed into a `WHERE`,
 the same rule evaluated in PHP over the unfiltered rows, and an assertion that
 the two select the same ids. **This is the gate.** Nothing below starts until

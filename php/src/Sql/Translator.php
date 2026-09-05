@@ -32,6 +32,14 @@ final class Translator
     private array $params = [];
     /** @var list<string> */
     private array $paramKinds = [];
+    /**
+     * Aggregate binders, innermost last. Consulted before the bindings map, the
+     * same precedence Sel\Context::lookup gives a binder over a variable, and
+     * pushed per element so that nested aggregates shadow independently.
+     *
+     * @var list<array<string, Binder>>
+     */
+    private array $frames = [];
     /** @var array<string,bool> */
     private array $caveats = [];
 
@@ -53,6 +61,7 @@ final class Translator
         $this->params = [];
         $this->paramKinds = [];
         $this->caveats = [];
+        $this->frames = [];
         $f = $this->node(Normalise::run($ast));
 
         return new Fragment($f->parts, $f->kind, $this->dialect,
@@ -100,6 +109,10 @@ final class Translator
     /** @param array<string,mixed> $n */
     private function variable(array $n): Fragment
     {
+        $bound = $this->binder($n['name']);
+        if ($bound !== null) {
+            return $this->fromBinder($bound, $n);
+        }
         $b = $this->bindings->get($n['name'], $n['pos']);
         switch ($b['kind']) {
             case 'column':
@@ -149,10 +162,20 @@ final class Translator
                 'only a bound name can be indexed here; SQL has no way to index '
                 . 'into the result of an expression', $n['pos']);
         }
+        $bound = $this->binder($obj['name']);
+        if ($bound !== null) {
+            return $this->indexBinder($bound, $obj['name'], $this->constantIndex($n['idx']), $n);
+        }
         $b = $this->bindings->get($obj['name'], $obj['pos']);
         $key = $this->constantIndex($n['idx']);
 
         if ($b['kind'] === 'relation') {
+            if (preg_match('/^[0-9]+$/', $key) === 1) {
+                refuse('E_SQL_SHAPE',
+                    "{$obj['name']}[{$key}] asks for a row by position, and a "
+                    . 'relation has no first row without an ORDER BY that nothing '
+                    . 'here can supply', $n['pos']);
+            }
             $field = strtoupper($key);
             if (!isset($b['fields'][$field])) {
                 $known = array_keys($b['fields']);
@@ -227,7 +250,17 @@ final class Translator
             $l = $this->requireBool($l, $n['l']['pos'], $op);
             $r = $this->requireBool($r, $n['r']['pos'], $op);
         }
-        return $this->apply('ops', $op, [$l, $r], $n['pos'], $this->variantFor($op, [$l, $r]));
+        $variant = $this->variantFor($op, [$l, $r]);
+        if (self::isByteComparison($op)) {
+            // See Emit::textOperand for why the operands are transformed here
+            // rather than by the template. Selected by operator, NOT by the
+            // variant being named "text": `&` has a variant of that name too and
+            // is concatenation, not a comparison — casting and collating its
+            // operands would be wrong and, briefly, was.
+            $l = $this->emit->textOperand($l);
+            $r = $this->emit->textOperand($r);
+        }
+        return $this->apply('ops', $op, [$l, $r], $n['pos'], $variant);
     }
 
     /**
@@ -243,6 +276,30 @@ final class Translator
         $needle = $this->node($n['l']);
         $rhs = $n['r'];
 
+        // `x IN rel` is the one place a relation appears on the right of an
+        // operator rather than as an aggregate's source, so it is lowered here
+        // and not by aggregate(). {body} is the relation's declared scalar.
+        if ($rhs['t'] === 'var' && $this->binder($rhs['name']) === null
+            && $this->bindings->has($rhs['name'])) {
+            $b = $this->bindings->get($rhs['name'], $rhs['pos']);
+            if ($b['kind'] === 'relation') {
+                $scalar = isset($b['scalar']) ? strtoupper((string) $b['scalar']) : null;
+                if ($scalar === null || !isset($b['fields'][$scalar])) {
+                    refuse('E_SQL_SHAPE',
+                        "IN over {$rhs['name']} needs the binding to name a \"scalar\" "
+                        . 'field: that is the column the subquery projects', $rhs['pos']);
+                }
+                return new Fragment(
+                    $this->fillNamed($this->skeleton('inRelation', $n['pos']),
+                        $this->relationSlots($b) + [
+                            'needle' => [$this->emit->textOperand($needle)],
+                            'body' => [$this->emit->textOperand(
+                                $this->columnRef($b['fields'][$scalar]))],
+                        ], $n['pos']),
+                    'BOOL', $this->dialect);
+            }
+        }
+
         $elements = null;
         if ($rhs['t'] === 'list') {
             $elements = $rhs['items'];
@@ -252,10 +309,24 @@ final class Translator
 
         if ($elements === null) {
             $r = $this->node($rhs);          // a scalar; spec §5.4's second case
-            return $this->apply('ops', 'IN', [$needle, $r], $n['pos'], 'scalar');
+            return $this->apply('ops', 'IN',
+                [$this->emit->textOperand($needle), $this->emit->textOperand($r)],
+                $n['pos'], 'scalar');
         }
 
-        $args = [$needle];
+        // A literal list becomes a chain of byte comparisons rather than SQL's
+        // IN. Casting each element inside a variadic template is not
+        // expressible, and casting only the needle is not enough: on MariaDB
+        // 11.8, CAST(3.0 AS CHAR) COLLATE utf8mb4_bin IN (3) is 1, because the
+        // numeric right-hand side pulls the comparison back to numbers, where
+        // SEL says FALSE. The cast has already cost the index SQL's IN would
+        // have used, so the chain gives up nothing the fix had not already
+        // spent.
+        if ($elements === []) {
+            return $this->literal(Value::bool(false), 'BOOL');
+        }
+        $cast = $this->emit->textOperand($needle);
+        $tests = [];
         foreach ($elements as $e) {
             $f = $this->node($e);
             if ($f->kind === 'LIST') {
@@ -263,9 +334,28 @@ final class Translator
                     'IN over a list of lists is structural in SEL and has no SQL '
                     . 'counterpart', $e['pos']);
             }
-            $args[] = $f;
+            $tests[] = $this->apply('ops', 'EQL',
+                [$cast, $this->emit->textOperand($f)], $e['pos'], 'text');
         }
-        return $this->apply('ops', 'IN', $args, $n['pos'], 'list');
+        return $this->foldPairwise('OR', $tests, $n['pos']);
+    }
+
+    /**
+     * Fold fragments pairwise-left through an operator's own template — the same
+     * path a hand-written chain takes, so an unrolled aggregate and a written-out
+     * chain produce the same bytes.
+     *
+     * @param list<Fragment> $parts
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    public function foldPairwise(string $op, array $parts, array $pos): Fragment
+    {
+        $acc = array_shift($parts);
+        foreach ($parts as $next) {
+            $acc = $this->apply('ops', $op, [$acc, $next], $pos,
+                $this->variantFor($op, [$acc, $next]));
+        }
+        return $acc;
     }
 
     /** @param array<string,mixed> $n */
@@ -274,14 +364,18 @@ final class Translator
         $name = $n['name'];
 
         if (in_array($name, self::AGGREGATES, true)) {
-            refuse('E_SQL_UNSUPPORTED',
-                "{$name} iterates, and turning iteration into SQL is stage 2, which "
-                . 'this build does not have yet', $n['pos']);
+            return $this->aggregate($n);
         }
-        if (in_array($name, ['COUNT', 'INDEXES', 'HAS'], true)) {
-            refuse('E_SQL_UNSUPPORTED',
-                "{$name} asks about a value's structure, which needs the same "
-                . 'lowering the aggregates do; not in this build', $n['pos']);
+        if ($name === 'COUNT') {
+            return $this->count($n);
+        }
+        if ($name === 'HAS') {
+            return $this->has($n);
+        }
+        if ($name === 'INDEXES') {
+            refuse('E_SQL_SHAPE',
+                'INDEXES yields a list of keys, and a SQL expression is a scalar',
+                $n['pos']);
         }
         if ($name === 'ABORT') {
             refuse('E_SQL_UNSUPPORTED',
@@ -291,6 +385,8 @@ final class Translator
         if ($name === 'IF' || $name === 'COND') {
             return $this->conditional($n);
         }
+
+        $n = $this->rewriteRegex($n);
 
         $args = [];
         foreach ($n['args'] as $arg) {
@@ -303,6 +399,48 @@ final class Translator
             $args[] = $f;
         }
         return $this->apply('funcs', $name, $args, $n['pos']);
+    }
+
+    /**
+     * Put a regex pattern through the language's own rewriter before it is
+     * emitted. Spec §7.8 expands \d, \w and \s into explicit ASCII classes
+     * rather than passing them through, because otherwise a library flag decides
+     * what they mean — and MariaDB's engine decides differently. Verified on
+     * 11.8: '٣' REGEXP '^\d$' is 1 there and FALSE in SEL.
+     *
+     * The rewriter is Sel\Builtins\Regex's own. A copy here would be a second
+     * thing to keep in step, and it would fail silently when they drifted.
+     *
+     * Both the pattern and the flags must be literals: a pattern read from a
+     * column cannot be rewritten, and the flag selects the template.
+     *
+     * @param array<string,mixed> $n
+     * @return array<string,mixed>
+     */
+    private function rewriteRegex(array $n): array
+    {
+        static $regex = ['RMATCH' => 0, 'RFIND' => 0, 'RREPLACE' => 0, 'RGROUPS' => 0];
+        if (!isset($regex[$n['name']])) {
+            return $n;
+        }
+        $at = $regex[$n['name']];
+        $pat = $n['args'][$at] ?? null;
+        if ($pat === null || $pat['t'] !== 'text') {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$n['name']} needs a literal pattern here: SEL rewrites \\d, \\w and "
+                . '\\s into explicit ASCII classes before matching, and a pattern that '
+                . 'is not known until the query runs cannot be rewritten',
+                ($pat['pos'] ?? $n['pos']));
+        }
+        $flagAt = $n['name'] === 'RREPLACE' ? 3 : 2;
+        if (isset($n['args'][$flagAt]) && $n['args'][$flagAt]['t'] !== 'text') {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$n['name']} needs literal flags here: they select the mapping",
+                $n['args'][$flagAt]['pos']);
+        }
+        $n['args'][$at]['v'] = \Sel\Builtins\Regex::portableSource(
+            (string) $pat['v'], $pat['pos']);
+        return $n;
     }
 
     /**
@@ -350,6 +488,520 @@ final class Translator
         ], $n['pos']);
 
         return new Fragment($parts, self::unify($results), $this->dialect);
+    }
+
+    // --- aggregates: docs/SQL-TRANSLATION.md §7 -----------------------------
+    //
+    // Lowering runs inside this walk rather than as an AST pass before it. Two
+    // of the three shapes have to render — a relation becomes a subquery, which
+    // is characters — and the third needs the dialect's operator templates,
+    // which a tree rewrite has no access to.
+
+    private const AGG_RETURNS = ['ALL' => 'BOOL', 'ANY' => 'BOOL', 'SUM' => 'NUM',
+                                 'JOIN' => 'TEXT', 'MAP' => 'LIST', 'FILTER' => 'LIST'];
+    private const AGG_SKELETON = ['ALL' => 'all', 'ANY' => 'any', 'SUM' => 'sum',
+                                  'JOIN' => 'join'];
+    private const AGG_FOLD = ['ALL' => 'AND', 'ANY' => 'OR', 'SUM' => '+'];
+
+    private function binder(string $name): ?Binder
+    {
+        for ($i = count($this->frames) - 1; $i >= 0; $i--) {
+            if (isset($this->frames[$i][$name])) {
+                return $this->frames[$i][$name];
+            }
+        }
+        return null;
+    }
+
+    /** @param array<string,mixed> $n */
+    private function fromBinder(Binder $b, array $n): Fragment
+    {
+        switch ($b->shape) {
+            case Binder::NODE:
+                return $this->node($b->payload);
+            case Binder::COLUMN:
+                return $this->columnRef($b->payload);
+            case Binder::ROW:
+                $rel = $b->payload;
+                $scalar = isset($rel['scalar']) ? strtoupper((string) $rel['scalar']) : null;
+                if ($scalar === null || !isset($rel['fields'][$scalar])) {
+                    refuse('E_SQL_SHAPE',
+                        "{$n['name']} names a row, and the relation does not say which "
+                        . 'of its fields a bare reference means; give the binding a '
+                        . '"scalar", or index the field you want', $n['pos']);
+                }
+                return $this->columnRef($rel['fields'][$scalar]);
+        }
+        refuse('E_SQL_SHAPE', (string) $b->reason, $n['pos']);
+    }
+
+    /** @param array<string,mixed> $n */
+    private function indexBinder(Binder $b, string $name, string $key, array $n): Fragment
+    {
+        if ($b->shape === Binder::ROW) {
+            if (preg_match('/^[0-9]+$/', $key) === 1) {
+                refuse('E_SQL_SHAPE',
+                    "{$name}[{$key}] asks for a row by position, and a relation has "
+                    . 'no first row without an ORDER BY that nothing here can supply',
+                    $n['pos']);
+            }
+            $field = strtoupper($key);
+            if (!isset($b->payload['fields'][$field])) {
+                $known = array_keys($b->payload['fields']);
+                sort($known);
+                refuse('E_SQL_BINDING',
+                    "{$name}[\"{$key}\"] is not a field of that relation"
+                    . ($known === [] ? '; it declares none' : '; it has ' . implode(', ', $known)),
+                    $n['pos']);
+            }
+            return $this->columnRef($b->payload['fields'][$field]);
+        }
+        if ($b->shape === Binder::NODE) {
+            $elem = self::childOf($b->payload, $key);
+            if ($elem === null) {
+                refuse('E_SQL_BINDING',
+                    "{$name}[\"{$key}\"] is not a key of that element", $n['pos']);
+            }
+            return $this->node($elem);
+        }
+        refuse('E_SQL_SHAPE',
+            "{$name} names a single column, which has no parts to index", $n['pos']);
+    }
+
+    /**
+     * The 2- and 3-argument forms: `_` by default, a bare name when given.
+     *
+     * @param array<string,mixed> $n
+     * @return array{0:string, 1:array<string,mixed>}
+     */
+    private static function aggShape(array $n): array
+    {
+        if (count($n['args']) === 3) {
+            if ($n['args'][1]['t'] !== 'var') {
+                refuse('E_SQL_SHAPE',
+                    "the binder of {$n['name']} must be a bare name", $n['args'][1]['pos']);
+            }
+            return [$n['args'][1]['name'], $n['args'][2]];
+        }
+        return ['_', $n['args'][1]];
+    }
+
+    /**
+     * Classify an aggregate's first argument into one of the three shapes,
+     * absorbing any FILTER on the way through. Recursive, so
+     * FILTER(FILTER(L, p1), p2) conjoins both predicates over L.
+     *
+     * @param array<string,mixed> $src
+     * @param array<string,mixed> $call
+     * @return array<string,mixed>
+     */
+    private function source(array $src, array $call): array
+    {
+        if ($src['t'] === 'call' && $src['name'] === 'FILTER') {
+            [$fBinder, $fBody] = self::aggShape($src);
+            $inner = $this->source($src['args'][0], $call);
+            $inner['filters'][] = ['binder' => $fBinder, 'body' => $fBody];
+            return $inner;
+        }
+        if ($src['t'] === 'call' && $src['name'] === 'MAP') {
+            refuse('E_SQL_UNSUPPORTED',
+                'MAP as the thing an aggregate iterates is not translated: unlike '
+                . 'FILTER, which only decides whether an element takes part, MAP '
+                . 'changes what the element is, so the two binders mean different '
+                . 'things and binding both to one element is not enough. See '
+                . 'docs/SQL-TRANSLATION.md §7.5', $src['pos']);
+        }
+
+        $base = ['filters' => [], 'scalarRule' => false];
+
+        if ($src['t'] === 'list') {
+            $out = [];
+            foreach ($src['items'] as $i => $item) {
+                $out[(string) ($i + 1)] = Binder::node($item);
+            }
+            return $base + ['shape' => 'static', 'elements' => $out];
+        }
+        if ($src['t'] === 'clist') {
+            $out = [];
+            foreach ($src['entries'] as [$k, $v]) {
+                $out[$k] = Binder::node($v);
+            }
+            return $base + ['shape' => 'static', 'elements' => $out];
+        }
+
+        if ($src['t'] === 'var') {
+            $bound = $this->binder($src['name']);
+            if ($bound !== null) {
+                if ($bound->shape === Binder::NODE) {
+                    return $this->source($bound->payload, $call);
+                }
+                if ($bound->shape === Binder::NONE) {
+                    refuse('E_SQL_SHAPE', (string) $bound->reason, $src['pos']);
+                }
+                // A column or a row is one value, so it is a one-element list
+                // containing itself — spec §7.3, the same rule the evaluator
+                // applies. This is what makes ALL(V, ALL(V, …)) work.
+                return $base + ['shape' => 'static', 'scalarRule' => true,
+                                'elements' => ['1' => $bound]];
+            }
+            $b = $this->bindings->get($src['name'], $src['pos']);
+            if ($b['kind'] === 'relation') {
+                return $base + ['shape' => 'relation', 'relation' => $b];
+            }
+            if ($b['kind'] === 'columns') {
+                $out = [];
+                foreach ($b['items'] as $i => $item) {
+                    $out[(string) ($i + 1)] = Binder::column($item);
+                }
+                return $base + ['shape' => 'columns', 'elements' => $out];
+            }
+            if ($b['kind'] === 'value') {
+                return $base + ['shape' => 'static',
+                                'elements' => $this->valueElements($b, $src['pos'])];
+            }
+        }
+
+        // Anything else that is one value: the scalar rule again.
+        return $base + ['shape' => 'static', 'scalarRule' => true,
+                        'elements' => ['1' => Binder::node($src)]];
+    }
+
+    /**
+     * A `value` binding holds Values, not AST nodes, so its children are
+     * synthesised into nodes before binding. A child with children becomes a
+     * `clist`; a scalar becomes the node kind its declared type asks for, which
+     * is the same rule declaredKind applies to the value as a whole — so what
+     * decides quoting is stated once.
+     *
+     * @param array<string,mixed> $b
+     * @param array{line:int,col:int,offset:int} $pos
+     * @return array<string, Binder>
+     */
+    private function valueElements(array $b, array $pos): array
+    {
+        $v = $b['value'];
+        if ($v->size() === 0) {
+            // A NONE with no children is genuinely empty — what FILTER returns
+            // when nothing matched. A scalar is a one-element list of itself.
+            return $v->isNone() ? [] : ['1' => Binder::node($this->valueNode($v, $b, $pos))];
+        }
+        $out = [];
+        foreach ($v->entries() as [$k, $child]) {
+            $out[$k] = Binder::node($this->valueNode($child, $b, $pos));
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $b
+     * @param array{line:int,col:int,offset:int} $pos
+     * @return array<string,mixed>
+     */
+    private function valueNode(Value $v, array $b, array $pos): array
+    {
+        if ($v->size() > 0) {
+            $entries = [];
+            foreach ($v->entries() as [$k, $child]) {
+                $entries[] = [$k, $this->valueNode($child, $b, $pos)];
+            }
+            return ['t' => 'clist', 'entries' => $entries, 'pos' => $pos];
+        }
+        if ($v->isBool()) {
+            return ['t' => 'bool', 'v' => $v->asBool($pos), 'pos' => $pos];
+        }
+        if ($v->isBin()) {
+            refuse('E_SQL_SHAPE',
+                'a BIN element of a value binding has no literal node to become; '
+                . 'bind it as a column, or convert it before translating', $pos);
+        }
+        return ['t' => ($b['type'] ?? null) === 'NUM' ? 'num' : 'text',
+                'v' => $v->asText($pos), 'pos' => $pos];
+    }
+
+    /** @param array<string,mixed> $n */
+    private function aggregate(array $n): Fragment
+    {
+        $name = $n['name'];
+        if ($name === 'MAP' || $name === 'FILTER') {
+            refuse('E_SQL_SHAPE',
+                "{$name} yields a list, and a SQL expression is a scalar; it can "
+                . 'only be the thing another aggregate iterates', $n['pos']);
+        }
+        if ($name === 'JOIN') {
+            return $this->joinAggregate($n);
+        }
+
+        [$binderName, $body] = self::aggShape($n);
+        $src = $this->source($n['args'][0], $n);
+
+        if ($src['shape'] === 'relation') {
+            $rendered = $this->withRow($src, $binderName,
+                fn (): Fragment => $this->aggBody($name, $body, $src, $n));
+            return $this->relationAggregate($name, $src['relation'], $rendered, $n);
+        }
+
+        $parts = [];
+        foreach ($src['elements'] as $key => $elem) {
+            $parts[] = $this->withElement($src, $binderName, $elem, (string) $key, $n,
+                fn (): Fragment => $this->aggBody($name, $body, $src, $n));
+        }
+        if ($parts === []) {
+            return match ($name) {                    // spec §7.3's empty cases
+                'ALL' => $this->literal(Value::bool(true), 'BOOL'),
+                'ANY' => $this->literal(Value::bool(false), 'BOOL'),
+                default => $this->literal(Value::num('0'), 'NUM'),
+            };
+        }
+        return count($parts) === 1
+            ? $parts[0]
+            : $this->foldPairwise(self::AGG_FOLD[$name], $parts, $n['pos']);
+    }
+
+    /**
+     * Render the body, and combine it with any absorbed FILTER predicates.
+     *
+     * The four rewrites of §7.5, and each is NULL-safe under the skeletons of
+     * §7.3: for ALL a NULL predicate with a FALSE body gives a NULL result,
+     * which `IS NOT TRUE` includes — the element is treated as having been in
+     * the filter and having failed, which is the conservative reading.
+     *
+     * @param array<string,mixed> $body
+     * @param array<string,mixed> $src
+     * @param array<string,mixed> $n
+     */
+    private function aggBody(string $name, array $body, array $src, array $n): Fragment
+    {
+        $q = $this->node($body);
+        $q = $name === 'SUM'
+            ? $this->requireNum($q, $body['pos'], $name)
+            : $this->requireBool($q, $body['pos'], $name);
+
+        foreach ($src['filters'] as $filter) {
+            $p = $this->requireBool($this->node($filter['body']), $filter['body']['pos'], 'FILTER');
+            if ($name === 'SUM') {
+                $q = $this->caseWhen($p, $q, $this->literal(Value::num('0'), 'NUM'), $n['pos']);
+                continue;
+            }
+            $q = $name === 'ALL'
+                ? $this->apply('ops', 'OR', [$this->apply('ops', 'NOT', [$p], $n['pos']), $q], $n['pos'])
+                : $this->apply('ops', 'AND', [$p, $q], $n['pos']);
+        }
+        return $q;
+    }
+
+    /**
+     * Push a frame for one element of a static or columns unroll and render.
+     * Every absorbed FILTER's binder is bound to the same element, which is what
+     * makes absorption three lines rather than a substitution pass — see §7.5.
+     *
+     * @param array<string,mixed> $src
+     * @param array<string,mixed> $n
+     */
+    private function withElement(array $src, string $binderName, Binder $elem,
+                                 string $key, array $n, callable $render): Fragment
+    {
+        $frame = [$binderName => $elem,
+                  '_K' => Binder::node(['t' => 'text', 'v' => $key, 'pos' => $n['pos']])];
+        foreach ($src['filters'] as $filter) {
+            $frame[$filter['binder']] = $elem;
+        }
+        $this->frames[] = $frame;
+        try {
+            return $render();
+        } finally {
+            array_pop($this->frames);
+        }
+    }
+
+    /**
+     * The same for a relation, where there is one frame rather than one per
+     * element. `_K` is in scope only to refuse: a row has no portable key, and
+     * inventing one — ROW_NUMBER(), the primary key — would be a guess about the
+     * schema this layer is careful never to make.
+     *
+     * @param array<string,mixed> $src
+     */
+    private function withRow(array $src, string $binderName, callable $render): Fragment
+    {
+        $row = Binder::row($src['relation']);
+        $frame = [$binderName => $row,
+                  '_K' => Binder::none('a row of a relation has no key: SQL rows are '
+                      . 'unordered and unkeyed unless the schema says otherwise, and '
+                      . 'guessing which column is the key is not something this layer does')];
+        foreach ($src['filters'] as $filter) {
+            $frame[$filter['binder']] = $row;
+        }
+        $this->frames[] = $frame;
+        try {
+            return $render();
+        } finally {
+            array_pop($this->frames);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $rel
+     * @param array<string,mixed> $n
+     */
+    private function relationAggregate(string $name, array $rel, Fragment $body, array $n): Fragment
+    {
+        return new Fragment(
+            $this->fillNamed($this->skeleton(self::AGG_SKELETON[$name], $n['pos']),
+                $this->relationSlots($rel) + ['body' => [$body]], $n['pos']),
+            self::AGG_RETURNS[$name], $this->dialect);
+    }
+
+    /**
+     * `{from}` is the table and alias, or a query the binding carries; `{corr}`
+     * is the join back to the outer row, or the dialect's TRUE when the binding
+     * has none — an uncorrelated relation is a subquery over the whole table,
+     * which is legal and occasionally what you want.
+     *
+     * @param array<string,mixed> $rel
+     * @return array<string, list<string>>
+     */
+    private function relationSlots(array $rel): array
+    {
+        $from = is_array($rel['from']) && isset($rel['from']['raw'])
+            ? (string) $rel['from']['raw']
+            : $this->emit->ident((string) $rel['from']);
+        if (!empty($rel['alias'])) {
+            $from .= ' ' . $this->emit->ident((string) $rel['alias']);
+        }
+        return ['from' => [$from],
+                'corr' => [(string) ($rel['correlate']['raw'] ?? $this->emit->lex('true'))]];
+    }
+
+    /** @param array<string,mixed> $n */
+    private function count(array $n): Fragment
+    {
+        $src = $this->source($n['args'][0], $n);
+
+        // COUNT is the number of children, so the scalar rule does not apply to
+        // it: spec §7.4 says a value with no children counts 0, where §7.3's
+        // one-element rule is about what an aggregate iterates.
+        if ($src['shape'] !== 'relation' && $src['scalarRule'] && $src['filters'] === []) {
+            return $this->literal(Value::num('0'), 'NUM');
+        }
+        if ($src['filters'] !== []) {
+            // COUNT(FILTER(L, p)) is SUM(L, CASE WHEN p THEN 1 ELSE 0 END).
+            $body = ['t' => 'num', 'v' => '1', 'pos' => $n['pos']];
+            if ($src['shape'] === 'relation') {
+                $rendered = $this->withRow($src, '_',
+                    fn (): Fragment => $this->aggBody('SUM', $body, $src, $n));
+                return $this->relationAggregate('SUM', $src['relation'], $rendered, $n);
+            }
+            $parts = [];
+            foreach ($src['elements'] as $key => $elem) {
+                $parts[] = $this->withElement($src, '_', $elem, (string) $key, $n,
+                    fn (): Fragment => $this->aggBody('SUM', $body, $src, $n));
+            }
+            return $parts === []
+                ? $this->literal(Value::num('0'), 'NUM')
+                : (count($parts) === 1 ? $parts[0]
+                    : $this->foldPairwise('+', $parts, $n['pos']));
+        }
+        if ($src['shape'] === 'relation') {
+            return new Fragment(
+                $this->fillNamed($this->skeleton('count', $n['pos']),
+                    $this->relationSlots($src['relation']), $n['pos']),
+                'NUM', $this->dialect);
+        }
+        return $this->literal(Value::num((string) count($src['elements'])), 'NUM');
+    }
+
+    /** @param array<string,mixed> $n */
+    private function has(array $n): Fragment
+    {
+        if (!in_array($n['args'][1]['t'], ['text', 'num'], true)) {
+            refuse('E_SQL_SHAPE',
+                'HAS needs a constant key here: which column it asks about has to '
+                . 'be known before the query runs', $n['args'][1]['pos']);
+        }
+        $key = (string) $n['args'][1]['v'];
+        $src = $this->source($n['args'][0], $n);
+        if ($src['filters'] !== []) {
+            refuse('E_SQL_SHAPE',
+                'HAS over a FILTER would have to know at translation time which '
+                . 'elements the filter kept', $n['pos']);
+        }
+        $found = $src['shape'] === 'relation'
+            ? isset($src['relation']['fields'][strtoupper($key)])
+            : (!$src['scalarRule'] && isset($src['elements'][$key]));
+        return $this->literal(Value::bool($found), 'BOOL');
+    }
+
+    /**
+     * JOIN is strict, not an aggregate: its second argument is a separator.
+     * Folded pairwise through the dialect's own concatenation, because `&` is
+     * what SEL's JOIN is, and a variadic concat would need a lexical key spelled
+     * two ways for the sake of one function.
+     *
+     * @param array<string,mixed> $n
+     */
+    private function joinAggregate(array $n): Fragment
+    {
+        $src = $this->source($n['args'][0], $n);
+        if ($src['shape'] === 'relation') {
+            $rel = $src['relation'];
+            $scalar = isset($rel['scalar']) ? strtoupper((string) $rel['scalar']) : null;
+            if ($scalar === null || !isset($rel['fields'][$scalar])) {
+                refuse('E_SQL_SHAPE',
+                    'JOIN over a relation needs the binding to name a "scalar" field',
+                    $n['pos']);
+            }
+            $body = $this->columnRef($rel['fields'][$scalar]);
+            $skel = $this->skeleton('join', $n['pos']);      // refuses with the map's reason
+            return new Fragment(
+                $this->fillNamed($skel, $this->relationSlots($rel)
+                    + ['body' => [$body], 'sep' => [$this->node($n['args'][1])]], $n['pos']),
+                'TEXT', $this->dialect);
+        }
+
+        $sep = $this->node($n['args'][1]);
+        $parts = [];
+        foreach ($src['elements'] as $key => $elem) {
+            if ($parts !== []) {
+                $parts[] = $sep;
+            }
+            $parts[] = $this->withElement($src, '_', $elem, (string) $key, $n,
+                fn (): Fragment => $this->fromBinder($elem, $n));
+        }
+        if ($parts === []) {
+            return $this->literal(Value::text(''), 'TEXT');
+        }
+        return count($parts) === 1 ? $parts[0] : $this->foldPairwise('&', $parts, $n['pos']);
+    }
+
+    /** @param array<string,mixed> $node @return array<string,mixed>|null */
+    private static function childOf(array $node, string $key): ?array
+    {
+        if ($node['t'] === 'list') {
+            return preg_match('/^[0-9]+$/', $key) === 1
+                ? ($node['items'][(int) $key - 1] ?? null)
+                : null;
+        }
+        if ($node['t'] === 'clist') {
+            foreach ($node['entries'] as [$k, $v]) {
+                if ($k === $key) {
+                    return $v;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** @param array{line:int,col:int,offset:int} $pos */
+    private function caseWhen(Fragment $cond, Fragment $then, Fragment $else, array $pos): Fragment
+    {
+        $branch = new Fragment(
+            $this->fillNamed($this->skeleton('caseBranch', $pos),
+                ['cond' => [$cond], 'then' => [$then]], $pos),
+            'UNKNOWN', $this->dialect);
+        return new Fragment(
+            $this->fillNamed($this->skeleton('case', $pos),
+                ['branches' => [$branch], 'else' => [$else]], $pos),
+            $then->kind === $else->kind ? $then->kind : 'UNKNOWN', $this->dialect);
     }
 
     // --- map application ----------------------------------------------------
@@ -435,6 +1087,14 @@ final class Translator
                 . 'argument(s); it maps ' . implode(', ', $have), $pos);
         }
         return (string) $tpl[$n];
+    }
+
+    /** The operators specified as byte comparisons: spec §5.3 and §5.4. */
+    private static function isByteComparison(string $op): bool
+    {
+        static $ops = ['$==' => 0, '$!=' => 0, '$<' => 0, '$<=' => 0,
+                       '$>' => 0, '$>=' => 0, 'EQL' => 0, 'IN' => 0];
+        return isset($ops[$op]);
     }
 
     /**
@@ -544,6 +1204,23 @@ final class Translator
         refuse('E_SQL_SHAPE',
             "{$where} needs a BOOL here and this is {$f->kind}; SEL has no "
             . 'truthiness, so neither does its translation', $pos);
+    }
+
+    /**
+     * SUM's counterpart to requireBool. UNKNOWN passes for the same reason it
+     * does there: an undeclared column may well be numeric, and the database is
+     * the one that knows.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private function requireNum(Fragment $f, array $pos, string $where): Fragment
+    {
+        if ($f->kind === 'NUM' || $f->kind === 'UNKNOWN') {
+            return $f;
+        }
+        refuse('E_SQL_SHAPE',
+            "{$where} adds its body up, so it needs a number here and this is "
+            . "{$f->kind}", $pos);
     }
 
     /** @param array{line:int,col:int,offset:int} $pos */

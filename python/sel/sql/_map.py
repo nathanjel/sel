@@ -32,6 +32,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "isTrue": "({0}) IS TRUE",
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
+            "textCast": "CAST({0} AS CHAR)",
         },
         "ops": {
             "+": {
@@ -126,50 +127,49 @@ DIALECTS: dict[str, dict[str, Any]] = {
             },
             "$==": {
                 "variants": {
-                    "text": "({0}{textCollate} = {1}{textCollate})",
+                    "text": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
             "$!=": {
                 "variants": {
-                    "text": "({0}{textCollate} <> {1}{textCollate})",
+                    "text": "({0} <> {1})",
                 },
                 "ret": "BOOL",
             },
             "$<": {
                 "variants": {
-                    "text": "({0}{textCollate} < {1}{textCollate})",
+                    "text": "({0} < {1})",
                 },
                 "ret": "BOOL",
             },
             "$<=": {
                 "variants": {
-                    "text": "({0}{textCollate} <= {1}{textCollate})",
+                    "text": "({0} <= {1})",
                 },
                 "ret": "BOOL",
             },
             "$>": {
                 "variants": {
-                    "text": "({0}{textCollate} > {1}{textCollate})",
+                    "text": "({0} > {1})",
                 },
                 "ret": "BOOL",
             },
             "$>=": {
                 "variants": {
-                    "text": "({0}{textCollate} >= {1}{textCollate})",
+                    "text": "({0} >= {1})",
                 },
                 "ret": "BOOL",
             },
             "EQL": {
                 "variants": {
-                    "text": "({0}{textCollate} = {1}{textCollate})",
+                    "text": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
             "IN": {
                 "variants": {
-                    "list": "({0} IN ({1:}))",
-                    "scalar": "({0}{textCollate} = {1}{textCollate})",
+                    "scalar": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
@@ -309,6 +309,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "isTrue": "({0}) IS TRUE",
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
+            "textCast": "CAST({0} AS CHAR)",
         },
         "ops": {
             "+": {
@@ -404,50 +405,49 @@ DIALECTS: dict[str, dict[str, Any]] = {
             },
             "$==": {
                 "variants": {
-                    "text": "({0}{textCollate} = {1}{textCollate})",
+                    "text": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
             "$!=": {
                 "variants": {
-                    "text": "({0}{textCollate} <> {1}{textCollate})",
+                    "text": "({0} <> {1})",
                 },
                 "ret": "BOOL",
             },
             "$<": {
                 "variants": {
-                    "text": "({0}{textCollate} < {1}{textCollate})",
+                    "text": "({0} < {1})",
                 },
                 "ret": "BOOL",
             },
             "$<=": {
                 "variants": {
-                    "text": "({0}{textCollate} <= {1}{textCollate})",
+                    "text": "({0} <= {1})",
                 },
                 "ret": "BOOL",
             },
             "$>": {
                 "variants": {
-                    "text": "({0}{textCollate} > {1}{textCollate})",
+                    "text": "({0} > {1})",
                 },
                 "ret": "BOOL",
             },
             "$>=": {
                 "variants": {
-                    "text": "({0}{textCollate} >= {1}{textCollate})",
+                    "text": "({0} >= {1})",
                 },
                 "ret": "BOOL",
             },
             "EQL": {
                 "variants": {
-                    "text": "({0}{textCollate} = {1}{textCollate})",
+                    "text": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
             "IN": {
                 "variants": {
-                    "list": "({0} IN ({1:}))",
-                    "scalar": "({0}{textCollate} = {1}{textCollate})",
+                    "scalar": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
@@ -605,12 +605,18 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "BTL": "yields a list, and a SQL expression is a scalar",
             "LTB": "takes a list, and a SQL expression is a scalar",
             "RMATCH": {
-                "tpl": "({1}{textCollate} REGEXP CONCAT('(?s)', {0}))",
+                "tpl": {
+                    "2": "({1}{textCollate} REGEXP CONCAT('(?s)', {0}))",
+                    "3": "({1}{textCollate} REGEXP CONCAT('(?si)', {0}))",
+                },
                 "ret": "BOOL",
                 "caveat": "regex-engine",
             },
             "RFIND": {
-                "tpl": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?s)', {0}))",
+                "tpl": {
+                    "2": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?s)', {0}))",
+                    "3": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?si)', {0}))",
+                },
                 "ret": "NUM",
                 "caveat": "regex-engine",
             },
@@ -663,6 +669,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "isTrue": "({0}) IS TRUE",
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
+            "textCast": "CAST({0} AS CHAR)",
         },
         "ops": {
             "+": {
@@ -758,50 +765,49 @@ DIALECTS: dict[str, dict[str, Any]] = {
             },
             "$==": {
                 "variants": {
-                    "text": "({0}{textCollate} = {1}{textCollate})",
+                    "text": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
             "$!=": {
                 "variants": {
-                    "text": "({0}{textCollate} <> {1}{textCollate})",
+                    "text": "({0} <> {1})",
                 },
                 "ret": "BOOL",
             },
             "$<": {
                 "variants": {
-                    "text": "({0}{textCollate} < {1}{textCollate})",
+                    "text": "({0} < {1})",
                 },
                 "ret": "BOOL",
             },
             "$<=": {
                 "variants": {
-                    "text": "({0}{textCollate} <= {1}{textCollate})",
+                    "text": "({0} <= {1})",
                 },
                 "ret": "BOOL",
             },
             "$>": {
                 "variants": {
-                    "text": "({0}{textCollate} > {1}{textCollate})",
+                    "text": "({0} > {1})",
                 },
                 "ret": "BOOL",
             },
             "$>=": {
                 "variants": {
-                    "text": "({0}{textCollate} >= {1}{textCollate})",
+                    "text": "({0} >= {1})",
                 },
                 "ret": "BOOL",
             },
             "EQL": {
                 "variants": {
-                    "text": "({0}{textCollate} = {1}{textCollate})",
+                    "text": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
             "IN": {
                 "variants": {
-                    "list": "({0} IN ({1:}))",
-                    "scalar": "({0}{textCollate} = {1}{textCollate})",
+                    "scalar": "({0} = {1})",
                 },
                 "ret": "BOOL",
             },
@@ -960,7 +966,10 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "LTB": "takes a list, and a SQL expression is a scalar",
             "RMATCH": "regular expressions are not ANSI; set per dialect",
             "RFIND": {
-                "tpl": "REGEXP_INSTR({1}, {0})",
+                "tpl": {
+                    "2": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?s)', {0}))",
+                    "3": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?si)', {0}))",
+                },
                 "ret": "NUM",
                 "caveat": "regex-engine",
             },

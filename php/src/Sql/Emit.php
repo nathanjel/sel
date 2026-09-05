@@ -100,6 +100,35 @@ final class Emit
         return str_contains($tpl, '{n}') ? str_replace('{n}', (string) $n, $tpl) : $tpl;
     }
 
+    /**
+     * An operand of a byte comparison: cast to a character type, then given the
+     * dialect's binary collation.
+     *
+     * Both halves are needed and neither is enough alone. Without the collation
+     * MariaDB's default is case-insensitive, so "A" $== "a" is true there and
+     * false in SEL. Without the cast the collation does not stop two numeric
+     * operands being compared as numbers, so 3.0 EQL 3 is true there and false
+     * in SEL — EQL is structural and does not normalise numbers.
+     *
+     * Applied here rather than in the templates because three places need it —
+     * two-operand comparisons, IN over a list, and the inRelation skeleton —
+     * and only one of those is a two-operand template.
+     */
+    public function textOperand(Fragment $f): Fragment
+    {
+        $cast = $this->lex('textCast');
+        $collate = (string) $this->lex('textCollate');
+        $parts = $f->parts;
+
+        if (is_string($cast) && $cast !== '{0}') {
+            $parts = $this->fill($cast, [$f]);
+        }
+        if ($collate !== '') {
+            $parts[] = $collate;
+        }
+        return new Fragment($parts, 'TEXT', $this->dialect);
+    }
+
     // --- identifiers --------------------------------------------------------
 
     /**

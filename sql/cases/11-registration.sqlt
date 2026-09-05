@@ -108,7 +108,7 @@ mariadb-11.8
 --- source
 "A" $== "a"
 --- expect
-('A' COLLATE utf8mb4_bin = 'a' COLLATE utf8mb4_bin)
+(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
 ===
 ### name: register.dialect.may-override-a-lexical-key
 --- dialect
@@ -119,7 +119,7 @@ mariadb-nocollate
 --- source
 "A" $== "a"
 --- expect
-('A' COLLATE utf8mb4_0900_bin = 'a' COLLATE utf8mb4_0900_bin)
+(CAST('A' AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a' AS CHAR) COLLATE utf8mb4_0900_bin)
 ===
 ### name: register.dialect.unknown-parent-is-a-programming-error
 --- note

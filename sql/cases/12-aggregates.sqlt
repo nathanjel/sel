@@ -1,0 +1,413 @@
+% Stage 2. The three iteration shapes of docs/SQL-TRANSLATION.md §7, decided by
+% what the first argument is after stage 1 — never by what it might evaluate to.
+
+### name: agg.static.all
+--- dialect
+mariadb
+--- source
+ALL((1, 2, 3), _ > 0)
+--- expect
+(((1 > 0) AND (2 > 0)) AND (3 > 0))
+===
+### name: agg.static.any
+--- dialect
+mariadb
+--- source
+ANY((1, 2), _ > 1)
+--- expect
+((1 > 1) OR (2 > 1))
+===
+### name: agg.static.sum
+--- dialect
+mariadb
+--- source
+SUM((1, 2, 3), _ * 2)
+--- expect
+(((1 * 2) + (2 * 2)) + (3 * 2))
+===
+### name: agg.static.one-element-needs-no-fold
+--- dialect
+mariadb
+--- source
+ALL((5), _ > 0)
+--- expect
+(5 > 0)
+===
+### name: agg.static.named-binder
+--- dialect
+mariadb
+--- source
+ALL((1, 2), N, N > 0)
+--- expect
+((1 > 0) AND (2 > 0))
+===
+### name: agg.static.key-binding
+--- note
+_K is the element's key. On a static list those are "1", "2", … exactly as `,`
+builds them.
+--- dialect
+mariadb
+--- source
+ALL((7, 8), _K $!= "")
+--- expect
+((CAST('1' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin) AND (CAST('2' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin))
+===
+### name: agg.static.join
+--- note
+Pairwise through the dialect's own concatenation, because `&` is what SEL's
+JOIN is. A variadic concat would need a lexical key spelled two ways for one
+function.
+--- dialect
+mariadb
+--- source
+JOIN((1, 2, 3), "-")
+--- expect
+CONCAT(CONCAT(CONCAT(CONCAT(1, '-'), 2), '-'), 3)
+===
+### name: agg.static.count-folds-to-a-literal
+--- dialect
+mariadb
+--- source
+COUNT((1, 2, 3))
+--- expect
+3
+===
+### name: agg.nested.static
+--- note
+The outer ALL folds two composite fragments, so the parentheses nest. A fold
+combines the operands it is handed, not the ones inside them.
+--- dialect
+mariadb
+--- source
+R[1] = (1, 2); R[2] = (3, 4); ALL(R, ROW, ALL(ROW, _ > 0))
+--- expect
+(((1 > 0) AND (2 > 0)) AND ((3 > 0) AND (4 > 0)))
+===
+### name: agg.scalar.is-a-one-element-list
+--- note
+spec §7.3: a value with no children behaves as a one-element list containing
+itself. This is the rule, not a convenience for the translator.
+--- dialect
+mariadb
+--- bindings
+{"TOTAL": {"kind": "column", "table": "o", "column": "total", "type": "NUM"}}
+--- source
+ALL(TOTAL, _ > 0)
+--- expect
+(`o`.`total` > 0)
+===
+### name: agg.columns.unroll
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}, {"table": "x", "column": "b", "type": "NUM"}, {"table": "x", "column": "c", "type": "NUM"}]}}
+--- source
+ALL(V, C, C > 0)
+--- expect
+(((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))
+===
+### name: agg.columns.two-level-spelling
+--- note
+The inner ALL sees one column, and the scalar rule above turns it into a
+one-element list. So the brief's ALL(values, val, ALL(row, …)) shape works
+without a special case anywhere.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}, {"table": "x", "column": "b", "type": "NUM"}]}}
+--- source
+ALL(V, C, ALL(C, _ > 0))
+--- expect
+((`x`.`a` > 0) AND (`x`.`b` > 0))
+===
+### name: agg.columns.key-is-the-ordinal
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}]}}
+--- source
+ALL(V, C, _K $== "1")
+--- expect
+(CAST('1' AS CHAR) COLLATE utf8mb4_bin = CAST('1' AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: agg.columns.count-folds-to-a-literal
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a"}, {"table": "x", "column": "b"}]}}
+--- source
+COUNT(V)
+--- expect
+2
+===
+### name: agg.relation.all
+--- note
+IS NOT TRUE rather than NOT (…): with a NULL body, NOT (body) is NULL, the
+WHERE rejects the row, and NOT EXISTS reports that every row satisfied it —
+silently the wrong answer for the case a validation rule exists to catch.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "scalar": "SKU", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}, "SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}}
+--- source
+ALL(ITEMS, I, I["qty"] > 0)
+--- expect
+NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS NOT TRUE)
+===
+### name: agg.relation.any
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ANY(ITEMS, I, I["qty"] > 100)
+--- expect
+EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 100)) IS TRUE)
+===
+### name: agg.relation.sum
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}, "PRICE": {"table": "oi", "column": "price", "type": "NUM"}}}}
+--- source
+SUM(ITEMS, _["QTY"] * _["PRICE"])
+--- expect
+(SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+===
+### name: agg.relation.count
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+COUNT(ITEMS) == 0
+--- expect
+((SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) = 0)
+===
+### name: agg.relation.uncorrelated
+--- note
+{corr} fills with the dialect's TRUE when the binding names no correlation. A
+subquery over the whole table is legal and occasionally what you want.
+--- dialect
+mariadb
+--- bindings
+{"ALL_ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+COUNT(ALL_ITEMS)
+--- expect
+(SELECT COUNT(*) FROM `order_items` `oi` WHERE TRUE)
+===
+### name: agg.relation.from-may-carry-a-query
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "relation", "from": {"raw": "(SELECT a, b FROM x)"}, "alias": "v", "fields": {"A": {"table": "v", "column": "a", "type": "NUM"}}}}
+--- source
+ALL(V, _["A"] > 0)
+--- expect
+NOT EXISTS (SELECT 1 FROM (SELECT a, b FROM x) `v` WHERE TRUE AND ((`v`.`a` > 0)) IS NOT TRUE)
+===
+### name: agg.relation.in
+--- dialect
+mariadb
+--- bindings
+{"SKU": {"kind": "column", "table": "o", "column": "sku", "type": "TEXT"}, "ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "scalar": "SKU", "fields": {"SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}}
+--- source
+SKU IN ITEMS
+--- expect
+(CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`))
+===
+### name: agg.relation.nested
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}, "LINES": {"kind": "relation", "from": "lines", "alias": "l", "correlate": {"raw": "`l`.`order_id` = `o`.`id`"}, "fields": {"QTY": {"table": "l", "column": "qty", "type": "NUM"}}}}
+--- source
+ALL(ORDERS, O, ALL(LINES, L, L["qty"] > 0))
+--- expect
+NOT EXISTS (SELECT 1 FROM `orders` `o` WHERE TRUE AND (NOT EXISTS (SELECT 1 FROM `lines` `l` WHERE `l`.`order_id` = `o`.`id` AND ((`l`.`qty` > 0)) IS NOT TRUE)) IS NOT TRUE)
+===
+### name: agg.filter.absorbed-into-all
+--- dialect
+mariadb
+--- source
+ALL(FILTER((1, 2, 3), _ > 1), _ > 2)
+--- expect
+((((NOT (1 > 1)) OR (1 > 2)) AND ((NOT (2 > 1)) OR (2 > 2))) AND ((NOT (3 > 1)) OR (3 > 2)))
+===
+### name: agg.filter.absorbed-into-any
+--- dialect
+mariadb
+--- source
+ANY(FILTER((1, 2), _ > 1), _ > 0)
+--- expect
+(((1 > 1) AND (1 > 0)) OR ((2 > 1) AND (2 > 0)))
+===
+### name: agg.filter.absorbed-into-count
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+COUNT(FILTER(ITEMS, _["QTY"] <= 0)) > 0
+--- expect
+((SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > 0)
+===
+### name: agg.filter.different-binder-names
+--- note
+Absorption binds both names to the same element rather than substituting one
+for the other. That is why it is three lines and cannot get a substitution
+wrong.
+--- dialect
+mariadb
+--- source
+ALL(FILTER((1, 2), A, A > 1), B, B > 2)
+--- expect
+(((NOT (1 > 1)) OR (1 > 2)) AND ((NOT (2 > 1)) OR (2 > 2)))
+===
+### name: agg.filter.nested-filters-conjoin
+--- dialect
+mariadb
+--- source
+ALL(FILTER(FILTER((1, 2), _ > 0), _ > 1), _ > 2)
+--- expect
+(((NOT (1 > 1)) OR ((NOT (1 > 0)) OR (1 > 2))) AND ((NOT (2 > 1)) OR ((NOT (2 > 0)) OR (2 > 2))))
+===
+### name: agg.value.binding-as-a-list
+--- dialect
+mariadb
+--- bindings
+{"L": {"kind": "value", "value": {"1": "a", "2": "b"}}}
+--- source
+ALL(L, _ $!= "")
+--- expect
+((CAST('a' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin) AND (CAST('b' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin))
+===
+### name: agg.empty.all-is-true
+--- note
+spec §7.3: an empty list makes ALL true and ANY false. A NONE with no children
+is genuinely empty — it is what FILTER returns when nothing matched.
+--- dialect
+mariadb
+--- bindings
+{"E": {"kind": "value", "value": []}}
+--- source
+ALL(E, _ > 0)
+--- expect
+TRUE
+===
+### name: agg.empty.any-is-false
+--- dialect
+mariadb
+--- bindings
+{"E": {"kind": "value", "value": []}}
+--- source
+ANY(E, _ > 0)
+--- expect
+FALSE
+===
+### name: agg.empty.sum-is-zero
+--- dialect
+mariadb
+--- bindings
+{"E": {"kind": "value", "value": []}}
+--- source
+SUM(E, _ * 2)
+--- expect
+0
+===
+### name: agg.has.static-is-decided-at-translation-time
+--- dialect
+mariadb
+--- source
+HAS((1, 2), "2")
+--- expect
+TRUE
+===
+### name: agg.has.relation-field
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+HAS(ITEMS, "price")
+--- expect
+FALSE
+===
+### name: agg.refuse.k-on-a-relation
+--- note
+A row has no portable key. Inventing one — ROW_NUMBER(), the primary key —
+would be a guess about the schema this layer never makes.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ALL(ITEMS, _K $!= "")
+--- error
+E_SQL_SHAPE 1:12
+===
+### name: agg.refuse.relation-indexed-by-position
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}}
+--- source
+ITEMS[1]
+--- error
+E_SQL_SHAPE 1:6
+===
+### name: agg.refuse.bare-row-without-a-scalar
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ALL(ITEMS, I, I > 0)
+--- error
+E_SQL_SHAPE 1:15
+===
+### name: agg.refuse.non-bool-body
+--- dialect
+mariadb
+--- source
+ALL((1, 2), _ + 1)
+--- error
+E_SQL_SHAPE 1:15
+===
+### name: agg.refuse.non-num-body-for-sum
+--- dialect
+mariadb
+--- source
+SUM((1, 2), _ > 0)
+--- error
+E_SQL_SHAPE 1:15
+===
+### name: agg.refuse.map-in-a-value-position
+--- dialect
+mariadb
+--- source
+MAP((1, 2), _ * 2)
+--- error
+E_SQL_SHAPE 1:1
+===
+### name: agg.refuse.join-over-a-relation
+--- note
+The reason comes from the map: GROUP_CONCAT does not specify an order without
+an ORDER BY, and SEL's JOIN concatenates in insertion order.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "scalar": "SKU", "fields": {"SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}}
+--- source
+JOIN(ITEMS, ", ")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: agg.refuse.binder-must-be-a-name
+--- dialect
+mariadb
+--- source
+ALL((1, 2), 5, _ > 0)
+--- error
+E_SQL_SHAPE 1:13

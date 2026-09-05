@@ -18,23 +18,28 @@ mariadb
 E_SQL_SHAPE 1:2
 ===
 ### name: refuse.list-returning-function
+--- note
+E_SQL_SHAPE rather than E_SQL_UNSUPPORTED: INDEXES is not missing from the map,
+it is a function whose result is not a SQL value at all, in any dialect.
 --- dialect
 mariadb
 --- source
 INDEXES("a")
 --- error
-E_SQL_UNSUPPORTED 1:1
+E_SQL_SHAPE 1:1
 ===
-### name: refuse.aggregate-needs-stage-two
+### name: refuse.map-as-an-aggregate-source
 --- note
-M3. Until then this is refused like anything else that cannot be translated,
-which is the behaviour a caller depends on rather than a placeholder.
+FILTER only decides whether an element takes part, so binding both names to one
+element absorbs it. MAP changes what the element is, so the two binders mean
+different things. See docs/SQL-TRANSLATION.md §7.5 for the shape a solution
+would take.
 --- dialect
 mariadb
 --- source
-ALL((1, 2, 3), _ > 0)
+ALL(MAP((1, 2), _ * 2), _ > 0)
 --- error
-E_SQL_UNSUPPORTED 1:1
+E_SQL_UNSUPPORTED 1:5
 ===
 ### name: refuse.no-truthiness-in-a-condition
 --- note

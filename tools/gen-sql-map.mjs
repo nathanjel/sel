@@ -61,7 +61,7 @@ const opArity = (key) => OP_ARITY[key] ?? 2;
 
 const LEXICAL_KEYS = [
   'identQuote', 'identEscape', 'textQuote', 'textEscape', 'true', 'false',
-  'binaryLiteral', 'textCollate', 'numericCast', 'isTrue', 'isNotTrue',
+  'binaryLiteral', 'textCollate', 'textCast', 'numericCast', 'isTrue', 'isNotTrue',
   'placeholder',
 ];
 // Substitutable in a template. textEscape is an object and binaryLiteral is
@@ -77,7 +77,7 @@ const VARIANT_FAMILIES = {
   '$==': ['text'], '$!=': ['text'], '$<': ['text'],
   '$<=': ['text'], '$>': ['text'], '$>=': ['text'],
   EQL: ['text'],
-  IN: ['list', 'scalar'],
+  IN: ['scalar'],
   '&': ['text', 'bin'],
 };
 
@@ -315,6 +315,17 @@ function checkEntry(entry, key, section, dialect, lexical) {
   const opts = { where, minArgs: min, maxArgs: max };
   if (hasTpl) {
     if (typeof entry.tpl === 'string') {
+      // A single template covering more than one argument count silently
+      // ignores the arguments it does not name — which is how RMATCH's `i` flag
+      // vanished, turning a TRUE into a case-sensitive FALSE with nothing to
+      // say so. Either narrow `arity` or supply an arity-keyed `tpl`.
+      // `{*}` and `{n:}` are exempt: those forms consume whatever they are given.
+      const variadic = /\{(\*|[0-9]+:)\}/.test(entry.tpl);
+      if (!variadic && min !== max) {
+        fail(where, `one template covers ${min}..${max} arguments; it can only use `
+          + `${min}, so the rest would be dropped silently — narrow "arity" or key `
+          + '"tpl" by argument count');
+      }
       checkTemplate(expandLexical(entry.tpl, lexical, where), opts);
     } else if (isObject(entry.tpl)) {
       for (const [arity, t] of Object.entries(entry.tpl)) {

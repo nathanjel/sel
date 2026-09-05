@@ -2,12 +2,13 @@
   "dialect": "ansi",
   "version": "1999",
   "target": false,
-
   "lexical": {
     "identQuote": "\"",
     "identEscape": "\"\"",
     "textQuote": "'",
-    "textEscape": { "'": "''" },
+    "textEscape": {
+      "'": "''"
+    },
     "true": "TRUE",
     "false": "FALSE",
     "binaryLiteral": "X'{hex}'",
@@ -15,121 +16,269 @@
     "numericCast": "CAST({0} AS DECIMAL(38,10))",
     "isTrue": "({0}) IS TRUE",
     "isNotTrue": "({0}) IS NOT TRUE",
-    "placeholder": "?"
+    "placeholder": "?",
+    "textCast": "CAST({0} AS CHAR)"
   },
-
   "ops": {
-    "+":   { "tpl": "({0} + {1})", "ret": "NUM" },
-    "-":   { "tpl": "({0} - {1})", "ret": "NUM" },
-    "*":   { "tpl": "({0} * {1})", "ret": "NUM" },
-    "/":   { "tpl": "({0} / {1})", "ret": "NUM", "caveat": "division-scale" },
-    "%":   { "tpl": "MOD({0}, {1})", "ret": "NUM" },
-    "NEG": { "tpl": "(-{0})", "ret": "NUM" },
-
-    "&": { "variants": { "text": "({0} || {1})" },
-           "ret": "@concat", "caveat": "concat-null" },
-
-    "AND": { "tpl": "({0} AND {1})", "ret": "BOOL" },
-    "OR":  { "tpl": "({0} OR {1})",  "ret": "BOOL" },
-    "NOT": { "tpl": "(NOT {0})",     "ret": "BOOL" },
-    "XOR": { "tpl": "(({0}) <> ({1}))", "ret": "BOOL" },
-
-    "==": { "variants": { "num": "({0} = {1})",
-                          "coerce": "({numericCast:0} = {numericCast:1})" }, "ret": "BOOL" },
-    "!=": { "variants": { "num": "({0} <> {1})",
-                          "coerce": "({numericCast:0} <> {numericCast:1})" }, "ret": "BOOL" },
-    "<":  { "variants": { "num": "({0} < {1})",
-                          "coerce": "({numericCast:0} < {numericCast:1})" }, "ret": "BOOL" },
-    "<=": { "variants": { "num": "({0} <= {1})",
-                          "coerce": "({numericCast:0} <= {numericCast:1})" }, "ret": "BOOL" },
-    ">":  { "variants": { "num": "({0} > {1})",
-                          "coerce": "({numericCast:0} > {numericCast:1})" }, "ret": "BOOL" },
-    ">=": { "variants": { "num": "({0} >= {1})",
-                          "coerce": "({numericCast:0} >= {numericCast:1})" }, "ret": "BOOL" },
-
-    "$==": { "variants": { "text": "({0}{textCollate} = {1}{textCollate})" },  "ret": "BOOL" },
-    "$!=": { "variants": { "text": "({0}{textCollate} <> {1}{textCollate})" }, "ret": "BOOL" },
-    "$<":  { "variants": { "text": "({0}{textCollate} < {1}{textCollate})" },  "ret": "BOOL" },
-    "$<=": { "variants": { "text": "({0}{textCollate} <= {1}{textCollate})" }, "ret": "BOOL" },
-    "$>":  { "variants": { "text": "({0}{textCollate} > {1}{textCollate})" },  "ret": "BOOL" },
-    "$>=": { "variants": { "text": "({0}{textCollate} >= {1}{textCollate})" }, "ret": "BOOL" },
-
-    "EQL": { "variants": { "text": "({0}{textCollate} = {1}{textCollate})" }, "ret": "BOOL" },
-    "IN":  { "variants": { "list": "({0} IN ({1:}))",
-                           "scalar": "({0}{textCollate} = {1}{textCollate})" }, "ret": "BOOL" },
-
+    "+": {
+      "tpl": "({0} + {1})",
+      "ret": "NUM"
+    },
+    "-": {
+      "tpl": "({0} - {1})",
+      "ret": "NUM"
+    },
+    "*": {
+      "tpl": "({0} * {1})",
+      "ret": "NUM"
+    },
+    "/": {
+      "tpl": "({0} / {1})",
+      "ret": "NUM",
+      "caveat": "division-scale"
+    },
+    "%": {
+      "tpl": "MOD({0}, {1})",
+      "ret": "NUM"
+    },
+    "NEG": {
+      "tpl": "(-{0})",
+      "ret": "NUM"
+    },
+    "&": {
+      "variants": {
+        "text": "({0} || {1})"
+      },
+      "ret": "@concat",
+      "caveat": "concat-null"
+    },
+    "AND": {
+      "tpl": "({0} AND {1})",
+      "ret": "BOOL"
+    },
+    "OR": {
+      "tpl": "({0} OR {1})",
+      "ret": "BOOL"
+    },
+    "NOT": {
+      "tpl": "(NOT {0})",
+      "ret": "BOOL"
+    },
+    "XOR": {
+      "tpl": "(({0}) <> ({1}))",
+      "ret": "BOOL"
+    },
+    "==": {
+      "variants": {
+        "num": "({0} = {1})",
+        "coerce": "({numericCast:0} = {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    "!=": {
+      "variants": {
+        "num": "({0} <> {1})",
+        "coerce": "({numericCast:0} <> {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    "<": {
+      "variants": {
+        "num": "({0} < {1})",
+        "coerce": "({numericCast:0} < {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    "<=": {
+      "variants": {
+        "num": "({0} <= {1})",
+        "coerce": "({numericCast:0} <= {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    ">": {
+      "variants": {
+        "num": "({0} > {1})",
+        "coerce": "({numericCast:0} > {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    ">=": {
+      "variants": {
+        "num": "({0} >= {1})",
+        "coerce": "({numericCast:0} >= {numericCast:1})"
+      },
+      "ret": "BOOL"
+    },
+    "$==": {
+      "variants": {
+        "text": "({0} = {1})"
+      },
+      "ret": "BOOL"
+    },
+    "$!=": {
+      "variants": {
+        "text": "({0} <> {1})"
+      },
+      "ret": "BOOL"
+    },
+    "$<": {
+      "variants": {
+        "text": "({0} < {1})"
+      },
+      "ret": "BOOL"
+    },
+    "$<=": {
+      "variants": {
+        "text": "({0} <= {1})"
+      },
+      "ret": "BOOL"
+    },
+    "$>": {
+      "variants": {
+        "text": "({0} > {1})"
+      },
+      "ret": "BOOL"
+    },
+    "$>=": {
+      "variants": {
+        "text": "({0} >= {1})"
+      },
+      "ret": "BOOL"
+    },
+    "EQL": {
+      "variants": {
+        "text": "({0} = {1})"
+      },
+      "ret": "BOOL"
+    },
+    "IN": {
+      "variants": {
+        "scalar": "({0} = {1})"
+      },
+      "ret": "BOOL"
+    },
     "BAND": "SQL's & is an integer operator; SEL's BAND is a byte-string operator over BIN of equal length, and no portable spelling of that exists",
-    "BOR":  "SQL's | is an integer operator; SEL's BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists",
+    "BOR": "SQL's | is an integer operator; SEL's BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists",
     "BXOR": "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"
   },
-
   "funcs": {
-    "LEN":    { "tpl": "CHAR_LENGTH({0})", "ret": "NUM" },
-    "SUBSTR": { "tpl": { "2": "SUBSTRING({0} FROM {1})",
-                         "3": "SUBSTRING({0} FROM {1} FOR {2})" }, "ret": "TEXT" },
-    "UPPER":  { "tpl": "UPPER({0})", "ret": "TEXT", "caveat": "unicode-case" },
-    "LOWER":  { "tpl": "LOWER({0})", "ret": "TEXT", "caveat": "unicode-case" },
-    "TRIM":   { "tpl": "TRIM(BOTH FROM {0})",     "ret": "TEXT", "caveat": "trim-charset" },
-    "LTRIM":  { "tpl": "TRIM(LEADING FROM {0})",  "ret": "TEXT", "caveat": "trim-charset" },
-    "RTRIM":  { "tpl": "TRIM(TRAILING FROM {0})", "ret": "TEXT", "caveat": "trim-charset" },
-
-    "ABS":   { "tpl": "ABS({0})",   "ret": "NUM" },
-    "CEIL":  { "tpl": "CEIL({0})",  "ret": "NUM" },
-    "FLOOR": { "tpl": "FLOOR({0})", "ret": "NUM" },
-    "POWER": { "tpl": "POWER({0}, {1})", "ret": "NUM", "caveat": "power-float" },
-
-    "LEFT":      "no ANSI spelling; each server has its own, so this is set per dialect",
-    "RIGHT":     "no ANSI spelling; each server has its own, so this is set per dialect",
-    "FIND":      "ANSI POSITION exists but takes no start offset and spells its arguments differently in every server",
-    "REPLACE":   "not ANSI; set per dialect",
-    "SPLIT":     "yields a list, and a SQL expression is a scalar",
+    "LEN": {
+      "tpl": "CHAR_LENGTH({0})",
+      "ret": "NUM"
+    },
+    "SUBSTR": {
+      "tpl": {
+        "2": "SUBSTRING({0} FROM {1})",
+        "3": "SUBSTRING({0} FROM {1} FOR {2})"
+      },
+      "ret": "TEXT"
+    },
+    "UPPER": {
+      "tpl": "UPPER({0})",
+      "ret": "TEXT",
+      "caveat": "unicode-case"
+    },
+    "LOWER": {
+      "tpl": "LOWER({0})",
+      "ret": "TEXT",
+      "caveat": "unicode-case"
+    },
+    "TRIM": {
+      "tpl": "TRIM(BOTH FROM {0})",
+      "ret": "TEXT",
+      "caveat": "trim-charset"
+    },
+    "LTRIM": {
+      "tpl": "TRIM(LEADING FROM {0})",
+      "ret": "TEXT",
+      "caveat": "trim-charset"
+    },
+    "RTRIM": {
+      "tpl": "TRIM(TRAILING FROM {0})",
+      "ret": "TEXT",
+      "caveat": "trim-charset"
+    },
+    "ABS": {
+      "tpl": "ABS({0})",
+      "ret": "NUM"
+    },
+    "CEIL": {
+      "tpl": "CEIL({0})",
+      "ret": "NUM"
+    },
+    "FLOOR": {
+      "tpl": "FLOOR({0})",
+      "ret": "NUM"
+    },
+    "POWER": {
+      "tpl": "POWER({0}, {1})",
+      "ret": "NUM",
+      "caveat": "power-float"
+    },
+    "LEFT": "no ANSI spelling; each server has its own, so this is set per dialect",
+    "RIGHT": "no ANSI spelling; each server has its own, so this is set per dialect",
+    "FIND": "ANSI POSITION exists but takes no start offset and spells its arguments differently in every server",
+    "REPLACE": "not ANSI; set per dialect",
+    "SPLIT": "yields a list, and a SQL expression is a scalar",
     "BACKWARDS": "no ANSI spelling; set per dialect",
-    "REPEAT":    "not ANSI; set per dialect",
-    "PADL":      "not ANSI; set per dialect",
-    "PADR":      "not ANSI; set per dialect",
-    "CHAR":      "not ANSI; the code-point-to-character spelling differs per server and per charset",
-    "CODE":      "not ANSI; set per dialect",
-
-    "SIGN":  "not ANSI; set per dialect",
+    "REPEAT": "not ANSI; set per dialect",
+    "PADL": "not ANSI; set per dialect",
+    "PADR": "not ANSI; set per dialect",
+    "CHAR": "not ANSI; the code-point-to-character spelling differs per server and per charset",
+    "CODE": "not ANSI; set per dialect",
+    "SIGN": "not ANSI; set per dialect",
     "TRUNC": "not ANSI; ROUND-toward-zero is spelled differently in every server",
     "ROUND": "not ANSI as a two-argument scale function; set per dialect",
-    "MIN":   "SEL's MIN is a scalar over its arguments, not a column aggregate; the scalar form is LEAST or GREATEST and is not ANSI",
-    "MAX":   "SEL's MAX is a scalar over its arguments, not a column aggregate; the scalar form is LEAST or GREATEST and is not ANSI",
+    "MIN": "SEL's MIN is a scalar over its arguments, not a column aggregate; the scalar form is LEAST or GREATEST and is not ANSI",
+    "MAX": "SEL's MAX is a scalar over its arguments, not a column aggregate; the scalar form is LEAST or GREATEST and is not ANSI",
     "ISNUM": "would need a regex or a failure-tolerant cast, and neither is ANSI",
-
-    "BLEN":          "not ANSI; octet length of a text value depends on the server's charset handling",
-    "TO_UTF8":       "SEL's TEXT/BIN distinction has no SQL counterpart; a cast to a binary type is per dialect",
-    "FROM_UTF8":     "SEL's TEXT/BIN distinction has no SQL counterpart; a cast from a binary type is per dialect",
-    "TO_HEX":        "not ANSI; set per dialect",
-    "FROM_HEX":      "not ANSI; set per dialect",
+    "BLEN": "not ANSI; octet length of a text value depends on the server's charset handling",
+    "TO_UTF8": "SEL's TEXT/BIN distinction has no SQL counterpart; a cast to a binary type is per dialect",
+    "FROM_UTF8": "SEL's TEXT/BIN distinction has no SQL counterpart; a cast from a binary type is per dialect",
+    "TO_HEX": "not ANSI; set per dialect",
+    "FROM_HEX": "not ANSI; set per dialect",
     "ENCODE_BASE64": "not ANSI; set per dialect",
     "DECODE_BASE64": "not ANSI; set per dialect",
-    "CRC32":         "not ANSI; set per dialect",
-    "BTL":           "yields a list, and a SQL expression is a scalar",
-    "LTB":           "takes a list, and a SQL expression is a scalar",
-
-    "RMATCH":   "regular expressions are not ANSI; set per dialect",
-    "RFIND":    "regular expressions are not ANSI; set per dialect",
+    "CRC32": "not ANSI; set per dialect",
+    "BTL": "yields a list, and a SQL expression is a scalar",
+    "LTB": "takes a list, and a SQL expression is a scalar",
+    "RMATCH": "regular expressions are not ANSI; set per dialect",
+    "RFIND": "regular expressions are not ANSI; set per dialect",
     "RREPLACE": "regular expressions are not ANSI; set per dialect",
-    "RGROUPS":  "yields a list, and a SQL expression is a scalar"
+    "RGROUPS": "yields a list, and a SQL expression is a scalar"
   },
-
   "skel": {
-    "case":       { "tpl": "CASE {branches} ELSE {else} END" },
-    "caseBranch": { "tpl": "WHEN {cond} THEN {then}" },
-
-    "all":   { "tpl": "NOT EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS NOT TRUE)" },
-    "any":   { "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS TRUE)" },
-    "sum":   { "tpl": "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})" },
-    "count": { "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})" },
-    "inRelation": { "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))" },
-    "join":  "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
+    "case": {
+      "tpl": "CASE {branches} ELSE {else} END"
+    },
+    "caseBranch": {
+      "tpl": "WHEN {cond} THEN {then}"
+    },
+    "all": {
+      "tpl": "NOT EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS NOT TRUE)"
+    },
+    "any": {
+      "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS TRUE)"
+    },
+    "sum": {
+      "tpl": "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})"
+    },
+    "count": {
+      "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})"
+    },
+    "inRelation": {
+      "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))"
+    },
+    "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
   },
-
   "notes": {
     "purpose": "ansi is a base, never a target. It carries the operator spellings every server agrees on so that four dialect documents do not repeat them, and it refuses — with a reason — everything whose spelling is a per-server decision. A leaf that inherits a refusal from here has simply not been told what its server does.",
     "textCollate": "Empty here, and it must not stay empty in a target. SEL's $ comparison family is bytewise; a server whose default collation is case- or accent-insensitive will disagree unless the target overrides this with a binary collation.",
     "isTrue": "IS TRUE and IS NOT TRUE are SQL:1999 and are supported by MariaDB, MySQL, PostgreSQL and SQLite 3.23+. They are what folds SQL's third truth value into SEL's two, and every aggregate skeleton depends on them.",
-    "concat-null": "|| yields NULL if either operand is NULL. SEL's & cannot, because SEL has no NULL. The caveat is on the operator rather than on every rule that uses it."
+    "concat-null": "|| yields NULL if either operand is NULL. SEL's & cannot, because SEL has no NULL. The caveat is on the operator rather than on every rule that uses it.",
+    "textCast": "SEL's $ family, EQL and IN are all specified as byte comparisons, and all of them can receive numbers. A collation alone does not make a server compare two numeric operands as text: verified on MariaDB 11.8, 3.0 COLLATE utf8mb4_bin = 3 COLLATE utf8mb4_bin is 1, where SEL says FALSE because EQL does not normalise numbers. Casting to a character type first is what makes the comparison the one SEL specifies. A deployment whose columns already carry a binary collation can register a dialect with textCast set to \"{0}\" to get the cast back out of the way — the templates do not change, only what the operands were turned into.",
+    "text-comparison-operands": "The $ family, EQL and IN templates are plain comparisons because the translator applies textCast and textCollate to their operands before filling them. The rule is applied in three places — two-operand comparisons, IN over a list, and the inRelation skeleton — and only one of those is a two-operand template, so putting it in the template would have meant writing it twice more in code anyway.",
+    "IN": "IN over a literal list is lowered to a chain of EQL comparisons rather than to SQL's IN. Casting each element inside a variadic template is not expressible, and casting only the needle is wrong: CAST(3.0 AS CHAR) COLLATE utf8mb4_bin IN (3) is 1 on MariaDB 11.8 because the numeric right-hand side pulls the comparison back to numbers. The cast has already cost the index that SQL's IN would have used, so the chain gives up nothing that the correctness fix had not already spent."
   }
 }

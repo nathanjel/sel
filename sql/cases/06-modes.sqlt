@@ -50,7 +50,7 @@ params
 --- source
 S $== "?"
 --- expect
-(`s` COLLATE utf8mb4_bin = ? COLLATE utf8mb4_bin)
+(CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)
 --- params
 t"?"
 ===
@@ -62,7 +62,7 @@ mariadb
 --- source
 S $== "?"
 --- expect
-(`s` COLLATE utf8mb4_bin = '?' COLLATE utf8mb4_bin)
+(CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('?' AS CHAR) COLLATE utf8mb4_bin)
 ===
 ### name: mode.params.order-follows-the-text-not-the-tree
 --- dialect

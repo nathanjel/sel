@@ -41,7 +41,7 @@ mariadb
 --- source
 A = ("x", "y"); S IN (A, "z")
 --- expect
-(`s` IN ('x', 'y', 'z'))
+(((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('x' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('y' AS CHAR) COLLATE utf8mb4_bin)) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('z' AS CHAR) COLLATE utf8mb4_bin))
 ===
 ### name: norm.trailing-semicolon
 --- dialect

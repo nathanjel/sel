@@ -3,67 +3,160 @@
   "extends": "ansi",
   "version": "0",
   "target": false,
-
   "lexical": {
     "identQuote": "`",
     "identEscape": "``",
     "textQuote": "'",
-    "textEscape": { "'": "''", "\\": "\\\\" },
+    "textEscape": {
+      "'": "''",
+      "\\": "\\\\"
+    },
     "textCollate": " COLLATE utf8mb4_bin",
-    "numericCast": "CAST({0} AS DECIMAL(65,10))"
+    "numericCast": "CAST({0} AS DECIMAL(65,10))",
+    "textCast": "CAST({0} AS CHAR)"
   },
-
   "ops": {
-    "&":   { "variants": { "text": "CONCAT({0}, {1})", "bin": "CONCAT({0}, {1})" },
-             "ret": "@concat", "caveat": "concat-null" },
-    "XOR": { "tpl": "({0} XOR {1})", "ret": "BOOL" }
+    "&": {
+      "variants": {
+        "text": "CONCAT({0}, {1})",
+        "bin": "CONCAT({0}, {1})"
+      },
+      "ret": "@concat",
+      "caveat": "concat-null"
+    },
+    "XOR": {
+      "tpl": "({0} XOR {1})",
+      "ret": "BOOL"
+    }
   },
-
   "funcs": {
-    "LEFT":    { "tpl": "LEFT({0}, {1})",  "ret": "TEXT" },
-    "RIGHT":   { "tpl": "RIGHT({0}, {1})", "ret": "TEXT" },
-    "SUBSTR":  { "tpl": { "2": "SUBSTRING({0}, {1})",
-                          "3": "SUBSTRING({0}, {1}, {2})" }, "ret": "TEXT" },
-    "FIND":    { "tpl": { "2": "INSTR({1}, {0})",
-                          "3": "LOCATE({0}, {1}, {2})" }, "ret": "NUM" },
-    "REPLACE": { "tpl": "REPLACE({2}, {0}, {1})", "ret": "TEXT" },
-
-    "TRIM":  { "tpl": "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '')", "ret": "TEXT" },
-    "LTRIM": { "tpl": "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+', '')", "ret": "TEXT" },
-    "RTRIM": { "tpl": "REGEXP_REPLACE({0}, '[ \\\\t\\\\r\\\\n]+$', '')", "ret": "TEXT" },
-
-    "BACKWARDS": { "tpl": "REVERSE({0})",          "ret": "TEXT" },
-    "REPEAT":    { "tpl": "REPEAT({0}, {1})",      "ret": "TEXT" },
-    "PADL":      { "tpl": "LPAD({0}, {1}, {2})",   "ret": "TEXT" },
-    "PADR":      { "tpl": "RPAD({0}, {1}, {2})",   "ret": "TEXT" },
-    "CHAR":      "CHAR(n USING utf8mb4) reads n as a byte sequence in that charset, not as a code point: CHAR(233 USING utf8mb4) is NULL because 0xE9 alone is not valid UTF-8, where SEL says the character is e-acute",
-    "CODE":      "ORD returns the first character's bytes read as an integer, not its code point; SEL's CODE is a code point",
-
-    "SIGN":  { "tpl": "SIGN({0})",         "ret": "NUM" },
-    "TRUNC": { "tpl": "TRUNCATE({0}, 0)",  "ret": "NUM" },
-    "ROUND": { "tpl": "ROUND({0}, {1})",   "ret": "NUM", "caveat": "rounding-mode" },
-    "MIN":   { "tpl": "LEAST({*})",        "ret": "NUM" },
-    "MAX":   { "tpl": "GREATEST({*})",     "ret": "NUM" },
-    "ISNUM": { "tpl": "({0} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$')", "ret": "BOOL" },
-
-    "BLEN":          { "tpl": "LENGTH({0})",                "ret": "NUM"  },
-    "TO_UTF8":       { "tpl": "CAST({0} AS BINARY)",        "ret": "BIN"  },
-    "FROM_UTF8":     { "tpl": "CONVERT({0} USING utf8mb4)", "ret": "TEXT" },
-    "TO_HEX":        { "tpl": "LOWER(HEX({0}))",            "ret": "TEXT" },
-    "FROM_HEX":      { "tpl": "UNHEX({0})",                 "ret": "BIN"  },
-    "ENCODE_BASE64": { "tpl": "REPLACE(REPLACE(TO_BASE64({0}), CHAR(10), ''), CHAR(13), '')",
-                       "ret": "TEXT" },
-    "DECODE_BASE64": { "tpl": "FROM_BASE64({0})", "ret": "BIN", "caveat": "input-laxity" },
-    "CRC32":         { "tpl": "LPAD(LOWER(HEX(CRC32({0}))), 8, '0')", "ret": "TEXT" },
-
-    "RFIND":    { "tpl": "REGEXP_INSTR({1}, {0})", "ret": "NUM", "caveat": "regex-engine" },
+    "LEFT": {
+      "tpl": "LEFT({0}, {1})",
+      "ret": "TEXT"
+    },
+    "RIGHT": {
+      "tpl": "RIGHT({0}, {1})",
+      "ret": "TEXT"
+    },
+    "SUBSTR": {
+      "tpl": {
+        "2": "SUBSTRING({0}, {1})",
+        "3": "SUBSTRING({0}, {1}, {2})"
+      },
+      "ret": "TEXT"
+    },
+    "FIND": {
+      "tpl": {
+        "2": "INSTR({1}, {0})",
+        "3": "LOCATE({0}, {1}, {2})"
+      },
+      "ret": "NUM"
+    },
+    "REPLACE": {
+      "tpl": "REPLACE({2}, {0}, {1})",
+      "ret": "TEXT"
+    },
+    "TRIM": {
+      "tpl": "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '')",
+      "ret": "TEXT"
+    },
+    "LTRIM": {
+      "tpl": "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+', '')",
+      "ret": "TEXT"
+    },
+    "RTRIM": {
+      "tpl": "REGEXP_REPLACE({0}, '[ \\\\t\\\\r\\\\n]+$', '')",
+      "ret": "TEXT"
+    },
+    "BACKWARDS": {
+      "tpl": "REVERSE({0})",
+      "ret": "TEXT"
+    },
+    "REPEAT": {
+      "tpl": "REPEAT({0}, {1})",
+      "ret": "TEXT"
+    },
+    "PADL": {
+      "tpl": "LPAD({0}, {1}, {2})",
+      "ret": "TEXT"
+    },
+    "PADR": {
+      "tpl": "RPAD({0}, {1}, {2})",
+      "ret": "TEXT"
+    },
+    "CHAR": "CHAR(n USING utf8mb4) reads n as a byte sequence in that charset, not as a code point: CHAR(233 USING utf8mb4) is NULL because 0xE9 alone is not valid UTF-8, where SEL says the character is e-acute",
+    "CODE": "ORD returns the first character's bytes read as an integer, not its code point; SEL's CODE is a code point",
+    "SIGN": {
+      "tpl": "SIGN({0})",
+      "ret": "NUM"
+    },
+    "TRUNC": {
+      "tpl": "TRUNCATE({0}, 0)",
+      "ret": "NUM"
+    },
+    "ROUND": {
+      "tpl": "ROUND({0}, {1})",
+      "ret": "NUM",
+      "caveat": "rounding-mode"
+    },
+    "MIN": {
+      "tpl": "LEAST({*})",
+      "ret": "NUM"
+    },
+    "MAX": {
+      "tpl": "GREATEST({*})",
+      "ret": "NUM"
+    },
+    "ISNUM": {
+      "tpl": "({0} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$')",
+      "ret": "BOOL"
+    },
+    "BLEN": {
+      "tpl": "LENGTH({0})",
+      "ret": "NUM"
+    },
+    "TO_UTF8": {
+      "tpl": "CAST({0} AS BINARY)",
+      "ret": "BIN"
+    },
+    "FROM_UTF8": {
+      "tpl": "CONVERT({0} USING utf8mb4)",
+      "ret": "TEXT"
+    },
+    "TO_HEX": {
+      "tpl": "LOWER(HEX({0}))",
+      "ret": "TEXT"
+    },
+    "FROM_HEX": {
+      "tpl": "UNHEX({0})",
+      "ret": "BIN"
+    },
+    "ENCODE_BASE64": {
+      "tpl": "REPLACE(REPLACE(TO_BASE64({0}), CHAR(10), ''), CHAR(13), '')",
+      "ret": "TEXT"
+    },
+    "DECODE_BASE64": {
+      "tpl": "FROM_BASE64({0})",
+      "ret": "BIN",
+      "caveat": "input-laxity"
+    },
+    "CRC32": {
+      "tpl": "LPAD(LOWER(HEX(CRC32({0}))), 8, '0')",
+      "ret": "TEXT"
+    },
+    "RFIND": {
+      "tpl": {
+        "2": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?s)', {0}))",
+        "3": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?si)', {0}))"
+      },
+      "ret": "NUM",
+      "caveat": "regex-engine"
+    },
     "RREPLACE": "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express"
   },
-
   "skel": {
     "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"
   },
-
   "notes": {
     "purpose": "The spellings MariaDB and MySQL agree on. Neither is a parent of the other: MariaDB is the reference this project tests against, and a reference dialect should not inherit from one nobody has exercised. Version-gated entries belong in the leaves, since `since` is compared against the target's version.",
     "textEscape": "The backslash entry is not optional. Under the default sql_mode both servers treat \\ as an escape inside a string literal, so a text value containing one must double it. PostgreSQL and SQLite do not, and their documents omit this key.",
@@ -73,6 +166,7 @@
     "DECODE_BASE64": "FROM_BASE64 accepts whitespace and is lenient where SEL requires padding and rejects any invalid character. It decodes valid input identically; it is the invalid input the two disagree about.",
     "CODE": "ORD('e-acute') is 50089 on a utf8mb4 column — the two UTF-8 bytes read as a big-endian integer — where SEL says 233. ASCII agrees by accident, which is worse than disagreeing, so this is refused rather than caveated.",
     "CHAR": "The inverse of CODE and refused for the inverse reason. Verified against MariaDB 11.8: SELECT CHAR(233 USING utf8mb4) is NULL. Code points below 128 would work, but an entry that is right for ASCII and silently wrong above it is the worst of the three options.",
-    "sql_mode": "This document assumes the default sql_mode, specifically that NO_BACKSLASH_ESCAPES is off. Two things depend on it: textEscape doubles backslashes inside string literals, and the TRIM family's regex escapes reach the engine as \\t, \\r and \\n only because the literal parser consumes one backslash of each pair. A deployment running NO_BACKSLASH_ESCAPES needs a derived dialect overriding both. ENCODE_BASE64 deliberately uses CHAR(10) and CHAR(13) instead, since REPLACE is not a regex and had nothing to gain from the assumption."
+    "sql_mode": "This document assumes the default sql_mode, specifically that NO_BACKSLASH_ESCAPES is off. Two things depend on it: textEscape doubles backslashes inside string literals, and the TRIM family's regex escapes reach the engine as \\t, \\r and \\n only because the literal parser consumes one backslash of each pair. A deployment running NO_BACKSLASH_ESCAPES needs a derived dialect overriding both. ENCODE_BASE64 deliberately uses CHAR(10) and CHAR(13) instead, since REPLACE is not a regex and had nothing to gain from the assumption.",
+    "regex-flags": "The three-argument form maps SEL's i flag onto the inline (?si) prefix, verified on MariaDB 11.8. It is an arity-keyed template rather than one string because a single string would have silently ignored the third argument: Emit::fill fills the slots a template names and says nothing about arguments it does not. RMATCH('^a$', \"A\", \"i\") is TRUE in SEL and translated to a case-sensitive match until this was found. The generator now rejects a single-string template on an entry whose arity spans more than one count, so the class cannot recur."
   }
 }

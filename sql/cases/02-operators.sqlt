@@ -107,7 +107,7 @@ mariadb
 --- source
 "A" $== "a"
 --- expect
-('A' COLLATE utf8mb4_bin = 'a' COLLATE utf8mb4_bin)
+(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
 ===
 ### name: op.compare.text-family-ordering
 --- dialect
@@ -115,7 +115,7 @@ mariadb
 --- source
 "a" $< "b"
 --- expect
-('a' COLLATE utf8mb4_bin < 'b' COLLATE utf8mb4_bin)
+(CAST('a' AS CHAR) COLLATE utf8mb4_bin < CAST('b' AS CHAR) COLLATE utf8mb4_bin)
 ===
 ### name: op.eql.scalars-are-a-text-compare
 --- dialect
@@ -123,9 +123,15 @@ mariadb
 --- source
 "a" EQL "a"
 --- expect
-('a' COLLATE utf8mb4_bin = 'a' COLLATE utf8mb4_bin)
+(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
 ===
 ### name: op.in.literal-list
+--- note
+Not SQL's IN. SEL's IN is EQL-based, so each element is a byte comparison, and
+casting each element inside a variadic template is not expressible. Casting only
+the needle is not enough either: CAST(3.0 AS CHAR) COLLATE utf8mb4_bin IN (3) is
+1 on MariaDB 11.8, because the numeric right-hand side pulls the comparison back
+to numbers. The cast has already cost the index SQL's IN would have used.
 --- dialect
 mariadb
 --- bindings
@@ -133,7 +139,7 @@ mariadb
 --- source
 S IN ("open", "held")
 --- expect
-(`state` IN ('open', 'held'))
+((CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))
 ===
 ### name: op.in.scalar-right-hand-side
 --- note
@@ -143,7 +149,7 @@ mariadb
 --- source
 "a" IN "a"
 --- expect
-('a' COLLATE utf8mb4_bin = 'a' COLLATE utf8mb4_bin)
+(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
 ===
 ### name: op.bitwise.refused-with-a-reason
 --- note

@@ -350,6 +350,24 @@ final class Regex
         return self::$cache[$key] = $compiled;
     }
 
+    /**
+     * The portable form of a pattern: validated against the subset spec §7.8
+     * allows, with \d, \w and \s expanded into explicit ASCII classes.
+     *
+     * Public so the SQL translator can emit the same thing the evaluator
+     * compiles. A second copy of the expansion in the SQL layer would be a
+     * second thing to keep in step, and the failure mode is silent: MariaDB's
+     * engine matches \d against Arabic-Indic digits where SEL does not, so a
+     * translator that passed the pattern through would answer differently from
+     * the evaluator on the same input.
+     *
+     * @param array<string,mixed>|null $pos
+     */
+    public static function portableSource(string $pattern, ?array $pos = null): string
+    {
+        return self::validate($pattern, $pos);
+    }
+
     /** The pattern may contain a bare `/`, which JS allows and a `/` delimiter does not. */
     private static function escapeDelimiter(string $pattern): string
     {
