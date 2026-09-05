@@ -40,6 +40,7 @@ for impl in $IMPLS; do
   step "unit tests ($impl)" impl_unit "$impl"
 done
 
+step "sql dialect map" ./tools/check-sql-map.sh
 step "manifest versions" ./tools/check-version.sh
 step "host API parity" ./tools/check-api.sh
 step "documentation examples" ./tools/check-docs.sh
