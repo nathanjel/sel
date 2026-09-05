@@ -11,6 +11,7 @@ from typing import Any
 
 from .. import decimal as D
 from ..errors import Pos
+from ..lexer import ascii_upper
 from ..value import Value, quote_dump
 from .errors import SqlError, refuse
 from .fragment import KINDS as FRAGMENT_KINDS
@@ -24,14 +25,20 @@ class Bindings:
     def __init__(self, bindings: dict[str, Any]) -> None:
         self._map: dict[str, dict[str, Any]] = {}
         for name, b in bindings.items():
-            key = str(name).upper()
+            # ascii_upper, not str.upper(), and for the reason registry.define
+            # already records: str.upper() folds "ß" to "SS" and changes the
+            # name's length, while PHP's strtoupper -- which every one of these
+            # transcribes -- is ASCII-only. A binding named "straße" would be
+            # stored under a key six characters long and looked up under one
+            # seven characters long, and nothing would say so.
+            key = ascii_upper(str(name))
             self._map[key] = _validate(key, b)
 
     def has(self, name: str) -> bool:
-        return name.upper() in self._map
+        return ascii_upper(name) in self._map
 
     def get(self, name: str, pos: Pos | None = None) -> dict[str, Any]:
-        key = name.upper()
+        key = ascii_upper(name)
         if key not in self._map:
             known = sorted(self._map)
             tail = ('; no bindings were given' if not known
@@ -114,7 +121,7 @@ def _validate(name: str, b: Any) -> dict[str, Any]:
         fields: dict[str, Any] = {}
         for f, spec in (b.get('fields') or {}).items():
             _check_column(f'{name}["{f}"]', spec)
-            fields[str(f).upper()] = {'type': 'UNKNOWN', **spec}
+            fields[ascii_upper(str(f))] = {'type': 'UNKNOWN', **spec}
         # `raw` is the one place a host writes SQL this layer cannot check the
         # meaning of. It can still check the SHAPE, and must: str() on a dict
         # yields something that is then spliced into a correlated subquery as if
@@ -135,7 +142,7 @@ def _validate(name: str, b: Any) -> dict[str, Any]:
             _check_name(f'the relation binding for {name}', 'from', frm)
         if isinstance(b.get('alias'), str):
             _check_name(f'the relation binding for {name}', 'alias', b['alias'])
-        if b.get('scalar') is not None and str(b['scalar']).upper() not in fields:
+        if b.get('scalar') is not None and ascii_upper(str(b['scalar'])) not in fields:
             raise SqlError('E_SQL_BINDING',
                            f"the relation binding for {name} names {b['scalar']} as its "
                            'scalar, which is not one of its fields')
@@ -147,7 +154,16 @@ def _validate(name: str, b: Any) -> dict[str, Any]:
         return {**b, 'fields': fields, 'alias': b.get('alias')}
 
     # value
-    if 'value' not in b:
+    #
+    # `.get(k) is not None`, not `k in b`, throughout this file and the
+    # translator. PHP's isset() -- which every one of these transcribes -- is
+    # FALSE for a key holding an explicit null, so {"kind":"value","value":null}
+    # is "needs a value" there. Membership makes it true, and the binding then
+    # reached Value.from_native(None) and was refused later with a different
+    # code. `in` is right only where PHP wrote array_key_exists, which is
+    # map.entry() and map.entries() and nowhere else -- and there the difference
+    # is the point: a null entry is a WITHDRAWAL, which must be found.
+    if b.get('value') is None:
         raise SqlError('E_SQL_BINDING', f'the value binding for {name} needs a value')
     v = b['value']
     type_ = b.get('type')

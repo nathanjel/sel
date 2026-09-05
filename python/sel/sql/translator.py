@@ -17,6 +17,7 @@ from typing import Any, Callable
 from .. import utf8
 from ..builtins import regex as _regex
 from ..errors import Pos, SelError
+from ..lexer import ascii_upper
 from ..parser import Node
 from ..value import Value, quote_dump
 from . import constants as _constants
@@ -338,7 +339,7 @@ class Translator:
                 and self.bindings.has(rhs.name):
             b = self.bindings.get(rhs.name, rhs.pos)
             if b['kind'] == 'relation':
-                scalar = str(b['scalar']).upper() if b.get('scalar') is not None else None
+                scalar = ascii_upper(str(b['scalar'])) if b.get('scalar') is not None else None
                 if scalar is None or scalar not in b['fields']:
                     refuse('E_SQL_SHAPE',
                            f'IN over {rhs.name} needs the binding to name a "scalar" '
@@ -559,7 +560,11 @@ class Translator:
         # and RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG. An
         # empty flag string is dropped so the two-argument template applies.
         text = str(flags.v)
-        if text != '' and text.lower() != 'i':
+        # Spelled as the two strings that pass rather than as a case fold:
+        # PHP's strtolower is ASCII-only and str.lower() is not ("İ".lower() is
+        # two code points), and `strtolower($t) !== 'i'` admits exactly "i" and
+        # "I". Naming them is byte-exact and needs no ascii_lower.
+        if text not in ('', 'i', 'I'):
             refuse('E_SQL_UNSUPPORTED',
                    f'{n.name} accepts only the i flag here, and SEL accepts only i '
                    'at all; ' + quote_dump(text) + ' is not it', flags.pos)
@@ -645,7 +650,7 @@ class Translator:
                        f'{n.name} is a row of a relation with {len(rel["fields"])} '
                        'fields, which is a map in SEL and not one value; name the '
                        'field you mean', n.pos)
-            scalar = str(rel['scalar']).upper() if rel.get('scalar') is not None else None
+            scalar = ascii_upper(str(rel['scalar'])) if rel.get('scalar') is not None else None
             if scalar is None or scalar not in rel['fields']:
                 refuse('E_SQL_SHAPE',
                        f'{n.name} names a row, and the relation does not say which of '
@@ -661,7 +666,7 @@ class Translator:
                        f'{name}[{key}] asks for a row by position, and a relation has '
                        'no first row without an ORDER BY that nothing here can supply',
                        n.pos)
-            field = key.upper()
+            field = ascii_upper(key)
             if field not in b.payload['fields']:
                 known = sorted(b.payload['fields'])
                 tail = ('; it declares none' if not known
@@ -986,7 +991,7 @@ class Translator:
         src = self._source(n.args[0], n)
         if src['shape'] == 'relation':
             rel = src['relation']
-            scalar = str(rel['scalar']).upper() if rel.get('scalar') is not None else None
+            scalar = ascii_upper(str(rel['scalar'])) if rel.get('scalar') is not None else None
             if scalar is None or scalar not in rel['fields']:
                 refuse('E_SQL_SHAPE',
                        'JOIN over a relation needs the binding to name a "scalar" '
@@ -1042,7 +1047,10 @@ class Translator:
         if isinstance(entry, str):
             refuse('E_SQL_UNSUPPORTED',
                    f'{what} has no mapping in dialect {self.dialect} — {entry}', pos)
-        if 'builder' in entry:
+        # `.get(k) is not None`, not `k in entry`: these transcribe isset(),
+        # which is false for an explicit null. Reachable through a runtime
+        # define() carrying a null field, which is the documented escape hatch.
+        if entry.get('builder') is not None:
             return entry['builder'](self.emit, args, {'pos': pos})
 
         # The map's `arity` narrows SEL's own for this dialect, and sql/MAP.md
@@ -1054,19 +1062,19 @@ class Translator:
         # anyway and filled the template it had, silently dropping the arguments
         # the template did not name. Found the hour sqlite was written, by the
         # oracle: FIND("a","banana",3) is 4 in SEL and instr('banana','a') is 2.
-        if 'arity' in entry:
+        if entry.get('arity') is not None:
             lo, hi = entry['arity']
             if not lo <= len(args) <= hi:
                 refuse('E_SQL_UNSUPPORTED',
                        f'{what} takes {lo} to {hi} argument(s) in dialect '
                        f'{self.dialect}, and this call has {len(args)}', pos)
 
-        if 'since' in entry \
+        if entry.get('since') is not None \
                 and not _map.version_at_least(_map.version(self.dialect), entry['since']):
             refuse('E_SQL_DIALECT',
                    f'{what} needs {self.dialect} {entry["since"]}, and this map '
                    f'assumes {_map.version(self.dialect)}', pos)
-        if 'caveat' in entry:
+        if entry.get('caveat') is not None:
             if self.strict:
                 refuse('E_SQL_UNSUPPORTED',
                        f'{what} maps to something that is not exactly equivalent '
@@ -1079,7 +1087,7 @@ class Translator:
 
     def _template_of(self, entry: dict[str, Any], args: list[Fragment],
                      variant: str | None, what: str, pos: Pos) -> str:
-        if 'variants' in entry:
+        if entry.get('variants') is not None:
             if variant is None or variant not in entry['variants']:
                 shape = 'this shape' if variant is None else f'{variant} operands'
                 refuse('E_SQL_UNSUPPORTED',
@@ -1178,7 +1186,7 @@ class Translator:
         # nothing here read it -- so `skel` was the one section whose entries could
         # declare an inexactness that never reached Fragment.caveats and that
         # `strict` never refused.
-        if 'caveat' in s:
+        if s.get('caveat') is not None:
             if self.strict:
                 refuse('E_SQL_UNSUPPORTED',
                        f'the {name} skeleton for {self.dialect} is not exactly '

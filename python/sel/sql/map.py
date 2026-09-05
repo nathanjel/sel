@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..errors import Pos
+from ..lexer import ascii_upper
 from ._map import DIALECTS
 from .errors import refuse
 
@@ -52,11 +53,19 @@ def define_dialect(name: str, spec: dict[str, Any]) -> None:
         raise RuntimeError(f'SQL dialect {name} must extend another dialect')
     if not exists(extends):
         raise RuntimeError(f'SQL dialect {name} extends {extends}, which does not exist')
+    # Each default is applied when the key is absent OR explicitly null, because
+    # PHP's `$spec['version'] ?? …` is. `spec.get('version', …)` would store the
+    # explicit None, and version() would then hand version_at_least the string
+    # 'None' for int() to choke on.
+    def _or(key, default):
+        v = spec.get(key)
+        return default if v is None else v
+
     _extra[name] = {
         'extends': extends,
-        'version': spec.get('version', _record(extends)['version']),
-        'target': spec.get('target', True),
-        'lexical': spec.get('lexical', {}),
+        'version': _or('version', _record(extends)['version']),
+        'target': _or('target', True),
+        'lexical': _or('lexical', {}),
     }
 
 
@@ -79,7 +88,9 @@ def define(dialect: str, section: str, key: str, entry: Any) -> None:
     # translator looks up verbatim -- upper-casing those stored a registered
     # skeleton under a key nothing ever reads, which made the documented escape
     # hatch silently dead.
-    k = key.upper() if section == 'funcs' else key
+    # ascii_upper, matching PHP's strtoupper and sel.registry.define; see
+    # the note in bindings.py on why str.upper() is not the same function.
+    k = ascii_upper(key) if section == 'funcs' else key
     _overlay.setdefault(dialect, {}).setdefault(section, {})[k] = entry
 
 
