@@ -70,7 +70,15 @@ final class Bindings
             if ($b['kind'] !== 'relation') {
                 continue;
             }
-            $alias = $b['alias'] ?? $b['from'];
+            // A raw `from` is an array, and using it as an array key raised a
+            // TypeError — not a SqlError, so tryTranslate() did not catch it and
+            // a host using the refusal-tolerant API got a fatal instead of null.
+            $alias = $b['alias'] ?? null;
+            if ($alias === null) {
+                $alias = is_array($b['from'])
+                    ? (string) ($b['from']['raw'] ?? '')
+                    : (string) $b['from'];
+            }
             if (isset($seen[$alias])) {
                 refuse('E_SQL_BINDING',
                     "relations {$seen[$alias]} and {$name} share the alias {$alias}; "
@@ -130,7 +138,12 @@ final class Bindings
                         "the relation binding for {$name} names {$b['scalar']} as its scalar, "
                         . 'which is not one of its fields');
                 }
-                return $b + ['fields' => $fields, 'alias' => $b['alias'] ?? null];
+                // array_merge, not `+`: the union operator keeps the LEFT
+                // operand's value for a duplicated key, so `$b + ['fields' => …]`
+                // silently kept the host's raw fields and discarded the
+                // normalisation — leaving lowercase keys that every consumer
+                // then failed to find, because they all look up strtoupper().
+                return array_merge($b, ['fields' => $fields, 'alias' => $b['alias'] ?? null]);
 
             case 'value':
             default:
@@ -148,8 +161,35 @@ final class Bindings
                 // `type` decides whether a scalar goes out quoted or bare, which
                 // is a question no inspection of the value can answer: SEL
                 // numbers are TEXT values. See Emit::literal.
-                return ['kind' => 'value', 'type' => $type,
-                        'value' => $v instanceof Value ? $v : Value::fromNative($v)];
+                $val = $v instanceof Value ? $v : Value::fromNative($v);
+                // Declaring NUM asks for the value to be emitted unquoted, so it
+                // has to be a number. Checked here, where the message can name
+                // the binding, and again in Emit::literal, which is the last
+                // place before the characters go out.
+                if ($type === 'NUM') {
+                    self::checkNumeric($name, $val);
+                }
+                return ['kind' => 'value', 'type' => $type, 'value' => $val];
+        }
+    }
+
+    /** Every scalar reachable from a NUM-typed value binding. */
+    private static function checkNumeric(string $name, Value $v): void
+    {
+        if ($v->size() > 0) {
+            foreach ($v->entries() as [$k, $child]) {
+                self::checkNumeric("{$name}[\"{$k}\"]", $child);
+            }
+            return;
+        }
+        if ($v->isNone()) {
+            return;
+        }
+        if (!$v->isText() || !$v->looksNumeric()) {
+            throw new SqlError('E_SQL_BINDING',
+                "the value binding for {$name} declares type NUM, which asks for it "
+                . 'to be emitted unquoted, but ' . Value::quoteDump($v->isBool()
+                    ? ($v->asBool() ? 'TRUE' : 'FALSE') : $v->asText()) . ' is not a number');
         }
     }
 

@@ -211,6 +211,41 @@ function run_case(array $c): ?string
     if ($sql !== $c['expect']) {
         return "got:  {$sql}\n     want: {$c['expect']}";
     }
+    // Checked for every case that produces a fragment, not only those asking
+    // about params: the slot numbers must read 1, 2, 3, … in the order they
+    // appear in the part list.
+    //
+    // What it does NOT demand is that the slots read 1, 2, 3 in output order.
+    // They cannot: a reordering template like INSTR({1}, {0}) emits the second
+    // slot created before the first, and the template is data. Binding order is
+    // taken from the output instead — see Fragment::bindings() — which is what
+    // makes reordering templates and repeated slots both correct.
+    //
+    // What is left over and still worth catching: a value bound but never
+    // emitted, which means a Fragment was rendered and thrown away, and a count
+    // mismatch between bindings() and the placeholders actually emitted. Both
+    // are invisible in `inline` mode, which is what the rest of the suite
+    // asserts.
+    $seen = [];
+    foreach ($frag->parts as $p) {
+        if (is_string($p)) {
+            continue;
+        }
+        if ($p < 1 || $p > count($frag->params)) {
+            return "parameter slot {$p} has no value in params";
+        }
+        $seen[$p] = true;
+    }
+    $orphans = array_values(array_diff(
+        $frag->params === [] ? [] : range(1, count($frag->params)), array_keys($seen)));
+    if ($orphans !== []) {
+        return 'parameter slot(s) ' . json_encode($orphans) . ' were bound but never '
+            . 'emitted — a fragment was rendered and discarded';
+    }
+    if (count($frag->bindings()) !== substr_count($frag->asValue('debug'), '~') / 2) {
+        return 'bindings() and the emitted placeholders disagree in count';
+    }
+
     if ($c['params'] !== null) {
         $got = implode(', ', array_map(
             static fn ($v): string => $v->dump(), $frag->bindings()));

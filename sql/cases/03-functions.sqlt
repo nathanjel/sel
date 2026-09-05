@@ -148,7 +148,7 @@ mariadb
 --- source
 RMATCH('^a.c$', "abc")
 --- expect
-('abc' COLLATE utf8mb4_bin REGEXP CONCAT('(?s)', '^a.c$'))
+('abc' COLLATE utf8mb4_bin REGEXP '(?s)^a.c$')
 ===
 ### name: func.regex.rfind
 --- dialect
@@ -156,7 +156,7 @@ mariadb
 --- source
 RFIND('ó', "zażółć")
 --- expect
-REGEXP_INSTR('zażółć' COLLATE utf8mb4_bin, CONCAT('(?s)', 'ó'))
+REGEXP_INSTR('zażółć' COLLATE utf8mb4_bin, '(?s)ó')
 ===
 ### name: func.refused.code-is-not-a-code-point
 --- note

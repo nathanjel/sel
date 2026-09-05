@@ -273,7 +273,10 @@ final class Translator
      */
     private function inOperator(array $n): Fragment
     {
-        $needle = $this->node($n['l']);
+        // The needle is rendered per branch, and per comparison in the list
+        // branch, rather than once up front. Rendering it eagerly bound a value
+        // the list branch then never used, leaving one more entry in `params`
+        // than there were placeholders — the mirror of the bug below.
         $rhs = $n['r'];
 
         // `x IN rel` is the one place a relation appears on the right of an
@@ -292,7 +295,7 @@ final class Translator
                 return new Fragment(
                     $this->fillNamed($this->skeleton('inRelation', $n['pos']),
                         $this->relationSlots($b) + [
-                            'needle' => [$this->emit->textOperand($needle)],
+                            'needle' => [$this->emit->textOperand($this->node($n['l']))],
                             'body' => [$this->emit->textOperand(
                                 $this->columnRef($b['fields'][$scalar]))],
                         ], $n['pos']),
@@ -305,12 +308,26 @@ final class Translator
             $elements = $rhs['items'];
         } elseif ($rhs['t'] === 'clist') {
             $elements = array_map(static fn (array $e): array => $e[1], $rhs['entries']);
+        } elseif ($rhs['t'] === 'var' && $this->binder($rhs['name']) === null
+                  && $this->bindings->has($rhs['name'])) {
+            // A `value` binding holding a list is the natural way a host writes
+            // an allow-list, and §5.4 says it unrolls exactly like a literal
+            // list. The elements are already synthesised into nodes for the
+            // aggregates; this reuses that rather than adding a second path.
+            $b = $this->bindings->get($rhs['name'], $rhs['pos']);
+            if ($b['kind'] === 'value' && $b['value']->size() > 0) {
+                $elements = [];
+                foreach ($this->valueElements($b, $rhs['pos']) as $binder) {
+                    $elements[] = $binder->payload;
+                }
+            }
         }
 
         if ($elements === null) {
             $r = $this->node($rhs);          // a scalar; spec §5.4's second case
             return $this->apply('ops', 'IN',
-                [$this->emit->textOperand($needle), $this->emit->textOperand($r)],
+                [$this->emit->textOperand($this->node($n['l'])),
+                 $this->emit->textOperand($r)],
                 $n['pos'], 'scalar');
         }
 
@@ -325,9 +342,18 @@ final class Translator
         if ($elements === []) {
             return $this->literal(Value::bool(false), 'BOOL');
         }
-        $cast = $this->emit->textOperand($needle);
         $tests = [];
         foreach ($elements as $e) {
+            // Needle first, because it is emitted first. A parameter slot is
+            // numbered when it is created and a positional placeholder carries
+            // no number, so a driver binds values in creation order to
+            // placeholders in text order — and the two are the same order only
+            // if operands are rendered left to right.
+            //
+            // The needle is also rendered once per comparison rather than once
+            // and spliced N times: splicing one Fragment twice puts the same
+            // slot number in the output twice while `params` holds one entry.
+            $needle = $this->emit->textOperand($this->node($n['l']));
             $f = $this->node($e);
             if ($f->kind === 'LIST') {
                 refuse('E_SQL_SHAPE',
@@ -335,7 +361,7 @@ final class Translator
                     . 'counterpart', $e['pos']);
             }
             $tests[] = $this->apply('ops', 'EQL',
-                [$cast, $this->emit->textOperand($f)], $e['pos'], 'text');
+                [$needle, $this->emit->textOperand($f)], $e['pos'], 'text');
         }
         return $this->foldPairwise('OR', $tests, $n['pos']);
     }
@@ -432,14 +458,58 @@ final class Translator
                 . 'is not known until the query runs cannot be rewritten',
                 ($pat['pos'] ?? $n['pos']));
         }
+        $source = \Sel\Builtins\Regex::portableSource((string) $pat['v'], $pat['pos']);
+
+        // Dotall is permanently on in SEL (spec §7.8) and off by default in the
+        // server, so every pattern carries (?s). The modifier goes in the
+        // pattern rather than in the template because the flag argument is not
+        // something the template should see: selecting an arity-keyed template
+        // by argument count gave every three-argument call the case-insensitive
+        // form, and left the flag bound as a parameter nothing emitted.
+        $inline = '(?s)';
+
         $flagAt = $n['name'] === 'RREPLACE' ? 3 : 2;
-        if (isset($n['args'][$flagAt]) && $n['args'][$flagAt]['t'] !== 'text') {
-            refuse('E_SQL_UNSUPPORTED',
-                "{$n['name']} needs literal flags here: they select the mapping",
-                $n['args'][$flagAt]['pos']);
+        if (!isset($n['args'][$flagAt])) {
+            $n['args'][$at]['v'] = $inline . $source;
+            return $n;
         }
-        $n['args'][$at]['v'] = \Sel\Builtins\Regex::portableSource(
-            (string) $pat['v'], $pat['pos']);
+        $flags = $n['args'][$flagAt];
+        if ($flags['t'] !== 'text') {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$n['name']} needs literal flags here: their content selects the "
+                . 'mapping, so they have to be known before the query runs',
+                $flags['pos']);
+        }
+
+        // The flag string's CONTENT chooses the template. Choosing by argument
+        // count instead meant every three-argument call got the case-insensitive
+        // form, so RMATCH(p, s, "") matched case-insensitively where SEL does
+        // not, and RMATCH(p, s, "zzz") compiled happily where SEL raises
+        // E_BAD_ARG. An empty flag string is dropped so the two-argument
+        // template applies.
+        $text = (string) $flags['v'];
+        if ($text !== '' && strtolower($text) !== 'i') {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$n['name']} accepts only the i flag here, and SEL accepts only i "
+                . 'at all; ' . \Sel\Value::quoteDump($text) . ' is not it',
+                $flags['pos']);
+        }
+        if ($text !== '') {
+            // The evaluator refuses i on a pattern with non-ASCII literals,
+            // because case folding above ASCII is the one thing PCRE and
+            // ECMAScript cannot be made to agree on. A translation that accepted
+            // it would disagree with the host that refused it.
+            foreach (\Sel\Utf8::codePoints($source) as $cp) {
+                if ($cp > 0x7f) {
+                    refuse('E_SQL_UNSUPPORTED',
+                        'the i flag needs an ASCII-only pattern, which SEL requires '
+                        . 'for the same reason and refuses here too', $flags['pos']);
+                }
+            }
+            $inline = '(?si)';
+        }
+        $n['args'][$at]['v'] = $inline . $source;
+        array_splice($n['args'], $flagAt, 1);      // folded into the pattern
         return $n;
     }
 
@@ -612,21 +682,23 @@ final class Translator
                 . 'docs/SQL-TRANSLATION.md §7.5', $src['pos']);
         }
 
-        $base = ['filters' => [], 'scalarRule' => false];
-
+        // Built by a helper rather than by `+`: PHP's array union keeps the
+        // LEFT operand's value for a duplicated key, so `$base + [... 'scalarRule'
+        // => true]` left scalarRule permanently false and made COUNT of a scalar
+        // answer 1 where the evaluator answers 0.
         if ($src['t'] === 'list') {
             $out = [];
             foreach ($src['items'] as $i => $item) {
                 $out[(string) ($i + 1)] = Binder::node($item);
             }
-            return $base + ['shape' => 'static', 'elements' => $out];
+            return self::staticSource($out);
         }
         if ($src['t'] === 'clist') {
             $out = [];
             foreach ($src['entries'] as [$k, $v]) {
                 $out[$k] = Binder::node($v);
             }
-            return $base + ['shape' => 'static', 'elements' => $out];
+            return self::staticSource($out);
         }
 
         if ($src['t'] === 'var') {
@@ -641,29 +713,42 @@ final class Translator
                 // A column or a row is one value, so it is a one-element list
                 // containing itself — spec §7.3, the same rule the evaluator
                 // applies. This is what makes ALL(V, ALL(V, …)) work.
-                return $base + ['shape' => 'static', 'scalarRule' => true,
-                                'elements' => ['1' => $bound]];
+                return self::staticSource(['1' => $bound], true);
             }
             $b = $this->bindings->get($src['name'], $src['pos']);
             if ($b['kind'] === 'relation') {
-                return $base + ['shape' => 'relation', 'relation' => $b];
+                return ['shape' => 'relation', 'relation' => $b, 'filters' => [],
+                        'scalarRule' => false];
             }
             if ($b['kind'] === 'columns') {
                 $out = [];
                 foreach ($b['items'] as $i => $item) {
                     $out[(string) ($i + 1)] = Binder::column($item);
                 }
-                return $base + ['shape' => 'columns', 'elements' => $out];
+                return ['shape' => 'columns', 'elements' => $out, 'filters' => [],
+                        'scalarRule' => false];
             }
             if ($b['kind'] === 'value') {
-                return $base + ['shape' => 'static',
-                                'elements' => $this->valueElements($b, $src['pos'])];
+                $v = $b['value'];
+                // A scalar value binding is one value, so the scalar rule applies
+                // to it exactly as it does to a column.
+                return self::staticSource($this->valueElements($b, $src['pos']),
+                    $v->size() === 0 && !$v->isNone());
             }
         }
 
         // Anything else that is one value: the scalar rule again.
-        return $base + ['shape' => 'static', 'scalarRule' => true,
-                        'elements' => ['1' => Binder::node($src)]];
+        return self::staticSource(['1' => Binder::node($src)], true);
+    }
+
+    /**
+     * @param array<string, Binder> $elements
+     * @return array<string,mixed>
+     */
+    private static function staticSource(array $elements, bool $scalarRule = false): array
+    {
+        return ['shape' => 'static', 'elements' => $elements,
+                'filters' => [], 'scalarRule' => $scalarRule];
     }
 
     /**
@@ -958,11 +1043,12 @@ final class Translator
                 'TEXT', $this->dialect);
         }
 
-        $sep = $this->node($n['args'][1]);
         $parts = [];
         foreach ($src['elements'] as $key => $elem) {
             if ($parts !== []) {
-                $parts[] = $sep;
+                // Rendered per gap, not once and reused: see the note in
+                // inOperator on why splicing one Fragment twice breaks `params`.
+                $parts[] = $this->node($n['args'][1]);
             }
             $parts[] = $this->withElement($src, '_', $elem, (string) $key, $n,
                 fn (): Fragment => $this->fromBinder($elem, $n));

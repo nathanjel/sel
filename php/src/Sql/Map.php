@@ -71,7 +71,13 @@ final class Map
         if (!self::exists($dialect)) {
             throw new \LogicException("SQL dialect {$dialect} does not exist");
         }
-        self::$overlay[$dialect][$section][$section === 'ops' ? $key : strtoupper($key)] = $entry;
+        // Only `funcs` keys are SEL function names, which are case-insensitive.
+        // `ops` keys are operator tokens and `skel` keys are camel-case names
+        // the translator looks up verbatim — upper-casing those stored a
+        // registered skeleton under a key nothing ever reads, which made the
+        // documented escape hatch silently dead.
+        self::$overlay[$dialect][$section][$section === 'funcs' ? strtoupper($key) : $key]
+            = $entry;
     }
 
     /**

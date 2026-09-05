@@ -65,6 +65,17 @@ final class Emit
         // DECIMAL arithmetic reads.
         if ($form === 'NUM') {
             $n = $v->asText($pos);
+            // A NUM-form literal is the one thing emitted without quotes, so it
+            // is the one thing that must be proved to be a number. The AST path
+            // arrives already parsed, but a `value` binding declaring type NUM
+            // reaches here straight from host data, and "1 OR 1=1 -- " would go
+            // out verbatim. Fragment's part list keeps a literal from being
+            // confused with SQL; it cannot keep a literal from BEING SQL.
+            if (!$v->looksNumeric()) {
+                refuse('E_SQL_BINDING',
+                    'a value bound as NUM must be a number, and '
+                    . \Sel\Value::quoteDump($n) . ' is not', $pos);
+            }
             // A negative number is parenthesised so that unary minus in front of
             // it cannot produce `--`. MariaDB reads that as double negation and
             // gets the right answer by luck; PostgreSQL and SQLite read it as

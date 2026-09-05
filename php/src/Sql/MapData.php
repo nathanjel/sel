@@ -610,18 +610,14 @@ final class MapData
                 'BTL' => 'yields a list, and a SQL expression is a scalar',
                 'LTB' => 'takes a list, and a SQL expression is a scalar',
                 'RMATCH' => [
-                    'tpl' => [
-                        '2' => '({1}{textCollate} REGEXP CONCAT(\'(?s)\', {0}))',
-                        '3' => '({1}{textCollate} REGEXP CONCAT(\'(?si)\', {0}))',
-                    ],
+                    'tpl' => '({1}{textCollate} REGEXP {0})',
+                    'arity' => [2, 2],
                     'ret' => 'BOOL',
                     'caveat' => 'regex-engine',
                 ],
                 'RFIND' => [
-                    'tpl' => [
-                        '2' => 'REGEXP_INSTR({1}{textCollate}, CONCAT(\'(?s)\', {0}))',
-                        '3' => 'REGEXP_INSTR({1}{textCollate}, CONCAT(\'(?si)\', {0}))',
-                    ],
+                    'tpl' => 'REGEXP_INSTR({1}{textCollate}, {0})',
+                    'arity' => [2, 2],
                     'ret' => 'NUM',
                     'caveat' => 'regex-engine',
                 ],
@@ -971,10 +967,8 @@ final class MapData
                 'LTB' => 'takes a list, and a SQL expression is a scalar',
                 'RMATCH' => 'regular expressions are not ANSI; set per dialect',
                 'RFIND' => [
-                    'tpl' => [
-                        '2' => 'REGEXP_INSTR({1}{textCollate}, CONCAT(\'(?s)\', {0}))',
-                        '3' => 'REGEXP_INSTR({1}{textCollate}, CONCAT(\'(?si)\', {0}))',
-                    ],
+                    'tpl' => 'REGEXP_INSTR({1}{textCollate}, {0})',
+                    'arity' => [2, 2],
                     'ret' => 'NUM',
                     'caveat' => 'regex-engine',
                 ],

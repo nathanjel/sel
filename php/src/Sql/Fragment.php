@@ -96,10 +96,30 @@ final class Fragment
             . 'SQL has no truthiness and neither does SEL');
     }
 
-    /** The bound values for `params` mode, in placeholder order. */
+    /**
+     * The bound values for `params` mode, in placeholder order.
+     *
+     * Derived from the part list rather than returned as stored, because the two
+     * orders are not the same. A slot is numbered when it is created, and the
+     * template decides where it lands: `FIND(needle, hay)` maps to
+     * `INSTR({1}, {0})`, so the second slot created is the first one emitted.
+     * A positional `?` carries no number, so a driver binds the first value to
+     * the first placeholder — which is right only if this walks the output.
+     *
+     * A slot appearing more than once yields its value more than once, which is
+     * also right: two placeholders need two bindings, even of the same value.
+     *
+     * @return list<Value>
+     */
     public function bindings(): array
     {
-        return $this->params;
+        $out = [];
+        foreach ($this->parts as $p) {
+            if (!is_string($p)) {
+                $out[] = $this->params[$p - 1];
+            }
+        }
+        return $out;
     }
 
     /** True when nothing about this translation is inexact. */
@@ -111,16 +131,22 @@ final class Fragment
     private function join(string $mode): string
     {
         $out = '';
+        $nth = 0;                       // position in bindings(), not slot id
         foreach ($this->parts as $p) {
             if (is_string($p)) {
                 $out .= $p;
                 continue;
             }
+            $nth++;
             $out .= match ($mode) {
                 'inline' => Emit::literal($this->dialect, $this->params[$p - 1],
                     $this->paramKinds[$p - 1] ?? 'TEXT'),
-                'params' => Emit::placeholder($this->dialect, $p),
-                'debug' => "~{$p}~",
+                // The ordinal a numbered placeholder carries — PostgreSQL's $n —
+                // must agree with bindings(), which walks the output. The slot
+                // id would not: it is a creation number, and a reordering
+                // template emits creation numbers out of order.
+                'params' => Emit::placeholder($this->dialect, $nth),
+                'debug' => "~{$nth}~",
                 default => throw new \InvalidArgumentException(
                     "unknown render mode {$mode}; use inline, params or debug"),
             };

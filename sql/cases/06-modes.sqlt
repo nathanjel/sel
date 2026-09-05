@@ -75,3 +75,33 @@ COND(TRUE, "a", "b")
 CASE WHEN ? THEN ? ELSE ? END
 --- params
 TRUE, t"a", t"b"
+===
+### name: mode.params.literal-needle-in-a-list
+--- note
+Every slot must appear exactly once. The needle is rendered per comparison, so
+a three-element IN with a literal needle binds six values for six placeholders
+— not one value spliced three times, which is what a driver rejects.
+--- dialect
+mariadb
+--- mode
+params
+--- source
+"a" IN ("a", "b", "c")
+--- expect
+(((CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin) OR (CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)) OR (CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin))
+--- params
+t"a", t"a", t"a", t"b", t"a", t"c"
+===
+### name: mode.params.join-separator-is-bound-per-gap
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}, {"column": "c"}]}}
+--- source
+JOIN(V, "-")
+--- expect
+CONCAT(CONCAT(CONCAT(CONCAT(`a`, ?), `b`), ?), `c`)
+--- params
+t"-", t"-"

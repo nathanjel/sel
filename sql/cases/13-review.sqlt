@@ -1,0 +1,206 @@
+% Regressions from the M1..M3 code review. Each of these passed the suite as it
+% stood and was wrong anyway, so each is pinned by the smallest case that shows
+% the wrong answer rather than by the code path that produced it.
+
+### name: review.count.scalar-has-no-children
+--- note
+Was 1. `$base + ['scalarRule' => true]` — PHP's array union keeps the LEFT
+operand's value for a duplicated key, so the flag was permanently false and
+COUNT of a scalar counted the one-element list §7.3 wraps it in. spec §7.4 says
+COUNT is the number of children, and a scalar has none.
+--- dialect
+mariadb
+--- source
+COUNT("hello")
+--- expect
+0
+===
+### name: review.count.scalar-column-has-no-children
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c", "type": "TEXT"}}
+--- source
+COUNT(C) == 0
+--- expect
+(0 = 0)
+===
+### name: review.has.scalar-has-no-keys
+--- note
+Was TRUE, from the same flag.
+--- dialect
+mariadb
+--- source
+HAS("hello", 1)
+--- expect
+FALSE
+===
+### name: review.relation.fields-are-case-insensitive
+--- note
+Was E_SQL_BINDING. Bindings normalised the field names and then returned
+`$b + ['fields' => $fields]`, which kept the host's raw lowercase keys — the
+same union trap. Every consumer looks up strtoupper(), and every fixture in
+12-aggregates happened to be written uppercase.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "t", "alias": "oi", "fields": {"qty": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ANY(ITEMS, I, I["QTY"] > 100)
+--- expect
+EXISTS (SELECT 1 FROM `t` `oi` WHERE TRUE AND ((`oi`.`qty` > 100)) IS TRUE)
+===
+### name: review.value.num-binding-must-be-a-number
+--- note
+Was an injection: a NUM-typed value binding is the one literal emitted without
+quotes, and it reached the emitter straight from host data. "1 OR 1=1 -- " went
+out verbatim. The part list stops a literal being confused with SQL; it cannot
+stop a literal from BEING SQL.
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c", "type": "NUM"}, "V": {"kind": "value", "type": "NUM", "value": "1 OR 1=1 -- "}}
+--- source
+C == V
+--- error
+E_SQL_BINDING
+===
+### name: review.value.num-binding-checks-children-too
+--- dialect
+mariadb
+--- bindings
+{"L": {"kind": "value", "type": "NUM", "value": {"1": "1", "2": "2) OR (1=1"}}}
+--- source
+ALL(L, _ > 0)
+--- error
+E_SQL_BINDING
+===
+### name: review.value.legitimate-num-binding-still-works
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c", "type": "NUM"}, "V": {"kind": "value", "type": "NUM", "value": "100"}}
+--- source
+C == V
+--- expect
+(`c` = 100)
+===
+### name: review.regex.empty-flags-are-not-the-i-flag
+--- note
+Was case-insensitive. The template was chosen by argument count, so every
+three-argument call got (?si) — including the ordinary "pass empty flags
+through" one, where SEL is case-sensitive.
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c", "type": "TEXT"}}
+--- source
+RMATCH("abc", C, "")
+--- expect
+(`c` COLLATE utf8mb4_bin REGEXP '(?s)abc')
+===
+### name: review.regex.i-flag-selects-the-other-template
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c", "type": "TEXT"}}
+--- source
+RMATCH("abc", C, "i")
+--- expect
+(`c` COLLATE utf8mb4_bin REGEXP '(?si)abc')
+===
+### name: review.regex.unknown-flag-is-refused
+--- note
+Compiled happily to (?si) before. The evaluator raises E_BAD_ARG on it.
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c", "type": "TEXT"}}
+--- source
+RMATCH("abc", C, "zzz")
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: review.regex.i-flag-needs-an-ascii-pattern
+--- note
+Case folding above ASCII is the one thing PCRE and ECMAScript cannot be made to
+agree on, so the evaluator refuses this. A translation that accepted it would
+disagree with the host that refused it.
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c", "type": "TEXT"}}
+--- source
+RMATCH("zażółć", C, "i")
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: review.register.a-skeleton-is-reachable
+--- note
+Was silently dead: the overlay upper-cased every key, but skeleton names are
+camel-case and looked up verbatim, so a registered skeleton went somewhere
+nothing reads. This is the documented escape hatch for exactly the JOIN the
+shipped map refuses.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "skel", "join", {"tpl": "(SELECT GROUP_CONCAT({body} ORDER BY {body} SEPARATOR {sep}) FROM {from} WHERE {corr})"}]}]
+--- bindings
+{"R": {"kind": "relation", "from": "t", "alias": "r", "scalar": "S", "fields": {"S": {"table": "r", "column": "s", "type": "TEXT"}}}}
+--- source
+JOIN(R, ",")
+--- expect
+(SELECT GROUP_CONCAT(`r`.`s` ORDER BY `r`.`s` SEPARATOR ',') FROM `t` `r` WHERE TRUE)
+===
+### name: review.bindings.raw-from-without-an-alias
+--- note
+Raised a TypeError, not a SqlError — so tryTranslate() did not catch it and a
+host using the refusal-tolerant API got a fatal instead of null.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "relation", "from": {"raw": "(SELECT 1)"}, "fields": {}}, "B": {"kind": "relation", "from": {"raw": "(SELECT 2)"}, "fields": {}}}
+--- source
+1 + 1
+--- expect
+(1 + 1)
+===
+### name: review.bindings.raw-from-alias-collision-still-caught
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "relation", "from": {"raw": "(SELECT 1)"}, "fields": {}}, "B": {"kind": "relation", "from": {"raw": "(SELECT 1)"}, "fields": {}}}
+--- source
+1 + 1
+--- error
+E_SQL_BINDING
+===
+### name: review.in.value-binding-holding-a-list
+--- note
+Refused before, though §5.4 says a value list unrolls exactly like a literal
+one — and an allow-list is the most natural thing a host binds this way.
+--- dialect
+mariadb
+--- bindings
+{"S": {"kind": "column", "column": "s", "type": "TEXT"}, "ALLOWED": {"kind": "value", "value": {"1": "open", "2": "held"}}}
+--- source
+S IN ALLOWED
+--- expect
+((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))
+===
+### name: review.params.reordering-template-binds-in-output-order
+--- note
+FIND(needle, hay) maps to INSTR({1}, {0}), so the second slot created is the
+first emitted. A positional ? carries no number, so bindings() must walk the
+output — returning them in creation order bound the hay to the needle's
+placeholder. Verified against MariaDB 11.8 under native prepares.
+--- dialect
+mariadb
+--- mode
+params
+--- source
+FIND("a", "banana")
+--- expect
+INSTR(?, ?)
+--- params
+t"banana", t"a"

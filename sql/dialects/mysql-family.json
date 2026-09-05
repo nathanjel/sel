@@ -145,10 +145,11 @@
       "ret": "TEXT"
     },
     "RFIND": {
-      "tpl": {
-        "2": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?s)', {0}))",
-        "3": "REGEXP_INSTR({1}{textCollate}, CONCAT('(?si)', {0}))"
-      },
+      "tpl": "REGEXP_INSTR({1}{textCollate}, {0})",
+      "arity": [
+        2,
+        2
+      ],
       "ret": "NUM",
       "caveat": "regex-engine"
     },
@@ -167,6 +168,6 @@
     "CODE": "ORD('e-acute') is 50089 on a utf8mb4 column — the two UTF-8 bytes read as a big-endian integer — where SEL says 233. ASCII agrees by accident, which is worse than disagreeing, so this is refused rather than caveated.",
     "CHAR": "The inverse of CODE and refused for the inverse reason. Verified against MariaDB 11.8: SELECT CHAR(233 USING utf8mb4) is NULL. Code points below 128 would work, but an entry that is right for ASCII and silently wrong above it is the worst of the three options.",
     "sql_mode": "This document assumes the default sql_mode, specifically that NO_BACKSLASH_ESCAPES is off. Two things depend on it: textEscape doubles backslashes inside string literals, and the TRIM family's regex escapes reach the engine as \\t, \\r and \\n only because the literal parser consumes one backslash of each pair. A deployment running NO_BACKSLASH_ESCAPES needs a derived dialect overriding both. ENCODE_BASE64 deliberately uses CHAR(10) and CHAR(13) instead, since REPLACE is not a regex and had nothing to gain from the assumption.",
-    "regex-flags": "The three-argument form maps SEL's i flag onto the inline (?si) prefix, verified on MariaDB 11.8. It is an arity-keyed template rather than one string because a single string would have silently ignored the third argument: Emit::fill fills the slots a template names and says nothing about arguments it does not. RMATCH('^a$', \"A\", \"i\") is TRUE in SEL and translated to a case-sensitive match until this was found. The generator now rejects a single-string template on an entry whose arity spans more than one count, so the class cannot recur."
+    "regex-flags": "The pattern arrives already rewritten and already carrying its inline modifier; see mariadb. The flag is not an argument these templates see."
   }
 }
