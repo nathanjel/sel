@@ -62,6 +62,35 @@ The rule the runner applies:
 That is the caveat vocabulary earning its place: it is not documentation, it is
 the list of expressions this check is not allowed to fail on.
 
+## `coverage.json` — the gate
+
+`tools/check-sql-oracle.sh` also answers a question the other two cannot: *did
+anything ask?* Every supported entry of every target dialect must have at least
+one oracle expression that reaches it, or a line in `coverage.json` giving a
+reason. There is no percentage and no threshold — a threshold is the "broad set
+with hidden assumptions" this layer exists not to be.
+
+Two properties make it worth having rather than decorative:
+
+- **Coverage is measured, not declared.** It comes from a trace of `Map::entry()`,
+  the one lookup every op, func and skeleton passes through. The `### entry:`
+  headers are checked *against* that trace, not trusted as it. A header no
+  expression under it reaches is reported; a header naming nothing real is a
+  suite error, because `func.UPPER` for `funcs.UPPER` would otherwise be a claim
+  nothing checks, which is the quietest way for a coverage gate to lie.
+- **A group is an occurrence, not a name.** Two groups may carry the same header,
+  and checking them together would let a mislabelled one hide behind an honest
+  one. It did, until the check was tested by mislabelling a group and watching it
+  pass.
+
+Refusals need no coverage: a refusal has no semantics to check, it is the absence
+of them.
+
+This is the part that changes what "done" means for M5. Three more dialect
+documents are about to be authored, each a few dozen semantic claims about a
+server nobody has probed, and each new entry will arrive needing either an
+expression or a written reason.
+
 ## `rows.json` and `fixture.sql`
 
 The row-parity oracle: each rule is translated into a `WHERE` clause and run

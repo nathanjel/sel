@@ -8,7 +8,12 @@
 // string and the wrong meaning; a case asserting it passes forever. See
 // docs/SQL-TESTING.md §3.
 //
-//     php/bin/sqlo [expressions|rows|all] [--dialect=mariadb] [--verbose]
+//     php/bin/sqlo [expressions|rows|coverage|all] [--dialect=mariadb] [--verbose]
+//
+// `coverage` asks a different question from the other two: not "does this agree
+// with a server" but "did anything ask?". It needs no database and runs anyway,
+// which matters — an entry nobody ever exercised is exactly the state a machine
+// with no database would otherwise leave unexamined.
 //
 // The connection comes from the environment and there is no default:
 //
@@ -27,6 +32,7 @@ use Sel\Dec;
 use Sel\Sel;
 use Sel\SelError;
 use Sel\Sql\Fragment;
+use Sel\Sql\Map;
 use Sel\Sql\Sql;
 use Sel\Sql\SqlError;
 use Sel\Value;
@@ -45,6 +51,10 @@ function parse_selo(string $text, string $file): array
 {
     $out = [];
     $entry = null;
+    // Where the header is, not just what it says: two groups may carry the same
+    // header, and checking them together lets a mislabelled one hide behind an
+    // honest one. Found by mislabelling a group and watching the gate pass.
+    $group = null;
     foreach (explode("\n", $text) as $i => $line) {
         $at = $file . ':' . ($i + 1);
         if ($line === '' || str_starts_with($line, '%')) {
@@ -54,13 +64,24 @@ function parse_selo(string $text, string $file): array
             if (preg_match('/^###\s+entry:\s*(\S+)\s*$/', $line, $m) !== 1) {
                 throw new RuntimeException("{$at}: malformed group header");
             }
+            // Two header shapes and no third. `<section>.<KEY>` is a claim the
+            // coverage gate checks against a trace; `mixed:<label>` is a group
+            // that deliberately covers no single entry. Anything else is a typo
+            // -- `func.UPPER` for `funcs.UPPER` would otherwise be a group whose
+            // claim is never checked because the checker does not recognise it,
+            // which is the quietest way for a coverage gate to lie.
+            if (preg_match('/^(ops|funcs|skel)\.\S+$|^mixed(:\S+)?$/', $m[1]) !== 1) {
+                throw new RuntimeException("{$at}: group header \"{$m[1]}\" is neither "
+                    . 'ops/funcs/skel.<KEY> nor mixed:<label>');
+            }
             $entry = $m[1];
+            $group = $at;
             continue;
         }
         if ($entry === null) {
             throw new RuntimeException("{$at}: expression before any `### entry:` header");
         }
-        $out[] = ['entry' => $entry, 'src' => $line, 'at' => $at];
+        $out[] = ['entry' => $entry, 'group' => $group, 'src' => $line, 'at' => $at];
     }
     return $out;
 }
@@ -358,6 +379,118 @@ function load_context(PDO $pdo, array $spec): array
     return $ctx;
 }
 
+// --- coverage ---------------------------------------------------------------
+
+/**
+ * Which map entries the corpus actually reaches, and which it does not.
+ *
+ * There is no percentage and no threshold. A threshold is precisely the "broad
+ * set with hidden assumptions" this layer exists not to be: 94% coverage is a
+ * number that sounds like progress and names nothing. Every supported entry
+ * either has an oracle expression that reaches it, or is listed in
+ * coverage.json with a reason someone wrote down.
+ *
+ * Coverage is measured from a trace of Map::entry(), not from the `### entry:`
+ * headers. The headers are checked *against* the trace: a header no expression
+ * under it reaches is a claim about the corpus that the corpus does not support,
+ * which is the same species of defect as everything else in this directory.
+ *
+ * This needs no database, so it runs whether or not a DSN is set.
+ */
+function run_coverage(string $dialect, bool $verbose): array
+{
+    $exclusions = [];
+    $file = ORACLE . '/coverage.json';
+    if (is_file($file)) {
+        $decoded = json_decode((string) file_get_contents($file), true);
+        $exclusions = is_array($decoded['exclude'] ?? null) ? $decoded['exclude'] : [];
+    }
+
+    // What the corpus reaches, per group and in total.
+    $seen = [];
+    $byGroup = [];
+    $problems = [];
+
+    $cases = parse_selo((string) file_get_contents(ORACLE . '/expressions.selo'),
+        'expressions.selo');
+    foreach ($cases as $c) {
+        Map::traceOn();
+        try {
+            Sql::translate(Sel::compile($c['src']), $dialect);
+        } catch (Throwable $e) {
+            // A refusal still looked the entry up, which is what is being
+            // counted: the corpus reached it and the map said no.
+        }
+        foreach (Map::traceOff() as $e) {
+            $seen[$e] = true;
+            $byGroup[$c['group']]['reached'][$e] = true;
+            $byGroup[$c['group']]['entry'] = $c['entry'];
+        }
+    }
+
+    // The bound rules reach what a closed expression cannot: the relation
+    // skeletons exist only where there is a query to correlate to.
+    $spec = json_decode((string) file_get_contents(ORACLE . '/rows.json'), true);
+    foreach ($spec['rules'] as $rule) {
+        Map::traceOn();
+        try {
+            Sql::translate(Sel::compile($rule['sel']), $dialect, $spec['bindings']);
+        } catch (Throwable $e) {
+        }
+        foreach (Map::traceOff() as $e) {
+            $seen[$e] = true;
+        }
+    }
+
+    // A header is a claim. `mixed` is the one group that deliberately names no
+    // single entry, and it is spelled out rather than inferred so a typo in a
+    // real header cannot pass as one.
+    foreach ($byGroup as $at => $g) {
+        if (str_starts_with($g['entry'], 'mixed')) {
+            continue;
+        }
+        if (!isset($g['reached'][$g['entry']])) {
+            $problems[] = "{$at}: group `### entry: {$g['entry']}` never reaches it";
+        }
+    }
+
+    // What there is to cover: every entry that is not a refusal. A refusal has
+    // no semantics to check — it is the absence of them.
+    $missing = [];
+    $supported = 0;
+    foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (Map::entries($dialect, $section) as $key => $entry) {
+            if (!is_array($entry)) {
+                continue;                       // a refusal, or null
+            }
+            $supported++;
+            $name = "{$section}.{$key}";
+            if (isset($seen[$name]) || isset($exclusions[$name])) {
+                continue;
+            }
+            $missing[] = $name;
+        }
+    }
+
+    foreach ($problems as $p) {
+        echo "COVERAGE  {$p}\n";
+    }
+    if ($missing !== []) {
+        echo "COVERAGE  no oracle expression reaches: " . implode(' ', $missing) . "\n";
+        echo "          add one to sql/oracle/expressions.selo, or list it in "
+            . "sql/oracle/coverage.json with a reason\n";
+    }
+    if ($verbose) {
+        foreach ($exclusions as $name => $why) {
+            printf("  excluded %-24s %s\n", $name, $why);
+        }
+    }
+    printf("coverage: %d of %d supported %s entries reached, %d excluded by reason\n",
+        $supported - count($missing), $supported, $dialect, count($exclusions));
+
+    return ['failed' => count($missing) + count($problems)];
+}
+
 // --- main -------------------------------------------------------------------
 
 $mode = 'all';
@@ -368,19 +501,37 @@ foreach (array_slice($argv, 1) as $arg) {
         $dialect = substr($arg, 10);
     } elseif ($arg === '--verbose' || $arg === '-v') {
         $verbose = true;
-    } elseif (in_array($arg, ['expressions', 'rows', 'all'], true)) {
+    } elseif (in_array($arg, ['expressions', 'rows', 'coverage', 'all'], true)) {
         $mode = $arg;
     } else {
-        fwrite(STDERR, "usage: sqlo [expressions|rows|all] [--dialect=NAME] [--verbose]\n");
+        fwrite(STDERR, "usage: sqlo [expressions|rows|coverage|all] "
+            . "[--dialect=NAME] [--verbose]\n");
         exit(2);
     }
+}
+
+// Coverage is a question about the map and the corpus, not about a server, so
+// it runs whether or not there is a database — which matters: it is the check
+// that says an entry was never asked about, and that is exactly the state a
+// machine with no database would otherwise leave unexamined.
+$failed = 0;
+try {
+    if ($mode === 'coverage' || $mode === 'all') {
+        $failed += run_coverage($dialect, $verbose)['failed'];
+    }
+} catch (RuntimeException $e) {
+    fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");
+    exit(2);
+}
+if ($mode === 'coverage') {
+    exit($failed === 0 ? 0 : 1);
 }
 
 $env = 'SEL_SQL_' . strtoupper(str_replace('-', '_', $dialect));
 $dsn = getenv($env . '_DSN');
 if ($dsn === false || $dsn === '') {
-    echo "sqlo: {$env}_DSN is not set, oracle skipped\n";
-    exit(0);
+    echo "sqlo: {$env}_DSN is not set, the database oracles are skipped\n";
+    exit($failed === 0 ? 0 : 1);
 }
 
 try {
@@ -398,11 +549,15 @@ try {
     exit(1);
 }
 
-$failed = 0;
-if ($mode === 'expressions' || $mode === 'all') {
-    $failed += run_expressions($pdo, $dialect, $verbose)['failed'];
-}
-if ($mode === 'rows' || $mode === 'all') {
-    $failed += run_rows($pdo, $dialect, $verbose)['failed'];
+try {
+    if ($mode === 'expressions' || $mode === 'all') {
+        $failed += run_expressions($pdo, $dialect, $verbose)['failed'];
+    }
+    if ($mode === 'rows' || $mode === 'all') {
+        $failed += run_rows($pdo, $dialect, $verbose)['failed'];
+    }
+} catch (RuntimeException $e) {
+    fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");
+    exit(2);
 }
 exit($failed === 0 ? 0 : 1);

@@ -195,6 +195,9 @@ final class Map
     public static function entry(string $dialect, string $section, string $key)
     {
         self::checkSection($section);
+        if (self::$trace !== null) {
+            self::$trace["{$section}.{$key}"] = true;
+        }
         $chain = self::chain($dialect);
 
         // The whole overlay chain first, and only then the generated table.
@@ -213,6 +216,69 @@ final class Map
             }
         }
         return self::MISSING;
+    }
+
+    /**
+     * Every key one section of a dialect resolves, overlay and generated table
+     * together, with the entry each resolves to.
+     *
+     * The chain is walked leaf-first so a nearer definition wins, which is the
+     * same precedence entry() applies one key at a time. Used by the coverage
+     * gate to ask what there is to cover; nothing in a translation needs it.
+     *
+     * @return array<string,mixed>
+     */
+    public static function entries(string $dialect, string $section): array
+    {
+        self::checkSection($section);
+        $out = [];
+        foreach (self::chain($dialect) as $d) {
+            foreach ((self::$overlay[$d][$section] ?? []) as $k => $v) {
+                $out[$k] ??= $v;
+            }
+        }
+        foreach (self::chain($dialect) as $d) {
+            foreach ((MapData::DIALECTS[$d][$section] ?? []) as $k => $v) {
+                $out[$k] ??= $v;
+            }
+        }
+        ksort($out);
+        return $out;
+    }
+
+    /**
+     * Which entries a translation looked at, or null when nobody is watching.
+     *
+     * Coverage is measured, not declared. The oracle corpus groups its
+     * expressions under `### entry:` headers, and a header is a claim that the
+     * group reaches that entry — a claim exactly as trustworthy as the ones this
+     * whole layer keeps getting wrong. This is the one place every op, func and
+     * skeleton lookup passes through, so a trace here is the fact the headers
+     * are checked against.
+     *
+     * Off by default and cheap when off. Nothing in a translation depends on it.
+     *
+     * @var array<string,bool>|null
+     */
+    private static ?array $trace = null;
+
+    /** Start recording entry lookups, discarding any previous recording. */
+    public static function traceOn(): void
+    {
+        self::$trace = [];
+    }
+
+    /**
+     * Stop recording and return the entries seen, as `section.key` strings.
+     *
+     * @return list<string>
+     */
+    public static function traceOff(): array
+    {
+        $seen = array_keys(self::$trace ?? []);
+        self::$trace = null;
+        sort($seen);
+        return $seen;
     }
 
     private static function checkSection(string $section): void

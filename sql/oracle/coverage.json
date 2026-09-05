@@ -1,0 +1,20 @@
+{
+  "note": [
+    "Entries with no oracle expression, and why. Read sql/oracle/README.md first.",
+    "",
+    "There is no percentage and no threshold here on purpose. A threshold is the",
+    "'broad set with hidden assumptions' this layer exists not to be: 94% coverage",
+    "is a number that sounds like progress and names nothing. Every supported entry",
+    "either has an expression that reaches it -- proved by a trace of Map::entry(),",
+    "not by a header claiming so -- or is listed below with a reason a person wrote.",
+    "",
+    "The list is empty, and that is the state to keep it in. When M5 adds",
+    "postgresql and sqlite, each new entry will arrive needing either an expression",
+    "or a line here, which is the obligation the gate exists to make visible.",
+    "",
+    "Refusals need nothing: a refusal has no semantics to check, it is the absence",
+    "of them. The gate only counts entries that are objects."
+  ],
+
+  "exclude": {}
+}

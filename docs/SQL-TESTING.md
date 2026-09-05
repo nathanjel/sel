@@ -143,19 +143,34 @@ CHAR(65)
 runs `SELECT <sql>` against a live server, and compares. Skips with a message
 when no DSN is set, the way `impl_available` already skips a missing host.
 
-**The part that matters is the coverage gate.** The generator already knows every
-entry in every dialect. The oracle runner knows which entries each expression
-touched. So it can report:
+**The part that matters is the coverage gate**, and it is built. Two things about
+how it came out differ from the sketch above, both for the better.
 
-```
-mariadb: 61 of 68 supported entries have an oracle expression
-  no oracle: funcs.BACKWARDS funcs.CODE ops.BXOR ...
-```
+*No threshold.* The sketch said "fail below a threshold". A threshold is exactly
+the "broad set with hidden assumptions" this project rules out: 94% coverage is a
+number that sounds like progress and names nothing. The rule is per entry —
+either an expression reaches it, or `sql/oracle/coverage.json` carries a written
+reason. The exclusion list is empty and that is the state to keep it in.
 
-and fail below a threshold. That turns "did we check this entry means what it
-says?" from a judgement call into a number, per entry, per dialect — and it makes
-adding a dialect in M5 come with an explicit, visible obligation rather than a
-hope.
+*Measured, not declared.* Coverage comes from a trace of `Map::entry()`, the one
+lookup every op, func and skeleton passes through, and the `### entry:` headers
+are checked **against** the trace rather than trusted as it. This matters more
+than it sounds: four headers in the first corpus were wrong. `ALL((1,2,3), _ > 0)`
+was filed under `skel.all` and reaches no skeleton at all — a static list unrolls
+into the operators' own templates, which is the property that makes
+`ALL((a,b), p)` and `p(a) AND p(b)` the same bytes. A declared coverage table
+would have recorded four entries as covered that nothing exercised.
+
+Testing the gate found two holes in the gate, which is item 7 arriving early:
+
+- A **mislabelled** group passed, because groups were keyed by header name and a
+  mislabelled one hid behind an honest group with the same label. A group is an
+  occurrence now, not a name.
+- A **typo'd** header — `func.UPPER` for `funcs.UPPER` — was silently ignored,
+  because the checker did not recognise it as a claim. That is the quietest way
+  for a coverage gate to lie: it reports success about a question it never asked.
+  A header is now either `<section>.<KEY>` or an explicit `mixed:<label>`, and
+  anything else is a suite error.
 
 **Would have caught:** all eight.
 

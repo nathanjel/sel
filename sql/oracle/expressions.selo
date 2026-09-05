@@ -363,26 +363,31 @@ IF(1 > 2, 10, 20)
 % --- aggregates over static lists -------------------------------------------
 %
 % A static list unrolls at translation time, so these reach the operators' own
-% templates rather than any aggregate skeleton — which is the property that makes
-% `ALL((a, b), p)` and `p(a) AND p(b)` the same bytes.
+% templates and NO aggregate skeleton — which is the property that makes
+% `ALL((a, b), p)` and `p(a) AND p(b)` the same bytes. The headers say `mixed`
+% for that reason: there is no entry for the coverage gate to attribute them to,
+% and claiming `skel.all` would be a claim the trace refuses to confirm.
+%
+% The skeletons themselves are reached by sql/oracle/rows.json, because a
+% correlated subquery needs a query to correlate to.
 
-### entry: skel.all
+### entry: mixed:static-all
 ALL((1, 2, 3), _ > 0)
 ALL((1, 2, 3), _ > 2)
 ALL((5), _ > 0)
 ALL(FILTER((1, 2, 3), _ > 1), _ > 2)
 
-### entry: skel.any
+### entry: mixed:static-any
 ANY((1, 2), _ > 1)
 ANY((1, 2), _ > 5)
 ANY(FILTER((1, 2, 3), _ > 1), _ > 2)
 
-### entry: skel.sum
+### entry: mixed:static-sum
 SUM((1, 2, 3), _ * 2)
 SUM((2.50, 2.50), _)
 SUM(FILTER((1, 2, 3), _ > 1), _)
 
-### entry: skel.count
+### entry: mixed:static-count
 COUNT((1, 2, 3))
 COUNT(FILTER((1, 2, 3), _ <= 1))
 COUNT("hello")
@@ -393,7 +398,7 @@ COUNT("hello")
 % appear where two of them meet — an operand transformed for one operator and
 % then handed to another.
 
-### entry: mixed
+### entry: mixed:compositions
 UPPER("abc") $== "ABC"
 LEN(UPPER("zażółć")) == 6
 TRIM(" " & "x" & " ")
