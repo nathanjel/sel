@@ -27,6 +27,7 @@ CREATE TABLE order_items (
   sku       TEXT NOT NULL,
   qty       NUMERIC NOT NULL,
   price     NUMERIC NOT NULL,
+  note      TEXT NULL,
   PRIMARY KEY (order_id, sku)
 );
 
@@ -37,11 +38,18 @@ INSERT INTO o (id, credit_limit) VALUES
   (4,  50.00),
   (5,  50.00);
 
-INSERT INTO order_items (order_id, sku, qty, price) VALUES
-  (1, 'AB-1000', 2.00, 10.00),
-  (1, 'CD-2000', 3.00,  5.00),
-  (2, 'EF-3000', 5.00, 30.00),
-  (4, 'GH-4000', 0.00,  1.00),
-  (4, 'IJ-5000', 4.00,  2.00),
-  (5, 'bad-sku', 1.00,  3.00),
-  (5, 'KL-6000', 6.00,  4.00);
+
+-- `note` is NULLABLE, and it is the only NULL anywhere in this fixture or in
+-- expressions.selo. That absence was itself a finding: SEL has no null, so
+-- every divergence SQL's three-valued logic can cause was unmeasured for five
+-- milestones. The `inRelation` skeleton was missing the IS TRUE fold that
+-- `all` and `any` carry, and nothing could show it.
+
+INSERT INTO order_items (order_id, sku, qty, price, note) VALUES
+  (1, 'AB-1000', 2.00, 10.00, 'flag'),
+  (1, 'CD-2000', 3.00,  5.00, NULL),
+  (2, 'EF-3000', 5.00, 30.00, NULL),
+  (4, 'GH-4000', 0.00,  1.00, 'GH-4000'),
+  (4, 'IJ-5000', 4.00,  2.00, NULL),
+  (5, 'bad-sku', 1.00,  3.00, 'flag'),
+  (5, 'KL-6000', 6.00,  4.00, NULL);

@@ -270,7 +270,7 @@
       "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})"
     },
     "inRelation": {
-      "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))"
+      "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"
     },
     "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
   },
@@ -281,6 +281,7 @@
     "concat-null": "|| yields NULL if either operand is NULL. SEL's & cannot, because SEL has no NULL. The caveat is on the operator rather than on every rule that uses it.",
     "textCast": "SEL's $ family, EQL and IN are all specified as byte comparisons, and all of them can receive numbers. A collation alone does not make a server compare two numeric operands as text: verified on MariaDB 11.8, 3.0 COLLATE utf8mb4_bin = 3 COLLATE utf8mb4_bin is 1, where SEL says FALSE because EQL does not normalise numbers. Casting to a character type first is what makes the comparison the one SEL specifies. A deployment whose columns already carry a binary collation can register a dialect with textCast set to \"{0}\" to get the cast back out of the way — the templates do not change, only what the operands were turned into.",
     "text-comparison-operands": "The $ family, EQL and IN templates are plain comparisons because the translator applies textCast and textCollate to their operands before filling them. The rule is applied in three places — two-operand comparisons, IN over a list, and the inRelation skeleton — and only one of those is a two-operand template, so putting it in the template would have meant writing it twice more in code anyway.",
-    "IN": "IN over a literal list is lowered to a chain of EQL comparisons rather than to SQL's IN. Casting each element inside a variadic template is not expressible, and casting only the needle is wrong: CAST(3.0 AS CHAR) COLLATE utf8mb4_bin IN (3) is 1 on MariaDB 11.8 because the numeric right-hand side pulls the comparison back to numbers. The cast has already cost the index that SQL's IN would have used, so the chain gives up nothing that the correctness fix had not already spent."
+    "IN": "IN over a literal list is lowered to a chain of EQL comparisons rather than to SQL's IN. Casting each element inside a variadic template is not expressible, and casting only the needle is wrong: CAST(3.0 AS CHAR) COLLATE utf8mb4_bin IN (3) is 1 on MariaDB 11.8 because the numeric right-hand side pulls the comparison back to numbers. The cast has already cost the index that SQL's IN would have used, so the chain gives up nothing that the correctness fix had not already spent.",
+    "inRelation-folds-null": "The IS TRUE is the same fold `all` and `any` carry, and this skeleton was the one relation skeleton without it even though §7.3's own table lists it beside them. A NULL among the subquery's rows makes `x IN (…)` answer NULL when nothing matches, and NOT NULL is NULL, so the WHERE dropped the row: NOT(\"flag\" IN NOTES) selected one order where SEL selects three. Worse inside an aggregate body -- the `all` skeleton's own fold cannot rescue a NULL that originates INSIDE it, so it read as \"this row failed\" and ALL answered FALSE where SEL says TRUE. SEL's IN is the one operator that tolerates a NONE rather than raising E_NO_SCALAR, which is why there is a SEL answer to disagree with at all."
   }
 }

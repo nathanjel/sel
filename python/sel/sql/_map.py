@@ -285,7 +285,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})",
             },
             "inRelation": {
-                "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))",
+                "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
             "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
         },
@@ -635,6 +635,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
         "skel": {
             "case": {
                 "tpl": "CASE {branches} ELSE {else} END",
+                "caveat": "numeric-scale",
             },
             "caseBranch": {
                 "tpl": "WHEN {cond} THEN {then}",
@@ -652,7 +653,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})",
             },
             "inRelation": {
-                "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))",
+                "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
             "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
         },
@@ -1019,7 +1020,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})",
             },
             "inRelation": {
-                "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))",
+                "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
             "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
         },
@@ -1386,7 +1387,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})",
             },
             "inRelation": {
-                "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))",
+                "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
             "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
         },
@@ -1743,7 +1744,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})",
             },
             "inRelation": {
-                "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))",
+                "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
             "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
         },
@@ -2080,7 +2081,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})",
             },
             "inRelation": {
-                "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))",
+                "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
             "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
         },

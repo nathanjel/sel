@@ -1748,6 +1748,19 @@ final class Translator
             refuse('E_SQL_UNSUPPORTED',
                 "dialect {$this->dialect} cannot express {$name} — {$s}", $pos);
         }
+        // A skeleton may carry a caveat, and until MariaDB's CASE needed one
+        // nothing here read it — so `skel` was the one section whose entries
+        // could declare an inexactness that never reached Fragment::caveats and
+        // that `strict` never refused.
+        if (isset($s['caveat'])) {
+            if ($this->strict) {
+                refuse('E_SQL_UNSUPPORTED',
+                    "the {$name} skeleton for {$this->dialect} is not exactly "
+                    . "equivalent ({$s['caveat']}), and strict mode refuses those",
+                    $pos);
+            }
+            $this->caveats[$s['caveat']] = true;
+        }
         return (string) $s['tpl'];
     }
 

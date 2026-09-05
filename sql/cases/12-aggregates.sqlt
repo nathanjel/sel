@@ -215,7 +215,7 @@ mariadb
 --- source
 SKU IN ITEMS
 --- expect
-(CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`))
+((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)
 ===
 ### name: agg.relation.nested
 --- dialect
@@ -576,4 +576,21 @@ sqlite
 HAS(SPLIT("a,b", ","), 1)
 --- error
 E_SQL_SHAPE
+===
+### name: agg.relation.in-folds-null-to-false
+--- note
+The IS TRUE is the fold `all` and `any` carry, and inRelation was the one
+relation skeleton without it even though §7.3's table lists it beside them. A
+NULL among the subquery's rows makes `x IN (...)` answer NULL when nothing
+matches, NOT NULL is NULL, and the WHERE drops the row. SEL's IN is the one
+operator that tolerates a NONE rather than raising E_NO_SCALAR, which is why
+there is a SEL answer to disagree with at all.
+--- dialect
+mariadb
+--- bindings
+{"NOTES": {"kind": "relation", "from": "order_items", "alias": "nt", "scalar": "NOTE", "fields": {"NOTE": {"table": "nt", "column": "note", "type": "TEXT"}}}}
+--- source
+NOT("flag" IN NOTES)
+--- expect
+(NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))
 ===

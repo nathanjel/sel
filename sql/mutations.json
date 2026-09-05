@@ -469,6 +469,20 @@
       "file": "php/src/Sql/Translator.php",
       "from": "            if ($l->kind !== 'BIN' || $r->kind !== 'BIN') {",
       "to": "            if (true) {"
+    },
+    {
+      "name": "in-relation-does-not-fold-null",
+      "was": "skel.inRelation without the IS TRUE fold that `all` and `any` carry, which is how it shipped. A NULL among the subquery's rows makes x IN (...) answer NULL when nothing matches, NOT NULL is NULL, and the WHERE drops the row: NOT(\"flag\" IN NOTES) selected one order where SEL selects three.",
+      "file": "sql/dialects/ansi.json",
+      "from": "\"tpl\": \"(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)\"",
+      "to": "\"tpl\": \"({needle} IN (SELECT {body} FROM {from} WHERE {corr}))\""
+    },
+    {
+      "name": "skeleton-caveat-is-ignored",
+      "was": "skeleton() reading the template and never the caveat, which is how it shipped -- `skel` was the one section whose entries could declare an inexactness that never reached Fragment::caveats and that strict never refused. MariaDB's CASE pads the scale of a NUM branch and needs one.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (isset($s['caveat'])) {",
+      "to": "        if (false) {"
     }
   ]
 }

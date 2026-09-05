@@ -582,6 +582,12 @@ ISNUM("12")
 ISNUM("1.5")
 ISNUM("abc")
 
+### entry: mixed:edge-case-branch-scale
+LEN(IF(FALSE, 2.50, 3))
+LEN(IF(TRUE, 3, 2.50))
+IF(FALSE, 2.50, 3) $== "3"
+IF(FALSE, 2.50, 3)
+
 ### entry: mixed:edge-integer-valued-decimal
 LEFT("abc", 2.0)
 RIGHT("abc", 2.0)

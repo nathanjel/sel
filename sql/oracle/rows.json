@@ -81,6 +81,27 @@
           "type": "TEXT"
         }
       }
+    },
+    "NOTES": {
+      "kind": "relation",
+      "from": "order_items",
+      "alias": "nt",
+      "correlate": {
+        "raw": {
+          "mariadb": "`nt`.`order_id` = `o`.`id`",
+          "mysql": "`nt`.`order_id` = `o`.`id`",
+          "sqlite": "`nt`.`order_id` = `o`.`id`",
+          "postgresql": "\"nt\".\"order_id\" = \"o\".\"id\""
+        }
+      },
+      "scalar": "NOTE",
+      "fields": {
+        "NOTE": {
+          "table": "nt",
+          "column": "note",
+          "type": "TEXT"
+        }
+      }
     }
   },
   "context": {
@@ -103,6 +124,11 @@
         "query": "SELECT order_id, sku FROM order_items ORDER BY order_id, sku",
         "parent": "order_id",
         "scalar": "sku"
+      },
+      "NOTES": {
+        "query": "SELECT order_id, note FROM order_items ORDER BY order_id, sku",
+        "parent": "order_id",
+        "scalar": "note"
       }
     }
   },
@@ -186,6 +212,18 @@
       "sel": "ANY(ITEMS, _[\"SKU\"] $== \"ab-1000\")",
       "expect": [],
       "degenerate": "Empty is the point. The fixture's columns are utf8mb4_general_ci, so a server comparing them under the column collation answers [1] and SEL answers []. This rule is the collation carried into a correlated subquery, which nothing else here checks."
+    },
+    {
+      "name": "a NULL among the rows must not swallow a NOT",
+      "sel": "NOT(\"flag\" IN NOTES)"
+    },
+    {
+      "name": "a NULL inside an ALL body is not a failed row",
+      "sel": "ALL(ITEMS, I, NOT(I[\"SKU\"] IN NOTES))"
+    },
+    {
+      "name": "a NULL matched positively still answers",
+      "sel": "ANY(ITEMS, I, I[\"SKU\"] IN NOTES)"
     }
   ]
 }
