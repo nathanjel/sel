@@ -717,7 +717,7 @@ function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose, stri
     }
 
     $n = ['agree' => 0, 'refused' => 0, 'sel-error' => 0, 'caveat' => 0,
-          'out-of-range' => 0];
+          'out-of-range' => 0, 'sel-rejected-and-refused' => 0];
     // What the refusals are, not just how many. A lane can abstain honestly and
     // it can abstain because something translatable is being turned away; the
     // difference is only visible as a histogram.
@@ -729,6 +729,24 @@ function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose, stri
             $sel = Sel::evaluate($src);
         } catch (SelError $e) {
             $n['sel-error']++;
+            // A program SEL will not evaluate must not become SQL. This lane
+            // generated 776 of them per run and asked nothing about any of them,
+            // which is exactly the question expressions.selo's `!E_CODE` lines
+            // exist to ask -- and the generator reaches shapes a hand-written
+            // corpus does not. Currently 0 slip through; the check is here so
+            // that stays a measurement.
+            try {
+                $sql = Sql::translate(Sel::compile($src), $dialect)->asValue();
+                $bad[] = [$src, $sql, "SEL rejects this with {$e->code} and the "
+                    . 'translation succeeded'];
+            } catch (SqlError $ignored) {
+                $n['sel-rejected-and-refused']++;
+            } catch (SelError $ignored) {
+                // It does not even parse, so there is nothing to translate and
+                // nothing to claim. Only a program that COMPILES and then fails
+                // to evaluate is a candidate for translating wrongly.
+                $n['sel-rejected-and-refused']++;
+            }
             continue;
         }
         try {
@@ -793,9 +811,11 @@ function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose, stri
 
     $compared = $n['agree'] + count($bad) + $n['caveat'];
     printf("{$label}fuzz: %d programs — %d agree, %d differ, %d inexact-by-declaration; "
-        . "%d refused, %d do not evaluate, %d out of range\n",
+        . "%d refused, %d do not evaluate (%d of them also refused by the translator), "
+        . "%d out of range\n",
         count($programs), $n['agree'], count($bad), $n['caveat'],
-        $n['refused'], $n['sel-error'], $n['out-of-range']);
+        $n['refused'], $n['sel-error'], $n['sel-rejected-and-refused'],
+        $n['out-of-range']);
 
     if ($verbose && $refusals !== []) {
         arsort($refusals);
