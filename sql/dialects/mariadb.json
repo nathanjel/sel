@@ -5,26 +5,11 @@
   "target": true,
   "lexical": {},
   "ops": {},
-  "funcs": {
-    "RMATCH": {
-      "tpl": "({1}{textCollate} REGEXP {0})",
-      "arity": [
-        2,
-        2
-      ],
-      "ret": "BOOL",
-      "caveat": "regex-engine"
-    }
-  },
+  "funcs": {},
   "skel": {},
   "notes": {
     "purpose": "The reference dialect. It is what examples/sql-php.php proves end to end and what the functional suite runs first, so it is authored before its sibling rather than derived from it.",
     "version": "10.5 is the minimum this document assumes, and it is what every `since` is compared against — not the server actually on the other end of the connection, which a static translator never sees. A deployment on something newer that wants entries gated above 10.5 registers a derived dialect: Map::defineDialect('mariadb-11.8', ['extends' => 'mariadb', 'version' => '11.8']). Being conservative by default is the right way round: refusing a rule that would have worked costs a fallback to the evaluator, while accepting one that will not costs a query that fails at run time.",
-    "regex-collation": "MariaDB's REGEXP is case-insensitive by default, because it follows the operand's collation and utf8mb4_general_ci is what most columns carry. SEL's regex is case-sensitive unless the i flag is given. Verified on 11.8: SELECT 'ABC' REGEXP 'abc' is 1, and SELECT 'ABC' COLLATE utf8mb4_bin REGEXP 'abc' is 0. Forcing the binary collation is what makes the two agree, and it leaves code-point matching intact — 'zazolc-with-diacritics' COLLATE utf8mb4_bin REGEXP '^.{6}$' is still 1.",
-    "regex-dotall": "SEL specifies dotall permanently on: . means any code point, newline included. MariaDB's . does not match a newline by default. The (?s) prefix turns it on. SEL rejects inline modifiers in a user's pattern, which is a rule about what a rule author may write and not about what the translator may emit.",
-    "regex-caveat": "What the caveat still covers, after the collation and dotall fixes: MariaDB's $ also matches immediately before a trailing newline, where SEL's anchors to the end of the subject and nothing else. Verified on 11.8: SELECT 'abc\\n' REGEXP '^abc$' is 1 where SEL says FALSE. \\z fixes it, but only by rewriting the pattern, which is possible only when the pattern is a literal — so it is a caveat rather than a template.",
-    "RREPLACE": "Refused in mysql-family, and MariaDB inherits the refusal even though it has had REGEXP_REPLACE since 10.0.5. The obstacle is the replacement string, not the function: SEL spells a capture $1 and MariaDB spells it \\1, and $$ means a literal $ where MariaDB has no such rule. Rewriting is possible when the replacement is a literal, which is a translator feature and not something the map can express.",
-    "regex-flags": "The pattern reaches here already rewritten by the translator: expanded through Sel\\Builtins\\Regex::portableSource, and prefixed with the inline modifier (?s), or (?si) when SEL's i flag was given. So the flag is not an argument this template sees — which is the point. It was arity-keyed and selected by argument count for a while, and that gave every three-argument call the case-insensitive form, including RMATCH(p, s, \"\") where SEL is case-sensitive. Folding the modifier into the pattern puts the decision where the flag is already being validated.",
-    "regex-literal-only": "Both the pattern and the flags must be literals. The pattern is rewritten through Sel\\Builtins\\Regex::portableSource before it is emitted — \\d becomes [0-9] and so on, per spec 7.8 — and a pattern taken from a column cannot be rewritten. The flag must be a literal because it selects the template."
+    "no-overrides": "This leaf overrides nothing any more. RMATCH was its one entry and moved to mysql-family once MySQL 8.4 confirmed the same template, which is what the family layer is for. A leaf that declares only a version is not an empty file: `version` is what every `since` is compared against, and `target: true` is what makes the name usable in translate()."
   }
 }

@@ -24,6 +24,21 @@ use Sel\Sql\SqlError;
 require_once __DIR__ . '/sqlt-format.php';
 
 /**
+ * Dialects that must emit byte-identical SQL for the same case.
+ *
+ * `mysql-family` is defined as the spellings MariaDB and MySQL agree on, and
+ * both leaves override nothing. That is a *claim*, and this is what turns it
+ * into a check: every case written for one is re-run under the other and must
+ * produce the same string, the same error, the same parameters.
+ *
+ * The alternative was a `14-mysql.sqlt` full of copies, which would have been
+ * two hundred lines asserting that a copy is a copy. This asserts the property
+ * the family layer exists for, over every case that already exists, and it fails
+ * the moment someone adds an override to one leaf without the other.
+ */
+const MIRRORS = ['mariadb' => 'mysql'];
+
+/**
  * Apply a case's runtime registrations before translating.
  *
  * A JSON list of operations, each either a dialect or an entry:
@@ -187,6 +202,7 @@ $files = glob(SUITE . '/*.sqlt');
 sort($files);
 
 $passed = 0;
+$mirrored = 0;
 $failures = [];
 $suiteErrors = 0;
 
@@ -220,10 +236,33 @@ foreach ($files as $file) {
             $suiteErrors++;
             continue;
         }
-        if ($problem === null) {
-            $passed++;
-        } else {
+        if ($problem !== null) {
             $failures[] = ['case' => $c, 'problem' => $problem];
+            continue;
+        }
+        $passed++;
+
+        // The same case under the mirrored dialect. A registration case is
+        // exempt: it names its dialect in the --- register JSON, so re-running
+        // it under another name would be testing something it does not claim.
+        $mirror = MIRRORS[$c['dialect']] ?? null;
+        if ($mirror === null || $c['register'] !== null) {
+            continue;
+        }
+        Map::reset();
+        try {
+            $problem = run_case(['dialect' => $mirror] + $c);
+        } catch (RuntimeException $e) {
+            echo "SUITE ERROR (mirrored to {$mirror}) {$e->getMessage()}\n";
+            $suiteErrors++;
+            continue;
+        }
+        if ($problem === null) {
+            $mirrored++;
+        } else {
+            $failures[] = ['case' => $c,
+                'problem' => "mirrored to {$mirror}, which must agree with "
+                    . "{$c['dialect']}: {$problem}"];
         }
     }
 }
@@ -233,6 +272,6 @@ foreach ($failures as $f) {
     echo "     {$f['problem']}\n";
 }
 
-echo "\n{$passed} passed, " . count($failures) . ' failed, '
-    . "{$suiteErrors} suite errors\n";
+echo "\n{$passed} passed ({$mirrored} also checked against a mirrored dialect), "
+    . count($failures) . ' failed, ' . "{$suiteErrors} suite errors\n";
 exit($failures === [] && $suiteErrors === 0 ? 0 : 1);

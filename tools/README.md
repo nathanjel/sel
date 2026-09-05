@@ -57,6 +57,17 @@ SEL_SQL_MARIADB_DSN='mysql:unix_socket=/var/lib/mysql/mysql.sock;dbname=sel_orac
 SEL_SQL_MARIADB_USER=you
 SEL_SQL_MARIADB_PASS=
 SEL_SQL_SQLITE_DSN='sqlite::memory:'
+SEL_SQL_MYSQL_DSN='mysql:host=127.0.0.1;port=13306;dbname=sel_oracle;charset=utf8mb4'
+SEL_SQL_MYSQL_USER=root
+```
+
+There is no MySQL on most machines, and MariaDB's `mysql`/`mysqld` binaries are
+compatibility symlinks rather than the thing itself. A container is the usual
+way to get a real one:
+
+```
+docker run -d --name sel-mysql -e MYSQL_ALLOW_EMPTY_PASSWORD=1 \
+  -e MYSQL_DATABASE=sel_oracle -p 13306:3306 mysql:8.4
 ```
 
 One per target dialect, and the oracle runs every target it has a DSN for. With

@@ -15,7 +15,8 @@
     "does agrees for no reason."
   ],
   "fixture": {
-    "mariadb": "fixture-mariadb.sql",
+    "mariadb": "fixture-mysql-family.sql",
+    "mysql": "fixture-mysql-family.sql",
     "sqlite": "fixture-sqlite.sql"
   },
   "select": "SELECT id FROM o WHERE {} ORDER BY id",

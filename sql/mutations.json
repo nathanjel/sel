@@ -47,8 +47,8 @@
       "name": "min-of-one-argument",
       "was": "Found by the oracle. LEAST and GREATEST are variadic but need two arguments; SEL's MIN takes one.",
       "file": "sql/dialects/mysql-family.json",
-      "from": "\"tpl\": { \"1\": \"{0}\", \"*\": \"LEAST({*})\" }",
-      "to": "\"tpl\": \"LEAST({*})\""
+      "from": "\"tpl\": {\n        \"1\": \"{0}\",\n        \"*\": \"LEAST({*})\"\n      },",
+      "to": "\"tpl\": \"LEAST({*})\","
     },
     {
       "name": "bindings-unwalked",
@@ -189,6 +189,20 @@
       "file": "php/src/Sql/Fragment.php",
       "from": "        return $kind === 'NUM' || $kind === 'BOOL';",
       "to": "        return $kind === 'NUM';"
+    },
+    {
+      "name": "family-leaves-diverge",
+      "was": "mysql-family is defined as the spellings MariaDB and MySQL agree on, and both leaves override nothing. An override added to one and not the other breaks that silently -- the two dialects would emit different SQL for the same rule and each would pass its own cases.",
+      "file": "sql/dialects/mysql.json",
+      "from": "  \"target\": true,",
+      "to": "  \"target\": true,\n  \"funcs\": { \"UPPER\": { \"tpl\": \"UCASE({0})\", \"ret\": \"TEXT\", \"caveat\": \"unicode-case\" } },"
+    },
+    {
+      "name": "regex-promoted-without-checking",
+      "was": "RMATCH moved from the mariadb leaf to mysql-family once MySQL 8.4 was asked and agreed. Downgrading it to a refusal is the interesting direction: a refusal is a legitimate outcome, so the oracle abstains and the coverage gate stops counting the entry at all. Only a case asserting the emitted string notices.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "    \"RMATCH\": {\n      \"tpl\": \"({1}{textCollate} REGEXP {0})\",\n      \"arity\": [\n        2,\n        2\n      ],\n      \"ret\": \"BOOL\",\n      \"caveat\": \"regex-engine\"\n    },",
+      "to": "    \"RMATCH\": \"downgraded to a refusal by the mutation runner\","
     }
   ]
 }

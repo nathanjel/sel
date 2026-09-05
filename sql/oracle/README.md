@@ -36,6 +36,15 @@ there is always one server to ask:
 SEL_SQL_SQLITE_DSN='sqlite::memory:' tools/check-sql-oracle.sh
 ```
 
+MySQL needs a real server, and MariaDB's `mysql`/`mysqld` binaries are
+compatibility symlinks rather than the thing itself — `SELECT VERSION()` on the
+local one says `11.8.8-MariaDB`. A container is the usual way to get one:
+
+```
+docker run -d --name sel-mysql -e MYSQL_ALLOW_EMPTY_PASSWORD=1 \
+  -e MYSQL_DATABASE=sel_oracle -p 13306:3306 mysql:8.4
+```
+
 A named schema must exist and must be disposable: the row oracle drops and
 recreates its tables every run.
 

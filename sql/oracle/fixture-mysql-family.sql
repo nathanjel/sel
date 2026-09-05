@@ -1,3 +1,6 @@
+-- The row-parity fixture for the MySQL family -- MariaDB and MySQL both, whose
+-- DDL and type systems agree here. The SQLite spelling is beside it.
+--
 -- The row-parity fixture: a table the translated WHERE clause selects from, and
 -- the same data the evaluator is handed as a SEL context.
 --

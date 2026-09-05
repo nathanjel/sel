@@ -661,6 +661,372 @@ final class MapData
                 'join' => 'GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL\'s JOIN concatenates in insertion order',
             ],
         ],
+        'mysql' => [
+            'dialect' => 'mysql',
+            'extends' => 'mysql-family',
+            'version' => '8.4',
+            'target' => true,
+            'lexical' => [
+                'identQuote' => '`',
+                'identEscape' => '``',
+                'textQuote' => '\'',
+                'textEscape' => [
+                    '\'' => '\'\'',
+                    '\\' => '\\\\',
+                ],
+                'true' => 'TRUE',
+                'false' => 'FALSE',
+                'binaryLiteral' => 'X\'{hex}\'',
+                'numericLiteral' => '{0}',
+                'textCollate' => ' COLLATE utf8mb4_bin',
+                'numericCast' => 'CAST({0} AS DECIMAL(65,10))',
+                'binaryCast' => 'CAST({0} AS BINARY)',
+                'isTrue' => '({0}) IS TRUE',
+                'isNotTrue' => '({0}) IS NOT TRUE',
+                'placeholder' => '?',
+                'textCast' => 'CAST({0} AS CHAR)',
+            ],
+            'ops' => [
+                '+' => [
+                    'tpl' => '({0} + {1})',
+                    'ret' => 'NUM',
+                ],
+                '-' => [
+                    'tpl' => '({0} - {1})',
+                    'ret' => 'NUM',
+                ],
+                '*' => [
+                    'tpl' => '({0} * {1})',
+                    'ret' => 'NUM',
+                ],
+                '/' => [
+                    'tpl' => '({0} / {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'division-scale',
+                ],
+                '%' => [
+                    'tpl' => 'MOD({0}, {1})',
+                    'ret' => 'NUM',
+                ],
+                'NEG' => [
+                    'tpl' => '(-{0})',
+                    'ret' => 'NUM',
+                ],
+                '&' => [
+                    'variants' => [
+                        'text' => 'CONCAT({0}, {1})',
+                        'bin' => 'CONCAT({0}, {1})',
+                    ],
+                    'ret' => '@concat',
+                    'caveat' => 'concat-null',
+                ],
+                'AND' => [
+                    'tpl' => '({0} AND {1})',
+                    'ret' => 'BOOL',
+                ],
+                'OR' => [
+                    'tpl' => '({0} OR {1})',
+                    'ret' => 'BOOL',
+                ],
+                'NOT' => [
+                    'tpl' => '(NOT {0})',
+                    'ret' => 'BOOL',
+                ],
+                'XOR' => [
+                    'tpl' => '({0} XOR {1})',
+                    'ret' => 'BOOL',
+                ],
+                '==' => [
+                    'variants' => [
+                        'num' => '({0} = {1})',
+                        'coerce' => '({numericCast:0} = {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '!=' => [
+                    'variants' => [
+                        'num' => '({0} <> {1})',
+                        'coerce' => '({numericCast:0} <> {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '<' => [
+                    'variants' => [
+                        'num' => '({0} < {1})',
+                        'coerce' => '({numericCast:0} < {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '<=' => [
+                    'variants' => [
+                        'num' => '({0} <= {1})',
+                        'coerce' => '({numericCast:0} <= {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '>' => [
+                    'variants' => [
+                        'num' => '({0} > {1})',
+                        'coerce' => '({numericCast:0} > {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '>=' => [
+                    'variants' => [
+                        'num' => '({0} >= {1})',
+                        'coerce' => '({numericCast:0} >= {numericCast:1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$==' => [
+                    'variants' => [
+                        'text' => '({0} = {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$!=' => [
+                    'variants' => [
+                        'text' => '({0} <> {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$<' => [
+                    'variants' => [
+                        'text' => '({0} < {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$<=' => [
+                    'variants' => [
+                        'text' => '({0} <= {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$>' => [
+                    'variants' => [
+                        'text' => '({0} > {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                '$>=' => [
+                    'variants' => [
+                        'text' => '({0} >= {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                'EQL' => [
+                    'variants' => [
+                        'text' => '({0} = {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                'IN' => [
+                    'variants' => [
+                        'scalar' => '({0} = {1})',
+                    ],
+                    'ret' => 'BOOL',
+                ],
+                'BAND' => 'SQL\'s & is an integer operator; SEL\'s BAND is a byte-string operator over BIN of equal length, and no portable spelling of that exists',
+                'BOR' => 'SQL\'s | is an integer operator; SEL\'s BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists',
+                'BXOR' => 'SQL\'s ^ is an integer operator; SEL\'s BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists',
+            ],
+            'funcs' => [
+                'LEN' => [
+                    'tpl' => 'CHAR_LENGTH({0})',
+                    'ret' => 'NUM',
+                ],
+                'SUBSTR' => [
+                    'tpl' => [
+                        '2' => 'SUBSTRING({0}, {1})',
+                        '3' => 'SUBSTRING({0}, {1}, {2})',
+                    ],
+                    'ret' => 'TEXT',
+                ],
+                'UPPER' => [
+                    'tpl' => 'UPPER({0})',
+                    'ret' => 'TEXT',
+                    'caveat' => 'unicode-case',
+                ],
+                'LOWER' => [
+                    'tpl' => 'LOWER({0})',
+                    'ret' => 'TEXT',
+                    'caveat' => 'unicode-case',
+                ],
+                'TRIM' => [
+                    'tpl' => 'REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\')',
+                    'ret' => 'TEXT',
+                ],
+                'LTRIM' => [
+                    'tpl' => 'REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+\', \'\')',
+                    'ret' => 'TEXT',
+                ],
+                'RTRIM' => [
+                    'tpl' => 'REGEXP_REPLACE({0}, \'[ \\\\t\\\\r\\\\n]+$\', \'\')',
+                    'ret' => 'TEXT',
+                ],
+                'ABS' => [
+                    'tpl' => 'ABS({0})',
+                    'ret' => 'NUM',
+                ],
+                'CEIL' => [
+                    'tpl' => 'CEIL({0})',
+                    'ret' => 'NUM',
+                ],
+                'FLOOR' => [
+                    'tpl' => 'FLOOR({0})',
+                    'ret' => 'NUM',
+                ],
+                'POWER' => [
+                    'tpl' => 'POWER({0}, {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'power-float',
+                ],
+                'LEFT' => [
+                    'tpl' => 'LEFT({0}, {1})',
+                    'ret' => 'TEXT',
+                ],
+                'RIGHT' => [
+                    'tpl' => 'RIGHT({0}, {1})',
+                    'ret' => 'TEXT',
+                ],
+                'FIND' => [
+                    'tpl' => [
+                        '2' => 'INSTR({1}, {0})',
+                        '3' => 'LOCATE({0}, {1}, {2})',
+                    ],
+                    'ret' => 'NUM',
+                ],
+                'REPLACE' => [
+                    'tpl' => 'REPLACE({2}, {0}, {1})',
+                    'ret' => 'TEXT',
+                ],
+                'SPLIT' => 'yields a list, and a SQL expression is a scalar',
+                'BACKWARDS' => [
+                    'tpl' => 'REVERSE({0})',
+                    'ret' => 'TEXT',
+                ],
+                'REPEAT' => [
+                    'tpl' => 'REPEAT({0}, {1})',
+                    'ret' => 'TEXT',
+                ],
+                'PADL' => [
+                    'tpl' => 'IF(CHAR_LENGTH({0}) >= {1}, {0}, LPAD({0}, {1}, {2}))',
+                    'ret' => 'TEXT',
+                ],
+                'PADR' => [
+                    'tpl' => 'IF(CHAR_LENGTH({0}) >= {1}, {0}, RPAD({0}, {1}, {2}))',
+                    'ret' => 'TEXT',
+                ],
+                'CHAR' => 'CHAR(n USING utf8mb4) reads n as a byte sequence in that charset, not as a code point: CHAR(233 USING utf8mb4) is NULL because 0xE9 alone is not valid UTF-8, where SEL says the character is e-acute',
+                'CODE' => 'ORD returns the first character\'s bytes read as an integer, not its code point; SEL\'s CODE is a code point',
+                'SIGN' => [
+                    'tpl' => 'SIGN({0})',
+                    'ret' => 'NUM',
+                ],
+                'TRUNC' => [
+                    'tpl' => 'TRUNCATE({0}, 0)',
+                    'ret' => 'NUM',
+                ],
+                'ROUND' => [
+                    'tpl' => 'ROUND({0}, {1})',
+                    'ret' => 'NUM',
+                    'caveat' => 'rounding-mode',
+                ],
+                'MIN' => [
+                    'tpl' => [
+                        '1' => '{0}',
+                        '*' => 'LEAST({*})',
+                    ],
+                    'ret' => 'NUM',
+                    'caveat' => 'numeric-scale',
+                ],
+                'MAX' => [
+                    'tpl' => [
+                        '1' => '{0}',
+                        '*' => 'GREATEST({*})',
+                    ],
+                    'ret' => 'NUM',
+                    'caveat' => 'numeric-scale',
+                ],
+                'ISNUM' => [
+                    'tpl' => '({0} REGEXP \'^-?[0-9]+(\\\\.[0-9]+)?$\')',
+                    'ret' => 'BOOL',
+                ],
+                'BLEN' => [
+                    'tpl' => 'LENGTH({binaryCast:0})',
+                    'ret' => 'NUM',
+                ],
+                'TO_UTF8' => [
+                    'tpl' => 'CAST({0} AS BINARY)',
+                    'ret' => 'BIN',
+                ],
+                'FROM_UTF8' => [
+                    'tpl' => 'CONVERT({binaryCast:0} USING utf8mb4)',
+                    'ret' => 'TEXT',
+                ],
+                'TO_HEX' => [
+                    'tpl' => 'LOWER(HEX({binaryCast:0}))',
+                    'ret' => 'TEXT',
+                ],
+                'FROM_HEX' => [
+                    'tpl' => 'UNHEX({0})',
+                    'ret' => 'BIN',
+                ],
+                'ENCODE_BASE64' => [
+                    'tpl' => 'REPLACE(REPLACE(TO_BASE64({binaryCast:0}), CHAR(10), \'\'), CHAR(13), \'\')',
+                    'ret' => 'TEXT',
+                ],
+                'DECODE_BASE64' => [
+                    'tpl' => 'FROM_BASE64({0})',
+                    'ret' => 'BIN',
+                    'caveat' => 'input-laxity',
+                ],
+                'CRC32' => [
+                    'tpl' => 'LPAD(LOWER(HEX(CRC32({binaryCast:0}))), 8, \'0\')',
+                    'ret' => 'TEXT',
+                ],
+                'BTL' => 'yields a list, and a SQL expression is a scalar',
+                'LTB' => 'takes a list, and a SQL expression is a scalar',
+                'RMATCH' => [
+                    'tpl' => '({1}{textCollate} REGEXP {0})',
+                    'arity' => [2, 2],
+                    'ret' => 'BOOL',
+                    'caveat' => 'regex-engine',
+                ],
+                'RFIND' => [
+                    'tpl' => 'REGEXP_INSTR({1}{textCollate}, {0})',
+                    'arity' => [2, 2],
+                    'ret' => 'NUM',
+                    'caveat' => 'regex-engine',
+                ],
+                'RREPLACE' => 'SEL replacement syntax is $0-$9 and MariaDB\'s is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express',
+                'RGROUPS' => 'yields a list, and a SQL expression is a scalar',
+            ],
+            'skel' => [
+                'case' => [
+                    'tpl' => 'CASE {branches} ELSE {else} END',
+                ],
+                'caseBranch' => [
+                    'tpl' => 'WHEN {cond} THEN {then}',
+                ],
+                'all' => [
+                    'tpl' => 'NOT EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS NOT TRUE)',
+                ],
+                'any' => [
+                    'tpl' => 'EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS TRUE)',
+                ],
+                'sum' => [
+                    'tpl' => '(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})',
+                ],
+                'count' => [
+                    'tpl' => '(SELECT COUNT(*) FROM {from} WHERE {corr})',
+                ],
+                'inRelation' => [
+                    'tpl' => '({needle} IN (SELECT {body} FROM {from} WHERE {corr}))',
+                ],
+                'join' => 'GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL\'s JOIN concatenates in insertion order',
+            ],
+        ],
         'mysql-family' => [
             'dialect' => 'mysql-family',
             'extends' => 'ansi',
@@ -987,7 +1353,12 @@ final class MapData
                 ],
                 'BTL' => 'yields a list, and a SQL expression is a scalar',
                 'LTB' => 'takes a list, and a SQL expression is a scalar',
-                'RMATCH' => 'regular expressions are not ANSI; set per dialect',
+                'RMATCH' => [
+                    'tpl' => '({1}{textCollate} REGEXP {0})',
+                    'arity' => [2, 2],
+                    'ret' => 'BOOL',
+                    'caveat' => 'regex-engine',
+                ],
                 'RFIND' => [
                     'tpl' => 'REGEXP_INSTR({1}{textCollate}, {0})',
                     'arity' => [2, 2],

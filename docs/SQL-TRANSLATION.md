@@ -1,6 +1,6 @@
 # SEL → SQL translation
 
-**Status: M1–M4 and the SQLite half of M5 are built (see §14); MySQL, PostgreSQL and the Python port are plan.** This document is the
+**Status: M1–M4 are built, and M5 has MariaDB, MySQL and SQLite (see §14); PostgreSQL and the Python port are plan.** This document is the
 design for the SQL layer. It is written in the same register as `spec/SPEC.md` — where it and a
 future implementation disagree, resolve it here first — but it is *not* part of
 the language spec. Nothing here changes how a SEL program evaluates. It
@@ -1928,8 +1928,23 @@ executable documentation, mutation testing, and the emitter's narrowed literal
 path. Not in the original plan, and it found seventeen defects in code that had
 already passed three reviews.
 
-**M5 — MySQL, PostgreSQL and SQLite maps. SQLite DONE**; MySQL and PostgreSQL to
+**M5 — MySQL, PostgreSQL and SQLite maps. SQLite and MySQL DONE**; PostgreSQL to
 come.
+
+MySQL was authored the other way round from every dialect before it: the leaf was
+written **empty** — `extends: mysql-family` and nothing else — and the oracle was
+asked whether the claim held rather than a person being asked to remember. It
+did, on MySQL 8.4.11: the same 223 expressions agree, the same 6 are refused, all
+10 row rules agree, and 6,000 generated programs give numbers identical to
+MariaDB's. One entry moved *up*: `RMATCH` had been sitting in `mariadb.json`
+because at M1 there was no MySQL to check it against, and the family layer means
+"verified to agree", not "probably agrees".
+
+That the leaf stays empty is now a check rather than a memory. `php/bin/sqlt`
+re-runs every `mariadb` case under `mysql` and requires the same string, the same
+error and the same parameters — 186 of them — so an override added to one leaf
+and not the other fails the suite. The alternative was a `14-mysql.sqlt` of
+copies, two hundred lines asserting that a copy is a copy.
 
 The plan said "data and cases only; the translator does not change. If it does,
 that is a bug in the M1 design and should be fixed as one." The translator
