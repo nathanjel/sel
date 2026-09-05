@@ -1388,6 +1388,363 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
         },
     },
+    "postgresql": {
+        "dialect": "postgresql",
+        "extends": "ansi",
+        "version": "15",
+        "target": True,
+        "lexical": {
+            "identQuote": "\"",
+            "identEscape": "\"\"",
+            "textQuote": "'",
+            "textEscape": {
+                "'": "''",
+            },
+            "true": "TRUE",
+            "false": "FALSE",
+            "binaryLiteral": "'\\x{hex}'::bytea",
+            "numericLiteral": "{0}",
+            "textCollate": " COLLATE \"C\"",
+            "numericCast": "CAST({0} AS NUMERIC)",
+            "binaryCast": "CAST(CAST({0} AS TEXT) AS BYTEA)",
+            "isTrue": "(({0}) IS TRUE)",
+            "isNotTrue": "(({0}) IS NOT TRUE)",
+            "placeholder": "?",
+            "textCast": "CAST({0} AS TEXT)",
+        },
+        "ops": {
+            "+": {
+                "tpl": "({numericCast:0} + {numericCast:1})",
+                "ret": "NUM",
+            },
+            "-": {
+                "tpl": "({numericCast:0} - {numericCast:1})",
+                "ret": "NUM",
+            },
+            "*": {
+                "tpl": "({numericCast:0} * {numericCast:1})",
+                "ret": "NUM",
+            },
+            "/": {
+                "tpl": "({numericCast:0} / {numericCast:1})",
+                "ret": "NUM",
+                "caveat": "division-scale",
+            },
+            "%": {
+                "tpl": "MOD({numericCast:0}, {numericCast:1})",
+                "ret": "NUM",
+            },
+            "NEG": {
+                "tpl": "(-{numericCast:0})",
+                "ret": "NUM",
+            },
+            "&": {
+                "variants": {
+                    "text": "({0} || {1})",
+                    "bin": "({0} || {1})",
+                },
+                "ret": "@concat",
+                "caveat": "concat-null",
+            },
+            "AND": {
+                "tpl": "({0} AND {1})",
+                "ret": "BOOL",
+            },
+            "OR": {
+                "tpl": "({0} OR {1})",
+                "ret": "BOOL",
+            },
+            "NOT": {
+                "tpl": "(NOT {0})",
+                "ret": "BOOL",
+            },
+            "XOR": {
+                "tpl": "(({0}) <> ({1}))",
+                "ret": "BOOL",
+            },
+            "==": {
+                "variants": {
+                    "num": "({0} = {1})",
+                    "coerce": "({numericCast:0} = {numericCast:1})",
+                },
+                "ret": "BOOL",
+            },
+            "!=": {
+                "variants": {
+                    "num": "({0} <> {1})",
+                    "coerce": "({numericCast:0} <> {numericCast:1})",
+                },
+                "ret": "BOOL",
+            },
+            "<": {
+                "variants": {
+                    "num": "({0} < {1})",
+                    "coerce": "({numericCast:0} < {numericCast:1})",
+                },
+                "ret": "BOOL",
+            },
+            "<=": {
+                "variants": {
+                    "num": "({0} <= {1})",
+                    "coerce": "({numericCast:0} <= {numericCast:1})",
+                },
+                "ret": "BOOL",
+            },
+            ">": {
+                "variants": {
+                    "num": "({0} > {1})",
+                    "coerce": "({numericCast:0} > {numericCast:1})",
+                },
+                "ret": "BOOL",
+            },
+            ">=": {
+                "variants": {
+                    "num": "({0} >= {1})",
+                    "coerce": "({numericCast:0} >= {numericCast:1})",
+                },
+                "ret": "BOOL",
+            },
+            "$==": {
+                "variants": {
+                    "text": "({0} = {1})",
+                },
+                "ret": "BOOL",
+            },
+            "$!=": {
+                "variants": {
+                    "text": "({0} <> {1})",
+                },
+                "ret": "BOOL",
+            },
+            "$<": {
+                "variants": {
+                    "text": "({0} < {1})",
+                },
+                "ret": "BOOL",
+            },
+            "$<=": {
+                "variants": {
+                    "text": "({0} <= {1})",
+                },
+                "ret": "BOOL",
+            },
+            "$>": {
+                "variants": {
+                    "text": "({0} > {1})",
+                },
+                "ret": "BOOL",
+            },
+            "$>=": {
+                "variants": {
+                    "text": "({0} >= {1})",
+                },
+                "ret": "BOOL",
+            },
+            "EQL": {
+                "variants": {
+                    "text": "({0} = {1})",
+                },
+                "ret": "BOOL",
+            },
+            "IN": {
+                "variants": {
+                    "scalar": "({0} = {1})",
+                },
+                "ret": "BOOL",
+            },
+            "BAND": "SQL's & is an integer operator; SEL's BAND is a byte-string operator over BIN of equal length, and no portable spelling of that exists",
+            "BOR": "SQL's | is an integer operator; SEL's BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists",
+            "BXOR": "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists",
+        },
+        "funcs": {
+            "LEN": {
+                "tpl": "length({textCast:0})",
+                "ret": "NUM",
+            },
+            "SUBSTR": {
+                "tpl": {
+                    "2": "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER))",
+                    "3": "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER) FOR CAST({2} AS INTEGER))",
+                },
+                "ret": "TEXT",
+            },
+            "UPPER": {
+                "tpl": "upper({textCast:0})",
+                "ret": "TEXT",
+                "caveat": "unicode-case",
+            },
+            "LOWER": {
+                "tpl": "lower({textCast:0})",
+                "ret": "TEXT",
+                "caveat": "unicode-case",
+            },
+            "TRIM": {
+                "tpl": "btrim({textCast:0}, E' \\t\\r\\n')",
+                "ret": "TEXT",
+            },
+            "LTRIM": {
+                "tpl": "ltrim({textCast:0}, E' \\t\\r\\n')",
+                "ret": "TEXT",
+            },
+            "RTRIM": {
+                "tpl": "rtrim({textCast:0}, E' \\t\\r\\n')",
+                "ret": "TEXT",
+            },
+            "ABS": {
+                "tpl": "abs({numericCast:0})",
+                "ret": "NUM",
+            },
+            "CEIL": {
+                "tpl": "ceil({numericCast:0})",
+                "ret": "NUM",
+            },
+            "FLOOR": {
+                "tpl": "floor({numericCast:0})",
+                "ret": "NUM",
+            },
+            "POWER": {
+                "tpl": "power({numericCast:0}, {numericCast:1})",
+                "ret": "NUM",
+                "caveat": "numeric-scale",
+            },
+            "LEFT": {
+                "tpl": "left({textCast:0}, CAST({1} AS INTEGER))",
+                "ret": "TEXT",
+            },
+            "RIGHT": {
+                "tpl": "right({textCast:0}, CAST({1} AS INTEGER))",
+                "ret": "TEXT",
+            },
+            "FIND": {
+                "tpl": "strpos({textCast:1}, {textCast:0})",
+                "ret": "NUM",
+                "arity": [2, 2],
+            },
+            "REPLACE": {
+                "tpl": "replace({textCast:2}, {textCast:0}, {textCast:1})",
+                "ret": "TEXT",
+            },
+            "SPLIT": "yields a list, and a SQL expression is a scalar",
+            "BACKWARDS": {
+                "tpl": "reverse({textCast:0})",
+                "ret": "TEXT",
+            },
+            "REPEAT": {
+                "tpl": "repeat({textCast:0}, CAST({1} AS INTEGER))",
+                "ret": "TEXT",
+            },
+            "PADL": {
+                "tpl": "CASE WHEN length({textCast:0}) >= {1} THEN {textCast:0} ELSE lpad({textCast:0}, CAST({1} AS INTEGER), {textCast:2}) END",
+                "ret": "TEXT",
+            },
+            "PADR": {
+                "tpl": "CASE WHEN length({textCast:0}) >= {1} THEN {textCast:0} ELSE rpad({textCast:0}, CAST({1} AS INTEGER), {textCast:2}) END",
+                "ret": "TEXT",
+            },
+            "CHAR": {
+                "tpl": "chr(CAST({0} AS INTEGER))",
+                "ret": "TEXT",
+            },
+            "CODE": {
+                "tpl": "ascii({textCast:0})",
+                "ret": "NUM",
+            },
+            "SIGN": {
+                "tpl": "sign({numericCast:0})",
+                "ret": "NUM",
+            },
+            "TRUNC": {
+                "tpl": "trunc({numericCast:0})",
+                "ret": "NUM",
+            },
+            "ROUND": {
+                "tpl": "round({numericCast:0}, CAST({1} AS INTEGER))",
+                "ret": "NUM",
+            },
+            "MIN": {
+                "tpl": "least({*})",
+                "ret": "NUM",
+            },
+            "MAX": {
+                "tpl": "greatest({*})",
+                "ret": "NUM",
+            },
+            "ISNUM": {
+                "tpl": "({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$')",
+                "ret": "BOOL",
+            },
+            "BLEN": {
+                "tpl": "octet_length({binaryCast:0})",
+                "ret": "NUM",
+            },
+            "TO_UTF8": {
+                "tpl": "CAST(CAST({0} AS TEXT) AS BYTEA)",
+                "ret": "BIN",
+            },
+            "FROM_UTF8": {
+                "tpl": "convert_from({binaryCast:0}, 'UTF8')",
+                "ret": "TEXT",
+            },
+            "TO_HEX": {
+                "tpl": "encode({binaryCast:0}, 'hex')",
+                "ret": "TEXT",
+            },
+            "FROM_HEX": {
+                "tpl": "decode({0}, 'hex')",
+                "ret": "BIN",
+            },
+            "ENCODE_BASE64": {
+                "tpl": "replace(replace(encode({binaryCast:0}, 'base64'), chr(10), ''), chr(13), '')",
+                "ret": "TEXT",
+            },
+            "DECODE_BASE64": {
+                "tpl": "decode({0}, 'base64')",
+                "ret": "BIN",
+                "caveat": "input-laxity",
+            },
+            "CRC32": "PostgreSQL has no CRC32 in core; pgcrypto supplies digests but not CRC32",
+            "BTL": "yields a list, and a SQL expression is a scalar",
+            "LTB": "takes a list, and a SQL expression is a scalar",
+            "RMATCH": {
+                "tpl": "({textCast:1}{textCollate} ~ {0})",
+                "arity": [2, 2],
+                "ret": "BOOL",
+                "caveat": "regex-engine",
+            },
+            "RFIND": {
+                "tpl": "regexp_instr({textCast:1}{textCollate}, {0})",
+                "arity": [2, 2],
+                "ret": "NUM",
+                "caveat": "regex-engine",
+            },
+            "RREPLACE": "regular expressions are not ANSI; set per dialect",
+            "RGROUPS": "yields a list, and a SQL expression is a scalar",
+        },
+        "skel": {
+            "case": {
+                "tpl": "CASE {branches} ELSE {else} END",
+            },
+            "caseBranch": {
+                "tpl": "WHEN {cond} THEN {then}",
+            },
+            "all": {
+                "tpl": "NOT EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS NOT TRUE)",
+            },
+            "any": {
+                "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS TRUE)",
+            },
+            "sum": {
+                "tpl": "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})",
+            },
+            "count": {
+                "tpl": "(SELECT COUNT(*) FROM {from} WHERE {corr})",
+            },
+            "inRelation": {
+                "tpl": "({needle} IN (SELECT {body} FROM {from} WHERE {corr}))",
+            },
+            "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
+        },
+    },
     "sqlite": {
         "dialect": "sqlite",
         "extends": "ansi",

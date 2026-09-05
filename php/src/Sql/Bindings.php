@@ -133,6 +133,28 @@ final class Bindings
                     self::checkColumn("{$name}[\"{$f}\"]", $spec);
                     $fields[strtoupper((string) $f)] = $spec + ['type' => 'UNKNOWN'];
                 }
+                // `raw` is the one place a host writes SQL this layer cannot
+                // check the meaning of. It can still check the SHAPE, and must:
+                // (string) on an array yields "Array" plus a warning, and that
+                // string is then spliced into a correlated subquery as if it
+                // were a join condition. Found while making the row oracle
+                // dialect-aware, when a per-dialect table of correlations
+                // reached relationSlots() unresolved.
+                if (isset($b['correlate'])) {
+                    if (!is_array($b['correlate']) || !isset($b['correlate']['raw'])
+                        || !is_string($b['correlate']['raw'])) {
+                        throw new SqlError('E_SQL_BINDING',
+                            "the relation binding for {$name} has a correlate that is "
+                            . 'not ["raw" => string]; correlate is raw SQL and there is '
+                            . 'nothing else it can be');
+                    }
+                }
+                if (isset($b['from']) && is_array($b['from'])
+                    && (!isset($b['from']['raw']) || !is_string($b['from']['raw']))) {
+                    throw new SqlError('E_SQL_BINDING',
+                        "the relation binding for {$name} has a from that is an array "
+                        . 'but not ["raw" => string]');
+                }
                 if (isset($b['scalar']) && !isset($fields[strtoupper((string) $b['scalar'])])) {
                     throw new SqlError('E_SQL_BINDING',
                         "the relation binding for {$name} names {$b['scalar']} as its scalar, "

@@ -287,3 +287,48 @@ mariadb
 --- error
 E_SQL_SHAPE
 ===
+### name: kinds.a-bool-is-not-a-number
+--- note
+`0 != FALSE` is E_NOT_NUM in SEL -- not FALSE. MariaDB and SQLite coerce a
+boolean to 1 or 0 and answer anyway, which is a wrong answer with no error
+attached; PostgreSQL says `cannot cast type boolean to numeric` and fails the
+query. Refusing is the only outcome that matches SEL, and it took a
+strongly-typed server to make the gap visible.
+--- dialect
+mariadb
+--- source
+0 != FALSE
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.a-bool-is-not-an-addend
+--- dialect
+mariadb
+--- source
+1 + TRUE
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.a-bool-cannot-be-negated
+--- note
+The unary path takes the same guard.
+--- dialect
+mariadb
+--- source
+-(TRUE)
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.an-unknown-column-still-adds
+--- note
+The limit of the rule: UNKNOWN passes, because the binding did not say and
+nothing here can either.
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c"}}
+--- source
+C + 1
+--- expect
+(`c` + 1)
+===

@@ -112,3 +112,28 @@ X + 1
 --- expect
 (2.50 + 1)
 ===
+### name: bind.relation.correlate-must-be-raw-string
+--- note
+`raw` is the one place a host writes SQL this layer cannot check the meaning of.
+It can still check the shape, and must: (string) on an array yields "Array" plus
+a warning, and that string is then spliced into a correlated subquery as if it
+were a join condition.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "t", "alias": "r", "correlate": {"raw": {"mariadb": "1=1"}}, "fields": {"A": {"table": "r", "column": "a", "type": "NUM"}}}}
+--- source
+COUNT(R)
+--- error
+E_SQL_BINDING
+===
+### name: bind.relation.from-array-must-be-raw-string
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": {"query": "select 1"}, "alias": "r", "fields": {"A": {"table": "r", "column": "a", "type": "NUM"}}}}
+--- source
+COUNT(R)
+--- error
+E_SQL_BINDING
+===

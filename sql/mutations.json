@@ -203,6 +203,48 @@
       "file": "sql/dialects/mysql-family.json",
       "from": "    \"RMATCH\": {\n      \"tpl\": \"({1}{textCollate} REGEXP {0})\",\n      \"arity\": [\n        2,\n        2\n      ],\n      \"ret\": \"BOOL\",\n      \"caveat\": \"regex-engine\"\n    },",
       "to": "    \"RMATCH\": \"downgraded to a refusal by the mutation runner\","
+    },
+    {
+      "name": "pg-text-operands-uncast",
+      "was": "PostgreSQL will not coerce: upper(integer) and reverse(numeric) are `function does not exist`. SEL numbers ARE text values, so a NUM fragment reaches a text function legitimately.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"tpl\": \"upper({textCast:0})\",",
+      "to": "\"tpl\": \"upper({0})\","
+    },
+    {
+      "name": "pg-integer-overload",
+      "was": "Given an INTEGER argument PostgreSQL resolves sign() to its DOUBLE PRECISION overload, so an expression that looks exact quietly leaves exact-decimal territory. A precision loss, not a type error.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"tpl\": \"sign({numericCast:0})\",",
+      "to": "\"tpl\": \"sign({0})\","
+    },
+    {
+      "name": "pg-collation-dropped",
+      "was": "COLLATE \"C\" is what makes the ORDERING half of the byte family agree: 'a' < 'B' is TRUE under the default collation and FALSE under \"C\", and SEL compares bytes.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"textCollate\": \" COLLATE \\\"C\\\"\",",
+      "to": "\"textCollate\": \"\","
+    },
+    {
+      "name": "pg-binary-cast-naive",
+      "was": "convert_to(bytea, ...) is an ERROR in PostgreSQL where the same doubling on MariaDB is a harmless no-op, and TO_HEX(TO_UTF8(x)) applies binaryCast twice by construction.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"binaryCast\": \"CAST(CAST({0} AS TEXT) AS BYTEA)\",",
+      "to": "\"binaryCast\": \"convert_to({0}, 'UTF8')\","
+    },
+    {
+      "name": "bool-in-a-numeric-comparison",
+      "was": "0 != FALSE is E_NOT_NUM in SEL. MariaDB and SQLite coerce the boolean to 1 or 0 and answer anyway -- a wrong answer with no error attached -- and it took PostgreSQL's `cannot cast type boolean to numeric` to make the gap visible.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $this->requireNotBool($l, $n['l']['pos'], $op);\n            $this->requireNotBool($r, $n['r']['pos'], $op);\n",
+      "to": ""
+    },
+    {
+      "name": "raw-binding-unchecked",
+      "was": "(string) on an array yields \"Array\" plus a warning, and that string is then spliced into a correlated subquery as if it were a join condition.",
+      "file": "php/src/Sql/Bindings.php",
+      "from": "                if (isset($b['correlate'])) {\n                    if (!is_array($b['correlate']) || !isset($b['correlate']['raw'])\n                        || !is_string($b['correlate']['raw'])) {",
+      "to": "                if (false) {\n                    if (!is_array($b['correlate']) || !isset($b['correlate']['raw'])\n                        || !is_string($b['correlate']['raw'])) {"
     }
   ]
 }

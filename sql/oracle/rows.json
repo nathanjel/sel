@@ -12,12 +12,15 @@
     "`expect` is not the answer being asserted -- the answer is whatever SEL",
     "says. It is a guard that the fixture still makes the rule discriminate:",
     "the driver fails if a rule selects every order or none, because a rule that",
-    "does agrees for no reason."
+    "does agrees for no reason.",
+    "",
+    "`correlate.raw` is raw SQL by design -- it is the one place a host says something the map cannot know -- and raw SQL does not travel between dialects. So it is written per dialect here, and the driver picks. Backticks are MySQL-family and SQLite; PostgreSQL wants double quotes."
   ],
   "fixture": {
     "mariadb": "fixture-mysql-family.sql",
     "mysql": "fixture-mysql-family.sql",
-    "sqlite": "fixture-sqlite.sql"
+    "sqlite": "fixture-sqlite.sql",
+    "postgresql": "fixture-postgresql.sql"
   },
   "select": "SELECT id FROM o WHERE {} ORDER BY id",
   "bindings": {
@@ -32,7 +35,12 @@
       "from": "order_items",
       "alias": "sk",
       "correlate": {
-        "raw": "`sk`.`order_id` = `o`.`id`"
+        "raw": {
+          "mariadb": "`sk`.`order_id` = `o`.`id`",
+          "mysql": "`sk`.`order_id` = `o`.`id`",
+          "sqlite": "`sk`.`order_id` = `o`.`id`",
+          "postgresql": "\"sk\".\"order_id\" = \"o\".\"id\""
+        }
       },
       "scalar": "SKU",
       "fields": {
@@ -48,7 +56,12 @@
       "from": "order_items",
       "alias": "oi",
       "correlate": {
-        "raw": "`oi`.`order_id` = `o`.`id`"
+        "raw": {
+          "mariadb": "`oi`.`order_id` = `o`.`id`",
+          "mysql": "`oi`.`order_id` = `o`.`id`",
+          "sqlite": "`oi`.`order_id` = `o`.`id`",
+          "postgresql": "\"oi\".\"order_id\" = \"o\".\"id\""
+        }
       },
       "scalar": "SKU",
       "fields": {

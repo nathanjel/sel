@@ -43,7 +43,12 @@ local one says `11.8.8-MariaDB`. A container is the usual way to get one:
 ```
 docker run -d --name sel-mysql -e MYSQL_ALLOW_EMPTY_PASSWORD=1 \
   -e MYSQL_DATABASE=sel_oracle -p 13306:3306 mysql:8.4
+docker run -d --name sel-pg -e POSTGRES_PASSWORD=sel \
+  -e POSTGRES_DB=sel_oracle -p 15432:5432 postgres:17
 ```
+
+PostgreSQL also needs `pdo_pgsql`, which is a separate package on most
+distributions (`dnf install php-pgsql`, `apt install php-pgsql`).
 
 A named schema must exist and must be disposable: the row oracle drops and
 recreates its tables every run.

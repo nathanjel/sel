@@ -230,6 +230,8 @@ final class Translator
         $x = $this->node($n['x']);
         if ($n['op'] === 'NOT') {
             $x = $this->requireBool($x, $n['x']['pos'], 'NOT');
+        } else {
+            $this->requireNotBool($x, $n['x']['pos'], $n['op']);
         }
         return $this->apply('ops', $n['op'], [$x], $n['pos']);
     }
@@ -249,6 +251,18 @@ final class Translator
         if (in_array($op, ['AND', 'OR', 'XOR'], true)) {
             $l = $this->requireBool($l, $n['l']['pos'], $op);
             $r = $this->requireBool($r, $n['r']['pos'], $op);
+        }
+        // SEL reads both operands of an arithmetic or numeric-comparison
+        // operator as numbers, and a BOOL is not one: `0 != FALSE` is E_NOT_NUM
+        // in the evaluator, not FALSE. MariaDB and SQLite coerce a boolean to
+        // 1 or 0 and answer anyway -- a wrong answer with no error attached --
+        // and PostgreSQL says `cannot cast type boolean to numeric` and fails
+        // the query. Refusing is the only outcome that matches SEL, and it took
+        // a strongly-typed server to make the gap visible.
+        if (in_array($op, ['+', '-', '*', '/', '%',
+                           '==', '!=', '<', '<=', '>', '>='], true)) {
+            $this->requireNotBool($l, $n['l']['pos'], $op);
+            $this->requireNotBool($r, $n['r']['pos'], $op);
         }
         $variant = $this->variantFor($op, [$l, $r]);
         if (self::isByteComparison($op)) {
@@ -1396,6 +1410,25 @@ final class Translator
      *
      * @param array{line:int,col:int,offset:int} $pos
      */
+    /**
+     * A number was expected and a boolean cannot become one.
+     *
+     * UNKNOWN passes, as everywhere: the binding did not say, so nothing here
+     * can either. Only a *declared* BOOL is refused, which is the same line the
+     * byte-comparison guard draws.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private function requireNotBool(Fragment $f, array $pos, string $where): void
+    {
+        if ($f->kind !== 'BOOL') {
+            return;
+        }
+        refuse('E_SQL_SHAPE',
+            "{$where} reads its operands as numbers, and a BOOL is not one; SEL "
+            . 'answers E_NOT_NUM here rather than treating it as 1 or 0', $pos);
+    }
+
     private function requireBool(Fragment $f, array $pos, string $where): Fragment
     {
         if ($f->kind === 'BOOL' || $f->kind === 'UNKNOWN') {

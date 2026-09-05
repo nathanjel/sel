@@ -116,6 +116,36 @@ The fourth is the coverage gate doing exactly what §3 said it would: SQLite
 supports two entries MariaDB refuses, and the gate demanded expressions for them
 before the dialect could be called done.
 
+### And then a fourth
+
+MySQL found nothing, which was the result: the leaf was written empty and the
+oracle confirmed it, rather than a person being asked to remember. One entry
+moved *up* into the family layer, which now means "verified to agree" instead of
+"probably agrees".
+
+PostgreSQL found three more, and all three are the same kind of thing:
+
+| Defect | What it was |
+|---|---|
+| `0 != FALSE` translated | SEL says `E_NOT_NUM`. MySQL and SQLite coerce the boolean and answer anyway |
+| text functions took numbers | SEL numbers **are** text, so `UPPER(13 + 4)` is legal — and `upper(integer)` does not exist |
+| `SIGN(13)` left exact arithmetic | PostgreSQL resolves it to the **`double precision`** overload |
+
+The first is a shared-layer defect, like SQLite's two: a wrong answer with no
+error attached, in every dialect, hidden for four milestones because the two
+servers looked at so far coerce booleans silently.
+
+The third is the one to remember, because it is invisible to every category
+above it. Nothing errors. No string is wrong. `pg_typeof(sign(13))` is
+`double precision`, so an expression that reads as exact stops being exact, and
+the only thing that was ever going to notice is a server being asked.
+
+**The running total across four dialects is twenty-four**, and the pattern in the
+last eight is worth more than the count: **each new server found defects in the
+code all servers share, not in its own templates.** SQLite found two, PostgreSQL
+found one, and a fourth would probably find another. That is an argument for
+adding dialects even where nobody needs them.
+
 ---
 
 ## 3. Class A — the map claims a semantic equivalence that nothing checks

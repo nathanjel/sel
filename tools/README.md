@@ -68,6 +68,8 @@ way to get a real one:
 ```
 docker run -d --name sel-mysql -e MYSQL_ALLOW_EMPTY_PASSWORD=1 \
   -e MYSQL_DATABASE=sel_oracle -p 13306:3306 mysql:8.4
+docker run -d --name sel-pg -e POSTGRES_PASSWORD=sel \
+  -e POSTGRES_DB=sel_oracle -p 15432:5432 postgres:17
 ```
 
 One per target dialect, and the oracle runs every target it has a DSN for. With

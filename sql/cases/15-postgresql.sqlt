@@ -1,0 +1,181 @@
+% PostgreSQL. The third target and the closest match to SEL -- which shows up as
+% caveats it does NOT need, and as the one thing it needs that nothing else did:
+% every operand's type stated, because it will not coerce.
+
+### name: pg.num.operands-are-cast
+--- note
+SEL numbers ARE text values (spec §4), so a TEXT-kind fragment that reads as a
+number is a legal arithmetic operand -- `x * BACKWARDS(y)` is arithmetic in SEL.
+PostgreSQL answers `operator does not exist: numeric * text`. The cast also puts
+the two on the same footing: a TEXT operand that does NOT read as a number
+raises here, exactly as SEL's E_NOT_NUM does, where SQLite would quietly make it
+zero.
+--- dialect
+postgresql
+--- source
+2.50 + 2.50
+--- expect
+(CAST(2.50 AS NUMERIC) + CAST(2.50 AS NUMERIC))
+===
+### name: pg.num.division-is-numeric
+--- note
+/ between two integers TRUNCATES in PostgreSQL -- 10 / 4 is 2 -- which is a
+different operation rather than an imprecise one. docs/SQL-TRANSLATION.md §11
+predicted this from the manual at M1 and it is now measured. What is left after
+the cast is scale: 2.5000000000000000 against SEL's ten digits.
+--- dialect
+postgresql
+--- source
+10 / 4
+--- expect
+(CAST(10 AS NUMERIC) / CAST(4 AS NUMERIC))
+===
+### name: pg.num.modulo-is-exact
+--- note
+No modulo-integer caveat, unlike SQLite: MOD on numeric gives 1.5 for 5.5 % 2.
+--- dialect
+postgresql
+--- source
+5.5 % 2
+--- expect
+MOD(CAST(5.5 AS NUMERIC), CAST(2 AS NUMERIC))
+===
+### name: pg.num.round-needs-no-caveat
+--- note
+round() is half away from zero here -- round(2.5,0) is 3 and round(-2.5,0) is
+-3 -- which is SEL's rule, so mysql-family's rounding-mode caveat is absent.
+The second argument is cast because round(numeric, int) is the exact overload.
+--- dialect
+postgresql
+--- source
+ROUND(2.5, 0)
+--- expect
+round(CAST(2.5 AS NUMERIC), CAST(0 AS INTEGER))
+===
+### name: pg.num.integer-overloads-are-pinned
+--- note
+The subtle one. Given an INTEGER argument PostgreSQL resolves sign(), power(),
+trunc(), ceil() and floor() to their DOUBLE PRECISION overloads --
+pg_typeof(sign(13)) is `double precision` -- so an expression that looks exact
+quietly leaves exact-decimal territory. Not a type error anybody would have
+seen; a precision loss, found by asking the server.
+--- dialect
+postgresql
+--- source
+SIGN(13)
+--- expect
+sign(CAST(13 AS NUMERIC))
+===
+### name: pg.text.operands-are-cast
+--- note
+upper(integer), reverse(numeric) and btrim(numeric, unknown) are all `function
+does not exist` here, where MySQL and SQLite coerce without comment.
+--- dialect
+postgresql
+--- source
+UPPER(13 + 4)
+--- expect
+upper(CAST((CAST(13 AS NUMERIC) + CAST(4 AS NUMERIC)) AS TEXT))
+===
+### name: pg.text.backwards-is-supported
+--- note
+reverse() exists here and not in SQLite, which refuses BACKWARDS.
+--- dialect
+postgresql
+--- source
+BACKWARDS("abc")
+--- expect
+reverse(CAST('abc' AS TEXT))
+===
+### name: pg.text.collation-is-for-ordering
+--- note
+COLLATE "C" is needed for the ORDERING half of the byte family, not the equality
+half: 'A' = 'a' is already false under the default collation, but 'a' < 'B' is
+TRUE there and FALSE under "C". SEL compares bytes, and 'a' is 0x61 against
+'B' at 0x42.
+--- dialect
+postgresql
+--- source
+"a" $< "B"
+--- expect
+(CAST('a' AS TEXT) COLLATE "C" < CAST('B' AS TEXT) COLLATE "C")
+===
+### name: pg.bin.cast-is-idempotent
+--- note
+CAST(CAST({0} AS TEXT) AS BYTEA) rather than convert_to({0}, 'UTF8'), because
+PostgreSQL is strongly typed: convert_to(bytea, ...) is an ERROR where the same
+doubling on MariaDB is a harmless no-op, and TO_HEX(TO_UTF8(x)) applies it twice
+by construction. convert_to(numeric, ...) does not exist either.
+--- dialect
+postgresql
+--- source
+TO_HEX(TO_UTF8("a"))
+--- expect
+encode(CAST(CAST(CAST(CAST('a' AS TEXT) AS BYTEA) AS TEXT) AS BYTEA), 'hex')
+===
+### name: pg.refuse.find-with-a-start-position
+--- note
+strpos takes no start position. This is the case sql/MAP.md §4.1 has cited as
+the reason `arity` exists since M1 -- "how PostgreSQL refuses the
+three-argument form its POSITION cannot express". Nothing enforced the field
+until SQLite exposed it; without that, this entry would have silently dropped
+the start position and answered the wrong number.
+--- dialect
+postgresql
+--- source
+FIND("a", "banana", 3)
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: pg.refuse.no-crc32
+--- dialect
+postgresql
+--- source
+CRC32("x")
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: pg.params.question-mark-by-default
+--- note
+`?` is what a driver wants: PDO_PGSQL rewrites it to the wire protocol's $n, and
+a raw $1 handed to PDO is not recognised as a parameter at all -- verified, it
+binds nothing and returns NULL.
+--- dialect
+postgresql
+--- mode
+params
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- note
+`&` is the one operand position that is NOT cast: PostgreSQL has
+`anynonarray || text`, so 2.50 || 'x' already works and a cast would only add
+noise.
+--- source
+T & "a" & "b"
+--- expect
+(("t" || ?) || ?)
+--- params
+t"a", t"b"
+===
+### name: pg.params.numbered-for-a-libpq-host
+--- note
+PostgreSQL's own numbered spelling, for a host that talks libpq directly rather
+than through a rewriting driver. Registered at run time, which is what runtime
+registration is for -- and this is the first thing in the project to exercise
+Emit::placeholder's {n} branch, which has existed since M1 with no user.
+--- dialect
+pg-numbered
+--- mode
+params
+--- register
+[{"dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": true,
+  "lexical": {"placeholder": "${n}"}}]
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T & "a" & "b"
+--- expect
+(("t" || $1) || $2)
+--- params
+t"a", t"b"
+===

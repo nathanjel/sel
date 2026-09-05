@@ -1,6 +1,6 @@
 # SEL → SQL translation
 
-**Status: M1–M4 are built, and M5 has MariaDB, MySQL and SQLite (see §14); PostgreSQL and the Python port are plan.** This document is the
+**Status: M1–M5 are built — MariaDB, MySQL, PostgreSQL and SQLite, each verified against a running server (see §14); the Python port is plan.** This document is the
 design for the SQL layer. It is written in the same register as `spec/SPEC.md` — where it and a
 future implementation disagree, resolve it here first — but it is *not* part of
 the language spec. Nothing here changes how a SEL program evaluates. It
@@ -1679,9 +1679,9 @@ out to support both exactly as SEL means them.
 | — (structural) | **No short-circuit.** `FALSE AND (1/0)` is `FALSE` in SEL; SQL may evaluate both sides and raise. Rules that lean on short-circuiting as a guard change meaning. |
 | — (structural) | **NULL.** SEL has no null. Any nullable column makes three-valued logic reachable. Aggregate skeletons use `IS [NOT] TRUE` to fold NULL to false; nothing else does. A translated rule is only as sound as the schema's nullability. |
 | `unicode-case` | `UPPER`/`LOWER` are ASCII-only in SEL. MySQL and PostgreSQL apply full Unicode case mapping. **(verified)** SQLite agrees with SEL exactly, so `sqlite.json` overrides the caveat away rather than inheriting it. |
-| `division-scale` | SEL's `/` yields ten fractional digits, half away from zero. MySQL's DECIMAL division adds four; PostgreSQL's `/` on integers **truncates** (so `postgresql.json` will cast both operands to `numeric`). |
+| `division-scale` | SEL's `/` yields ten fractional digits, half away from zero. MySQL's DECIMAL division adds four. **(verified)** PostgreSQL's `/` on integers **truncates** — `10 / 4` is `2` — so `postgresql.json` casts both operands to `numeric`, leaving sixteen fractional digits against SEL's ten. The M1 prediction, measured. |
 | `decimal-float` | **(verified)** SQLite has no exact decimal type: arithmetic is int64 or IEEE double. Not a scale difference — a different number system. `0.1 + 0.2` is `0.30000000000000004` there and `0.3` in SEL, and no template fixes it, so every arithmetic entry carries this and `strict` refuses the lot. |
-| `rounding-mode` | SEL rounds half away from zero everywhere. MySQL and PostgreSQL agree on `DECIMAL`/`numeric`. |
+| `rounding-mode` | SEL rounds half away from zero everywhere. **(verified)** PostgreSQL agrees exactly — `round(2.5,0)` is `3` and `round(-2.5,0)` is `-3` — so `postgresql.json` carries no such caveat. MariaDB needs it. |
 | `modulo-integer` | **(verified)** SQLite truncates both operands to integers before `%`, so `5.5 % 2` is `1.0` rather than `1.5`. |
 | `numeric-scale` | **(verified)** The value is equal and the scale is not. MariaDB's `LEAST(17, 123.456)` is `17.000` where SEL's `MIN` returns `17` — invisible until the result is read as text. |
 | `power-float` | `POWER` returns a float in every dialect; SEL's is exact. |
@@ -1690,7 +1690,26 @@ out to support both exactly as SEL means them.
 | `concat-null` | `CONCAT` / `\|\|` yields NULL if any operand is NULL; SEL's `&` cannot. |
 | — (refused) | `BAND`/`BOR`/`BXOR` — no portable byte-string bitwise operator exists. `ABORT` — a control-flow effect, not a value. `SPLIT`, `INDEXES`, `BTL`, `RGROUPS` — list-valued. **(verified)** `CHAR`/`CODE` on MariaDB, whose `ORD` and `CHAR` read bytes rather than code points — SQLite's `unicode()` and `char()` are code points and are mapped there. |
 
-### 11.1 Divergences a caveat cannot express
+### 11.1 A caveat is about a value, not about a type
+
+PostgreSQL will not coerce, and that turns three things this layer had been
+getting away with into errors — every one of them a place where SEL's own rule
+was being approximated rather than followed:
+
+| SEL says | MySQL and SQLite | PostgreSQL |
+|---|---|---|
+| `0 != FALSE` is `E_NOT_NUM` | coerce the boolean to `0` and answer `TRUE` | `cannot cast type boolean to numeric` |
+| `UPPER(13 + 4)` is `"17"` — numbers *are* text | coerce and answer | `function upper(integer) does not exist` |
+| `SIGN(13)` is exact | exact | resolves to the **`double precision`** overload |
+
+The first is now refused, in every dialect, because SEL refuses it. The second is
+why every text operand in `postgresql.json` is wrapped in `{textCast:n}` — the
+same lexical key the byte-comparison family already uses one level down. The
+third is the one worth remembering: it is not a type error and no query fails.
+`pg_typeof(sign(13))` is `double precision`, so an expression that reads as exact
+quietly stops being exact, and only a server was ever going to say so.
+
+### 11.2 Divergences a caveat cannot express
 
 A caveat says "the value may differ". These two say something else: **a rule that
 would *fail* in SEL may quietly *succeed* in SQL.** Both are SQLite; both are
@@ -1928,8 +1947,7 @@ executable documentation, mutation testing, and the emitter's narrowed literal
 path. Not in the original plan, and it found seventeen defects in code that had
 already passed three reviews.
 
-**M5 — MySQL, PostgreSQL and SQLite maps. SQLite and MySQL DONE**; PostgreSQL to
-come.
+**M5 — MySQL, PostgreSQL and SQLite maps. DONE.**
 
 MySQL was authored the other way round from every dialect before it: the leaf was
 written **empty** — `extends: mysql-family` and nothing else — and the oracle was

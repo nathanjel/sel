@@ -126,9 +126,19 @@ function compare(Value $sel, $db, string $kind): ?string
     }
     switch ($kind) {
         case 'BOOL':
-            $want = $sel->asBool() ? '1' : '0';
-            $got = (string) $db;
-            return $got === $want ? null : "SEL={$want} DB={$got}";
+            // Drivers disagree about what a truth value looks like coming back,
+            // and the disagreement is not the translator's. MySQL and SQLite
+            // have no boolean type and answer the integers 1 and 0; PostgreSQL
+            // has one and PDO hands back a PHP bool, so `(string) false` is the
+            // empty string and 66 correct translations were reported as wrong on
+            // this dialect's first run. Normalise here, where the transport is,
+            // rather than asking the map to paper over it.
+            $want = $sel->asBool();
+            $got = is_bool($db)
+                ? $db
+                : in_array(strtolower((string) $db), ['1', 't', 'true', 'on'], true);
+            return $got === $want ? null
+                : 'SEL=' . ($want ? 'TRUE' : 'FALSE') . ' DB=' . var_export($db, true);
 
         case 'NUM':
             $want = $sel->asText();
@@ -141,8 +151,13 @@ function compare(Value $sel, $db, string $kind): ?string
             return Dec::cmp($a, $b) === 0 ? null : "SEL={$want} DB={$got}";
 
         case 'BIN':
+            // PDO_PGSQL hands bytea back as a stream, so (string) $db is
+            // "Resource id #34" -- which bin2hex will happily encode, reporting
+            // every correct binary translation as a mismatch against a number
+            // that changes each run.
+            $raw = is_resource($db) ? (string) stream_get_contents($db) : (string) $db;
             $want = bin2hex($sel->asBytes());
-            $got = bin2hex((string) $db);
+            $got = bin2hex($raw);
             return $got === $want ? null : "SEL=x'{$want}' DB=x'{$got}'";
 
         default:
@@ -395,6 +410,11 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
         throw new RuntimeException("{$fixture} contained no statements");
     }
 
+    // `raw` is where a host writes SQL the map cannot know, so it is the one
+    // thing in this file that cannot be portable. A raw value written as an
+    // object is a per-dialect table; resolve it before anything sees it.
+    $bindings = resolve_raw($spec['bindings'], $dialect, $label);
+
     $ctx = load_context($pdo, $spec['context']);
     $total = count($ctx);
 
@@ -404,7 +424,7 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
     foreach ($spec['rules'] as $rule) {
         try {
             $program = Sel::compile($rule['sel']);
-            $frag = Sql::translate($program, $dialect, $spec['bindings']);
+            $frag = Sql::translate($program, $dialect, $bindings);
         } catch (SqlError $e) {
             // A rule this dialect cannot express is an outcome, not a failure.
             // sqlite has no REGEXP, so the SKU-format rule simply is not a rule
@@ -464,6 +484,30 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
         $ok, count($bad), $refused, $total);
 
     return ['failed' => count($bad)];
+}
+
+/**
+ * Replace every `raw` written as a per-dialect object with this dialect's string.
+ *
+ * @param array<string,mixed> $node
+ * @return array<string,mixed>
+ */
+function resolve_raw(array $node, string $dialect, string $label): array
+{
+    foreach ($node as $k => $v) {
+        if (!is_array($v)) {
+            continue;
+        }
+        if ($k === 'raw') {
+            if (!isset($v[$dialect])) {
+                throw new RuntimeException("a raw binding names no SQL for {$dialect}");
+            }
+            $node[$k] = $v[$dialect];
+            continue;
+        }
+        $node[$k] = resolve_raw($v, $dialect, $label);
+    }
+    return $node;
 }
 
 /**
@@ -712,7 +756,8 @@ function run_coverage(string $dialect, bool $verbose, string $label = ''): array
     foreach ($spec['rules'] as $rule) {
         Map::traceOn();
         try {
-            Sql::translate(Sel::compile($rule['sel']), $dialect, $spec['bindings']);
+            Sql::translate(Sel::compile($rule['sel']), $dialect,
+                resolve_raw($spec['bindings'], $dialect, $label));
         } catch (Throwable $e) {
         }
         foreach (Map::traceOff() as $e) {
