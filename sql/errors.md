@@ -32,10 +32,10 @@ second reporting channel, no `explain()` API.
 | `E_SQL_DIALECT` | the named dialect does not exist, is a base rather than a target, or is below an entry's `since` |
 | `E_SQL_UNSUPPORTED` | an operator or function has no mapping in this dialect — or has one carrying a `caveat` while `strict` is set |
 | `E_SQL_UNBOUND` | a variable is read that the bindings do not name |
-| `E_SQL_BINDING` | a binding is malformed, names an unknown field, or collides with another relation's alias |
+| `E_SQL_BINDING` | a binding is malformed, names an unknown field, or collides with another relation's alias. *Malformed* is checked rather than assumed: a `column`, `raw` or `table` that is not a string, an identifier that is empty or contains a NUL, an alias that is not a string, and a `value` declaring `type: NUM` whose text is not SEL's canonical form for that number |
 | `E_SQL_ASSIGN` | stage 1 refuses an assignment or a sequence: compound assignment, reassignment, a read before the write, an assignment inside an aggregate body or a call argument, a non-constant index on the target, or a non-assignment before the result expression |
-| `E_SQL_INVALID` | every argument is written down and SEL rejects the expression: an out-of-range length or position, a fractional count, text that is not a number, a zero divisor. The message carries SEL's own code and the position is SEL's own innermost failing node |
-| `E_SQL_SHAPE` | a list where a scalar is required; `_K` inside a relation body; a non-BOOL where a condition is required; an aggregate over something that is neither a list, a `columns` binding nor a `relation` binding; `asCondition()` on a non-BOOL fragment |
+| `E_SQL_INVALID` | every argument is knowable and SEL rejects the expression: an out-of-range length or position, a fractional count, text that is not a number, a zero divisor. *Knowable* means a literal, a scalar `value` binding, or an assignment over those. The message carries SEL's own code and the position is SEL's own innermost failing node |
+| `E_SQL_SHAPE` | a list where a scalar is required; `_K` inside a relation body; a non-BOOL where a condition is required; an aggregate over something that is neither a list, a `columns` binding nor a `relation` binding; `asCondition()` on a non-BOOL fragment. Also every place a **row of a multi-field relation** is treated as one value, because it is a map in SEL: a bare `_`, `IN`, `COUNT`, `HAS`, indexing by position, and iterating it. `HAS` over a relation is refused outright — a relation's keys are positions, and the answer needs the row count |
 
 ---
 
@@ -76,9 +76,13 @@ must not be negative), so there is nothing to translate; a database would
 answer something rather than fail
 ```
 
-It is raised only where the answer is knowable — every leaf a literal. The same
-mistake written with a column in it is not detected, and `docs/SQL-TRANSLATION.md`
-§11.4 says so rather than leaving it to be discovered.
+It is raised only where the answer is knowable, and the residual is exactly one
+thing: **a column**. A literal is knowable, a scalar `value` binding is a literal
+the host wrote down, and an assignment is knowable when its right-hand side is —
+including an assignment nothing reads, which stage 1 would otherwise drop before
+anyone looked at it. A column is not, and will not be until the query runs. The
+same mistake written with a column in it is not detected, and
+`docs/SQL-TRANSLATION.md` §11.4 says so rather than leaving it to be discovered.
 
 ---
 

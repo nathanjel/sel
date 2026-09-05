@@ -1,6 +1,6 @@
 # SEL → SQL translation
 
-**Status: M1–M5 are built — MariaDB, MySQL, PostgreSQL and SQLite, each verified against a running server (see §14); the Python port is plan.** This document is the
+**Status: M1–M5 are built and reviewed — MariaDB, MySQL, PostgreSQL and SQLite, each verified against a running server, then put through a five-lane contract review that reproduced twenty-four violations the suite had reported clean (see §14 and §11.5); the Python port is plan.** This document is the
 design for the SQL layer. It is written in the same register as `spec/SPEC.md` — where it and a
 future implementation disagree, resolve it here first — but it is *not* part of
 the language spec. Nothing here changes how a SEL program evaluates. It
@@ -225,7 +225,7 @@ key by key.
   "numericCast":    "CAST({0} AS DECIMAL(38,10))",
   "isTrue":     "({0}) IS TRUE",
   "isNotTrue":  "({0}) IS NOT TRUE",
-  "placeholder":  "?"          // "${n}" for PostgreSQL; see §9
+  "placeholder":  "?"          // every dialect so far; see §9
 }
 ```
 
@@ -347,7 +347,7 @@ disagree). `ret` is what §8 consumes.
 ```jsonc
 "UPPER": { "tpl": "UPPER({0})", "ret": "TEXT", "caveat": "unicode-case" },
 "/":     { "tpl": "({0} / {1})", "ret": "NUM", "caveat": "division-scale" },
-"ROUND": { "tpl": "ROUND({0}, {1})", "ret": "NUM", "caveat": "rounding-mode" }
+"MIN":   { "tpl": "LEAST({*})", "ret": "NUM", "caveat": "numeric-scale" }
 ```
 
 Caveats are advisory by default and fatal under `strict`: `translate(…, ['strict' => true])`
@@ -1045,6 +1045,13 @@ ALL(ORDERS, O, ALL(LINES, L, L["qty"] > 0))
 Two relations sharing an alias in one expression is `E_SQL_BINDING`, checked
 before anything is rendered.
 
+A relation nested inside **itself** is refused separately, when the binder frame
+is pushed rather than up front: the aliases are equal, so the check above sees
+one alias and not two, and the inner `{corr}` would name the outer row while
+reading the inner one. `ALL(ORDERS, O, ALL(ORDERS, O, …))` is `E_SQL_SHAPE`
+with its own message. Two *different* relations with distinct aliases nest
+correctly and are unaffected — §7.3 above is that case.
+
 ### 7.4 The binder environment
 
 A stack of frames, `name => binder`, consulted **before** the bindings map —
@@ -1055,7 +1062,7 @@ variable. A binder is one of three things, matching the three shapes:
 |---|---|---|---|
 | a static element | the element's AST node, re-entered | indexing that node | its key, as TEXT |
 | a column | that column reference | `E_SQL_SHAPE` | the ordinal, as TEXT |
-| a relation row | the relation's `scalar` field, or `E_SQL_SHAPE` if it declares none | the named field | **`E_SQL_SHAPE`** |
+| a relation row | the relation's `scalar` field — but `E_SQL_SHAPE` if the relation declares more than one field, and `E_SQL_SHAPE` if it declares none | the named field | **`E_SQL_SHAPE`** |
 
 The **scalar** row of §7.0 binds as a static element whose node is the first
 argument itself and whose key is `"1"`, matching what `Core::elements` does in
@@ -1073,6 +1080,16 @@ M2's quoting decision rather than restating it.
 `_K` on a relation is refused because a row has no portable key. Inventing one —
 `ROW_NUMBER()`, the primary key — would be a guess about the schema this layer
 is careful never to make.
+
+A bare `_` over a **multi-field** relation is refused for a different reason,
+and it is the same defect as the multi-field `IN` in §7.7 reached through the
+binder instead of the operator. A row of two or more fields is a *map* in SEL,
+not one value, so `ANY(ITEMS, _ $== "AB-1000")` compares a map against text —
+structurally false for every row, so `[]` in SEL — and every one of the four
+servers answered `[1]`, because the `scalar` field silently stood in for the
+row. A one-field relation genuinely is a scalar and still works; for anything
+wider, name the field. `scalar` remains what a *one-field* relation may declare
+so a bare reference reads well, not a projection of a wide one.
 
 Binders shadow, and nested aggregates shadow independently, exactly as spec
 §7.3 requires of the evaluator.
@@ -1184,11 +1201,19 @@ becomes the thing people actually hit, and the relation half is blocked on
 | | static / columns | relation | scalar |
 |---|---|---|---|
 | `COUNT(x)` | the count, as a literal | `count` skeleton | `0` — a scalar has no children (spec §7.4) |
-| `HAS(x, k)` | `TRUE`/`FALSE`, decided at translation time | `TRUE`/`FALSE` from the declared fields | `FALSE` |
+| `HAS(x, k)` | `TRUE`/`FALSE`, decided at translation time | **`E_SQL_SHAPE`** | `FALSE` |
 | `INDEXES(x)` | `E_SQL_SHAPE` — yields a list | same | same |
 
 `HAS` needs a **constant** key, for the same reason indexing does: which column
 it asks about has to be known before the query runs.
+
+`HAS` over a relation used to answer from the declared fields, and that answered
+a different question in both directions. A relation is a *list of rows*, so its
+keys are `"1"`, `"2"`, … and never a field name — which is how the row oracle's
+own context builds it. `HAS(ITEMS, "QTY")` was `TRUE` where SEL says `FALSE`,
+and `HAS(SKUS, "1")` was `FALSE` where SEL says `TRUE`. The positional direction
+cannot be answered by an expression at all, because it needs the row count, so
+refusal is the only honest outcome for either and the whole row is refused.
 
 ### 7.7 What is refused, and where
 
@@ -1512,8 +1537,27 @@ Rules: literals give their own kind; a `var` gives its binding's declared `type`
 an `index` into a `columns`/`relation` binding gives the field's `type`;
 everything else gives its map entry's `ret`. `UNKNOWN` is not an error — it means
 "ask the database", which for an untyped binding is the honest answer. `UNKNOWN`
-where `BOOL` is required is allowed and rendered through `isTrue`; `UNKNOWN`
-in a numeric comparison selects the `coerce` variant.
+where `BOOL` is required is allowed; `UNKNOWN` in a numeric comparison selects
+the `coerce` variant.
+
+**`isTrue` wraps at `asCondition` and nowhere else.** That is worth stating
+plainly, because the obvious reading of the paragraph above is that every
+`UNKNOWN` in a boolean position gets folded, and it does not. `Fragment::asCondition`
+wraps an `UNKNOWN` *whole fragment* in the dialect's `IS TRUE`, and the `all`,
+`any` and `inRelation` skeletons carry `IS TRUE` / `IS NOT TRUE` in their own
+templates. An `UNKNOWN` operand *inside* the tree is emitted bare: `A AND B`
+over two untyped columns renders `` (`a` AND `b`) ``, and `IF(A, 1, 2)` renders
+`CASE WHEN `a` THEN …`, with the server's own three-valued logic deciding what
+a NULL does.
+
+Wrapping every interior operand instead was considered and rejected. It would
+not buy correctness — a NULL column in SEL is a `NONE`, and `NONE AND TRUE` is
+`E_NO_SCALAR`, an *error*, not `FALSE` — so folding NULL to false at every
+interior node would replace one wrong answer with a different wrong answer while
+making every rendered condition unreadable. This is a refusal-class divergence,
+and §11.2 is where it is recorded rather than papered over. Fold at the boundary
+where a WHERE clause forces a two-valued answer anyway; be honest about the
+inside.
 
 ---
 
@@ -1544,21 +1588,35 @@ not worth the risk now.
 
 The renderer never concatenates a literal into a string. It builds a **part
 list** — alternating chunks of finished SQL and numbered parameter slots — and
-every literal, whether it came from a `num`/`text`/`bool` node or from a
+a literal that needs quoting, whether it came from a `text` node or from a
 `kind: value` binding, becomes a slot with its `Value` recorded in order.
 
 ```
-parts:  ['(`o`.`total` > ', SLOT 1, ' AND `o`.`state` = ', SLOT 2, ')']
-params: [Value::num('100'), Value::text('open')]
+parts:  ['(`o`.`total` > 100 AND `o`.`state` = ', SLOT 1, ')']
+params: [Value::text('open')]
 ```
 
-Joining is the last thing that happens, and there are two ways to do it:
+**A NUM, BOOL or BIN literal is not a slot.** `Fragment::isInline` says so, and
+it is a deliberate narrowing rather than an oversight: those three have a
+dialect spelling with no injection surface — a canonical decimal, `TRUE`/`1`,
+`x'…'` — and parameterising them would defeat the point. A driver binds `?` as a
+*string* by default, so `100` sent as a parameter arrives as `'100'` and
+MariaDB's `DECIMAL` cast of it is a different expression than the cast of a bare
+`100`. TEXT is the kind with a quoting problem, and TEXT is what gets a slot.
+
+Joining is the last thing that happens, and there are three ways to do it:
 
 | Mode | Slot becomes | Result |
 |---|---|---|
 | `inline` (default) | the dialect-quoted literal | ``(`o`.`total` > 100 AND `o`.`state` = 'open')`` |
-| `params` | the dialect's placeholder — `?`, or `$n` for PostgreSQL | ``(`o`.`total` > ? AND `o`.`state` = ?)`` plus the array |
-| `debug` | `~1~`, `~2~`, … | ``(`o`.`total` > ~1~ AND `o`.`state` = ~2~)`` |
+| `params` | the dialect's `lexical.placeholder` | ``(`o`.`total` > 100 AND `o`.`state` = ?)`` plus the array |
+| `debug` | `~1~`, `~2~`, … | ``(`o`.`total` > 100 AND `o`.`state` = ~1~)`` |
+
+Every dialect written so far spells the placeholder `?`, PostgreSQL included:
+`$1` is the *protocol's* numbering and PDO does not use it. It stays a lexical
+key because a host that talks the wire protocol directly would need `$n`, and
+the numbering the part list already carries is exactly what such a spelling
+needs.
 
 This is a structural decision and not a rendering flag bolted on later, because
 the alternative — emit a string, then find the literals in it again — is
@@ -1597,7 +1655,7 @@ final class Fragment
     public array $parts;
     /** @var list<\Sel\Value> one per slot, in order */
     public array $params;
-    public string $kind;      // NUM | TEXT | BOOL | BIN | UNKNOWN
+    public string $kind;      // NUM | TEXT | BOOL | BIN | LIST | UNKNOWN
     public string $dialect;
     /** @var list<string> */
     public array $caveats;    // which inexactnesses were accepted
@@ -1605,7 +1663,7 @@ final class Fragment
     /** Usable as a condition: BOOL as-is, UNKNOWN wrapped in the IS TRUE test. */
     public function asCondition(string $mode = 'inline'): string;
 
-    /** Usable in a select list, GROUP BY, ORDER BY, HAVING. Any kind. */
+    /** Usable in a select list, GROUP BY, ORDER BY, HAVING. Any kind but LIST. */
     public function asValue(string $mode = 'inline'): string;
 
     /** The bound values for `params` mode, in placeholder order. */
@@ -1639,7 +1697,7 @@ translated is not a wrong program.
 | Code | Means |
 |---|---|
 | `E_SQL_UNSUPPORTED` | no mapping for this operator or function in this dialect (or a `caveat` under `strict`) |
-| `E_SQL_DIALECT` | mapped, but the dialect version is below the entry's `since` |
+| `E_SQL_DIALECT` | the dialect itself is wrong: no such name, or a base like `ansi` that no server runs. Also mapped-but-too-old, when an entry's `since` is above the dialect's declared version — no entry declares one today |
 | `E_SQL_UNBOUND` | a variable with no binding |
 | `E_SQL_BINDING` | a malformed binding, an unknown field, an alias collision |
 | `E_SQL_ASSIGN` | an assignment or sequence stage 1 refuses |
@@ -1682,9 +1740,12 @@ out to support both exactly as SEL means them.
 | `unicode-case` | `UPPER`/`LOWER` are ASCII-only in SEL. MySQL and PostgreSQL apply full Unicode case mapping. **(verified)** SQLite agrees with SEL exactly, so `sqlite.json` overrides the caveat away rather than inheriting it. |
 | `division-scale` | SEL's `/` yields ten fractional digits, half away from zero. MySQL's DECIMAL division adds four. **(verified)** PostgreSQL's `/` on integers **truncates** — `10 / 4` is `2` — so `postgresql.json` casts both operands to `numeric`, leaving sixteen fractional digits against SEL's ten. The M1 prediction, measured. |
 | `decimal-float` | **(verified)** SQLite has no exact decimal type: arithmetic is int64 or IEEE double. Not a scale difference — a different number system. `0.1 + 0.2` is `0.30000000000000004` there and `0.3` in SEL, and no template fixes it, so every arithmetic entry carries this and `strict` refuses the lot. |
-| `rounding-mode` | SEL rounds half away from zero everywhere. **(verified)** PostgreSQL agrees exactly — `round(2.5,0)` is `3` and `round(-2.5,0)` is `-3` — so `postgresql.json` carries no such caveat. MariaDB needs it. |
+| `rounding-mode` | SEL rounds half away from zero everywhere. **No dialect declares this**, and that was measured rather than assumed: `mysql-family` carried it on `ROUND` and did not need it. The operands reach `ROUND` through `numericCast`, so they are `DECIMAL`, and both MySQL and MariaDB round `DECIMAL` half away from zero — `ROUND(-2.5,0)` is `-3`, `ROUND(2.675,2)` is `2.68`, agreeing with SEL on every probe. The caveat was written for the `FLOAT` behaviour the cast means these operands never have. Removing it was a **coverage gain**: it had been exempting every `ROUND` in the corpus from the exactness check. The name stays in the vocabulary because the divergence is real in general. |
+| `trim-charset` | `TRIM` strips exactly space, tab, CR and LF in SEL, and ANSI `TRIM` strips spaces only. `mysql-family` reaches SEL's set with `REGEXP_REPLACE` and SQLite with `trim(X, Y)`, so the caveat sits on `ansi` and is inherited by no target that has a better answer. |
+| `input-laxity` | The server accepts input SEL rejects. `DECODE_BASE64("aGVsbG8")` — unpadded — is `E_BAD_ARG` in SEL and a value on MySQL and PostgreSQL. Structurally unwitnessable, for the reason §11.5 gives. |
+| `length-units` | In the vocabulary and used by nothing: every dialect's `LEN` counts what SEL counts. Kept because a dialect whose `LENGTH` is bytes is the obvious next one to be written, and a mutation exists that adds it to prove the check would notice. |
 | `modulo-integer` | **(verified)** SQLite truncates both operands to integers before `%`, so `5.5 % 2` is `1.0` rather than `1.5`. |
-| `numeric-scale` | **(verified)** The value is equal and the scale is not. MariaDB's `LEAST(17, 123.456)` is `17.000` where SEL's `MIN` returns `17` — invisible until the result is read as text. |
+| `numeric-scale` | **(verified)** The value is equal and the scale is not. MariaDB's `LEAST(17, 123.456)` is `17.000` where SEL's `MIN` returns `17` — invisible until the result is read as text. It is also the only caveat a **skeleton** carries: MariaDB gives a `CASE` over NUM branches one type and pads to the widest scale, so `IF(FALSE, 2.50, 3)` is `3.00` there and `3` in SEL and on MySQL 8.4. That is `mariadb.json`'s first and only override, and it is the reason `skel` entries reach `Fragment::caveats` at all — before it, a skeleton could declare an inexactness that `strict` never saw. |
 | `scale-limit` | **(verified)** DECIMAL caps the scale of a product and SEL does not, so a result needing more fractional digits is truncated to the cap — to zero, when every surviving digit is one. `0.00000000000000000000000000000001 * 2` is `2e-32` in SEL and on MariaDB and `0.000000000000000000000000000000` on MySQL 8.4: the boundary is **30** there and **38** on MariaDB. It sits on `mysql-family` because both truncate; only the digit they stop at differs. `+` and `-` do not truncate on either, and `/` already declares `division-scale` for the same shape of loss. PostgreSQL's `numeric` has no such cap and carries no caveat, so a multiplication defect still fails the build there. |
 | `power-float` | `POWER` returns a float in every dialect; SEL's is exact. |
 | `text-collation` | The `$` family is bytewise in SEL. The `textCollate` lexical entry forces a binary collation; a column with an incompatible declared collation can still defeat it. |
@@ -1731,16 +1792,30 @@ Refusing `CHAR` outright would cost every legitimate use of it to prevent one
 input. And §11.4's check does not reach it, because that check asks SEL whether
 the expression is valid and SEL says it is.
 
-The first two rows have shrunk since they were written, and §11.4 is why: where
-both operands are literals, `1 / 0` is now refused rather than translated, and
-so is `LEFT("abc", " 2")`. What survives here is the same divergence with a
-column in it.
+The first two rows have shrunk twice since they were written, and §11.4 is why.
+First, where both operands are literals, `1 / 0` became a refusal rather than a
+translation, and so did `LEFT("abc", " 2")`. Then the constant check learned that
+a scalar `value` binding is a literal the host wrote down, and that stage 1's
+assignments are constant when their right-hand sides are — so `V / 0` with
+`V` bound as `{kind: value, value: 1}` is refused too, and so is
+`A = 1 / 0; TRUE` — even though stage 1 drops a definition nothing reads. **What survives here is the same divergence with a
+column in it, and nothing else.** A column is the one operand whose value this
+layer genuinely cannot know.
 
-The `NULL` case is partly contained: an aggregate body folds through
-`IS [NOT] TRUE`, and `asCondition` wraps an `UNKNOWN` fragment in `isTrue`, so a
-NULL reaching a `WHERE` rejects its row rather than being read as true. A `BOOL`
-fragment renders bare, which is correct for every value SEL can produce and
-becomes row-rejection for a NULL that SEL could not have produced at all.
+The `NULL` case is partly contained, and the word doing the work is *partly*.
+An aggregate body folds through `IS [NOT] TRUE`, and `asCondition` wraps an
+`UNKNOWN` fragment in `isTrue`, so a NULL reaching a `WHERE` rejects its row
+rather than being read as true. A `BOOL` fragment renders bare, which is correct
+for every value SEL can produce and becomes row-rejection for a NULL that SEL
+could not have produced at all.
+
+Inside the expression, there is no containment and none is attempted — see §8.
+`A AND B` over two nullable columns renders `` (`a` AND `b`) `` and the server's
+three-valued logic decides. That is not an oversight to be fixed by wrapping
+every interior operand: SEL's answer for a `NONE` operand is `E_NO_SCALAR`, an
+*error*, so folding NULL to false inside would be a second wrong answer dressed
+as a fix. The boundary is where a two-valued answer is forced and therefore
+where folding is honest; the inside is a divergence, and this row is it.
 
 There is no containment for the second. It is stated here because the honest
 version of "SEL and SQL agree" is "they agree on every value SEL would have
@@ -1843,19 +1918,93 @@ Four properties of the check, each of which is a decision:
   expression, two answers, decided by whether the operand next to it happened to
   be written down. §11.2's first row is the other half of the argument: SQL does
   not promise not to evaluate the branch it does not take.
+- **A value binding is a constant, and so is an assignment.** The check began
+  as "every leaf of this subtree is a literal", which read the source and not
+  the inputs. A scalar `value` binding is a literal the *host* wrote down — the
+  translator has the `Value` in hand — so `V / 0` is refused when `V` is bound
+  to `1`, and the name is lifted into a `Context` the evaluator is handed.
+  Stage 1's assignments inherit it, and are checked in `Normalise::record`
+  *before* `substitute` — which matters most for a definition nothing reads.
+  Stage 1 drops those, so `A = 1 / 0; TRUE` translated to `TRUE` and all four
+  servers answered `TRUE` where SEL raises at the assignment. After substitution
+  the subtree is gone and there is nothing left to check. `column`, `columns`
+  and `relation` bindings are not constants and never become ones.
 - **It costs what evaluation costs.** `REPEAT(REPEAT("x", 3000), 3000)` is a
   constant subtree and translating it now builds the nine-million-character
   string once. Measured at parity with evaluating the same expression, and
   bounded by the same limits, but it is no longer true that translation is
   cheap regardless of what is being translated.
 
-**What it cannot do is check a value it does not have.** `LEFT(col, -1)` is
-exactly as wrong and translates, because `col` is a column and its value is not
-knowable here. Argument validation happens where SEL's does — at the value — and
-this reaches the subset of values that are written down. `-N` where `N` is a
-column is not a constant either, however much it looks like `-1`: the test is
-about leaves, not about shape. Both are pinned as cases in
-`sql/cases/16-constants.sqlt` so they are a decision rather than an oversight.
+**What it cannot do is check a value it does not have, and the residual is
+exactly one thing: a column.** `LEFT(col, -1)` is as wrong as `LEFT("abc", -1)`
+and translates, because a column's value is not knowable here and will not be
+until the query runs. Everything else that once looked unknowable has been
+folded in — literals from the start, then host-supplied `value` bindings, then
+assignments over both. Argument validation happens where SEL's does, at the
+value, and this now reaches every value that exists at translation time.
+
+`-N` where `N` is a column is not a constant either, however much it looks like
+`-1`: the test is about leaves, not about shape. Both that and `LEFT(col, -1)`
+are pinned as cases in `sql/cases/16-constants.sqlt` so the residual is a
+recorded decision rather than an oversight.
+
+### 11.5 What the checks cannot see
+
+The sections above list divergences the checks found. This one lists the shapes
+of divergence the checks are structurally unable to find, which is a different
+and less comfortable list. It was written after a review round that reproduced
+twenty-four contract violations against a suite reporting zero differences, and
+every one of them is an instance of something here.
+
+**The closed corpus measures the map, not the bindings.** `sql/oracle/` compares
+SEL against four servers over 391 expressions and finds them identical, and that
+is a real result about `sql/dialects/*.json`: the templates are right. It is not a result about the translator, because the corpus is closed
+by design — an expression, no host input — and *every severe defect the review
+found needed a binding*. A multi-field relation compared against text. `HAS`
+over a relation. A column bound `raw` with a type nobody checked. `COUNT` of a
+row. None of those is expressible as a closed expression, so a corpus of closed
+expressions can run clean for a milestone while they sit there. `sql/oracle/rows.json`
+exists for this reason and is the direction to extend when a new binder shape
+lands, not the expression corpus.
+
+**A corpus of symmetric inputs cannot see an asymmetric bug.** This is §4 of
+`docs/SQL-TESTING.md` and it keeps recurring in new clothing. The sharpest
+instance: the closed corpus contained exactly one BIN value, `7ac3a9`, and it is
+valid UTF-8 — which made it the one byte string that could not distinguish a
+correct `binaryCast` from a missing one, because a wrong cast round-trips it
+unchanged. The value was chosen to look like a hash, and looking like a hash and
+being a *discriminating* hash are unrelated properties.
+
+**A caveat is one-directional, and the second direction had to be bolted on.**
+A caveat says "this entry may disagree", which tells the oracle not to fail. It
+does not say the entry *does* disagree, so declaring one is free, silences every
+check on that entry, and changes no output character — the exact profile of a
+defect nothing can see. `caveat_symmetry` in `php/bin/sqlo` is the other
+direction: every declared caveat must be *witnessed* by an expression that
+actually crosses it, or excused by name. Both `rounding-mode` on `mysql-family`
+and the mixed-BIN guard in the translator were found this way, by asking what a
+declaration had ever done rather than whether it was plausible.
+
+**Two divergences are unwitnessable by construction, and are excused rather than
+checked.** `concat-null` and `input-laxity` are refusal-class divergences wearing
+a caveat's clothes. `concat-null` says concatenation yields NULL if an operand
+is NULL — but SEL has no null, so the operand is a `NONE` and `N & "!"` is
+`E_NO_SCALAR`. `input-laxity` says the server accepts input SEL rejects. In both
+cases SEL has *no answer to disagree with*, so no expression can put the two
+sides in opposition; this is §11.2's territory and not §11.3's. They stay
+declared because an application branching on `Fragment::caveats` still wants to
+be told, and they are named in `sql/oracle/coverage.json` under
+`caveats_unwitnessable` with the reason — which is itself mutation-tested, so
+adding a name there to silence a complaint is not free.
+
+**And a check that has never failed is a claim, not a result.** The slot
+invariant was committed, trusted, and did not fire when the bug it existed for
+was reinstated by hand. `tools/mutate-sql.py` exists to ask "would we know?", and
+it has since caught the mirror check going vacuous, the coverage gate recomputing
+its own denominator, and — in the most embarrassing instance — itself, reporting
+four mutations as "caught by sqldoc" while `sqldoc` was red on the unmutated
+tree and would have reported anything as caught. It now refuses to run on a red
+baseline.
 
 ---
 
@@ -2056,7 +2205,7 @@ evaluated in PHP over the same rows, and an assertion that the two select the
 same ids". That is `sql/oracle/rows.json` and `sql/oracle/fixture-*.sql`, run by
 `php/bin/sqlo rows` — a committed, re-runnable check in `tools/check.sh` rather
 than an `examples/sql-php.php` nobody would run twice. The first version of it
-was an example, and it is the reason `docs/SQL-TESTING.md` §9 exists: it lived in
+was an example, and it is the reason `docs/SQL-TESTING.md` §10 exists: it lived in
 a scratch directory and its results were cited in three commit messages nobody
 could reproduce.
 
@@ -2092,8 +2241,11 @@ because at M1 there was no MySQL to check it against, and the family layer means
 
 That the leaf stays empty is now a check rather than a memory. `php/bin/sqlt`
 re-runs every `mariadb` case under `mysql` and requires the same string, the same
-error and the same parameters — 213 of them — so an override added to one leaf
-and not the other fails the suite. The alternative was a `14-mysql.sqlt` of
+error and the same parameters — 256 of them today — so an override added to one
+leaf and not the other fails the suite. A second check compares the two leaves
+*entry by entry* through `Map::entries`, which catches an override that changes
+no output character, such as a `caveat`; `MIRROR_EXCEPTIONS` names the one entry
+allowed to differ, and removing that name is itself a mutation. The alternative was a `14-mysql.sqlt` of
 copies, two hundred lines asserting that a copy is a copy.
 
 The plan said "data and cases only; the translator does not change. If it does,
@@ -2117,6 +2269,24 @@ them:
 
 So: two M1/M2 defects the second dialect exposed, and one new key. The prediction
 held.
+
+**M5¾ — five reviewers, briefed on the contract. DONE.** Not a milestone in the
+plan, and the largest single round of defect-finding the layer has had. Five
+independent lanes — the map, the emitter, the bindings, the translator, the check
+suite — were each given the engineering promise (*if a translation passes, the
+contract holds; otherwise fail outright*) and asked what violated it. They
+reproduced **twenty-four** contract violations against a suite reporting zero
+differences across four live servers — 273 cases, 10 row rules and 39 mutations,
+all green — plus twelve faults in the checks themselves, eight of them mutation
+classes that survived every check there was. Twelve commits, each with cases,
+corpus lines and a mutation. The suite now stands at 339 cases, 391 corpus
+expressions across four dialects at 0 differ, 13 row rules and 69 mutations
+caught with none surviving.
+
+The finding under the findings is the one worth carrying forward: **every severe
+defect needed a binding**, and the corpus is closed by design. The suite was
+measuring the map, and the map was right. §11.5 is that lesson written down, and
+`sql/oracle/rows.json` is where the answer to it lives.
 
 **M6 — Python port.** Transcribed from the PHP, generated map consumed as-is,
 the same `sql/cases/` suite passing byte-identically. That equality is the

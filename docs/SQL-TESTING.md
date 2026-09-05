@@ -2,8 +2,10 @@
 
 Written after M1–M3, when a code review found eight defects — five of them wrong
 answers — in code whose 162-case suite was green. This is not a retrospective for
-its own sake: the same five classes recurred at every milestone, and each has a
-mechanical fix that the project's existing harness is most of the way to already.
+its own sake: the same classes recurred at every milestone — seven of them now,
+A through G — and each has a mechanical fix that the project's existing harness
+is most of the way to already. Sections 3 to 9 are those classes; §10 is the
+class of *evidence* they all argue for.
 
 ---
 
@@ -166,7 +168,7 @@ The fix reuses `Evaluator::evalNode`: where every leaf of a subtree is a
 literal, the translator hands it to SEL and refuses what SEL refuses. One copy
 of the argument rules, in the evaluator, asked rather than reimplemented — which
 is the same lesson as Class A, one level up. The corpus grew a line form for it,
-`!E_RANGE LEFT("abc", -1)`, and thirty-one such lines now assert that a
+`!E_RANGE LEFT("abc", -1)`, and thirty-seven such lines now assert that a
 translation *does not* happen.
 
 The other two are a smaller and more interesting pattern: a caveat is a claim,
@@ -185,6 +187,51 @@ in the templates that provoked them.** SQLite found two, PostgreSQL found one,
 the edges found one more — every time, in the layer underneath. That is an
 argument for adding dialects even where nobody needs them, and for pushing the
 corpus into values no rule would ever contain.
+
+### And then five reviewers were briefed on the contract
+
+Five independent lanes — the map, the emitter, the bindings, the translator, the
+check suite — were each given the engineering promise the layer exists to keep
+(*if a translation passes, the contract holds; otherwise fail outright*) and
+asked what violated it. The suite was green: 273 cases, a closed corpus at
+**0 differ** across four live servers, 10 row rules, 39 mutations caught.
+
+| Lane | Defects | The root |
+|---|---|---|
+| dialect templates | 2 | `ISNUM`'s `^…$` — ICU's `$` matches before a trailing newline, so `ISNUM("12\n")` answered TRUE where SEL says FALSE |
+| bindings | 5 | five ways host data reached the server unchecked: a non-string alias, an empty identifier, a NUL, a non-canonical NUM, an unvalidated `raw` |
+| the constant check | 2 | it closed around AST literals only, leaving `value` bindings — the documented way a host passes a parameter — and assignments outside it |
+| kind guards | 3 | half of spec §4 and none of §5.2: BIN slipped through `requireNotBool`, and `&` accepted operands `EQL` would have refused |
+| relation rows | 6 | spec §7.3's scalar rule applied to values that *have* children: `COUNT`, `HAS`, `IN`, `ANY`, a bare binder and an index all answered for a different question |
+| binary handling | 4 | PostgreSQL's `binaryCast` parsed text as a bytea **input literal**, so `\x41` became `A` |
+| the oracle's fixtures | 2 | no NULL existed anywhere in five milestones of fixtures; and `skel` entries could declare a caveat that never reached `Fragment::caveats` |
+
+**Twenty-four contract defects, bringing the running total to fifty-one.** Every
+one of them was live while the corpus reported 0 differ.
+
+Two sentences carry the whole finding, and they are the same sentence read twice.
+
+**The corpus measured the map and found it right; the bindings were never
+measured.** The map is data and the corpus is the right instrument for it — the
+templates *are* correct, which is a real result. But the corpus is closed by
+design, an expression with no host input, and **every severe defect above needed
+a binding**. A closed corpus can run clean for a milestone over defects it is
+structurally unable to reach.
+
+**And the closed corpus had exactly one BIN value, and it was the one that could
+not fail.** `7ac3a9` — chosen to look like a hash — is valid UTF-8, which makes
+it precisely the byte string that round-trips unchanged through a *wrong*
+`binaryCast`. Four binary defects hid behind one well-chosen-looking constant.
+That is §4's lesson about symmetric inputs, arriving in different clothes for the
+third time.
+
+The check suite was reviewed as its own lane and is counted separately, because
+these are holes rather than wrong answers: the mutation runner had **three**
+faults found by pointing it at itself, **eight** mutation classes survived every
+check, and the fuzz lane counted a SEL-rejected program as handled without ever
+asking whether translation refused it. Twelve, and that number is the fuzziest
+here — several are one fault seen from two directions, and no honest line
+separates "a hole in a check" from "a defect the check would have found".
 
 ---
 
@@ -633,7 +680,79 @@ explicit list, living in code — which works, and is worth remembering is a
 
 ---
 
-## 9. The evidence is not in the repository
+## 9. Class G — a check that could not fail for the reason it claimed
+
+**Four instances, and the class was invisible until a tool existed to look for
+it.** Classes A–F are all "the code was wrong and nothing noticed". This one is
+"something *did* notice, reported a result, and the result meant nothing" — which
+is worse, because a green check is read as evidence and a missing check is not.
+
+### Example
+
+`tools/mutate-sql.py` reported four consecutive mutations as **caught by
+`sqldoc`**. `sqldoc` checks that the design document's examples quote cases that
+run; it cannot see a change to a dialect template, a translator guard, or an
+emitter path. It was reporting them caught because it was **red on the unmutated
+tree** — a doc quote had gone stale when `skel.inRelation` changed — so it failed
+on every mutated copy too, for a reason that had nothing to do with the mutation.
+Four mutations scored as covered while nothing covered them.
+
+Three more of the same shape:
+
+- **The mirror check went vacuous.** `php/bin/sqlt` re-runs every `mariadb` case
+  under `mysql`, and the mirrored case was built with `['dialect' => $mirror] + $c`
+  — PHP's `+` keeps the **left** operand for a duplicated key, so the mirror ran
+  under `mariadb` and compared a run against itself. 213 assertions, all of them
+  `x == x`.
+- **The coverage gate recomputed its own denominator.** It measured "entries
+  covered" against the set of entries it had just walked, so an entry that
+  vanished from the map lowered both numbers and the percentage never moved.
+- **A caveat silences.** Class-A adjacent, but this is its check-side face: a
+  caveat tells the oracle not to fail on that entry, so *adding* one turns a
+  failing check green and changes no output character. Mutating `ansi`'s `LOWER`
+  to `UPPER` was reported as a caveat line, not a difference, because `LOWER`
+  already carried `unicode-case` honestly.
+
+### Root cause
+
+**A check's failure mode was never exercised.** Every one of these was written
+correctly, committed, and believed. What none of them had was a moment where
+somebody broke the thing the check exists to catch and confirmed the check went
+red *for that reason*. A check is a hypothesis about a defect; running it on
+correct code tests neither half.
+
+### Fix — a baseline gate, and mutations for the allow-lists
+
+Three mechanisms, in increasing order of how much they cost:
+
+1. **The mutation runner refuses to run on a red tree.** It now runs every check
+   against the unmutated copy first and reports a suite error rather than
+   scoring, so "caught by X" means X changed its mind, not that X was already
+   unhappy. This is the direct fix for the `sqldoc` instance and it would have
+   caught it the first time.
+
+2. **A check that compares two things asserts they are two things.** The mirror
+   check now asserts `$mirrorCase['dialect'] !== $c['dialect']` before running,
+   and the coverage gate diffs against a *recorded* set in
+   `sql/oracle/coverage.json` in both directions rather than against itself. In
+   both cases the fix is the same: name the invariant that makes the comparison
+   meaningful, and assert it.
+
+3. **Mutate the allow-lists.** Every mechanism above has an escape hatch —
+   `MIRROR_EXCEPTIONS` in `php/bin/sqlt`, `caveats_unwitnessable` in
+   `sql/oracle/coverage.json` — and an escape hatch is the first thing an
+   impatient edit reaches for. Both now have a mutation that removes the entry
+   they hold, and each is caught by exactly the check it guards. The caveat side
+   also got its own direction: `caveat_symmetry` requires every declared caveat
+   to be *witnessed* by an expression that crosses it, so declaring one is no
+   longer free.
+
+**Would have caught:** all four, and it is the only class here whose fix is a
+property of the harness rather than of the code under test.
+
+---
+
+## 10. The evidence is not in the repository
 
 This is not a class of defect. It is the class of *evidence* every section above
 argues for, and it currently fails its own standard.
@@ -658,11 +777,24 @@ separate task.
 
 ---
 
-## 10. What to build, ranked
+## 11. What to build, ranked
+
+**All of it is built.** This section was a plan and is now a record; it is kept
+because the ranking turned out to be right and the reasoning under it is what
+generalises. Items 0–5 and 7 all shipped, item 6 was dropped for the reason
+below, and the check suite has since been reviewed as its own lane and closed
+eight holes it did not know it had (§9).
+
+What is left is not on this list, because this list is about the PHP layer's
+checks and they are done. What remains is **M6, the Python port** — and the thing
+to carry into it is that the port inherits `sql/cases/*.sqlt` and the generated
+map as data, so the suite that took seven classes of defect to build is the
+suite the second host is graded against on day one. That is the whole argument
+for §13.1 of `docs/SQL-TRANSLATION.md` being byte-exact.
 
 | # | Item | Effort | Class | Defects it would have caught |
 |---|---|---|---|---|
-| 0 | Commit the three scratch differentials as `sql/oracle/` | trivial — already written | §9 | makes 1 and 2 possible |
+| 0 | Commit the three scratch differentials as `sql/oracle/` | trivial — already written | §10 | makes 1 and 2 possible |
 | 1 | SQL lane in `tools/fuzz.sh`, **both render modes, native prepares** | small — the plumbing exists | B, A | ~6 |
 | 2 | Oracle runner + per-entry coverage gate over item 0 | medium | A | 8 |
 | 3 | `sel-sql` blocks in `extract-docs.mjs` | small | C | 5 + doc drift |
@@ -706,10 +838,10 @@ lower bound on what that produces.
 
 ---
 
-## 11. What not to do
+## 12. What not to do
 
 **Do not write more `.sqlt` cases as the answer.** They are the right tool for
-pinning a decision and for regression, and 180 of them do that well. They cannot
+pinning a decision and for regression, and 339 of them do that well. They cannot
 find a defect nobody suspected, because a case is a belief and the defects are in
 the beliefs.
 
@@ -725,6 +857,21 @@ argument in the corpus was in range, every number was of ordinary size, every
 string was short and non-empty. Full coverage and an untested edge are the same
 green. Three of the twenty-seven were found by nothing more than writing down
 the values a person would never write on purpose.
+
+**Do not trust a check that has never failed.** A check is a hypothesis about a
+defect, and running it against correct code tests neither half of the hypothesis.
+Four checks in this layer were green for reasons unrelated to what they claimed
+to be checking (§9) — one of them the mutation runner itself, whose entire job is
+to ask this question. `tools/mutate-sql.py` is the mechanical version of the
+rule: break the thing on purpose, and require the check to notice *for the right
+reason*. Its baseline gate is what makes "for the right reason" enforceable.
+
+**Do not assume the corpus reaches the layer you are worried about.** The closed
+expression corpus reports 0 differ across four live servers, and that is a true
+statement about the *map*. It said nothing about the bindings, because a closed
+expression has none, and a review found twenty-four defects sitting behind that
+line. When a new binder shape or a new host-supplied value lands, the corpus to
+extend is `sql/oracle/rows.json`, not `expressions.selo`.
 
 **Do not add a static analyser expecting it to catch these.** PHPStan would flag
 none of the twelve. They are semantic — a wrong claim about a server, a wrong

@@ -238,6 +238,16 @@ binding is the honest answer.
 "RMATCH": { "tpl": "REGEXP_LIKE({1}, {0})", "ret": "BOOL", "since": "8.0.4" }
 ```
 
+**Reserved, and used by no dialect today.** The mechanism is implemented and
+checked — `Translator` compares the entry's `since` against the target's declared
+`version` and refuses `E_SQL_DIALECT` below it — but every entry in every dialect
+written so far is available in the version that dialect declares, so nothing
+exercises it against a real server. It is documented here as the answer for older
+servers rather than as something in use: `mysql.json` notes that a MySQL 5.7 leaf
+would need most of the regex family gated or refused, and writing that leaf is
+what would first make `since` live data. Treat the example below as a shape, not
+as a citation.
+
 Below that version, `E_SQL_DIALECT`. Comparison is dotted-numeric and nothing
 cleverer. The version compared is always the **target's**, never a base's, so a
 version-gated entry belongs in the leaf that declares the version — putting one
@@ -269,14 +279,14 @@ than a bag of prose. Each is described in full in `docs/SQL-TRANSLATION.md` §11
 | `numeric-scale` | the result's decimal scale differs from SEL's, though the value is equal |
 | `scale-limit` | the server's decimal type caps the result scale, and a result needing more fractional digits is truncated to it |
 | `decimal-float` | the server has no exact decimal type; arithmetic is integer or binary floating point |
-| `rounding-mode` | rounding is not half-away-from-zero |
+| `rounding-mode` | rounding is not half-away-from-zero — **in the vocabulary, declared by no dialect**: `mysql-family` carried it on `ROUND` and was probed not to need it, because `numericCast` means the operands are `DECIMAL` and both servers round `DECIMAL` SEL's way |
 | `modulo-integer` | `%` is integer-only |
 | `power-float` | `POWER` returns a float |
 | `text-collation` | a declared column collation can defeat `textCollate` |
 | `regex-engine` | the regex dialect is not SEL's PCRE∩ECMAScript subset |
 | `concat-null` | concatenation yields NULL if any operand is NULL |
 | `trim-charset` | `TRIM` strips a different character set than SEL's space/tab/CR/LF |
-| `length-units` | a length or position is counted in something other than code points |
+| `length-units` | a length or position is counted in something other than code points — **in the vocabulary, declared by no dialect**: every target's `LEN` counts what SEL counts. A mutation adds it to `ansi`'s `LEN` to prove the check would notice |
 | `input-laxity` | the server accepts input SEL rejects, though it agrees on everything SEL accepts |
 
 ---

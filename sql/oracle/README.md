@@ -93,6 +93,29 @@ The rule the runner applies:
 That is the caveat vocabulary earning its place: it is not documentation, it is
 the list of expressions this check is not allowed to fail on.
 
+**And the rule runs in the other direction too**, because the first half alone
+makes declaring a caveat free — it silences every check on that entry and changes
+no output character, which is the exact profile of a defect nothing can see. So:
+
+> Every caveat a dialect **declares** must be **witnessed**: some expression must
+> actually make that entry differ, or `coverage.json` must excuse it by name.
+
+`caveat_symmetry` enforces both halves, and fails in both directions — a declared
+caveat nothing witnesses, *and* an excused caveat that turns out to be witnessed
+after all. A fragment is credited as a witness only when it carries **exactly
+one** caveat; two say which entries were inexact and not which one caused this
+difference, and crediting both would let a real divergence launder an invented
+caveat beside it. That strictness was measured to cost nothing — relaxing it to
+two credits no caveat a single-caveat line does not already witness.
+
+Two caveats are excused, and by construction rather than by omission.
+`concat-null` and `input-laxity` are refusal-class divergences wearing a caveat's
+clothes: SEL raises exactly where the server answers, so SEL has no answer to
+disagree with and no expression can put the two sides in opposition. They are
+named in `coverage.json` under `caveats_unwitnessable` with the reason. Adding a
+name there is not free — `tools/mutate-sql.py` removes one and requires the
+symmetry check to notice.
+
 ### Lines SEL rejects
 
 A line may instead say what SEL refuses, and then the assertion is on the
@@ -112,7 +135,7 @@ the server, because the point is that nothing should be.
 These lines could not have been written before `docs/SQL-TRANSLATION.md` §11.4.
 `LEFT("abc", -1)` translated cleanly into all four dialects and they answered
 `''`, `''`, `'ab'` and `'abc'` — a translation reporting success for an
-expression SEL has no answer for. The corpus now carries thirty-one of them, and
+expression SEL has no answer for. The corpus now carries thirty-seven of them, and
 each is a line the old translator would have failed.
 
 A `!` line still traces the map entries it reaches, because the refusal happens
@@ -141,12 +164,25 @@ Two properties make it worth having rather than decorative:
   pass.
 
 Refusals need no coverage: a refusal has no semantics to check, it is the absence
-of them.
+of them. But *which* entries are supported is itself recorded, in `coverage.json`
+under `supported`, and diffed both ways: an entry that gains support without
+gaining an expression is reported, and so is one that quietly loses it. Without
+the recorded set the gate measured "entries covered" against the entries it had
+just walked, so an entry vanishing from the map lowered both numbers and the
+percentage never moved — a denominator computing itself.
 
-This is the part that changes what "done" means for M5. Three more dialect
-documents are about to be authored, each a few dozen semantic claims about a
-server nobody has probed, and each new entry will arrive needing either an
-expression or a written reason.
+This is the part that changed what "done" meant for M5, and all four dialect
+documents were authored under it: each a few dozen semantic claims about a
+server nobody had probed, each new entry arriving needing either an expression or
+a written reason.
+
+**What it does not measure is bindings**, and that is worth stating where the
+gate is described rather than leaving it to be discovered. `expressions.selo` is
+closed by design — an expression, no host input — so a defect that needs a
+binding to reach cannot appear here however green this runs. A contract review
+found twenty-four such defects while this corpus reported 0 differ on 391
+expressions across four servers. `rows.json` below is the instrument for that
+half, and it is the one to extend when a new binder shape lands.
 
 ## The fuzz lane
 
@@ -167,7 +203,7 @@ Outcomes, and why each is what it is:
 | differ | they did not, and the fragment claimed to be exact — a defect |
 | caveat | they differ and the fragment said in advance that it might |
 | refused | the translator would not translate it; an ordinary outcome |
-| sel-error | the program does not evaluate; nothing to compare against |
+| sel-error | the program does not evaluate — and the translator is then required to refuse it |
 | out of range | the server rejected the **values** as too large |
 | invalid SQL | the server rejected the **syntax** — always a defect |
 
@@ -176,6 +212,13 @@ The last two are the split that matters. SEL's arithmetic is unbounded and
 still overflow; that is the accepted limit of pushing a rule into a database. A
 syntax error is never that. It means the layer emitted something that is not SQL,
 which no input may cause.
+
+`sel-error` used to mean "nothing to compare against", counted and skipped. It
+now carries an assertion, because §11.4 gave the translator a rule about exactly
+these programs: SEL rejects it, so nothing may translate it. Each one is
+translated and the lane fails if translation *succeeds* — 518 of 518 refused on
+the standing seed, and 1072 of 1072 on a fresh one, across all four dialects.
+The largest single group in a fuzz run had been the group nothing checked.
 
 A run that abstains on nearly everything is not a lane, so the driver fails when
 fewer than one program in twenty reaches the server. About a quarter do today;
@@ -190,7 +233,23 @@ against the fixture, and evaluated by SEL over the same rows loaded as a context
 The two id lists must match.
 
 This is the only oracle that reaches a `relation` binding, because a correlated
-subquery needs a query to correlate to.
+subquery needs a query to correlate to — and, more to the point, **the only one
+that reaches a binding at all**. `expressions.selo` is closed, so the entire
+host-input surface of this layer is measured here and nowhere else. A contract
+review found twenty-four defects behind that line, every one of them needing a
+binding; `rows.json` grew a `NOTES` relation binding and thirteen rules in
+response. When a new binder shape lands, this is the file that has to grow.
+
+Every fixture also carries a **nullable `note` column**, added late and worth its
+own sentence. For five milestones no NULL existed anywhere in any fixture — not
+in `expressions.selo`, which is closed and so cannot have one, and not here
+either — which meant every divergence SQL's three-valued logic can cause was
+unmeasured across the whole layer. SEL has no null, so a NULL is a `NONE` and
+most operations on it raise; the column exists so that the places which *do*
+have an answer (`IS [NOT] TRUE` folding in the aggregate skeletons, `asCondition`
+wrapping an `UNKNOWN`) are checked against a server rather than reasoned about,
+and so that `concat-null`'s unwitnessability is a measurement rather than a
+claim.
 
 Two guards, both of which have already caught something:
 
@@ -204,7 +263,7 @@ Two guards, both of which have already caught something:
 
 `fixture.sql` exists because the original did not. The M3 row-parity check ran
 against a database made by hand at a shell, three commit messages cite its
-result, and the database is gone. See `docs/SQL-TESTING.md` §9.
+result, and the database is gone. See `docs/SQL-TESTING.md` §10.
 
 ## What it found on its first two runs
 
