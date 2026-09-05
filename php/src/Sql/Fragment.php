@@ -152,7 +152,16 @@ final class Fragment
     private function isInline(int $slot): bool
     {
         $kind = $this->paramKinds[$slot - 1] ?? 'TEXT';
-        return $kind === 'NUM' || $kind === 'BOOL';
+        // BIN joins them. A BIN parameter is bytes, and a driver sends them
+        // through the connection's text encoding: on PostgreSQL 130 of the 256
+        // single-byte values then failed -- 129 as `22021 invalid byte sequence
+        // for encoding "UTF8"` and 0x00 silently -- while the same values
+        // inlined through `binaryLiteral` were correct on all four dialects, all
+        // 256. The corpus's one BIN witness is 7ac3a9, valid UTF-8, which is
+        // precisely the byte string that survives. A host cannot work around it:
+        // bindings() hands back Values, and the cast wrapping the placeholder is
+        // what breaks it.
+        return $kind === 'NUM' || $kind === 'BOOL' || $kind === 'BIN';
     }
 
     /** True when nothing about this translation is inexact. */

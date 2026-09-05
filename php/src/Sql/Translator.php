@@ -332,8 +332,17 @@ final class Translator
             // variant being named "text": `&` has a variant of that name too and
             // is concatenation, not a comparison — casting and collating its
             // operands would be wrong and, briefly, was.
-            $l = $this->emit->textOperand($l);
-            $r = $this->emit->textOperand($r);
+            //
+            // Two BIN operands are already bytes and are compared as bytes by
+            // every dialect here, so the cast is not merely redundant: casting
+            // them to characters made `TO_UTF8(X) EQL TO_UTF8(Y)` answer NULL on
+            // MariaDB and MySQL whenever either side was not valid UTF-8, where
+            // SEL answers FALSE. The corpus had exactly one BIN value, 7ac3a9,
+            // which is valid UTF-8 and could not show it.
+            if ($l->kind !== 'BIN' || $r->kind !== 'BIN') {
+                $l = $this->emit->textOperand($l);
+                $r = $this->emit->textOperand($r);
+            }
         }
         return $this->apply('ops', $op, [$l, $r], $n['pos'], $variant);
     }
@@ -1495,6 +1504,16 @@ final class Translator
      * `TO_UTF8("a") EQL "a"` is FALSE, and the emitted comparison cast both
      * sides to characters and answered 1 on MariaDB, MySQL and SQLite. Refused
      * rather than folded to FALSE — folding is the road §11.4 closed.
+     *
+     * The same call serves the `$` family, for a different reason with the same
+     * answer. SEL's byte comparisons do NOT compare kinds — `TO_UTF8("a") $== "a"`
+     * is genuinely TRUE, both operands read as bytes — but saying that in SQL
+     * means casting the TEXT side to bytes, and the templates cast the BIN side
+     * to characters instead, which is backwards: PostgreSQL compares against the
+     * literal `\x61` and answers false. Per-dialect byte casts for a comparison
+     * nobody writes is not a trade worth making, so mixed operands are refused
+     * here too. Two operands of one class still translate, and for two BINs the
+     * character cast is skipped — see binary().
      *
      * Two operands of one class are fine. One UNKNOWN is the accepted limit —
      * the binding did not say, so nothing here can either.

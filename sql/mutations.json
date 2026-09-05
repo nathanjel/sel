@@ -227,10 +227,10 @@
     },
     {
       "name": "pg-binary-cast-naive",
-      "was": "convert_to(bytea, ...) is an ERROR in PostgreSQL where the same doubling on MariaDB is a harmless no-op, and TO_HEX(TO_UTF8(x)) applies binaryCast twice by construction.",
+      "was": "The inner CAST AS TEXT dropped. convert_to takes text, so a NUM operand -- SEL numbers are text values, and BLEN(1+1) is an ordinary thing to write -- has no matching function and the query dies. The original form of this mutation targeted the old double-cast template and went stale when that was fixed; the hazard it names is still real, one layer in.",
       "file": "sql/dialects/postgresql.json",
-      "from": "\"binaryCast\": \"CAST(CAST({0} AS TEXT) AS BYTEA)\",",
-      "to": "\"binaryCast\": \"convert_to({0}, 'UTF8')\","
+      "from": "\"binaryCast\": \"convert_to(CAST({0} AS TEXT), 'UTF8')\"",
+      "to": "\"binaryCast\": \"convert_to({0}, 'UTF8')\""
     },
     {
       "name": "bool-in-a-numeric-comparison",
@@ -441,6 +441,34 @@
       "file": "php/src/Sql/Translator.php",
       "from": "            refuse('E_SQL_SHAPE',\n                \"{$obj['name']} is a relation, which is a list of rows; indexing it \"",
       "to": "            return $this->columnRef($b['fields'][strtoupper($key)] ?? reset($b['fields']));\n            refuse('E_SQL_SHAPE',\n                \"{$obj['name']} is a relation, which is a list of rows; indexing it \""
+    },
+    {
+      "name": "pg-binary-cast-parses-bytea-escapes",
+      "was": "PostgreSQL's binaryCast as CAST(CAST({0} AS TEXT) AS BYTEA). text::bytea parses its input as a bytea literal, so any backslash changed the bytes or killed the query: BLEN('\\\\') was 1 against SEL's 2 and TO_HEX('a\\\\b') raised 22P02. A sweep of 13840 renderings gave 1290 server errors and 52 silent wrong answers, all on this dialect.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"binaryCast\": \"convert_to(CAST({0} AS TEXT), 'UTF8')\"",
+      "to": "\"binaryCast\": \"CAST(CAST({0} AS TEXT) AS BYTEA)\""
+    },
+    {
+      "name": "binary-cast-applied-to-a-bin-operand",
+      "was": "binaryCast wrapping an operand that is already BIN. Harmless on the three dialects whose cast is idempotent and destructive on PostgreSQL, where the bytes go out through text and come back parsed as a bytea literal.",
+      "file": "php/src/Sql/Emit.php",
+      "from": "            if ($key === 'binaryCast' && preg_match('/^[0-9]+$/', $arg) === 1",
+      "to": "            if (false && preg_match('/^[0-9]+$/', $arg) === 1"
+    },
+    {
+      "name": "bin-is-parameterised",
+      "was": "A BIN literal rendered as a placeholder rather than inline. The driver sends the bytes through the connection's text encoding: on PostgreSQL 130 of 256 single-byte values failed, 129 as invalid byte sequence and 0x00 silently. Inline was correct for all 256 on all four dialects.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "        return $kind === 'NUM' || $kind === 'BOOL' || $kind === 'BIN';",
+      "to": "        return $kind === 'NUM' || $kind === 'BOOL';"
+    },
+    {
+      "name": "two-bins-compared-as-characters",
+      "was": "A byte comparison casting two BIN operands to CHAR. MariaDB and MySQL answer NULL when either side is not valid UTF-8, where SEL answers FALSE. The corpus's only BIN value was 7ac3a9 -- valid UTF-8, and precisely the byte string that could not show it.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            if ($l->kind !== 'BIN' || $r->kind !== 'BIN') {",
+      "to": "            if (true) {"
     }
   ]
 }

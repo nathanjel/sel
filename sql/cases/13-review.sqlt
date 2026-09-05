@@ -354,13 +354,20 @@ mariadb
 --- error
 E_SQL_SHAPE
 ===
-### name: kinds.two-bins-compare-fine
+### name: kinds.two-bins-compare-as-bytes
+--- note
+This case used to expect both sides cast to CHAR and collated, which is right
+for text and wrong for bytes: TO_UTF8(X) EQL TO_UTF8(Y) answered NULL on MariaDB
+and MySQL whenever either side was not valid UTF-8, where SEL answers FALSE.
+Two BIN operands are already bytes and every dialect here compares bytes
+directly. The corpus had exactly one BIN value -- 7ac3a9, valid UTF-8 -- so
+nothing could show it until hostile bytes were added.
 --- dialect
 mariadb
 --- source
 TO_UTF8("a") EQL TO_UTF8("a")
 --- expect
-(CAST(CAST('a' AS BINARY) AS CHAR) COLLATE utf8mb4_bin = CAST(CAST('a' AS BINARY) AS CHAR) COLLATE utf8mb4_bin)
+(CAST('a' AS BINARY) = CAST('a' AS BINARY))
 ===
 ### name: kinds.a-number-is-a-text-value
 --- note
@@ -466,7 +473,7 @@ mariadb
 --- source
 BLEN(B)
 --- expect
-LENGTH(CAST(`b` AS BINARY))
+LENGTH(`b`)
 ===
 ### name: kinds.isnum-takes-anything
 --- note
@@ -490,4 +497,27 @@ mariadb
 UPPER(U)
 --- expect
 UPPER(`u`)
+===
+### name: kinds.bin-against-text-in-a-byte-comparison
+--- note
+SEL reads both operands of the $ family as bytes, so TO_UTF8("a") $== "a" is
+genuinely TRUE. Saying that in SQL means casting the TEXT side to bytes; the
+templates cast the BIN side to characters, which is backwards -- PostgreSQL then
+compared against the literal '\x61' and answered false, and MySQL answered NULL
+for bytes that are not valid UTF-8. Per-dialect byte casts for a comparison
+nobody writes is not a trade worth making, so it is refused.
+--- dialect
+postgresql
+--- source
+TO_UTF8("a") $== "a"
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.bin-against-bin-in-a-byte-comparison
+--- dialect
+postgresql
+--- source
+TO_UTF8("a") $== TO_UTF8("a")
+--- expect
+(convert_to(CAST('a' AS TEXT), 'UTF8') = convert_to(CAST('a' AS TEXT), 'UTF8'))
 ===

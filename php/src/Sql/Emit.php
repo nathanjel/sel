@@ -325,6 +325,19 @@ final class Emit
                 $push($val);
                 continue;
             }
+            // binaryCast converts a TEXT or NUM operand to bytes. An operand
+            // that is already BIN needs no conversion, and on PostgreSQL
+            // converting it is destructive: text::bytea parses its input as a
+            // bytea *literal*, where \\ is one backslash and \x41 is a byte, so
+            // the round trip changes the bytes or fails the query. Every other
+            // cast is idempotent and applied unconditionally, as before; this is
+            // the one whose input kind decides whether it means anything.
+            if ($key === 'binaryCast' && preg_match('/^[0-9]+$/', $arg) === 1
+                    && ($args[(int) $arg] ?? null) instanceof Fragment
+                    && $args[(int) $arg]->kind === 'BIN') {
+                $splice($args[(int) $arg]);
+                continue;
+            }
             $sub = $this->fill(str_replace('{0}', '{' . $arg . '}', $val), $args, $pos);
             foreach ($sub as $p) {
                 if (is_string($p)) {

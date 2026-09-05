@@ -435,6 +435,30 @@ ROUND(10 / 4, 1) == 2.5
 % it had no witness anywhere. The evaluator is handed the same constants under
 % the same names, so both sides are still being asked the same question.
 
+% The hostile bytes, which the one witness above deliberately is not. 7ac3a9 is
+% valid UTF-8 and contains no backslash, which is exactly the byte string that
+% survived PostgreSQL's text::bytea round trip -- so for four milestones the only
+% BIN in the corpus was the one that could not show the defect.
+
+### bindings: {"B": {"kind": "value", "value": {"bin": "5c78"}}, "N": {"kind": "value", "value": {"bin": "00ff80"}}}
+
+### entry: mixed:bin-hostile-bytes
+TO_HEX(B)
+BLEN(B)
+TO_HEX(N)
+BLEN(N)
+B EQL N
+ENCODE_BASE64(B)
+
+### entry: mixed:bin-backslash-from-text
+BLEN('\\')
+TO_HEX('a\b')
+ENCODE_BASE64('\\')
+FROM_UTF8(TO_UTF8('\\'))
+BLEN('\x41')
+TO_HEX(TO_UTF8("é"))
+FROM_UTF8(TO_UTF8("é"))
+
 ### bindings: {"B": {"kind": "value", "value": {"bin": "7ac3a9"}}}
 
 ### entry: mixed:bin-literal

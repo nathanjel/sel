@@ -100,18 +100,31 @@ postgresql
 --- expect
 (CAST('a' AS TEXT) COLLATE "C" < CAST('B' AS TEXT) COLLATE "C")
 ===
-### name: pg.bin.cast-is-idempotent
+### name: pg.bin.text-goes-to-bytes-through-convert-to
 --- note
-CAST(CAST({0} AS TEXT) AS BYTEA) rather than convert_to({0}, 'UTF8'), because
-PostgreSQL is strongly typed: convert_to(bytea, ...) is an ERROR where the same
-doubling on MariaDB is a harmless no-op, and TO_HEX(TO_UTF8(x)) applies it twice
-by construction. convert_to(numeric, ...) does not exist either.
+This case used to be called `cast-is-idempotent` and expected four nested casts,
+with a note arguing that text::bytea::text::bytea recovers the original bytes.
+That is true for 'abc' and for every string anyone had tried, and false for any
+string containing a backslash: PostgreSQL's text::bytea does not reinterpret
+characters as bytes, it parses the text as a bytea INPUT LITERAL, where \\ is
+one backslash and \x41 is a byte.
+
+    BLEN('\\')            SEL 2         pg 1
+    ENCODE_BASE64('\\')   SEL "XFw="    pg "XA=="
+    TO_HEX('a\b')         SEL 615c62    pg 22P02 invalid input syntax for bytea
+
+A sweep of 13,840 renderings of hostile short strings gave 1290 server errors
+and 52 silent wrong answers, all on this dialect and none on the other three.
+convert_to(text, 'UTF8') is the function that means what SEL means.
+
+The cast is now applied only to a non-BIN operand -- see Emit::fill -- because
+bytea->bytea needs nothing and convert_to would not typecheck.
 --- dialect
 postgresql
 --- source
 TO_HEX(TO_UTF8("a"))
 --- expect
-encode(CAST(CAST(CAST(CAST('a' AS TEXT) AS BYTEA) AS TEXT) AS BYTEA), 'hex')
+encode(convert_to(CAST('a' AS TEXT), 'UTF8'), 'hex')
 ===
 ### name: pg.refuse.find-with-a-start-position
 --- note
@@ -178,4 +191,17 @@ T & "a" & "b"
 (CAST((CAST("t" AS TEXT) || CAST($1 AS TEXT)) AS TEXT) || CAST($2 AS TEXT))
 --- params
 t"a", t"b"
+===
+### name: pg.bin.a-bin-operand-is-not-converted-again
+--- note
+binaryCast converts a TEXT or NUM operand to bytes. An operand that is already
+BIN needs no conversion, and here converting it would not even typecheck --
+convert_to takes text. Emit::fill skips the cast on a BIN argument, which is
+the one place a cast's input kind decides whether it means anything.
+--- dialect
+postgresql
+--- source
+BLEN(TO_UTF8("a"))
+--- expect
+octet_length(convert_to(CAST('a' AS TEXT), 'UTF8'))
 ===

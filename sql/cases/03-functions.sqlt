@@ -160,7 +160,7 @@ mariadb
 --- source
 TO_HEX(TO_UTF8("a"))
 --- expect
-LOWER(HEX(CAST(CAST('a' AS BINARY) AS BINARY)))
+LOWER(HEX(CAST('a' AS BINARY)))
 ===
 ### name: func.binary.base64-strips-the-wrapping
 --- note
@@ -175,7 +175,7 @@ mariadb
 --- source
 ENCODE_BASE64(TO_UTF8("a"))
 --- expect
-REPLACE(REPLACE(TO_BASE64(CAST(CAST('a' AS BINARY) AS BINARY)), CHAR(10), ''), CHAR(13), '')
+REPLACE(REPLACE(TO_BASE64(CAST('a' AS BINARY)), CHAR(10), ''), CHAR(13), '')
 ===
 ### name: func.binary.crc32-is-padded-hex
 --- dialect

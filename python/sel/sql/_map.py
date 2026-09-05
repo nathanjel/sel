@@ -1409,7 +1409,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "numericLiteral": "{0}",
             "textCollate": " COLLATE \"C\"",
             "numericCast": "CAST({0} AS NUMERIC)",
-            "binaryCast": "CAST(CAST({0} AS TEXT) AS BYTEA)",
+            "binaryCast": "convert_to(CAST({0} AS TEXT), 'UTF8')",
             "isTrue": "(({0}) IS TRUE)",
             "isNotTrue": "(({0}) IS NOT TRUE)",
             "placeholder": "?",
@@ -1681,7 +1681,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "NUM",
             },
             "TO_UTF8": {
-                "tpl": "CAST(CAST({0} AS TEXT) AS BYTEA)",
+                "tpl": "{binaryCast:0}",
                 "ret": "BIN",
             },
             "FROM_UTF8": {
