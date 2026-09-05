@@ -10,7 +10,13 @@ namespace Sel;
 
 final class Evaluator
 {
-    private const MAX_DEPTH = 200;
+    /**
+     * Public because the SQL translator refuses at the same limit, and reading
+     * it is the point: a translation that succeeds must be a rule the evaluator
+     * would have evaluated. A second copy of 200 would be a second thing to keep
+     * in step, and the two drifting means the database answers where SEL raises.
+     */
+    public const MAX_DEPTH = 200;
 
     private const COMPOUND = [
         '+=' => '+', '-=' => '-', '*=' => '*', '/=' => '/', '%=' => '%', '&=' => '&',

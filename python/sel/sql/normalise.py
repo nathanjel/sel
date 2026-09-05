@@ -12,6 +12,7 @@ import dataclasses
 from typing import Any
 
 from ..errors import Pos
+from ..eval import MAX_DEPTH
 from ..parser import Node
 from . import constants as _constants
 from .errors import refuse
@@ -124,7 +125,8 @@ def _constant_key(idx: Node) -> str | None:
     return None
 
 
-def _substitute(node: Any, defs: dict[str, Any], bound: list[str]) -> Any:
+def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
+                depth: int = 0) -> Any:
     """Replace every read of a defined name with the node it was assigned.
 
     The substituted subtree keeps its original ``pos``, so an error inside an
@@ -136,7 +138,19 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str]) -> Any:
     Node is a mutable object shared with the caller's AST, and rewriting one in
     place would leave the program permanently substituted -- visible to the next
     translation of the same Program, and to the evaluator.
+
+    Bounded at the evaluator's own limit, because stage 1 walks the tree before
+    the translator's guard can reach it. Without this the deepest expression the
+    layer accepts was decided by the host: PHP recursed as far as it liked and
+    this one died of its own stack at around 510 terms, which is an
+    implementation accident rather than a decision.
     """
+    depth += 1
+    if depth > MAX_DEPTH:
+        refuse('E_SQL_DEPTH',
+               f'this expression nests deeper than SEL will evaluate ({MAX_DEPTH}), '
+               'so there is nothing to translate; the evaluator answers E_DEPTH '
+               'for it', node.pos)
     t = node.t
     if t == 'var':
         if node.name in bound:
@@ -157,23 +171,23 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str]) -> Any:
                'expression cannot do', node.pos)
 
     if t == 'un':
-        return dataclasses.replace(node, x=_substitute(node.x, defs, bound))
+        return dataclasses.replace(node, x=_substitute(node.x, defs, bound, depth))
 
     if t == 'bin':
         return dataclasses.replace(node,
-                                   l=_substitute(node.l, defs, bound),
-                                   r=_substitute(node.r, defs, bound))
+                                   l=_substitute(node.l, defs, bound, depth),
+                                   r=_substitute(node.r, defs, bound, depth))
 
     if t == 'index':
         return dataclasses.replace(node,
-                                   obj=_substitute(node.obj, defs, bound),
-                                   idx=_substitute(node.idx, defs, bound))
+                                   obj=_substitute(node.obj, defs, bound, depth),
+                                   idx=_substitute(node.idx, defs, bound, depth))
 
     if t == 'list':
-        return dataclasses.replace(node, items=_flatten(node.items, defs, bound))
+        return dataclasses.replace(node, items=_flatten(node.items, defs, bound, depth))
 
     if t == 'clist':
-        return CList(node.pos, [(k, _substitute(v, defs, bound))
+        return CList(node.pos, [(k, _substitute(v, defs, bound, depth))
                                 for k, v in node.entries])
 
     if t == 'call':
@@ -190,13 +204,14 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str]) -> Any:
             if binds and i == 1 and len(node.args) == 3 and arg.t == 'var':
                 args.append(arg)
                 continue
-            args.append(_substitute(arg, defs, bound if i == 0 else inner))
+            args.append(_substitute(arg, defs, bound if i == 0 else inner, depth))
         return dataclasses.replace(node, args=args)
 
     return node
 
 
-def _flatten(items: list[Any], defs: dict[str, Any], bound: list[str]) -> list[Any]:
+def _flatten(items: list[Any], defs: dict[str, Any], bound: list[str],
+             depth: int = 0) -> list[Any]:
     """Build a ``,`` list, flattening per spec §5.9: an operand with children and
     no scalar of its own contributes each of its children, and the keys are
     renumbered from 1.
@@ -220,7 +235,7 @@ def _flatten(items: list[Any], defs: dict[str, Any], bound: list[str]) -> list[A
     """
     out: list[Any] = []
     for item in items:
-        s = _substitute(item, defs, bound)
+        s = _substitute(item, defs, bound, depth)
         if s.t == 'list':
             out.extend(s.items)
             continue

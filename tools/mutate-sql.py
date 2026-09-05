@@ -17,6 +17,13 @@ GENERATED = os.path.join('php', 'src', 'Sql', 'MapData.php')
 # useful one.
 CHECKS = [
     ('sqlt',              ['php', 'php/bin/sqlt']),
+    # The second host runs the same case files, so a mutation in python/sel/sql
+    # is now testable at all. Before this the tool could only mutate PHP and
+    # JSON, which meant every Python-side guard was believed rather than
+    # checked -- and the cross-host review's whole finding was that the two
+    # hosts diverge exactly where nothing was watching. A check that cannot
+    # reach half the code under test is docs/SQL-TESTING.md's Class G.
+    ('sqlt (python)',     ['python3', 'python/bin/sqlt']),
     ('sqldoc',            ['php', 'php/bin/sqldoc']),
     ('oracle coverage',   ['php', 'php/bin/sqlo', 'coverage']),
     ('oracle expressions',['php', 'php/bin/sqlo', 'expressions']),
@@ -26,7 +33,12 @@ NEEDS_DB = {'oracle coverage', 'oracle expressions', 'oracle rows'}
 
 
 def run(cmd, cwd):
-    return subprocess.run(cmd, cwd=cwd, stdout=subprocess.DEVNULL,
+    # PYTHONPATH points at the mutated copy, not at the source tree, or the
+    # Python runner would import the unmutated package and report every
+    # mutation caught for the wrong reason -- the exact failure this tool
+    # exists to catch, committed by the tool itself.
+    env = dict(os.environ, PYTHONPATH=os.path.join(cwd, 'python'))
+    return subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL).returncode
 
 

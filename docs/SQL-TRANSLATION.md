@@ -1715,6 +1715,7 @@ translated is not a wrong program.
 | `E_SQL_ASSIGN` | an assignment or sequence stage 1 refuses |
 | `E_SQL_SHAPE` | a list where a scalar is required, `_K` on a relation, a non-BOOL condition, an aggregate over something untranslatable |
 | `E_SQL_INVALID` | every argument is a literal and SEL rejects the expression — see §11.4 |
+| `E_SQL_DEPTH` | the expression nests deeper than SEL will evaluate, at the evaluator's own `MAX_DEPTH` — see §11.4 |
 
 Two entry points, because both callers are real:
 

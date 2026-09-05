@@ -46,6 +46,8 @@ final class Translator
     /** @var array<string,bool> */
     private array $constNames = [];
     private ?\Sel\Context $constCtx = null;
+    /** Walk depth, counted exactly as Evaluator counts evaluation nesting. */
+    private int $depth = 0;
 
     /** @param array<string,mixed> $options */
     public function __construct(string $dialect, Bindings $bindings, array $options = [])
@@ -66,6 +68,7 @@ final class Translator
         $this->paramKinds = [];
         $this->caveats = [];
         $this->frames = [];
+        $this->depth = 0;
         [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
         $f = $this->node(Normalise::run($ast, $this->constNames, $this->constCtx));
 
@@ -103,15 +106,38 @@ final class Translator
      */
     private function node(array $n): Fragment
     {
-        if (!in_array($n['t'], ['bin', 'un', 'call'], true)
-            || !Constants::isConstant($n, $this->constNames)) {
-            return $this->dispatch($n);
+        // Refuse what SEL will not evaluate, at the limit SEL itself uses.
+        //
+        // Nothing bounded this walk, so a flat chain of 201 terms over a column
+        // translated -- and the evaluator answers E_DEPTH for the same
+        // expression. A rule the database answers and SEL does not is §11.4's
+        // defect in a different costume, and it was in every host: PHP rendered
+        // it, and Python happened to die of its own stack at around 510 terms,
+        // which is an implementation accident rather than a decision.
+        //
+        // Counted the way Evaluator counts, at the same constant read from
+        // there, so the two cannot drift: 200 terms translate and 201 refuse,
+        // exactly as 200 evaluate and 201 raise.
+        if (++$this->depth > \Sel\Evaluator::MAX_DEPTH) {
+            $this->depth--;
+            refuse('E_SQL_DEPTH',
+                'this expression nests deeper than SEL will evaluate ('
+                . \Sel\Evaluator::MAX_DEPTH . '), so there is nothing to translate; '
+                . 'the evaluator answers E_DEPTH for it', $n['pos']);
         }
+        try {
+            if (!in_array($n['t'], ['bin', 'un', 'call'], true)
+                || !Constants::isConstant($n, $this->constNames)) {
+                return $this->dispatch($n);
+            }
 
-        $f = $this->dispatch($n);
-        Constants::validate($n, $this->constCtx);
+            $f = $this->dispatch($n);
+            Constants::validate($n, $this->constCtx);
 
-        return $f;
+            return $f;
+        } finally {
+            $this->depth--;
+        }
     }
 
     /** @param array<string,mixed> $n */

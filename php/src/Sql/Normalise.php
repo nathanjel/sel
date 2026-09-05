@@ -151,8 +151,20 @@ final class Normalise
      * @param list<string> $bound aggregate binders, which shadow a definition
      * @return array<string,mixed>
      */
-    private static function substitute(array $node, array $defs, array $bound): array
+    private static function substitute(array $node, array $defs, array $bound,
+                                       int $depth = 0): array
     {
+        // Stage 1 walks the tree before the translator's own guard can, so the
+        // bound belongs here too and at the same constant. Without it the
+        // deepest expression this layer accepts was decided by the host: PHP
+        // recursed as far as it liked and Python died of its own stack at around
+        // 510 terms, which is an implementation accident rather than a decision.
+        if (++$depth > \Sel\Evaluator::MAX_DEPTH) {
+            refuse('E_SQL_DEPTH',
+                'this expression nests deeper than SEL will evaluate ('
+                . \Sel\Evaluator::MAX_DEPTH . '), so there is nothing to translate; '
+                . 'the evaluator answers E_DEPTH for it', $node['pos']);
+        }
         switch ($node['t']) {
             case 'var':
                 if (in_array($node['name'], $bound, true)) {
@@ -178,26 +190,26 @@ final class Normalise
                 // no break
 
             case 'un':
-                $node['x'] = self::substitute($node['x'], $defs, $bound);
+                $node['x'] = self::substitute($node['x'], $defs, $bound, $depth);
                 return $node;
 
             case 'bin':
-                $node['l'] = self::substitute($node['l'], $defs, $bound);
-                $node['r'] = self::substitute($node['r'], $defs, $bound);
+                $node['l'] = self::substitute($node['l'], $defs, $bound, $depth);
+                $node['r'] = self::substitute($node['r'], $defs, $bound, $depth);
                 return $node;
 
             case 'index':
-                $node['obj'] = self::substitute($node['obj'], $defs, $bound);
-                $node['idx'] = self::substitute($node['idx'], $defs, $bound);
+                $node['obj'] = self::substitute($node['obj'], $defs, $bound, $depth);
+                $node['idx'] = self::substitute($node['idx'], $defs, $bound, $depth);
                 return $node;
 
             case 'list':
-                $node['items'] = self::flatten($node['items'], $defs, $bound);
+                $node['items'] = self::flatten($node['items'], $defs, $bound, $depth);
                 return $node;
 
             case 'clist':
                 foreach ($node['entries'] as $i => [$k, $v]) {
-                    $node['entries'][$i] = [$k, self::substitute($v, $defs, $bound)];
+                    $node['entries'][$i] = [$k, self::substitute($v, $defs, $bound, $depth)];
                 }
                 return $node;
 
@@ -215,7 +227,7 @@ final class Normalise
                         && count($node['args']) === 3 && $arg['t'] === 'var') {
                         continue;
                     }
-                    $node['args'][$i] = self::substitute($arg, $defs, $i === 0 ? $bound : $inner);
+                    $node['args'][$i] = self::substitute($arg, $defs, $i === 0 ? $bound : $inner, $depth);
                 }
                 return $node;
 
@@ -251,11 +263,12 @@ final class Normalise
      * @param list<string> $bound
      * @return list<array<string,mixed>>
      */
-    private static function flatten(array $items, array $defs, array $bound): array
+    private static function flatten(array $items, array $defs, array $bound,
+                                    int $depth = 0): array
     {
         $out = [];
         foreach ($items as $item) {
-            $s = self::substitute($item, $defs, $bound);
+            $s = self::substitute($item, $defs, $bound, $depth);
             if ($s['t'] === 'list') {
                 foreach ($s['items'] as $child) {
                     $out[] = $child;

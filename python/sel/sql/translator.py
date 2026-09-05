@@ -17,6 +17,7 @@ from typing import Any, Callable
 from .. import utf8
 from ..builtins import regex as _regex
 from ..errors import Pos, SelError
+from ..eval import MAX_DEPTH
 from ..lexer import ascii_upper
 from ..parser import Node
 from ..value import Value, quote_dump
@@ -107,6 +108,8 @@ class Translator:
         self.caveats: dict[str, bool] = {}
         self.const_names: dict[str, bool] = {}
         self.const_ctx = None
+        # Walk depth, counted exactly as eval.eval_node counts evaluation nesting.
+        self.depth = 0
 
     def translate(self, ast: Node) -> Fragment:
         _map.require_target(self.dialect)
@@ -116,6 +119,7 @@ class Translator:
         self.param_kinds = []
         self.caveats = {}
         self.frames = []
+        self.depth = 0
         self.const_names, self.const_ctx = _constants.scope(self.bindings)
         f = self._node(_normalise.run(ast, self.const_names, self.const_ctx))
 
@@ -145,14 +149,33 @@ class Translator:
         evaluating the arm they do not take. It is refused because §11.2's first
         row records that SQL does not promise that, and because a rule that
         refuses one of two identical divisions is not a rule.
-        """
-        if n.t not in ('bin', 'un', 'call') \
-                or not _constants.is_constant(n, self.const_names):
-            return self._dispatch(n)
 
-        f = self._dispatch(n)
-        _constants.validate(n, self.const_ctx)
-        return f
+        **The walk is also bounded, at the evaluator's own limit.** Nothing
+        bounded it, so a flat chain of 201 terms over a column translated -- and
+        the evaluator answers E_DEPTH for that same expression. A rule the
+        database answers and SEL does not is the defect above in a different
+        costume, and it was in every host: PHP rendered it, and this one
+        happened to die of its own stack at around 510 terms, which is an
+        implementation accident rather than a decision. The guard reads
+        ``eval.MAX_DEPTH`` rather than repeating 200, so the two cannot drift.
+        """
+        self.depth += 1
+        if self.depth > MAX_DEPTH:
+            self.depth -= 1
+            refuse('E_SQL_DEPTH',
+                   f'this expression nests deeper than SEL will evaluate '
+                   f'({MAX_DEPTH}), so there is nothing to translate; the '
+                   'evaluator answers E_DEPTH for it', n.pos)
+        try:
+            if n.t not in ('bin', 'un', 'call') \
+                    or not _constants.is_constant(n, self.const_names):
+                return self._dispatch(n)
+
+            f = self._dispatch(n)
+            _constants.validate(n, self.const_ctx)
+            return f
+        finally:
+            self.depth -= 1
 
     def _dispatch(self, n: Any) -> Fragment:
         t = n.t

@@ -264,8 +264,8 @@
       "name": "constant-check-runs-before-dispatch",
       "was": "Validating on the way in rather than on the way out. Every refusal the translator already had -- ABORT, an unportable regex, a BOOL where a number belongs -- would be replaced by the vaguer 'SEL rejects this expression'.",
       "file": "php/src/Sql/Translator.php",
-      "from": "        $f = $this->dispatch($n);\n        Constants::validate($n, $this->constCtx);\n\n        return $f;",
-      "to": "        Constants::validate($n, $this->constCtx);\n        $f = $this->dispatch($n);\n\n        return $f;"
+      "from": "            $f = $this->dispatch($n);\n            Constants::validate($n, $this->constCtx);\n\n            return $f;",
+      "to": "            Constants::validate($n, $this->constCtx);\n            $f = $this->dispatch($n);\n\n            return $f;"
     },
     {
       "name": "sqlite-comparison-claims-exactness",
@@ -285,8 +285,8 @@
       "name": "constant-check-outermost-only",
       "was": "Checking only the outermost constant node, which is what the first version did. SEL is lazy, so FALSE AND (1 / 0 > 0) is constant and answers FALSE without dividing -- the AND passes, the division is never looked at, and (1 / 0) goes into the SQL. The same division beside a column was refused. Killed by the const.lazy.* cases. Not by the corpus: a `!` line asserts SEL raises, and SEL does not raise here -- it is lazy and answers FALSE. An expression SEL accepts and the translator refuses can only be asserted as a case.",
       "file": "php/src/Sql/Translator.php",
-      "from": "        $f = $this->dispatch($n);\n        Constants::validate($n, $this->constCtx);",
-      "to": "        static $in = false;\n        if ($in) {\n            return $this->dispatch($n);\n        }\n        $in = true;\n        try {\n            $f = $this->dispatch($n);\n        } finally {\n            $in = false;\n        }\n        Constants::validate($n, $this->constCtx);"
+      "from": "            $f = $this->dispatch($n);\n            Constants::validate($n, $this->constCtx);",
+      "to": "            static $in = false;\n            if ($in) {\n                return $this->dispatch($n);\n            }\n            $in = true;\n            try {\n                $f = $this->dispatch($n);\n            } finally {\n                $in = false;\n            }\n            Constants::validate($n, $this->constCtx);"
     },
     {
       "name": "caveated-entry-answers-anything",
@@ -511,6 +511,20 @@
       "file": "php/src/Sql/Emit.php",
       "from": "        return preg_match('/\\A(?:0|[1-9][0-9]{0,2})\\z/', $s) === 1 ? (int) $s : null;",
       "to": "        return preg_match('/^[0-9]+$/', $s) === 1 ? (int) $s : null;"
+    },
+    {
+      "name": "depth-guard-is-off-by-one",
+      "was": "The boundary itself, which is the only part of a limit worth testing. `>=` refuses at 200, which the evaluator accepts -- a translation refusing a rule SEL answers is the mirror of the defect the guard exists for, and quieter, because a false refusal just looks like the layer being conservative.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (++$this->depth > \\Sel\\Evaluator::MAX_DEPTH) {",
+      "to": "        if (++$this->depth >= \\Sel\\Evaluator::MAX_DEPTH) {"
+    },
+    {
+      "name": "stage-one-is-unbounded",
+      "was": "How it shipped. Stage 1 substitutes before the render walk's guard can see anything, so with only one of the two bounds the deepest source the layer accepted was decided by the host's stack rather than by SEL. Targeted at PYTHON deliberately: in PHP this guard is redundant -- the render walk reaches the same refusal -- so a PHP mutation of it cannot fail, and reporting it as a hole would have been the tool lying about its own reach. It is load-bearing exactly where a host has a stack limit, which is why the case that catches it is 600 terms deep rather than 201.",
+      "file": "python/sel/sql/normalise.py",
+      "from": "    if depth > MAX_DEPTH:",
+      "to": "    if False:"
     }
   ]
 }
