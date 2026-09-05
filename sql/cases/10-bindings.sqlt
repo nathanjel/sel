@@ -84,20 +84,147 @@ mariadb
 I["qty"] > 0
 --- expect
 (`oi`.`qty` > 0)
-### name: bind.value.num-is-emitted-as-parsed
+### name: bind.value.num-must-already-be-canonical
 --- note
-The NUM branch emits what Dec::parse recovered, not the text the host supplied.
-Proving a string is a number and then emitting a different string is a gap, and
-the gap is where "1 OR 1=1 -- " lived. After this the characters that can leave
-unquoted are digits, one dot and a leading minus, by construction.
+This case used to expect `(7 + 1)`, and the reasoning it carried is still true:
+the NUM branch emits what Dec::parse recovered, because proving a string is a
+number and then emitting a different string is the gap "1 OR 1=1 -- " lived in.
+
+What was missing is that the evaluator is handed the host's original text and
+keeps it. So `007` translated to `7` while SEL kept "007", and the two agreed
+on `X + 1` and disagreed on everything that reads a number as text: LEN was 1
+against 3, TRIM was "7" against "007", `X $== "007"` was false against TRUE.
+Emit::numericLiteral's docblock states the assumption exactly -- "the two agree
+for everything the parser produces" -- and a value binding is not the parser.
+
+Refusing is the only outcome that holds: canonicalising here would still
+disagree with the evaluator, which never runs this code. The non-canonical set
+is small and entirely leading zeros and negative zero.
 --- dialect
 mariadb
 --- bindings
 {"X": {"kind": "value", "value": "007", "type": "NUM"}}
 --- source
 X + 1
+--- error
+E_SQL_BINDING
+===
+### name: bind.value.canonical-num-still-emits-bare
+--- note
+The other half: 2.50 round-trips, so it is unaffected. Scale is part of a SEL
+number and survives.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "2.50", "type": "NUM"}}
+--- source
+X + 1
 --- expect
-(7 + 1)
+(2.50 + 1)
+===
+### name: bind.value.negative-zero-is-not-canonical
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "-0", "type": "NUM"}}
+--- source
+X + 1
+--- error
+E_SQL_BINDING
+===
+### name: bind.value.untyped-non-canonical-is-fine
+--- note
+Without `type: NUM` the value is text, goes out quoted, and the characters the
+host supplied are the characters SEL has. Nothing to refuse.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "007"}}
+--- source
+X & ""
+--- expect
+CONCAT('007', '')
+===
+### name: bind.value.empty-is-not-a-scalar
+--- note
+An empty result set as a value binding. Legal as the thing an aggregate
+iterates, nothing as a value -- and asking for its characters used to raise a
+SelError from inside asValue(), past tryTranslate(), which a host uses so it
+does not need a try/catch.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": []}}
+--- source
+X $== "a"
+--- error
+E_SQL_SHAPE
+===
+### name: bind.value.empty-is-still-an-aggregate-source
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": []}}
+--- source
+ALL(X, _ > 0)
+--- expect
+TRUE
+===
+### name: bind.column.nul-in-a-name-is-refused
+--- note
+Emit::ident doubles the quote character and passes everything else through,
+which is right for every character but two. A NUL terminates the C string
+libpq and sqlite3 are handed, so it is malformed SQL on all four servers; an
+empty name quotes to "" , which PostgreSQL rejects and the others accept.
+No dialect has an escape for either, and a column with a NUL in its name does
+not exist.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "column", "column": "a\u0000b"}}
+--- source
+X
+--- error
+E_SQL_BINDING
+===
+### name: bind.column.array-column-is-refused
+--- note
+`(string)` on an array is the characters "Array", and `Array` is a legal
+identifier -- so in a schema with a column of that name the wrong column is
+read and nothing says so. The same audit reached relation `from` and
+`correlate` and stopped there.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "column", "column": ["a", "b"]}}
+--- source
+X
+--- error
+E_SQL_BINDING
+===
+### name: bind.column.array-table-is-refused
+--- note
+Worse than "Array": this one reached Emit::column(?string) and raised a
+TypeError, which is not a SqlError, so tryTranslate() returned a fatal instead
+of null.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "column", "column": "c", "table": {"raw": "x"}}}
+--- source
+X
+--- error
+E_SQL_BINDING
+===
+### name: bind.relation.array-alias-is-refused
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "t", "alias": ["x"], "fields": {"Q": {"column": "q"}}}}
+--- source
+ALL(R, I, I["Q"] > 0)
+--- error
+E_SQL_BINDING
 ===
 ### name: bind.value.num-keeps-its-scale
 --- note

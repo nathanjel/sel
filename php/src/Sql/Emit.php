@@ -60,6 +60,18 @@ final class Emit
             }
             return str_replace('{hex}', bin2hex($v->asBytes($pos)), $tpl);
         }
+        // A NONE value has no characters, and asking for them raises a
+        // SelError -- which tryTranslate() does not catch, so a host using the
+        // refusal-tolerant API got a fatal out of asValue() rather than null.
+        // Reachable from ordinary host data: `["kind" => "value", "value" => []]`
+        // is an empty result set. Standing alone the variable is refused as a
+        // LIST, but as an operand the result kind comes from the template and
+        // the LIST-ness is gone by the time anything looks.
+        if ($v->isNone()) {
+            refuse('E_SQL_BINDING',
+                'a value binding holding no value cannot be a SQL literal; only an '
+                . 'aggregate can be given an empty binding', $pos);
+        }
         if ($form === 'NUM') {
             return self::numericLiteral($dialect, $v, $pos);
         }

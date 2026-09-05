@@ -165,6 +165,20 @@ final class Translator
                         . 'value; it can only be the thing an aggregate iterates',
                         $n['pos']);
                 }
+                // An empty binding -- `["kind" => "value", "value" => []]`, which
+                // is what an empty result set looks like -- has no characters, and
+                // asking for them raised a SelError from inside asValue(): the
+                // wrong class, and thrown past tryTranslate(), which a host uses
+                // precisely so it does not need a try/catch. It is legal as the
+                // thing an aggregate iterates (ALL over nothing is TRUE) and
+                // nothing as a value, so the refusal belongs here, where the walk
+                // knows a scalar is what was asked for.
+                if ($v->isNone()) {
+                    refuse('E_SQL_SHAPE',
+                        "{$n['name']} is bound to an empty value, which is not a SQL "
+                        . 'value; only an aggregate can be given an empty binding',
+                        $n['pos']);
+                }
                 return $this->literal($v, self::declaredKind($b, $v));
 
             case 'columns':
