@@ -300,6 +300,19 @@ $filters = array_slice($argv, 1);
 $files = glob(SUITE . '/*.sqlt');
 sort($files);
 
+// `--names` prints what this parser loaded and stops. tools/check-sql-cases.sh
+// diffs it against python/bin/sqlt --names, because sql/cases/*.sqlt is only the
+// shared contract if both hosts read the same cases out of it: a parser that
+// silently drops one runs 338, passes 338, and reports green.
+if ($filters === ['--names']) {
+    foreach ($files as $file) {
+        foreach (parse_sqlt((string) file_get_contents($file), basename($file)) as $c) {
+            echo "{$c['at']}\t{$c['name']}\n";
+        }
+    }
+    exit(0);
+}
+
 $passed = 0;
 $mirrored = 0;
 $failures = [];

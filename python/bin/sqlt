@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""Run sql/cases/*.sqlt against the Python translator.
+
+The counterpart of php/bin/sqlt, and deliberately not all of it. That runner has
+five checks; three ask about the HOST and are here, two ask about the MAP and the
+SUITE and are not:
+
+  here   run_case          the emitted string, the error code and position, the
+                           parameter list -- what this host does with shared data
+  here   the mirror re-run every mariadb case re-run as mysql, requiring the same
+                           string: does THIS host emit identical SQL for a leaf
+                           that overrides nothing
+  here   the slot checks   every bound value is emitted, and bindings() agrees in
+                           count with the placeholders
+
+  not    caveat_pins       every caveated entry is pinned by some case. A property
+                           of the case files against the dialect data, both shared
+                           and both already checked by PHP. Running it twice
+                           measures the same thing twice.
+  not    mirror_parity     mariadb and mysql declare the same map. Likewise a
+                           property of sql/dialects/*.json and nothing to do with
+                           which host reads it.
+
+That split is why python/sel/sql/map.py has no trace facility: nothing here needs
+one, and adding one would only be to re-run a check PHP already owns.
+
+    python/bin/sqlt [name-substring ...]
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from sqlt_format import SUITE, SuiteError, decode_json, parse_sqlt  # noqa: E402
+
+# The translator is imported by load_translator() rather than here, so that
+# `--names` works without it. That is not only for the days before it existed:
+# the case list IS the contract, and reading it must not depend on the code being
+# graded against it. A broken translator should fail its cases, not make the
+# suite unreadable.
+sel = None
+SelError = Exception
+Sql = None
+SqlError = None
+sqlmap = None
+
+
+def load_translator() -> None:
+    global sel, SelError, Sql, SqlError, sqlmap
+    import sel as _sel
+    from sel.errors import SelError as _SelError
+    from sel.sql import Sql as _Sql, SqlError as _SqlError
+    from sel.sql import map as _map
+    sel, SelError, Sql, SqlError, sqlmap = _sel, _SelError, _Sql, _SqlError, _map
+
+MIRRORS = {'mariadb': 'mysql'}
+
+# `--- throws` names PHP's class, because the cases were written for one host.
+# The line it draws is the one that matters and it is the same in both: a
+# malformed map or registration is a mistake in the application's startup, not a
+# rule that cannot be translated, so it must NOT be catchable as SqlError --
+# tryTranslate() swallows the second and must not swallow the first. PHP spells
+# that LogicException; this host spells it RuntimeError, which is what
+# sel/registry.py already raises for a function defined twice.
+#
+# A name with no entry here is a suite error rather than a pass: an expectation
+# nobody has mapped must never be satisfied by whatever happened to be raised.
+THROWS = {'LogicException': RuntimeError}
+
+
+def apply_registrations(text: str | None, at: str) -> None:
+    """A case's runtime registrations, applied before translating.
+
+    A JSON list of operations, each either a dialect or an entry -- the same
+    shape php/bin/sqlt reads, because it is the same file.
+    """
+    if text is None or text == '':
+        return
+    try:
+        ops = json.loads(text)
+    except ValueError:
+        raise SuiteError(f'{at}: --- register is not a JSON list') from None
+    if not isinstance(ops, list):
+        raise SuiteError(f'{at}: --- register is not a JSON list')
+    for op in ops:
+        if 'define' in op:
+            dialect, section, key, entry = op['define']
+            sqlmap.define(dialect, section, key, entry)
+            continue
+        if 'dialect' in op:
+            rest = {k: v for k, v in op.items() if k != 'dialect'}
+            sqlmap.define_dialect(op['dialect'], rest)
+            continue
+        raise SuiteError(f'{at}: --- register op needs a dialect or a define')
+
+
+ERROR_RE = re.compile(r'^(\S+)(?:\s+(\d+):(\d+))?$')
+TILDE_RE = re.compile(r'~\d+~')
+
+
+def run_case(c: dict) -> str | None:
+    """None when the case passes, else what went wrong."""
+    dialect = c['dialect']
+    if dialect is None or dialect == '':
+        raise SuiteError(f"{c['at']}: case {c['name']} has no --- dialect")
+    bindings = decode_json(c['bindings'], 'bindings', c['at'])
+    options = decode_json(c['options'], 'options', c['at'])
+    as_ = c['as'] or 'value'
+    mode = c['mode'] or 'inline'
+
+    sql = None
+    error = None
+    thrown = None
+    frag = None
+    try:
+        # Inside the try: a bad registration is one of the outcomes a case may
+        # assert, so it has to be catchable rather than fatal.
+        apply_registrations(c['register'], c['at'])
+        program = sel.compile(c['source'])
+        frag = Sql.translate(program, dialect, bindings, options)
+        sql = frag.as_condition(mode) if as_ == 'condition' else frag.as_value(mode)
+    except SqlError as e:
+        error = e
+    except SelError as e:
+        return f'the source did not compile: {e}'
+    except SuiteError:
+        raise
+    except Exception as e:                                    # noqa: BLE001
+        thrown = e
+
+    # A malformed map or binding is a mistake in the application's startup and
+    # raises the host's own error type; a rule that cannot be translated raises
+    # SqlError. Keeping the two apart is why `throws` exists as its own outcome
+    # rather than as another E_SQL_ code.
+    #
+    # The case files name PHP's class -- they were written for one host -- so the
+    # name is mapped rather than compared. A name with no mapping is a suite
+    # error and not a pass: an unrecognised expectation must never be satisfied
+    # by whatever happened to be raised.
+    if c['throws'] is not None:
+        want = THROWS.get(c['throws'])
+        if want is None:
+            raise SuiteError(f"{c['at']}: no Python equivalent is recorded for "
+                             f"--- throws {c['throws']}; add one to THROWS")
+        if thrown is None:
+            return f"expected {c['throws']}, got " + (str(error) if error else repr(sql))
+        if isinstance(thrown, want):
+            return None
+        return (f"expected {c['throws']} ({want.__name__}), got "
+                f'{type(thrown).__name__} ({thrown})')
+    if thrown is not None:
+        raise SuiteError(f"{c['at']}: unexpected {type(thrown).__name__}: {thrown}")
+
+    if c['error'] is not None:
+        if error is None:
+            return f"expected {c['error']}, got {sql!r}"
+        m = ERROR_RE.match(c['error'])
+        if m is None:
+            raise SuiteError(f"{c['at']}: malformed error expectation")
+        if error.code != m.group(1):
+            return f'expected {m.group(1)}, got {error.code} ({error.message})'
+        if m.group(2) is not None:
+            want_pos = f'{m.group(2)}:{m.group(3)}'
+            got_pos = f'{error.line}:{error.col}'
+            if want_pos != got_pos:
+                return f'expected {m.group(1)} at {want_pos}, got it at {got_pos}'
+        return None
+
+    if error is not None:
+        return f'expected SQL, got {error.code} ({error.message})'
+    if sql != c['expect']:
+        return f"got:  {sql}\n     want: {c['expect']}"
+
+    # Checked for every case that produces a fragment, not only those asking
+    # about params: every slot in the part list must have a value, and every
+    # value must be emitted. A value bound but never emitted means a Fragment
+    # was rendered and thrown away -- invisible in `inline` mode, which is what
+    # the rest of the suite asserts.
+    seen = set()
+    for p in frag.parts:
+        if isinstance(p, str):
+            continue
+        if p < 1 or p > len(frag.params):
+            return f'parameter slot {p} has no value in params'
+        seen.add(p)
+    orphans = [i for i in range(1, len(frag.params) + 1) if i not in seen]
+    if orphans:
+        return (f'parameter slot(s) {json.dumps(orphans)} were bound but never '
+                'emitted — a fragment was rendered and discarded')
+    # `~1~`, not bare tildes: PostgreSQL's regex operator IS `~`, so counting
+    # them divided a regex fragment's odd tilde count by two. PHP's runner
+    # shipped that bug; this is the corrected form from the start.
+    if len(frag.bindings()) != len(TILDE_RE.findall(frag.as_value('debug'))):
+        return 'bindings() and the emitted placeholders disagree in count'
+
+    if c['params'] is not None:
+        got = ', '.join(v.dump() for v in frag.bindings())
+        if got != c['params']:
+            return f"params got:  {got}\n     want: {c['params']}"
+    return None
+
+
+def main(argv: list[str]) -> int:
+    filters = argv[1:]
+    files = sorted(f for f in os.listdir(SUITE) if f.endswith('.sqlt'))
+
+    # `--names` prints what this parser loaded and stops. tools/check-sql-cases.sh
+    # diffs it against php/bin/sqlt --names, because sql/cases/*.sqlt is only the
+    # shared contract if both hosts read the same cases out of it: a parser that
+    # silently drops one runs 338, passes 338, and reports green.
+    if filters == ['--names']:
+        for short in files:
+            with open(os.path.join(SUITE, short), encoding='utf-8') as fh:
+                for c in parse_sqlt(fh.read(), short):
+                    print(f"{c['at']}\t{c['name']}")
+        return 0
+
+    load_translator()
+
+    passed = 0
+    mirrored = 0
+    failures: list[tuple[dict, str]] = []
+    suite_errors = 0
+
+    for short in files:
+        with open(os.path.join(SUITE, short), encoding='utf-8') as fh:
+            text = fh.read()
+        try:
+            cases = parse_sqlt(text, short)
+        except SuiteError as e:
+            print(f'SUITE ERROR {e}')
+            suite_errors += 1
+            continue
+        for c in cases:
+            if filters and not any(f in c['name'] for f in filters):
+                continue
+            sqlmap.reset()        # no case may leak a registration into another
+            try:
+                problem = run_case(c)
+            except SuiteError as e:
+                print(f'SUITE ERROR {e}')
+                suite_errors += 1
+                continue
+            if problem is not None:
+                failures.append((c, problem))
+                continue
+            passed += 1
+
+            # The same case under the mirrored dialect. A registration case is
+            # exempt: it names its dialect in the --- register JSON, so re-running
+            # it under another name would be testing something it does not claim.
+            mirror = MIRRORS.get(c['dialect'])
+            if mirror is None or c['register'] is not None:
+                continue
+            sqlmap.reset()
+            # Python's {**a, 'k': v} is RIGHT-wins, where PHP's `+` is left-wins;
+            # the assertion below is the same one php/bin/sqlt carries, because
+            # getting this backwards re-runs every mariadb case as mariadb and
+            # the count line still prints a plausible number.
+            mirror_case = {**c, 'dialect': mirror}
+            if mirror_case['dialect'] != mirror:
+                print(f"SUITE ERROR the mirrored case for {c['name']} is still "
+                      f"{mirror_case['dialect']}, so nothing is being mirrored")
+                suite_errors += 1
+                continue
+            try:
+                problem = run_case(mirror_case)
+            except SuiteError as e:
+                print(f'SUITE ERROR (mirrored to {mirror}) {e}')
+                suite_errors += 1
+                continue
+            if problem is None:
+                mirrored += 1
+            else:
+                failures.append((c, f'mirrored to {mirror}, which must agree '
+                                    f"with {c['dialect']}: {problem}"))
+
+    for c, problem in failures:
+        print(f"FAIL {c['name']}  ({c['at']})")
+        print(f'     {problem}')
+
+    print(f'\n{passed} passed ({mirrored} also checked against a mirrored '
+          f'dialect), {len(failures)} failed, {suite_errors} suite errors')
+    return 0 if not failures and suite_errors == 0 else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))

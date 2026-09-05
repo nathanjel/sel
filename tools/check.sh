@@ -41,6 +41,7 @@ for impl in $IMPLS; do
 done
 
 step "sql dialect map" ./tools/check-sql-map.sh
+step "sql case parity" ./tools/check-sql-cases.sh
 
 for impl in $IMPLS; do
   step "sql translation ($impl)" impl_sql "$impl"
