@@ -544,6 +544,20 @@ LEN(TRIM(REPEAT(" ", 300) & "x"))
 !E_RANGE CHAR(1114112)
 !E_RANGE CODE("")
 
+### entry: mixed:edge-concat-two-non-text
+2.50 & 2.50
+1 & 2
+LEN("a") & LEN("b")
+ABS(-1) & 2
+
+### entry: mixed:edge-isnum-anchor
+ISNUM("12\n")
+ISNUM("1.5\n")
+ISNUM("12\r")
+ISNUM("12")
+ISNUM("1.5")
+ISNUM("abc")
+
 ### entry: mixed:edge-integer-valued-decimal
 LEFT("abc", 2.0)
 RIGHT("abc", 2.0)

@@ -50,7 +50,7 @@
     },
     "&": {
       "variants": {
-        "text": "({0} || {1})",
+        "text": "({textCast:0} || {textCast:1})",
         "bin": "({0} || {1})"
       },
       "ret": "@concat",
@@ -239,6 +239,7 @@
     "strong-typing": "The thing that makes this dialect different to write. SEL numbers ARE text values (spec §4), so a NUM fragment reaches a text function legitimately -- UPPER(13 + 4) is \"17\" -- and MySQL and SQLite coerce it without comment. PostgreSQL does not: upper(integer), reverse(numeric) and btrim(numeric, unknown) are all `function does not exist`. So every text operand is wrapped in {textCast:n}, which is the same key the byte-comparison family already uses for the same reason one level down.",
     "numeric-overloads": "The mirror image, and the subtler half. Given an INTEGER argument PostgreSQL resolves sign(), power(), trunc(), ceil() and floor() to their DOUBLE PRECISION overloads -- pg_typeof(sign(13)) is `double precision` -- so an expression that looks exact quietly leaves exact-decimal territory. {numericCast:n} pins them to numeric. This is not a type error anybody would have seen; it is a precision loss, and it was found by the fuzz lane asking a server rather than by reading the manual.",
     "integer-arguments": "left(), right(), substring(), repeat(), lpad(), chr() and round()'s second argument all take INTEGER, and a SEL number is numeric, so they are cast. A literal small enough resolves without help; a bigint one does not, which is how left('a', 9223372036854775807) surfaced. The cast makes columns work and makes an out-of-range literal an honest run-time error, which is the database type-checking limit this layer accepts rather than papers over.",
-    "arithmetic-operands": "Every arithmetic operand is cast, not just division's. SEL numbers are TEXT values, so a TEXT-kind fragment that happens to read as a number is a legal operand -- `x * BACKWARDS(y)` is arithmetic in SEL -- and PostgreSQL answers `operator does not exist: numeric * text`. The cast also puts the two sides on the same footing as SEL: a TEXT operand that does NOT read as a number raises here, exactly as SEL's E_NOT_NUM does, instead of quietly becoming 0 the way SQLite would."
+    "arithmetic-operands": "Every arithmetic operand is cast, not just division's. SEL numbers are TEXT values, so a TEXT-kind fragment that happens to read as a number is a legal operand -- `x * BACKWARDS(y)` is arithmetic in SEL -- and PostgreSQL answers `operator does not exist: numeric * text`. The cast also puts the two sides on the same footing as SEL: a TEXT operand that does NOT read as a number raises here, exactly as SEL's E_NOT_NUM does, instead of quietly becoming 0 the way SQLite would.",
+    "concat-casts-both-operands": "Both operands, not one. PostgreSQL's || resolves through the text || anynonarray overload, so a concatenation with at least one TEXT operand worked and every corpus line had one. Two computed numbers have no overload at all: 2.50 & 2.50 emitted (2.50 || 2.50) and the server answered 42883 operator does not exist: numeric || numeric. That is a translation reporting success for a query that cannot run, and concatenating two computed numbers is an ordinary thing for a rule to do. The bin variant is left alone: bytea || bytea is a real operator."
   }
 }

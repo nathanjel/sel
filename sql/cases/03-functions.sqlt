@@ -139,12 +139,18 @@ ROUND(2.5, 0)
 ROUND(2.5, 0)
 ===
 ### name: func.number.isnum-is-a-regex
+--- note
+\A and \z, not ^ and $. ICU's $ matches before a trailing newline, so
+ISNUM("12\n") answered 1 on MariaDB and MySQL where SEL says FALSE -- a value
+that is not a number saying it is, which is the wrong direction for a
+validation rule to be wrong in. The two servers also disagreed with each other
+on \r. See the isnum-anchor note in mysql-family.json.
 --- dialect
 mariadb
 --- source
 ISNUM("-12.50")
 --- expect
-('-12.50' REGEXP '^-?[0-9]+(\\.[0-9]+)?$')
+('-12.50' REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z')
 ===
 ### name: func.binary.to-hex-is-lower-cased
 --- note

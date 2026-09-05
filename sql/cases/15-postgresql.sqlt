@@ -153,7 +153,7 @@ noise.
 --- source
 T & "a" & "b"
 --- expect
-(("t" || ?) || ?)
+(CAST((CAST("t" AS TEXT) || CAST(? AS TEXT)) AS TEXT) || CAST(? AS TEXT))
 --- params
 t"a", t"b"
 ===
@@ -175,7 +175,7 @@ params
 --- source
 T & "a" & "b"
 --- expect
-(("t" || $1) || $2)
+(CAST((CAST("t" AS TEXT) || CAST($1 AS TEXT)) AS TEXT) || CAST($2 AS TEXT))
 --- params
 t"a", t"b"
 ===

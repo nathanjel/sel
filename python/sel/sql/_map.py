@@ -579,7 +579,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "caveat": "numeric-scale",
             },
             "ISNUM": {
-                "tpl": "({0} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$')",
+                "tpl": "({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')",
                 "ret": "BOOL",
             },
             "BLEN": {
@@ -946,7 +946,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "caveat": "numeric-scale",
             },
             "ISNUM": {
-                "tpl": "({0} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$')",
+                "tpl": "({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')",
                 "ret": "BOOL",
             },
             "BLEN": {
@@ -1313,7 +1313,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "caveat": "numeric-scale",
             },
             "ISNUM": {
-                "tpl": "({0} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$')",
+                "tpl": "({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')",
                 "ret": "BOOL",
             },
             "BLEN": {
@@ -1443,7 +1443,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             },
             "&": {
                 "variants": {
-                    "text": "({0} || {1})",
+                    "text": "({textCast:0} || {textCast:1})",
                     "bin": "({0} || {1})",
                 },
                 "ret": "@concat",
