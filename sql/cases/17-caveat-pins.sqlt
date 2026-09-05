@@ -1,0 +1,182 @@
+% String pins for entries carrying a caveat.
+%
+% A caveat tells the oracle not to fail on an entry, which is exactly the point:
+% these entries genuinely disagree with SEL and the disagreement is declared. But
+% it also means their semantics stop being checked against a server, and the
+% string they emit becomes the only thing left holding them. That half was
+% missing. Mutating ansi's LOWER to UPPER proved it: the oracle printed
+% `caveat LOWER("ABC") SEL="abc" DB="ABC" [unicode-case]` and reported 0 differ,
+% because LOWER already carried unicode-case for an honest reason and no case
+% named LOWER on any dialect.
+%
+% php/bin/sqlt now requires one of these per caveated entry per target, traced
+% rather than claimed. Each case here exists because that check asked for it.
+
+### name: pin.mariadb.decode-base64
+--- dialect
+mariadb
+--- source
+BLEN(DECODE_BASE64("aGk="))
+--- expect
+LENGTH(FROM_BASE64('aGk='))
+===
+### name: pin.mariadb.lower
+--- dialect
+mariadb
+--- source
+LOWER("ABC")
+--- expect
+LOWER('ABC')
+===
+### name: pin.mariadb.max
+--- dialect
+mariadb
+--- source
+MAX(1, 2)
+--- expect
+GREATEST(1, 2)
+===
+### name: pin.postgresql.decode-base64
+--- dialect
+postgresql
+--- source
+BLEN(DECODE_BASE64("aGk="))
+--- expect
+octet_length(decode('aGk=', 'base64'))
+===
+### name: pin.postgresql.lower
+--- dialect
+postgresql
+--- source
+LOWER("ABC")
+--- expect
+lower(CAST('ABC' AS TEXT))
+===
+### name: pin.postgresql.power
+--- dialect
+postgresql
+--- source
+POWER(2, 10)
+--- expect
+power(CAST(2 AS NUMERIC), CAST(10 AS NUMERIC))
+===
+### name: pin.postgresql.rfind
+--- dialect
+postgresql
+--- source
+RFIND('b', "abc")
+--- expect
+regexp_instr(CAST('abc' AS TEXT) COLLATE "C", '(?s)b')
+===
+### name: pin.postgresql.rmatch
+--- dialect
+postgresql
+--- source
+RMATCH('^a', "abc")
+--- expect
+(CAST('abc' AS TEXT) COLLATE "C" ~ '(?s)^a')
+===
+### name: pin.sqlite.abs
+--- dialect
+sqlite
+--- source
+ABS(-2.50)
+--- expect
+abs((-'2.50'))
+===
+### name: pin.sqlite.ceil
+--- dialect
+sqlite
+--- source
+CEIL(1.2)
+--- expect
+ceil('1.2')
+===
+### name: pin.sqlite.floor
+--- dialect
+sqlite
+--- source
+FLOOR(1.8)
+--- expect
+floor('1.8')
+===
+### name: pin.sqlite.max
+--- dialect
+sqlite
+--- source
+MAX(1, 2)
+--- expect
+max('1', '2')
+===
+### name: pin.sqlite.power
+--- dialect
+sqlite
+--- source
+POWER(2, 3)
+--- expect
+pow('2', '3')
+===
+### name: pin.sqlite.trunc
+--- dialect
+sqlite
+--- source
+TRUNC(1.9)
+--- expect
+trunc('1.9')
+===
+### name: pin.sqlite.!=
+--- dialect
+sqlite
+--- source
+1 != 2
+--- expect
+(CAST('1' AS NUMERIC) <> CAST('2' AS NUMERIC))
+===
+### name: pin.sqlite.*
+--- dialect
+sqlite
+--- source
+2 * 3
+--- expect
+('2' * '3')
+===
+### name: pin.sqlite.-
+--- dialect
+sqlite
+--- source
+5 - 2
+--- expect
+('5' - '2')
+===
+### name: pin.sqlite.<
+--- dialect
+sqlite
+--- source
+1 < 2
+--- expect
+(CAST('1' AS NUMERIC) < CAST('2' AS NUMERIC))
+===
+### name: pin.sqlite.<=
+--- dialect
+sqlite
+--- source
+1 <= 2
+--- expect
+(CAST('1' AS NUMERIC) <= CAST('2' AS NUMERIC))
+===
+### name: pin.sqlite.>
+--- dialect
+sqlite
+--- source
+2 > 1
+--- expect
+(CAST('2' AS NUMERIC) > CAST('1' AS NUMERIC))
+===
+### name: pin.sqlite.>=
+--- dialect
+sqlite
+--- source
+2 >= 1
+--- expect
+(CAST('2' AS NUMERIC) >= CAST('1' AS NUMERIC))
+===

@@ -230,6 +230,60 @@ function plain_number(string $text): string
  * That is not hypothetical, it is how 23 green comparisons hid the defect that
  * Fragment::bindings() now exists to prevent.
  */
+/**
+ * Every caveat this dialect declares must have been seen doing its job.
+ *
+ * The oracle's rule is that an inexact translation is allowed to differ. The
+ * missing half was that it is REQUIRED to -- somewhere, on some expression --
+ * or the declaration is unfalsifiable. Two mutations proved it: adding
+ * `length-units` to LEN silenced four real disagreements and changed no output
+ * character, and dropping `numeric-scale` from MIN was invisible because the
+ * comparator reads NUM through Dec, where 17.000 and 17 are one number.
+ *
+ * A caveat no closed corpus can cross is excused by name in coverage.json, with
+ * a reason a person wrote.
+ *
+ * @param array<string,bool> $witnessed
+ * @return list<string>
+ */
+function caveat_symmetry(string $dialect, array $witnessed): array
+{
+    $excused = [];
+    $file = ORACLE . '/coverage.json';
+    if (is_file($file)) {
+        $decoded = json_decode((string) file_get_contents($file), true);
+        $excused = (array) (($decoded['caveats_unwitnessable'] ?? [])[$dialect] ?? []);
+    }
+
+    $declared = [];
+    foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (Map::entries($dialect, $section) as $key => $entry) {
+            if (is_array($entry) && isset($entry['caveat'])) {
+                $declared[$entry['caveat']][] = "{$section}.{$key}";
+            }
+        }
+    }
+
+    $out = [];
+    foreach ($declared as $caveat => $where) {
+        if (isset($witnessed[$caveat]) || isset($excused[$caveat])) {
+            continue;
+        }
+        sort($where);
+        $out[] = "{$dialect} declares the caveat `{$caveat}` on " . implode(' ', $where)
+            . ', and no corpus expression ever differed under it. Add one that '
+            . 'crosses its boundary, remove the caveat, or excuse it by name in '
+            . 'sql/oracle/coverage.json under caveats_unwitnessable';
+    }
+    foreach (array_keys($excused) as $caveat) {
+        if (isset($declared[$caveat]) && isset($witnessed[$caveat])) {
+            $out[] = "{$dialect} excuses `{$caveat}` as unwitnessable in "
+                . 'coverage.json and the corpus witnessed it; remove the excuse';
+        }
+    }
+    return $out;
+}
+
 function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
 {
     $cases = parse_selo((string) file_get_contents(ORACLE . '/expressions.selo'),
@@ -241,6 +295,17 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
     $stats = ['ok' => 0, 'refused' => 0, 'caveat' => 0, 'rejected' => 0];
     $bad = [];
     $entries = [];
+    // Which caveats actually excused a difference. A caveat is a claim that an
+    // entry may disagree with SEL, and until an expression makes it disagree
+    // nothing has checked whether the claim is true, still needed, or hiding a
+    // defect -- and inventing one is free, silences every check on that entry,
+    // and changes no output character.
+    //
+    // Credited only when the fragment carries exactly one. A fragment carrying
+    // two says which entries were inexact and not which one caused this
+    // difference, and crediting both would let a real divergence launder an
+    // invented caveat sitting beside it.
+    $witnessed = [];
 
     foreach ($cases as $c) {
         $entries[$c['entry']] = ($entries[$c['entry']] ?? 0) + 1;
@@ -323,6 +388,9 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
                 if ($mode === 'params') {
                     $stats['caveat']++;
                 }
+                if (count($frag->caveats) === 1) {
+                    $witnessed[$frag->caveats[0]] = true;
+                }
                 if ($verbose) {
                     printf("  caveat   %-40s %s  [%s]\n", $c['src'], $why,
                         implode(' ', $frag->caveats));
@@ -331,6 +399,11 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
             }
             $bad[] = [$c, $sql, "{$mode}: {$why}"];
         }
+    }
+
+    foreach (caveat_symmetry($dialect, $witnessed) as $why) {
+        $bad[] = [['src' => '(caveat symmetry)', 'at' => 'sql/oracle/coverage.json'],
+                  '', $why];
     }
 
     foreach ($bad as [$c, $sql, $why]) {
@@ -764,10 +837,12 @@ function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose, stri
 function run_coverage(string $dialect, bool $verbose, string $label = ''): array
 {
     $exclusions = [];
+    $declared = [];
     $file = ORACLE . '/coverage.json';
     if (is_file($file)) {
         $decoded = json_decode((string) file_get_contents($file), true);
         $exclusions = is_array($decoded['exclude'] ?? null) ? $decoded['exclude'] : [];
+        $declared = is_array($decoded['supported'] ?? null) ? $decoded['supported'] : [];
     }
 
     // What the corpus reaches, per group and in total.
@@ -823,6 +898,7 @@ function run_coverage(string $dialect, bool $verbose, string $label = ''): array
     // no semantics to check — it is the absence of them.
     $missing = [];
     $supported = 0;
+    $live = [];
     foreach (['ops', 'funcs', 'skel'] as $section) {
         foreach (Map::entries($dialect, $section) as $key => $entry) {
             if (!is_array($entry)) {
@@ -830,10 +906,36 @@ function run_coverage(string $dialect, bool $verbose, string $label = ''): array
             }
             $supported++;
             $name = "{$section}.{$key}";
+            $live[$name] = true;
             if (isset($seen[$name]) || isset($exclusions[$name])) {
                 continue;
             }
             $missing[] = $name;
+        }
+    }
+
+    // The denominator has to come from somewhere other than the code under
+    // test. Recomputing it here meant withdrawing an entry shrank supply and
+    // demand together: `66 of 66 entries reached` stayed green while ABS
+    // silently stopped being translatable on every dialect. Checked both ways,
+    // because undeclared support is the same kind of drift as a withdrawal.
+    $recorded = [];
+    foreach ((array) ($declared[$dialect] ?? []) as $name) {
+        $recorded[$name] = true;
+    }
+    if ($recorded === []) {
+        $problems[] = "sql/oracle/coverage.json records no supported set for "
+            . "{$dialect}; the gate cannot check a denominator it does not have";
+    } else {
+        $withdrawn = array_diff_key($recorded, $live);
+        $undeclared = array_diff_key($live, $recorded);
+        if ($withdrawn !== []) {
+            $problems[] = 'these entries are recorded as supported and the map no '
+                . 'longer has them: ' . implode(' ', array_keys($withdrawn));
+        }
+        if ($undeclared !== []) {
+            $problems[] = 'these entries are supported and not recorded in '
+                . 'coverage.json: ' . implode(' ', array_keys($undeclared));
         }
     }
 

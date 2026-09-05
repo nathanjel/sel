@@ -205,3 +205,29 @@ BLEN(TO_UTF8("a"))
 --- expect
 octet_length(convert_to(CAST('a' AS TEXT), 'UTF8'))
 ===
+### name: pg.params.an-inlined-literal-does-not-consume-an-ordinal
+--- note
+The one shape that can see whether the placeholder ordinal counts slots that are
+inlined rather than bound. All four shipped dialects spell the placeholder `?`,
+which carries no ordinal, so `$n` is the only witness -- and the case above uses
+three bound TEXT operands with no inlined literal in front, so it could not tell
+`$1, $2` from `$2, $3`. The 1 here is a NUM literal, which never becomes a
+parameter, so the first bound value must still be $1.
+
+This is the M2 binding-order defect in the form nothing else covers.
+--- dialect
+pg-numbered
+--- mode
+params
+--- register
+[{"dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": true,
+  "lexical": {"placeholder": "${n}"}}]
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+IF(1 == 1, T & "a", "b")
+--- expect
+CASE WHEN (1 = 1) THEN (CAST("t" AS TEXT) || CAST($1 AS TEXT)) ELSE $2 END
+--- params
+t"a", t"b"
+===

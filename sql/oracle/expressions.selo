@@ -582,6 +582,46 @@ ISNUM("12")
 ISNUM("1.5")
 ISNUM("abc")
 
+% Quoting, which nothing outside 01-lexical.sqlt exercised -- and every case in
+% that file is `dialect mariadb`, so PostgreSQL's and SQLite's escaping had no
+% witness anywhere: not in cases, not here, not in rows.json, and not in the
+% fuzz generator, which never puts an apostrophe inside a text literal. Halving
+% postgresql's '' escape is a live injection that survived every check.
+
+% Lines that cross a caveat's boundary. Each caveat below was declared, reached
+% by the corpus, and never actually differed -- so nothing had ever checked
+% whether the claim was true, still needed, or hiding a defect.
+
+### entry: mixed:caveat-crossings
+LEN(MIN(17, 123.456))
+LEN(MAX(17, 123.456))
+POWER(3, 40)
+POWER(2, 64)
+LEN(POWER(2, 10))
+LEN(POWER(10, 3))
+RMATCH('^abc$', "abc\n")
+RFIND('c$', "abc\n")
+ROUND(-2.5, 0)
+ROUND(2.675, 2)
+ROUND(-0.125, 2)
+99999999999999999999 != 99999999999999999998
+99999999999999999999 < 99999999999999999998
+99999999999999999999 <= 99999999999999999998
+99999999999999999999 > 99999999999999999998
+99999999999999999999 >= 99999999999999999998
+0.1 + 0.2 == 0.3
+
+### entry: mixed:edge-quoting
+LEN("it's")
+"it's" $== "it's"
+LEN("a\\b")
+"a\\b" $== "a\\b"
+LEN("a\"b")
+UPPER("it's")
+LEN("--")
+LEN("';")
+"a'b" & "c'd"
+
 ### entry: mixed:edge-case-branch-scale
 LEN(IF(FALSE, 2.50, 3))
 LEN(IF(TRUE, 3, 2.50))

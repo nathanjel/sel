@@ -560,7 +560,6 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "ROUND": {
                 "tpl": "ROUND({0}, {1})",
                 "ret": "NUM",
-                "caveat": "rounding-mode",
             },
             "MIN": {
                 "tpl": {
@@ -928,7 +927,6 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "ROUND": {
                 "tpl": "ROUND({0}, {1})",
                 "ret": "NUM",
-                "caveat": "rounding-mode",
             },
             "MIN": {
                 "tpl": {
@@ -1295,7 +1293,6 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "ROUND": {
                 "tpl": "ROUND({0}, {1})",
                 "ret": "NUM",
-                "caveat": "rounding-mode",
             },
             "MIN": {
                 "tpl": {

@@ -565,7 +565,6 @@ final class MapData
                 'ROUND' => [
                     'tpl' => 'ROUND({0}, {1})',
                     'ret' => 'NUM',
-                    'caveat' => 'rounding-mode',
                 ],
                 'MIN' => [
                     'tpl' => [
@@ -933,7 +932,6 @@ final class MapData
                 'ROUND' => [
                     'tpl' => 'ROUND({0}, {1})',
                     'ret' => 'NUM',
-                    'caveat' => 'rounding-mode',
                 ],
                 'MIN' => [
                     'tpl' => [
@@ -1300,7 +1298,6 @@ final class MapData
                 'ROUND' => [
                     'tpl' => 'ROUND({0}, {1})',
                     'ret' => 'NUM',
-                    'caveat' => 'rounding-mode',
                 ],
                 'MIN' => [
                     'tpl' => [

@@ -334,8 +334,8 @@
       "name": "mirror-compares-mariadb-with-itself",
       "was": "A check on a check, which is what §7 of docs/SQL-TESTING.md is about, and the PHP array-union trap this layer has already shipped twice. `+` keeps the LEFT operand for a duplicated key, so swapping the operands makes the mirror re-run every mariadb case AS mariadb. The pass count is unchanged, the \"also checked against a mirrored dialect\" line still prints the same number, and the only thing that makes mysql.json safe to leave empty has stopped happening.",
       "file": "php/bin/sqlt",
-      "from": "        $problem = run_case(['dialect' => $mirror] + $c);",
-      "to": "        $problem = run_case($c + ['dialect' => $mirror]);"
+      "from": "        $mirrorCase = ['dialect' => $mirror] + $c;",
+      "to": "        $mirrorCase = $c + ['dialect' => $mirror];"
     },
     {
       "name": "min-claims-exactness",

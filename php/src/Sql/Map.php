@@ -231,15 +231,25 @@ final class Map
     public static function entries(string $dialect, string $section): array
     {
         self::checkSection($section);
+        // array_key_exists, not ??=, and for the same reason entry() uses it:
+        // a dialect withdraws an entry by defining it as null, and `??=` reads
+        // that as "not set yet" and lets the base's live entry through. So
+        // entry() said a withdrawn entry was gone while entries() still listed
+        // it -- and the coverage gate reads entries(), so a withdrawn entry
+        // stayed in the denominator and was demanded of the corpus forever.
         $out = [];
         foreach (self::chain($dialect) as $d) {
             foreach ((self::$overlay[$d][$section] ?? []) as $k => $v) {
-                $out[$k] ??= $v;
+                if (!array_key_exists($k, $out)) {
+                    $out[$k] = $v;
+                }
             }
         }
         foreach (self::chain($dialect) as $d) {
             foreach ((MapData::DIALECTS[$d][$section] ?? []) as $k => $v) {
-                $out[$k] ??= $v;
+                if (!array_key_exists($k, $out)) {
+                    $out[$k] = $v;
+                }
             }
         }
         ksort($out);
