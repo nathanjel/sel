@@ -115,6 +115,20 @@ impl_sql() {
   esac
 }
 
+# The SQL semantic oracle in sql/oracle/: the same expressions evaluated by SEL
+# and by a real database. Where impl_sql asks "is this the string we meant to
+# emit?", this asks "does that string mean what SEL means?" -- the question a
+# case file cannot answer about itself. Skips itself when no DSN is set.
+impl_oracle() {
+  local impl="$1"; shift
+  case "$impl" in
+    php)  php php/bin/sqlo "$@" ;;
+    js|js-bundle|cpp|lisp) return 0 ;;          # no SQL layer yet
+    python|python-wheel) return 0 ;;            # M6
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
 # Each implementation's own unit tests, covering the layers underneath the
 # conformance suite. Optional: js and php have none, and say so by succeeding.
 impl_unit() {

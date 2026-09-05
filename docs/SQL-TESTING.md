@@ -58,6 +58,39 @@ miss it — the suite did not *have* it. `sql/MAP.md` says field names are
 case-insensitive; no case said so; nothing failed. One sentence, one missing
 case, one silent defect for a milestone.
 
+### What happened when the oracle was actually built
+
+The fix proposed in §3 was built. On its **first two runs**, against code that
+had passed three rounds of review and a green 180-case suite, it found five more:
+
+| Defect | Shape |
+|---|---|
+| `PADL`/`PADR` truncated | `LPAD('7777', 2, '0')` is `'77'`; SEL returns `"7777"` |
+| `MIN(1)`/`MAX(1)` emitted invalid SQL | `LEAST` and `GREATEST` need two arguments |
+| `params` mode compared numbers as text | `(2.50 = 2.5)` is TRUE, `(? = ?)` over two string parameters is FALSE |
+| `x IN <multi-field relation>` | the server selected order 1, SEL selected nothing |
+| the row fixture loaded nothing | and reported nine disagreements over zero rows |
+
+Two of those deserve a second look.
+
+The **params-mode number** defect is the §4 argument made literal. The same
+expression means two different things in the two render modes, because a bound
+parameter arrives as a string in every driver — an exact decimal has no numeric
+binding to arrive as. `inline` was right, `params` was wrong, and the 23
+params-mode comparisons that "passed" in M2 passed under emulated prepares, which
+inline client-side. Nothing but a native prepare against a real server can see it.
+
+The **`IN` over a relation** defect was not an implementation slip. §7.6 of the
+design document used a multi-field relation in its own worked example, and no SEL
+context makes that translation true: a relation with several fields is a list of
+rows, and SEL compares a scalar against a row structurally. It was documented,
+implemented, case-tested and wrong, and the only thing that could tell was asking
+both sides the same question. That is the entire thesis of this document arriving
+in one defect.
+
+So the honest total is **seventeen**, and the row that matters is unchanged:
+the suite that asserts what the author believed found one of them.
+
 ---
 
 ## 3. Class A — the map claims a semantic equivalence that nothing checks

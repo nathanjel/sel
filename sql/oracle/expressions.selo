@@ -1,0 +1,406 @@
+% Oracle corpus: closed SEL expressions, evaluated by SEL and by a real server,
+% and required to agree. See sql/oracle/README.md for the format and the rule.
+%
+% Every expression here is CLOSED — literals only, no bindings — so one corpus
+% serves every dialect. What differs between dialects is the map, and the map is
+% exactly what this measures.
+%
+% Group headers name the map entry the group exists to cover. They are grouping,
+% not truth: coverage is taken from a trace of Map::entry() during translation,
+% so an expression that touches five entries counts for five. A header no
+% expression under it actually reaches is a suite error.
+
+% --- arithmetic -------------------------------------------------------------
+
+### entry: ops.+
+1 + 2
+2.50 + 2.50
+0.1 + 0.2
+-3 + 3
+
+### entry: ops.-
+10 - 3
+2.50 - 2.50
+1 - 10
+
+### entry: ops.*
+1.5 * 1.5
+2.50 * 4
+0 * 12345
+
+### entry: ops./
+10 / 4
+1 / 3
+2.50 / 0.5
+
+### entry: ops.%
+5 % 3
+-5 % 3
+5.5 % 2
+
+### entry: ops.NEG
+-(3)
+-(0)
+-(2.50)
+
+% --- numeric comparison -----------------------------------------------------
+%
+% The interesting inputs are the ones where SEL's numeric reading and SQL's
+% textual reading disagree: "5.00" and "5" are one number and two strings.
+
+### entry: ops.==
+5 == 5
+"5.00" == "5"
+2.50 == 2.5
+0 == -0
+
+### entry: ops.!=
+5 != 6
+"5.00" != "5"
+2.50 != 2.5
+
+### entry: ops.<
+1 < 2
+2 < 1
+"10" < "9"
+
+### entry: ops.<=
+2 <= 2
+3 <= 2
+"10" <= "9"
+
+### entry: ops.>
+3 > 4
+4 > 3
+"10" > "9"
+
+### entry: ops.>=
+2 >= 2
+1 >= 2
+"10" >= "9"
+
+% --- byte comparison --------------------------------------------------------
+%
+% These are the ones a default collation gets wrong. "A" $== "a" is FALSE in SEL
+% and TRUE in MariaDB under utf8mb4_general_ci, and 3.0 $== 3 is FALSE in SEL and
+% TRUE anywhere the operands are read as numbers.
+
+### entry: ops.$==
+"A" $== "a"
+"abc" $== "abc"
+"5.00" $== "5"
+"3.0" $== "3"
+"" $== ""
+"ß" $== "SS"
+
+### entry: ops.$!=
+"A" $!= "a"
+"abc" $!= "abc"
+"5.00" $!= "5"
+
+### entry: ops.$<
+"a" $< "b"
+"B" $< "a"
+"abc" $< "abd"
+
+### entry: ops.$<=
+"a" $<= "a"
+"b" $<= "a"
+
+### entry: ops.$>
+"b" $> "a"
+"a" $> "b"
+
+### entry: ops.$>=
+"a" $>= "a"
+"a" $>= "b"
+
+### entry: ops.EQL
+"a" EQL "a"
+"a" EQL "b"
+"5.00" EQL "5"
+TRUE EQL TRUE
+
+% --- logic ------------------------------------------------------------------
+
+### entry: ops.AND
+TRUE AND FALSE
+TRUE AND TRUE
+FALSE AND FALSE
+
+### entry: ops.OR
+TRUE OR FALSE
+FALSE OR FALSE
+TRUE OR TRUE
+
+### entry: ops.XOR
+TRUE XOR TRUE
+TRUE XOR FALSE
+FALSE XOR FALSE
+
+### entry: ops.NOT
+NOT TRUE
+NOT FALSE
+NOT (1 > 2)
+
+% --- concatenation ----------------------------------------------------------
+%
+% `&` shares the variant name `text` with the byte-comparison family and must not
+% share its treatment: a collation on a concatenation operand is meaningless, and
+% a cast to CHAR would change what a number concatenates as.
+
+### entry: ops.&
+"a" & "b"
+"x" & 1
+"" & ""
+2.50 & "!"
+
+### entry: ops.IN
+3 IN (1, 2, 3)
+9 IN (1, 2, 3)
+"OPEN" IN ("open", "held")
+"open" IN ("open", "held")
+"3.0" IN ("3")
+
+% --- text -------------------------------------------------------------------
+
+### entry: funcs.UPPER
+UPPER("abc")
+UPPER("zażółć gęślą jaźń")
+UPPER("")
+
+### entry: funcs.LOWER
+LOWER("ABC")
+LOWER("ZAŻÓŁĆ GĘŚLĄ JAŹŃ")
+
+### entry: funcs.LEN
+LEN("zażółć")
+LEN("")
+LEN("𝄞")
+
+### entry: funcs.LEFT
+LEFT("banana", 3)
+LEFT("zażółć", 3)
+LEFT("ab", 10)
+LEFT("ab", 0)
+
+### entry: funcs.RIGHT
+RIGHT("banana", 3)
+RIGHT("zażółć", 3)
+RIGHT("ab", 10)
+
+### entry: funcs.SUBSTR
+SUBSTR("banana", 2)
+SUBSTR("banana", 2, 3)
+SUBSTR("zażółć", 3, 2)
+SUBSTR("ab", 5)
+
+### entry: funcs.FIND
+FIND("a", "banana")
+FIND("a", "banana", 3)
+FIND("z", "banana")
+FIND("ó", "zażółć")
+FIND("na", "banana")
+
+### entry: funcs.REPLACE
+REPLACE("a", "o", "banana")
+REPLACE("x", "y", "banana")
+REPLACE("ż", "z", "zażółć")
+
+### entry: funcs.TRIM
+TRIM("  x  ")
+TRIM("x")
+TRIM("\t\r\n x \n")
+
+### entry: funcs.LTRIM
+LTRIM("  x")
+LTRIM("x  ")
+
+### entry: funcs.RTRIM
+RTRIM("x  ")
+RTRIM("  x")
+
+### entry: funcs.REPEAT
+REPEAT("ab", 3)
+REPEAT("ab", 0)
+REPEAT("ż", 2)
+
+### entry: funcs.PADL
+PADL("7", 3, "0")
+PADL("7777", 2, "0")
+PADL("ż", 3, "-")
+
+### entry: funcs.PADR
+PADR("7", 3, "0")
+PADR("7777", 2, "0")
+
+### entry: funcs.BACKWARDS
+BACKWARDS("abc")
+BACKWARDS("zażółć")
+BACKWARDS("")
+
+% --- numbers ----------------------------------------------------------------
+
+### entry: funcs.ABS
+ABS(-5)
+ABS(5)
+ABS(-2.50)
+
+### entry: funcs.SIGN
+SIGN(-3)
+SIGN(0)
+SIGN(3)
+
+### entry: funcs.CEIL
+CEIL(2.1)
+CEIL(-2.1)
+CEIL(2)
+
+### entry: funcs.FLOOR
+FLOOR(2.9)
+FLOOR(-2.9)
+FLOOR(2)
+
+### entry: funcs.TRUNC
+TRUNC(2.9)
+TRUNC(-2.9)
+TRUNC(2)
+
+### entry: funcs.ROUND
+ROUND(2.5, 0)
+ROUND(-2.5, 0)
+ROUND(1.2345, 2)
+ROUND(1.005, 2)
+
+### entry: funcs.MIN
+MIN(3, 1, 2)
+MIN(1)
+MIN(-1, -2)
+
+### entry: funcs.MAX
+MAX(3, 1, 2)
+MAX(1)
+MAX(-1, -2)
+
+### entry: funcs.POWER
+POWER(2, 10)
+POWER(2, 0)
+POWER(10, 3)
+
+### entry: funcs.ISNUM
+ISNUM("12.5")
+ISNUM(" 2")
+ISNUM("x")
+ISNUM("")
+
+% --- binary -----------------------------------------------------------------
+
+### entry: funcs.BLEN
+BLEN("zażółć")
+BLEN("")
+BLEN("abc")
+
+### entry: funcs.TO_UTF8
+TO_HEX(TO_UTF8("zażółć"))
+TO_HEX(TO_UTF8(""))
+
+### entry: funcs.FROM_UTF8
+FROM_UTF8(TO_UTF8("zażółć"))
+FROM_UTF8(FROM_HEX("616263"))
+
+### entry: funcs.TO_HEX
+TO_HEX(FROM_HEX("414243"))
+TO_HEX(TO_UTF8("a"))
+
+### entry: funcs.FROM_HEX
+FROM_UTF8(FROM_HEX("414243"))
+BLEN(FROM_UTF8(FROM_HEX("c3a9")))
+
+### entry: funcs.ENCODE_BASE64
+ENCODE_BASE64(TO_UTF8("hello"))
+ENCODE_BASE64(TO_UTF8(""))
+ENCODE_BASE64(TO_UTF8("a longer string, long enough to pass the wrap column that TO_BASE64 inserts on its own"))
+
+### entry: funcs.DECODE_BASE64
+TO_HEX(DECODE_BASE64("aGVsbG8="))
+FROM_UTF8(DECODE_BASE64("aGVsbG8="))
+
+### entry: funcs.CRC32
+CRC32("hello")
+CRC32("")
+CRC32("zażółć")
+
+% --- regex ------------------------------------------------------------------
+%
+% Every one of these disagreed with MariaDB at some point in M1: the engine is
+% case-insensitive by default, its `.` does not match a newline, and its `\d`
+% matches digits SEL's does not.
+
+### entry: funcs.RMATCH
+RMATCH('^[a-z]+$', "abc")
+RMATCH('^[a-z]+$', "ABC")
+RMATCH('^abc$', "ABC", "i")
+RMATCH('^a.c$', "a\nc")
+RMATCH('^\d+$', "123")
+RMATCH('^\d+$', "٣")
+RMATCH('^$', "")
+
+### entry: funcs.RFIND
+RFIND('ó', "zażółć")
+RFIND('z', "abc")
+RFIND('[0-9]+', "ab123")
+RFIND('^ABC$', "abc")
+
+% --- conditionals -----------------------------------------------------------
+
+### entry: skel.case
+IF(TRUE, "y", "n")
+IF(FALSE, "y", "n")
+COND(FALSE, "a", TRUE, "b", "c")
+COND(FALSE, "a", FALSE, "b", "c")
+IF(1 > 2, 10, 20)
+
+% --- aggregates over static lists -------------------------------------------
+%
+% A static list unrolls at translation time, so these reach the operators' own
+% templates rather than any aggregate skeleton — which is the property that makes
+% `ALL((a, b), p)` and `p(a) AND p(b)` the same bytes.
+
+### entry: skel.all
+ALL((1, 2, 3), _ > 0)
+ALL((1, 2, 3), _ > 2)
+ALL((5), _ > 0)
+ALL(FILTER((1, 2, 3), _ > 1), _ > 2)
+
+### entry: skel.any
+ANY((1, 2), _ > 1)
+ANY((1, 2), _ > 5)
+ANY(FILTER((1, 2, 3), _ > 1), _ > 2)
+
+### entry: skel.sum
+SUM((1, 2, 3), _ * 2)
+SUM((2.50, 2.50), _)
+SUM(FILTER((1, 2, 3), _ > 1), _)
+
+### entry: skel.count
+COUNT((1, 2, 3))
+COUNT(FILTER((1, 2, 3), _ <= 1))
+COUNT("hello")
+
+% --- mixed ------------------------------------------------------------------
+%
+% Compositions, because a defect that survives every entry in isolation can still
+% appear where two of them meet — an operand transformed for one operator and
+% then handed to another.
+
+### entry: mixed
+UPPER("abc") $== "ABC"
+LEN(UPPER("zażółć")) == 6
+TRIM(" " & "x" & " ")
+IF("A" $== "a", "wrong", "right")
+ALL((1, 2, 3), _ * 2 > 1)
+NOT ("5.00" $== "5")
+(2.50 + 2.50) == 5
+FIND("a", UPPER("banana"))
+"x" & IF(TRUE, "y", "n")
+ROUND(10 / 4, 1) == 2.5

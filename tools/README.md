@@ -13,6 +13,8 @@ tools/check-api.sh          the same API probes through every host binding
 tools/check-version.sh      every manifest declares the same version
 cd cpp && make asan         the C++ suite under the address and leak sanitizers
 tools/fuzz.sh               seeded differential fuzzing, N-way
+tools/check-sql-map.sh      the dialect map, regenerated and diffed
+tools/check-sql-oracle.sh   translated SQL against a real database
 ```
 
 Only the JS side owns generators: `gen-programs.mjs` (fuzz corpus),
@@ -36,8 +38,25 @@ rather than a comparison of the standard library with itself.
 | `e2e` | `examples/order-validation.sel` | the scenario report | 0 |
 | `api` | nothing | the API parity report, one `NN name = value` line per probe | 0 |
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
+| `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure; **0 and silent** for a host with no SQL layer |
+| `oracle [mode]` | `sql/oracle/*` | a per-mode agreement report | non-zero on any disagreement; **0 with a skip line** when no DSN is set |
 
-All five run from the repository root and take paths relative to it.
+The first five are required. `sql` and `oracle` are optional in the same way
+`unit` is: a host with no SQL layer succeeds silently and the harness moves on.
+
+All of them run from the repository root and take paths relative to it.
+
+`oracle` needs a database and finds it in the environment, named for the dialect:
+
+```
+SEL_SQL_MARIADB_DSN='mysql:unix_socket=/var/lib/mysql/mysql.sock;dbname=sel_oracle;charset=utf8mb4'
+SEL_SQL_MARIADB_USER=you
+SEL_SQL_MARIADB_PASS=
+```
+
+With no DSN it prints a skip and succeeds, so a fresh clone stays green. The
+named schema must exist and must be disposable: the row oracle drops and
+recreates its tables on every run. See `sql/oracle/README.md`.
 
 | Role | js | php | cpp | lisp | python |
 |---|---|---|---|---|---|
@@ -46,6 +65,8 @@ All five run from the repository root and take paths relative to it.
 | `e2e` | `examples/e2e.mjs` | `examples/e2e.php` | `cpp/build/e2e` | `lisp/bin/e2e` | `examples/e2e.py` |
 | `api` | `tools/api.mjs` | `tools/api.php` | `cpp/build/api` | `lisp/bin/api` | `python/bin/api.py` |
 | `check-decimal` | `tools/check-decimal.mjs` | `tools/check-decimal.php` | `cpp/build/check-decimal` | `lisp/bin/check-decimal` | `python/bin/check-decimal.py` |
+| `sql` | — | `php/bin/sqlt` | — | — | M6 |
+| `oracle` | — | `php/bin/sqlo` | — | — | M6 |
 
 Two implementations in `tools/impls.sh` are the same code reached a second way:
 `js-bundle` runs `dist/sel.mjs`, and `python-wheel` runs the built wheel from a

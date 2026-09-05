@@ -46,6 +46,7 @@ for impl in $IMPLS; do
   step "sql translation ($impl)" impl_sql "$impl"
 done
 
+step "sql semantic oracle" ./tools/check-sql-oracle.sh
 step "manifest versions" ./tools/check-version.sh
 step "host API parity" ./tools/check-api.sh
 step "documentation examples" ./tools/check-docs.sh

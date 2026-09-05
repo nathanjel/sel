@@ -112,6 +112,44 @@ final class Emit
     }
 
     /**
+     * A params-mode slot: the placeholder, cast back to a number when the value
+     * it carries is one.
+     *
+     * A bound parameter arrives as a string in every driver, because an exact
+     * decimal has no numeric binding to arrive as — PHP, and the wire protocol
+     * under it, have float and int and neither is a SEL number. So the two
+     * render modes stop meaning the same thing at exactly the point where the
+     * server has to decide whether it is comparing numbers or text:
+     *
+     *     inline  (2.50 = 2.5)          -> two numeric literals   -> TRUE
+     *     params  (? = ?)               -> two string parameters  -> FALSE
+     *
+     * SEL says TRUE, `inline` agreed and `params` did not, and 23 green
+     * comparisons under emulated prepares said nothing because emulation inlines
+     * the values client-side. The cast restores the one property the two modes
+     * must share: the same meaning.
+     *
+     * It goes on the slot rather than on the comparison operators because the
+     * operators are not the only place a number is read as one — LEAST, SUBSTR,
+     * ROUND and every other numeric argument have the same problem, and one rule
+     * at the slot covers all of them without a word of map surface.
+     */
+    public static function slot(string $dialect, int $n, string $kind = 'TEXT'): string
+    {
+        $ph = self::placeholder($dialect, $n);
+        if ($kind !== 'NUM') {
+            return $ph;
+        }
+        $cast = Map::lexical($dialect, 'numericCast');
+        if (!is_string($cast)) {
+            refuse('E_SQL_DIALECT',
+                "dialect {$dialect} has no numericCast, so a number cannot be bound "
+                . 'as a parameter; render this fragment inline');
+        }
+        return str_replace('{0}', $ph, $cast);
+    }
+
+    /**
      * An operand of a byte comparison: cast to a character type, then given the
      * dialect's binary collation.
      *

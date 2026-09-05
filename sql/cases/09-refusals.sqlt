@@ -130,3 +130,21 @@ mariadb
 T[1]
 --- error
 E_SQL_SHAPE 1:2
+### name: refuse.in-over-a-multi-field-relation
+--- note
+A relation with more than one field is a list of rows, and SEL compares a scalar
+against a row structurally: FALSE for every row, always. Projecting one column
+would translate something the evaluator never answers.
+
+Found by the row oracle: the server selected order 1 and SEL selected nothing.
+The doc's own example (§7.6) was this shape. Bind the projected column as its
+own one-field relation, which sql/oracle/rows.json now does.
+--- dialect
+mariadb
+--- bindings
+{"SKU": {"kind": "column", "table": "o", "column": "sku", "type": "TEXT"}, "ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "scalar": "SKU", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}, "SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}}
+--- source
+SKU IN ITEMS
+--- error
+E_SQL_SHAPE
+===

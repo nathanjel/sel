@@ -72,12 +72,47 @@ TRIM("  x  ")
 REGEXP_REPLACE('  x  ', '^[ \\t\\r\\n]+|[ \\t\\r\\n]+$', '')
 ===
 ### name: func.text.pad
+--- note
+LPAD truncates an argument already wider than the target width and SEL's PADL
+returns it unchanged, so the template guards the call rather than making it.
+The guard repeats {0} and {1}: a slot emitted twice is bound twice, which is
+what Fragment::bindings() walking the output is for.
 --- dialect
 mariadb
 --- source
 PADL("7", 3, "0")
 --- expect
-LPAD('7', 3, '0')
+IF(CHAR_LENGTH('7') >= 3, '7', LPAD('7', 3, '0'))
+===
+### name: func.text.pad-does-not-truncate
+--- note
+Found by the oracle, not by anyone reading the manual: LPAD('7777', 2, '0') is
+'77' and PADL("7777", 2, "0") is "7777".
+--- dialect
+mariadb
+--- source
+PADR("7777", 2, "0")
+--- expect
+IF(CHAR_LENGTH('7777') >= 2, '7777', RPAD('7777', 2, '0'))
+===
+### name: func.num.min-of-one-argument
+--- note
+LEAST and GREATEST are variadic but need two arguments, and SEL's MIN takes one.
+`*` is the arity-keyed template's fallback; `1` is the count that needs its own.
+--- dialect
+mariadb
+--- source
+MIN(1)
+--- expect
+1
+===
+### name: func.num.min-of-several
+--- dialect
+mariadb
+--- source
+MIN(3, 1, 2)
+--- expect
+LEAST(3, 1, 2)
 ===
 ### name: func.number.min-is-a-scalar-not-an-aggregate
 --- dialect

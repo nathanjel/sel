@@ -12,6 +12,11 @@ T > 100 AND T < 200
 ((`t` > 100) AND (`t` < 200))
 ===
 ### name: mode.params.placeholders-in-order
+--- note
+A NUM slot is cast back to a number. A driver binds a parameter as a string —
+an exact decimal has no numeric binding in any of them — so without the cast
+`params` and `inline` stop meaning the same thing: (2.50 = 2.5) is TRUE and
+(? = ?) over '2.50' and '2.5' is FALSE. See Emit::slot.
 --- dialect
 mariadb
 --- mode
@@ -21,9 +26,26 @@ params
 --- source
 T > 100 AND T < 200
 --- expect
-((`t` > ?) AND (`t` < ?))
+((`t` > CAST(? AS DECIMAL(65,10))) AND (`t` < CAST(? AS DECIMAL(65,10))))
 --- params
 t"100", t"200"
+===
+### name: mode.params.a-text-slot-is-not-cast
+--- note
+Only NUM slots are cast. A TEXT parameter is already what the server will read
+it as, and casting it would be a second place for a collation to go wrong.
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T & "x"
+--- expect
+CONCAT(`t`, ?)
+--- params
+t"x"
 ===
 ### name: mode.debug.slots-are-visible
 --- dialect

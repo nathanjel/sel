@@ -328,10 +328,36 @@ function checkEntry(entry, key, section, dialect, lexical) {
       }
       checkTemplate(expandLexical(entry.tpl, lexical, where), opts);
     } else if (isObject(entry.tpl)) {
+      // An arity-keyed template maps one argument count each. `*` is the
+      // fallback for the counts it does not name, which is what an open-ended
+      // arity needs: MIN takes one argument or any number, and only the
+      // one-argument case cannot go through LEAST.
       for (const [arity, t] of Object.entries(entry.tpl)) {
-        if (!/^[0-9]+$/.test(arity)) { fail(where, `tpl key "${arity}" is not an argument count`); continue; }
+        if (arity === '*') {
+          checkTemplate(expandLexical(t, lexical, where),
+            { ...opts, maxArgs: max, where: `${where}[*]` });
+          continue;
+        }
+        if (!/^[0-9]+$/.test(arity)) { fail(where, `tpl key "${arity}" is not an argument count or "*"`); continue; }
         checkTemplate(expandLexical(t, lexical, where),
           { ...opts, maxArgs: Number(arity), where: `${where}[${arity}]` });
+      }
+      // Every count the entry accepts must resolve to a template. Without this
+      // an arity-keyed entry refuses at run time for a count nobody noticed was
+      // missing — the same silent gap a single template covering two counts has,
+      // one level up.
+      if (entry.tpl['*'] === undefined) {
+        if (max === Infinity) {
+          fail(where, `arity is [${min}, unbounded] and "tpl" names specific counts `
+            + 'with no "*" fallback, so every larger count is unmapped');
+        } else {
+          const missing = [];
+          for (let n = min; n <= max; n++) if (entry.tpl[String(n)] === undefined) missing.push(n);
+          if (missing.length) {
+            fail(where, `arity is [${min}, ${max}] but "tpl" has no template for `
+              + `${missing.join(', ')} argument(s) — add them or add a "*" fallback`);
+          }
+        }
       }
     } else {
       fail(where, 'tpl must be a string or an object keyed by argument count');

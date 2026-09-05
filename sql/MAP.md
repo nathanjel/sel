@@ -144,12 +144,21 @@ one of them.
 
 | Field | Required | Means |
 |---|---|---|
-| `tpl` | one of `tpl`/`variants` | a template, or an object keyed by argument count |
+| `tpl` | one of `tpl`/`variants` | a template, or an object keyed by argument count, with `*` as the fallback |
 | `variants` | one of `tpl`/`variants` | named templates chosen by §4.3 |
 | `ret` | yes | the static kind produced; §4.4 |
 | `arity` | no | `[min, max]`, narrowing SEL's own arity for this dialect |
 | `caveat` | no | mapped but inexact; §4.6 |
 | `since` | no | requires at least this target version; §4.5 |
+
+An arity-keyed `tpl` must resolve for every count the entry accepts: the
+generator lists the counts it does not cover, and an entry with an unbounded
+arity must carry a `*`. `MIN` is the case that needs it — `LEAST` and `GREATEST`
+are variadic but require two arguments, and SEL's `MIN` takes one:
+
+```jsonc
+"MIN": { "tpl": { "1": "{0}", "*": "LEAST({*})" }, "ret": "NUM" }
+```
 
 `FIND` and `REPLACE` reorder their arguments, because SEL is
 `FIND(needle, hay)` and SQL is `INSTR(hay, needle)`. `arity` on `FIND` is how

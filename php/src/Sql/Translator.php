@@ -292,6 +292,21 @@ final class Translator
                         "IN over {$rhs['name']} needs the binding to name a \"scalar\" "
                         . 'field: that is the column the subquery projects', $rhs['pos']);
                 }
+                // A relation with more than one field is a list of ROWS, and SEL
+                // compares a scalar against a row structurally: it is FALSE for
+                // every row, always. Projecting one column would translate
+                // something the evaluator never answers — the oracle found this
+                // by asking both sides and getting [1] from the server and []
+                // from SEL. Bind the column as its own one-field relation and
+                // the two agree; anything else is a guess about which field the
+                // author meant.
+                if (count($b['fields']) !== 1) {
+                    refuse('E_SQL_SHAPE',
+                        "IN over {$rhs['name']} is refused: the relation declares "
+                        . count($b['fields']) . ' fields, so SEL reads its rows as '
+                        . 'maps and a scalar can never equal one. Bind the projected '
+                        . 'column as a relation with that one field.', $rhs['pos']);
+                }
                 return new Fragment(
                     $this->fillNamed($this->skeleton('inRelation', $n['pos']),
                         $this->relationSlots($b) + [
@@ -1165,6 +1180,11 @@ final class Translator
             return $tpl;
         }
         $n = (string) count($args);
+        // `*` is the fallback for counts the entry does not name one by one, so
+        // an open-ended arity can still special-case the counts that need it.
+        if (!isset($tpl[$n]) && isset($tpl['*'])) {
+            $n = '*';
+        }
         if (!isset($tpl[$n])) {
             $have = array_keys($tpl);
             sort($have);

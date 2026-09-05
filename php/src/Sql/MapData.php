@@ -540,11 +540,11 @@ final class MapData
                     'ret' => 'TEXT',
                 ],
                 'PADL' => [
-                    'tpl' => 'LPAD({0}, {1}, {2})',
+                    'tpl' => 'IF(CHAR_LENGTH({0}) >= {1}, {0}, LPAD({0}, {1}, {2}))',
                     'ret' => 'TEXT',
                 ],
                 'PADR' => [
-                    'tpl' => 'RPAD({0}, {1}, {2})',
+                    'tpl' => 'IF(CHAR_LENGTH({0}) >= {1}, {0}, RPAD({0}, {1}, {2}))',
                     'ret' => 'TEXT',
                 ],
                 'CHAR' => 'CHAR(n USING utf8mb4) reads n as a byte sequence in that charset, not as a code point: CHAR(233 USING utf8mb4) is NULL because 0xE9 alone is not valid UTF-8, where SEL says the character is e-acute',
@@ -563,11 +563,17 @@ final class MapData
                     'caveat' => 'rounding-mode',
                 ],
                 'MIN' => [
-                    'tpl' => 'LEAST({*})',
+                    'tpl' => [
+                        '1' => '{0}',
+                        '*' => 'LEAST({*})',
+                    ],
                     'ret' => 'NUM',
                 ],
                 'MAX' => [
-                    'tpl' => 'GREATEST({*})',
+                    'tpl' => [
+                        '1' => '{0}',
+                        '*' => 'GREATEST({*})',
+                    ],
                     'ret' => 'NUM',
                 ],
                 'ISNUM' => [
@@ -896,11 +902,11 @@ final class MapData
                     'ret' => 'TEXT',
                 ],
                 'PADL' => [
-                    'tpl' => 'LPAD({0}, {1}, {2})',
+                    'tpl' => 'IF(CHAR_LENGTH({0}) >= {1}, {0}, LPAD({0}, {1}, {2}))',
                     'ret' => 'TEXT',
                 ],
                 'PADR' => [
-                    'tpl' => 'RPAD({0}, {1}, {2})',
+                    'tpl' => 'IF(CHAR_LENGTH({0}) >= {1}, {0}, RPAD({0}, {1}, {2}))',
                     'ret' => 'TEXT',
                 ],
                 'CHAR' => 'CHAR(n USING utf8mb4) reads n as a byte sequence in that charset, not as a code point: CHAR(233 USING utf8mb4) is NULL because 0xE9 alone is not valid UTF-8, where SEL says the character is e-acute',
@@ -919,11 +925,17 @@ final class MapData
                     'caveat' => 'rounding-mode',
                 ],
                 'MIN' => [
-                    'tpl' => 'LEAST({*})',
+                    'tpl' => [
+                        '1' => '{0}',
+                        '*' => 'LEAST({*})',
+                    ],
                     'ret' => 'NUM',
                 ],
                 'MAX' => [
-                    'tpl' => 'GREATEST({*})',
+                    'tpl' => [
+                        '1' => '{0}',
+                        '*' => 'GREATEST({*})',
+                    ],
                     'ret' => 'NUM',
                 ],
                 'ISNUM' => [

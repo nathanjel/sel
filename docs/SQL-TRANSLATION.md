@@ -964,7 +964,7 @@ The map's `skel` section supplies the skeleton and the lowering fills it.
 | `SUM(rel, b)` | `sum` | the body |
 | `COUNT(rel)` | `count` | — |
 | `JOIN(rel, s)` | `join` | refused on MariaDB; see below |
-| `x IN rel` | `inRelation` | the relation's `scalar` field |
+| `x IN rel` | `inRelation` | the relation's `scalar` field — **one-field relations only** |
 
 ```
 ALL(ITEMS, I, I["qty"] > 0)
@@ -979,10 +979,23 @@ SUM(ITEMS, I, I["qty"] * I["price"])
 COUNT(ITEMS)
     (SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
 
-SKU IN ITEMS                          ITEMS declares scalar: SKU
+SKU IN SKUS                  SKUS has ONE field, SKU, and declares it scalar
     (`o`.`sku` IN (SELECT `oi`.`sku` FROM `order_items` `oi`
                     WHERE `oi`.`order_id` = `o`.`id`))
 ```
+
+**`IN` is refused over a relation with more than one field.** This example used
+to bind the multi-field `ITEMS`, and that was wrong in a way no case file could
+see. A relation with several fields is a list of **rows**; SEL compares a scalar
+against a row structurally, which is FALSE for every row, always. Projecting one
+column would translate something the evaluator never answers — and the row
+oracle proved it, selecting order 1 on the server and nothing at all in SEL.
+
+`scalar` therefore carries one meaning, not two: it says what a bare binder
+resolves to inside an aggregate body (§7.4). Using it as a projection for `IN`
+only agrees with SEL when the relation has nothing else in it, because that is
+the only shape a host can model as a list of scalars. Bind the column you want to
+search as its own one-field relation; `sql/oracle/rows.json` shows both.
 
 `IS NOT TRUE` rather than `NOT (…)` is the point of care. SQL is three-valued
 and SEL is not: if the body is NULL for some row, `NOT (body)` is NULL, the
@@ -1168,6 +1181,7 @@ it asks about has to be known before the query runs.
 | `MAP` as an aggregate's source | `E_SQL_SHAPE` | see §7.5 |
 | `INDEXES` anywhere | `E_SQL_SHAPE` | yields a list |
 | `_K` inside a relation body | `E_SQL_SHAPE` | a row has no portable key |
+| `x IN rel` where `rel` declares more than one field | `E_SQL_SHAPE` | the relation is a list of rows, and SEL compares a scalar against a row structurally: FALSE for every row. Bind the projected column as its own one-field relation. Found by the row oracle, which got `[1]` from the server and `[]` from SEL |
 | `rel[1]` — indexing a relation by position | `E_SQL_SHAPE` | rows have no order without an `ORDER BY`. A numeric key on a relation takes this branch **before** the field lookup, so the message is about ordering rather than a missing field |
 | `JOIN` over a relation, on MariaDB | `E_SQL_UNSUPPORTED` | `GROUP_CONCAT` does not specify an order, and SEL's `JOIN` concatenates in insertion order. The reason comes from the map |
 | a non-BOOL aggregate body for `ALL`/`ANY` | `E_SQL_SHAPE` | SEL has no truthiness |

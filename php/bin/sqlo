@@ -1,0 +1,408 @@
+#!/usr/bin/env php
+<?php
+// SQL oracle runner. Where php/bin/sqlt asserts the string the translator emits,
+// this asks a real server whether that string MEANS what SEL means.
+//
+// The difference matters because a map entry is a claim about semantics and the
+// case suite only ever checks syntax. `CHAR({0} USING utf8mb4)` is the right
+// string and the wrong meaning; a case asserting it passes forever. See
+// docs/SQL-TESTING.md §3.
+//
+//     php/bin/sqlo [expressions|rows|all] [--dialect=mariadb] [--verbose]
+//
+// The connection comes from the environment and there is no default:
+//
+//     SEL_SQL_MARIADB_DSN='mysql:unix_socket=/var/lib/mysql/mysql.sock;charset=utf8mb4'
+//     SEL_SQL_MARIADB_USER=someone
+//     SEL_SQL_MARIADB_PASS=
+//
+// With no DSN the run prints a skip and succeeds. A checkout with no database
+// must stay green, the same way a checkout with no C++ toolchain does.
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/Sql/bootstrap.php';
+
+use Sel\Dec;
+use Sel\Sel;
+use Sel\SelError;
+use Sel\Sql\Fragment;
+use Sel\Sql\Sql;
+use Sel\Sql\SqlError;
+use Sel\Value;
+
+const ORACLE = __DIR__ . '/../../sql/oracle';
+
+// --- corpus -----------------------------------------------------------------
+
+/**
+ * Parse a .selo corpus: `### entry: <key>` opens a group, `%` is a comment, and
+ * every other non-blank line is one closed expression.
+ *
+ * @return list<array{entry:string, src:string, at:string}>
+ */
+function parse_selo(string $text, string $file): array
+{
+    $out = [];
+    $entry = null;
+    foreach (explode("\n", $text) as $i => $line) {
+        $at = $file . ':' . ($i + 1);
+        if ($line === '' || str_starts_with($line, '%')) {
+            continue;
+        }
+        if (str_starts_with($line, '### ')) {
+            if (preg_match('/^###\s+entry:\s*(\S+)\s*$/', $line, $m) !== 1) {
+                throw new RuntimeException("{$at}: malformed group header");
+            }
+            $entry = $m[1];
+            continue;
+        }
+        if ($entry === null) {
+            throw new RuntimeException("{$at}: expression before any `### entry:` header");
+        }
+        $out[] = ['entry' => $entry, 'src' => $line, 'at' => $at];
+    }
+    return $out;
+}
+
+// --- comparison -------------------------------------------------------------
+
+/**
+ * Compare what SEL answered with what the server answered, in the fragment's own
+ * kind.
+ *
+ * NUM is compared as a decimal, not as a string and never as a float: `10 / 4`
+ * is 2.5 to SEL and 2.5000 to a DECIMAL column, and those are one number. A
+ * float comparison in the oracle of a language whose whole contract is exact
+ * decimal arithmetic would be the check quietly agreeing to the thing it exists
+ * to catch.
+ *
+ * Returns null when they agree, else a description of how they differ.
+ */
+function compare(Value $sel, $db, string $kind): ?string
+{
+    if ($db === null) {
+        return 'the server answered NULL';
+    }
+    switch ($kind) {
+        case 'BOOL':
+            $want = $sel->asBool() ? '1' : '0';
+            $got = (string) $db;
+            return $got === $want ? null : "SEL={$want} DB={$got}";
+
+        case 'NUM':
+            $want = $sel->asText();
+            $got = (string) $db;
+            $a = Dec::parse($want);
+            $b = Dec::parse($got);
+            if ($a === null || $b === null) {
+                return "SEL={$want} DB={$got} (not both numbers)";
+            }
+            return Dec::cmp($a, $b) === 0 ? null : "SEL={$want} DB={$got}";
+
+        case 'BIN':
+            $want = bin2hex($sel->asBytes());
+            $got = bin2hex((string) $db);
+            return $got === $want ? null : "SEL=x'{$want}' DB=x'{$got}'";
+
+        default:
+            // TEXT and UNKNOWN both compare byte for byte. A SEL number is a
+            // TEXT value, so scale is part of it here and 2.50 is not 2.5 —
+            // which is right: whatever produced a TEXT fragment promised bytes.
+            $want = $sel->isBool() ? ($sel->asBool() ? 'TRUE' : 'FALSE') : $sel->asText();
+            $got = (string) $db;
+            return $got === $want ? null : "SEL=" . Value::quoteDump($want)
+                . ' DB=' . Value::quoteDump($got);
+    }
+}
+
+// --- expressions ------------------------------------------------------------
+
+/**
+ * Every expression, twice: once with literals inlined and once through native
+ * prepared statements.
+ *
+ * Both renderings, because they fail differently. In `inline` mode a literal is
+ * quoted at the position it belongs to, so a fragment whose parameter pool is in
+ * the wrong order still emits the right string — an ordering defect is invisible.
+ * Only `params` mode can show it, and only with emulation off: PDO's default
+ * inlines client-side, and an emulated run passes whatever the binding order is.
+ * That is not hypothetical, it is how 23 green comparisons hid the defect that
+ * Fragment::bindings() now exists to prevent.
+ */
+function run_expressions(PDO $pdo, string $dialect, bool $verbose): array
+{
+    $cases = parse_selo((string) file_get_contents(ORACLE . '/expressions.selo'),
+        'expressions.selo');
+    if ($cases === []) {
+        throw new RuntimeException('the corpus is empty');
+    }
+
+    $stats = ['ok' => 0, 'refused' => 0, 'caveat' => 0];
+    $bad = [];
+    $entries = [];
+
+    foreach ($cases as $c) {
+        $entries[$c['entry']] = ($entries[$c['entry']] ?? 0) + 1;
+        try {
+            $sel = Sel::evaluate($c['src']);
+        } catch (SelError $e) {
+            $bad[] = [$c, '', 'the corpus expression does not evaluate: ' . $e->getMessage()];
+            continue;
+        }
+        try {
+            $frag = Sql::translate(Sel::compile($c['src']), $dialect);
+        } catch (SqlError $e) {
+            // A refusal is an outcome, not a failure: the corpus is allowed to
+            // contain things a dialect cannot do, and saying so is the point.
+            $stats['refused']++;
+            if ($verbose) {
+                printf("  refused  %-52s %s\n", $c['src'], $e->code);
+            }
+            continue;
+        }
+
+        foreach (['inline', 'params'] as $mode) {
+            try {
+                $sql = $frag->asValue($mode);
+            } catch (SqlError $e) {
+                $stats['refused']++;
+                break;
+            }
+            try {
+                if ($mode === 'inline') {
+                    $db = $pdo->query('SELECT ' . $sql)->fetchColumn();
+                } else {
+                    $st = $pdo->prepare('SELECT ' . $sql);
+                    $st->execute(array_map(bind_value(...), $frag->bindings()));
+                    $db = $st->fetchColumn();
+                }
+            } catch (Throwable $e) {
+                $bad[] = [$c, $sql, "{$mode}: the server refused it: " . $e->getMessage()];
+                continue;
+            }
+
+            $why = compare($sel, $db, $frag->kind);
+            if ($why === null) {
+                if ($mode === 'params') {
+                    $stats['ok']++;
+                }
+                continue;
+            }
+            // An inexact translation is allowed to differ, and says so in
+            // advance. An exact one is not: that is the whole promise.
+            if (!$frag->isExact()) {
+                if ($mode === 'params') {
+                    $stats['caveat']++;
+                }
+                if ($verbose) {
+                    printf("  caveat   %-40s %s  [%s]\n", $c['src'], $why,
+                        implode(' ', $frag->caveats));
+                }
+                continue;
+            }
+            $bad[] = [$c, $sql, "{$mode}: {$why}"];
+        }
+    }
+
+    foreach ($bad as [$c, $sql, $why]) {
+        printf("DIFFER  %s   (%s)\n        %s\n        %s\n", $c['src'], $c['at'], $sql, $why);
+    }
+    printf("expressions: %d agree, %d differ, %d refused, %d inexact-by-declaration"
+        . " (%d expressions, %d groups)\n",
+        $stats['ok'], count($bad), $stats['refused'], $stats['caveat'],
+        count($cases), count($entries));
+
+    return ['failed' => count($bad)];
+}
+
+/** A bound value as the driver wants it: SQL has no BOOL to bind, so send 1/0. */
+function bind_value(Value $v): string
+{
+    if ($v->isBool()) {
+        return $v->asBool() ? '1' : '0';
+    }
+    return $v->isBin() ? $v->asBytes() : $v->asText();
+}
+
+// --- rows -------------------------------------------------------------------
+
+/**
+ * Row parity: the translated condition selects the same rows the evaluator
+ * accepts, over the same data.
+ *
+ * This is the only oracle that reaches a `relation` binding, because a
+ * correlated subquery needs a query to correlate to. It is also the only one
+ * where a defect can hide behind agreement: two sides that both answer "no rows"
+ * agree about nothing, so a rule that does not discriminate is a failure of the
+ * fixture and is reported as one.
+ */
+function run_rows(PDO $pdo, string $dialect, bool $verbose): array
+{
+    $spec = json_decode((string) file_get_contents(ORACLE . '/rows.json'), true);
+    if (!is_array($spec)) {
+        throw new RuntimeException('rows.json is not JSON');
+    }
+
+    // The driver owns the fixture. Reconstructing it every run is what stops the
+    // check depending on a database somebody made at a shell once.
+    //
+    // Comments come out before the split, not after: a statement preceded by a
+    // comment block otherwise arrives with the comment attached, and a "skip
+    // anything starting with --" rule then drops the statement with it. That is
+    // how this loaded nothing at all the first time, and it did not error — it
+    // reported nine rules disagreeing over zero rows.
+    $sql = (string) file_get_contents(ORACLE . '/' . $spec['fixture']);
+    $sql = preg_replace('/^\s*--.*$/m', '', $sql) ?? '';
+    $statements = 0;
+    foreach (explode(';', $sql) as $stmt) {
+        if (trim($stmt) !== '') {
+            $pdo->exec($stmt);
+            $statements++;
+        }
+    }
+    if ($statements === 0) {
+        throw new RuntimeException("{$spec['fixture']} contained no statements");
+    }
+
+    $ctx = load_context($pdo, $spec['context']);
+    $total = count($ctx);
+
+    $bad = [];
+    $ok = 0;
+    foreach ($spec['rules'] as $rule) {
+        try {
+            $program = Sel::compile($rule['sel']);
+            $frag = Sql::translate($program, $dialect, $spec['bindings']);
+            $sql = str_replace('{}', $frag->asCondition(), $spec['select']);
+            $db = array_map('intval', $pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN));
+        } catch (Throwable $e) {
+            $bad[] = [$rule['name'], '', get_class($e) . ': ' . $e->getMessage()];
+            continue;
+        }
+
+        $sel = [];
+        foreach ($ctx as $id => $row) {
+            if ($program->run($row)->asBool()) {
+                $sel[] = $id;
+            }
+        }
+
+        // The rule has to be able to disagree before its agreeing means
+        // anything. A rule that selects everything or nothing is exempt only if
+        // it says why.
+        if (!isset($rule['degenerate']) && (count($sel) === 0 || count($sel) === $total)) {
+            $bad[] = [$rule['name'], $sql,
+                'selects ' . (count($sel) === 0 ? 'no' : 'every')
+                . ' order, so agreement proves nothing — fix the fixture or '
+                . 'declare "degenerate" with a reason'];
+            continue;
+        }
+        if ($sel !== ($rule['expect'] ?? $sel)) {
+            $bad[] = [$rule['name'], $sql, 'SEL selects [' . implode(',', $sel)
+                . '] but rows.json expects [' . implode(',', $rule['expect'])
+                . ']; the fixture and the corpus have drifted apart'];
+            continue;
+        }
+        if ($db !== $sel) {
+            $bad[] = [$rule['name'], $sql,
+                'SQL=[' . implode(',', $db) . ']  SEL=[' . implode(',', $sel) . ']'];
+            continue;
+        }
+        $ok++;
+        if ($verbose) {
+            printf("  ok       %-28s [%s]\n", $rule['name'], implode(',', $sel));
+        }
+    }
+
+    foreach ($bad as [$name, $sql, $why]) {
+        printf("DIFFER  %s\n        %s\n        %s\n", $name, $sql, $why);
+    }
+    printf("rows: %d rules agree, %d differ, over %d orders\n", $ok, count($bad), $total);
+
+    return ['failed' => count($bad)];
+}
+
+/**
+ * Load the fixture into SEL contexts, one per parent row, so the evaluator is
+ * handed the same facts the query is.
+ *
+ * @return array<int, array<string,mixed>>
+ */
+function load_context(PDO $pdo, array $spec): array
+{
+    $ctx = [];
+    foreach ($pdo->query($spec['query'])->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $one = [];
+        foreach ($spec['columns'] as $col => $name) {
+            $one[$name] = $r[$col];
+        }
+        foreach ($spec['children'] as $name => $_) {
+            $one[$name] = [];
+        }
+        $ctx[(int) $r[$spec['key']]] = $one;
+    }
+    foreach ($spec['children'] as $name => $child) {
+        foreach ($pdo->query($child['query'])->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            // A one-column relation is a list of scalars on the SEL side, and a
+            // multi-column one is a list of maps. Which of the two a binding is
+            // decides what `x IN it` can mean, so the context has to be able to
+            // say — modelling every relation as maps is what made the two sides
+            // of `IN` disagree.
+            $ctx[(int) $r[$child['parent']]][$name][] = isset($child['scalar'])
+                ? $r[$child['scalar']]
+                : array_combine(array_values($child['columns']),
+                    array_map(static fn ($c) => $r[$c], array_keys($child['columns'])));
+        }
+    }
+    return $ctx;
+}
+
+// --- main -------------------------------------------------------------------
+
+$mode = 'all';
+$dialect = 'mariadb';
+$verbose = false;
+foreach (array_slice($argv, 1) as $arg) {
+    if (str_starts_with($arg, '--dialect=')) {
+        $dialect = substr($arg, 10);
+    } elseif ($arg === '--verbose' || $arg === '-v') {
+        $verbose = true;
+    } elseif (in_array($arg, ['expressions', 'rows', 'all'], true)) {
+        $mode = $arg;
+    } else {
+        fwrite(STDERR, "usage: sqlo [expressions|rows|all] [--dialect=NAME] [--verbose]\n");
+        exit(2);
+    }
+}
+
+$env = 'SEL_SQL_' . strtoupper(str_replace('-', '_', $dialect));
+$dsn = getenv($env . '_DSN');
+if ($dsn === false || $dsn === '') {
+    echo "sqlo: {$env}_DSN is not set, oracle skipped\n";
+    exit(0);
+}
+
+try {
+    $pdo = new PDO($dsn, (string) (getenv($env . '_USER') ?: ''),
+        (string) (getenv($env . '_PASS') ?: ''), [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            // Not negotiable. With emulation on, the driver inlines the values
+            // client-side and `params` mode stops being a second rendering at
+            // all — it becomes `inline` with extra steps, and the binding-order
+            // defect it exists to catch passes.
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]);
+} catch (Throwable $e) {
+    fwrite(STDERR, "sqlo: cannot connect ({$env}_DSN): {$e->getMessage()}\n");
+    exit(1);
+}
+
+$failed = 0;
+if ($mode === 'expressions' || $mode === 'all') {
+    $failed += run_expressions($pdo, $dialect, $verbose)['failed'];
+}
+if ($mode === 'rows' || $mode === 'all') {
+    $failed += run_rows($pdo, $dialect, $verbose)['failed'];
+}
+exit($failed === 0 ? 0 : 1);

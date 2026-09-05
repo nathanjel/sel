@@ -145,7 +145,8 @@ final class Fragment
                 // must agree with bindings(), which walks the output. The slot
                 // id would not: it is a creation number, and a reordering
                 // template emits creation numbers out of order.
-                'params' => Emit::placeholder($this->dialect, $nth),
+                'params' => Emit::slot($this->dialect, $nth,
+                    $this->paramKinds[$p - 1] ?? 'TEXT'),
                 'debug' => "~{$nth}~",
                 default => throw new \InvalidArgumentException(
                     "unknown render mode {$mode}; use inline, params or debug"),
