@@ -90,91 +90,91 @@ final class MapData
                 '==' => [
                     'variants' => [
                         'num' => '({0} = {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(38,10)) = CAST({1} AS DECIMAL(38,10)))',
+                        'coerce' => '({numericCast:0} = {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '!=' => [
                     'variants' => [
                         'num' => '({0} <> {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(38,10)) <> CAST({1} AS DECIMAL(38,10)))',
+                        'coerce' => '({numericCast:0} <> {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '<' => [
                     'variants' => [
                         'num' => '({0} < {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(38,10)) < CAST({1} AS DECIMAL(38,10)))',
+                        'coerce' => '({numericCast:0} < {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '<=' => [
                     'variants' => [
                         'num' => '({0} <= {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(38,10)) <= CAST({1} AS DECIMAL(38,10)))',
+                        'coerce' => '({numericCast:0} <= {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '>' => [
                     'variants' => [
                         'num' => '({0} > {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(38,10)) > CAST({1} AS DECIMAL(38,10)))',
+                        'coerce' => '({numericCast:0} > {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '>=' => [
                     'variants' => [
                         'num' => '({0} >= {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(38,10)) >= CAST({1} AS DECIMAL(38,10)))',
+                        'coerce' => '({numericCast:0} >= {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$==' => [
                     'variants' => [
-                        'text' => '({0} = {1})',
+                        'text' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$!=' => [
                     'variants' => [
-                        'text' => '({0} <> {1})',
+                        'text' => '({0}{textCollate} <> {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$<' => [
                     'variants' => [
-                        'text' => '({0} < {1})',
+                        'text' => '({0}{textCollate} < {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$<=' => [
                     'variants' => [
-                        'text' => '({0} <= {1})',
+                        'text' => '({0}{textCollate} <= {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$>' => [
                     'variants' => [
-                        'text' => '({0} > {1})',
+                        'text' => '({0}{textCollate} > {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$>=' => [
                     'variants' => [
-                        'text' => '({0} >= {1})',
+                        'text' => '({0}{textCollate} >= {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 'EQL' => [
                     'variants' => [
-                        'text' => '({0} = {1})',
+                        'text' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 'IN' => [
                     'variants' => [
                         'list' => '({0} IN ({1:}))',
-                        'scalar' => '({0} = {1})',
+                        'scalar' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
@@ -368,91 +368,91 @@ final class MapData
                 '==' => [
                     'variants' => [
                         'num' => '({0} = {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) = CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} = {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '!=' => [
                     'variants' => [
                         'num' => '({0} <> {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) <> CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} <> {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '<' => [
                     'variants' => [
                         'num' => '({0} < {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) < CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} < {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '<=' => [
                     'variants' => [
                         'num' => '({0} <= {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) <= CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} <= {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '>' => [
                     'variants' => [
                         'num' => '({0} > {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) > CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} > {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '>=' => [
                     'variants' => [
                         'num' => '({0} >= {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) >= CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} >= {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$==' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin = {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$!=' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin <> {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} <> {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$<' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin < {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} < {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$<=' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin <= {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} <= {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$>' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin > {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} > {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$>=' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin >= {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} >= {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 'EQL' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin = {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 'IN' => [
                     'variants' => [
                         'list' => '({0} IN ({1:}))',
-                        'scalar' => '({0} COLLATE utf8mb4_bin = {1} COLLATE utf8mb4_bin)',
+                        'scalar' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
@@ -610,12 +610,12 @@ final class MapData
                 'BTL' => 'yields a list, and a SQL expression is a scalar',
                 'LTB' => 'takes a list, and a SQL expression is a scalar',
                 'RMATCH' => [
-                    'tpl' => '({1} COLLATE utf8mb4_bin REGEXP CONCAT(\'(?s)\', {0}))',
+                    'tpl' => '({1}{textCollate} REGEXP CONCAT(\'(?s)\', {0}))',
                     'ret' => 'BOOL',
                     'caveat' => 'regex-engine',
                 ],
                 'RFIND' => [
-                    'tpl' => 'REGEXP_INSTR({1} COLLATE utf8mb4_bin, CONCAT(\'(?s)\', {0}))',
+                    'tpl' => 'REGEXP_INSTR({1}{textCollate}, CONCAT(\'(?s)\', {0}))',
                     'ret' => 'NUM',
                     'caveat' => 'regex-engine',
                 ],
@@ -722,91 +722,91 @@ final class MapData
                 '==' => [
                     'variants' => [
                         'num' => '({0} = {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) = CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} = {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '!=' => [
                     'variants' => [
                         'num' => '({0} <> {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) <> CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} <> {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '<' => [
                     'variants' => [
                         'num' => '({0} < {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) < CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} < {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '<=' => [
                     'variants' => [
                         'num' => '({0} <= {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) <= CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} <= {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '>' => [
                     'variants' => [
                         'num' => '({0} > {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) > CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} > {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '>=' => [
                     'variants' => [
                         'num' => '({0} >= {1})',
-                        'coerce' => '(CAST({0} AS DECIMAL(65,10)) >= CAST({1} AS DECIMAL(65,10)))',
+                        'coerce' => '({numericCast:0} >= {numericCast:1})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$==' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin = {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$!=' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin <> {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} <> {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$<' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin < {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} < {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$<=' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin <= {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} <= {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$>' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin > {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} > {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 '$>=' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin >= {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} >= {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 'EQL' => [
                     'variants' => [
-                        'text' => '({0} COLLATE utf8mb4_bin = {1} COLLATE utf8mb4_bin)',
+                        'text' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],
                 'IN' => [
                     'variants' => [
                         'list' => '({0} IN ({1:}))',
-                        'scalar' => '({0} COLLATE utf8mb4_bin = {1} COLLATE utf8mb4_bin)',
+                        'scalar' => '({0}{textCollate} = {1}{textCollate})',
                     ],
                     'ret' => 'BOOL',
                 ],

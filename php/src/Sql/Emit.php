@@ -64,7 +64,16 @@ final class Emit
         // scale — scale is part of a SEL number (spec §4.1) and part of what SQL
         // DECIMAL arithmetic reads.
         if ($form === 'NUM') {
-            return $v->asText($pos);
+            $n = $v->asText($pos);
+            // A negative number is parenthesised so that unary minus in front of
+            // it cannot produce `--`. MariaDB reads that as double negation and
+            // gets the right answer by luck; PostgreSQL and SQLite read it as
+            // the start of a line comment and the rest of the expression
+            // disappears. Only reachable through a `value` binding, since the
+            // parser never produces a signed `num` node — which is exactly the
+            // kind of narrow path that stays broken until a dialect that cares
+            // is added.
+            return str_starts_with($n, '-') ? '(' . $n . ')' : $n;
         }
         return self::textLiteral($dialect, $v->asText($pos));
     }

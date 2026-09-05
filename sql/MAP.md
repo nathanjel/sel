@@ -168,10 +168,15 @@ involved.
 | `{key:n}` | argument *n* wrapped in the `lexical` template named `key` |
 | `{{` `}}` | a literal brace |
 
-`{key}` and `{key:n}` are expanded **by the generator**, so the shipped host map
-holds finished templates. The hosts still carry the expansion code, because
-entries registered at run time never pass through the generator and an
-application writing a template deserves the same vocabulary the shipped map has.
+`{key}` and `{key:n}` are **validated** by the generator and left in place, and
+every host expands them when it fills the template.
+
+Baking them in would be one fewer thing to do at render time and would quietly
+break the reason lexical keys exist. `textCollate` is stated once and used by
+thirteen comparison entries; an application on a server with a different binary
+collation should be able to override that one key and have all thirteen follow.
+With the templates pre-expanded the key is gone by then, and the application
+would have to re-register every entry that mentioned it.
 
 The generator rejects a template referring to an argument the entry's arity
 cannot supply, and a `{key}` naming a `lexical` entry that does not resolve.

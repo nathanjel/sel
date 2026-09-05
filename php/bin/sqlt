@@ -23,7 +23,8 @@ use Sel\Sql\SqlError;
 
 const SUITE = __DIR__ . '/../../sql/cases';
 
-const SECTIONS = ['dialect', 'bindings', 'options', 'as', 'mode', 'source', 'expect', 'params', 'error'];
+const SECTIONS = ['dialect', 'register', 'bindings', 'options', 'as', 'mode',
+                  'source', 'expect', 'params', 'error', 'throws'];
 
 /** @return list<array<string,mixed>> */
 function parse_sqlt(string $text, string $file): array
@@ -75,13 +76,11 @@ function parse_sqlt(string $text, string $file): array
         if ($c['source'] === null) {
             throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- source");
         }
-        if ($c['expect'] === null && $c['error'] === null) {
-            throw new RuntimeException(
-                "{$c['at']}: case {$c['name']} needs --- expect or --- error");
-        }
-        if ($c['expect'] !== null && $c['error'] !== null) {
-            throw new RuntimeException(
-                "{$c['at']}: case {$c['name']} has both --- expect and --- error");
+        $outcomes = array_filter([$c['expect'], $c['error'], $c['throws']],
+            static fn ($x): bool => $x !== null);
+        if (count($outcomes) !== 1) {
+            throw new RuntimeException("{$c['at']}: case {$c['name']} needs exactly "
+                . 'one of --- expect, --- error and --- throws');
         }
     }
     return $cases;
@@ -100,6 +99,43 @@ function decode_json(?string $text, string $what, string $at): array
     return $v;
 }
 
+/**
+ * Apply a case's runtime registrations before translating.
+ *
+ * A JSON list of operations, each either a dialect or an entry:
+ *
+ *   [{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"},
+ *    {"define": ["mariadb", "funcs", "CRC32", {"tpl": "X({0})", "ret": "TEXT"}]},
+ *    {"define": ["mariadb", "funcs", "UPPER", "we do not allow this one"]}]
+ *
+ * The runner calls Map::reset() before every case, so nothing leaks between
+ * them and a registration case cannot pass because of a neighbour.
+ */
+function apply_registrations(?string $text, string $at): void
+{
+    if ($text === null || $text === '') {
+        return;
+    }
+    $ops = json_decode($text, true);
+    if (!is_array($ops)) {
+        throw new RuntimeException("{$at}: --- register is not a JSON list");
+    }
+    foreach ($ops as $op) {
+        if (isset($op['define'])) {
+            [$dialect, $section, $key, $entry] = $op['define'];
+            Map::define($dialect, $section, $key, $entry);
+            continue;
+        }
+        if (isset($op['dialect'])) {
+            $name = $op['dialect'];
+            unset($op['dialect']);
+            Map::defineDialect($name, $op);
+            continue;
+        }
+        throw new RuntimeException("{$at}: --- register op needs a dialect or a define");
+    }
+}
+
 /** null when the case passes, else what went wrong. */
 function run_case(array $c): ?string
 {
@@ -114,7 +150,11 @@ function run_case(array $c): ?string
 
     $sql = null;
     $error = null;
+    $thrown = null;
     try {
+        // Inside the try: a bad registration is one of the outcomes a case may
+        // assert, so it has to be catchable rather than fatal.
+        apply_registrations($c['register'], $c['at']);
         $program = Sel::compile($c['source']);
         $frag = Sql::translate($program, $dialect, $bindings, $options);
         $sql = $as === 'condition' ? $frag->asCondition($mode) : $frag->asValue($mode);
@@ -122,6 +162,27 @@ function run_case(array $c): ?string
         $error = $e;
     } catch (SelError $e) {
         return "the source did not compile: {$e}";
+    } catch (\Throwable $e) {
+        $thrown = $e;
+    }
+
+    // A malformed map or binding is a mistake in the application's startup and
+    // raises the host's own error type; a rule that cannot be translated raises
+    // SqlError. Keeping the two apart is why `throws` exists as its own outcome
+    // rather than as another E_SQL_ code.
+    if ($c['throws'] !== null) {
+        if ($thrown === null) {
+            return "expected {$c['throws']}, got "
+                . ($error !== null ? (string) $error : var_export($sql, true));
+        }
+        $got = get_class($thrown);
+        return $got === $c['throws'] || is_a($thrown, $c['throws'])
+            ? null
+            : "expected {$c['throws']}, got {$got} ({$thrown->getMessage()})";
+    }
+    if ($thrown !== null) {
+        throw new RuntimeException("{$c['at']}: unexpected "
+            . get_class($thrown) . ": {$thrown->getMessage()}");
     }
 
     if ($c['error'] !== null) {

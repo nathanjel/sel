@@ -382,35 +382,17 @@ function validate(flat) {
   }
 }
 
-/** Rewrite every template in place, so the shipped map holds finished text. */
-function expandAll(flat) {
-  const { lexical } = flat;
-  const one = (e, where) => {
-    if (isRefusal(e) || !isObject(e)) return e;
-    const out = { ...e };
-    if (typeof out.tpl === 'string') out.tpl = expandLexical(out.tpl, lexical, where);
-    else if (isObject(out.tpl)) {
-      out.tpl = Object.fromEntries(
-        Object.entries(out.tpl).map(([a, t]) => [a, expandLexical(t, lexical, where)]));
-    }
-    if (isObject(out.variants)) {
-      out.variants = Object.fromEntries(
-        Object.entries(out.variants).map(([n, t]) => [n, expandLexical(t, lexical, where)]));
-    }
-    return out;
-  };
-  for (const section of ['ops', 'funcs']) {
-    for (const [k, e] of Object.entries(flat[section])) {
-      flat[section][k] = one(e, `${flat.dialect}.${section}.${k}`);
-    }
-  }
-  for (const [k, v] of Object.entries(flat.skel)) {
-    if (isObject(v) && typeof v.tpl === 'string' && SKEL_SLOTS[k]) {
-      flat.skel[k] = { ...v, tpl: expandLexical(v.tpl, lexical, `${flat.dialect}.skel.${k}`) };
-    }
-  }
-  return flat;
-}
+// Lexical references are validated here (expandLexical reports an unresolvable
+// {key} while checking a template) but deliberately NOT baked into the emitted
+// map. Baking them in would be one fewer thing for a host to do at render time
+// and would quietly break the reason lexical keys exist: `textCollate` is
+// stated once and used by thirteen comparison entries, so an application on a
+// server with a different binary collation should be able to override that one
+// key. With the templates pre-expanded it could not — the key is gone by then,
+// and it would have to re-register all thirteen.
+//
+// The cost is one scan per template fill, which Emit::fill already performs for
+// entries registered at run time.
 
 // --- emitters --------------------------------------------------------------
 
@@ -516,7 +498,7 @@ const dialects = {};
 for (const name of [...docs.keys()].sort()) {
   const flat = flatten(docs, name);
   validate(flat);
-  dialects[name] = expandAll(flat);
+  dialects[name] = flat;
 }
 
 if (errors.length) {

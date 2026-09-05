@@ -317,11 +317,14 @@ expressed as data.
 `{lexicalKey}` splices a lexical string. It keeps the cast and collation
 spellings in one place rather than repeated across twelve comparison entries.
 
-**The generator expands these**, which is why §4.6's PHP shows `CAST({0} AS
-DECIMAL(38,10))` written out where the JSON said `{numericCast:0}`. The hosts
-still carry the expansion code, because entries registered at runtime (§4.7)
-never pass through the generator and an application writing a template deserves
-the same vocabulary the shipped map has.
+**The generator validates these and leaves them in place**; every host expands
+them when it fills the template. Baking them in would be one fewer thing to do
+at render time and would quietly break the reason lexical keys exist:
+`textCollate` is stated once and used by thirteen comparison entries, so an
+application on a server with a different binary collation should be able to
+override that one key and have all thirteen follow. Pre-expanded, the key is
+gone by then. The hosts need the expansion code regardless, since entries
+registered at run time (§4.7) never pass through the generator at all.
 
 Which variant is chosen is **not** in the data — it is one of four fixed
 selectors, named by the operator family and implemented identically in every
@@ -419,9 +422,9 @@ final class MapData
                 '&'  => ['variants' => ['text' => 'CONCAT({0}, {1})',
                                         'bin'  => 'CONCAT({0}, {1})'],
                          'ret' => '@concat'],
+                // Lexical references survive into the shipped map; see §4.2.
                 '==' => ['variants' => ['num' => '({0} = {1})',
-                                        'coerce' => '(CAST({0} AS DECIMAL(38,10))'
-                                                  . ' = CAST({1} AS DECIMAL(38,10)))'],
+                                        'coerce' => '({numericCast:0} = {numericCast:1})'],
                          'ret' => 'BOOL'],
                 'BAND' => null,          // no portable byte-string bitwise
                 // ...
@@ -745,11 +748,16 @@ The rules, in order:
      inlining it duplicates the read and changes nothing about the fact that
      there is no place to put the write;
    - a variable assigned more than once;
-   - a variable read before its assignment;
    - any assignment inside an aggregate body or a call argument;
    - an assignment whose target is indexed by a non-constant expression.
 4. **Inline.** Substitute each assignment's right-hand side for every read of
-   its target in the statements that follow. Substitution is by AST node, and
+   its target in the statements that follow. **Capture happens at the
+   assignment, not at the use**, which is what SEL itself does: in
+   `A = B + 1; B = 2; A + B` the `B` inside `A` is the one that was in scope
+   when `A` was written. Inlining at the use instead would quietly rewrite the
+   program. An earlier draft of this document listed "a variable read before its
+   assignment" as a refusal; it is not one, and `norm.inline.captures-at-assignment`
+   pins the behaviour so nobody restores the rule. Substitution is by AST node, and
    the inlined subtree keeps its original `pos` so an error inside it still
    points at where the author wrote it.
 5. **Fold indexed assignment into a keyed-list node.** `R[1] = (1, 2);

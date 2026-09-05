@@ -114,3 +114,32 @@ mariadb
 MYSTERY > 1
 --- error
 E_SQL_UNBOUND 1:1
+===
+### name: norm.inline.captures-at-assignment
+--- note
+The B inside A is the one that was in scope when A was written, which is what
+SEL itself does — `A = B + 1; B = 2; A + B` with B = 10 evaluates to 13, not 5.
+Inlining at the use instead would quietly rewrite the program. This case exists
+so that "refuse a variable read before its assignment" is never reinstated as a
+rule: there is nothing to refuse.
+--- dialect
+mariadb
+--- bindings
+{"B": {"kind": "column", "column": "b", "type": "NUM"}}
+--- source
+A = B + 1; B = 2; A + B
+--- expect
+((`b` + 1) + 2)
+===
+### name: norm.value.negative-number-is-parenthesised
+--- note
+Otherwise unary minus in front of it makes `--`, which MariaDB reads as double
+negation and PostgreSQL and SQLite read as the start of a line comment.
+--- dialect
+mariadb
+--- bindings
+{"LIM": {"kind": "value", "value": "-5", "type": "NUM"}}
+--- source
+-LIM
+--- expect
+(-(-5))
