@@ -212,6 +212,36 @@ generator's existing bias toward awkward inputs (astral pairs, differing scales,
 mixed case) doing the work of imagining asymmetric pairs, which is precisely
 the thing a human corpus-writer is bad at.
 
+### What it found
+
+Built as `tools/fuzz-sql.sh`. On its first 4000-program run, against the code
+that had just passed the oracle, the review and the case suite, it found six:
+
+| Defect | Shape |
+|---|---|
+| `params` mode changed a number's text | `CAST(? AS DECIMAL(65,10))` pads: `TRIM(2.50)` gave `"2.5000000000"` |
+| the BIN family read numbers as numbers | `HEX(1)` is `"1"`; SEL's `TO_HEX(1)` is `"31"`, the hex of the character |
+| mixed known kinds unified to UNKNOWN | `IF(TRUE, TRUE, "A-1")` is `"TRUE"` in SEL and `1` on the server |
+| a BOOL byte-compared to a number | `CAST(0 AS CHAR)` and `CAST(FALSE AS CHAR)` are both `'0'`; SEL says the kinds differ |
+| `MIN`/`MAX` rescaled their result | `LEAST(17, 123.456)` is `17.000`; SEL's `MIN` returns `17` |
+| a `SelError` escaped `Sql::translate` | an unportable regex in an untaken branch — fatal where `tryTranslate()` promises `null` |
+
+The first is the one to sit with: **it was introduced by the previous fix.** The
+oracle found that `params` mode compared numbers as text; the fix cast NUM slots
+back to numbers; and the cast changed what those numbers looked like as text.
+That is Class F — a repair reaching along a structural axis wider than the
+semantics — and it was caught within the hour by the next check built. Neither
+the case suite nor the oracle could have: the oracle's corpus has no expression
+that reads a computed number as text, because nobody thinks to write one.
+
+The eventual fix was smaller than either attempt. No coercion of a bound string
+reproduces a bare decimal literal — `CAST` pads the scale, `+ 0` drops it and
+floats above seventeen digits — because MariaDB reads `2.50` as DECIMAL with
+scale 2 and a parameter is untyped. So a NUM literal is rendered as itself in
+every mode and binds nothing, which costs exactly what item 5 established there
+was nothing to protect: after `Emit::numericLiteral` a NUM literal is digits, one
+`.` and a leading `-`, by construction.
+
 **The lane has to execute both renderings, through native prepares.** This is
 the part to get right, because getting it wrong reproduces the exact blind spot
 being fixed. In `inline` mode every literal is quoted at the position it belongs

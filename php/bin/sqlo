@@ -15,6 +15,9 @@
 // which matters — an entry nobody ever exercised is exactly the state a machine
 // with no database would otherwise leave unexamined.
 //
+// `fuzz --corpus=FILE` runs the same comparison over generated programs. It is
+// not part of `all`; tools/fuzz-sql.sh generates the corpus and calls it.
+//
 // The connection comes from the environment and there is no default:
 //
 //     SEL_SQL_MARIADB_DSN='mysql:unix_socket=/var/lib/mysql/mysql.sock;charset=utf8mb4'
@@ -379,6 +382,162 @@ function load_context(PDO $pdo, array $spec): array
     return $ctx;
 }
 
+// --- fuzz -------------------------------------------------------------------
+
+/**
+ * The same comparison as run_expressions, over programs nobody wrote.
+ *
+ * The hand-written corpus is written by asking "which entries have I covered?".
+ * That question never produces `"OPEN"` against `"open"`, or `3.0` against `3`,
+ * or a call whose SQL spelling reorders its arguments — the asymmetric pairs
+ * where a distinction collapses. Three defects lived there through 73 green
+ * comparisons. A generator has no such blind spot because it has no model to be
+ * blind with.
+ *
+ * The programs come from tools/gen-programs.mjs, the generator the six-host
+ * differential already uses, so this inherits its bias toward awkward inputs
+ * rather than restating it. They assign variables and then use them, which stage
+ * 1 inlines, so they are closed by the time the translator sees them.
+ *
+ * Outcomes, and why each is what it is:
+ *
+ *   agree            SEL and the server gave the same answer
+ *   differ           they did not, and the fragment claimed to be exact — a bug
+ *   refused          the translator would not translate it; an ordinary outcome
+ *   sel-error        the program does not evaluate; nothing to compare against
+ *   caveat           they differ and the fragment said in advance that it might
+ *   out-of-range     the server rejected the VALUES as too large or malformed
+ *   invalid-sql      the server rejected the SYNTAX — always a defect
+ *
+ * The last two are the split that matters. SEL's arithmetic is unbounded and
+ * DECIMAL(65,10) is not, so a translated expression can be perfectly correct and
+ * still overflow: that is the accepted limit of pushing a rule into a database,
+ * and it is an abstention. A syntax error is never that. It means the layer
+ * emitted something that is not SQL, which no input should be able to cause.
+ */
+function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose): array
+{
+    $programs = [];
+    $cur = null;
+    foreach (explode("\n", (string) file_get_contents($corpus)) as $line) {
+        if (str_starts_with($line, '### ')) {
+            if ($cur !== null) {
+                $programs[] = rtrim($cur, "\n");
+            }
+            $cur = '';
+            continue;
+        }
+        if ($cur !== null) {
+            $cur .= $line . "\n";
+        }
+    }
+    if ($cur !== null) {
+        $programs[] = rtrim($cur, "\n");
+    }
+    if ($programs === []) {
+        throw new RuntimeException("{$corpus} holds no programs");
+    }
+
+    $n = ['agree' => 0, 'refused' => 0, 'sel-error' => 0, 'caveat' => 0,
+          'out-of-range' => 0];
+    // What the refusals are, not just how many. A lane can abstain honestly and
+    // it can abstain because something translatable is being turned away; the
+    // difference is only visible as a histogram.
+    $refusals = [];
+    $bad = [];
+
+    foreach ($programs as $src) {
+        try {
+            $sel = Sel::evaluate($src);
+        } catch (SelError $e) {
+            $n['sel-error']++;
+            continue;
+        }
+        try {
+            $frag = Sql::translate(Sel::compile($src), $dialect);
+            $rendered = ['inline' => $frag->asValue('inline'),
+                         'params' => $frag->asValue('params')];
+        } catch (SqlError $e) {
+            $n['refused']++;
+            $refusals[$e->code] = ($refusals[$e->code] ?? 0) + 1;
+            continue;
+        }
+
+        $agreedBoth = true;
+        foreach ($rendered as $mode => $sql) {
+            try {
+                if ($mode === 'inline') {
+                    $db = $pdo->query('SELECT ' . $sql)->fetchColumn();
+                } else {
+                    $st = $pdo->prepare('SELECT ' . $sql);
+                    $st->execute(array_map(bind_value(...), $frag->bindings()));
+                    $db = $st->fetchColumn();
+                }
+            } catch (PDOException $e) {
+                // 42xxx is syntax and access: the layer emitted something that
+                // is not SQL, and no input may cause that. Everything else is
+                // the server refusing the values, which is the accepted cost of
+                // pushing unbounded arithmetic into a fixed-width column.
+                if (str_starts_with((string) $e->getCode(), '42')) {
+                    $bad[] = [$src, $sql, "{$mode}: invalid SQL: " . $e->getMessage()];
+                } else {
+                    $n['out-of-range']++;
+                }
+                $agreedBoth = false;
+                break;
+            }
+
+            $why = compare($sel, $db, $frag->kind);
+            if ($why === null) {
+                continue;
+            }
+            if (!$frag->isExact()) {
+                $n['caveat']++;
+                $agreedBoth = false;
+                break;
+            }
+            $bad[] = [$src, $sql, "{$mode}: {$why}"];
+            $agreedBoth = false;
+            break;
+        }
+        if ($agreedBoth) {
+            $n['agree']++;
+        }
+    }
+
+    $shown = 0;
+    foreach ($bad as [$src, $sql, $why]) {
+        if (++$shown > 25) {
+            break;
+        }
+        printf("DIFFER  %s\n        %s\n        %s\n", $src, $sql, $why);
+    }
+
+    $compared = $n['agree'] + count($bad) + $n['caveat'];
+    printf("fuzz: %d programs — %d agree, %d differ, %d inexact-by-declaration; "
+        . "%d refused, %d do not evaluate, %d out of range\n",
+        count($programs), $n['agree'], count($bad), $n['caveat'],
+        $n['refused'], $n['sel-error'], $n['out-of-range']);
+
+    if ($verbose && $refusals !== []) {
+        arsort($refusals);
+        foreach ($refusals as $code => $count) {
+            printf("  refused  %-24s %d\n", $code, $count);
+        }
+    }
+
+    // A lane that abstains on almost everything is not a lane. It would report
+    // success for years while comparing nothing, which is the failure mode this
+    // whole exercise is about — a check that is itself unchecked.
+    $floor = (int) (count($programs) * 0.05);
+    if ($compared < max(1, $floor)) {
+        printf("fuzz: only %d of %d programs reached the server — the lane is not "
+            . "comparing anything\n", $compared, count($programs));
+        return ['failed' => count($bad) + 1];
+    }
+    return ['failed' => count($bad)];
+}
+
 // --- coverage ---------------------------------------------------------------
 
 /**
@@ -495,17 +654,21 @@ function run_coverage(string $dialect, bool $verbose): array
 
 $mode = 'all';
 $dialect = 'mariadb';
+$corpus = null;
 $verbose = false;
 foreach (array_slice($argv, 1) as $arg) {
     if (str_starts_with($arg, '--dialect=')) {
         $dialect = substr($arg, 10);
     } elseif ($arg === '--verbose' || $arg === '-v') {
         $verbose = true;
-    } elseif (in_array($arg, ['expressions', 'rows', 'coverage', 'all'], true)) {
+    } elseif (str_starts_with($arg, '--corpus=')) {
+        $corpus = substr($arg, 9);
+        $mode = 'fuzz';
+    } elseif (in_array($arg, ['expressions', 'rows', 'coverage', 'fuzz', 'all'], true)) {
         $mode = $arg;
     } else {
-        fwrite(STDERR, "usage: sqlo [expressions|rows|coverage|all] "
-            . "[--dialect=NAME] [--verbose]\n");
+        fwrite(STDERR, "usage: sqlo [expressions|rows|coverage|fuzz|all] "
+            . "[--corpus=FILE] [--dialect=NAME] [--verbose]\n");
         exit(2);
     }
 }
@@ -555,6 +718,13 @@ try {
     }
     if ($mode === 'rows' || $mode === 'all') {
         $failed += run_rows($pdo, $dialect, $verbose)['failed'];
+    }
+    if ($mode === 'fuzz') {
+        if ($corpus === null || !is_file($corpus)) {
+            fwrite(STDERR, "sqlo fuzz needs --corpus=FILE\n");
+            exit(2);
+        }
+        $failed += run_fuzz($pdo, $dialect, $corpus, $verbose)['failed'];
     }
 } catch (RuntimeException $e) {
     fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");

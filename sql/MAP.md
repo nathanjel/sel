@@ -266,6 +266,7 @@ than a bag of prose. Each is described in full in `docs/SQL-TRANSLATION.md` §11
 |---|---|
 | `unicode-case` | `UPPER`/`LOWER` are ASCII-only in SEL, Unicode-aware in the server |
 | `division-scale` | `/` yields a different scale, or truncates |
+| `numeric-scale` | the result's decimal scale differs from SEL's, though the value is equal |
 | `rounding-mode` | rounding is not half-away-from-zero |
 | `modulo-integer` | `%` is integer-only |
 | `power-float` | `POWER` returns a float |

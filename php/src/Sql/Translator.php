@@ -252,6 +252,7 @@ final class Translator
         }
         $variant = $this->variantFor($op, [$l, $r]);
         if (self::isByteComparison($op)) {
+            self::requireComparableKinds($l, $r, $op, $n['pos']);
             // See Emit::textOperand for why the operands are transformed here
             // rather than by the template. Selected by operator, NOT by the
             // variant being named "text": `&` has a variant of that name too and
@@ -340,9 +341,10 @@ final class Translator
 
         if ($elements === null) {
             $r = $this->node($rhs);          // a scalar; spec §5.4's second case
+            $l = $this->node($n['l']);
+            self::requireComparableKinds($l, $r, 'IN', $n['pos']);
             return $this->apply('ops', 'IN',
-                [$this->emit->textOperand($this->node($n['l'])),
-                 $this->emit->textOperand($r)],
+                [$this->emit->textOperand($l), $this->emit->textOperand($r)],
                 $n['pos'], 'scalar');
         }
 
@@ -368,13 +370,15 @@ final class Translator
             // The needle is also rendered once per comparison rather than once
             // and spliced N times: splicing one Fragment twice puts the same
             // slot number in the output twice while `params` holds one entry.
-            $needle = $this->emit->textOperand($this->node($n['l']));
+            $raw = $this->node($n['l']);
+            $needle = $this->emit->textOperand($raw);
             $f = $this->node($e);
             if ($f->kind === 'LIST') {
                 refuse('E_SQL_SHAPE',
                     'IN over a list of lists is structural in SEL and has no SQL '
                     . 'counterpart', $e['pos']);
             }
+            self::requireComparableKinds($raw, $f, 'IN', $e['pos']);
             $tests[] = $this->apply('ops', 'EQL',
                 [$needle, $this->emit->textOperand($f)], $e['pos'], 'text');
         }
@@ -473,7 +477,20 @@ final class Translator
                 . 'is not known until the query runs cannot be rewritten',
                 ($pat['pos'] ?? $n['pos']));
         }
-        $source = \Sel\Builtins\Regex::portableSource((string) $pat['v'], $pat['pos']);
+        // portableSource raises SelError for a pattern outside the portable
+        // subset, and SEL raises it too -- but only when the call is reached.
+        // Translation walks every branch, so a pattern in a branch the evaluator
+        // never takes reaches here anyway, and a SelError escaping Sql::translate
+        // would break the one thing tryTranslate() promises: that a rule which
+        // cannot be pushed down returns null rather than throwing. Found by the
+        // fuzz lane, as a fatal error in the middle of a run.
+        try {
+            $source = \Sel\Builtins\Regex::portableSource((string) $pat['v'], $pat['pos']);
+        } catch (\Sel\SelError $e) {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$n['name']}'s pattern is not in SEL's portable subset, so there is "
+                . "nothing to translate: {$e->getMessage()}", $pat['pos']);
+        }
 
         // Dotall is permanently on in SEL (spec §7.8) and off by default in the
         // server, so every pattern carries (?s). The modifier goes in the
@@ -1195,6 +1212,36 @@ final class Translator
         return (string) $tpl[$n];
     }
 
+    /**
+     * Refuse a byte comparison between a BOOL and a known other kind.
+     *
+     * These operators are structural: SEL compares kinds first, so `0 EQL FALSE`
+     * is FALSE because a number is not a boolean, and no amount of casting says
+     * that in SQL. `CAST(0 AS CHAR)` and `CAST(FALSE AS CHAR)` are both '0', so
+     * `NOT (0 IN FALSE)` answered TRUE in SEL and FALSE on the server — found by
+     * the fuzz lane, which produces operand pairs a hand-written corpus does not.
+     *
+     * Two BOOLs are fine: '1' against '0' is exactly right. One UNKNOWN is the
+     * accepted limit — the binding did not say, so nothing here can either.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private static function requireComparableKinds(Fragment $l, Fragment $r,
+                                                   string $op, array $pos): void
+    {
+        $bool = static fn (Fragment $f): bool => $f->kind === 'BOOL';
+        $known = static fn (Fragment $f): bool => $f->kind !== 'UNKNOWN';
+        if ($bool($l) === $bool($r) || !$known($l) || !$known($r)) {
+            return;
+        }
+        $other = $l->kind === 'BOOL' ? $r->kind : $l->kind;
+        refuse('E_SQL_SHAPE',
+            "{$op} compares a BOOL with a {$other}, which SEL answers FALSE for "
+            . 'every value because the kinds differ. SQL has no way to say that: '
+            . 'both sides cast to the same characters',
+            $pos);
+    }
+
     /** The operators specified as byte comparisons: spec §5.3 and §5.4. */
     private static function isByteComparison(string $op): bool
     {
@@ -1248,20 +1295,45 @@ final class Translator
                     $pick[] = $args[(int) $i];
                 }
             }
-            return self::unify($pick);
+            return self::unify($pick, $args[0]->pos ?? null);
         }
         return $ret;
     }
 
-    /** @param list<Fragment> $fs */
-    private static function unify(array $fs): string
+    /**
+     * The one kind a set of branches all produce.
+     *
+     * UNKNOWN unifies with anything: that is what it is for, and a column whose
+     * type the binding did not declare is the ordinary case. Two *known* kinds
+     * that differ are another matter, and used to yield UNKNOWN as well. They
+     * cannot: SQL types the whole CASE, and there is no rendering of the result
+     * that agrees with SEL's.
+     *
+     * `IF(TRUE, TRUE, "A-1")` is the one the fuzz lane found. SEL answers the
+     * BOOL TRUE, whose text is "TRUE"; the CASE answers 1. Nothing casts one to
+     * the other and no caveat says "a boolean becomes 1", so the honest outcome
+     * is a refusal. `IF(p, 1, "x")` goes the same way for the same reason — SQL
+     * would type the branches together and pad the scale of one of them.
+     *
+     * The rule is one line: known-kind branches must agree.
+     *
+     * @param list<Fragment> $fs
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private static function unify(array $fs, ?array $pos = null): string
     {
         $kind = null;
         foreach ($fs as $f) {
+            if ($f->kind === 'UNKNOWN') {
+                continue;
+            }
             if ($kind === null) {
                 $kind = $f->kind;
             } elseif ($kind !== $f->kind) {
-                return 'UNKNOWN';
+                refuse('E_SQL_SHAPE',
+                    "these branches produce different kinds — {$kind} and {$f->kind} "
+                    . '— and SQL gives the whole expression one type, which cannot '
+                    . "match SEL's for both", $pos);
             }
         }
         return $kind ?? 'UNKNOWN';

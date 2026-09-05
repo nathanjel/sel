@@ -40,7 +40,7 @@ const LOWERED = new Set([
 // sql/MAP.md §4.6. Closed, so Fragment::$caveats is something an application
 // can branch on rather than a bag of prose.
 const CAVEATS = new Set([
-  'unicode-case', 'division-scale', 'rounding-mode', 'modulo-integer',
+  'unicode-case', 'division-scale', 'numeric-scale', 'rounding-mode', 'modulo-integer',
   'power-float', 'text-collation', 'regex-engine', 'concat-null',
   'trim-charset', 'length-units', 'input-laxity',
 ]);
@@ -61,8 +61,8 @@ const opArity = (key) => OP_ARITY[key] ?? 2;
 
 const LEXICAL_KEYS = [
   'identQuote', 'identEscape', 'textQuote', 'textEscape', 'true', 'false',
-  'binaryLiteral', 'textCollate', 'textCast', 'numericCast', 'isTrue', 'isNotTrue',
-  'placeholder',
+  'binaryLiteral', 'textCollate', 'textCast', 'numericCast', 'binaryCast',
+  'isTrue', 'isNotTrue', 'placeholder',
 ];
 // Substitutable in a template. textEscape is an object and binaryLiteral is
 // filled by the renderer, so neither is spliceable.

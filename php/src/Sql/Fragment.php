@@ -115,11 +115,34 @@ final class Fragment
     {
         $out = [];
         foreach ($this->parts as $p) {
-            if (!is_string($p)) {
+            if (!is_string($p) && !$this->isNumeric($p)) {
                 $out[] = $this->params[$p - 1];
             }
         }
         return $out;
+    }
+
+    /**
+     * True for a slot holding a NUM-form literal, which is never parameterised.
+     *
+     * No coercion of a bound string reproduces a bare decimal literal, and that
+     * is not a gap to be patched — it is what the two things are. MariaDB reads
+     * `2.50` as DECIMAL with scale 2 and `12345678901234567890.12345` as DECIMAL
+     * with 25 digits; a string parameter is untyped, and every way of giving it a
+     * type picks the wrong one. `CAST(? AS DECIMAL(65,10))` pads the scale, so
+     * TRIM(2.50) answered "2.5000000000". `(? + 0)` drops the scale and floats
+     * above seventeen digits. Without either, `(? = ?)` compares two strings and
+     * 2.50 = 2.5 is FALSE.
+     *
+     * So a NUM literal is rendered as itself in every mode. That costs nothing
+     * params mode was protecting: after Emit::numericLiteral the characters it
+     * can contain are digits, one `.` and a leading `-`, by construction, which
+     * is the one value form that provably cannot carry a quote or a comment.
+     * Everything else is still bound.
+     */
+    private function isNumeric(int $slot): bool
+    {
+        return ($this->paramKinds[$slot - 1] ?? 'TEXT') === 'NUM';
     }
 
     /** True when nothing about this translation is inexact. */
@@ -137,16 +160,22 @@ final class Fragment
                 $out .= $p;
                 continue;
             }
+            $kind = $this->paramKinds[$p - 1] ?? 'TEXT';
+            if ($mode !== 'inline' && $kind === 'NUM') {
+                // Never a placeholder; see isNumeric(). It does not advance $nth
+                // either, because it emits no placeholder for a binding to land
+                // in.
+                $out .= Emit::literal($this->dialect, $this->params[$p - 1], $kind);
+                continue;
+            }
             $nth++;
             $out .= match ($mode) {
-                'inline' => Emit::literal($this->dialect, $this->params[$p - 1],
-                    $this->paramKinds[$p - 1] ?? 'TEXT'),
+                'inline' => Emit::literal($this->dialect, $this->params[$p - 1], $kind),
                 // The ordinal a numbered placeholder carries — PostgreSQL's $n —
                 // must agree with bindings(), which walks the output. The slot
                 // id would not: it is a creation number, and a reordering
                 // template emits creation numbers out of order.
-                'params' => Emit::slot($this->dialect, $nth,
-                    $this->paramKinds[$p - 1] ?? 'TEXT'),
+                'params' => Emit::placeholder($this->dialect, $nth),
                 'debug' => "~{$nth}~",
                 default => throw new \InvalidArgumentException(
                     "unknown render mode {$mode}; use inline, params or debug"),

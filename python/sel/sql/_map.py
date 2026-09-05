@@ -29,6 +29,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "X'{hex}'",
             "textCollate": "",
             "numericCast": "CAST({0} AS DECIMAL(38,10))",
+            "binaryCast": "CAST({0} AS BINARY)",
             "isTrue": "({0}) IS TRUE",
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
@@ -306,6 +307,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "X'{hex}'",
             "textCollate": " COLLATE utf8mb4_bin",
             "numericCast": "CAST({0} AS DECIMAL(65,10))",
+            "binaryCast": "CAST({0} AS BINARY)",
             "isTrue": "({0}) IS TRUE",
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
@@ -563,6 +565,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "*": "LEAST({*})",
                 },
                 "ret": "NUM",
+                "caveat": "numeric-scale",
             },
             "MAX": {
                 "tpl": {
@@ -570,13 +573,14 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "*": "GREATEST({*})",
                 },
                 "ret": "NUM",
+                "caveat": "numeric-scale",
             },
             "ISNUM": {
                 "tpl": "({0} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$')",
                 "ret": "BOOL",
             },
             "BLEN": {
-                "tpl": "LENGTH({0})",
+                "tpl": "LENGTH({binaryCast:0})",
                 "ret": "NUM",
             },
             "TO_UTF8": {
@@ -584,11 +588,11 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "BIN",
             },
             "FROM_UTF8": {
-                "tpl": "CONVERT({0} USING utf8mb4)",
+                "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
                 "ret": "TEXT",
             },
             "TO_HEX": {
-                "tpl": "LOWER(HEX({0}))",
+                "tpl": "LOWER(HEX({binaryCast:0}))",
                 "ret": "TEXT",
             },
             "FROM_HEX": {
@@ -596,7 +600,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "BIN",
             },
             "ENCODE_BASE64": {
-                "tpl": "REPLACE(REPLACE(TO_BASE64({0}), CHAR(10), ''), CHAR(13), '')",
+                "tpl": "REPLACE(REPLACE(TO_BASE64({binaryCast:0}), CHAR(10), ''), CHAR(13), '')",
                 "ret": "TEXT",
             },
             "DECODE_BASE64": {
@@ -605,7 +609,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "caveat": "input-laxity",
             },
             "CRC32": {
-                "tpl": "LPAD(LOWER(HEX(CRC32({0}))), 8, '0')",
+                "tpl": "LPAD(LOWER(HEX(CRC32({binaryCast:0}))), 8, '0')",
                 "ret": "TEXT",
             },
             "BTL": "yields a list, and a SQL expression is a scalar",
@@ -668,6 +672,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "X'{hex}'",
             "textCollate": " COLLATE utf8mb4_bin",
             "numericCast": "CAST({0} AS DECIMAL(65,10))",
+            "binaryCast": "CAST({0} AS BINARY)",
             "isTrue": "({0}) IS TRUE",
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
@@ -925,6 +930,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "*": "LEAST({*})",
                 },
                 "ret": "NUM",
+                "caveat": "numeric-scale",
             },
             "MAX": {
                 "tpl": {
@@ -932,13 +938,14 @@ DIALECTS: dict[str, dict[str, Any]] = {
                     "*": "GREATEST({*})",
                 },
                 "ret": "NUM",
+                "caveat": "numeric-scale",
             },
             "ISNUM": {
                 "tpl": "({0} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$')",
                 "ret": "BOOL",
             },
             "BLEN": {
-                "tpl": "LENGTH({0})",
+                "tpl": "LENGTH({binaryCast:0})",
                 "ret": "NUM",
             },
             "TO_UTF8": {
@@ -946,11 +953,11 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "BIN",
             },
             "FROM_UTF8": {
-                "tpl": "CONVERT({0} USING utf8mb4)",
+                "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
                 "ret": "TEXT",
             },
             "TO_HEX": {
-                "tpl": "LOWER(HEX({0}))",
+                "tpl": "LOWER(HEX({binaryCast:0}))",
                 "ret": "TEXT",
             },
             "FROM_HEX": {
@@ -958,7 +965,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "BIN",
             },
             "ENCODE_BASE64": {
-                "tpl": "REPLACE(REPLACE(TO_BASE64({0}), CHAR(10), ''), CHAR(13), '')",
+                "tpl": "REPLACE(REPLACE(TO_BASE64({binaryCast:0}), CHAR(10), ''), CHAR(13), '')",
                 "ret": "TEXT",
             },
             "DECODE_BASE64": {
@@ -967,7 +974,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "caveat": "input-laxity",
             },
             "CRC32": {
-                "tpl": "LPAD(LOWER(HEX(CRC32({0}))), 8, '0')",
+                "tpl": "LPAD(LOWER(HEX(CRC32({binaryCast:0}))), 8, '0')",
                 "ret": "TEXT",
             },
             "BTL": "yields a list, and a SQL expression is a scalar",

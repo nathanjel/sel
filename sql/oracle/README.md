@@ -91,6 +91,41 @@ documents are about to be authored, each a few dozen semantic claims about a
 server nobody has probed, and each new entry will arrive needing either an
 expression or a written reason.
 
+## The fuzz lane
+
+`tools/fuzz-sql.sh` runs the same comparison over programs nobody wrote, from the
+generator the six-host differential already uses.
+
+It is a separate lane from `tools/fuzz.sh` rather than a mode of it, because the
+two compare different things. `fuzz.sh` demands that six implementations produce
+the same string; that is right for the language and wrong here — a translated
+expression may legitimately answer `2.5000` where SEL says `2.5`, may refuse
+outright, and may yield a list, which is not a SQL value at all.
+
+Outcomes, and why each is what it is:
+
+| Outcome | Meaning |
+|---|---|
+| agree | SEL and the server gave the same answer |
+| differ | they did not, and the fragment claimed to be exact — a defect |
+| caveat | they differ and the fragment said in advance that it might |
+| refused | the translator would not translate it; an ordinary outcome |
+| sel-error | the program does not evaluate; nothing to compare against |
+| out of range | the server rejected the **values** as too large |
+| invalid SQL | the server rejected the **syntax** — always a defect |
+
+The last two are the split that matters. SEL's arithmetic is unbounded and
+`DECIMAL(65,10)` is not, so a translated expression can be perfectly correct and
+still overflow; that is the accepted limit of pushing a rule into a database. A
+syntax error is never that. It means the layer emitted something that is not SQL,
+which no input may cause.
+
+A run that abstains on nearly everything is not a lane, so the driver fails when
+fewer than one program in twenty reaches the server. About a quarter do today;
+`--verbose` prints the refusal histogram, which is currently dominated by
+`E_SQL_ASSIGN` — the generator's fixed `ITEMS[1]["QTY"] = 2` preamble is two
+levels of indexed assignment, which stage 1 documents that it will not fold.
+
 ## `rows.json` and `fixture.sql`
 
 The row-parity oracle: each rule is translated into a `WHERE` clause and run

@@ -53,6 +53,7 @@ step "documentation examples" ./tools/check-docs.sh
 step "decimal vs python oracle" ./tools/check-decimal.sh "${DECIMAL_COUNT:-4000}"
 step "end to end, every host API" ./tools/e2e.sh
 step "differential fuzz" ./tools/fuzz.sh "${FUZZ_COUNT:-4000}" "${FUZZ_SEED:-20260813}"
+step "differential fuzz, sql" ./tools/fuzz-sql.sh "${SQL_FUZZ_COUNT:-2000}" "${SQL_FUZZ_SEED:-20260905}"
 
 echo
 if [ "$status" -eq 0 ]; then
