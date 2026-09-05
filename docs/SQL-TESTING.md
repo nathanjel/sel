@@ -209,21 +209,32 @@ asked what violated it. The suite was green: 273 cases, a closed corpus at
 **Twenty-four contract defects, bringing the running total to fifty-one.** Every
 one of them was live while the corpus reported 0 differ.
 
-Two sentences carry the whole finding, and they are the same sentence read twice.
+**The corpus measured the map and found it right; it did not measure four other
+things.** The map is data and the corpus is the right instrument for it — the
+templates *are* correct, which is a real result and not a consolation. But
+`expressions.selo` is closed by design, one expression with no host input and one
+line per expression, and the twenty-four defects split cleanly by *what the
+corpus could not hold*:
 
-**The corpus measured the map and found it right; the bindings were never
-measured.** The map is data and the corpus is the right instrument for it — the
-templates *are* correct, which is a real result. But the corpus is closed by
-design, an expression with no host input, and **every severe defect above needed
-a binding**. A closed corpus can run clean for a milestone over defects it is
-structurally unable to reach.
+| It could not hold | Defects | Why |
+|---|---|---|
+| a **binding** | 16 | a closed expression has none: the five binding checks, the three kind guards (each needs a column, so there is no value to hand the evaluator), the six relation-row defects, the `value`-binding constant check, and the NULL that only a nullable column can produce |
+| a **discriminating byte string** | 4 | the corpus had exactly one BIN value and it was the one that could not fail — see below |
+| a **literal newline** | 2 | `ISNUM`'s `^…$` differs from `\A…\z` only for a value with a trailing newline, and the corpus is line-oriented. Fixed by using SEL's `\n` escape |
+| an entry **that did not exist yet** | 2 | a `skel` caveat could not be witnessed before MariaDB's `skel.case` became the first one; and an assignment nothing reads is dropped by stage 1 before any expression sees it |
 
-**And the closed corpus had exactly one BIN value, and it was the one that could
-not fail.** `7ac3a9` — chosen to look like a hash — is valid UTF-8, which makes
-it precisely the byte string that round-trips unchanged through a *wrong*
-`binaryCast`. Four binary defects hid behind one well-chosen-looking constant.
-That is §4's lesson about symmetric inputs, arriving in different clothes for the
-third time.
+Sixteen of twenty-four is the headline and it is the one to act on — **`rows.json`
+is where the missing half lives** — but the other eight are the more useful
+warning, because each is a different way for a corpus to be blind and none of
+them is fixed by adding bindings.
+
+**The BIN row deserves its own sentence: the closed corpus had exactly one BIN
+value, and it was the one that could not fail.** `7ac3a9` — chosen to look like a
+hash — is valid UTF-8, which makes it precisely the byte string that round-trips
+unchanged through a *wrong* `binaryCast`. Four binary defects hid behind one
+well-chosen-looking constant. That is §4's lesson about symmetric inputs,
+arriving in different clothes for the third time, and it is the same lesson as
+the newline row: a corpus tests the inputs it contains and nothing adjacent.
 
 The check suite was reviewed as its own lane and is counted separately, because
 these are holes rather than wrong answers: the mutation runner had **three**
@@ -697,16 +708,27 @@ tree** — a doc quote had gone stale when `skel.inRelation` changed — so it f
 on every mutated copy too, for a reason that had nothing to do with the mutation.
 Four mutations scored as covered while nothing covered them.
 
-Three more of the same shape:
+That one happened. Three more were **planted** — written as mutations and found
+to survive every check there was, which is the same finding arrived at before it
+costs anything:
 
-- **The mirror check went vacuous.** `php/bin/sqlt` re-runs every `mariadb` case
-  under `mysql`, and the mirrored case was built with `['dialect' => $mirror] + $c`
-  — PHP's `+` keeps the **left** operand for a duplicated key, so the mirror ran
-  under `mariadb` and compared a run against itself. 213 assertions, all of them
-  `x == x`.
-- **The coverage gate recomputed its own denominator.** It measured "entries
-  covered" against the set of entries it had just walked, so an entry that
-  vanished from the map lowered both numbers and the percentage never moved.
+- **Nothing asserted the mirror was mirroring.** `php/bin/sqlt` re-runs every
+  `mariadb` case under `mysql`, building the mirrored case with
+  `['dialect' => $mirror] + $c`. That is correct: PHP's `+` keeps the **left**
+  operand for a duplicated key, so `$mirror` wins. Swap the operands — the trap
+  this layer has already shipped twice — and every mirrored case re-runs as
+  `mariadb` against itself. The pass count is unchanged, the "also checked
+  against a mirrored dialect" line prints the same number, and the only thing
+  making `mysql.json` safe to leave empty has silently stopped happening. The
+  mutation survived every check; the fix is one assertion that the mirrored
+  dialect is not the original.
+- **The coverage gate computed its denominator from the code under test.** It
+  measured `Map::entry()` *lookups*, which a withdrawn entry still performs,
+  against `Map::entries()`, which stops counting it as supported — so
+  withdrawing a working entry shrank supply and demand together and "66 of 66
+  reached" stayed green. Twenty of MariaDB's sixty-seven supported entries have
+  no `.sqlt` case, and every one could be turned off this way. `coverage.json`
+  now records the supported set and the gate diffs it in both directions.
 - **A caveat silences.** Class-A adjacent, but this is its check-side face: a
   caveat tells the oracle not to fail on that entry, so *adding* one turns a
   failing check green and changes no output character. Mutating `ansi`'s `LOWER`
@@ -732,8 +754,8 @@ Three mechanisms, in increasing order of how much they cost:
    caught it the first time.
 
 2. **A check that compares two things asserts they are two things.** The mirror
-   check now asserts `$mirrorCase['dialect'] !== $c['dialect']` before running,
-   and the coverage gate diffs against a *recorded* set in
+   check now asserts that `$mirrorCase['dialect']` really is `$mirror` before
+   running it, and the coverage gate diffs against a *recorded* set in
    `sql/oracle/coverage.json` in both directions rather than against itself. In
    both cases the fix is the same: name the invariant that makes the comparison
    meaningful, and assert it.
@@ -868,10 +890,13 @@ reason*. Its baseline gate is what makes "for the right reason" enforceable.
 
 **Do not assume the corpus reaches the layer you are worried about.** The closed
 expression corpus reports 0 differ across four live servers, and that is a true
-statement about the *map*. It said nothing about the bindings, because a closed
-expression has none, and a review found twenty-four defects sitting behind that
-line. When a new binder shape or a new host-supplied value lands, the corpus to
-extend is `sql/oracle/rows.json`, not `expressions.selo`.
+statement about the *map*. It says nothing about the bindings, because a closed
+expression has none — sixteen of the twenty-four defects a review found were
+sitting behind exactly that line. When a new binder shape or a new host-supplied
+value lands, the corpus to extend is `sql/oracle/rows.json`. And ask the question
+one level up as well: a corpus cannot hold what its *format* cannot express, and
+two more of those defects lived behind a line-oriented file's inability to
+contain a newline.
 
 **Do not add a static analyser expecting it to catch these.** PHPStan would flag
 none of the twelve. They are semantic — a wrong claim about a server, a wrong

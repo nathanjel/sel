@@ -167,9 +167,11 @@ Refusals need no coverage: a refusal has no semantics to check, it is the absenc
 of them. But *which* entries are supported is itself recorded, in `coverage.json`
 under `supported`, and diffed both ways: an entry that gains support without
 gaining an expression is reported, and so is one that quietly loses it. Without
-the recorded set the gate measured "entries covered" against the entries it had
-just walked, so an entry vanishing from the map lowered both numbers and the
-percentage never moved — a denominator computing itself.
+the recorded set the gate compared `Map::entry()` *lookups*, which a withdrawn
+entry still performs, against `Map::entries()`, which stops counting it as
+supported — so withdrawing a working entry lowered both sides at once and "66 of
+66 reached" stayed green. A denominator computed from the code under test. Found
+by planting the withdrawal as a mutation and watching every check survive it.
 
 This is the part that changed what "done" meant for M5, and all four dialect
 documents were authored under it: each a few dozen semantic claims about a
@@ -236,9 +238,12 @@ This is the only oracle that reaches a `relation` binding, because a correlated
 subquery needs a query to correlate to — and, more to the point, **the only one
 that reaches a binding at all**. `expressions.selo` is closed, so the entire
 host-input surface of this layer is measured here and nowhere else. A contract
-review found twenty-four defects behind that line, every one of them needing a
-binding; `rows.json` grew a `NOTES` relation binding and thirteen rules in
-response. When a new binder shape lands, this is the file that has to grow.
+review found twenty-four defects, and **sixteen of them needed a binding** to
+reach: the binding checks themselves, the kind guards (which need a column, since
+a column is the one operand with no value to check), the relation-row defects,
+the `value`-binding constant check, and the NULL below. `rows.json` grew a
+`NOTES` relation binding and thirteen rules in response. When a new binder shape
+lands, this is the file that has to grow.
 
 Every fixture also carries a **nullable `note` column**, added late and worth its
 own sentence. For five milestones no NULL existed anywhere in any fixture — not

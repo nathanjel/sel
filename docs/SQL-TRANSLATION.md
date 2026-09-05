@@ -1597,12 +1597,24 @@ params: [Value::text('open')]
 ```
 
 **A NUM, BOOL or BIN literal is not a slot.** `Fragment::isInline` says so, and
-it is a deliberate narrowing rather than an oversight: those three have a
-dialect spelling with no injection surface — a canonical decimal, `TRUE`/`1`,
-`x'…'` — and parameterising them would defeat the point. A driver binds `?` as a
-*string* by default, so `100` sent as a parameter arrives as `'100'` and
-MariaDB's `DECIMAL` cast of it is a different expression than the cast of a bare
-`100`. TEXT is the kind with a quoting problem, and TEXT is what gets a slot.
+the reason is that *neither carries any character the caller chose* — there is
+nothing for a placeholder to protect, and both are damaged by being sent as a
+string.
+
+For NUM, no coercion of a bound string reproduces a bare numeric literal. MariaDB
+reads `2.50` as `DECIMAL` with scale 2 and `12345678901234567890.12345` as
+`DECIMAL` with 25 digits; a parameter is untyped, and every way of giving it a
+type picks the wrong one. `CAST(? AS DECIMAL(65,10))` pads the scale, so
+`TRIM(2.50)` answered `"2.5000000000"`. `(? + 0)` drops the scale and floats
+above seventeen digits. With neither, `(? = ?)` compares two strings and
+`2.50 = 2.5` is FALSE. After `Emit::numericLiteral` the characters a NUM literal
+can contain are digits, one `.` and a leading `-`, by construction.
+
+For BOOL, the token comes out of `lexical.true`/`lexical.false` — out of the
+dialect document, not out of a rule. Binding it as a string breaks SQLite
+outright: `1 = '1'` is **0** there, so `TRUE XOR TRUE` answered TRUE in `params`
+mode and FALSE inline. Found by the fuzz lane on SQLite's first run. TEXT is the
+kind with a quoting problem, and TEXT is what gets a slot.
 
 Joining is the last thing that happens, and there are three ways to do it:
 
@@ -1741,7 +1753,7 @@ out to support both exactly as SEL means them.
 | `division-scale` | SEL's `/` yields ten fractional digits, half away from zero. MySQL's DECIMAL division adds four. **(verified)** PostgreSQL's `/` on integers **truncates** — `10 / 4` is `2` — so `postgresql.json` casts both operands to `numeric`, leaving sixteen fractional digits against SEL's ten. The M1 prediction, measured. |
 | `decimal-float` | **(verified)** SQLite has no exact decimal type: arithmetic is int64 or IEEE double. Not a scale difference — a different number system. `0.1 + 0.2` is `0.30000000000000004` there and `0.3` in SEL, and no template fixes it, so every arithmetic entry carries this and `strict` refuses the lot. |
 | `rounding-mode` | SEL rounds half away from zero everywhere. **No dialect declares this**, and that was measured rather than assumed: `mysql-family` carried it on `ROUND` and did not need it. The operands reach `ROUND` through `numericCast`, so they are `DECIMAL`, and both MySQL and MariaDB round `DECIMAL` half away from zero — `ROUND(-2.5,0)` is `-3`, `ROUND(2.675,2)` is `2.68`, agreeing with SEL on every probe. The caveat was written for the `FLOAT` behaviour the cast means these operands never have. Removing it was a **coverage gain**: it had been exempting every `ROUND` in the corpus from the exactness check. The name stays in the vocabulary because the divergence is real in general. |
-| `trim-charset` | `TRIM` strips exactly space, tab, CR and LF in SEL, and ANSI `TRIM` strips spaces only. `mysql-family` reaches SEL's set with `REGEXP_REPLACE` and SQLite with `trim(X, Y)`, so the caveat sits on `ansi` and is inherited by no target that has a better answer. |
+| `trim-charset` | `TRIM` strips exactly space, tab, CR and LF in SEL, and ANSI `TRIM` strips spaces only. Declared on `ansi` and **inherited by no target**: all four override it with SEL's exact set — `mysql-family` through `REGEXP_REPLACE`, PostgreSQL through `btrim(…, E' \\t\\r\\n')`, SQLite through `trim(X, Y)`. `ansi` is not a target, so nothing runs it and the symmetry check never asks. It is the base being a base: the conservative answer, overridden everywhere a real server was probed. |
 | `input-laxity` | The server accepts input SEL rejects. `DECODE_BASE64("aGVsbG8")` — unpadded — is `E_BAD_ARG` in SEL and a value on MySQL and PostgreSQL. Structurally unwitnessable, for the reason §11.5 gives. |
 | `length-units` | In the vocabulary and used by nothing: every dialect's `LEN` counts what SEL counts. Kept because a dialect whose `LENGTH` is bytes is the obvious next one to be written, and a mutation exists that adds it to prove the check would notice. |
 | `modulo-integer` | **(verified)** SQLite truncates both operands to integers before `%`, so `5.5 % 2` is `1.0` rather than `1.5`. |
@@ -1959,13 +1971,19 @@ every one of them is an instance of something here.
 **The closed corpus measures the map, not the bindings.** `sql/oracle/` compares
 SEL against four servers over 391 expressions and finds them identical, and that
 is a real result about `sql/dialects/*.json`: the templates are right. It is not a result about the translator, because the corpus is closed
-by design — an expression, no host input — and *every severe defect the review
-found needed a binding*. A multi-field relation compared against text. `HAS`
-over a relation. A column bound `raw` with a type nobody checked. `COUNT` of a
-row. None of those is expressible as a closed expression, so a corpus of closed
-expressions can run clean for a milestone while they sit there. `sql/oracle/rows.json`
-exists for this reason and is the direction to extend when a new binder shape
-lands, not the expression corpus.
+by design — an expression, no host input — and **sixteen of the review's
+twenty-four defects needed a binding**. A multi-field relation compared against
+text. `HAS` over a relation. A column bound `raw` with a type nobody checked.
+`COUNT` of a row. None of those is expressible as a closed expression, so a
+corpus of closed expressions can run clean for a milestone while they sit there.
+`sql/oracle/rows.json` exists for this reason and is the direction to extend when
+a new binder shape lands, not the expression corpus.
+
+The other eight are the more useful half, because each names a *different* blind
+spot: four needed a byte string that could distinguish a right cast from a wrong
+one, two needed a literal newline in a line-oriented file, and two needed a map
+entry that did not exist when the corpus was written.
+`docs/SQL-TESTING.md` §2 has the table.
 
 **A corpus of symmetric inputs cannot see an asymmetric bug.** This is §4 of
 `docs/SQL-TESTING.md` and it keeps recurring in new clothing. The sharpest
@@ -1981,9 +1999,19 @@ does not say the entry *does* disagree, so declaring one is free, silences every
 check on that entry, and changes no output character — the exact profile of a
 defect nothing can see. `caveat_symmetry` in `php/bin/sqlo` is the other
 direction: every declared caveat must be *witnessed* by an expression that
-actually crosses it, or excused by name. Both `rounding-mode` on `mysql-family`
-and the mixed-BIN guard in the translator were found this way, by asking what a
-declaration had ever done rather than whether it was plausible.
+actually crosses it, or excused by name. `rounding-mode` on `mysql-family` was
+found this way — declared, never witnessed, and on inspection not needed at all,
+because `numericCast` means the operands are `DECIMAL` and both servers round
+`DECIMAL` SEL's way.
+
+The same question asked of a *guard* rather than a caveat has the same answer and
+a different instrument. A mixed-BIN/TEXT check added during the review turned out
+to be unreachable — `requireComparableKinds` already refused every input that
+could reach it — and what said so was its mutation surviving: break the guard on
+purpose, and every check stays green because the guard was never the thing
+refusing. It was removed and the dual purpose documented on the check that does
+the work. A guard nothing can reach is a caveat nothing witnesses, one layer
+down.
 
 **Two divergences are unwitnessable by construction, and are excused rather than
 checked.** `concat-null` and `input-laxity` are refusal-class divergences wearing
@@ -2278,8 +2306,8 @@ contract holds; otherwise fail outright*) and asked what violated it. They
 reproduced **twenty-four** contract violations against a suite reporting zero
 differences across four live servers — 273 cases, 10 row rules and 39 mutations,
 all green — plus twelve faults in the checks themselves, eight of them mutation
-classes that survived every check there was. Twelve commits, each with cases,
-corpus lines and a mutation. The suite now stands at 339 cases, 391 corpus
+classes that survived every check there was. Twelve commits, most carrying cases,
+corpus lines and a mutation of their own. The suite now stands at 339 cases, 391 corpus
 expressions across four dialects at 0 differ, 13 row rules and 69 mutations
 caught with none surviving.
 
