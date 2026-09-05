@@ -129,6 +129,18 @@ impl_oracle() {
   esac
 }
 
+# The design document's worked examples, checked against the cases they quote.
+# Optional the same way impl_sql is.
+impl_sqldoc() {
+  local impl="$1"; shift
+  case "$impl" in
+    php)  php php/bin/sqldoc "$@" ;;
+    js|js-bundle|cpp|lisp) return 0 ;;
+    python|python-wheel) return 0 ;;
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
 # Each implementation's own unit tests, covering the layers underneath the
 # conformance suite. Optional: js and php have none, and say so by succeeding.
 impl_unit() {

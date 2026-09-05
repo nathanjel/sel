@@ -296,7 +296,10 @@ footgun, but the reason it was *invisible for a whole milestone* is that
 `scalarRule` had no case: its only observable effect was `COUNT` of a scalar,
 and no case asked.
 
-### Fix — make the design document executable
+### Fix — make the document quote what runs
+
+*Built as `php/bin/sqldoc` and `tools/check-sql-docs.sh`.* Not the second
+extractor the sketch below proposed — see the note at the end of this section.
 
 `tools/extract-docs.mjs` already pulls `EXPR  =>  RESULT` lines out of ```sel
 blocks in `README.md`, `docs/LANGUAGE.md` and `docs/EXTENDING.md`, and
@@ -311,11 +314,41 @@ ALL((1, 2, 3), _ > 0)
     (((1 > 0) AND (2 > 0)) AND (3 > 0))
 ```
 
-They are prose. Extending the extractor with a ```sel-sql block carrying
-`SOURCE` / indented `SQL` pairs, plus a dialect and bindings header, would turn
-every worked example in the contract into an executed case — and would have
-caught the flat-versus-nested fold discrepancy that sat in §13.1 for two
-milestones while §7.1 said something else.
+They are prose. The sketch was to extend the extractor with a ```sel-sql block
+carrying `SOURCE` / indented `SQL` pairs plus a dialect and bindings header.
+
+**That is not what was built, and the reason is worth keeping.** `extract-docs.mjs`
+is a *language* checker: it writes four index-aligned files and `check-docs.sh`
+feeds them to `impl_batch`, which all six hosts implement. A SQL example fits
+none of that — it needs a dialect, half of §7's examples need a bindings
+side-channel the `EXPR => RESULT` line has no room for, the subquery
+expectations are multi-line where `.want` is one line per example, and the runner
+would have to be `sqlt` rather than `impl_batch`. It would share a sixty-line
+scanner and nothing else, while adding a second documentation-example format to a
+project that has one.
+
+`sql/cases/*.sqlt` already *is* the format that sketch would have had to invent:
+`dialect`, `bindings`, multi-line `expect`, and a runner. So the block names a
+case and quotes it, and `php/bin/sqldoc` asserts the quotation is exact:
+
+```
+​```sel-case agg.static.all
+ALL((1, 2, 3), _ > 0)
+    (((1 > 0) AND (2 > 0)) AND (3 > 0))
+​```
+```
+
+The layout is the one the document already used, so converting a block is a
+change of fence and nothing else. Twelve of §7's examples are quotations now, and
+converting them found two more drifts immediately: §7.2's `columns` example
+claimed three columns where the case has two, and its binder was named `VALUES`
+in the document and `V` in the code.
+
+Being precise about what this buys: it checks the document against the suite, and
+the suite is an assertion suite. It stops the document lying about the code; it
+does not make the code right. That is `sql/oracle/`'s job, and where a documented
+example is a closed expression it inherits the oracle for free, because both run
+over the same case files.
 
 For the claims that are not example-shaped — "registering against `ansi`
 reaches every dialect" — the discipline is cheaper than a tool: **a normative

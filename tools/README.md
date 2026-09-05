@@ -14,6 +14,7 @@ tools/check-version.sh      every manifest declares the same version
 cd cpp && make asan         the C++ suite under the address and leak sanitizers
 tools/fuzz.sh               seeded differential fuzzing, N-way
 tools/check-sql-map.sh      the dialect map, regenerated and diffed
+tools/check-sql-docs.sh     the design document quotes cases that run
 tools/check-sql-oracle.sh   translated SQL against a real database
 tools/fuzz-sql.sh           seeded SQL differential fuzzing against a database
 ```
@@ -41,6 +42,7 @@ rather than a comparison of the standard library with itself.
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
 | `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure; **0 and silent** for a host with no SQL layer |
 | `oracle [mode]` | `sql/oracle/*` | a per-mode agreement report | non-zero on any disagreement; **0 with a skip line** when no DSN is set |
+| `sqldoc [file.md…]` | `docs/SQL-TRANSLATION.md`, `sql/cases/*.sqlt` | `N quote a case, M wrong` | non-zero on any mismatch, and on finding no blocks |
 
 The first five are required. `sql` and `oracle` are optional in the same way
 `unit` is: a host with no SQL layer succeeds silently and the harness moves on.
@@ -68,6 +70,7 @@ recreates its tables on every run. See `sql/oracle/README.md`.
 | `check-decimal` | `tools/check-decimal.mjs` | `tools/check-decimal.php` | `cpp/build/check-decimal` | `lisp/bin/check-decimal` | `python/bin/check-decimal.py` |
 | `sql` | — | `php/bin/sqlt` | — | — | M6 |
 | `oracle` | — | `php/bin/sqlo` | — | — | M6 |
+| `sqldoc` | — | `php/bin/sqldoc` | — | — | M6 |
 
 Two implementations in `tools/impls.sh` are the same code reached a second way:
 `js-bundle` runs `dist/sel.mjs`, and `python-wheel` runs the built wheel from a

@@ -1,0 +1,169 @@
+#!/usr/bin/env php
+<?php
+// Checks that the design document's worked examples are quotations of cases that
+// actually run, rather than prose somebody wrote once.
+//
+// docs/SQL-TRANSLATION.md §7 drifted from the code for a whole milestone: §13.1
+// claimed a flat four-way AND for a case §7.1 renders nested, and the example was
+// sitting in both sections. Neither could fail, because neither executed.
+//
+// The fix is not a second corpus format. sql/cases/*.sqlt already has `dialect`,
+// `bindings`, multi-line `expect` and a runner — it is the thing an executable
+// documentation block would have had to invent. So a block names a case and
+// quotes it, and this asserts the quotation is exact:
+//
+//     ```sel-case agg.static.all
+//     ALL((1, 2, 3), _ > 0)
+//         (((1 > 0) AND (2 > 0)) AND (3 > 0))
+//     ```
+//
+// The source lines come first, then the expectation indented by four spaces —
+// the layout the document already used, so converting a block is a change of
+// fence and nothing else. The document then cannot drift, because it is quoting
+// a file that runs.
+//
+// What this does NOT do is make the document an oracle. It checks the document
+// against the suite, and the suite is an assertion suite; sql/oracle/ is what
+// checks the suite against a server. Drift is the defect being fixed here.
+//
+//     php/bin/sqldoc [file.md ...]
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/sqlt-format.php';
+
+const INDENT = '    ';
+
+/** @return array<string, array<string,mixed>> */
+function load_cases(): array
+{
+    $out = [];
+    foreach (glob(SUITE . '/*.sqlt') ?: [] as $file) {
+        foreach (parse_sqlt((string) file_get_contents($file), basename($file)) as $c) {
+            if (isset($out[$c['name']])) {
+                throw new RuntimeException("two cases are named {$c['name']}: "
+                    . "{$out[$c['name']]['at']} and {$c['at']}");
+            }
+            $out[$c['name']] = $c;
+        }
+    }
+    return $out;
+}
+
+/**
+ * The block a case should be quoted as.
+ *
+ * A refusal case quotes its code rather than an expectation, because that is
+ * what the case asserts and a document showing SQL for it would be showing
+ * something that does not exist.
+ *
+ * @param array<string,mixed> $c
+ */
+function render_case(array $c): string
+{
+    $out = $c['source'];
+    if ($c['expect'] !== null) {
+        foreach (explode("\n", $c['expect']) as $line) {
+            $out .= "\n" . INDENT . $line;
+        }
+        return $out;
+    }
+    $what = $c['error'] ?? ('throws ' . $c['throws']);
+    return $out . "\n" . INDENT . $what;
+}
+
+/** @return list<array{file:string, line:int, name:string, body:string}> */
+function extract_blocks(string $file): array
+{
+    $blocks = [];
+    $open = null;
+    $body = [];
+    $at = 0;
+    foreach (explode("\n", (string) file_get_contents($file)) as $i => $line) {
+        $t = ltrim($line);
+        if (str_starts_with($t, '```')) {
+            if ($open !== null) {
+                $blocks[] = ['file' => $file, 'line' => $at, 'name' => $open,
+                             'body' => rtrim(implode("\n", $body), "\n")];
+                $open = null;
+                $body = [];
+                continue;
+            }
+            $info = trim(substr($t, 3));
+            if (str_starts_with($info, 'sel-case')) {
+                $name = trim(substr($info, 8));
+                if ($name === '') {
+                    throw new RuntimeException(
+                        "{$file}:" . ($i + 1) . ': a sel-case block names no case');
+                }
+                $open = $name;
+                $at = $i + 1;
+            }
+            continue;
+        }
+        if ($open !== null) {
+            $body[] = $line;
+        }
+    }
+    if ($open !== null) {
+        throw new RuntimeException("{$file}: unterminated sel-case block for {$open}");
+    }
+    return $blocks;
+}
+
+// --- main -------------------------------------------------------------------
+
+$files = array_slice($argv, 1);
+if ($files === []) {
+    $files = [__DIR__ . '/../../docs/SQL-TRANSLATION.md'];
+}
+
+try {
+    $cases = load_cases();
+} catch (RuntimeException $e) {
+    fwrite(STDERR, "sqldoc: SUITE ERROR {$e->getMessage()}\n");
+    exit(2);
+}
+
+$checked = 0;
+$bad = [];
+foreach ($files as $file) {
+    try {
+        $blocks = extract_blocks($file);
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, "sqldoc: {$e->getMessage()}\n");
+        exit(2);
+    }
+    foreach ($blocks as $b) {
+        $checked++;
+        if (!isset($cases[$b['name']])) {
+            $bad[] = [$b, "no case is named {$b['name']}"];
+            continue;
+        }
+        $want = render_case($cases[$b['name']]);
+        if ($b['body'] !== $want) {
+            $bad[] = [$b, "the block does not match {$cases[$b['name']]['at']}:\n"
+                . "  document:\n" . indent($b['body']) . "\n"
+                . "  case:\n" . indent($want)];
+        }
+    }
+}
+
+function indent(string $s): string
+{
+    return '    ' . str_replace("\n", "\n    ", $s);
+}
+
+foreach ($bad as [$b, $why]) {
+    printf("FAIL %s:%d  sel-case %s\n     %s\n", $b['file'], $b['line'], $b['name'], $why);
+}
+
+// Nothing to compare is not success: a renamed fence or a mistyped file list
+// would otherwise leave the document unchecked and the check reporting green.
+if ($checked === 0) {
+    fwrite(STDERR, "sqldoc: no sel-case blocks found in " . implode(' ', $files) . "\n");
+    exit(1);
+}
+
+printf("%d documented examples quote a case, %d wrong\n", $checked - count($bad), count($bad));
+exit($bad === [] ? 0 : 1);

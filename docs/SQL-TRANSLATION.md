@@ -897,16 +897,22 @@ recover a separator, or adding a variadic-with-separator template form for the
 sake of three operators. Neither is worth flatter parentheses — and going
 pairwise stops `JOIN`, already pairwise below, being the odd one out.
 
-```
+```sel-case agg.static.all
 ALL((1, 2, 3), _ > 0)
     (((1 > 0) AND (2 > 0)) AND (3 > 0))
+```
 
+```sel-case agg.static.any
 ANY((1, 2), _ > 1)
     ((1 > 1) OR (2 > 1))
+```
 
+```sel-case agg.static.sum
 SUM((1, 2, 3), _ * 2)
     (((1 * 2) + (2 * 2)) + (3 * 2))
+```
 
+```sel-case agg.static.join
 JOIN((1, 2, 3), "-")
     CONCAT(CONCAT(CONCAT(CONCAT(1, '-'), 2), '-'), 3)
 ```
@@ -920,7 +926,7 @@ function.
 **Nesting falls out.** The binder names an element, and if that element is
 itself a list node the inner aggregate simply dispatches on it again:
 
-```
+```sel-case agg.nested.static
 R[1] = (1, 2); R[2] = (3, 4); ALL(R, ROW, ALL(ROW, _ > 0))
     (((1 > 0) AND (2 > 0)) AND ((3 > 0) AND (4 > 0)))
 ```
@@ -935,8 +941,10 @@ combines the operands it is handed, not the ones inside them.
 Identical to §7.1 with column references as the elements and `_K` bound to the
 ordinal as TEXT.
 
-```
-ALL(VALUES, V, V > 0)               VALUES = columns x.a, x.b, x.c
+With `V` bound as `columns x.a, x.b, x.c`:
+
+```sel-case agg.columns.unroll
+ALL(V, C, C > 0)
     (((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))
 ```
 
@@ -948,9 +956,9 @@ The two-level spelling from the brief works because §7.0's scalar rule catches
 the inner one — the binder names a single column, and an aggregate over a
 scalar is a one-element list:
 
-```
-ALL(VALUES, V, ALL(V, _ > 0))
-    (((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))
+```sel-case agg.columns.two-level-spelling
+ALL(V, C, ALL(C, _ > 0))
+    ((`x`.`a` > 0) AND (`x`.`b` > 0))
 ```
 
 ### 7.3 `relation` binding → subquery
@@ -966,22 +974,35 @@ The map's `skel` section supplies the skeleton and the lowering fills it.
 | `JOIN(rel, s)` | `join` | refused on MariaDB; see below |
 | `x IN rel` | `inRelation` | the relation's `scalar` field — **one-field relations only** |
 
-```
+These are quotations of `sql/cases/12-aggregates.sqlt`, checked by
+`php/bin/sqldoc`, so the lines are as long as the translator makes them:
+
+```sel-case agg.relation.all
 ALL(ITEMS, I, I["qty"] > 0)
-    NOT EXISTS (SELECT 1 FROM `order_items` `oi`
-                WHERE `oi`.`order_id` = `o`.`id`
-                  AND ((`oi`.`qty` > 0)) IS NOT TRUE)
+    NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS NOT TRUE)
+```
 
-SUM(ITEMS, I, I["qty"] * I["price"])
-    (SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0)
-       FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+```sel-case agg.relation.sum
+SUM(ITEMS, _["QTY"] * _["PRICE"])
+    (SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+```
 
-COUNT(ITEMS)
-    (SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+```sel-case agg.relation.count
+COUNT(ITEMS) == 0
+    ((SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) = 0)
+```
 
-SKU IN SKUS                  SKUS has ONE field, SKU, and declares it scalar
-    (`o`.`sku` IN (SELECT `oi`.`sku` FROM `order_items` `oi`
-                    WHERE `oi`.`order_id` = `o`.`id`))
+`ITEMS` there declares one field. Over a relation declaring several, the same
+expression is refused:
+
+```sel-case agg.relation.in
+SKU IN ITEMS
+    (CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`))
+```
+
+```sel-case refuse.in-over-a-multi-field-relation
+SKU IN ITEMS
+    E_SQL_SHAPE
 ```
 
 **`IN` is refused over a relation with more than one field.** This example used
