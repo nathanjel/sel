@@ -364,6 +364,41 @@
       "file": "php/src/Sql/Normalise.php",
       "from": "        if (Constants::isConstant($value, $constNames)) {\n            Constants::validate($value, $ctx);\n        }",
       "to": "        // if (Constants::isConstant($value, $constNames)) {}"
+    },
+    {
+      "name": "eql-compares-bool-ness-only",
+      "was": "The structural-comparison guard as it shipped: it asked whether both operands were BOOL, which let BIN through. TO_UTF8(\"a\") EQL \"a\" is FALSE in SEL and answered 1 on MariaDB, MySQL and SQLite.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "    private const EQL_CLASS = ['NUM' => 'text', 'TEXT' => 'text',\n                               'BOOL' => 'bool', 'BIN' => 'bin'];",
+      "to": "    private const EQL_CLASS = ['NUM' => 'text', 'TEXT' => 'text',\n                               'BOOL' => 'bool', 'BIN' => 'text'];"
+    },
+    {
+      "name": "arithmetic-guard-forgets-bin",
+      "was": "spec §4 says \"BOOL and BIN are never numbers\" and the guard implemented the first half. BLOB + 1 translated: MariaDB 2.0, MySQL 50, SQLite 1, PostgreSQL raises.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($f->kind !== 'BOOL' && $f->kind !== 'BIN') {",
+      "to": "        if ($f->kind !== 'BOOL') {"
+    },
+    {
+      "name": "concat-accepts-a-bool",
+      "was": "`&` left out of the kind guards because it is not arithmetic. FLAG & NAME concatenated, MariaDB answering '1a' and PostgreSQL 'truea', where SEL says E_NOT_TEXT.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($op === '&' || ($op[0] === '$' && $op !== '$')) {",
+      "to": "        if ($op[0] === '$' && $op !== '$') {"
+    },
+    {
+      "name": "function-arguments-are-unchecked",
+      "was": "No argument-kind check for funcs existed at all. 26 functions accepted a BOOL and 26 accepted a BIN where SEL raises -- UPPER(BLOB) answered '1' on three servers and '\\X31' on PostgreSQL.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $this->requireArgumentKind($name, $f, $arg['pos']);",
+      "to": "            // $this->requireArgumentKind($name, $f, $arg['pos']);"
+    },
+    {
+      "name": "byte-functions-lose-their-exemption",
+      "was": "The other direction: over-refusing. BLEN, TO_HEX and the rest genuinely take bytes, and a guard that refuses them would make the BIN half of the layer unusable while every check still passed.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "    private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,",
+      "to": "    private const BIN_ARGUMENT_OK = ['CRC32' => 0, 'ENCODE_BASE64' => 0,"
     }
   ]
 }

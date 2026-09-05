@@ -322,6 +322,12 @@ final class Translator
             $this->requireNotBool($l, $n['l']['pos'], $op);
             $this->requireNotBool($r, $n['r']['pos'], $op);
         }
+        // The `$` family and `&`, not EQL and IN: those two are structural and
+        // `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
+        if ($op === '&' || ($op[0] === '$' && $op !== '$')) {
+            $this->requireNotBoolOperand($l, $n['l']['pos'], $op);
+            $this->requireNotBoolOperand($r, $n['r']['pos'], $op);
+        }
         $variant = $this->variantFor($op, [$l, $r]);
         if (self::isByteComparison($op)) {
             self::requireComparableKinds($l, $r, $op, $n['pos']);
@@ -513,9 +519,59 @@ final class Translator
                     "argument to {$name} is a list, and a SQL expression is a scalar",
                     $arg['pos']);
             }
+            $this->requireArgumentKind($name, $f, $arg['pos']);
             $args[] = $f;
         }
         return $this->apply('funcs', $name, $args, $n['pos']);
+    }
+
+    /**
+     * The functions that read their argument as bytes, and the one that takes a
+     * BOOL.
+     *
+     * Both lists were measured rather than written: every name in
+     * `Registry::names()` was called with `TO_UTF8("a")` and with `TRUE`, and
+     * these are the ones SEL did not answer E_NOT_* for. Writing them by hand
+     * would be the second copy of SEL's argument rules that §11.4 exists to
+     * avoid — this is a cached measurement, and `sql/oracle/` re-measures it.
+     *
+     * COUNT, HAS and INDEXES also accept both and are absent because none of
+     * them reaches this path: the first two are folded before dispatch and the
+     * third is refused. BTL is absent for the same reason — it yields a list.
+     */
+    private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,
+                                     'FROM_UTF8' => 0, 'ISNUM' => 0, 'TO_HEX' => 0,
+                                     'TO_UTF8' => 0];
+    private const BOOL_ARGUMENT_OK = ['ISNUM' => 0];
+
+    /**
+     * Refuse an argument whose kind SEL would refuse.
+     *
+     * Nothing checked function arguments at all, and the operators' own guards
+     * did not reach them. Measured on MariaDB: 26 functions accepted a BOOL and
+     * 26 accepted a BIN where SEL raises. `UPPER(BLOB)` answered '1' on three
+     * servers and '\X31' on PostgreSQL; `LEN(BLOB)` answered 1 on three and 4 on
+     * PostgreSQL. Every one of those is a translation reporting success for an
+     * expression SEL has no answer for.
+     *
+     * A column is where this bites, which is why the constant check could not
+     * cover it: `BLOB + 1` has no value to hand the evaluator, and only the
+     * declared kind says anything.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private function requireArgumentKind(string $name, Fragment $f, array $pos): void
+    {
+        if ($f->kind === 'BOOL' && !isset(self::BOOL_ARGUMENT_OK[$name])) {
+            refuse('E_SQL_SHAPE',
+                "{$name} does not take a BOOL argument; SEL raises here rather "
+                . 'than reading a boolean as text or as 1', $pos);
+        }
+        if ($f->kind === 'BIN' && !isset(self::BIN_ARGUMENT_OK[$name])) {
+            refuse('E_SQL_SHAPE',
+                "{$name} reads its argument as text, and this is BIN; SEL raises "
+                . 'here rather than reinterpreting bytes as characters', $pos);
+        }
     }
 
     /**
@@ -1307,25 +1363,40 @@ final class Translator
     }
 
     /**
-     * Refuse a byte comparison between a BOOL and a known other kind.
+     * The runtime kind classes EQL and IN compare, which are not the static
+     * kinds.
      *
-     * These operators are structural: SEL compares kinds first, so `0 EQL FALSE`
-     * is FALSE because a number is not a boolean, and no amount of casting says
-     * that in SQL. `CAST(0 AS CHAR)` and `CAST(FALSE AS CHAR)` are both '0', so
+     * A SEL number IS a text value (spec §4), so `1 EQL "1"` is TRUE and NUM
+     * and TEXT are one class here. BOOL and BIN are each their own: `0 EQL
+     * FALSE` is FALSE because a number is not a boolean, and
+     * `TO_UTF8("a") EQL "a"` is FALSE because bytes are not text.
+     */
+    private const EQL_CLASS = ['NUM' => 'text', 'TEXT' => 'text',
+                               'BOOL' => 'bool', 'BIN' => 'bin'];
+
+    /**
+     * Refuse a structural comparison between two different known kind classes.
+     *
+     * These operators compare kinds first, and no amount of casting says that in
+     * SQL. `CAST(0 AS CHAR)` and `CAST(FALSE AS CHAR)` are both '0', so
      * `NOT (0 IN FALSE)` answered TRUE in SEL and FALSE on the server — found by
      * the fuzz lane, which produces operand pairs a hand-written corpus does not.
      *
-     * Two BOOLs are fine: '1' against '0' is exactly right. One UNKNOWN is the
-     * accepted limit — the binding did not say, so nothing here can either.
+     * It used to compare only BOOL-ness, which let BIN through: SEL says
+     * `TO_UTF8("a") EQL "a"` is FALSE, and the emitted comparison cast both
+     * sides to characters and answered 1 on MariaDB, MySQL and SQLite. Refused
+     * rather than folded to FALSE — folding is the road §11.4 closed.
+     *
+     * Two operands of one class are fine. One UNKNOWN is the accepted limit —
+     * the binding did not say, so nothing here can either.
      *
      * @param array{line:int,col:int,offset:int} $pos
      */
     private static function requireComparableKinds(Fragment $l, Fragment $r,
                                                    string $op, array $pos): void
     {
-        $bool = static fn (Fragment $f): bool => $f->kind === 'BOOL';
-        $known = static fn (Fragment $f): bool => $f->kind !== 'UNKNOWN';
-        if ($bool($l) === $bool($r) || !$known($l) || !$known($r)) {
+        $cls = static fn (Fragment $f): ?string => self::EQL_CLASS[$f->kind] ?? null;
+        if ($cls($l) === null || $cls($r) === null || $cls($l) === $cls($r)) {
             return;
         }
         $other = $l->kind === 'BOOL' ? $r->kind : $l->kind;
@@ -1479,12 +1550,35 @@ final class Translator
      */
     private function requireNotBool(Fragment $f, array $pos, string $where): void
     {
+        // spec §4: "BOOL and BIN are never numbers". The guard implemented the
+        // first half of that sentence for a milestone: `BLOB + 1` translated,
+        // and MariaDB answered 2.0 while MySQL answered 50 — two servers, two
+        // answers, neither SEL's, from a column the schema said was binary.
+        if ($f->kind !== 'BOOL' && $f->kind !== 'BIN') {
+            return;
+        }
+        $what = $f->kind === 'BOOL' ? 'a BOOL' : 'a BIN';
+        refuse('E_SQL_SHAPE',
+            "{$where} reads its operands as numbers, and {$what} is not one; SEL "
+            . 'answers E_NOT_NUM here rather than coercing it', $pos);
+    }
+
+    /**
+     * `&` takes text or bytes, and a BOOL is neither — spec §5.2 ends "BOOL is
+     * E_NOT_TEXT". It was left out of the arithmetic list because it is not
+     * arithmetic, and nothing else covered it: `FLAG & NAME` concatenated, and
+     * MariaDB answered '1a' where PostgreSQL answered 'truea'.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private function requireNotBoolOperand(Fragment $f, array $pos, string $where): void
+    {
         if ($f->kind !== 'BOOL') {
             return;
         }
         refuse('E_SQL_SHAPE',
-            "{$where} reads its operands as numbers, and a BOOL is not one; SEL "
-            . 'answers E_NOT_NUM here rather than treating it as 1 or 0', $pos);
+            "{$where} reads its operands as text or bytes, and a BOOL is neither; "
+            . 'SEL answers E_NOT_TEXT here rather than spelling it 1 or true', $pos);
     }
 
     private function requireBool(Fragment $f, array $pos, string $where): Fragment

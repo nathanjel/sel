@@ -332,3 +332,162 @@ C + 1
 --- expect
 (`c` + 1)
 ===
+### name: kinds.bin-is-not-text-comparable-under-eql
+--- note
+SEL's EQL and IN compare kinds first, and a SEL number IS a text value, so the
+classes are {NUM, TEXT}, {BOOL} and {BIN}. The guard compared only BOOL-ness,
+so BIN sailed through and the emitted comparison cast both sides to characters:
+TO_UTF8("a") EQL "a" is FALSE in SEL and answered 1 on MariaDB, MySQL and
+SQLite. Refused rather than folded to FALSE -- folding is the road §11.4 closed.
+--- dialect
+mariadb
+--- source
+TO_UTF8("a") EQL "a"
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.bin-is-not-text-comparable-under-in
+--- dialect
+mariadb
+--- source
+"a" IN TO_UTF8("a")
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.two-bins-compare-fine
+--- dialect
+mariadb
+--- source
+TO_UTF8("a") EQL TO_UTF8("a")
+--- expect
+(CAST(CAST('a' AS BINARY) AS CHAR) COLLATE utf8mb4_bin = CAST(CAST('a' AS BINARY) AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: kinds.a-number-is-a-text-value
+--- note
+The other side of the same rule, and the reason the classes are not the static
+kinds: spec §4 makes numbers TEXT values, so `1 EQL "1"` is TRUE and NUM vs
+TEXT must keep translating.
+--- dialect
+mariadb
+--- source
+1 EQL "1"
+--- expect
+(CAST(1 AS CHAR) COLLATE utf8mb4_bin = CAST('1' AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: kinds.a-bin-is-not-an-addend
+--- note
+spec §4: "BOOL and BIN are never numbers". The guard implemented the first half
+of that sentence. BLOB + 1 translated, and MariaDB answered 2.0 where MySQL
+answered 50 -- two servers, two answers, neither SEL's.
+--- dialect
+mariadb
+--- bindings
+{"B": {"kind": "column", "column": "b", "type": "BIN"}}
+--- source
+B + 1
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.a-bin-cannot-be-negated
+--- dialect
+mariadb
+--- bindings
+{"B": {"kind": "column", "column": "b", "type": "BIN"}}
+--- source
+-B
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.a-bool-is-not-concatenable
+--- note
+spec §5.2 ends "BOOL is E_NOT_TEXT". `&` was left out of the arithmetic guard
+because it is not arithmetic, and nothing else covered it: FLAG & NAME
+concatenated, MariaDB answering '1a' and PostgreSQL 'truea'.
+--- dialect
+mariadb
+--- bindings
+{"F": {"kind": "column", "column": "f", "type": "BOOL"}, "N": {"kind": "column", "column": "n", "type": "TEXT"}}
+--- source
+F & N
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.a-bin-is-concatenable
+--- note
+And the half that must keep working: `&` takes text or bytes, and SEL answers
+for BIN & TEXT.
+--- dialect
+mariadb
+--- bindings
+{"B": {"kind": "column", "column": "b", "type": "BIN"}, "N": {"kind": "column", "column": "n", "type": "TEXT"}}
+--- source
+B & N
+--- expect
+CONCAT(`b`, `n`)
+===
+### name: kinds.a-bool-is-not-a-function-argument
+--- note
+Nothing checked function arguments at all. Measured on MariaDB: 26 functions
+accepted a BOOL and 26 accepted a BIN where SEL raises. This is where a column
+binding bites and the constant check cannot help -- there is no value to hand
+the evaluator, only a declared kind.
+--- dialect
+mariadb
+--- bindings
+{"F": {"kind": "column", "column": "f", "type": "BOOL"}}
+--- source
+UPPER(F)
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.a-bin-is-not-a-text-function-argument
+--- note
+UPPER(BLOB) answered '1' on three servers and '\X31' on PostgreSQL; LEN(BLOB)
+answered 1 on three and 4 on PostgreSQL.
+--- dialect
+mariadb
+--- bindings
+{"B": {"kind": "column", "column": "b", "type": "BIN"}}
+--- source
+LEN(B)
+--- error
+E_SQL_SHAPE
+===
+### name: kinds.a-bin-is-a-byte-function-argument
+--- note
+The set that does take bytes was measured, not written: every name in
+Registry::names() was called with TO_UTF8("a") and with TRUE, and these are the
+ones SEL did not raise for. A hand-written table would be the second copy of
+SEL's argument rules that §11.4 exists to avoid.
+--- dialect
+mariadb
+--- bindings
+{"B": {"kind": "column", "column": "b", "type": "BIN"}}
+--- source
+BLEN(B)
+--- expect
+LENGTH(CAST(`b` AS BINARY))
+===
+### name: kinds.isnum-takes-anything
+--- note
+The one function that accepts a BOOL, because its question is "is this a
+number" and every kind has an answer to it.
+--- dialect
+mariadb
+--- bindings
+{"F": {"kind": "column", "column": "f", "type": "BOOL"}}
+--- source
+ISNUM(F)
+--- expect
+(`f` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z')
+===
+### name: kinds.an-unknown-argument-is-still-the-accepted-limit
+--- dialect
+mariadb
+--- bindings
+{"U": {"kind": "column", "column": "u"}}
+--- source
+UPPER(U)
+--- expect
+UPPER(`u`)
+===
