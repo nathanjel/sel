@@ -453,8 +453,8 @@
       "name": "binary-cast-applied-to-a-bin-operand",
       "was": "binaryCast wrapping an operand that is already BIN. Harmless on the three dialects whose cast is idempotent and destructive on PostgreSQL, where the bytes go out through text and come back parsed as a bytea literal.",
       "file": "php/src/Sql/Emit.php",
-      "from": "            if ($key === 'binaryCast' && preg_match('/^[0-9]+$/', $arg) === 1",
-      "to": "            if (false && preg_match('/^[0-9]+$/', $arg) === 1"
+      "from": "            $castArg = $key === 'binaryCast' ? self::slotIndex($arg) : null;",
+      "to": "            $castArg = false ? self::slotIndex($arg) : null;"
     },
     {
       "name": "bin-is-parameterised",
@@ -497,6 +497,20 @@
       "file": "sql/oracle/coverage.json",
       "from": "\"mariadb\": {\n      \"concat-null\"",
       "to": "\"mariadb\": {\n      \"concat-null-renamed-by-mutation\""
+    },
+    {
+      "name": "key-regex-accepts-a-trailing-newline",
+      "was": "How it shipped, in BOTH hosts, and the worst kind of defect this layer can have: they agreed, and they were both wrong, so no amount of comparing PHP against Python could see it. `^[0-9]+$` accepts \"1\\n\" because PHP's `$` matches before a trailing newline without the D modifier -- and `(int)\"01\"` is 1 -- so V[\"01\"] and V[\"1\\n\"] both resolved to element 1 where SEL answers E_NO_KEY. Dec::parse carries the D for exactly this reason and the SQL layer had not inherited it.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        return preg_match('/\\A[1-9][0-9]{0,8}\\z/', $k) === 1 ? (int) $k : null;",
+      "to": "        return preg_match('/^[0-9]+$/', $k) === 1 ? (int) $k : null;"
+    },
+    {
+      "name": "slot-regex-accepts-a-trailing-newline",
+      "was": "The same slip in the template grammar. tools/gen-sql-map.mjs refused `{1\\n}` because JS reads `$` strictly, and Map::define accepted it -- so the shipped map and a runtime-registered entry were being read by two different grammars, and only one of them was validated.",
+      "file": "php/src/Sql/Emit.php",
+      "from": "        return preg_match('/\\A(?:0|[1-9][0-9]{0,2})\\z/', $s) === 1 ? (int) $s : null;",
+      "to": "        return preg_match('/^[0-9]+$/', $s) === 1 ? (int) $s : null;"
     }
   ]
 }

@@ -12,8 +12,18 @@ from ..value import Value, quote_dump
 from . import map as _map
 from .errors import refuse
 
-_DIGITS = re.compile(r'^[0-9]+$')
-_SLICE = re.compile(r'^([0-9]+):$')
+# Template slots are 0-based and canonical: {0}, {1}, {0:}. `{01}` and `{1\n}`
+# are not slots, and the generator (tools/gen-sql-map.mjs) already refuses both
+# -- JS's `$` matches only at end of string -- so the shipped map and a
+# runtime-registered template were being read by two different grammars. A
+# fullmatch and a three-digit cap close that: one grammar, and no host's integer
+# parser is consulted.
+_SLOT = re.compile(r'0|[1-9][0-9]{0,2}')
+
+
+def _slot_index(s: str) -> int | None:
+    """The argument a template slot names, or None when it names none."""
+    return int(s) if _SLOT.fullmatch(s) else None
 
 
 # --- literals ----------------------------------------------------------------
@@ -266,12 +276,13 @@ class Emit:
             if slot == '*':
                 join(args)
                 continue
-            m = _SLICE.match(slot)
-            if m is not None:
-                join(args[int(m.group(1)):])
-                continue
-            if _DIGITS.match(slot) is not None:
-                k = int(slot)
+            if slot.endswith(':'):
+                frm = _slot_index(slot[:-1])
+                if frm is not None:
+                    join(args[frm:])
+                    continue
+            k = _slot_index(slot)
+            if k is not None:
                 if k >= len(args):
                     refuse('E_SQL_UNSUPPORTED',
                            f'the mapping for this expression asks for argument {k}, '
@@ -295,11 +306,11 @@ class Emit:
             # changes the bytes or fails the query. Every other cast is
             # idempotent and applied unconditionally; this is the one whose input
             # kind decides whether it means anything.
-            if (key == 'binaryCast' and _DIGITS.match(arg) is not None
-                    and int(arg) < len(args)
-                    and isinstance(args[int(arg)], Fragment)
-                    and args[int(arg)].kind == 'BIN'):
-                splice(args[int(arg)])
+            cast_arg = _slot_index(arg) if key == 'binaryCast' else None
+            if (cast_arg is not None and cast_arg < len(args)
+                    and isinstance(args[cast_arg], Fragment)
+                    and args[cast_arg].kind == 'BIN'):
+                splice(args[cast_arg])
                 continue
             for p in self.fill(val.replace('{0}', '{' + arg + '}'), args, pos):
                 if isinstance(p, str):

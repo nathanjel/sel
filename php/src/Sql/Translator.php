@@ -242,8 +242,8 @@ final class Translator
                 . 'row its binder gives you', $n['pos']);
         }
         if ($b['kind'] === 'columns') {
-            $i = (int) $key;
-            if (!preg_match('/^[0-9]+$/', $key) || $i < 1 || $i > count($b['items'])) {
+            $i = self::listKey($key);
+            if ($i === null || $i > count($b['items'])) {
                 refuse('E_SQL_BINDING',
                     "{$obj['name']}[{$key}] is outside that binding's "
                     . count($b['items']) . ' column(s)', $n['pos']);
@@ -265,6 +265,26 @@ final class Translator
         refuse('E_SQL_SHAPE',
             "{$obj['name']} is bound as a column, which has no parts to index",
             $n['pos']);
+    }
+
+    /**
+     * The 1-based position a key names, or null when it names none.
+     *
+     * SEL list keys are the canonical decimals "1", "2", … — so "01" is not a
+     * key and neither is "1\n", and the evaluator answers E_NO_KEY for both.
+     * This used to answer *element 1* for both, in every host, because
+     * `^[0-9]+$` accepts a trailing newline unless PHP is given the D modifier
+     * and `(int)` accepts leading zeros. Dec::parse already carries the D for
+     * exactly this reason; the SQL layer did not inherit the lesson.
+     *
+     * Nine digits at most, so the conversion is exact in every host that will
+     * ever implement this: C++'s stoi throws above int32, PHP saturates above
+     * int64, JS loses precision above 2^53. No list this layer can build has a
+     * billion elements, so the cap costs nothing and removes the question.
+     */
+    private static function listKey(string $k): ?int
+    {
+        return preg_match('/\A[1-9][0-9]{0,8}\z/', $k) === 1 ? (int) $k : null;
     }
 
     /** @param array<string,mixed> $idx */
@@ -823,7 +843,7 @@ final class Translator
     private function indexBinder(Binder $b, string $name, string $key, array $n): Fragment
     {
         if ($b->shape === Binder::ROW) {
-            if (preg_match('/^[0-9]+$/', $key) === 1) {
+            if (self::listKey($key) !== null) {
                 refuse('E_SQL_SHAPE',
                     "{$name}[{$key}] asks for a row by position, and a relation has "
                     . 'no first row without an ORDER BY that nothing here can supply',
@@ -1341,9 +1361,8 @@ final class Translator
     private static function childOf(array $node, string $key): ?array
     {
         if ($node['t'] === 'list') {
-            return preg_match('/^[0-9]+$/', $key) === 1
-                ? ($node['items'][(int) $key - 1] ?? null)
-                : null;
+            $i = self::listKey($key);
+            return $i === null ? null : ($node['items'][$i - 1] ?? null);
         }
         if ($node['t'] === 'clist') {
             foreach ($node['entries'] as [$k, $v]) {

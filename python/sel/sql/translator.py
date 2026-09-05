@@ -29,7 +29,23 @@ from .emit import Emit
 from .errors import refuse
 from .fragment import Fragment
 
-_INT = re.compile(r'^[0-9]+$')
+# SEL list keys are the canonical decimals "1", "2", … -- so "01" is not a key
+# and neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer
+# used to answer *element 1* for both, in every host, because `^[0-9]+$` accepts
+# a trailing newline (Python's `$`, and PHP's without the D modifier) and
+# int()/(int) accept leading zeros. decimal.py already uses fullmatch for
+# exactly this reason; the SQL layer did not inherit the lesson.
+#
+# Nine digits at most, so the conversion is exact in every host that will ever
+# implement this: C++'s stoi throws above int32, PHP saturates above int64, JS
+# loses precision above 2^53. No list this layer can build has a billion
+# elements, so the cap costs nothing and removes the question.
+_LIST_KEY = re.compile(r'[1-9][0-9]{0,8}')
+
+
+def _list_key(k: str) -> int | None:
+    """The 1-based position a key names, or None when it names none."""
+    return int(k) if _LIST_KEY.fullmatch(k) else None
 
 #: Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 AGGREGATES = ('ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN')
@@ -243,11 +259,12 @@ class Translator:
                    'names no value SEL can produce, so use an aggregate and index '
                    'the row its binder gives you', n.pos)
         if b['kind'] == 'columns':
-            if _INT.match(key) is None or not 1 <= int(key) <= len(b['items']):
+            i = _list_key(key)
+            if i is None or i > len(b['items']):
                 refuse('E_SQL_BINDING',
                        f"{obj.name}[{key}] is outside that binding's "
                        f"{len(b['items'])} column(s)", n.pos)
-            return self._column_ref(b['items'][int(key) - 1])
+            return self._column_ref(b['items'][i - 1])
         if b['kind'] == 'value':
             child = b['value'].get(key)
             if child is None:
@@ -661,7 +678,7 @@ class Translator:
 
     def _index_binder(self, b: Binder, name: str, key: str, n: Node) -> Fragment:
         if b.shape == Binder.ROW:
-            if _INT.match(key) is not None:
+            if _list_key(key) is not None:
                 refuse('E_SQL_SHAPE',
                        f'{name}[{key}] asks for a row by position, and a relation has '
                        'no first row without an ORDER BY that nothing here can supply',
@@ -1273,10 +1290,10 @@ def _relation_alias(rel: dict[str, Any]) -> str:
 
 def _child_of(node: Any, key: str) -> Any:
     if node.t == 'list':
-        if _INT.match(key) is None:
+        i = _list_key(key)
+        if i is None or i > len(node.items):
             return None
-        i = int(key) - 1
-        return node.items[i] if 0 <= i < len(node.items) else None
+        return node.items[i - 1]
     if node.t == 'clist':
         for k, v in node.entries:
             if k == key:

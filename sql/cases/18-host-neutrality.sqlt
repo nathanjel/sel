@@ -1,0 +1,118 @@
+% Where a host language's own rules were deciding the answer.
+%
+% Every case here separates a correct implementation from one that reached for
+% its host's nearest built-in. They exist because a cross-host review found the
+% SQL layer letting PHP's and Python's semantics choose the output -- and, in the
+% worst of them, letting BOTH hosts choose the same wrong output, which no
+% PHP-against-Python comparison can ever see.
+%
+% These run under every host that has a SQL layer, which is what makes them the
+% enforcement mechanism: sql/mutations.json targets PHP and JSON, and
+% sql/oracle/ is PHP-only, so a case file is the only witness the next four
+% ports inherit automatically.
+
+### name: neutral.key.leading-zero-is-not-a-position
+--- note
+SEL list keys are the canonical decimals "1", "2", … so "01" is not a key and
+the evaluator answers E_NO_KEY. Both hosts answered *element 1*: PHP's
+(int)"01" and Python's int("01") are both 1, and neither regex said no.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}]}}
+--- source
+V["01"]
+--- error
+E_SQL_BINDING 1:2
+===
+### name: neutral.key.trailing-newline-is-not-a-position
+--- note
+The regex was `^[0-9]+$` in both hosts. PHP's `$` matches before a trailing
+newline unless the D modifier is given, and Python's does too -- so "1\n"
+selected element 1 in both. Dec::parse and decimal.py already carry the fix for
+exactly this; the SQL layer had not inherited it. A full match is the rule.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}]}}
+--- source
+V["1\n"]
+--- error
+E_SQL_BINDING 1:2
+===
+### name: neutral.key.canonical-position-still-resolves
+--- note
+The guard above must not cost the ordinary case.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}]}}
+--- source
+V["2"]
+--- expect
+`b`
+===
+### name: neutral.key.leading-zero-over-a-static-list
+--- note
+The same key rule reached through an aggregate binder rather than a binding:
+childOf() walks a `list` node and used the same host int parse.
+--- dialect
+mariadb
+--- source
+ALL((1, 2), _K $== "1" AND _["01"] EQL 9)
+--- error
+E_SQL_BINDING 1:29
+===
+### name: neutral.key.leading-zero-is-not-a-relation-position
+--- note
+`rel[1]` is refused because rows have no order. "01" is not a position, so it
+falls to the field lookup and is refused as a missing field -- which is what SEL
+does with it. The two refusals must not be swapped by a lax regex.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi",
+           "fields": {"QTY": {"column": "qty", "type": "NUM"}}}}
+--- source
+ANY(ITEMS, I, I["01"] > 0)
+--- error
+E_SQL_BINDING 1:16
+===
+### name: neutral.slot.leading-zero-is-not-a-slot
+--- note
+tools/gen-sql-map.mjs refused `{01}` and Map::define did not, so the shipped map
+and a runtime-registered template were read by two grammars. Now one: canonical,
+full-match, three digits.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({01})", "ret": "TEXT"}]}]
+--- source
+UPPER("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: neutral.slot.trailing-newline-is-not-a-slot
+--- note
+JS reads `^[0-9]+$` strictly, so the generator always refused this; PHP did not.
+The runtime grammar now matches the generator's.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0\n})", "ret": "TEXT"}]}]
+--- source
+UPPER("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: neutral.slot.canonical-slot-still-fills
+--- note
+And the ordinary registered template still works, including the {n:} rest form.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT"}]}]
+--- source
+UPPER("a")
+--- expect
+U('a')

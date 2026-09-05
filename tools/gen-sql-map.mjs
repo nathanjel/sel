@@ -238,19 +238,28 @@ function expandLexical(tpl, lexical, where) {
 
 // --- validation ------------------------------------------------------------
 
+// The one slot grammar, shared with php/src/Sql/Emit.php and
+// python/sel/sql/emit.py. Canonical and full-match: `{01}` is not `{1}` and
+// `{1\n}` is not a slot at all. It was `/^[0-9]+$/` here and in both hosts,
+// which JS reads strictly and PHP does not -- so a template this file refused
+// was accepted at run time by Map::define, and the shipped map and a registered
+// entry were read by two different grammars. Three digits is far above any
+// entry's arity and keeps every host's integer parser out of it.
+const SLOT_INDEX = /^(?:0|[1-9][0-9]{0,2})$/;
+
 function checkTemplate(tpl, { where, minArgs, maxArgs, allowNamed }) {
   for (const s of slots(tpl)) {
     if (s.raw === null) { fail(where, 'unclosed { in template'); continue; }
     const raw = s.raw;
     if (raw === '*') continue;
-    if (/^[0-9]+$/.test(raw)) {
+    if (SLOT_INDEX.test(raw)) {
       const n = Number(raw);
       if (maxArgs !== Infinity && n >= maxArgs) {
         fail(where, `template uses {${n}} but the entry takes at most ${maxArgs} argument(s)`);
       }
       continue;
     }
-    if (/^[0-9]+:$/.test(raw)) continue;
+    if (raw.endsWith(':') && SLOT_INDEX.test(raw.slice(0, -1))) continue;
     if (allowNamed && allowNamed.includes(raw)) continue;
     if (raw === 'hex') continue;                       // binaryLiteral
     fail(where, `template uses {${raw}}, which is neither an argument nor a known slot`);

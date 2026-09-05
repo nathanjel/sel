@@ -152,6 +152,21 @@ final class Emit
         return $quote . $out . $quote;
     }
 
+    /**
+     * The argument a template slot names, or null when it names none.
+     *
+     * Template slots are 0-based and canonical: `{0}`, `{1}`, `{0:}`. `{01}`
+     * and `{1\n}` are not slots, and the generator (tools/gen-sql-map.mjs)
+     * already refuses both — JS's `$` matches only at end of string, so the
+     * shipped map and a runtime-registered template were being read by two
+     * different grammars. `\A…\z` and a three-digit cap close that: one
+     * grammar, and no host's integer parser is consulted.
+     */
+    private static function slotIndex(string $s): ?int
+    {
+        return preg_match('/\A(?:0|[1-9][0-9]{0,2})\z/', $s) === 1 ? (int) $s : null;
+    }
+
     /** The params-mode placeholder for slot $n, 1-based. */
     public static function placeholder(string $dialect, int $n): string
     {
@@ -299,12 +314,13 @@ final class Emit
                 $join($args);
                 continue;
             }
-            if (preg_match('/^([0-9]+):$/', $slot, $m) === 1) {
-                $join(array_slice($args, (int) $m[1]));
+            if (str_ends_with($slot, ':')
+                    && ($from = self::slotIndex(substr($slot, 0, -1))) !== null) {
+                $join(array_slice($args, $from));
                 continue;
             }
-            if (preg_match('/^[0-9]+$/', $slot) === 1) {
-                $n = (int) $slot;
+            if (($slotN = self::slotIndex($slot)) !== null) {
+                $n = $slotN;
                 if (!isset($args[$n])) {
                     refuse('E_SQL_UNSUPPORTED',
                         "the mapping for this expression asks for argument {$n}, "
@@ -332,10 +348,10 @@ final class Emit
             // the round trip changes the bytes or fails the query. Every other
             // cast is idempotent and applied unconditionally, as before; this is
             // the one whose input kind decides whether it means anything.
-            if ($key === 'binaryCast' && preg_match('/^[0-9]+$/', $arg) === 1
-                    && ($args[(int) $arg] ?? null) instanceof Fragment
-                    && $args[(int) $arg]->kind === 'BIN') {
-                $splice($args[(int) $arg]);
+            $castArg = $key === 'binaryCast' ? self::slotIndex($arg) : null;
+            if ($castArg !== null && ($args[$castArg] ?? null) instanceof Fragment
+                    && $args[$castArg]->kind === 'BIN') {
+                $splice($args[$castArg]);
                 continue;
             }
             $sub = $this->fill(str_replace('{0}', '{' . $arg . '}', $val), $args, $pos);
