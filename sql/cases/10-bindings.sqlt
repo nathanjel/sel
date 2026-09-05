@@ -1,0 +1,86 @@
+% The four binding kinds, in the positions M2 can use them.
+
+### name: bind.column.typed
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "table": "o", "column": "total", "type": "NUM"}}
+--- source
+T * 2
+--- expect
+(`o`.`total` * 2)
+===
+### name: bind.value.scalar-is-quoted-by-default
+--- note
+A host-supplied value is TEXT unless it says otherwise. Guessing from the
+characters would emit a product code of "00123" as the number 123.
+--- dialect
+mariadb
+--- bindings
+{"CODE": {"kind": "value", "value": "00123"}}
+--- source
+CODE
+--- expect
+'00123'
+===
+### name: bind.value.numeric-when-declared
+--- dialect
+mariadb
+--- bindings
+{"LIMIT": {"kind": "value", "value": "100", "type": "NUM"}}
+--- source
+LIMIT
+--- expect
+100
+===
+### name: bind.value.indexed
+--- dialect
+mariadb
+--- bindings
+{"L": {"kind": "value", "value": {"1": "a", "2": "b"}}}
+--- source
+L[2]
+--- expect
+'b'
+===
+### name: bind.value.list-is-not-a-scalar
+--- dialect
+mariadb
+--- bindings
+{"L": {"kind": "value", "value": {"1": "a", "2": "b"}}}
+--- source
+L
+--- error
+E_SQL_SHAPE 1:1
+===
+### name: bind.columns.indexed-positionally
+--- note
+Keys are "1", "2", … exactly as `,` builds them.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}, {"table": "x", "column": "b", "type": "NUM"}]}}
+--- source
+V[2] > 0
+--- expect
+(`x`.`b` > 0)
+===
+### name: bind.columns.index-out-of-range
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}]}}
+--- source
+V[5]
+--- error
+E_SQL_BINDING 1:2
+===
+### name: bind.relation.field-is-a-column-reference
+--- dialect
+mariadb
+--- bindings
+{"I": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+I["qty"] > 0
+--- expect
+(`oi`.`qty` > 0)

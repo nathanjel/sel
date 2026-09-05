@@ -1,7 +1,7 @@
 # SEL → SQL translation
 
-**Status: design, not yet implemented.** This document is the plan for the SQL
-layer. It is written in the same register as `spec/SPEC.md` — where it and a
+**Status: M1 and M2 built (see §14); M3 onward is plan.** This document is the
+design for the SQL layer. It is written in the same register as `spec/SPEC.md` — where it and a
 future implementation disagree, resolve it here first — but it is *not* part of
 the language spec. Nothing here changes how a SEL program evaluates. It
 describes a second consumer of the same AST.
@@ -124,6 +124,17 @@ Stages 1–3 are AST→AST. Only stage 4 produces characters. This ordering is w
 makes whole-expression refusal cheap: a rule that cannot be translated fails in
 stage 1, 2 or 3, before a single character has been written, so there is no
 half-built string to discard and no partially-applied side effect.
+
+**Stage 3 is a stage in the design and a fold in the code.** The implementation
+computes kinds during the stage 4 walk rather than in a pass of its own. The
+walk is post-order, so every operand's kind is already known when its parent
+needs it — which is exactly what a separate pass would have computed, at the
+cost of a second traversal and a side table keyed by node identity that PHP's
+array-valued AST cannot cheaply provide. Whole-expression refusal is unaffected:
+nothing becomes characters until `asValue()` is called on a returned Fragment,
+so a kind failure still escapes with no partial output. It is described
+separately here because it is a separate set of rules, and a host that finds the
+fold awkward may unfold it without changing a single emitted byte.
 
 Each stage is written once, in prose here and in code per host, and transcribed
 between hosts the way `Parser` and `Evaluator` already are. The *data* is
@@ -1013,6 +1024,20 @@ confused about where a literal ends, whatever the literal contains. Retrofitting
 it would mean touching every template-fill site in every host, which is why it
 is here in M2 rather than deferred.
 
+**A slot records the form its literal is written in, not just its value.** SEL
+numbers *are* TEXT values (spec §4), so `Value::num('5.00')` and
+`Value::text('5.00')` are the same object, and nothing about a value can say
+whether the author wrote `5.00` or `"5.00"`. Only the AST knows — a `num` node
+against a `text` node — so the form travels with the slot from the moment the
+literal is created.
+
+This is not cosmetic. Emitted bare, `"5.00" $== "5"` becomes `5.00 = 5`, which
+the database answers `TRUE` and SEL answers `FALSE`. For a value the *host*
+supplies there is no AST to consult, so nothing is guessed there either: a
+`value` binding is quoted unless it declares `type: NUM`. Inferring from the
+characters would send a product code of `"00123"` to the database as the number
+`123`.
+
 The `~n~` debug spelling is `~` because SEL has no `~` token, so a slot marker
 can never be mistaken for something the translator emitted from source. It is
 for reading and for error messages only — never for substitution, which is what
@@ -1300,17 +1325,17 @@ before asserting, and the normalisation is per driver.
 
 Milestones, each one leaving the tree green.
 
-**M1 — the map exists.** `sql/MAP.md`, `sql/errors.md`, `sql/dialects/ansi.json`,
+**M1 — the map exists. DONE.** `sql/MAP.md`, `sql/errors.md`, `sql/dialects/ansi.json`,
 `mysql-family.json` and `mariadb.json`, `tools/gen-sql-map.mjs`, `tools/check-sql-map.sh`, and the
 generated PHP file. No translator yet; the deliverable is that the data is
 authored, validated and generated.
 
-**M2 — PHP translates the core.** Stages 1, 3 and 4 for operators, literals,
+**M2 — PHP translates the core. DONE.** Stages 1, 3 and 4 for operators, literals,
 `column` bindings, `IF`/`COND`, and the non-aggregate functions. `sql/cases/`
 covering `lex.*`, `op.*`, `func.*`, `norm.*`, `refuse.*`; `php/bin/sqlt`;
 `impl_sql` wired into `check.sh`.
 
-**M3 — PHP does aggregates.** Stage 2, all three shapes, the FILTER rewrites,
+**M3 — PHP does aggregates. NEXT.** Stage 2, all three shapes, the FILTER rewrites,
 the `agg.*` cases.
 
 **M4 — PHP + MariaDB end to end.** `examples/sql-php.php` against a real

@@ -1,0 +1,77 @@
+% Inline, params and debug are three ways of joining one part list, not three
+% code paths. The renderer never concatenates a literal into a string.
+
+### name: mode.inline.is-the-default
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T > 100 AND T < 200
+--- expect
+((`t` > 100) AND (`t` < 200))
+===
+### name: mode.params.placeholders-in-order
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T > 100 AND T < 200
+--- expect
+((`t` > ?) AND (`t` < ?))
+--- params
+t"100", t"200"
+===
+### name: mode.debug.slots-are-visible
+--- dialect
+mariadb
+--- mode
+debug
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T > 100 AND T < 200
+--- expect
+((`t` > ~1~) AND (`t` < ~2~))
+===
+### name: mode.params.a-literal-holding-a-placeholder-stays-a-literal
+--- note
+The reason a part list exists. Inline, the ? is inside a quoted string; in
+params mode the real placeholder is a separate slot and the two never mix.
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"S": {"kind": "column", "column": "s", "type": "TEXT"}}
+--- source
+S $== "?"
+--- expect
+(`s` COLLATE utf8mb4_bin = ? COLLATE utf8mb4_bin)
+--- params
+t"?"
+===
+### name: mode.params.same-expression-inline
+--- dialect
+mariadb
+--- bindings
+{"S": {"kind": "column", "column": "s", "type": "TEXT"}}
+--- source
+S $== "?"
+--- expect
+(`s` COLLATE utf8mb4_bin = '?' COLLATE utf8mb4_bin)
+===
+### name: mode.params.order-follows-the-text-not-the-tree
+--- dialect
+mariadb
+--- mode
+params
+--- source
+COND(TRUE, "a", "b")
+--- expect
+CASE WHEN ? THEN ? ELSE ? END
+--- params
+TRUE, t"a", t"b"

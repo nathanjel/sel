@@ -1,0 +1,194 @@
+% The mapped functions. Argument reordering, arity-keyed templates, and the
+% wrappers that make a server's answer match SEL's.
+
+### name: func.text.upper
+--- dialect
+mariadb
+--- source
+UPPER("abc")
+--- expect
+UPPER('abc')
+===
+### name: func.text.len-counts-characters
+--- dialect
+mariadb
+--- source
+LEN("zażółć")
+--- expect
+CHAR_LENGTH('zażółć')
+===
+### name: func.text.find-reorders-its-arguments
+--- note
+SEL is FIND(needle, hay); SQL is INSTR(hay, needle). A map that could not
+reorder would need a wrapper function in every host.
+--- dialect
+mariadb
+--- source
+FIND("a", "banana")
+--- expect
+INSTR('banana', 'a')
+===
+### name: func.text.find-three-argument-form-is-a-different-function
+--- dialect
+mariadb
+--- source
+FIND("a", "banana", 3)
+--- expect
+LOCATE('a', 'banana', 3)
+===
+### name: func.text.replace-reorders-three
+--- dialect
+mariadb
+--- source
+REPLACE("a", "b", "banana")
+--- expect
+REPLACE('banana', 'a', 'b')
+===
+### name: func.text.substr-two-arguments
+--- dialect
+mariadb
+--- source
+SUBSTR("banana", 2)
+--- expect
+SUBSTRING('banana', 2)
+===
+### name: func.text.substr-three-arguments
+--- dialect
+mariadb
+--- source
+SUBSTR("banana", 2, 3)
+--- expect
+SUBSTRING('banana', 2, 3)
+===
+### name: func.text.trim-strips-sel-s-four-characters
+--- note
+SEL strips space, tab, CR and LF. TRIM(BOTH x FROM s) takes one string rather
+than a character set, so it cannot express that; REGEXP_REPLACE can.
+--- dialect
+mariadb
+--- source
+TRIM("  x  ")
+--- expect
+REGEXP_REPLACE('  x  ', '^[ \\t\\r\\n]+|[ \\t\\r\\n]+$', '')
+===
+### name: func.text.pad
+--- dialect
+mariadb
+--- source
+PADL("7", 3, "0")
+--- expect
+LPAD('7', 3, '0')
+===
+### name: func.number.min-is-a-scalar-not-an-aggregate
+--- dialect
+mariadb
+--- source
+MIN(3, 1, 2)
+--- expect
+LEAST(3, 1, 2)
+===
+### name: func.number.min-is-variadic
+--- dialect
+mariadb
+--- source
+MIN(5, 4, 3, 2, 1)
+--- expect
+LEAST(5, 4, 3, 2, 1)
+===
+### name: func.number.round
+--- dialect
+mariadb
+--- source
+ROUND(2.5, 0)
+--- expect
+ROUND(2.5, 0)
+===
+### name: func.number.isnum-is-a-regex
+--- dialect
+mariadb
+--- source
+ISNUM("-12.50")
+--- expect
+('-12.50' REGEXP '^-?[0-9]+(\\.[0-9]+)?$')
+===
+### name: func.binary.to-hex-is-lower-cased
+--- note
+MariaDB's HEX returns upper case and spec §7.7 says lower.
+--- dialect
+mariadb
+--- source
+TO_HEX(TO_UTF8("a"))
+--- expect
+LOWER(HEX(CAST('a' AS BINARY)))
+===
+### name: func.binary.base64-strips-the-wrapping
+--- note
+TO_BASE64 wraps every 76 characters; SEL's does not.
+--- dialect
+mariadb
+--- source
+ENCODE_BASE64(TO_UTF8("a"))
+--- expect
+REPLACE(REPLACE(TO_BASE64(CAST('a' AS BINARY)), CHAR(10), ''), CHAR(13), '')
+===
+### name: func.binary.crc32-is-padded-hex
+--- dialect
+mariadb
+--- source
+CRC32("hello")
+--- expect
+LPAD(LOWER(HEX(CRC32('hello'))), 8, '0')
+===
+### name: func.regex.rmatch-forces-collation-and-dotall
+--- note
+MariaDB's REGEXP follows the operand's collation and is case-insensitive by
+default; and its . does not match a newline where SEL's does.
+--- dialect
+mariadb
+--- source
+RMATCH('^a.c$', "abc")
+--- expect
+('abc' COLLATE utf8mb4_bin REGEXP CONCAT('(?s)', '^a.c$'))
+===
+### name: func.regex.rfind
+--- dialect
+mariadb
+--- source
+RFIND('ó', "zażółć")
+--- expect
+REGEXP_INSTR('zażółć' COLLATE utf8mb4_bin, CONCAT('(?s)', 'ó'))
+===
+### name: func.refused.code-is-not-a-code-point
+--- note
+ORD reads the first character's bytes as an integer. ASCII agrees by accident,
+which is worse than disagreeing.
+--- dialect
+mariadb
+--- source
+CODE("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: func.refused.char-is-the-inverse
+--- dialect
+mariadb
+--- source
+CHAR(233)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: func.refused.rreplace-replacement-syntax-differs
+--- dialect
+mariadb
+--- source
+RREPLACE('a', "b", "banana")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: func.refused.split-yields-a-list
+--- dialect
+mariadb
+--- source
+SPLIT("a,b", ",")
+--- error
+E_SQL_UNSUPPORTED 1:1

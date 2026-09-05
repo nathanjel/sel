@@ -1,0 +1,116 @@
+% Stage 1: a helper variable becomes the expression it held, and everything
+% that cannot be inlined is refused with a position.
+
+### name: norm.inline.one-helper
+--- dialect
+mariadb
+--- bindings
+{"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}
+--- source
+LIMIT = 100; TOTAL > LIMIT
+--- expect
+(`total` > 100)
+===
+### name: norm.inline.chained-helpers
+--- dialect
+mariadb
+--- source
+A = 1; B = A + 1; B + 1
+--- expect
+((1 + 1) + 1)
+===
+### name: norm.inline.helper-used-twice
+--- note
+Substitution is by AST node, so the expression appears once per use. SQL has
+no place to put a shared temporary, and duplicating a pure expression is the
+honest translation of one.
+--- dialect
+mariadb
+--- source
+A = 1 + 2; A * A
+--- expect
+((1 + 2) * (1 + 2))
+===
+### name: norm.list.comma-flattens-per-spec
+--- note
+spec §5.9: an operand with children and no scalar contributes each of them.
+--- dialect
+mariadb
+--- bindings
+{"S": {"kind": "column", "column": "s", "type": "TEXT"}}
+--- source
+A = ("x", "y"); S IN (A, "z")
+--- expect
+(`s` IN ('x', 'y', 'z'))
+===
+### name: norm.trailing-semicolon
+--- dialect
+mariadb
+--- source
+1 + 1;
+--- expect
+(1 + 1)
+===
+### name: norm.refuse.compound-assignment
+--- dialect
+mariadb
+--- source
+A = 1; A += 1; A
+--- error
+E_SQL_ASSIGN 1:8
+===
+### name: norm.refuse.reassignment
+--- dialect
+mariadb
+--- source
+A = 1; A = 2; A
+--- error
+E_SQL_ASSIGN 1:8
+===
+### name: norm.refuse.value-before-the-result-expression
+--- note
+1:3 is the + operator: a `bin` node takes its operator token's position, which
+is the rule conformance/12-misuse.selt pins for the evaluator too.
+--- dialect
+mariadb
+--- source
+1 + 1; 2 + 2
+--- error
+E_SQL_ASSIGN 1:3
+===
+### name: norm.refuse.assignment-inside-an-expression
+--- dialect
+mariadb
+--- source
+(A = 1) + 1
+--- error
+E_SQL_ASSIGN 1:2
+===
+### name: norm.refuse.indexed-and-whole-assignment-mixed
+--- dialect
+mariadb
+--- note
+1:9 is the [ — an assign takes its target's position, and an indexed target is
+an `index` node positioned at its bracket.
+--- source
+A = 1; A[1] = 2; A
+--- error
+E_SQL_ASSIGN 1:9
+===
+### name: norm.refuse.non-constant-index-on-a-target
+--- dialect
+mariadb
+--- bindings
+{"K": {"kind": "column", "column": "k", "type": "TEXT"}}
+--- source
+A[K] = 1; A
+--- error
+E_SQL_ASSIGN 1:3
+===
+### name: norm.refuse.unbound-variable
+--- dialect
+mariadb
+--- source
+MYSTERY > 1
+--- error
+E_SQL_UNBOUND 1:1

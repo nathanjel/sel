@@ -41,6 +41,11 @@ for impl in $IMPLS; do
 done
 
 step "sql dialect map" ./tools/check-sql-map.sh
+
+for impl in $IMPLS; do
+  step "sql translation ($impl)" impl_sql "$impl"
+done
+
 step "manifest versions" ./tools/check-version.sh
 step "host API parity" ./tools/check-api.sh
 step "documentation examples" ./tools/check-docs.sh

@@ -1,0 +1,133 @@
+% Quoting and escaping. Getting any of this wrong is an injection, not a
+% formatting nit, which is why it is the first file.
+
+### name: lex.number.canonical-form-survives
+--- note
+2.50 keeps its scale: scale is part of a SEL number and part of what SQL
+DECIMAL arithmetic reads. Reformatting it would change the value.
+--- dialect
+mariadb
+--- source
+2.50
+--- expect
+2.50
+===
+### name: lex.number.leading-zeros-canonicalised-by-the-parser
+--- dialect
+mariadb
+--- source
+007
+--- expect
+7
+===
+### name: lex.number.negative-is-an-operator-not-a-literal
+--- dialect
+mariadb
+--- source
+-5
+--- expect
+(-5)
+===
+### name: lex.text.simple
+--- dialect
+mariadb
+--- source
+"hello"
+--- expect
+'hello'
+===
+### name: lex.text.single-quote-doubles
+--- dialect
+mariadb
+--- source
+"it's"
+--- expect
+'it''s'
+===
+### name: lex.text.backslash-doubles-on-mysql-family
+--- note
+MariaDB treats \ as an escape inside a string literal under the default
+sql_mode. PostgreSQL and SQLite do not, and their maps omit the rule.
+--- dialect
+mariadb
+--- source
+'a\b'
+--- expect
+'a\\b'
+===
+### name: lex.text.empty
+--- dialect
+mariadb
+--- source
+""
+--- expect
+''
+===
+### name: lex.text.non-ascii-passes-through
+--- dialect
+mariadb
+--- source
+"zażółć"
+--- expect
+'zażółć'
+===
+### name: lex.bool.true
+--- dialect
+mariadb
+--- source
+TRUE
+--- expect
+TRUE
+===
+### name: lex.bool.false
+--- dialect
+mariadb
+--- source
+FALSE
+--- expect
+FALSE
+===
+### name: lex.ident.table-and-column
+--- dialect
+mariadb
+--- bindings
+{"TOTAL": {"kind": "column", "table": "o", "column": "total", "type": "NUM"}}
+--- source
+TOTAL
+--- expect
+`o`.`total`
+===
+### name: lex.ident.no-table
+--- dialect
+mariadb
+--- bindings
+{"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}
+--- source
+TOTAL
+--- expect
+`total`
+===
+### name: lex.ident.quote-inside-a-name-is-escaped
+--- note
+A backtick in a column name must not end the identifier early.
+--- dialect
+mariadb
+--- bindings
+{"ODD": {"kind": "column", "table": "a`b", "column": "c`d", "type": "NUM"}}
+--- source
+ODD
+--- expect
+`a``b`.`c``d`
+===
+### name: lex.ident.raw-bypasses-quoting
+--- note
+The one place a caller can inject arbitrary SQL, spelled distinctly so it is
+visible in a review.
+--- dialect
+mariadb
+--- bindings
+{"NOW": {"kind": "column", "raw": "CURRENT_TIMESTAMP", "type": "UNKNOWN"}}
+--- source
+NOW
+--- expect
+CURRENT_TIMESTAMP

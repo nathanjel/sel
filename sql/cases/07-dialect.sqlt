@@ -1,0 +1,38 @@
+% Targets, bases and versions.
+
+### name: dialect.base-is-not-a-target
+--- note
+ansi names no server anyone runs. A dialect no database implements is not one
+a caller should be able to aim at.
+--- dialect
+ansi
+--- source
+1 + 1
+--- error
+E_SQL_DIALECT
+===
+### name: dialect.mysql-family-is-a-base-too
+--- dialect
+mysql-family
+--- source
+1 + 1
+--- error
+E_SQL_DIALECT
+===
+### name: dialect.unknown-name
+--- dialect
+oracle
+--- source
+1 + 1
+--- error
+E_SQL_DIALECT
+===
+### name: dialect.mariadb-inherits-from-both-bases
+--- note
+MOD comes from ansi, CONCAT from mysql-family, and nothing restates either.
+--- dialect
+mariadb
+--- source
+(5 % 3) & "x"
+--- expect
+CONCAT(MOD(5, 3), 'x')

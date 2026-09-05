@@ -1,0 +1,218 @@
+#!/usr/bin/env php
+<?php
+// SQL translation case runner. The suite in sql/cases/ is normative for what
+// the translator emits; this program has no opinions of its own beyond the file
+// format described in sql/cases/README.md.
+//
+// The cases assert an exact string. That is what makes them a cross-host parity
+// check rather than a smoke test: if two hosts emit different SQL for the same
+// input, the suite says so, and no database is needed to find out.
+//
+//     php/bin/sqlt [name-substring ...]
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/Sql/bootstrap.php';
+
+use Sel\Sel;
+use Sel\SelError;
+use Sel\Sql\Fragment;
+use Sel\Sql\Map;
+use Sel\Sql\Sql;
+use Sel\Sql\SqlError;
+
+const SUITE = __DIR__ . '/../../sql/cases';
+
+const SECTIONS = ['dialect', 'bindings', 'options', 'as', 'mode', 'source', 'expect', 'params', 'error'];
+
+/** @return list<array<string,mixed>> */
+function parse_sqlt(string $text, string $file): array
+{
+    $cases = [];
+    $cur = -1;
+    $section = null;
+    foreach (explode("\n", $text) as $idx => $line) {
+        $at = $file . ':' . ($idx + 1);
+        if (str_starts_with($line, '### ')) {
+            if (preg_match('/^###\s+name:\s*(\S+)\s*$/', $line, $m) !== 1) {
+                throw new RuntimeException("{$at}: malformed case header");
+            }
+            $cases[] = ['name' => $m[1], 'at' => $at]
+                + array_fill_keys(SECTIONS, null);
+            $cur = count($cases) - 1;
+            $section = null;
+            continue;
+        }
+        if ($line === '===') {
+            $cur = -1;
+            $section = null;
+            continue;
+        }
+        if (str_starts_with($line, '--- ')) {
+            if ($cur < 0) {
+                throw new RuntimeException("{$at}: section outside a case");
+            }
+            $section = trim(substr($line, 4));
+            if (in_array($section, SECTIONS, true)) {
+                $cases[$cur][$section] = [];
+            } elseif ($section !== 'note') {
+                throw new RuntimeException("{$at}: unknown section {$section}");
+            }
+            continue;
+        }
+        if ($cur < 0 || $section === null || $section === 'note') {
+            continue;                              // header text, ignored
+        }
+        $cases[$cur][$section][] = $line;
+    }
+
+    foreach ($cases as &$c) {
+        foreach (SECTIONS as $s) {
+            if ($c[$s] !== null) {
+                $c[$s] = trim(implode("\n", $c[$s]));
+            }
+        }
+        if ($c['source'] === null) {
+            throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- source");
+        }
+        if ($c['expect'] === null && $c['error'] === null) {
+            throw new RuntimeException(
+                "{$c['at']}: case {$c['name']} needs --- expect or --- error");
+        }
+        if ($c['expect'] !== null && $c['error'] !== null) {
+            throw new RuntimeException(
+                "{$c['at']}: case {$c['name']} has both --- expect and --- error");
+        }
+    }
+    return $cases;
+}
+
+/** @return array<string,mixed> */
+function decode_json(?string $text, string $what, string $at): array
+{
+    if ($text === null || $text === '') {
+        return [];
+    }
+    $v = json_decode($text, true);
+    if (!is_array($v)) {
+        throw new RuntimeException("{$at}: --- {$what} is not a JSON object");
+    }
+    return $v;
+}
+
+/** null when the case passes, else what went wrong. */
+function run_case(array $c): ?string
+{
+    $dialect = $c['dialect'] ?? null;
+    if ($dialect === null || $dialect === '') {
+        throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- dialect");
+    }
+    $bindings = decode_json($c['bindings'], 'bindings', $c['at']);
+    $options = decode_json($c['options'], 'options', $c['at']);
+    $as = $c['as'] ?? 'value';
+    $mode = $c['mode'] ?? 'inline';
+
+    $sql = null;
+    $error = null;
+    try {
+        $program = Sel::compile($c['source']);
+        $frag = Sql::translate($program, $dialect, $bindings, $options);
+        $sql = $as === 'condition' ? $frag->asCondition($mode) : $frag->asValue($mode);
+    } catch (SqlError $e) {
+        $error = $e;
+    } catch (SelError $e) {
+        return "the source did not compile: {$e}";
+    }
+
+    if ($c['error'] !== null) {
+        if ($error === null) {
+            return "expected {$c['error']}, got " . var_export($sql, true);
+        }
+        if (preg_match('/^(\S+)(?:\s+(\d+):(\d+))?$/', $c['error'], $m) !== 1) {
+            throw new RuntimeException("{$c['at']}: malformed error expectation");
+        }
+        if ($error->code !== $m[1]) {
+            return "expected {$m[1]}, got {$error->code} ({$error->getMessage()})";
+        }
+        if (isset($m[2])) {
+            $want = "{$m[2]}:{$m[3]}";
+            $got = "{$error->line}:{$error->col}";
+            if ($want !== $got) {
+                return "expected {$m[1]} at {$want}, got it at {$got}";
+            }
+        }
+        return null;
+    }
+
+    if ($error !== null) {
+        return "expected SQL, got {$error->code} ({$error->getMessage()})";
+    }
+    if ($sql !== $c['expect']) {
+        return "got:  {$sql}\n     want: {$c['expect']}";
+    }
+    if ($c['params'] !== null) {
+        $got = implode(', ', array_map(
+            static fn ($v): string => $v->dump(), $frag->bindings()));
+        if ($got !== $c['params']) {
+            return "params got:  {$got}\n     want: {$c['params']}";
+        }
+    }
+    return null;
+}
+
+// --- main -------------------------------------------------------------------
+
+$filters = array_slice($argv, 1);
+$files = glob(SUITE . '/*.sqlt');
+sort($files);
+
+$passed = 0;
+$failures = [];
+$suiteErrors = 0;
+
+foreach ($files as $file) {
+    $short = basename($file);
+    try {
+        $cases = parse_sqlt((string) file_get_contents($file), $short);
+    } catch (RuntimeException $e) {
+        echo "SUITE ERROR {$e->getMessage()}\n";
+        $suiteErrors++;
+        continue;
+    }
+    foreach ($cases as $c) {
+        if ($filters !== []) {
+            $keep = false;
+            foreach ($filters as $f) {
+                if (str_contains($c['name'], $f)) {
+                    $keep = true;
+                    break;
+                }
+            }
+            if (!$keep) {
+                continue;
+            }
+        }
+        Map::reset();                 // no case may leak a registration into another
+        try {
+            $problem = run_case($c);
+        } catch (RuntimeException $e) {
+            echo "SUITE ERROR {$e->getMessage()}\n";
+            $suiteErrors++;
+            continue;
+        }
+        if ($problem === null) {
+            $passed++;
+        } else {
+            $failures[] = ['case' => $c, 'problem' => $problem];
+        }
+    }
+}
+
+foreach ($failures as $f) {
+    echo "FAIL {$f['case']['name']}  ({$f['case']['at']})\n";
+    echo "     {$f['problem']}\n";
+}
+
+echo "\n{$passed} passed, " . count($failures) . ' failed, '
+    . "{$suiteErrors} suite errors\n";
+exit($failures === [] && $suiteErrors === 0 ? 0 : 1);

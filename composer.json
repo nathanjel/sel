@@ -27,7 +27,8 @@
   },
   "autoload": {
     "files": [
-      "php/src/bootstrap.php"
+      "php/src/bootstrap.php",
+      "php/src/Sql/bootstrap.php"
     ]
   },
   "scripts": {

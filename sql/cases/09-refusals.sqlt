@@ -1,0 +1,127 @@
+% Refusal is a first-class result. Every one of these fails cleanly and whole,
+% with a position, so the caller can fall back to the evaluator.
+
+### name: refuse.abort-is-an-effect-not-a-value
+--- dialect
+mariadb
+--- source
+ABORT("nope")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: refuse.list-in-scalar-position
+--- dialect
+mariadb
+--- source
+(1, 2) + 1
+--- error
+E_SQL_SHAPE 1:2
+===
+### name: refuse.list-returning-function
+--- dialect
+mariadb
+--- source
+INDEXES("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: refuse.aggregate-needs-stage-two
+--- note
+M3. Until then this is refused like anything else that cannot be translated,
+which is the behaviour a caller depends on rather than a placeholder.
+--- dialect
+mariadb
+--- source
+ALL((1, 2, 3), _ > 0)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: refuse.no-truthiness-in-a-condition
+--- note
+Silently accepting WHERE o.total is how a database turns a validation rule
+into the truthiness test SEL spent its whole design avoiding.
+--- dialect
+mariadb
+--- as
+condition
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T
+--- error
+E_SQL_SHAPE
+===
+### name: refuse.no-truthiness-in-and
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T AND TRUE
+--- error
+E_SQL_SHAPE 1:1
+===
+### name: refuse.unknown-kind-may-be-a-condition
+--- note
+The other side of the same rule: an undeclared column may well be boolean, and
+the database is the one that knows. It is wrapped rather than trusted.
+--- dialect
+mariadb
+--- as
+condition
+--- bindings
+{"F": {"kind": "column", "column": "flag"}}
+--- source
+F
+--- expect
+(`flag`) IS TRUE
+===
+### name: refuse.relation-binding-used-as-a-value
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"column": "qty", "type": "NUM"}}}}
+--- source
+ITEMS > 1
+--- error
+E_SQL_SHAPE 1:1
+===
+### name: refuse.columns-binding-used-as-a-value
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a", "type": "NUM"}, {"column": "b", "type": "NUM"}]}}
+--- source
+V > 1
+--- error
+E_SQL_SHAPE 1:1
+===
+### name: refuse.unknown-field-of-a-relation
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"column": "qty", "type": "NUM"}}}}
+--- source
+ITEMS["price"] > 1
+--- error
+E_SQL_BINDING 1:6
+===
+### name: refuse.alias-collision
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "relation", "from": "x", "alias": "t"}, "B": {"kind": "relation", "from": "y", "alias": "t"}}
+--- source
+1 + 1
+--- error
+E_SQL_BINDING
+===
+### name: refuse.indexing-a-plain-column
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T[1]
+--- error
+E_SQL_SHAPE 1:2

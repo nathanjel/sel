@@ -101,6 +101,20 @@ impl_decimal() {
   esac
 }
 
+# The SQL translation cases in sql/cases/. Optional: an implementation with no
+# SQL layer says so by succeeding, the same way impl_unit does. The cases assert
+# an exact string, so running them under two hosts is what makes "the same SQL
+# everywhere" a measurement rather than an intention.
+impl_sql() {
+  local impl="$1"; shift
+  case "$impl" in
+    php)  php php/bin/sqlt "$@" ;;
+    js|js-bundle|cpp|lisp) return 0 ;;          # no SQL layer yet
+    python|python-wheel) return 0 ;;            # M6
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
 # Each implementation's own unit tests, covering the layers underneath the
 # conformance suite. Optional: js and php have none, and say so by succeeding.
 impl_unit() {
