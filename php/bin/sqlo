@@ -305,6 +305,13 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
     // two says which entries were inexact and not which one caused this
     // difference, and crediting both would let a real divergence launder an
     // invented caveat sitting beside it.
+    //
+    // The strictness costs nothing today, which was measured rather than
+    // assumed: relaxing the rule to two credits no caveat that a single-caveat
+    // line does not already witness, so no caveat is excused in coverage.json
+    // for want of this. If a future caveat has only multi-caveat witnesses the
+    // symmetry check will say so by name, and the answer is a narrower corpus
+    // line rather than a laxer rule here.
     $witnessed = [];
 
     foreach ($cases as $c) {

@@ -483,6 +483,20 @@
       "file": "php/src/Sql/Translator.php",
       "from": "        if (isset($s['caveat'])) {",
       "to": "        if (false) {"
+    },
+    {
+      "name": "mirror-exception-is-not-guarded",
+      "was": "Not a defect this layer shipped: a defect the allow-list that hides defects could acquire. MIRROR_EXCEPTIONS names the one entry mariadb and mysql are allowed to disagree on, and an entry there silences the parity check for that name for good. Removing the entry must make parity fail -- if it does not, the exception was load-bearing for nothing and the check it guards has already gone vacuous.",
+      "file": "php/bin/sqlt",
+      "from": "    'skel.case' => 'MariaDB pads the scale of a CASE over NUM branches and '\n        . 'declares numeric-scale for it; MySQL 8.4 does not. See mariadb.json.',\n",
+      "to": ""
+    },
+    {
+      "name": "caveat-excuse-is-not-guarded",
+      "was": "The same question asked of the other allow-list. coverage.json's caveats_unwitnessable excuses a declared caveat from ever being seen doing its job, which is the oracle being told twice not to look. Renaming mariadb's concat-null excuse must make the symmetry check name the caveat it can no longer account for. Needs a database: without one this is reported skipped, because the check that would catch it did not run.",
+      "file": "sql/oracle/coverage.json",
+      "from": "\"mariadb\": {\n      \"concat-null\"",
+      "to": "\"mariadb\": {\n      \"concat-null-renamed-by-mutation\""
     }
   ]
 }
