@@ -140,6 +140,13 @@
       "file": "php/src/Sql/Translator.php",
       "from": "        $text = (string) $flags['v'];\n",
       "to": "        $text = 'i';\n"
+    },
+    {
+      "name": "binary-literal-broken",
+      "was": "The BIN branch of Emit::literal, which no closed expression can reach -- SEL has no BIN literal. Only the corpus's value bindings get there.",
+      "file": "sql/dialects/ansi.json",
+      "from": "\"binaryLiteral\": \"X'{hex}'\",",
+      "to": "\"binaryLiteral\": \"X'00{hex}'\","
     }
   ]
 }

@@ -409,3 +409,32 @@ NOT ("5.00" $== "5")
 FIND("a", UPPER("banana"))
 "x" & IF(TRUE, "y", "n")
 ROUND(10 / 4, 1) == 2.5
+
+% --- literal forms that need a binding ---------------------------------------
+%
+% Everything above is closed. These are not, and cannot be: a BIN literal has no
+% SEL syntax, so the one literal form Emit::literal handles with its own branch
+% could only be reached through a `value` binding — and until this block existed
+% it had no witness anywhere. The evaluator is handed the same constants under
+% the same names, so both sides are still being asked the same question.
+
+### bindings: {"B": {"kind": "value", "value": {"bin": "7ac3a9"}}}
+
+### entry: mixed:bin-literal
+TO_HEX(B)
+BLEN(B)
+FROM_UTF8(B)
+ENCODE_BASE64(B)
+B EQL B
+
+### bindings: {"N": {"kind": "value", "value": "2.50", "type": "NUM"}, "T": {"kind": "value", "value": "2.50"}}
+
+### entry: mixed:value-binding-forms
+N + 1
+N & "!"
+T $== "2.50"
+N $== "2.50"
+T == N
+BLEN(N)
+
+### bindings: {}

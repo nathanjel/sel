@@ -46,14 +46,21 @@ const ORACLE = __DIR__ . '/../../sql/oracle';
 
 /**
  * Parse a .selo corpus: `### entry: <key>` opens a group, `%` is a comment, and
- * every other non-blank line is one closed expression.
+ * every other non-blank line is one expression.
  *
- * @return list<array{entry:string, src:string, at:string}>
+ * `### bindings: <json>` sets the bindings for everything after it, until the
+ * next one; `### bindings: {}` clears them. Almost every expression here is
+ * closed, which is what lets one corpus serve every dialect — but a BIN literal
+ * has no SEL syntax and can only arrive through a `value` binding, so without
+ * this the one literal form the emitter handles specially had no witness at all.
+ *
+ * @return list<array{entry:string, src:string, at:string, bindings:array<string,mixed>}>
  */
 function parse_selo(string $text, string $file): array
 {
     $out = [];
     $entry = null;
+    $bindings = [];
     // Where the header is, not just what it says: two groups may carry the same
     // header, and checking them together lets a mislabelled one hide behind an
     // honest one. Found by mislabelling a group and watching the gate pass.
@@ -64,6 +71,14 @@ function parse_selo(string $text, string $file): array
             continue;
         }
         if (str_starts_with($line, '### ')) {
+            if (preg_match('/^###\s+bindings:\s*(.*)$/', $line, $m) === 1) {
+                $decoded = json_decode(trim($m[1]), true);
+                if (!is_array($decoded)) {
+                    throw new RuntimeException("{$at}: bindings header is not a JSON object");
+                }
+                $bindings = selo_bindings($decoded, $at);
+                continue;
+            }
             if (preg_match('/^###\s+entry:\s*(\S+)\s*$/', $line, $m) !== 1) {
                 throw new RuntimeException("{$at}: malformed group header");
             }
@@ -84,7 +99,8 @@ function parse_selo(string $text, string $file): array
         if ($entry === null) {
             throw new RuntimeException("{$at}: expression before any `### entry:` header");
         }
-        $out[] = ['entry' => $entry, 'group' => $group, 'src' => $line, 'at' => $at];
+        $out[] = ['entry' => $entry, 'group' => $group, 'src' => $line, 'at' => $at,
+                  'bindings' => $bindings];
     }
     return $out;
 }
@@ -169,13 +185,13 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose): array
     foreach ($cases as $c) {
         $entries[$c['entry']] = ($entries[$c['entry']] ?? 0) + 1;
         try {
-            $sel = Sel::evaluate($c['src']);
+            $sel = Sel::compile($c['src'])->run(selo_context($c['bindings']));
         } catch (SelError $e) {
             $bad[] = [$c, '', 'the corpus expression does not evaluate: ' . $e->getMessage()];
             continue;
         }
         try {
-            $frag = Sql::translate(Sel::compile($c['src']), $dialect);
+            $frag = Sql::translate(Sel::compile($c['src']), $dialect, $c['bindings']);
         } catch (SqlError $e) {
             // A refusal is an outcome, not a failure: the corpus is allowed to
             // contain things a dialect cannot do, and saying so is the point.
@@ -238,6 +254,56 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose): array
         count($cases), count($entries));
 
     return ['failed' => count($bad)];
+}
+
+/**
+ * Corpus bindings, with one convention JSON cannot express on its own.
+ *
+ * `{"bin": "7ac3a9"}` becomes a BIN Value. SEL has no BIN literal — bytes only
+ * ever arrive from TO_UTF8, FROM_HEX or a host — so without a spelling here the
+ * corpus could not name one, and the branch of Emit::literal that renders a
+ * binary literal would have no witness. A hex escape is an ordinary thing for a
+ * test format to have; it is not part of the bindings API.
+ *
+ * @param array<string,mixed> $bindings
+ * @return array<string,mixed>
+ */
+function selo_bindings(array $bindings, string $at): array
+{
+    foreach ($bindings as $name => &$b) {
+        if (!is_array($b['value'] ?? null) || !isset($b['value']['bin'])) {
+            continue;
+        }
+        $bytes = @hex2bin((string) $b['value']['bin']);
+        if ($bytes === false) {
+            throw new RuntimeException("{$at}: the bin value for {$name} is not hex");
+        }
+        $b['value'] = Value::bin($bytes);
+    }
+    return $bindings;
+}
+
+/**
+ * The evaluator's view of a corpus `value` binding.
+ *
+ * A `value` binding is a constant supplied at translation time, so the evaluator
+ * gets the same constant under the same name. Any other binding kind names a
+ * column or a table, which a closed expression has no business referring to.
+ *
+ * @param array<string,mixed> $bindings
+ * @return array<string,mixed>
+ */
+function selo_context(array $bindings): array
+{
+    $ctx = [];
+    foreach ($bindings as $name => $b) {
+        if (($b['kind'] ?? null) !== 'value') {
+            throw new RuntimeException("the corpus binding {$name} is not a value; "
+                . 'expressions.selo is closed except for constants');
+        }
+        $ctx[$name] = $b['value'];
+    }
+    return $ctx;
 }
 
 /** A bound value as the driver wants it: SQL has no BOOL to bind, so send 1/0. */
@@ -575,7 +641,7 @@ function run_coverage(string $dialect, bool $verbose): array
     foreach ($cases as $c) {
         Map::traceOn();
         try {
-            Sql::translate(Sel::compile($c['src']), $dialect);
+            Sql::translate(Sel::compile($c['src']), $dialect, $c['bindings']);
         } catch (Throwable $e) {
             // A refusal still looked the entry up, which is what is being
             // counted: the corpus reached it and the map said no.

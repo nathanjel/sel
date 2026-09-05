@@ -1037,12 +1037,9 @@ can write the predicate that joins them.
 **Nesting works and needs no machinery.** An inner relation's `correlate` names
 the outer alias, because the host wrote it:
 
-```
+```sel-case agg.relation.nested
 ALL(ORDERS, O, ALL(LINES, L, L["qty"] > 0))
-    NOT EXISTS (SELECT 1 FROM `orders` `o` WHERE TRUE
-                  AND (NOT EXISTS (SELECT 1 FROM `lines` `l`
-                                    WHERE `l`.`order_id` = `o`.`id`
-                                      AND ((`l`.`qty` > 0)) IS NOT TRUE)) IS NOT TRUE)
+    NOT EXISTS (SELECT 1 FROM `orders` `o` WHERE TRUE AND (NOT EXISTS (SELECT 1 FROM `lines` `l` WHERE `l`.`order_id` = `o`.`id` AND ((`l`.`qty` > 0)) IS NOT TRUE)) IS NOT TRUE)
 ```
 
 Two relations sharing an alias in one expression is `E_SQL_BINDING`, checked
@@ -1110,10 +1107,9 @@ makes `FILTER(FILTER(L, p1), p2)` work too, since the inner one is absorbed on
 the way through and the predicates conjoin. All three shapes get the rewrite for
 free:
 
-```
+```sel-case agg.filter.absorbed-into-count-bare
 COUNT(FILTER(ITEMS, I, I["qty"] <= 0))
-    (SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0)
-       FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+    (SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
 ```
 
 `MAP` as an aggregate's source is **not** absorbed in M3 and is refused with a
@@ -1223,25 +1219,24 @@ With `ITEMS` bound as a relation over `order_items oi` correlated on
 **What translates.** Each of these is a conjunct the host can compile on its
 own and push down:
 
-```
+```sel-case agg.relation.count
 COUNT(ITEMS) == 0
-    ((SELECT COUNT(*) FROM `order_items` `oi`
-       WHERE `oi`.`order_id` = `o`.`id`) = 0)
+    ((SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) = 0)
+```
 
+```sel-case agg.filter.absorbed-into-count
 COUNT(FILTER(ITEMS, _["QTY"] <= 0)) > 0
-    ((SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0)
-       FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > 0)
+    ((SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > 0)
+```
 
+```sel-case agg.contract.over-credit-limit
 SUM(ITEMS, _["QTY"] * _["PRICE"]) > CREDIT_LIMIT
-    ((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0)
-       FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
-     > `o`.`credit_limit`)
+    ((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > `o`.`credit_limit`)
+```
 
+```sel-case agg.contract.all-skus-well-formed
 ALL(ITEMS, RMATCH('^[A-Z]{2}-\d{4}$', _["SKU"]))
-    NOT EXISTS (SELECT 1 FROM `order_items` `oi`
-                WHERE `oi`.`order_id` = `o`.`id`
-                  AND ((`oi`.`sku` COLLATE utf8mb4_bin
-                        REGEXP CONCAT('(?s)', '^[A-Z]{2}-[0-9]{4}$'))) IS NOT TRUE)
+    NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)
 ```
 
 That last one is `\d` rewritten to `[0-9]` — see §7.10.

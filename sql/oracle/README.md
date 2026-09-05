@@ -45,6 +45,15 @@ UPPER("zażółć gęślą jaźń")
 Because they are closed, one corpus serves every dialect. What differs between
 dialects is the map, and the map is exactly what is being measured.
 
+Two groups at the end are the exception, and have to be. A `### bindings: {…}`
+header sets `value` bindings for what follows, because SEL has **no BIN literal**
+— bytes only ever arrive from `TO_UTF8`, `FROM_HEX` or a host — so the branch of
+`Emit::literal` that renders a binary literal could not otherwise be reached by
+anything at all. `{"bin": "7ac3a9"}` in a corpus binding means those bytes; it is
+a convenience of this file format, not part of the bindings API. The evaluator is
+handed the same constants under the same names, so both sides are still being
+asked the same question.
+
 Each expression is run **twice**: once with literals inlined and once through a
 native prepared statement. Both, because they fail differently. In `inline` mode
 a literal is quoted at the position it belongs to, so a fragment whose parameter

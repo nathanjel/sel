@@ -411,3 +411,43 @@ mariadb
 ALL((1, 2), 5, _ > 0)
 --- error
 E_SQL_SHAPE 1:13
+### name: agg.contract.over-credit-limit
+--- note
+§7.8's worked contract, as cases rather than as prose. The block in the document
+quotes these; php/bin/sqldoc checks the quotation.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "scalar": "SKU", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}, "PRICE": {"table": "oi", "column": "price", "type": "NUM"}, "SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}, "CREDIT_LIMIT": {"kind": "column", "table": "o", "column": "credit_limit", "type": "NUM"}}
+--- source
+SUM(ITEMS, _["QTY"] * _["PRICE"]) > CREDIT_LIMIT
+--- expect
+((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > `o`.`credit_limit`)
+===
+### name: agg.contract.all-skus-well-formed
+--- note
+The (?s) prefix is folded into the pattern text, not concatenated at run time.
+The document claimed REGEXP CONCAT('(?s)', …) for two milestones, which is what
+this quotation now stops.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "scalar": "SKU", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}, "PRICE": {"table": "oi", "column": "price", "type": "NUM"}, "SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}, "CREDIT_LIMIT": {"kind": "column", "table": "o", "column": "credit_limit", "type": "NUM"}}
+--- source
+ALL(ITEMS, RMATCH('^[A-Z]{2}-\d{4}$', _["SKU"]))
+--- expect
+NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)
+===
+### name: agg.filter.absorbed-into-count-bare
+--- note
+§7.5's example: COUNT over an absorbed FILTER with a named binder, without the
+comparison agg.filter.absorbed-into-count wraps it in.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "scalar": "SKU", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}, "PRICE": {"table": "oi", "column": "price", "type": "NUM"}, "SKU": {"table": "oi", "column": "sku", "type": "TEXT"}}}, "CREDIT_LIMIT": {"kind": "column", "table": "o", "column": "credit_limit", "type": "NUM"}}
+--- source
+COUNT(FILTER(ITEMS, I, I["qty"] <= 0))
+--- expect
+(SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+===
