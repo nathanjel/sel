@@ -306,17 +306,26 @@ the prose asserted the stronger one.
 *Now, done:* validate at the boundary and again in `Emit::literal`, which is the
 last place before characters go out, plus cases for both.
 
-*Deeper, proposed:* narrow the door rather than guarding it twice.
+*Deeper, built:* narrow the door rather than guarding it twice.
 `Emit::literal` takes a `Value` and a form **string**, and any caller can ask for
 the unquoted branch with anything. If the NUM form required `Dec::parse()`'s
 output instead, the check would live in one constructor rather than at two call
 sites.
 
-This is worth stating precisely, because the obvious phrasing overclaims: PHP's
-types would enforce that *a `Dec` was passed*, not that it was built honestly —
-a caller can still construct one around an unvalidated string. It removes the
-accidental path, not the determined one. That is still the right trade, and it is
-a smaller claim than "unrepresentable".
+What was actually built is smaller and better than the proposal. `Emit::literal`
+now routes its NUM branch through one private `numericLiteral`, which parses the
+text and emits **what the parse recovered** — `Dec::format`'s output — rather
+than the string the caller supplied. The two agree for everything the parser
+produces, and the difference is the point: proving a string is a number and then
+emitting a *different* string is a gap, however small, and the gap is where
+`"1 OR 1=1 -- "` lived. After it, the characters that can leave unquoted are
+digits, one `.` and a leading `-`, by construction rather than by guard.
+
+It is worth stating what that does not do, because the obvious phrasing
+overclaims. `Dec::parse` is still being called on host data, and a host with its
+own reason to believe a string is a number can still be wrong about it. What it
+cannot be is wrong in a way that reaches the server. The accidental path is
+closed; a determined one is not, and no type in PHP would close it either.
 
 The general rule this suggests: **every comment claiming something is
 unreachable is a missing assertion.** They are cheap to find — grep for
@@ -462,8 +471,30 @@ separate task.
 | 3 | `sel-sql` blocks in `extract-docs.mjs` | small | C | 5 + doc drift |
 | 4 | `tools/mutate-sql.sh`, incl. the `&` planted mutation | medium | E, F | validates 1–3 |
 | 5 | Typed literal at the emitter | small | D | the injection |
-| 6 | Lint banning `+ [` in `php/src/Sql/` | trivial | C | 2 |
+| ~~6~~ | ~~Lint banning `+ [` in `php/src/Sql/`~~ | **dropped** — see below | | |
 | 7 | Enumerate the class in the message when a fix keys on structure | free | F | the `&` regression |
+
+**Item 6 was dropped rather than built, and the reason is worth keeping.** The
+proposal was to forbid PHP's array-union operator in `php/src/Sql/`, since using
+it where `array_merge` was meant caused two defects. Six uses remained in the
+tree and **all six were correct**: three are `$b + ['type' => 'UNKNOWN']`, which
+is `+` doing exactly its job — keep what the host declared, supply a default —
+and where `array_merge` would be the bug; three merged disjoint slot maps. Six
+false positives, zero true positives, and no possible improvement, because the
+correct default-idiom and the buggy override-idiom are *the same syntax*. The
+defect was never `+`; it was intending "override" and writing "default". A lint
+that fires on correct code gets a suppression comment, and a codebase that trains
+you to add the suppression comment is worse than one with no lint.
+
+What replaced it says the same thing where it can be true. The three disjoint
+merges relied on `relationSlots()` never naming a slot its caller also names —
+true by inspection, enforced by nothing. `Translator::slots()` now merges them
+and raises `LogicException` on a collision. Mutating `relationSlots` to return a
+`body` key turns four silently-wrong translations into four loud failures.
+
+That is the general shape: **a lint bans a spelling; an assertion states the
+property the spelling was standing in for.** Prefer the second wherever the
+property can be named.
 
 Item 0 is first because it costs nothing and items 1 and 2 are both extensions of
 it. Items 1 and 3 are small because the tools already exist and the SQL layer

@@ -309,11 +309,11 @@ final class Translator
                 }
                 return new Fragment(
                     $this->fillNamed($this->skeleton('inRelation', $n['pos']),
-                        $this->relationSlots($b) + [
+                        self::slots($this->relationSlots($b), [
                             'needle' => [$this->emit->textOperand($this->node($n['l']))],
                             'body' => [$this->emit->textOperand(
                                 $this->columnRef($b['fields'][$scalar]))],
-                        ], $n['pos']),
+                        ]), $n['pos']),
                     'BOOL', $this->dialect);
             }
         }
@@ -947,7 +947,7 @@ final class Translator
     {
         return new Fragment(
             $this->fillNamed($this->skeleton(self::AGG_SKELETON[$name], $n['pos']),
-                $this->relationSlots($rel) + ['body' => [$body]], $n['pos']),
+                self::slots($this->relationSlots($rel), ['body' => [$body]]), $n['pos']),
             self::AGG_RETURNS[$name], $this->dialect);
     }
 
@@ -1053,8 +1053,8 @@ final class Translator
             $body = $this->columnRef($rel['fields'][$scalar]);
             $skel = $this->skeleton('join', $n['pos']);      // refuses with the map's reason
             return new Fragment(
-                $this->fillNamed($skel, $this->relationSlots($rel)
-                    + ['body' => [$body], 'sep' => [$this->node($n['args'][1])]], $n['pos']),
+                $this->fillNamed($skel, self::slots($this->relationSlots($rel),
+                    ['body' => [$body], 'sep' => [$this->node($n['args'][1])]]), $n['pos']),
                 'TEXT', $this->dialect);
         }
 
@@ -1342,6 +1342,40 @@ final class Translator
                 "dialect {$this->dialect} cannot express {$name} — {$s}", $pos);
         }
         return (string) $s['tpl'];
+    }
+
+    /**
+     * Merge named slot maps for a skeleton, refusing to let one shadow another.
+     *
+     * The three relation skeletons are filled from two sources: relationSlots()
+     * supplies `from` and `corr`, the caller supplies `body` and friends. PHP's
+     * array union keeps the LEFT operand's value for a duplicated key, so if the
+     * two ever named the same slot the caller's would vanish without a word —
+     * and `+` used where a merge was meant has already cost this layer two
+     * defects, one of which left COUNT("hello") answering 1.
+     *
+     * The disjointness was true by inspection and enforced by nothing. This is
+     * the assertion that comment was standing in for. A collision is a bug in
+     * the translator rather than in a rule or a map, so it raises LogicException
+     * like every other startup mistake, not SqlError.
+     *
+     * @param array<string, list<Fragment|string>> ...$maps
+     * @return array<string, list<Fragment|string>>
+     */
+    private static function slots(array ...$maps): array
+    {
+        $out = [];
+        foreach ($maps as $m) {
+            foreach ($m as $k => $v) {
+                if (array_key_exists($k, $out)) {
+                    throw new \LogicException(
+                        "two sources both supply the skeleton slot {{$k}}; one would "
+                        . 'silently shadow the other');
+                }
+                $out[$k] = $v;
+            }
+        }
+        return $out;
     }
 
     /**

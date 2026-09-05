@@ -84,3 +84,31 @@ mariadb
 I["qty"] > 0
 --- expect
 (`oi`.`qty` > 0)
+### name: bind.value.num-is-emitted-as-parsed
+--- note
+The NUM branch emits what Dec::parse recovered, not the text the host supplied.
+Proving a string is a number and then emitting a different string is a gap, and
+the gap is where "1 OR 1=1 -- " lived. After this the characters that can leave
+unquoted are digits, one dot and a leading minus, by construction.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "007", "type": "NUM"}}
+--- source
+X + 1
+--- expect
+(7 + 1)
+===
+### name: bind.value.num-keeps-its-scale
+--- note
+Canonical is not the same as shortest: scale is part of a SEL number (spec §4.1)
+and part of what SQL DECIMAL arithmetic reads, so 2.50 stays 2.50.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "2.50", "type": "NUM"}}
+--- source
+X + 1
+--- expect
+(2.50 + 1)
+===

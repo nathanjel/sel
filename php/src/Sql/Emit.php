@@ -60,33 +60,54 @@ final class Emit
             }
             return str_replace('{hex}', bin2hex($v->asBytes($pos)), $tpl);
         }
-        // A number goes out verbatim in SEL's canonical form, so 2.50 keeps its
-        // scale — scale is part of a SEL number (spec §4.1) and part of what SQL
-        // DECIMAL arithmetic reads.
         if ($form === 'NUM') {
-            $n = $v->asText($pos);
-            // A NUM-form literal is the one thing emitted without quotes, so it
-            // is the one thing that must be proved to be a number. The AST path
-            // arrives already parsed, but a `value` binding declaring type NUM
-            // reaches here straight from host data, and "1 OR 1=1 -- " would go
-            // out verbatim. Fragment's part list keeps a literal from being
-            // confused with SQL; it cannot keep a literal from BEING SQL.
-            if (!$v->looksNumeric()) {
-                refuse('E_SQL_BINDING',
-                    'a value bound as NUM must be a number, and '
-                    . \Sel\Value::quoteDump($n) . ' is not', $pos);
-            }
-            // A negative number is parenthesised so that unary minus in front of
-            // it cannot produce `--`. MariaDB reads that as double negation and
-            // gets the right answer by luck; PostgreSQL and SQLite read it as
-            // the start of a line comment and the rest of the expression
-            // disappears. Only reachable through a `value` binding, since the
-            // parser never produces a signed `num` node — which is exactly the
-            // kind of narrow path that stays broken until a dialect that cares
-            // is added.
-            return str_starts_with($n, '-') ? '(' . $n . ')' : $n;
+            return self::numericLiteral($v, $pos);
         }
         return self::textLiteral($dialect, $v->asText($pos));
+    }
+
+    /**
+     * The only unquoted output in the layer.
+     *
+     * A NUM literal is the one thing emitted without quotes, which makes it the
+     * one thing that has to be a number. The AST path arrives already parsed,
+     * but a `value` binding declaring `type: NUM` reaches here straight from
+     * host data, and `"1 OR 1=1 -- "` would go out verbatim. Fragment's part
+     * list keeps a literal from being confused with SQL; it cannot keep a
+     * literal from BEING SQL.
+     *
+     * What is emitted is what the parse recovered — `Dec::format`'s output —
+     * rather than the text the caller supplied. The two agree for everything the
+     * parser produces, and the difference is the point: proving a string is a
+     * number and then emitting a *different* string is a gap, however small, and
+     * the gap is where "1 OR 1=1" lived. After this the characters that can
+     * leave here are digits, one `.` and a leading `-`, by construction.
+     *
+     * That is a narrower door, not a locked one. `Dec::parse` is still being
+     * called on host data, and a host that has its own reason to believe a
+     * string is a number can still be wrong about it — what it cannot be is
+     * wrong in a way that reaches the server. Scale survives: 2.50 stays 2.50,
+     * because scale is part of a SEL number (spec §4.1) and part of what SQL
+     * DECIMAL arithmetic reads.
+     */
+    private static function numericLiteral(Value $v, ?array $pos): string
+    {
+        $text = $v->asText($pos);
+        $d = \Sel\Dec::parse($text);
+        if ($d === null) {
+            refuse('E_SQL_BINDING',
+                'a value bound as NUM must be a number, and '
+                . Value::quoteDump($text) . ' is not', $pos);
+        }
+        $n = \Sel\Dec::format($d);
+        // A negative number is parenthesised so that unary minus in front of it
+        // cannot produce `--`. MariaDB reads that as double negation and gets
+        // the right answer by luck; PostgreSQL and SQLite read it as the start
+        // of a line comment and the rest of the expression disappears. Only
+        // reachable through a `value` binding, since the parser never produces a
+        // signed `num` node — which is exactly the kind of narrow path that
+        // stays broken until a dialect that cares is added.
+        return str_starts_with($n, '-') ? '(' . $n . ')' : $n;
     }
 
     public static function textLiteral(string $dialect, string $text): string
