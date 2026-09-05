@@ -1,6 +1,6 @@
 # SEL → SQL translation
 
-**Status: M1–M5 are built and reviewed — MariaDB, MySQL, PostgreSQL and SQLite, each verified against a running server, then put through a five-lane contract review that reproduced twenty-four violations the suite had reported clean (see §14 and §11.5); the Python port is plan.** This document is the
+**Status: M1–M5 are built and reviewed — MariaDB, MySQL, PostgreSQL and SQLite, each verified against a running server, then put through a five-lane contract review that reproduced twenty-four violations the suite had reported clean (see §14 and §11.5). M6 is built too: **PHP and Python emit the same SQL for all 339 cases**, which is what makes "the map is data" a measurement.** This document is the
 design for the SQL layer. It is written in the same register as `spec/SPEC.md` — where it and a
 future implementation disagree, resolve it here first — but it is *not* part of
 the language spec. Nothing here changes how a SEL program evaluates. It
@@ -2079,18 +2079,24 @@ with `$frag->asCondition()` being
   WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS NOT TRUE))
 ```
 
-Python, once the port lands — same call, host spelling:
+Python — the same call, the same bindings, the host's spelling:
 
 ```python
-from sel import compile as sel_compile
-from sel.sql import try_translate
+import sel
+from sel.sql import Sql
 
-program = sel_compile('TOTAL > 100 AND ALL(ITEMS, I, I["qty"] > 0)')
-frag = try_translate(program, 'postgresql', bindings)
+program = sel.compile('TOTAL > 100 AND ALL(ITEMS, I, I["qty"] > 0)')
+frag = Sql.try_translate(program, 'mysql', bindings)
 if frag is None:
-    ...                       # fall back to program.run(context)
+    ...                       # fall back to the evaluator
 cur.execute(f'SELECT o.id FROM orders o WHERE {frag.as_condition()}')
 ```
+
+`bindings` is the same structure in both, because it is JSON either way — the
+`.sqlt` cases pass one literal `--- bindings` block to both hosts. Given the
+bindings above, `frag.as_condition()` is byte for byte the SQL shown for PHP.
+That is not a claim about care taken; it is `sql/cases/*.sqlt` run under two
+runners, and `tools/check-sql-cases.sh` asserting the two read the same cases.
 
 ---
 
@@ -2104,6 +2110,14 @@ Line-oriented, `.selt`'s sibling, with two extra sections. These assert the
 **exact string**, which is what makes them a cross-host parity check: if PHP and
 Python emit different SQL for the same input, the suite says so, and no database
 is needed to find out.
+
+**Two runners read them now** — `php/bin/sqlt` and `python/bin/sqlt` — and both
+report `339 passed, 0 failed`. Each host parses the file format itself, because a
+parser shared across five languages is not a thing that exists, so
+`tools/check-sql-cases.sh` diffs what each one *loaded*: the `at` and the name of
+every case, in file order, byte for byte. Comparing the counts would not do —
+two parsers can lose and gain a case each and agree on the total, and a runner
+that silently reads 338 passes 338 and prints a green line nobody reads twice.
 
 ```
 % Aggregates over a relation binding.
@@ -2316,12 +2330,67 @@ defect needed a binding**, and the corpus is closed by design. The suite was
 measuring the map, and the map was right. §11.5 is that lesson written down, and
 `sql/oracle/rows.json` is where the answer to it lives.
 
-**M6 — Python port.** Transcribed from the PHP, generated map consumed as-is,
-the same `sql/cases/` suite passing byte-identically. That equality is the
-whole point of §13.1.
+**M6 — Python port. DONE.** Transcribed from the PHP, generated map consumed
+as-is, the same `sql/cases/` suite passing byte-identically:
 
-**M7 — the functional harness.** `python/tests/sql/`, the differential runner,
-the three backends.
+| | passed | mirrored |
+|---|---|---|
+| `php/bin/sqlt` | 339 | 256, plus 1 leaf pair compared entry by entry |
+| `python/bin/sqlt` | 339 | 256 |
+
+That equality is the whole point of §13.1, and it held on the first full run:
+326 of 339 passed immediately, and the other 13 were two wrong *helper names* —
+`Regex::portableSource` is `regex.validate` here and `Utf8::codePoints` is
+`utf8.to_code_points` — not two wrong translations. Which is the result the
+milestone was designed to produce: the map is data, so a second host consuming it
+has almost nothing left to get wrong, and what it does have is spelled in its own
+language rather than in the design.
+
+Three things needed a decision rather than a rename, and each is a case where the
+obvious Python spelling is a *different function* from the PHP one:
+
+- **`isset` is not `in`.** PHP's `isset($a['k'])` is false for a key holding an
+  explicit null; Python's `in` is true. `{"kind": "value", "value": null}` was
+  `E_SQL_BINDING` in one host and `E_SQL_SHAPE` in the other — the same refusal
+  under a different code, and codes are contract. `in` is right only where PHP
+  wrote `array_key_exists`, in `Map::entry` and `Map::entries`, where a null
+  entry is a *withdrawal* and finding it is the point.
+- **`str.upper()` is not `strtoupper`.** It folds `ß` to `SS` and changes the
+  name's length; `strtoupper` is ASCII-only. This host already knew — its
+  registry uses an `ascii_upper` and says why — and all eleven case-folds in the
+  port use it.
+- **PHP's `+` on arrays is left-wins and Python's `{**a, **b}` is right-wins.**
+  Every site had to be read for which of *default* and *replace* it meant. Both
+  are noted at the site; getting the first backwards silently makes every
+  declared type `UNKNOWN` and the kind guards stop guarding.
+
+The check suite grades the built **wheel** as well as the source tree:
+`python/bin/sqlt` adds `python/` to `sys.path` only when `sel` is not already
+importable, so `SEL_IMPLS=python-wheel` measures what would be installed rather
+than shadowing it with the sources.
+
+Two of `php/bin/sqlt`'s five checks are deliberately not ported, and the runner's
+docstring says so where somebody would go to add them: `caveat_pins` and
+`mirror_parity` ask about `sql/cases` and `sql/dialects`, which are shared data
+that PHP already measures. Running them twice measures the same thing twice.
+That is also why `python/sel/sql/map.py` has no trace facility.
+
+**M7 — superseded, and the reason is worth keeping.** As planned this was
+"`python/tests/sql/`, the differential runner, the three backends" — a second
+database harness in the second host. It is not being built. `sql/oracle/`
+measures whether the *map* means what SEL means, and the map is data both hosts
+consume unchanged; a second copy of that harness would ask a live server the same
+question twice and answer about `sql/dialects/*.json` both times. The oracle
+stays PHP-only.
+
+What deserves the slot instead is the differential the ports actually make
+possible: `tools/fuzz-sql.sh` already generates thousands of programs and
+translates each one with PHP, and translating each with Python and comparing the
+*string* — or the refusal code — is the six-host differential applied to a
+seventh, needs no database at all, and is the check that turns *passes the suite*
+into *is the same translator*. §11.5 is the argument for it: 339 assertion cases
+are 339 beliefs, and both of the transcription defects above were found by
+reading rather than by running.
 
 **M8 — alpha.** Commit to GitHub and mark it with a lightweight tag. Nothing
 is published to Packagist, npm or PyPI, and `tools/check.sh` is not required to

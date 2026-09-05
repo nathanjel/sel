@@ -807,12 +807,25 @@ generalises. Items 0–5 and 7 all shipped, item 6 was dropped for the reason
 below, and the check suite has since been reviewed as its own lane and closed
 eight holes it did not know it had (§9).
 
-What is left is not on this list, because this list is about the PHP layer's
-checks and they are done. What remains is **M6, the Python port** — and the thing
-to carry into it is that the port inherits `sql/cases/*.sqlt` and the generated
-map as data, so the suite that took seven classes of defect to build is the
-suite the second host is graded against on day one. That is the whole argument
-for §13.1 of `docs/SQL-TRANSLATION.md` being byte-exact.
+M6, the Python port, has since landed too, and it is the argument for §13.1 of
+`docs/SQL-TRANSLATION.md` being byte-exact: the port inherits `sql/cases/*.sqlt`
+and the generated map as data, so the suite that took seven classes of defect to
+build is the suite the second host was graded against on its first day. It
+passed 326 of 339 on the first full run and 339 after two helper names were
+corrected.
+
+**And that is a Class B result, which is worth saying out loud in the section
+that ranks checks.** For a *transcription* an assertion suite is the right
+instrument, and unusually so: the belief a case asserts is PHP's output, and PHP's
+output is exactly what Python has to match, so the suite is not the author's
+opinion for once — it is the other host's behaviour. But 339 cases are still 339
+inputs somebody chose. Both defects the port actually shipped were found by
+reading the code against the PHP, not by running it: `isset` transcribed as `in`,
+which differs only for an explicit null, and `str.upper()` transcribed for
+`strtoupper`, which differs only above ASCII. No case in the suite distinguishes
+either, and adding two would not fix the class. The check that would is the one
+named in §14's M7 slot: put both translators behind `tools/fuzz-sql.sh` and
+compare the strings over programs nobody wrote.
 
 | # | Item | Effort | Class | Defects it would have caught |
 |---|---|---|---|---|
