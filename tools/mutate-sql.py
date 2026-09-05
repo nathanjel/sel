@@ -10,6 +10,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE = os.path.join(ROOT, 'sql', 'mutations.json')
+GENERATED = os.path.join('php', 'src', 'Sql', 'MapData.php')
 
 # In order, cheapest first. The first one that fails is the one reported: it is
 # the answer to "what would have told you", and the cheapest such answer is the
@@ -32,7 +33,27 @@ def run(cmd, cwd):
 def main(argv):
     table = json.load(open(TABLE, encoding='utf-8'))
     filters = argv[1:]
-    have_db = bool(os.environ.get('SEL_SQL_MARIADB_DSN'))
+    # Per dialect, not one MariaDB-shaped proxy for all four. With
+    # SEL_SQL_SQLITE_DSN unset and MariaDB's set, a mutation the SQLite oracle
+    # is the only witness for was reported as a HOLE rather than as skipped --
+    # inverting the guard's own promise, and the worse of the two failure modes.
+    DIALECTS = ('mariadb', 'mysql', 'postgresql', 'sqlite')
+    have_db = {d: bool(os.environ.get(f'SEL_SQL_{d.upper()}_DSN')) for d in DIALECTS}
+    any_db = any(have_db.values())
+    missing = [d for d in DIALECTS if not have_db[d]]
+
+    # Every mutation is trivially "caught" if a check is already failing on the
+    # unmutated tree, and the report reads exactly like a healthy one. That is
+    # not hypothetical: sqldoc went red when a skeleton changed and the design
+    # document still quoted the old rendering, and the next four mutation runs
+    # all reported `caught by sqldoc` for mutations sqldoc cannot see.
+    for label, cmd in CHECKS:
+        if label in NEEDS_DB and not any_db:
+            continue
+        if run(cmd, ROOT) != 0:
+            print(f'BASELINE {label} fails on the unmutated tree; every mutation '
+                  'would be reported as caught by it. Fix that first.')
+            return 2
 
     caught, holes, errors, skipped = 0, [], [], 0
     work = tempfile.mkdtemp(prefix='mutate-sql.')
@@ -69,13 +90,25 @@ def main(argv):
                 continue
 
             if m['file'].startswith('sql/dialects/'):
+                before = open(os.path.join(tree, GENERATED), encoding='utf-8').read()
                 if run(['node', 'tools/gen-sql-map.mjs'], tree) != 0:
                     errors.append(f'{name}: the mutated map would not regenerate')
+                    continue
+                # Landing in the source is not landing in the artifact. The
+                # generator drops `notes` entirely, so a mutation to one is a
+                # provable no-op that was scored as a HOLE -- this tool's own
+                # failure mode, reported with confidence. 22 of the mutations
+                # target sql/dialects/*.json and nothing checked that any of
+                # them changed the map the checks actually read. Verified by
+                # adding a key the generator ignores and watching this fire.
+                if open(os.path.join(tree, GENERATED), encoding='utf-8').read() == before:
+                    errors.append(f'{name}: {m["file"]} changed but the generated map '
+                                  'did not — the mutation is a no-op')
                     continue
 
             by = None
             for label, cmd in CHECKS:
-                if label in NEEDS_DB and not have_db:
+                if label in NEEDS_DB and not any_db:
                     continue
                 if run(cmd, tree) != 0:
                     by = label
@@ -84,8 +117,8 @@ def main(argv):
             if by:
                 print(f'caught  {name:<34} by {by}')
                 caught += 1
-            elif not have_db:
-                print(f'skipped {name:<34} (survived sqlt and sqldoc; no database to ask)')
+            elif missing:
+                print(f'skipped {name:<34} (survived; no DSN for ' + ', '.join(missing) + ')')
                 skipped += 1
             else:
                 print(f'HOLE    {name:<34} survived every check')

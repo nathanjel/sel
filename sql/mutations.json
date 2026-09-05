@@ -187,8 +187,8 @@
       "name": "bool-becomes-a-placeholder",
       "was": "Found by the fuzz lane on sqlite. 1 = '1' is 0 in SQLite -- INTEGER and TEXT are different storage classes -- so a BOOL bound as a string made TRUE XOR TRUE answer TRUE in params mode and FALSE inline.",
       "file": "php/src/Sql/Fragment.php",
-      "from": "        return $kind === 'NUM' || $kind === 'BOOL';",
-      "to": "        return $kind === 'NUM';"
+      "from": "        return $kind === 'NUM' || $kind === 'BOOL' || $kind === 'BIN';",
+      "to": "        return $kind === 'NUM' || $kind === 'BIN';"
     },
     {
       "name": "family-leaves-diverge",
@@ -250,8 +250,8 @@
       "name": "constant-validation-removed",
       "was": "M5. The translator answered 'can this be pushed down' without asking 'is this a SEL expression'. LEFT(\"abc\", -1) translated into all four dialects and they answered '', '', 'ab' and 'abc'. Killed by every `!` line in the corpus and by every case in 16-constants.sqlt.",
       "file": "php/src/Sql/Translator.php",
-      "from": "        Constants::validate($n);",
-      "to": "        // Constants::validate($n);"
+      "from": "        Constants::validate($n, $this->constCtx);",
+      "to": "        // Constants::validate($n, $this->constCtx);"
     },
     {
       "name": "constant-negation-not-constant",
@@ -264,8 +264,8 @@
       "name": "constant-check-runs-before-dispatch",
       "was": "Validating on the way in rather than on the way out. Every refusal the translator already had -- ABORT, an unportable regex, a BOOL where a number belongs -- would be replaced by the vaguer 'SEL rejects this expression'.",
       "file": "php/src/Sql/Translator.php",
-      "from": "        $f = $this->dispatch($n);\n        Constants::validate($n);\n\n        return $f;",
-      "to": "        Constants::validate($n);\n        $f = $this->dispatch($n);\n\n        return $f;"
+      "from": "        $f = $this->dispatch($n);\n        Constants::validate($n, $this->constCtx);\n\n        return $f;",
+      "to": "        Constants::validate($n, $this->constCtx);\n        $f = $this->dispatch($n);\n\n        return $f;"
     },
     {
       "name": "sqlite-comparison-claims-exactness",
@@ -285,8 +285,8 @@
       "name": "constant-check-outermost-only",
       "was": "Checking only the outermost constant node, which is what the first version did. SEL is lazy, so FALSE AND (1 / 0 > 0) is constant and answers FALSE without dividing -- the AND passes, the division is never looked at, and (1 / 0) goes into the SQL. The same division beside a column was refused. Killed by the const.lazy.* cases. Not by the corpus: a `!` line asserts SEL raises, and SEL does not raise here -- it is lazy and answers FALSE. An expression SEL accepts and the translator refuses can only be asserted as a case.",
       "file": "php/src/Sql/Translator.php",
-      "from": "        $f = $this->dispatch($n);\n        Constants::validate($n);",
-      "to": "        static $in = false;\n        if ($in) {\n            return $this->dispatch($n);\n        }\n        $in = true;\n        try {\n            $f = $this->dispatch($n);\n        } finally {\n            $in = false;\n        }\n        Constants::validate($n);"
+      "from": "        $f = $this->dispatch($n);\n        Constants::validate($n, $this->constCtx);",
+      "to": "        static $in = false;\n        if ($in) {\n            return $this->dispatch($n);\n        }\n        $in = true;\n        try {\n            $f = $this->dispatch($n);\n        } finally {\n            $in = false;\n        }\n        Constants::validate($n, $this->constCtx);"
     },
     {
       "name": "caveated-entry-answers-anything",

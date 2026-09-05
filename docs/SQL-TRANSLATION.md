@@ -997,7 +997,7 @@ expression is refused:
 
 ```sel-case agg.relation.in
 SKU IN ITEMS
-    (CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`))
+    ((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)
 ```
 
 ```sel-case refuse.in-over-a-multi-field-relation
