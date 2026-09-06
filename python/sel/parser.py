@@ -302,13 +302,28 @@ class Parser:
         return self.parse_postfix()
 
     # postfix = primary { "[" sequence "]" }
+    # postfix = primary { "[" sequence "]" }
+    #
+    # The bracket counts a level of its own. Without it an index is the one
+    # nesting door that recurses from outside parse_primary's enter/leave, so it
+    # charged one level per nesting where "(", "f(" and the prefix operators all
+    # charge for the frames they actually cost. Five stack frames against one
+    # level of the budget put a[a[...]] over CPython's 1000-frame limit before
+    # the 200-level guard could fire, and this is the host where that showed:
+    # `a[` x198 raised RecursionError through the public CLI while the others
+    # still answered. Counting the bracket halves the density to 2.5 frames per
+    # level, which puts the guard back in front of the stack at every depth.
     def parse_postfix(self) -> Node:
         node = self.parse_primary()
         while self.at_op('['):
             br = self.next()
-            idx = self.parse_sequence()
-            self.expect_op(']')
-            node = Node('index', br.pos, obj=node, idx=idx)
+            self.enter(br.pos)
+            try:
+                idx = self.parse_sequence()
+                self.expect_op(']')
+                node = Node('index', br.pos, obj=node, idx=idx)
+            finally:
+                self.leave()
         return node
 
     def parse_primary(self) -> Node:

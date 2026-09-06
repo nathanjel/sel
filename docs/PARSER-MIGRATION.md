@@ -172,8 +172,9 @@ programs is 4. So nothing real is near the old boundary or the new one.
 
 ### Why it lands host by host rather than all at once
 
-Until the last host has it, the hosts disagree above 99 nestings. That is
-tolerated deliberately and it is bounded: `conformance/` tops out at 3 levels and
+Until the last host has it, the hosts disagree above 99 nestings — C++ and Lisp
+accept to ~198 where JS, PHP and Python now stop at 99. That is tolerated
+deliberately and it is bounded: `conformance/` tops out at 3 levels and
 the generator at 4, so neither the suite nor the differential fuzz can see it.
 What it does mean is that **the pinning cases cannot go into `conformance/`
 yet** — that suite is normative for every host at once, with no per-host
@@ -216,13 +217,17 @@ Per-host status:
 
 - **JS** — done, with the conversion.
 - **PHP** — done, with the conversion.
-- **Python** — outstanding. This is the host the change is *for*; it keeps
-  raising `RecursionError` at `a[` ×198 until it lands. Its parser is already
-  precedence climbing, so this is the only change it needs.
+- **Python** — done. It has no conversion coming — its parser was already
+  precedence climbing — so waiting for one would have left the only host that
+  actually crashed with nothing scheduled. It took the rider on its own. With it
+  the worst shape is `call` at 708 frames against CPython's 1000, a 29% margin,
+  and `a[` ×50 000 returns a clean `E_DEPTH` through the public CLI.
 - **C++** — outstanding, to land with its conversion.
-- **Lisp** — outstanding, to land with its conversion. Whichever of these three
+- **Lisp** — outstanding, to land with its conversion. Whichever of these two
   goes last also adds the two cases above to `conformance/10-limits.selt` and
-  the sentence to `spec/SPEC.md` §6.4.
+  the sentence to `spec/SPEC.md` §6.4 — §6.4 already says every nesting
+  construct is counted and names the index among them, but says nothing about
+  what each one *costs*, which is the gap this drifted through.
 
 ## Per host
 
