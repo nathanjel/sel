@@ -24,6 +24,11 @@ CHECKS = [
     # hosts diverge exactly where nothing was watching. A check that cannot
     # reach half the code under test is docs/SQL-TESTING.md's Class G.
     ('sqlt (python)',     ['python3', 'python/bin/sqlt']),
+    # And the third host, for the same reason. js/src/sql is 3,300 lines whose
+    # host-shaped decisions -- Map where the others use a native ordered map,
+    # Object.hasOwn where they use plain membership -- are exactly the kind the
+    # other two hosts cannot fail on, so nothing else here can measure them.
+    ('sqlt (js)',         ['node', 'js/bin/sqlt.mjs']),
     ('sqldoc',            ['php', 'php/bin/sqldoc']),
     ('oracle coverage',   ['php', 'php/bin/sqlo', 'coverage']),
     ('oracle expressions',['php', 'php/bin/sqlo', 'expressions']),

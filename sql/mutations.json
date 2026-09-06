@@ -532,6 +532,62 @@
       "file": "php/src/Sql/Translator.php",
       "from": "        if (!array_key_exists($n, $tpl) || $tpl[$n] === null) {",
       "to": "        if (!array_key_exists($n, $tpl)) {"
+    },
+    {
+      "name": "js-clist-order-through-a-plain-object",
+      "was": "The JS port's one host-shaped decision that changes emitted BYTES rather than defending against an exotic name. An aggregate's elements are keyed \"1\", \"2\", ... and a clist built by indexed assignment may mix those with word keys. A JS object enumerates integer-like keys FIRST, in numeric order, whatever the insertion order was, so R[\"b\"]=1; R[1]=2; R[\"a\"]=3 would unroll 2,1,3 here and 1,2,3 in the other two hosts. This mutation round-trips the Map through a plain object and keeps the Map API, so only the ORDER changes -- which is exactly how the defect would arrive.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "  return { shape: 'static', elements, filters: [], scalarRule };",
+      "to": "  return { shape: 'static', elements: new Map(Object.entries(Object.fromEntries(elements))), filters: [], scalarRule };"
+    },
+    {
+      "name": "js-num-literal-bound-as-a-parameter",
+      "was": "A NUM literal is the one thing emitted unquoted in every mode, because no coercion of a bound string reproduces a bare numeric literal: MariaDB reads 2.50 as DECIMAL with scale 2, a parameter is untyped, and (? = ?) compares two strings so 2.50 = 2.5 is FALSE. Dropping NUM from the inline set sends it as a placeholder instead.",
+      "file": "js/src/sql/fragment.mjs",
+      "from": "    return kind === 'NUM' || kind === 'BOOL' || kind === 'BIN';",
+      "to": "    return kind === 'BOOL' || kind === 'BIN';"
+    },
+    {
+      "name": "js-needle-rendered-eagerly",
+      "was": "How it shipped. `x IN y` has three branches -- a relation, an unrolled list, and a scalar -- and the needle must be rendered INSIDE the branch that uses it. Rendered up front, the relation branch never uses the fragment, and the value stays in `params` with no placeholder pointing at it: one more bound value than there are slots, which a driver silently misaligns. Invisible in inline mode, which is what most of the suite asserts, so the runner's own orphan check is the thing that has to notice.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "    const rhs = n.r;",
+      "to": "    const rhs = n.r; const eager = this.node(n.l); void eager;"
+    },
+    {
+      "name": "js-arity-not-enforced",
+      "was": "The map's `arity` narrows SEL's own for a dialect -- how PostgreSQL refuses the three-argument FIND its POSITION cannot express while MariaDB accepts it. Enforced by nobody, a narrowed entry takes the call anyway and fills the template it has, silently dropping the arguments the template does not name: FIND(\"a\",\"banana\",3) is 4 in SEL and instr('banana','a') is 2.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "      if (!(lo <= args.length && args.length <= hi)) {",
+      "to": "      if (false) {"
+    },
+    {
+      "name": "js-tpl-null-rescued-by-the-fallback",
+      "was": "The JS half of arity-null-is-rescued-by-the-fallback. sql/MAP.md \u00a72: null is a refusal without a reason, so {\"1\": null, \"*\": ...} withdraws the one-argument form and the `*` fallback must not rescue it. Membership rather than a null test is the whole of that rule.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "    if (!Object.hasOwn(tpl, n) || tpl[n] === null) {",
+      "to": "    if (!Object.hasOwn(tpl, n)) {"
+    },
+    {
+      "name": "py-num-literal-bound-as-a-parameter",
+      "was": "The Python half of js-num-literal-bound-as-a-parameter. The rule is one line in each host and was believed rather than measured in both.",
+      "file": "python/sel/sql/fragment.py",
+      "from": "        return kind in ('NUM', 'BOOL', 'BIN')",
+      "to": "        return kind in ('BOOL', 'BIN')"
+    },
+    {
+      "name": "py-arity-not-enforced",
+      "was": "The Python half of js-arity-not-enforced. Only PHP's copy of this guard was measured; the other two were transcriptions nothing tried to break.",
+      "file": "python/sel/sql/translator.py",
+      "from": "            if not lo <= len(args) <= hi:",
+      "to": "            if False:"
+    },
+    {
+      "name": "py-tpl-null-rescued-by-the-fallback",
+      "was": "The Python half of arity-null-is-rescued-by-the-fallback, which was mutated in PHP only. On this host the null reached the renderer and emitted the literal text `None` into the SQL, which is the worse of the two failures and the one nothing was checking.",
+      "file": "python/sel/sql/translator.py",
+      "from": "        if n not in tpl or tpl[n] is None:",
+      "to": "        if n not in tpl:"
     }
   ]
 }
