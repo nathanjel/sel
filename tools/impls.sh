@@ -6,6 +6,13 @@
 # described in tools/README.md — no changes to check.sh, fuzz.sh or the rest.
 #
 # Override to narrow a run:   SEL_IMPLS="js cpp" tools/fuzz.sh
+#
+# python-wheel is a seventh host and is deliberately not in the default list: it
+# runs the *built package* rather than the source tree, so it needs a build and
+# an install before it means anything, and a run that silently skipped it would
+# be worse than one that never offered it. Widen to include it:
+#
+#   SEL_IMPLS="js js-bundle php cpp lisp python python-wheel" tools/check.sh
 
 SEL_IMPLS="${SEL_IMPLS:-js js-bundle php cpp lisp python}"
 
