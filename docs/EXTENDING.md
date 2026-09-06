@@ -66,12 +66,14 @@ are imported from `js/src/builtins/index.mjs` and Python's from
 `python/sel/builtins/__init__.py`. All three must happen before parsing, because
 unknown function names are a **compile-time** error.
 
-**One host does not match the table's spirit, on purpose.**
-`python/sel/parser.py` is precedence climbing, where the other four transcribe
-`spec/grammar.md` one function per production. It is the pilot for moving all
-five to that shape: see [PARSER-MIGRATION.md](PARSER-MIGRATION.md), which is a
-working document that gets deleted when the last host is converted. Read it
-before touching any parser.
+**The parsers are mid-migration and do not all match the table's spirit.**
+`python/sel/parser.py`, `js/src/parser.mjs` and `php/src/Parser.php` are
+precedence climbing; `cpp/sel.cpp` and `lisp/src/parser.lisp` still transcribe
+`spec/grammar.md` one function per production. Python was the pilot and the
+other two were transcribed from it. See
+[PARSER-MIGRATION.md](PARSER-MIGRATION.md), which is a working document that
+gets deleted when the last host is converted. Read it before touching any
+parser.
 
 ---
 
@@ -553,26 +555,29 @@ its neighbours, associativity, and the failure modes.
 Getting this wrong makes `//` lex as two `/` tokens and the failure will look
 like a parser bug.
 
-**5. Every parser** — and this is the one step where the hosts currently differ.
+**5. Every parser** — and this is the one step where the hosts still differ,
+though less than they did. `js/src/parser.mjs`, `php/src/Parser.php` and
+`python/sel/parser.py` are precedence climbing; `cpp/sel.cpp` and
+`lisp/src/parser.lisp` are still transcribed one function per precedence level.
+See `docs/PARSER-MIGRATION.md`, which is deleted when the last two are done.
 
-In the four transcribed parsers, `parseMultiplicative` already loops over a list:
-
-```js
-parseMultiplicative() { return this.parseOpBinary(['*', '/', '%', '//'], () => this.parseUnary()); }
-```
-
-A *new* precedence level means a new method in each of those, wired into the
-chain in the same place, and mirrored in `grammar.md`.
-
-In `python/sel/parser.py` it is a row in a table instead:
+In the three table-driven parsers it is a row:
 
 ```python
 INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }
 ```
 
-and a new precedence level is a new `BP_` constant with the ones above it
-renumbered — no new function, and nothing to wire into a chain. That asymmetry
-is temporary and deliberate; see the note under "Where everything lives".
+and a *new* precedence level is a new `BP_` constant with the ones above it
+renumbered — no new function, and nothing to wire into a chain.
+
+In the two transcribed parsers, `parseMultiplicative` already loops over a list:
+
+```js
+parseMultiplicative() { return this.parseOpBinary(['*', '/', '%', '//'], () => this.parseUnary()); }
+```
+
+and a new precedence level means a new method in each of them, wired into the
+chain in the same place, and mirrored in `grammar.md`.
 
 **6. Every evaluator** — a branch in `evalBinary` / `eval_binary` /
 `eval-binary`. Use the operand's own position for type errors and the operator's
@@ -739,10 +744,11 @@ replacements are sliced from the original.
 
 **Watch `E_DEPTH`.** Every host caps parse and evaluation nesting at 200. If you
 add recursion, it must be counted, or a hostile rule becomes a stack overflow.
-This is not hypothetical and the rule was already broken once: `parseNot` and
-`parseUnary` recursed into themselves without passing through either of the two
-functions that track depth, so a chain of prefix operators was bounded by
-nothing. `-` repeated about twenty thousand times raised a `RangeError` in JS and
+This is not hypothetical and the rule was already broken once: the prefix
+operators recursed into themselves without passing through either of the two
+functions that track depth, so a chain of them was bounded by nothing. They live
+in `parsePrefix` in the table-driven hosts and in `parseNot`/`parseUnary` in the
+transcribed ones; the hazard is the same in both shapes. `-` repeated about twenty thousand times raised a `RangeError` in JS and
 **segfaulted the C++ host** through its public CLI. Count the nesting *only when
 the operator is actually consumed*, or every other expression loses a level and
 `lim.parse-depth` moves.
