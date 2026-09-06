@@ -11,6 +11,7 @@
 // shared data that PHP already measures. Running them a second time here would
 // measure the same thing twice.
 
+import { asciiUpper } from '../lexer.mjs';
 import { DIALECTS, RULES } from './_map.mjs';
 import { refuse } from './errors.mjs';
 
@@ -27,19 +28,6 @@ export const MISSING = '\0missing';
 // name. A dialect called `toString` must not already exist.
 const extra = new Map();
 const overlay = new Map();
-
-// strtoupper's rule, not toUpperCase's. JS folds the full Unicode mapping, so
-// 'ß' would become 'SS' and a key nothing registered; PHP's strtoupper and
-// Python's ascii_upper both leave every non-ASCII byte alone. Function names are
-// ASCII, which is exactly why the cheap function is the correct one.
-function asciiUpper(s) {
-  let out = '';
-  for (const ch of s) {
-    const c = ch.codePointAt(0);
-    out += (c >= 0x61 && c <= 0x7a) ? String.fromCharCode(c - 32) : ch;
-  }
-  return out;
-}
 
 // Object.hasOwn throughout, never `in` and never a truthiness test: the
 // generated tables are plain objects parsed from JSON, so `'constructor' in d`
