@@ -43,7 +43,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -59,7 +58,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -75,7 +73,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -91,7 +88,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -107,7 +103,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -123,7 +118,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -139,7 +133,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -155,7 +148,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -171,7 +163,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -187,7 +178,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -203,7 +193,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"TOTAL": Binding.column("total", "o", "NUM")},
     },
     {
@@ -219,7 +208,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"TOTAL": Binding.column("total", None, "NUM")},
     },
     {
@@ -235,7 +223,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ODD": Binding.column("c`d", "a`b", "NUM")},
     },
     {
@@ -251,7 +238,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"NOW": Binding.raw("CURRENT_TIMESTAMP", "UNKNOWN")},
     },
     {
@@ -267,7 +253,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -283,7 +268,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -299,7 +283,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -315,7 +298,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -331,7 +313,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -347,7 +328,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -363,7 +343,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -379,7 +358,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -395,7 +373,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -411,7 +388,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -427,7 +403,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"A": Binding.column("a", None, "TEXT")},
     },
     {
@@ -443,7 +418,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"A": Binding.column("a", None, "UNKNOWN")},
     },
     {
@@ -459,7 +433,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -475,7 +448,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -491,7 +463,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -507,7 +478,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"S": Binding.column("state", None, "TEXT")},
     },
     {
@@ -523,7 +493,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -539,7 +508,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -555,7 +523,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -571,7 +538,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -587,7 +553,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -603,7 +568,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -619,7 +583,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -635,7 +598,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -651,7 +613,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -667,7 +628,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -683,7 +643,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -699,7 +658,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -715,7 +673,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -731,7 +688,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -747,7 +703,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -763,7 +718,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -779,7 +733,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -795,7 +748,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -811,7 +763,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -827,7 +778,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -843,7 +793,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -859,7 +808,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -875,7 +823,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -891,7 +838,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -907,7 +853,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -923,7 +868,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -939,7 +883,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -955,7 +898,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -971,7 +913,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -987,7 +928,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1003,7 +943,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"TOTAL": Binding.column("total", None, "NUM")},
     },
     {
@@ -1019,7 +958,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1035,7 +973,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1051,7 +988,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"S": Binding.column("s", None, "TEXT")},
     },
     {
@@ -1067,7 +1003,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1083,7 +1018,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1099,7 +1033,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1115,7 +1048,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1131,7 +1063,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1147,7 +1078,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1163,7 +1093,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"K": Binding.column("k", None, "TEXT")},
     },
     {
@@ -1179,7 +1108,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1195,7 +1123,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"B": Binding.column("b", None, "NUM")},
     },
     {
@@ -1211,7 +1138,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"LIM": Binding.value(Value.text("-5"), "NUM")},
     },
     {
@@ -1227,7 +1153,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"N": Binding.column("n", None, "NUM")},
     },
     {
@@ -1243,7 +1168,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"N": Binding.column("n", None, "NUM")},
     },
     {
@@ -1259,7 +1183,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"S": Binding.column("score", None, "NUM")},
     },
     {
@@ -1275,7 +1198,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1291,7 +1213,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"N": Binding.column("n", None, "NUM")},
     },
     {
@@ -1307,7 +1228,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1323,7 +1243,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"N": Binding.column("n", None, "NUM")},
     },
     {
@@ -1339,7 +1258,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "NUM")},
     },
     {
@@ -1355,7 +1273,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "TEXT")},
     },
     {
@@ -1371,7 +1288,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "NUM")},
     },
     {
@@ -1387,7 +1303,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "NUM"), "LIMIT": Binding.value(Value.text("2.50"), "NUM")},
     },
     {
@@ -1403,7 +1318,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "TEXT")},
     },
     {
@@ -1419,7 +1333,6 @@ SQL_CASES = [
         "mode": "debug",
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "TEXT")},
     },
     {
@@ -1435,7 +1348,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"S": Binding.column("s", None, "TEXT")},
     },
     {
@@ -1451,7 +1363,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"S": Binding.column("s", None, "TEXT")},
     },
     {
@@ -1467,7 +1378,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1483,7 +1393,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1499,7 +1408,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1515,7 +1423,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", None, "UNKNOWN"), Binding.column("b", None, "UNKNOWN"), Binding.column("c", None, "UNKNOWN"))},
     },
     {
@@ -1531,7 +1438,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1547,7 +1453,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1563,7 +1468,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1579,7 +1483,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1595,7 +1498,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1611,7 +1513,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": {"strict": True},
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1627,7 +1528,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": {"strict": True},
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1643,7 +1543,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": {"strict": True},
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1659,7 +1558,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": {"strict": True},
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1675,7 +1573,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1691,7 +1588,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1707,7 +1603,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1723,7 +1618,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -1739,7 +1633,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "NUM")},
     },
     {
@@ -1755,7 +1648,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "NUM")},
     },
     {
@@ -1771,7 +1663,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"F": Binding.column("flag", None, "UNKNOWN")},
     },
     {
@@ -1787,7 +1678,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", None, "NUM")}, None, None)},
     },
     {
@@ -1803,7 +1693,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", None, "NUM"), Binding.column("b", None, "NUM"))},
     },
     {
@@ -1819,7 +1708,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", None, "NUM")}, None, None)},
     },
     {
@@ -1835,7 +1723,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"A": Binding.relation("x", "t", {}, None, None), "B": Binding.relation("y", "t", {}, None, None)},
     },
     {
@@ -1851,7 +1738,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "NUM")},
     },
     {
@@ -1867,7 +1753,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"SKU": Binding.column("sku", "o", "TEXT"), "ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT")}, "SKU", "`oi`.`order_id` = `o`.`id`")},
     },
     {
@@ -1883,7 +1768,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("total", "o", "NUM")},
     },
     {
@@ -1899,7 +1783,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"CODE": Binding.value(Value.text("00123"), None)},
     },
     {
@@ -1915,7 +1798,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"LIMIT": Binding.value(Value.text("100"), "NUM")},
     },
     {
@@ -1931,7 +1813,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"L": Binding.value(value_tree([("1", Value.text("a")), ("2", Value.text("b"))]), None)},
     },
     {
@@ -1947,7 +1828,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"L": Binding.value(value_tree([("1", Value.text("a")), ("2", Value.text("b"))]), None)},
     },
     {
@@ -1963,7 +1843,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", "x", "NUM"), Binding.column("b", "x", "NUM"))},
     },
     {
@@ -1979,7 +1858,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", "x", "NUM"))},
     },
     {
@@ -1995,7 +1873,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"I": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, None)},
     },
     {
@@ -2011,7 +1888,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"I": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, None)},
     },
     {
@@ -2027,7 +1903,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.value(Value.text("007"), "NUM")},
     },
     {
@@ -2043,7 +1918,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.value(Value.text("2.50"), "NUM")},
     },
     {
@@ -2059,7 +1933,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.value(Value.text("-0"), "NUM")},
     },
     {
@@ -2075,7 +1948,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.value(Value.text("007"), None)},
     },
     {
@@ -2091,7 +1963,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.value(value_tree([]), None)},
     },
     {
@@ -2107,7 +1978,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.value(value_tree([]), None)},
     },
     {
@@ -2123,7 +1993,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.column("a\u0000b", None, "UNKNOWN")},
     },
     {
@@ -2139,7 +2008,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.column(["a", "b"], None, "UNKNOWN")},
     },
     {
@@ -2155,7 +2023,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.column("c", {"raw": "x"}, "UNKNOWN")},
     },
     {
@@ -2171,7 +2038,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"R": Binding.relation("t", ["x"], {"Q": Binding.column("q", None, "UNKNOWN")}, None, None)},
     },
     {
@@ -2187,7 +2053,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.value(Value.text("2.50"), "NUM")},
     },
     {
@@ -2203,7 +2068,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"R": Binding.relation("t", "r", {"A": Binding.column("a", "r", "NUM")}, None, {"mariadb": "1=1"})},
     },
     {
@@ -2219,7 +2083,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"R": Binding.relation_query({"query": "select 1"}, "r", {"A": Binding.column("a", "r", "NUM")}, None, None)},
     },
     {
@@ -2235,7 +2098,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "CRC32", {"tpl": "MY_CRC({0})", "ret": "TEXT"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2251,7 +2113,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", "this deployment forbids case folding in SQL"]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2267,7 +2128,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["ansi", "funcs", "UPPER", {"tpl": "ANSI_UPPER({0})", "ret": "TEXT"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2283,7 +2143,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["ansi", "funcs", "UPPER", {"tpl": "ANSI_UPPER({0})", "ret": "TEXT"}]}, {"define": ["mariadb", "funcs", "UPPER", {"tpl": "LEAF_UPPER({0})", "ret": "TEXT"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2299,7 +2158,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "ops", "&", {"variants": {"text": "({0} || {1})"}, "ret": "@concat"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2315,7 +2173,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "LEN", {"tpl": "LEN({0}{textCollate})", "ret": "NUM"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2331,7 +2188,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "99.0"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2347,7 +2203,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"}, {"define": ["mariadb", "funcs", "UPPER", {"tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "11.0"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2363,7 +2218,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2379,7 +2233,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "mariadb-nocollate", "extends": "mariadb", "version": "10.5", "lexical": {"textCollate": " COLLATE utf8mb4_0900_bin"}}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2395,7 +2248,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "wishful", "extends": "nosuchdialect", "version": "1.0"}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2411,7 +2263,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "nonesuch", "UPPER", None]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2427,7 +2278,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2443,7 +2293,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2459,7 +2308,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2475,7 +2323,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2491,7 +2338,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2507,7 +2353,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2523,7 +2368,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2539,7 +2383,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2555,7 +2398,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2571,7 +2413,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2587,7 +2428,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"TOTAL": Binding.column("total", "o", "NUM")},
     },
     {
@@ -2603,7 +2443,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", "x", "NUM"), Binding.column("b", "x", "NUM"), Binding.column("c", "x", "NUM"))},
     },
     {
@@ -2619,7 +2458,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", "x", "NUM"), Binding.column("b", "x", "NUM"))},
     },
     {
@@ -2635,7 +2473,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", "x", "NUM"))},
     },
     {
@@ -2651,7 +2488,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", "x", "UNKNOWN"), Binding.column("b", "x", "UNKNOWN"))},
     },
     {
@@ -2667,7 +2503,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT")}, "SKU", "`oi`.`order_id` = `o`.`id`")},
     },
     {
@@ -2683,7 +2518,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, "`oi`.`order_id` = `o`.`id`")},
     },
     {
@@ -2699,7 +2533,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM"), "PRICE": Binding.column("price", "oi", "NUM")}, None, "`oi`.`order_id` = `o`.`id`")},
     },
     {
@@ -2715,7 +2548,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, "`oi`.`order_id` = `o`.`id`")},
     },
     {
@@ -2731,7 +2563,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ALL_ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, None)},
     },
     {
@@ -2747,7 +2578,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.relation_query("(SELECT a, b FROM x)", "v", {"A": Binding.column("a", "v", "NUM")}, None, None)},
     },
     {
@@ -2763,7 +2593,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"SKU": Binding.column("sku", "o", "TEXT"), "ITEMS": Binding.relation("order_items", "oi", {"SKU": Binding.column("sku", "oi", "TEXT")}, "SKU", "`oi`.`order_id` = `o`.`id`")},
     },
     {
@@ -2779,7 +2608,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ORDERS": Binding.relation("orders", "o", {"ID": Binding.column("id", "o", "NUM")}, None, None), "LINES": Binding.relation("lines", "l", {"QTY": Binding.column("qty", "l", "NUM")}, None, "`l`.`order_id` = `o`.`id`")},
     },
     {
@@ -2795,7 +2623,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2811,7 +2638,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2827,7 +2653,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, "`oi`.`order_id` = `o`.`id`")},
     },
     {
@@ -2843,7 +2668,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2859,7 +2683,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2875,7 +2698,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"L": Binding.value(value_tree([("1", Value.text("a")), ("2", Value.text("b"))]), None)},
     },
     {
@@ -2891,7 +2713,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"E": Binding.value(value_tree([]), None)},
     },
     {
@@ -2907,7 +2728,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"E": Binding.value(value_tree([]), None)},
     },
     {
@@ -2923,7 +2743,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"E": Binding.value(value_tree([]), None)},
     },
     {
@@ -2939,7 +2758,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -2955,7 +2773,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, None)},
     },
     {
@@ -2971,7 +2788,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, None)},
     },
     {
@@ -2987,7 +2803,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3003,7 +2818,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, None)},
     },
     {
@@ -3019,7 +2833,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"SKU": Binding.column("sku", "oi", "TEXT")}, None, None)},
     },
     {
@@ -3035,7 +2848,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM")}, None, None)},
     },
     {
@@ -3051,7 +2863,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3067,7 +2878,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3083,7 +2893,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3099,7 +2908,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"SKU": Binding.column("sku", "oi", "TEXT")}, "SKU", None)},
     },
     {
@@ -3115,7 +2923,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3131,7 +2938,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM"), "PRICE": Binding.column("price", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT")}, "SKU", "`oi`.`order_id` = `o`.`id`"), "CREDIT_LIMIT": Binding.column("credit_limit", "o", "NUM")},
     },
     {
@@ -3147,7 +2953,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM"), "PRICE": Binding.column("price", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT")}, "SKU", "`oi`.`order_id` = `o`.`id`"), "CREDIT_LIMIT": Binding.column("credit_limit", "o", "NUM")},
     },
     {
@@ -3163,7 +2968,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", "oi", "NUM"), "PRICE": Binding.column("price", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT")}, "SKU", "`oi`.`order_id` = `o`.`id`"), "CREDIT_LIMIT": Binding.column("credit_limit", "o", "NUM")},
     },
     {
@@ -3179,7 +2983,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", None, "NUM"), "SKU": Binding.column("sku", None, "TEXT")}, "SKU", None)},
     },
     {
@@ -3195,7 +2998,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"SKUS": Binding.relation("order_items", "s2", {"SKU": Binding.column("sku", "s2", "TEXT")}, "SKU", None)},
     },
     {
@@ -3211,7 +3013,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", None, "NUM"), "SKU": Binding.column("sku", None, "TEXT")}, "SKU", None)},
     },
     {
@@ -3227,7 +3028,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", None, "NUM")}, None, None)},
     },
     {
@@ -3243,7 +3043,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"SKU": Binding.column("sku", "oi", "TEXT")}, None, None), "SKUS": Binding.relation("skus", "s2", {"SKU": Binding.column("sku", "s2", "TEXT")}, "SKU", None)},
     },
     {
@@ -3259,7 +3058,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3275,7 +3073,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3291,7 +3088,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"NOTES": Binding.relation("order_items", "nt", {"NOTE": Binding.column("note", "nt", "TEXT")}, "NOTE", None)},
     },
     {
@@ -3307,7 +3103,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3323,7 +3118,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "TEXT")},
     },
     {
@@ -3339,7 +3133,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3355,7 +3148,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("t", "oi", {"qty": Binding.column("qty", "oi", "NUM")}, None, None)},
     },
     {
@@ -3371,7 +3163,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "NUM"), "V": Binding.value(Value.text("1 OR 1=1 -- "), "NUM")},
     },
     {
@@ -3387,7 +3178,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"L": Binding.value(value_tree([("1", Value.text("1")), ("2", Value.text("2) OR (1=1"))]), "NUM")},
     },
     {
@@ -3403,7 +3193,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "NUM"), "V": Binding.value(Value.text("100"), "NUM")},
     },
     {
@@ -3419,7 +3208,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "TEXT")},
     },
     {
@@ -3435,7 +3223,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "TEXT")},
     },
     {
@@ -3451,7 +3238,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "TEXT")},
     },
     {
@@ -3467,7 +3253,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "TEXT")},
     },
     {
@@ -3483,7 +3268,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "skel", "join", {"tpl": "(SELECT GROUP_CONCAT({body} ORDER BY {body} SEPARATOR {sep}) FROM {from} WHERE {corr})"}]}],
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"R": Binding.relation("t", "r", {"S": Binding.column("s", "r", "TEXT")}, "S", None)},
     },
     {
@@ -3499,7 +3283,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"A": Binding.relation_query("(SELECT 1)", None, {}, None, None), "B": Binding.relation_query("(SELECT 2)", None, {}, None, None)},
     },
     {
@@ -3515,7 +3298,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"A": Binding.relation_query("(SELECT 1)", None, {}, None, None), "B": Binding.relation_query("(SELECT 1)", None, {}, None, None)},
     },
     {
@@ -3531,7 +3313,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"S": Binding.column("s", None, "TEXT"), "ALLOWED": Binding.value(value_tree([("1", Value.text("open")), ("2", Value.text("held"))]), None)},
     },
     {
@@ -3547,7 +3328,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3563,7 +3343,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3579,7 +3358,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "UNKNOWN")},
     },
     {
@@ -3595,7 +3373,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3611,7 +3388,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3627,7 +3403,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "UNKNOWN")},
     },
     {
@@ -3643,7 +3418,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3659,7 +3433,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3675,7 +3448,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3691,7 +3463,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3707,7 +3478,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3723,7 +3493,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"C": Binding.column("c", None, "UNKNOWN")},
     },
     {
@@ -3739,7 +3508,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3755,7 +3523,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3771,7 +3538,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3787,7 +3553,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3803,7 +3568,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"B": Binding.column("b", None, "BIN")},
     },
     {
@@ -3819,7 +3583,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"B": Binding.column("b", None, "BIN")},
     },
     {
@@ -3835,7 +3598,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"F": Binding.column("f", None, "BOOL"), "N": Binding.column("n", None, "TEXT")},
     },
     {
@@ -3851,7 +3613,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"B": Binding.column("b", None, "BIN"), "N": Binding.column("n", None, "TEXT")},
     },
     {
@@ -3867,7 +3628,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"F": Binding.column("f", None, "BOOL")},
     },
     {
@@ -3883,7 +3643,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"B": Binding.column("b", None, "BIN")},
     },
     {
@@ -3899,7 +3658,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"B": Binding.column("b", None, "BIN")},
     },
     {
@@ -3915,7 +3673,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"F": Binding.column("f", None, "BOOL")},
     },
     {
@@ -3931,7 +3688,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"U": Binding.column("u", None, "UNKNOWN")},
     },
     {
@@ -3947,7 +3703,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3963,7 +3718,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -3979,7 +3733,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"COL": Binding.column("active$' -- oops", None, "UNKNOWN")},
     },
     {
@@ -3995,7 +3748,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "twice", "extends": "postgresql", "lexical": {"isTrue": "({0} IS TRUE AND {0} IS NOT NULL)"}}],
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"COL": Binding.column("c", None, "UNKNOWN")},
     },
     {
@@ -4011,7 +3763,51 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "wrapped", "extends": "sqlite", "lexical": {"numericLiteral": "({0} || '' || {0})"}}],
         "options": None,
-        "hasBindings": False,
+        "bindings": lambda: {},
+    },
+    {
+        "name": "review.lexical.expands-into-itself",
+        "at": "13-review.sqlt:580",
+        "dialect": "selfref",
+        "source": "A $== \"x\"",
+        "expect": None,
+        "error": "E_SQL_UNSUPPORTED",
+        "throws": None,
+        "params": None,
+        "as": None,
+        "mode": None,
+        "register": [{"dialect": "selfref", "extends": "mariadb", "lexical": {"textCast": "X({textCast:0})"}}],
+        "options": None,
+        "bindings": lambda: {"A": Binding.column("a", None, "UNKNOWN")},
+    },
+    {
+        "name": "review.unify.refusal-carries-a-position",
+        "at": "13-review.sqlt:601",
+        "dialect": "mariadb",
+        "source": "IF(TRUE, TRUE, \"A-1\")",
+        "expect": None,
+        "error": "E_SQL_SHAPE 1:1",
+        "throws": None,
+        "params": None,
+        "as": None,
+        "mode": None,
+        "register": None,
+        "options": None,
+        "bindings": lambda: {},
+    },
+    {
+        "name": "review.lexical.empty-quote-is-refused",
+        "at": "13-review.sqlt:614",
+        "dialect": "mariadb",
+        "source": "1",
+        "expect": None,
+        "error": None,
+        "throws": "LogicException",
+        "params": None,
+        "as": None,
+        "mode": None,
+        "register": [{"dialect": "noquote", "extends": "ansi", "lexical": {"identQuote": ""}}],
+        "options": None,
         "bindings": lambda: {},
     },
     {
@@ -4027,7 +3823,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4043,7 +3838,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4059,7 +3853,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4075,7 +3868,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4091,7 +3883,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4107,7 +3898,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4123,7 +3913,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4139,7 +3928,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4155,7 +3943,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4171,7 +3958,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4187,7 +3973,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4203,7 +3988,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4219,7 +4003,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4235,7 +4018,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4251,7 +4033,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": {"strict": True},
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4267,7 +4048,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": {"strict": True},
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4283,7 +4063,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4299,7 +4078,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4315,7 +4093,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4331,7 +4108,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4347,7 +4123,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4363,7 +4138,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4379,7 +4153,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4395,7 +4168,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4411,7 +4183,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4427,7 +4198,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4443,7 +4213,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4459,7 +4228,6 @@ SQL_CASES = [
         "mode": "params",
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "TEXT")},
     },
     {
@@ -4475,7 +4243,6 @@ SQL_CASES = [
         "mode": "params",
         "register": [{"dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": True, "lexical": {"placeholder": "${n}"}}],
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "TEXT")},
     },
     {
@@ -4491,7 +4258,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4507,7 +4273,6 @@ SQL_CASES = [
         "mode": "params",
         "register": [{"dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": True, "lexical": {"placeholder": "${n}"}}],
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"T": Binding.column("t", None, "TEXT")},
     },
     {
@@ -4523,7 +4288,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4539,7 +4303,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4555,7 +4318,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4571,7 +4333,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4587,7 +4348,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4603,7 +4363,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4619,7 +4378,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4635,7 +4393,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4651,7 +4408,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4667,7 +4423,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4683,7 +4438,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4699,7 +4453,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4715,7 +4468,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4731,7 +4483,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4747,7 +4498,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4763,7 +4513,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4779,7 +4528,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4795,7 +4543,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4811,7 +4558,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4827,7 +4573,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4843,7 +4588,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4859,7 +4603,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4875,7 +4618,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4891,7 +4633,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4907,7 +4648,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4923,7 +4663,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4939,7 +4678,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -4955,7 +4693,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"N": Binding.column("n", None, "NUM")},
     },
     {
@@ -4971,7 +4708,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"N": Binding.column("n", None, "NUM")},
     },
     {
@@ -4987,7 +4723,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5003,7 +4738,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5019,7 +4753,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5035,7 +4768,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5051,7 +4783,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"F": Binding.column("f", None, "BOOL")},
     },
     {
@@ -5067,7 +4798,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5083,7 +4813,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"X": Binding.value(Value.text("-1"), "NUM")},
     },
     {
@@ -5099,7 +4828,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"Z": Binding.value(Value.text("0"), "NUM")},
     },
     {
@@ -5115,7 +4843,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"S": Binding.value(Value.text("abc"), None)},
     },
     {
@@ -5131,7 +4858,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"N": Binding.column("n", None, "NUM")},
     },
     {
@@ -5147,7 +4873,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5163,7 +4888,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5179,7 +4903,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5195,7 +4918,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5211,7 +4933,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5227,7 +4948,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5243,7 +4963,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5259,7 +4978,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5275,7 +4993,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5291,7 +5008,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5307,7 +5023,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5323,7 +5038,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5339,7 +5053,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5355,7 +5068,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5371,7 +5083,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5387,7 +5098,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5403,7 +5113,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5419,7 +5128,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5435,7 +5143,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5451,7 +5158,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5467,7 +5173,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5483,7 +5188,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5499,7 +5203,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5515,7 +5218,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5531,7 +5233,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5547,7 +5248,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", None, "UNKNOWN"), Binding.column("b", None, "UNKNOWN"))},
     },
     {
@@ -5563,7 +5263,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", None, "UNKNOWN"), Binding.column("b", None, "UNKNOWN"))},
     },
     {
@@ -5579,7 +5278,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"V": Binding.columns(Binding.column("a", None, "UNKNOWN"), Binding.column("b", None, "UNKNOWN"))},
     },
     {
@@ -5595,7 +5293,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5611,7 +5308,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"ITEMS": Binding.relation("order_items", "oi", {"QTY": Binding.column("qty", None, "NUM")}, None, None)},
     },
     {
@@ -5627,7 +5323,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({01})", "ret": "TEXT"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5643,7 +5338,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0\n})", "ret": "TEXT"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5659,7 +5353,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5675,7 +5368,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"A": Binding.column("a", None, "NUM")},
     },
     {
@@ -5691,7 +5383,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": True,
         "bindings": lambda: {"A": Binding.column("a", None, "NUM")},
     },
     {
@@ -5707,7 +5398,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5723,7 +5413,6 @@ SQL_CASES = [
         "mode": None,
         "register": None,
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5739,7 +5428,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5755,7 +5443,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": ["a", "b"], "ret": "TEXT"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5771,7 +5458,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT", "arity": ["1", "1"]}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5787,7 +5473,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT", "since": "abc"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5803,7 +5488,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT", "caveat": "made-up"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5819,7 +5503,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "ops", "and", {"tpl": "({0} AND {1})", "ret": "BOOL"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5835,7 +5518,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "COUNT", {"tpl": "X({0})", "ret": "NUM"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5851,7 +5533,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "skel", "case", {"tpl": "CASE {branchez} ELSE {else} END"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5867,7 +5548,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "mariadb", "extends": "mysql"}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5883,7 +5563,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "d1", "extends": "mariadb", "target": "0"}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5899,7 +5578,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "d2", "extends": "mariadb", "version": "11.8.8-MariaDB"}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5915,7 +5593,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "d3", "extends": "mariadb", "lexical": {"textEscape": "x"}}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5931,7 +5608,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "d4", "extends": "mariadb", "lexical": {"true": True}}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5947,7 +5623,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"dialect": "d5", "extends": "mariadb", "lexical": {"identQuot": "`"}}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5963,7 +5638,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "MIN", {"tpl": {"1": None, "*": "LEAST({*})"}, "ret": "NUM"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
     {
@@ -5979,7 +5653,6 @@ SQL_CASES = [
         "mode": None,
         "register": [{"define": ["mariadb", "funcs", "MIN", {"tpl": {"1": None, "*": "LEAST({*})"}, "ret": "NUM"}]}],
         "options": None,
-        "hasBindings": False,
         "bindings": lambda: {},
     },
 ]

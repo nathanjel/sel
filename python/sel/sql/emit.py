@@ -205,7 +205,8 @@ class Emit:
 
     # --- templates -----------------------------------------------------------
 
-    def fill(self, tpl: str, args: list, pos: Pos | None = None) -> list:
+    def fill(self, tpl: str, args: list, pos: Pos | None = None,
+             expanding: set | None = None) -> list:
         """Fill a template with already-rendered arguments, producing a part list.
 
         Splicing part lists rather than strings is the whole point: an argument
@@ -224,6 +225,19 @@ class Emit:
         ``{key}`` and ``{key:n}`` lexical forms are expanded here too. The
         generator has already done that for the shipped map; this is for entries
         an application registers at run time, which never pass through it.
+
+        ``expanding`` is the set of lexical keys this call is already inside. A
+        lexical value may reference another lexical key, and nothing stopped one
+        from referencing itself: a dialect registering
+        ``{'textCast': 'X({textCast:0})'}`` recursed until the host died --
+        RecursionError here, a RangeError on the JS host, a host crash through
+        the public API either way, which is the failure every other guard in this
+        layer exists to prevent.
+
+        The cycle is refused rather than a depth capped, because the cycle is the
+        actual mistake and a depth cap would need a number nobody can justify.
+        With cycles refused the chain is bounded by the number of lexical keys,
+        which is fifteen.
         """
         from .fragment import Fragment
         parts: list = []
@@ -306,13 +320,19 @@ class Emit:
             # changes the bytes or fails the query. Every other cast is
             # idempotent and applied unconditionally; this is the one whose input
             # kind decides whether it means anything.
+            if expanding is not None and key in expanding:
+                refuse('E_SQL_UNSUPPORTED',
+                       f'the {key} lexical entry of dialect {self._dialect} expands '
+                       'into itself, so filling it would never finish', pos)
             cast_arg = _slot_index(arg) if key == 'binaryCast' else None
             if (cast_arg is not None and cast_arg < len(args)
                     and isinstance(args[cast_arg], Fragment)
                     and args[cast_arg].kind == 'BIN'):
                 splice(args[cast_arg])
                 continue
-            for p in self.fill(val.replace('{0}', '{' + arg + '}'), args, pos):
+            deeper = set(expanding or ())
+            deeper.add(key)
+            for p in self.fill(val.replace('{0}', '{' + arg + '}'), args, pos, deeper):
                 if isinstance(p, str):
                     push(p)
                 else:

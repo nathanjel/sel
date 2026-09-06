@@ -803,7 +803,7 @@ final class Translator
             'else' => [$else],
         ], $n['pos']);
 
-        return new Fragment($parts, self::unify($results), $this->dialect);
+        return new Fragment($parts, self::unify($results, $n['pos']), $this->dialect);
     }
 
     // --- aggregates: docs/SQL-TRANSLATION.md §7 -----------------------------
@@ -1485,7 +1485,7 @@ final class Translator
         $tpl = $this->templateOf($entry, $args, $variant, $what, $pos);
         return new Fragment(
             $this->emit->fill($tpl, $args, $pos),
-            $this->retKind($entry, $args),
+            $this->retKind($entry, $args, $pos),
             $this->dialect);
     }
 
@@ -1622,7 +1622,7 @@ final class Translator
      * @param array<string,mixed> $entry
      * @param list<Fragment> $args
      */
-    private function retKind(array $entry, array $args): string
+    private function retKind(array $entry, array $args, ?array $pos = null): string
     {
         $ret = (string) $entry['ret'];
         if ($ret === '@concat') {
@@ -1640,7 +1640,7 @@ final class Translator
                     $pick[] = $args[(int) $i];
                 }
             }
-            return self::unify($pick, $args[0]->pos ?? null);
+            return self::unify($pick, $pos);
         }
         return $ret;
     }

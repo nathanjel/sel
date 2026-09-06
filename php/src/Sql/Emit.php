@@ -250,7 +250,22 @@ final class Emit
      * @param list<Fragment> $args
      * @return list<string|int>
      */
-    public function fill(string $tpl, array $args, ?array $pos = null): array
+    // `$expanding` is the set of lexical keys this call is already inside. A
+    // lexical value may reference another lexical key, and nothing stopped one
+    // from referencing itself: a dialect registering
+    // ['textCast' => 'X({textCast:0})'] recursed until the host died -- a
+    // RecursionError on Python, a RangeError on JS, a host crash through the
+    // public API either way, which is the failure every other guard in this
+    // layer exists to prevent.
+    //
+    // The cycle is refused rather than a depth capped, because the cycle is the
+    // actual mistake and a depth cap would need a number nobody can justify.
+    // With cycles refused the chain is bounded by the number of lexical keys,
+    // which is fifteen.
+    //
+    // @param array<string,bool> $expanding
+    public function fill(string $tpl, array $args, ?array $pos = null,
+                         array $expanding = []): array
     {
         $parts = [];
         $push = static function (string $s) use (&$parts): void {
@@ -348,13 +363,21 @@ final class Emit
             // the round trip changes the bytes or fails the query. Every other
             // cast is idempotent and applied unconditionally, as before; this is
             // the one whose input kind decides whether it means anything.
+            if (isset($expanding[$key])) {
+                refuse('E_SQL_UNSUPPORTED',
+                    "the {$key} lexical entry of dialect {$this->dialect} expands "
+                    . 'into itself, so filling it would never finish', $pos);
+            }
             $castArg = $key === 'binaryCast' ? self::slotIndex($arg) : null;
             if ($castArg !== null && ($args[$castArg] ?? null) instanceof Fragment
                     && $args[$castArg]->kind === 'BIN') {
                 $splice($args[$castArg]);
                 continue;
             }
-            $sub = $this->fill(str_replace('{0}', '{' . $arg . '}', $val), $args, $pos);
+            $deeper = $expanding;
+            $deeper[$key] = true;
+            $sub = $this->fill(str_replace('{0}', '{' . $arg . '}', $val), $args,
+                $pos, $deeper);
             foreach ($sub as $p) {
                 if (is_string($p)) {
                     $push($p);

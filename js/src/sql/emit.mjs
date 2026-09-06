@@ -237,7 +237,18 @@ export class Emit {
   // `{key}` and `{key:n}` lexical forms are expanded here too. The generator has
   // already done that for the shipped map; this is for entries an application
   // registers at run time, which never pass through it.
-  fill(tpl, args, pos = null) {
+  // `expanding` is the set of lexical keys this call is already inside. A
+  // lexical value may reference another lexical key, and nothing stopped one
+  // from referencing itself: a dialect registering
+  // `{textCast: 'X({textCast:0})'}` recursed until the host died -- RangeError
+  // here, RecursionError on Python, a host crash through the public API either
+  // way, which is the failure every other guard in this layer exists to prevent.
+  //
+  // The cycle is refused rather than a depth capped, because the cycle is the
+  // actual mistake and a depth cap would need a number nobody can justify. With
+  // cycles refused the chain is bounded by the number of lexical keys, which is
+  // fifteen.
+  fill(tpl, args, pos = null, expanding = null) {
     const parts = [];
 
     const push = (s) => {
@@ -309,13 +320,20 @@ export class Emit {
       // or fails the query. Every other cast is idempotent and applied
       // unconditionally; this is the one whose input kind decides whether it
       // means anything.
+      if (expanding !== null && expanding.has(key)) {
+        refuse('E_SQL_UNSUPPORTED',
+          `the ${key} lexical entry of dialect ${this._dialect} expands into `
+          + 'itself, so filling it would never finish', pos);
+      }
       const castArg = key === 'binaryCast' ? slotIndex(arg) : null;
       if (castArg !== null && castArg < args.length
           && args[castArg] instanceof Fragment && args[castArg].kind === 'BIN') {
         splice(args[castArg]);
         continue;
       }
-      for (const p of this.fill(fillSlot(val, '{0}', `{${arg}}`), args, pos)) {
+      const deeper = new Set(expanding ?? []);
+      deeper.add(key);
+      for (const p of this.fill(fillSlot(val, '{0}', `{${arg}}`), args, pos, deeper)) {
         if (typeof p === 'string') push(p);
         else parts.push(p);
       }

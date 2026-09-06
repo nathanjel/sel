@@ -293,6 +293,14 @@ def _check_lexical(key: str, v: Any, where: str) -> None:
     if not isinstance(v, str):
         raise RuntimeError(f'{where} sets {key} to a {type(v).__name__}; it must be '
                            'a string')
+    # A quote character that is not a character cannot quote. Left through, the
+    # hosts disagreed about what it meant -- str.replace puts the escape between
+    # every character AND at each end, the JS host's split/join only between --
+    # and both answers are nonsense. textCollate is legitimately empty (ansi and
+    # sqlite ship it that way); these two are not.
+    if v == '' and key in ('identQuote', 'textQuote'):
+        raise RuntimeError(f'{where} sets {key} to the empty string; a quote '
+                           'character that is not a character cannot quote')
 
 
 def _check_key(section: str, key: str) -> None:

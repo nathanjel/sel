@@ -271,7 +271,6 @@ function emitPhp(cases) {
       ['expect', c.expect], ['error', c.error], ['throws', c.throws],
       ['params', c.params], ['as', c.as], ['mode', c.mode],
       ['register', c.registerData], ['options', c.optionsData],
-      ['hasBindings', c.bindings !== null],
     ].map(([k, v]) => `            ${phpStr(k)} => ${emitPhpArg(v)},`).join('\n');
     const binds = Object.entries(c.bindingCalls)
       .map(([n, x]) => `${phpStr(n)} => ${emitPhpArg(x)}`).join(', ');
@@ -304,7 +303,6 @@ function emitPython(cases) {
       ['expect', c.expect], ['error', c.error], ['throws', c.throws],
       ['params', c.params], ['as', c.as], ['mode', c.mode],
       ['register', c.registerData], ['options', c.optionsData],
-      ['hasBindings', c.bindings !== null],
     ].map(([k, v]) => `        ${pyStr(k)}: ${emitPyArg(v)},`).join('\n');
     const binds = Object.entries(c.bindingCalls)
       .map(([n, x]) => `${pyStr(n)}: ${emitPyArg(x)}`).join(', ');
@@ -331,7 +329,6 @@ function emitJs(cases) {
       ['expect', c.expect], ['error', c.error], ['throws', c.throws],
       ['params', c.params], ['as', c.as], ['mode', c.mode],
       ['register', c.registerData], ['options', c.optionsData],
-      ['hasBindings', c.bindings !== null],
     ].map(([k, v]) => `    ${jsStr(k)}: ${emitJsArg(v)},`).join('\n');
     const binds = Object.entries(c.bindingCalls)
       .map(([n, x]) => `${jsStr(n)}: ${emitJsArg(x)}`).join(', ');

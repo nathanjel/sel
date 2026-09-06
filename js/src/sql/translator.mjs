@@ -663,7 +663,7 @@ export class Translator {
       joined.push(b);
     });
     const parts = this.fillNamed(caseTpl, { branches: joined, else: [els] }, n.pos);
-    return new Fragment(parts, unify(results), this.dialect);
+    return new Fragment(parts, unify(results, n.pos), this.dialect);
   }
 
   // --- aggregates: docs/SQL-TRANSLATION.md §7 ------------------------------
@@ -1164,7 +1164,8 @@ export class Translator {
     }
 
     const tpl = this.templateOf(entry, args, variant, what, pos);
-    return new Fragment(this.emit.fill(tpl, args, pos), retKind(entry, args), this.dialect);
+    return new Fragment(this.emit.fill(tpl, args, pos), retKind(entry, args, pos),
+      this.dialect);
   }
 
   templateOf(entry, args, variant, what, pos) {
@@ -1392,13 +1393,13 @@ function requireComparableKinds(l, r, op, pos) {
     + 'same characters', pos);
 }
 
-function retKind(entry, args) {
+function retKind(entry, args, pos = null) {
   const ret = String(entry.ret);
   if (ret === '@concat') return args.some((a) => a.kind === 'BIN') ? 'BIN' : 'TEXT';
   if (ret.startsWith('@unify:')) {
     const pick = ret.slice(7).split(',')
       .map(Number).filter((i) => i < args.length).map((i) => args[i]);
-    return unify(pick);
+    return unify(pick, pos);
   }
   return ret;
 }

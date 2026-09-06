@@ -374,6 +374,16 @@ final class Map
             throw new \LogicException("{$where} sets {$key} to a "
                 . get_debug_type($v) . '; it must be a string');
         }
+        // A quote character that is not a character cannot quote. Left through,
+        // the hosts disagreed about what it meant -- str_replace and Python's
+        // str.replace put the escape between every character AND at each end,
+        // the JS host's split/join only between -- and both answers are
+        // nonsense. textCollate is legitimately empty (ansi and sqlite ship it
+        // that way); these two are not.
+        if ($v === '' && ($key === 'identQuote' || $key === 'textQuote')) {
+            throw new \LogicException("{$where} sets {$key} to the empty string; "
+                . 'a quote character that is not a character cannot quote');
+        }
     }
 
     private static function checkKey(string $section, string $key): void

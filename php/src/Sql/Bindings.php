@@ -11,8 +11,6 @@ use Sel\Value;
 
 final class Bindings
 {
-    public const KINDS = ['column', 'columns', 'relation', 'value'];
-
     /** @var array<string, array<string,mixed>> upper-case name => binding */
     private array $map = [];
 

@@ -106,8 +106,34 @@ and `review.slot.repeated-in-a-numeric-wrap` in `sql/cases/13-review.sqlt` pin
 all three sites for every host, and `js-slot-replace-is-not-literal` in
 `sql/mutations.json` proves they still catch it.
 
-The other five findings were host-local or cosmetic and are recorded in the
-commit that fixed them; none changes what C++ or Lisp should do.
+The review's other survivors turned out to be cross-host too, and all four are
+now fixed in JS, PHP and Python. **A new host must arrive with them already
+right**, because the cases and mutations that pin them are shared:
+
+- **A lexical entry may not expand into itself.** `Emit.fill` expands one lexical
+  key inside another, and nothing stopped a registered
+  `{textCast: 'X({textCast:0})'}` recursing until the host died — RangeError on
+  JS, RecursionError on Python, a host crash through the public API either way.
+  Track the keys being expanded and refuse a repeat; do NOT cap a depth, because
+  with cycles refused the chain is bounded by the fifteen lexical keys and a cap
+  would need a number nobody can justify.
+- **A kind-mismatch refusal must carry a position.** `unify()` took a position
+  and every caller passed none, so `IF(TRUE, TRUE, "A-1")` reported
+  `E_SQL_SHAPE at 0:0` in all three hosts while every other refusal in the layer
+  reported where it happened.
+- **An empty `identQuote` or `textQuote` must be refused at registration.** A
+  quote character that is not a character cannot quote, and the hosts each
+  produced a different nonsense from it. `textCollate` is legitimately empty —
+  `ansi` and `sqlite` ship it that way — so refuse those two keys, not every key.
+- **Dead shared data.** `hasBindings` was emitted into every generated case by
+  all three emitters and read by none; `Bindings.KINDS` was defined in all three
+  hosts and read by none (`Fragment`'s `KINDS` is the one that is used). Both are
+  gone. A new host should not add them back.
+
+`review.lexical.expands-into-itself`, `review.unify.refusal-carries-a-position`
+and `review.lexical.empty-quote-is-refused` in `sql/cases/13-review.sqlt` pin the
+first three for every host, and four mutations in `sql/mutations.json` prove the
+cases still catch them.
 
 ---
 

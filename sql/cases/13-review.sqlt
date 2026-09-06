@@ -577,3 +577,53 @@ wrapped
 --- expect
 (1 || '' || 1)
 ===
+### name: review.lexical.expands-into-itself
+--- note
+A lexical value may reference another lexical key, and nothing stopped one from
+referencing itself. Filling it recursed until the host died -- RangeError on JS,
+RecursionError on Python, a host crash through the public API either way, which
+is the failure every other guard in this layer exists to prevent.
+
+The cycle is refused rather than a depth capped: the cycle is the actual mistake,
+a depth cap would need a number nobody can justify, and with cycles refused the
+chain is bounded by the fifteen lexical keys.
+--- dialect
+selfref
+--- register
+[{"dialect": "selfref", "extends": "mariadb", "lexical": {"textCast": "X({textCast:0})"}}]
+--- bindings
+{"A": {"kind": "column", "column": "a"}}
+--- source
+A $== "x"
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: review.unify.refusal-carries-a-position
+--- note
+Every refusal in this layer reports where it happened; this one reported 0:0,
+in all three hosts, because the only call that could supply a position passed
+none. The position is the character an author has to change, which is the whole
+reason the field exists.
+--- dialect
+mariadb
+--- source
+IF(TRUE, TRUE, "A-1")
+--- error
+E_SQL_SHAPE 1:1
+===
+### name: review.lexical.empty-quote-is-refused
+--- note
+A quote character that is not a character cannot quote. Left through, the hosts
+disagreed about what it meant -- str_replace and Python's str.replace put the
+escape between every character AND at each end, the JS host's split/join only
+between -- and both answers are nonsense. textCollate is legitimately empty and
+still is; these two are not.
+--- dialect
+mariadb
+--- register
+[{"dialect": "noquote", "extends": "ansi", "lexical": {"identQuote": ""}}]
+--- source
+1
+--- throws
+LogicException
+===

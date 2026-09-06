@@ -595,6 +595,34 @@
       "file": "js/src/sql/emit.mjs",
       "from": "  return tpl.split(slot).join(value);",
       "to": "  return tpl.replace(slot, value);"
+    },
+    {
+      "name": "js-lexical-cycle-unguarded",
+      "was": "How it shipped, and it crashed the host. A lexical value may reference another lexical key and nothing stopped one referencing itself, so a registered {textCast: 'X({textCast:0})'} recursed until JS raised RangeError through the public API -- the failure every other guard in this layer exists to prevent.",
+      "file": "js/src/sql/emit.mjs",
+      "from": "      if (expanding !== null && expanding.has(key)) {",
+      "to": "      if (false) {"
+    },
+    {
+      "name": "py-lexical-cycle-unguarded",
+      "was": "The Python half of js-lexical-cycle-unguarded; there it was RecursionError. Mutated in both because the guard is one line in each and a transcription can lose it in either.",
+      "file": "python/sel/sql/emit.py",
+      "from": "            if expanding is not None and key in expanding:",
+      "to": "            if False:"
+    },
+    {
+      "name": "unify-refusal-loses-its-position",
+      "was": "Every refusal in this layer reports where it happened; the kind-mismatch one reported 0:0 in all three hosts, because the only call that could supply a position passed none. Found by the JS layer's adversarial review and fixed in all three.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        return new Fragment($parts, self::unify($results, $n['pos']), $this->dialect);",
+      "to": "        return new Fragment($parts, self::unify($results), $this->dialect);"
+    },
+    {
+      "name": "empty-quote-accepted",
+      "was": "A quote character that is not a character cannot quote, and registering one was accepted. The hosts then disagreed about what it meant: str_replace and str.replace put the escape between every character AND at each end, JS's split/join only between. Both nonsense, differently.",
+      "file": "php/src/Sql/Map.php",
+      "from": "        if ($v === '' && ($key === 'identQuote' || $key === 'textQuote')) {",
+      "to": "        if (false) {"
     }
   ]
 }

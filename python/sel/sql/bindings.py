@@ -14,9 +14,6 @@ from ..lexer import ascii_upper
 from .binding import Binding
 from .errors import SqlError, refuse
 
-KINDS = ('column', 'columns', 'relation', 'value')
-
-
 class Bindings:
     __slots__ = ('_map',)
 

@@ -656,7 +656,7 @@ class Translator:
                 joined.append(' ')
             joined.append(b)
         parts = self._fill_named(case_tpl, {'branches': joined, 'else': [else_]}, n.pos)
-        return Fragment(parts, _unify(results), self.dialect)
+        return Fragment(parts, _unify(results, n.pos), self.dialect)
 
     # --- aggregates: docs/SQL-TRANSLATION.md §7 ------------------------------
     #
@@ -1123,7 +1123,7 @@ class Translator:
 
         tpl = self._template_of(entry, args, variant, what, pos)
         return Fragment(self.emit.fill(tpl, args, pos),
-                        _ret_kind(entry, args), self.dialect)
+                        _ret_kind(entry, args, pos), self.dialect)
 
     def _template_of(self, entry: dict[str, Any], args: list[Fragment],
                      variant: str | None, what: str, pos: Pos) -> str:
@@ -1366,13 +1366,14 @@ def _require_comparable_kinds(l: Fragment, r: Fragment, op: str, pos: Pos) -> No
            'cast to the same characters', pos)
 
 
-def _ret_kind(entry: dict[str, Any], args: list[Fragment]) -> str:
+def _ret_kind(entry: dict[str, Any], args: list[Fragment],
+              pos: Pos | None = None) -> str:
     ret = str(entry['ret'])
     if ret == '@concat':
         return 'BIN' if any(a.kind == 'BIN' for a in args) else 'TEXT'
     if ret.startswith('@unify:'):
         pick = [args[int(i)] for i in ret[7:].split(',') if int(i) < len(args)]
-        return _unify(pick)
+        return _unify(pick, pos)
     return ret
 
 

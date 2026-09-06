@@ -50,7 +50,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -66,7 +65,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -82,7 +80,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -98,7 +95,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -114,7 +110,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -130,7 +125,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -146,7 +140,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -162,7 +155,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -178,7 +170,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -194,7 +185,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -210,7 +200,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "TOTAL": Binding.column("total", "o", "NUM") }),
   },
   {
@@ -226,7 +215,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "TOTAL": Binding.column("total", null, "NUM") }),
   },
   {
@@ -242,7 +230,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ODD": Binding.column("c`d", "a`b", "NUM") }),
   },
   {
@@ -258,7 +245,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "NOW": Binding.raw("CURRENT_TIMESTAMP", "UNKNOWN") }),
   },
   {
@@ -274,7 +260,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -290,7 +275,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -306,7 +290,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -322,7 +305,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -338,7 +320,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -354,7 +335,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -370,7 +350,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -386,7 +365,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -402,7 +380,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -418,7 +395,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -434,7 +410,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "A": Binding.column("a", null, "TEXT") }),
   },
   {
@@ -450,7 +425,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "A": Binding.column("a", null, "UNKNOWN") }),
   },
   {
@@ -466,7 +440,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -482,7 +455,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -498,7 +470,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -514,7 +485,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "S": Binding.column("state", null, "TEXT") }),
   },
   {
@@ -530,7 +500,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -546,7 +515,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -562,7 +530,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -578,7 +545,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -594,7 +560,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -610,7 +575,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -626,7 +590,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -642,7 +605,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -658,7 +620,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -674,7 +635,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -690,7 +650,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -706,7 +665,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -722,7 +680,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -738,7 +695,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -754,7 +710,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -770,7 +725,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -786,7 +740,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -802,7 +755,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -818,7 +770,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -834,7 +785,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -850,7 +800,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -866,7 +815,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -882,7 +830,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -898,7 +845,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -914,7 +860,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -930,7 +875,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -946,7 +890,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -962,7 +905,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -978,7 +920,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -994,7 +935,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1010,7 +950,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "TOTAL": Binding.column("total", null, "NUM") }),
   },
   {
@@ -1026,7 +965,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1042,7 +980,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1058,7 +995,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "S": Binding.column("s", null, "TEXT") }),
   },
   {
@@ -1074,7 +1010,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1090,7 +1025,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1106,7 +1040,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1122,7 +1055,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1138,7 +1070,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1154,7 +1085,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1170,7 +1100,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "K": Binding.column("k", null, "TEXT") }),
   },
   {
@@ -1186,7 +1115,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1202,7 +1130,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "B": Binding.column("b", null, "NUM") }),
   },
   {
@@ -1218,7 +1145,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "LIM": Binding.value(Value.text("-5"), "NUM") }),
   },
   {
@@ -1234,7 +1160,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "N": Binding.column("n", null, "NUM") }),
   },
   {
@@ -1250,7 +1175,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "N": Binding.column("n", null, "NUM") }),
   },
   {
@@ -1266,7 +1190,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "S": Binding.column("score", null, "NUM") }),
   },
   {
@@ -1282,7 +1205,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1298,7 +1220,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "N": Binding.column("n", null, "NUM") }),
   },
   {
@@ -1314,7 +1235,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1330,7 +1250,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "N": Binding.column("n", null, "NUM") }),
   },
   {
@@ -1346,7 +1265,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "NUM") }),
   },
   {
@@ -1362,7 +1280,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "TEXT") }),
   },
   {
@@ -1378,7 +1295,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "NUM") }),
   },
   {
@@ -1394,7 +1310,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "NUM"), "LIMIT": Binding.value(Value.text("2.50"), "NUM") }),
   },
   {
@@ -1410,7 +1325,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "TEXT") }),
   },
   {
@@ -1426,7 +1340,6 @@ export const SQL_CASES = [
     "mode": "debug",
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "TEXT") }),
   },
   {
@@ -1442,7 +1355,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "S": Binding.column("s", null, "TEXT") }),
   },
   {
@@ -1458,7 +1370,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "S": Binding.column("s", null, "TEXT") }),
   },
   {
@@ -1474,7 +1385,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1490,7 +1400,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1506,7 +1415,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1522,7 +1430,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", null, "UNKNOWN"), Binding.column("b", null, "UNKNOWN"), Binding.column("c", null, "UNKNOWN")) }),
   },
   {
@@ -1538,7 +1445,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1554,7 +1460,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1570,7 +1475,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1586,7 +1490,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1602,7 +1505,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1618,7 +1520,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": { "strict": true },
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1634,7 +1535,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": { "strict": true },
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1650,7 +1550,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": { "strict": true },
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1666,7 +1565,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": { "strict": true },
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1682,7 +1580,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1698,7 +1595,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1714,7 +1610,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1730,7 +1625,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -1746,7 +1640,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "NUM") }),
   },
   {
@@ -1762,7 +1655,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "NUM") }),
   },
   {
@@ -1778,7 +1670,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "F": Binding.column("flag", null, "UNKNOWN") }),
   },
   {
@@ -1794,7 +1685,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", null, "NUM") }, null, null) }),
   },
   {
@@ -1810,7 +1700,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", null, "NUM"), Binding.column("b", null, "NUM")) }),
   },
   {
@@ -1826,7 +1715,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", null, "NUM") }, null, null) }),
   },
   {
@@ -1842,7 +1730,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "A": Binding.relation("x", "t", {}, null, null), "B": Binding.relation("y", "t", {}, null, null) }),
   },
   {
@@ -1858,7 +1745,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "NUM") }),
   },
   {
@@ -1874,7 +1760,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "SKU": Binding.column("sku", "o", "TEXT"), "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT") }, "SKU", "`oi`.`order_id` = `o`.`id`") }),
   },
   {
@@ -1890,7 +1775,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("total", "o", "NUM") }),
   },
   {
@@ -1906,7 +1790,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "CODE": Binding.value(Value.text("00123"), null) }),
   },
   {
@@ -1922,7 +1805,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "LIMIT": Binding.value(Value.text("100"), "NUM") }),
   },
   {
@@ -1938,7 +1820,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "L": Binding.value(valueTree([["1", Value.text("a")], ["2", Value.text("b")]]), null) }),
   },
   {
@@ -1954,7 +1835,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "L": Binding.value(valueTree([["1", Value.text("a")], ["2", Value.text("b")]]), null) }),
   },
   {
@@ -1970,7 +1850,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", "x", "NUM"), Binding.column("b", "x", "NUM")) }),
   },
   {
@@ -1986,7 +1865,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", "x", "NUM")) }),
   },
   {
@@ -2002,7 +1880,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "I": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, null) }),
   },
   {
@@ -2018,7 +1895,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "I": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, null) }),
   },
   {
@@ -2034,7 +1910,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.value(Value.text("007"), "NUM") }),
   },
   {
@@ -2050,7 +1925,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.value(Value.text("2.50"), "NUM") }),
   },
   {
@@ -2066,7 +1940,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.value(Value.text("-0"), "NUM") }),
   },
   {
@@ -2082,7 +1955,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.value(Value.text("007"), null) }),
   },
   {
@@ -2098,7 +1970,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.value(valueTree([]), null) }),
   },
   {
@@ -2114,7 +1985,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.value(valueTree([]), null) }),
   },
   {
@@ -2130,7 +2000,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.column("a\u0000b", null, "UNKNOWN") }),
   },
   {
@@ -2146,7 +2015,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.column(["a", "b"], null, "UNKNOWN") }),
   },
   {
@@ -2162,7 +2030,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.column("c", { "raw": "x" }, "UNKNOWN") }),
   },
   {
@@ -2178,7 +2045,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "R": Binding.relation("t", ["x"], { "Q": Binding.column("q", null, "UNKNOWN") }, null, null) }),
   },
   {
@@ -2194,7 +2060,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.value(Value.text("2.50"), "NUM") }),
   },
   {
@@ -2210,7 +2075,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "R": Binding.relation("t", "r", { "A": Binding.column("a", "r", "NUM") }, null, { "mariadb": "1=1" }) }),
   },
   {
@@ -2226,7 +2090,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "R": Binding.relationQuery({ "query": "select 1" }, "r", { "A": Binding.column("a", "r", "NUM") }, null, null) }),
   },
   {
@@ -2242,7 +2105,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "CRC32", { "tpl": "MY_CRC({0})", "ret": "TEXT" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2258,7 +2120,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", "this deployment forbids case folding in SQL"] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2274,7 +2135,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["ansi", "funcs", "UPPER", { "tpl": "ANSI_UPPER({0})", "ret": "TEXT" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2290,7 +2150,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["ansi", "funcs", "UPPER", { "tpl": "ANSI_UPPER({0})", "ret": "TEXT" }] }, { "define": ["mariadb", "funcs", "UPPER", { "tpl": "LEAF_UPPER({0})", "ret": "TEXT" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2306,7 +2165,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "ops", "&", { "variants": { "text": "({0} || {1})" }, "ret": "@concat" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2322,7 +2180,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "LEN", { "tpl": "LEN({0}{textCollate})", "ret": "NUM" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2338,7 +2195,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "99.0" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2354,7 +2210,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8" }, { "define": ["mariadb", "funcs", "UPPER", { "tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "11.0" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2370,7 +2225,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8" }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2386,7 +2240,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "mariadb-nocollate", "extends": "mariadb", "version": "10.5", "lexical": { "textCollate": " COLLATE utf8mb4_0900_bin" } }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2402,7 +2255,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "wishful", "extends": "nosuchdialect", "version": "1.0" }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2418,7 +2270,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "nonesuch", "UPPER", null] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2434,7 +2285,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2450,7 +2300,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2466,7 +2315,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2482,7 +2330,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2498,7 +2345,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2514,7 +2360,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2530,7 +2375,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2546,7 +2390,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2562,7 +2405,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2578,7 +2420,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2594,7 +2435,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "TOTAL": Binding.column("total", "o", "NUM") }),
   },
   {
@@ -2610,7 +2450,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", "x", "NUM"), Binding.column("b", "x", "NUM"), Binding.column("c", "x", "NUM")) }),
   },
   {
@@ -2626,7 +2465,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", "x", "NUM"), Binding.column("b", "x", "NUM")) }),
   },
   {
@@ -2642,7 +2480,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", "x", "NUM")) }),
   },
   {
@@ -2658,7 +2495,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", "x", "UNKNOWN"), Binding.column("b", "x", "UNKNOWN")) }),
   },
   {
@@ -2674,7 +2510,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT") }, "SKU", "`oi`.`order_id` = `o`.`id`") }),
   },
   {
@@ -2690,7 +2525,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, "`oi`.`order_id` = `o`.`id`") }),
   },
   {
@@ -2706,7 +2540,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM"), "PRICE": Binding.column("price", "oi", "NUM") }, null, "`oi`.`order_id` = `o`.`id`") }),
   },
   {
@@ -2722,7 +2555,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, "`oi`.`order_id` = `o`.`id`") }),
   },
   {
@@ -2738,7 +2570,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ALL_ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, null) }),
   },
   {
@@ -2754,7 +2585,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.relationQuery("(SELECT a, b FROM x)", "v", { "A": Binding.column("a", "v", "NUM") }, null, null) }),
   },
   {
@@ -2770,7 +2600,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "SKU": Binding.column("sku", "o", "TEXT"), "ITEMS": Binding.relation("order_items", "oi", { "SKU": Binding.column("sku", "oi", "TEXT") }, "SKU", "`oi`.`order_id` = `o`.`id`") }),
   },
   {
@@ -2786,7 +2615,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ORDERS": Binding.relation("orders", "o", { "ID": Binding.column("id", "o", "NUM") }, null, null), "LINES": Binding.relation("lines", "l", { "QTY": Binding.column("qty", "l", "NUM") }, null, "`l`.`order_id` = `o`.`id`") }),
   },
   {
@@ -2802,7 +2630,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2818,7 +2645,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2834,7 +2660,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, "`oi`.`order_id` = `o`.`id`") }),
   },
   {
@@ -2850,7 +2675,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2866,7 +2690,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2882,7 +2705,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "L": Binding.value(valueTree([["1", Value.text("a")], ["2", Value.text("b")]]), null) }),
   },
   {
@@ -2898,7 +2720,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "E": Binding.value(valueTree([]), null) }),
   },
   {
@@ -2914,7 +2735,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "E": Binding.value(valueTree([]), null) }),
   },
   {
@@ -2930,7 +2750,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "E": Binding.value(valueTree([]), null) }),
   },
   {
@@ -2946,7 +2765,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -2962,7 +2780,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, null) }),
   },
   {
@@ -2978,7 +2795,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, null) }),
   },
   {
@@ -2994,7 +2810,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3010,7 +2825,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, null) }),
   },
   {
@@ -3026,7 +2840,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "SKU": Binding.column("sku", "oi", "TEXT") }, null, null) }),
   },
   {
@@ -3042,7 +2855,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM") }, null, null) }),
   },
   {
@@ -3058,7 +2870,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3074,7 +2885,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3090,7 +2900,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3106,7 +2915,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "SKU": Binding.column("sku", "oi", "TEXT") }, "SKU", null) }),
   },
   {
@@ -3122,7 +2930,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3138,7 +2945,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM"), "PRICE": Binding.column("price", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT") }, "SKU", "`oi`.`order_id` = `o`.`id`"), "CREDIT_LIMIT": Binding.column("credit_limit", "o", "NUM") }),
   },
   {
@@ -3154,7 +2960,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM"), "PRICE": Binding.column("price", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT") }, "SKU", "`oi`.`order_id` = `o`.`id`"), "CREDIT_LIMIT": Binding.column("credit_limit", "o", "NUM") }),
   },
   {
@@ -3170,7 +2975,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", "oi", "NUM"), "PRICE": Binding.column("price", "oi", "NUM"), "SKU": Binding.column("sku", "oi", "TEXT") }, "SKU", "`oi`.`order_id` = `o`.`id`"), "CREDIT_LIMIT": Binding.column("credit_limit", "o", "NUM") }),
   },
   {
@@ -3186,7 +2990,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", null, "NUM"), "SKU": Binding.column("sku", null, "TEXT") }, "SKU", null) }),
   },
   {
@@ -3202,7 +3005,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "SKUS": Binding.relation("order_items", "s2", { "SKU": Binding.column("sku", "s2", "TEXT") }, "SKU", null) }),
   },
   {
@@ -3218,7 +3020,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", null, "NUM"), "SKU": Binding.column("sku", null, "TEXT") }, "SKU", null) }),
   },
   {
@@ -3234,7 +3035,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", null, "NUM") }, null, null) }),
   },
   {
@@ -3250,7 +3050,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "SKU": Binding.column("sku", "oi", "TEXT") }, null, null), "SKUS": Binding.relation("skus", "s2", { "SKU": Binding.column("sku", "s2", "TEXT") }, "SKU", null) }),
   },
   {
@@ -3266,7 +3065,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3282,7 +3080,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3298,7 +3095,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "NOTES": Binding.relation("order_items", "nt", { "NOTE": Binding.column("note", "nt", "TEXT") }, "NOTE", null) }),
   },
   {
@@ -3314,7 +3110,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3330,7 +3125,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "TEXT") }),
   },
   {
@@ -3346,7 +3140,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3362,7 +3155,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("t", "oi", { "qty": Binding.column("qty", "oi", "NUM") }, null, null) }),
   },
   {
@@ -3378,7 +3170,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "NUM"), "V": Binding.value(Value.text("1 OR 1=1 -- "), "NUM") }),
   },
   {
@@ -3394,7 +3185,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "L": Binding.value(valueTree([["1", Value.text("1")], ["2", Value.text("2) OR (1=1")]]), "NUM") }),
   },
   {
@@ -3410,7 +3200,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "NUM"), "V": Binding.value(Value.text("100"), "NUM") }),
   },
   {
@@ -3426,7 +3215,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "TEXT") }),
   },
   {
@@ -3442,7 +3230,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "TEXT") }),
   },
   {
@@ -3458,7 +3245,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "TEXT") }),
   },
   {
@@ -3474,7 +3260,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "TEXT") }),
   },
   {
@@ -3490,7 +3275,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "skel", "join", { "tpl": "(SELECT GROUP_CONCAT({body} ORDER BY {body} SEPARATOR {sep}) FROM {from} WHERE {corr})" }] }],
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "R": Binding.relation("t", "r", { "S": Binding.column("s", "r", "TEXT") }, "S", null) }),
   },
   {
@@ -3506,7 +3290,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "A": Binding.relationQuery("(SELECT 1)", null, {}, null, null), "B": Binding.relationQuery("(SELECT 2)", null, {}, null, null) }),
   },
   {
@@ -3522,7 +3305,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "A": Binding.relationQuery("(SELECT 1)", null, {}, null, null), "B": Binding.relationQuery("(SELECT 1)", null, {}, null, null) }),
   },
   {
@@ -3538,7 +3320,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "S": Binding.column("s", null, "TEXT"), "ALLOWED": Binding.value(valueTree([["1", Value.text("open")], ["2", Value.text("held")]]), null) }),
   },
   {
@@ -3554,7 +3335,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3570,7 +3350,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3586,7 +3365,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "UNKNOWN") }),
   },
   {
@@ -3602,7 +3380,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3618,7 +3395,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3634,7 +3410,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "UNKNOWN") }),
   },
   {
@@ -3650,7 +3425,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3666,7 +3440,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3682,7 +3455,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3698,7 +3470,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3714,7 +3485,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3730,7 +3500,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "C": Binding.column("c", null, "UNKNOWN") }),
   },
   {
@@ -3746,7 +3515,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3762,7 +3530,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3778,7 +3545,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3794,7 +3560,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3810,7 +3575,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "B": Binding.column("b", null, "BIN") }),
   },
   {
@@ -3826,7 +3590,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "B": Binding.column("b", null, "BIN") }),
   },
   {
@@ -3842,7 +3605,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "F": Binding.column("f", null, "BOOL"), "N": Binding.column("n", null, "TEXT") }),
   },
   {
@@ -3858,7 +3620,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "B": Binding.column("b", null, "BIN"), "N": Binding.column("n", null, "TEXT") }),
   },
   {
@@ -3874,7 +3635,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "F": Binding.column("f", null, "BOOL") }),
   },
   {
@@ -3890,7 +3650,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "B": Binding.column("b", null, "BIN") }),
   },
   {
@@ -3906,7 +3665,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "B": Binding.column("b", null, "BIN") }),
   },
   {
@@ -3922,7 +3680,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "F": Binding.column("f", null, "BOOL") }),
   },
   {
@@ -3938,7 +3695,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "U": Binding.column("u", null, "UNKNOWN") }),
   },
   {
@@ -3954,7 +3710,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3970,7 +3725,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -3986,7 +3740,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "COL": Binding.column("active$' -- oops", null, "UNKNOWN") }),
   },
   {
@@ -4002,7 +3755,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "twice", "extends": "postgresql", "lexical": { "isTrue": "({0} IS TRUE AND {0} IS NOT NULL)" } }],
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "COL": Binding.column("c", null, "UNKNOWN") }),
   },
   {
@@ -4018,7 +3770,51 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "wrapped", "extends": "sqlite", "lexical": { "numericLiteral": "({0} || '' || {0})" } }],
     "options": null,
-    "hasBindings": false,
+    bindings: () => ({  }),
+  },
+  {
+    "name": "review.lexical.expands-into-itself",
+    "at": "13-review.sqlt:580",
+    "dialect": "selfref",
+    "source": "A $== \"x\"",
+    "expect": null,
+    "error": "E_SQL_UNSUPPORTED",
+    "throws": null,
+    "params": null,
+    "as": null,
+    "mode": null,
+    "register": [{ "dialect": "selfref", "extends": "mariadb", "lexical": { "textCast": "X({textCast:0})" } }],
+    "options": null,
+    bindings: () => ({ "A": Binding.column("a", null, "UNKNOWN") }),
+  },
+  {
+    "name": "review.unify.refusal-carries-a-position",
+    "at": "13-review.sqlt:601",
+    "dialect": "mariadb",
+    "source": "IF(TRUE, TRUE, \"A-1\")",
+    "expect": null,
+    "error": "E_SQL_SHAPE 1:1",
+    "throws": null,
+    "params": null,
+    "as": null,
+    "mode": null,
+    "register": null,
+    "options": null,
+    bindings: () => ({  }),
+  },
+  {
+    "name": "review.lexical.empty-quote-is-refused",
+    "at": "13-review.sqlt:614",
+    "dialect": "mariadb",
+    "source": "1",
+    "expect": null,
+    "error": null,
+    "throws": "LogicException",
+    "params": null,
+    "as": null,
+    "mode": null,
+    "register": [{ "dialect": "noquote", "extends": "ansi", "lexical": { "identQuote": "" } }],
+    "options": null,
     bindings: () => ({  }),
   },
   {
@@ -4034,7 +3830,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4050,7 +3845,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4066,7 +3860,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4082,7 +3875,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4098,7 +3890,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4114,7 +3905,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4130,7 +3920,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4146,7 +3935,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4162,7 +3950,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4178,7 +3965,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4194,7 +3980,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4210,7 +3995,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4226,7 +4010,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4242,7 +4025,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4258,7 +4040,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": { "strict": true },
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4274,7 +4055,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": { "strict": true },
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4290,7 +4070,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4306,7 +4085,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4322,7 +4100,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4338,7 +4115,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4354,7 +4130,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4370,7 +4145,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4386,7 +4160,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4402,7 +4175,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4418,7 +4190,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4434,7 +4205,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4450,7 +4220,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4466,7 +4235,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "TEXT") }),
   },
   {
@@ -4482,7 +4250,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": [{ "dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": true, "lexical": { "placeholder": "${n}" } }],
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "TEXT") }),
   },
   {
@@ -4498,7 +4265,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4514,7 +4280,6 @@ export const SQL_CASES = [
     "mode": "params",
     "register": [{ "dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": true, "lexical": { "placeholder": "${n}" } }],
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "T": Binding.column("t", null, "TEXT") }),
   },
   {
@@ -4530,7 +4295,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4546,7 +4310,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4562,7 +4325,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4578,7 +4340,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4594,7 +4355,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4610,7 +4370,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4626,7 +4385,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4642,7 +4400,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4658,7 +4415,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4674,7 +4430,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4690,7 +4445,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4706,7 +4460,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4722,7 +4475,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4738,7 +4490,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4754,7 +4505,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4770,7 +4520,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4786,7 +4535,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4802,7 +4550,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4818,7 +4565,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4834,7 +4580,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4850,7 +4595,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4866,7 +4610,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4882,7 +4625,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4898,7 +4640,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4914,7 +4655,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4930,7 +4670,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4946,7 +4685,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -4962,7 +4700,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "N": Binding.column("n", null, "NUM") }),
   },
   {
@@ -4978,7 +4715,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "N": Binding.column("n", null, "NUM") }),
   },
   {
@@ -4994,7 +4730,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5010,7 +4745,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5026,7 +4760,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5042,7 +4775,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5058,7 +4790,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "F": Binding.column("f", null, "BOOL") }),
   },
   {
@@ -5074,7 +4805,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5090,7 +4820,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "X": Binding.value(Value.text("-1"), "NUM") }),
   },
   {
@@ -5106,7 +4835,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "Z": Binding.value(Value.text("0"), "NUM") }),
   },
   {
@@ -5122,7 +4850,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "S": Binding.value(Value.text("abc"), null) }),
   },
   {
@@ -5138,7 +4865,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "N": Binding.column("n", null, "NUM") }),
   },
   {
@@ -5154,7 +4880,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5170,7 +4895,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5186,7 +4910,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5202,7 +4925,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5218,7 +4940,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5234,7 +4955,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5250,7 +4970,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5266,7 +4985,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5282,7 +5000,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5298,7 +5015,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5314,7 +5030,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5330,7 +5045,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5346,7 +5060,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5362,7 +5075,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5378,7 +5090,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5394,7 +5105,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5410,7 +5120,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5426,7 +5135,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5442,7 +5150,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5458,7 +5165,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5474,7 +5180,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5490,7 +5195,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5506,7 +5210,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5522,7 +5225,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5538,7 +5240,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5554,7 +5255,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", null, "UNKNOWN"), Binding.column("b", null, "UNKNOWN")) }),
   },
   {
@@ -5570,7 +5270,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", null, "UNKNOWN"), Binding.column("b", null, "UNKNOWN")) }),
   },
   {
@@ -5586,7 +5285,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "V": Binding.columns(Binding.column("a", null, "UNKNOWN"), Binding.column("b", null, "UNKNOWN")) }),
   },
   {
@@ -5602,7 +5300,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5618,7 +5315,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "ITEMS": Binding.relation("order_items", "oi", { "QTY": Binding.column("qty", null, "NUM") }, null, null) }),
   },
   {
@@ -5634,7 +5330,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": "U({01})", "ret": "TEXT" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5650,7 +5345,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": "U({0\n})", "ret": "TEXT" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5666,7 +5360,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": "U({0})", "ret": "TEXT" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5682,7 +5375,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "A": Binding.column("a", null, "NUM") }),
   },
   {
@@ -5698,7 +5390,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": true,
     bindings: () => ({ "A": Binding.column("a", null, "NUM") }),
   },
   {
@@ -5714,7 +5405,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5730,7 +5420,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": null,
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5746,7 +5435,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": "U({0})" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5762,7 +5450,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": ["a", "b"], "ret": "TEXT" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5778,7 +5465,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": "U({0})", "ret": "TEXT", "arity": ["1", "1"] }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5794,7 +5480,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": "U({0})", "ret": "TEXT", "since": "abc" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5810,7 +5495,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "UPPER", { "tpl": "U({0})", "ret": "TEXT", "caveat": "made-up" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5826,7 +5510,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "ops", "and", { "tpl": "({0} AND {1})", "ret": "BOOL" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5842,7 +5525,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "COUNT", { "tpl": "X({0})", "ret": "NUM" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5858,7 +5540,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "skel", "case", { "tpl": "CASE {branchez} ELSE {else} END" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5874,7 +5555,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "mariadb", "extends": "mysql" }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5890,7 +5570,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "d1", "extends": "mariadb", "target": "0" }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5906,7 +5585,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "d2", "extends": "mariadb", "version": "11.8.8-MariaDB" }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5922,7 +5600,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "d3", "extends": "mariadb", "lexical": { "textEscape": "x" } }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5938,7 +5615,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "d4", "extends": "mariadb", "lexical": { "true": true } }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5954,7 +5630,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "dialect": "d5", "extends": "mariadb", "lexical": { "identQuot": "`" } }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5970,7 +5645,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "MIN", { "tpl": { "1": null, "*": "LEAST({*})" }, "ret": "NUM" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
   {
@@ -5986,7 +5660,6 @@ export const SQL_CASES = [
     "mode": null,
     "register": [{ "define": ["mariadb", "funcs", "MIN", { "tpl": { "1": null, "*": "LEAST({*})" }, "ret": "NUM" }] }],
     "options": null,
-    "hasBindings": false,
     bindings: () => ({  }),
   },
 ];

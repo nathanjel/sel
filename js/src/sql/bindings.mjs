@@ -8,8 +8,6 @@ import { asciiUpper } from '../lexer.mjs';
 import { Binding } from './binding.mjs';
 import { SqlError, refuse } from './errors.mjs';
 
-export const KINDS = ['column', 'columns', 'relation', 'value'];
-
 export class Bindings {
   // Name -> Binding, and nothing else.
   //

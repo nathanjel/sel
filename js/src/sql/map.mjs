@@ -302,6 +302,15 @@ function checkLexical(key, v, where) {
   if (typeof v !== 'string') {
     throw new Error(`${where} sets ${key} to a ${typeName(v)}; it must be a string`);
   }
+  // A quote character that is not a character cannot quote. Left through, the
+  // hosts disagreed about what it meant -- JS's split/join inserts the escape
+  // between every character, Python's str.replace also puts one at each end --
+  // and both answers are nonsense. textCollate is legitimately empty (ansi and
+  // sqlite ship it that way); these two are not.
+  if (v === '' && (key === 'identQuote' || key === 'textQuote')) {
+    throw new Error(`${where} sets ${key} to the empty string; a quote character `
+      + 'that is not a character cannot quote');
+  }
 }
 
 function checkKey(section, key) {
