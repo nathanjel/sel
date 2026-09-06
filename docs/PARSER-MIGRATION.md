@@ -126,7 +126,7 @@ are `Map`s rather than plain objects so that a token spelled like a name on
 `enter`/`leave` was converged onto the protected form at the same time.
 
 The easiest, and the one whose 35 frames motivated the exercise. The nine arrow
-thunks and both binary helpers delete outright; the tables are plain objects.
+thunks and both binary helpers delete outright.
 
 One wrinkle: `pos` in this host *is* the token object (tokens carry
 `line`/`col`/`offset` inline), so table-driven `fail` calls keep passing tokens
@@ -197,11 +197,12 @@ single biggest deletion in the exercise.
 
 ### One inconsistency worth settling
 
-`parse_sequence`'s `enter`/`leave` is unprotected in JS (`57`/`65`), PHP
-(`99`/`109`) and C++ (`1278`/`1286`), and protected in Lisp (`with-depth`) and
-Python (`try/finally`). It is harmless today because a `fail` abandons the whole
-parse, but the asymmetry is the first thing a reviewer asks about. Converge on
-the protected form.
+`parse_sequence`'s `enter`/`leave` was unprotected in JS, PHP and C++ and
+protected in Lisp (`with-depth`) and Python (`try/finally`). It is harmless
+either way, because a `fail` abandons the whole parse, but the asymmetry is the
+first thing a reviewer asks about. JS and PHP converged onto the protected form
+as part of their conversions; **C++ is the last one left**, and should converge
+when it is converted.
 
 ## How to do one
 

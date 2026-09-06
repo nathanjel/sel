@@ -570,13 +570,15 @@ INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }
 and a *new* precedence level is a new `BP_` constant with the ones above it
 renumbered — no new function, and nothing to wire into a chain.
 
-In the two transcribed parsers, `parseMultiplicative` already loops over a list:
+In the two transcribed parsers — `cpp/sel.cpp` and `lisp/src/parser.lisp` —
+`parse_multiplicative` already loops over a list, so an operator at an existing
+level is one more entry in it:
 
-```js
-parseMultiplicative() { return this.parseOpBinary(['*', '/', '%', '//'], () => this.parseUnary()); }
+```lisp
+(defun parse-multiplicative (p) (parse-op-binary p '("*" "/" "%" "//") #'parse-unary))
 ```
 
-and a new precedence level means a new method in each of them, wired into the
+and a new precedence level means a new function in each of them, wired into the
 chain in the same place, and mirrored in `grammar.md`.
 
 **6. Every evaluator** — a branch in `evalBinary` / `eval_binary` /
