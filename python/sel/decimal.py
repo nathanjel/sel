@@ -13,11 +13,18 @@ too, `tools/check-decimal.sh` would be comparing that module against itself and
 would verify precisely nothing for Python while still printing a reassuring
 "0 mismatches".
 
-Where the other three hosts carry digit strings — because PHP has no bigint and
+Where the other four hosts carry digit strings — because PHP has no bigint and
 JS has doubles — this carries Python `int`, which is arbitrary precision. Every
 digit-string routine there (addAbs, subAbs, mulAbs, divModAbs, scaleUp, strip)
 is exactly an integer operation, so the mapping is one-to-one and the leading-
 zero bookkeeping simply disappears.
+
+The arithmetic is unbounded; the *conversions* are not. CPython refuses int/str
+above 4300 digits by default, and since a SEL number is text, that limit reached
+straight into the language: a 4301-digit literal the other four hosts evaluated
+could not be compiled here at all. It is raised below to what §6.4 admits, and
+the digit count the cap needs is read from bit_length rather than str(), because
+str() is the conversion being guarded.
 """
 
 from __future__ import annotations

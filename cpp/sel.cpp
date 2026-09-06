@@ -224,9 +224,10 @@ constexpr long long DIV_SCALE = 10;
 constexpr long long MAX_INT_DIGITS = 1000000;
 constexpr long long MAX_FRAC_DIGITS = 1000000;
 
-// An upper bound on any scale a built-in will construct. Not a language limit —
-// spec/SPEC.md sets none — but a value beyond this asks for a string longer than
-// memory, and failing with E_RANGE beats either a wrapped integer or a crash.
+// Upper bounds on the arguments that name a size, from spec/SPEC.md §6.4's
+// first table. These are not the same as the value caps above: they bound what
+// a call may ask for, not how big the answer may be, and an argument cap alone
+// left POWER's base free to step over MAX_POWER by nesting.
 constexpr long long MAX_SCALE = 1000000;
 constexpr long long MAX_POWER = 100000;
 constexpr long long MAX_QUANTIFIER = 65535;   // PCRE2's own hard limit
