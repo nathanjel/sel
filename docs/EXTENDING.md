@@ -596,6 +596,15 @@ In C++ and Lisp, bind the two coerced operands to named locals first. Writing
 them as two arguments to one call leaves their order unspecified in C++, and
 which operand's position an error reports is observable — see the traps.
 
+A **comparison** operator is the one case where the evaluator is two edits, not
+one: the branch in `evalBinary` hands off to `compareResult` /
+`compare_result` / `compare-result`, which turns a `-1 | 0 | 1` into a boolean
+and must learn the new operator too. Every host used to answer for an operator
+it did not name — `>=` in four of them, `FALSE` in JS — so forgetting this
+second edit produced wrong answers rather than an error. All five now refuse
+with `E_SYNTAX unknown comparison operator`, which is what you will see if you
+skip it.
+
 **7. `Program.dependencies()`** — nothing to do for a binary operator; `bin`
 nodes are already walked. A node type that binds names is a different story.
 

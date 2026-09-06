@@ -247,11 +247,11 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
 
     if op in ('==', '!=', '<', '<=', '>', '>='):
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.bool(_compare_result(op, D.cmp(a, b)))
+        return Value.bool(_compare_result(op, D.cmp(a, b), node.pos))
 
     if op in ('$==', '$!=', '$<', '$<=', '$>', '$>='):
         a = l.as_bytes(lp); b = r.as_bytes(rp)
-        return Value.bool(_compare_result(op[1:], bytes_compare(a, b)))
+        return Value.bool(_compare_result(op[1:], bytes_compare(a, b), node.pos))
 
     if op == 'EQL':
         return Value.bool(l.eql(r))
@@ -269,7 +269,15 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     fail('E_SYNTAX', f'unknown operator {op}', node.pos)
 
 
-def _compare_result(op: str, c: int) -> bool:
+def _compare_result(op: str, c: int, pos: Pos) -> bool:
+    """The six comparisons, and nothing else.
+
+    The last branch was `return c >= 0`, which answered for every operator it
+    did not name -- so a comparison operator added to the parser and forgotten
+    here evaluated as `>=` and reported nothing. Unreachable today, since the
+    caller only reaches this with the six, and that is the point of saying so
+    out loud rather than answering.
+    """
     if op == '==':
         return c == 0
     if op == '!=':
@@ -280,7 +288,9 @@ def _compare_result(op: str, c: int) -> bool:
         return c <= 0
     if op == '>':
         return c > 0
-    return c >= 0
+    if op == '>=':
+        return c >= 0
+    fail('E_SYNTAX', f'unknown comparison operator {op}', pos)
 
 
 def _concat(l: Value, r: Value, lp: Pos, rp: Pos) -> Value:

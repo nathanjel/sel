@@ -150,13 +150,22 @@
         (make-bool (not (as-bool v (node-pos (node-l node)))))
         (make-num (dec-negate (as-dec v (node-pos (node-l node))))))))
 
-(defun compare-result (op c)
+;;; The six comparisons, and nothing else.
+;;;
+;;; The last clause was `(t (>= c 0))`, which answered for every operator it did
+;;; not name. This host is the one where that mattered most: the caller reaches
+;;; here through `(member op +compare-ops+)` and through a bare test on a
+;;; leading `$`, so an operator added to +compare-ops+ and forgotten here really
+;;; would have evaluated as `>=` and reported nothing. Unreachable today, and
+;;; that is the point of saying so out loud rather than answering.
+(defun compare-result (op c pos)
   (cond ((string= op "==") (zerop c))
         ((string= op "!=") (not (zerop c)))
         ((string= op "<") (minusp c))
         ((string= op "<=") (<= c 0))
         ((string= op ">") (plusp c))
-        (t (>= c 0))))
+        ((string= op ">=") (>= c 0))
+        (t (fail "E_SYNTAX" (format nil "unknown comparison operator ~a" op) pos))))
 
 ;;; TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
 (defun sel-concat (l r lp rp)
@@ -232,12 +241,12 @@
         ((char= (char op 0) #\$)
          (let* ((a (as-bytes l lp))
                 (b (as-bytes r rp)))
-           (make-bool (compare-result (subseq op 1) (bytes-compare a b)))))
+           (make-bool (compare-result (subseq op 1) (bytes-compare a b) (node-pos node)))))
 
         ((member op +compare-ops+ :test #'string=)
          (let* ((a (as-dec l lp))
                 (b (as-dec r rp)))
-           (make-bool (compare-result op (dec-cmp a b)))))
+           (make-bool (compare-result op (dec-cmp a b) (node-pos node)))))
 
         (t (fail "E_SYNTAX" (format nil "unknown operator ~a" op) (node-pos node)))))))
 

@@ -202,11 +202,11 @@ function evalBinary(node, ctx) {
 
     case '==': case '!=': case '<': case '<=': case '>': case '>=': {
       const c = D.cmp(l.asDecimal(lp), r.asDecimal(rp));
-      return Value.bool(compareResult(op, c));
+      return Value.bool(compareResult(op, c, node.pos));
     }
     case '$==': case '$!=': case '$<': case '$<=': case '$>': case '$>=': {
       const c = bytesCompare(l.asBytes(lp), r.asBytes(rp));
-      return Value.bool(compareResult(op.slice(1), c));
+      return Value.bool(compareResult(op.slice(1), c, node.pos));
     }
 
     case 'EQL': return Value.bool(l.eql(r));
@@ -220,7 +220,15 @@ function evalBinary(node, ctx) {
   fail('E_SYNTAX', `unknown operator ${op}`, node.pos);
 }
 
-function compareResult(op, c) {
+// The six comparisons, and nothing else.
+//
+// This switch had no default, so an operator it did not name fell off the end
+// as `undefined` and Value.bool made that FALSE -- a comparison operator added
+// to the parser and forgotten here answered FALSE for every pair of operands
+// and reported nothing. Unreachable today, since the caller only reaches this
+// with the six, and that is the point of saying so out loud rather than
+// answering.
+function compareResult(op, c, pos) {
   switch (op) {
     case '==': return c === 0;
     case '!=': return c !== 0;
@@ -229,6 +237,7 @@ function compareResult(op, c) {
     case '>': return c > 0;
     case '>=': return c >= 0;
   }
+  fail('E_SYNTAX', `unknown comparison operator ${op}`, pos);
 }
 
 // TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).

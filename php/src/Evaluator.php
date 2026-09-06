@@ -160,12 +160,12 @@ final class Evaluator
             case '&': return self::concat($l, $r, $lp, $rp);
 
             case '==': case '!=': case '<': case '<=': case '>': case '>=':
-                return Value::bool(self::compareResult($op, Dec::cmp($l->asDecimal($lp), $r->asDecimal($rp))));
+                return Value::bool(self::compareResult($op, Dec::cmp($l->asDecimal($lp), $r->asDecimal($rp)), $node['pos']));
 
             case '$==': case '$!=': case '$<': case '$<=': case '$>': case '$>=':
                 // strcmp is bytewise, which is exactly what §5.3 requires.
                 $c = strcmp($l->asBytes($lp), $r->asBytes($rp));
-                return Value::bool(self::compareResult(substr($op, 1), $c <=> 0));
+                return Value::bool(self::compareResult(substr($op, 1), $c <=> 0, $node['pos']));
 
             case 'EQL': return Value::bool($l->eql($r));
             case 'IN': return Value::bool(self::isIn($l, $r));
@@ -178,7 +178,19 @@ final class Evaluator
         fail('E_SYNTAX', "unknown operator {$op}", $node['pos']);
     }
 
-    private static function compareResult(string $op, int $c): bool
+    /**
+     * The six comparisons, and nothing else.
+     *
+     * The match had no default arm, so an operator it did not name raised
+     * \UnhandledMatchError -- loud, which is right, but a PHP error rather than
+     * a SEL one, so it carried no code and no position and could not be caught
+     * where every other failure in this file is caught. The other four hosts
+     * answered silently in their own ways; all five now refuse identically.
+     * Unreachable today, since the caller only reaches this with the six.
+     *
+     * @param array<string,mixed>|null $pos
+     */
+    private static function compareResult(string $op, int $c, ?array $pos): bool
     {
         return match ($op) {
             '==' => $c === 0,
@@ -187,6 +199,7 @@ final class Evaluator
             '<=' => $c <= 0,
             '>' => $c > 0,
             '>=' => $c >= 0,
+            default => fail('E_SYNTAX', "unknown comparison operator {$op}", $pos),
         };
     }
 
