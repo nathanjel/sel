@@ -346,7 +346,9 @@ Per-host status:
   actually crashed with nothing scheduled. It took the rider on its own. With it
   the worst shape is `call` at 708 frames against CPython's 1000, a 29% margin,
   and `a[` ×50 000 returns a clean `E_DEPTH` through the public CLI.
-- **C++** — outstanding, to land with its conversion.
+- **C++** — done, on its own, ahead of the conversion. The four textually
+  identical local `Leave` RAII structs were factored into one class-scope type
+  in the same commit, and the bracket loop is its fifth site.
 - **Lisp** — outstanding, to land with its conversion. Whichever of these two
   goes last also adds the two cases above to `conformance/10-limits.selt` and
   the sentence to `spec/SPEC.md` §6.4 — §6.4 already says every nesting
@@ -416,20 +418,24 @@ single biggest deletion in the exercise.
   `items` serves `seq`, `list` *and* call arguments. Introducing Python's
   `target`/`value`/`obj`/`idx` names means touching `eval`, `check_target` and
   `dependencies` too, and that is a different change.
-- The three textually identical local `Leave` RAII structs (`sel.cpp:1354`,
-  `:1421`, `:1451`) collapse to two sites and should be factored into one type
-  while you are there. C++ has no `finally`; this is the equivalent.
+- The `Leave` RAII type is already factored — the rider commit did it, because
+  it was about to be written out a fifth time. C++ has no `finally`; this is the
+  equivalent, and the conversion keeps the same five counted constructs.
 **This host's three deliverables**, in order:
 
-1. **The index-bracket rider** — the bracket loop needs its own `enter`/`leave`,
-   a fourth `Leave` site, or the factored type if you do that first. Land it
-   before the conversion, not with it.
+1. **The index-bracket rider** — done, alone, ahead of the conversion.
 2. **The parser conversion** — everything above.
 3. **The SQL translator** — `php/src/Sql/` is 6,381 lines and
-   `python/sel/sql/` is 5,459; transcribe from the Python. The container warning
-   in [A host's turn](#a-hosts-turn-three-deliverables) is aimed squarely at this
-   host: `std::map` sorts its keys, so an aggregate's elements need a
-   `std::vector` of pairs or they unroll in the wrong order.
+   `python/sel/sql/` is 5,459. **Deferred, and not by transcription from the
+   Python.** The obvious C++ shape for the generated dialect map is a JSON blob
+   parsed at load, because the map is heterogeneous nested data and the runtime
+   `define()` API takes application-supplied data of the same shape. That is
+   ruled out: this host is not taking a JSON reader. The representation is an
+   open question, and it is the question to answer before any of the layer is
+   written — the container warning in
+   [A host's turn](#a-hosts-turn-three-deliverables) is aimed squarely at
+   whatever answers it, since `std::map` sorts its keys and an aggregate's
+   elements must unroll in the order they were assigned.
 
 ### Lisp
 

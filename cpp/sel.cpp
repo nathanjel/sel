@@ -1320,6 +1320,18 @@ class Parser {
   }
   void leave() { depth_--; }
 
+  // C++ has no `finally`, so every enter() is released by one of these going out
+  // of scope -- including on the throw fail() raises, which is the whole point.
+  // It was written out locally at each of the four counted constructs; the fifth
+  // is what made one type worth having.
+  struct Leave {
+    Parser* p;
+    explicit Leave(Parser* parser) : p(parser) {}
+    ~Leave() { p->leave(); }
+    Leave(const Leave&) = delete;
+    Leave& operator=(const Leave&) = delete;
+  };
+
   static std::shared_ptr<Node> make(NT t, Pos pos) {
     auto n = std::make_shared<Node>();
     n->t = t;
@@ -1369,10 +1381,7 @@ class Parser {
       // of assignments is bounded by nothing. `A=` forty-four thousand times
       // terminated this host with SIGSEGV through its public CLI.
       enter(op.pos);
-      struct Leave {
-        Parser* p;
-        ~Leave() { p->leave(); }
-      } leave_guard{this};
+      const Leave leave_guard{this};
       NodePtr value = parse_assignment();
       auto n = make(NT::Assign, left->pos);
       n->s = op.value;
@@ -1415,10 +1424,7 @@ class Parser {
     if (at_word("NOT")) {
       const Token op = next();
       enter(op.pos);
-      struct Leave {
-        Parser* p;
-        ~Leave() { p->leave(); }
-      } leave_guard{this};
+      const Leave leave_guard{this};
       auto n = make(NT::Un, op.pos);
       n->s = "NOT";
       n->l = parse_not();
@@ -1482,10 +1488,7 @@ class Parser {
     if (at_op("-")) {
       const Token op = next();
       enter(op.pos);
-      struct Leave {
-        Parser* p;
-        ~Leave() { p->leave(); }
-      } leave_guard{this};
+      const Leave leave_guard{this};
       auto n = make(NT::Un, op.pos);
       n->s = "NEG";
       n->l = parse_unary();
@@ -1495,10 +1498,22 @@ class Parser {
   }
 
   // postfix = primary { "[" sequence "]" }
+  //
+  // The bracket counts a level of its own. Without it an index is the one
+  // nesting door that recurses from OUTSIDE parse_primary's enter/leave -- this
+  // loop is where it happens -- so it charged one level per nesting where "(",
+  // "f(" and the prefix operators all charge two. Five stack frames against one
+  // level of the budget is the widest ratio in the grammar, and it put a[a[...]]
+  // over CPython's stack before the 200-level guard could fire: a host crash
+  // through the public CLI while this host still answered. Counting the bracket
+  // halves the density to 2.5 and moves the boundary from ~198 nestings to 99.
+  // docs/PARSER-MIGRATION.md has the table and the measurement.
   NodePtr parse_postfix() {
     NodePtr node = parse_primary();
     while (at_op("[")) {
       const Token br = next();
+      enter(br.pos);
+      const Leave leave_guard{this};
       NodePtr idx = parse_sequence();
       expect_op("]");
       auto n = make(NT::Index, br.pos);
@@ -1512,10 +1527,7 @@ class Parser {
   NodePtr parse_primary() {
     const Token t = peek();
     enter(t.pos);
-    struct Leave {
-      Parser* p;
-      ~Leave() { p->leave(); }
-    } leave_guard{this};
+    const Leave leave_guard{this};
 
     if (t.type == Tok::Num) {
       next();
