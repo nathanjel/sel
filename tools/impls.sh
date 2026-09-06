@@ -116,7 +116,13 @@ impl_sql() {
   local impl="$1"; shift
   case "$impl" in
     php)  php php/bin/sqlt "$@" ;;
-    js|js-bundle|cpp|lisp) return 0 ;;          # no SQL layer yet
+    js)   node js/bin/sqlt.mjs "$@" ;;
+    # The bundle is built from js/src/sel.mjs, which does not import the SQL
+    # layer -- it is a separate entry point (package.json "./sql"), so a host
+    # that only wants the evaluator does not carry the translator. Nothing to
+    # grade here, rather than something skipped.
+    js-bundle) return 0 ;;
+    cpp|lisp) return 0 ;;                       # no SQL layer yet
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlt "$@" ;;
     # The runner adds python/ to sys.path only when `sel` is not already
     # importable, so this grades the installed wheel and not the source tree.
@@ -133,7 +139,11 @@ impl_oracle() {
   local impl="$1"; shift
   case "$impl" in
     php)  php php/bin/sqlo "$@" ;;
-    js|js-bundle|cpp|lisp) return 0 ;;          # no SQL layer yet
+    # js has a translator and still no oracle, for the reason M7 records: the
+    # oracle measures whether the MAP means what SEL means, and the map is data
+    # every host consumes unchanged, so a second harness would ask one server
+    # the same question twice.
+    js|js-bundle|cpp|lisp) return 0 ;;
     python|python-wheel) return 0 ;;            # M6
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
@@ -145,7 +155,7 @@ impl_sqldoc() {
   local impl="$1"; shift
   case "$impl" in
     php)  php php/bin/sqldoc "$@" ;;
-    js|js-bundle|cpp|lisp) return 0 ;;
+    js|js-bundle|cpp|lisp) return 0 ;;          # a property of the design doc
     python|python-wheel) return 0 ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac

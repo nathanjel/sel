@@ -101,7 +101,7 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 // A Call is emitted as `Binding::name(a, b)` in PHP and `Binding.name(a, b)` in
 // Python. Arguments are either literal values or nested Calls.
 const call = (name, args) => ({ __call: name, args });
-const raw = (php, py) => ({ __raw: true, php, py });
+const raw = (php, py, js) => ({ __raw: true, php, py, js });
 
 function bindingCall(b, where) {
   if (!isObj(b) || b.kind === undefined) {
@@ -169,16 +169,23 @@ function valueCall(v, where) {
   if (typeof v === 'number') {
     fail(where, `write ${v} as a string and declare "type": "NUM"; a JSON number `
               + 'does not survive every host');
-    return raw('Value::none()', 'Value.none()');
+    return raw('Value::none()', 'Value.none()', 'Value.none()');
   }
-  if (v === null || v === undefined) return raw('Value::none()', 'Value.none()');
-  if (typeof v === 'boolean') return raw(`Value::bool(${v})`, `Value.bool(${v ? 'True' : 'False'})`);
-  if (typeof v === 'string') return raw(`Value::text(${phpStr(v)})`, `Value.text(${pyStr(v)})`);
+  if (v === null || v === undefined) return raw('Value::none()', 'Value.none()', 'Value.none()');
+  if (typeof v === 'boolean') {
+    return raw(`Value::bool(${v})`, `Value.bool(${v ? 'True' : 'False'})`,
+               `Value.bool(${v})`);
+  }
+  if (typeof v === 'string') {
+    return raw(`Value::text(${phpStr(v)})`, `Value.text(${pyStr(v)})`,
+               `Value.text(${jsStr(v)})`);
+  }
   if (isObj(v) && Object.keys(v).length === 1 && typeof v.bin === 'string') {
     // JSON has no byte string, so the corpus spells one as {"bin": "<hex>"}.
     if (!/^([0-9a-fA-F]{2})*$/.test(v.bin)) fail(where, `the bin value ${v.bin} is not hex`);
     return raw(`Value::bin(hex2bin(${phpStr(v.bin)}))`,
-               `Value.bin(bytes.fromhex(${pyStr(v.bin)}))`);
+               `Value.bin(bytes.fromhex(${pyStr(v.bin)}))`,
+               `Value.bin(binFromHex(${jsStr(v.bin)}))`);
   }
   // A list or a map of further values.
   const parts = Array.isArray(v)
@@ -188,13 +195,16 @@ function valueCall(v, where) {
     'sel_value_tree([' + parts.map(([k, x]) =>
       (k === null ? '' : phpStr(k) + ' => ') + emitPhpArg(x)).join(', ') + '])',
     'value_tree([' + parts.map(([k, x]) =>
-      (k === null ? '' : '(' + pyStr(k) + ', ') + emitPyArg(x) + (k === null ? '' : ')')).join(', ') + '])');
+      (k === null ? '' : '(' + pyStr(k) + ', ') + emitPyArg(x) + (k === null ? '' : ')')).join(', ') + '])',
+    'valueTree([' + parts.map(([k, x]) =>
+      (k === null ? '' : '[' + jsStr(k) + ', ') + emitJsArg(x) + (k === null ? '' : ']')).join(', ') + '])');
 }
 
 // --- emitters ---------------------------------------------------------------
 
 const phpStr = (s) => "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
 const pyStr = (s) => JSON.stringify(String(s));
+const jsStr = (s) => JSON.stringify(String(s));
 
 function emitPhpArg(v) {
   if (v === null || v === undefined) return 'null';
@@ -225,6 +235,20 @@ function emitPyArg(v) {
   const e = Object.entries(v);
   if (!e.length) return '{}';
   return '{' + e.map(([k, x]) => `${pyStr(k)}: ${emitPyArg(x)}`).join(', ') + '}';
+}
+
+function emitJsArg(v) {
+  if (v === null || v === undefined) return 'null';
+  if (v === true) return 'true';
+  if (v === false) return 'false';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string') return jsStr(v);
+  if (v.__raw) return v.js;
+  if (v.__call) return `Binding.${v.__call}(${v.args.map(emitJsArg).join(', ')})`;
+  if (Array.isArray(v)) return '[' + v.map(emitJsArg).join(', ') + ']';
+  const e = Object.entries(v);
+  if (!e.length) return '{}';
+  return '{ ' + e.map(([k, x]) => `${jsStr(k)}: ${emitJsArg(x)}`).join(', ') + ' }';
 }
 
 const BANNER = [
@@ -300,6 +324,40 @@ function emitPython(cases) {
     + `SQL_CASES = [\n${body}\n]\n`;
 }
 
+function emitJs(cases) {
+  const body = cases.map((c) => {
+    const fields = [
+      ['name', c.name], ['at', c.at], ['dialect', c.dialect], ['source', c.source],
+      ['expect', c.expect], ['error', c.error], ['throws', c.throws],
+      ['params', c.params], ['as', c.as], ['mode', c.mode],
+      ['register', c.registerData], ['options', c.optionsData],
+      ['hasBindings', c.bindings !== null],
+    ].map(([k, v]) => `    ${jsStr(k)}: ${emitJsArg(v)},`).join('\n');
+    const binds = Object.entries(c.bindingCalls)
+      .map(([n, x]) => `${jsStr(n)}: ${emitJsArg(x)}`).join(', ');
+    return `  {\n${fields}\n    bindings: () => ({ ${binds} }),\n  },`;
+  }).join('\n');
+  return `// ${BANNER.join('\n// ')}\n\n`
+    + `import { Binding } from '../src/sql/index.mjs';\n`
+    + `import { Value } from '../src/value.mjs';\n\n`
+    + `// A list of Value children, keyed as SEL keys them.\n`
+    + `function valueTree(items) {\n`
+    + `  const v = Value.list([]);\n  let i = 0;\n`
+    + `  for (const item of items) {\n`
+    + `    if (Array.isArray(item)) {\n`
+    + `      v.set(String(item[0]), item[1]);\n`
+    + `    } else {\n`
+    + `      i += 1;\n      v.set(String(i), item);\n`
+    + `    }\n  }\n  return v;\n}\n\n`
+    + `// JSON has no byte string, so the corpus spells one as {"bin": "<hex>"}.\n`
+    + `function binFromHex(hex) {\n`
+    + `  const out = new Uint8Array(hex.length / 2);\n`
+    + `  for (let i = 0; i < out.length; i += 1) {\n`
+    + `    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);\n`
+    + `  }\n  return out;\n}\n\n`
+    + `export const SQL_CASES = [\n${body}\n];\n`;
+}
+
 // --- main -------------------------------------------------------------------
 
 const files = readdirSync(SUITE).filter((f) => f.endsWith('.sqlt')).sort();
@@ -332,7 +390,8 @@ if (errors.length) {
   process.exit(1);
 }
 
-const OUTPUTS = [['php/bin/CaseData.php', emitPhp], ['python/bin/case_data.py', emitPython]];
+const OUTPUTS = [['php/bin/CaseData.php', emitPhp], ['python/bin/case_data.py', emitPython],
+  ['js/bin/case-data.mjs', emitJs]];
 const check = process.argv.includes('--check');
 let stale = 0;
 for (const [rel, emit] of OUTPUTS) {

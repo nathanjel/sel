@@ -2478,9 +2478,53 @@ is published to Packagist, npm or PyPI, and `tools/check.sh` is not required to
 be green: the point of the tag is to be able to name the state the PHP+MariaDB
 proof passed in, not to ship it. See §15.
 
-**Later, and separately:** JS, C++ and Lisp ports. Each is a transcription of a
-design that three hosts will have already agreed on, which is the cheapest
-moment to do it.
+**M9 — JS port. DONE.** Transcribed from the Python, generated map and generated
+case table consumed as-is, the same `sql/cases/` suite passing byte-identically:
+
+| | passed | mirrored |
+|---|---|---|
+| `php/bin/sqlt` | 368 | 266, plus 1 leaf pair compared entry by entry |
+| `python/bin/sqlt` | 368 | 266 |
+| `js/bin/sqlt.mjs` | 368 | 266 |
+
+All 368 on the first full run, which is what M6 predicted would happen the second
+time: the map is data, so a third host consuming it has almost nothing left to
+get wrong. `tools/gen-sql-map.mjs` and `tools/gen-sql-cases.mjs` each grew one
+emitter and one line in `OUTPUTS`; the PHP and Python outputs regenerate
+byte-identical, which is the check that this added a host rather than changing
+the map.
+
+Four things were host-shaped rather than transcribed, and each is a place where
+the obvious JS spelling is a *different* thing from the Python one:
+
+- **`Map`, not `{}`, wherever a key comes from a rule or an application.** The
+  runtime overlay, the bindings table, `normalise`'s definitions and the
+  translator's binder frames all key on caller-supplied text, and `{}` answers
+  for every `Object.prototype` name. Reads of the generated tables go through
+  `Object.hasOwn` for the same reason.
+- **`Map`, not an object, for an aggregate's elements.** A plain object with the
+  keys `"1"`, `"2"`, … iterates in ascending *numeric* order rather than
+  insertion order, so a `clist` mixing `"a"` with `"1"` would have unrolled in a
+  different order here than in the other two hosts — silently, and only for
+  indexed assignment.
+- **`Object.create(null)` for a relation's fields.** A field named `__proto__`
+  assigned into an object literal sets the prototype instead of a property.
+- **The emit/fragment cycle needs no help.** Python breaks it with a
+  function-local import; ESM resolves it natively, because neither module touches
+  the other's binding while they are still evaluating.
+
+`asciiUpper` moved into `js/src/lexer.mjs`, where the other hosts keep it, and
+`MAX_DEPTH` is now exported from `js/src/eval.mjs` so the translator's guard can
+read the evaluator's own limit rather than repeating 200.
+
+The bundle does not carry it: `dist/sel.mjs` is built from `js/src/sel.mjs`, and
+the SQL layer is a separate entry point (`package.json` `"./sql"`), so a host
+that wants only the evaluator does not pay for the translator. `impl_sql
+js-bundle` returns 0 for that reason rather than skipping something.
+
+**Later, and separately:** C++ and Lisp ports. Each is a transcription of a
+design that four hosts will have already agreed on, which is the cheapest moment
+to do it.
 
 A note on how to build M2–M3 and M5–M6: those are the phases where fanning work
 out pays. Authoring four dialect documents, writing the case files per category,
