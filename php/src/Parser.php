@@ -243,11 +243,20 @@ final class Parser
                 // Parsing the right side at $bp rather than $bp + 1 is what makes
                 // it right associative.
                 self::checkTarget($left, $t);
-                $value = $this->parseTerm($bp);
-                $left = [
-                    't' => 'assign', 'op' => $t['value'], 'target' => $left,
-                    'value' => $value, 'pos' => $left['pos'],
-                ];
+                // Counted, for the same reason parsePrefix counts: the right side
+                // recurses without passing through parseSequence or parsePrimary,
+                // so uncounted a chain of assignments is bounded by nothing but
+                // the host's own stack.
+                $this->enter($t);
+                try {
+                    $value = $this->parseTerm($bp);
+                    $left = [
+                        't' => 'assign', 'op' => $t['value'], 'target' => $left,
+                        'value' => $value, 'pos' => $left['pos'],
+                    ];
+                } finally {
+                    $this->leave();
+                }
                 continue;
             }
 

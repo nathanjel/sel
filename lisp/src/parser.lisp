@@ -121,12 +121,17 @@
     (if (assign-op-p (p-peek p))
         (let ((op (p-next p)))
           (check-target left op)
-          (let ((value (parse-assignment p))
-                (n (make-node :assign (node-pos left))))
-            (setf (node-s n) (token-value op)
-                  (node-l n) left
-                  (node-r n) value)
-            n))
+          ;; Counted, for the reason given on parse-negation: this recursion
+          ;; passes through neither parse-sequence nor parse-primary, so
+          ;; uncounted a chain of assignments is bounded by nothing but the
+          ;; host's control stack.
+          (with-depth (p (token-pos op))
+            (let ((value (parse-assignment p))
+                  (n (make-node :assign (node-pos left))))
+              (setf (node-s n) (token-value op)
+                    (node-l n) left
+                    (node-r n) value)
+              n)))
         left)))
 
 (defun parse-or (p) (parse-word-binary p "OR" #'parse-xor))

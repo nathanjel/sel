@@ -229,8 +229,18 @@ class Parser:
                 # Assignment. The target is validated against the AST shape, not
                 # against a value, which is what makes `(A) = 1` a compile error.
                 check_target(left, t)
-                value = self.parse_term(bp)
-                left = Node('assign', left.pos, op=t.value, target=left, value=value)
+                # Counted, for the same reason parse_prefix counts: the right
+                # side recurses without passing through parse_sequence or
+                # parse_primary, so uncounted a chain of assignments is bounded
+                # by nothing but the host's own stack -- and this host has the
+                # least of it, raising RecursionError where four others were
+                # still returning E_DEPTH.
+                self.enter(t.pos)
+                try:
+                    value = self.parse_term(bp)
+                    left = Node('assign', left.pos, op=t.value, target=left, value=value)
+                finally:
+                    self.leave()
                 continue
 
             if assoc == 'N':

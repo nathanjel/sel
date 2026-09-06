@@ -168,8 +168,19 @@ class Parser {
         // a value, which is what makes `(A) = 1` a compile error. Parsing the
         // right side at bp rather than bp + 1 is what makes it right associative.
         checkTarget(left, t);
-        const value = this.parseTerm(bp);
-        left = { t: 'assign', op: t.value, target: left, value, pos: left.pos };
+        // Counted, for the same reason parsePrefix counts: the right side recurses
+        // without passing through parseSequence or parsePrimary, so uncounted a
+        // chain of assignments is bounded by nothing but the host's own stack.
+        // `A=` fifty thousand times segfaulted the C++ host through its public
+        // CLI and raised a host RangeError here -- the same hole the prefix
+        // operators had, through the one production nobody had counted.
+        this.enter(t);
+        try {
+          const value = this.parseTerm(bp);
+          left = { t: 'assign', op: t.value, target: left, value, pos: left.pos };
+        } finally {
+          this.leave();
+        }
         continue;
       }
 

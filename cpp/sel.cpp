@@ -1364,6 +1364,15 @@ class Parser {
     if (is_assign_op(peek())) {
       const Token op = next();
       check_target(left, op);
+      // Counted, for the reason given on parse_not: this recursion passes
+      // through neither parse_sequence nor parse_primary, so uncounted a chain
+      // of assignments is bounded by nothing. `A=` forty-four thousand times
+      // terminated this host with SIGSEGV through its public CLI.
+      enter(op.pos);
+      struct Leave {
+        Parser* p;
+        ~Leave() { p->leave(); }
+      } leave_guard{this};
       NodePtr value = parse_assignment();
       auto n = make(NT::Assign, left->pos);
       n->s = op.value;

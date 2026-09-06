@@ -242,3 +242,34 @@ ISNUM(REPEAT("1", 200000))
 --- expect
 bool TRUE
 ===
+### name: lim.assign-depth
+--- note
+Assignment is right associative, so the right-hand side recurses -- and that
+recursion passed through neither of the two functions that track depth, exactly
+the hole `lim.prefix-depth-neg` closed for prefix operators, still open through
+`=` until it was counted.
+
+Uncounted it was bounded by nothing but each host's own stack, and the hosts
+failed in four different ways on the same input: `A=` forty-four thousand times
+terminated the C++ host with SIGSEGV through its public CLI, the Lisp host
+exhausted its control stack, the JS host raised a RangeError, and the Python
+host raised RecursionError from as few as a thousand -- while the others were
+still returning a clean error. PHP survived to two hundred thousand and then
+exhausted memory.
+
+The error lands on the primary after the 199th `=`, because the primary rule
+counts a level of its own on top of the chain.
+--- source
+A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=1
+--- expect
+error E_DEPTH at 1:399
+===
+### name: lim.assign-depth-just-under
+--- note
+One shorter, and it is an ordinary program. Pinning both sides so a host that
+counts the chain twice, or not at all, fails here rather than somewhere far away.
+--- source
+A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=1
+--- expect
+num 1
+===
