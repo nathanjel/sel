@@ -83,6 +83,26 @@ R[1] = (1, 2); R[2] = (3, 4); ALL(R, ROW, ALL(ROW, _ > 0))
 --- expect
 (((1 > 0) AND (2 > 0)) AND ((3 > 0) AND (4 > 0)))
 ===
+### name: agg.clist.mixed-keys-keep-insertion-order
+--- note
+An indexed assignment builds a clist, and a clist iterates in the order the
+assignments were written -- not in key order, and not with the numeric keys
+first. The keys here are deliberately "b", 1, "a" so that the three orders are
+all different: insertion gives 1,2,3; sorting the keys gives 2,3,1; and putting
+the numeric key first gives 2,1,3.
+
+Pinned because it is the one place a host's native map type decides the emitted
+bytes. A JS object with the keys "b", "1", "a" enumerates them "1", "b", "a" --
+integer-like keys are visited first, in numeric order, whatever the insertion
+order was -- so the JS translator keys its elements with a Map. PHP's arrays and
+Python's dicts are insertion-ordered already and could not have shown this.
+--- dialect
+mariadb
+--- source
+R["b"] = 1; R[1] = 2; R["a"] = 3; JOIN(R, ",")
+--- expect
+CONCAT(CONCAT(CONCAT(CONCAT(1, ','), 2), ','), 3)
+===
 ### name: agg.scalar.is-a-one-element-list
 --- note
 spec §7.3: a value with no children behaves as a one-element list containing

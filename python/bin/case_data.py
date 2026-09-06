@@ -2559,8 +2559,24 @@ SQL_CASES = [
         "bindings": lambda: {},
     },
     {
-        "name": "agg.scalar.is-a-one-element-list",
+        "name": "agg.clist.mixed-keys-keep-insertion-order",
         "at": "12-aggregates.sqlt:86",
+        "dialect": "mariadb",
+        "source": "R[\"b\"] = 1; R[1] = 2; R[\"a\"] = 3; JOIN(R, \",\")",
+        "expect": "CONCAT(CONCAT(CONCAT(CONCAT(1, ','), 2), ','), 3)",
+        "error": None,
+        "throws": None,
+        "params": None,
+        "as": None,
+        "mode": None,
+        "register": None,
+        "options": None,
+        "hasBindings": False,
+        "bindings": lambda: {},
+    },
+    {
+        "name": "agg.scalar.is-a-one-element-list",
+        "at": "12-aggregates.sqlt:106",
         "dialect": "mariadb",
         "source": "ALL(TOTAL, _ > 0)",
         "expect": "(`o`.`total` > 0)",
@@ -2576,7 +2592,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.columns.unroll",
-        "at": "12-aggregates.sqlt:99",
+        "at": "12-aggregates.sqlt:119",
         "dialect": "mariadb",
         "source": "ALL(V, C, C > 0)",
         "expect": "(((`x`.`a` > 0) AND (`x`.`b` > 0)) AND (`x`.`c` > 0))",
@@ -2592,7 +2608,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.columns.two-level-spelling",
-        "at": "12-aggregates.sqlt:109",
+        "at": "12-aggregates.sqlt:129",
         "dialect": "mariadb",
         "source": "ALL(V, C, ALL(C, _ > 0))",
         "expect": "((`x`.`a` > 0) AND (`x`.`b` > 0))",
@@ -2608,7 +2624,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.columns.key-is-the-ordinal",
-        "at": "12-aggregates.sqlt:123",
+        "at": "12-aggregates.sqlt:143",
         "dialect": "mariadb",
         "source": "ALL(V, C, _K $== \"1\")",
         "expect": "(CAST('1' AS CHAR) COLLATE utf8mb4_bin = CAST('1' AS CHAR) COLLATE utf8mb4_bin)",
@@ -2624,7 +2640,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.columns.count-folds-to-a-literal",
-        "at": "12-aggregates.sqlt:133",
+        "at": "12-aggregates.sqlt:153",
         "dialect": "mariadb",
         "source": "COUNT(V)",
         "expect": "2",
@@ -2640,7 +2656,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.all",
-        "at": "12-aggregates.sqlt:143",
+        "at": "12-aggregates.sqlt:163",
         "dialect": "mariadb",
         "source": "ALL(ITEMS, I, I[\"qty\"] > 0)",
         "expect": "NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS NOT TRUE)",
@@ -2656,7 +2672,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.any",
-        "at": "12-aggregates.sqlt:157",
+        "at": "12-aggregates.sqlt:177",
         "dialect": "mariadb",
         "source": "ANY(ITEMS, I, I[\"qty\"] > 100)",
         "expect": "EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 100)) IS TRUE)",
@@ -2672,7 +2688,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.sum",
-        "at": "12-aggregates.sqlt:167",
+        "at": "12-aggregates.sqlt:187",
         "dialect": "mariadb",
         "source": "SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"])",
         "expect": "(SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)",
@@ -2688,7 +2704,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.count",
-        "at": "12-aggregates.sqlt:177",
+        "at": "12-aggregates.sqlt:197",
         "dialect": "mariadb",
         "source": "COUNT(ITEMS) == 0",
         "expect": "((SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) = 0)",
@@ -2704,7 +2720,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.uncorrelated",
-        "at": "12-aggregates.sqlt:187",
+        "at": "12-aggregates.sqlt:207",
         "dialect": "mariadb",
         "source": "COUNT(ALL_ITEMS)",
         "expect": "(SELECT COUNT(*) FROM `order_items` `oi` WHERE TRUE)",
@@ -2720,7 +2736,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.from-may-carry-a-query",
-        "at": "12-aggregates.sqlt:200",
+        "at": "12-aggregates.sqlt:220",
         "dialect": "mariadb",
         "source": "ALL(V, _[\"A\"] > 0)",
         "expect": "NOT EXISTS (SELECT 1 FROM (SELECT a, b FROM x) `v` WHERE TRUE AND ((`v`.`a` > 0)) IS NOT TRUE)",
@@ -2736,7 +2752,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.in",
-        "at": "12-aggregates.sqlt:210",
+        "at": "12-aggregates.sqlt:230",
         "dialect": "mariadb",
         "source": "SKU IN ITEMS",
         "expect": "((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)",
@@ -2752,7 +2768,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.nested",
-        "at": "12-aggregates.sqlt:220",
+        "at": "12-aggregates.sqlt:240",
         "dialect": "mariadb",
         "source": "ALL(ORDERS, O, ALL(LINES, L, L[\"qty\"] > 0))",
         "expect": "NOT EXISTS (SELECT 1 FROM `orders` `o` WHERE TRUE AND (NOT EXISTS (SELECT 1 FROM `lines` `l` WHERE `l`.`order_id` = `o`.`id` AND ((`l`.`qty` > 0)) IS NOT TRUE)) IS NOT TRUE)",
@@ -2768,7 +2784,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.filter.absorbed-into-all",
-        "at": "12-aggregates.sqlt:230",
+        "at": "12-aggregates.sqlt:250",
         "dialect": "mariadb",
         "source": "ALL(FILTER((1, 2, 3), _ > 1), _ > 2)",
         "expect": "((((NOT (1 > 1)) OR (1 > 2)) AND ((NOT (2 > 1)) OR (2 > 2))) AND ((NOT (3 > 1)) OR (3 > 2)))",
@@ -2784,7 +2800,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.filter.absorbed-into-any",
-        "at": "12-aggregates.sqlt:238",
+        "at": "12-aggregates.sqlt:258",
         "dialect": "mariadb",
         "source": "ANY(FILTER((1, 2), _ > 1), _ > 0)",
         "expect": "(((1 > 1) AND (1 > 0)) OR ((2 > 1) AND (2 > 0)))",
@@ -2800,7 +2816,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.filter.absorbed-into-count",
-        "at": "12-aggregates.sqlt:246",
+        "at": "12-aggregates.sqlt:266",
         "dialect": "mariadb",
         "source": "COUNT(FILTER(ITEMS, _[\"QTY\"] <= 0)) > 0",
         "expect": "((SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > 0)",
@@ -2816,7 +2832,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.filter.different-binder-names",
-        "at": "12-aggregates.sqlt:256",
+        "at": "12-aggregates.sqlt:276",
         "dialect": "mariadb",
         "source": "ALL(FILTER((1, 2), A, A > 1), B, B > 2)",
         "expect": "(((NOT (1 > 1)) OR (1 > 2)) AND ((NOT (2 > 1)) OR (2 > 2)))",
@@ -2832,7 +2848,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.filter.nested-filters-conjoin",
-        "at": "12-aggregates.sqlt:268",
+        "at": "12-aggregates.sqlt:288",
         "dialect": "mariadb",
         "source": "ALL(FILTER(FILTER((1, 2), _ > 0), _ > 1), _ > 2)",
         "expect": "(((NOT (1 > 1)) OR ((NOT (1 > 0)) OR (1 > 2))) AND ((NOT (2 > 1)) OR ((NOT (2 > 0)) OR (2 > 2))))",
@@ -2848,7 +2864,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.value.binding-as-a-list",
-        "at": "12-aggregates.sqlt:276",
+        "at": "12-aggregates.sqlt:296",
         "dialect": "mariadb",
         "source": "ALL(L, _ $!= \"\")",
         "expect": "((CAST('a' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin) AND (CAST('b' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin))",
@@ -2864,7 +2880,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.empty.all-is-true",
-        "at": "12-aggregates.sqlt:286",
+        "at": "12-aggregates.sqlt:306",
         "dialect": "mariadb",
         "source": "ALL(E, _ > 0)",
         "expect": "TRUE",
@@ -2880,7 +2896,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.empty.any-is-false",
-        "at": "12-aggregates.sqlt:299",
+        "at": "12-aggregates.sqlt:319",
         "dialect": "mariadb",
         "source": "ANY(E, _ > 0)",
         "expect": "FALSE",
@@ -2896,7 +2912,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.empty.sum-is-zero",
-        "at": "12-aggregates.sqlt:309",
+        "at": "12-aggregates.sqlt:329",
         "dialect": "mariadb",
         "source": "SUM(E, _ * 2)",
         "expect": "0",
@@ -2912,7 +2928,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.has.static-is-decided-at-translation-time",
-        "at": "12-aggregates.sqlt:319",
+        "at": "12-aggregates.sqlt:339",
         "dialect": "mariadb",
         "source": "HAS((1, 2), \"2\")",
         "expect": "TRUE",
@@ -2928,7 +2944,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.has.relation-is-refused",
-        "at": "12-aggregates.sqlt:327",
+        "at": "12-aggregates.sqlt:347",
         "dialect": "mariadb",
         "source": "HAS(ITEMS, \"price\")",
         "expect": None,
@@ -2944,7 +2960,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.has.relation-field-name-is-refused-too",
-        "at": "12-aggregates.sqlt:348",
+        "at": "12-aggregates.sqlt:368",
         "dialect": "mariadb",
         "source": "HAS(ITEMS, \"QTY\")",
         "expect": None,
@@ -2960,7 +2976,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.has.a-list-still-answers",
-        "at": "12-aggregates.sqlt:358",
+        "at": "12-aggregates.sqlt:378",
         "dialect": "mariadb",
         "source": "HAS((1, 2), \"2\")",
         "expect": "TRUE",
@@ -2976,7 +2992,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.refuse.k-on-a-relation",
-        "at": "12-aggregates.sqlt:369",
+        "at": "12-aggregates.sqlt:389",
         "dialect": "mariadb",
         "source": "ALL(ITEMS, _K $!= \"\")",
         "expect": None,
@@ -2992,7 +3008,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.refuse.relation-indexed-by-position",
-        "at": "12-aggregates.sqlt:382",
+        "at": "12-aggregates.sqlt:402",
         "dialect": "mariadb",
         "source": "ITEMS[1]",
         "expect": None,
@@ -3008,7 +3024,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.refuse.bare-row-without-a-scalar",
-        "at": "12-aggregates.sqlt:392",
+        "at": "12-aggregates.sqlt:412",
         "dialect": "mariadb",
         "source": "ALL(ITEMS, I, I > 0)",
         "expect": None,
@@ -3024,7 +3040,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.refuse.non-bool-body",
-        "at": "12-aggregates.sqlt:402",
+        "at": "12-aggregates.sqlt:422",
         "dialect": "mariadb",
         "source": "ALL((1, 2), _ + 1)",
         "expect": None,
@@ -3040,7 +3056,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.refuse.non-num-body-for-sum",
-        "at": "12-aggregates.sqlt:410",
+        "at": "12-aggregates.sqlt:430",
         "dialect": "mariadb",
         "source": "SUM((1, 2), _ > 0)",
         "expect": None,
@@ -3056,7 +3072,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.refuse.map-in-a-value-position",
-        "at": "12-aggregates.sqlt:418",
+        "at": "12-aggregates.sqlt:438",
         "dialect": "mariadb",
         "source": "MAP((1, 2), _ * 2)",
         "expect": None,
@@ -3072,7 +3088,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.refuse.join-over-a-relation",
-        "at": "12-aggregates.sqlt:426",
+        "at": "12-aggregates.sqlt:446",
         "dialect": "mariadb",
         "source": "JOIN(ITEMS, \", \")",
         "expect": None,
@@ -3088,7 +3104,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.refuse.binder-must-be-a-name",
-        "at": "12-aggregates.sqlt:439",
+        "at": "12-aggregates.sqlt:459",
         "dialect": "mariadb",
         "source": "ALL((1, 2), 5, _ > 0)",
         "expect": None,
@@ -3104,7 +3120,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.contract.over-credit-limit",
-        "at": "12-aggregates.sqlt:446",
+        "at": "12-aggregates.sqlt:466",
         "dialect": "mariadb",
         "source": "SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"]) > CREDIT_LIMIT",
         "expect": "((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > `o`.`credit_limit`)",
@@ -3120,7 +3136,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.contract.all-skus-well-formed",
-        "at": "12-aggregates.sqlt:459",
+        "at": "12-aggregates.sqlt:479",
         "dialect": "mariadb",
         "source": "ALL(ITEMS, RMATCH('^[A-Z]{2}-\\d{4}$', _[\"SKU\"]))",
         "expect": "NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)",
@@ -3136,7 +3152,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.filter.absorbed-into-count-bare",
-        "at": "12-aggregates.sqlt:473",
+        "at": "12-aggregates.sqlt:493",
         "dialect": "mariadb",
         "source": "COUNT(FILTER(ITEMS, I, I[\"qty\"] <= 0))",
         "expect": "(SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)",
@@ -3152,7 +3168,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.bare-binder-over-a-multi-field-row",
-        "at": "12-aggregates.sqlt:486",
+        "at": "12-aggregates.sqlt:506",
         "dialect": "mariadb",
         "source": "ANY(ITEMS, _ $== \"AB-1000\")",
         "expect": None,
@@ -3168,7 +3184,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.bare-binder-over-a-one-field-row",
-        "at": "12-aggregates.sqlt:503",
+        "at": "12-aggregates.sqlt:523",
         "dialect": "mariadb",
         "source": "ANY(SKUS, _ $== \"AB-1000\")",
         "expect": "EXISTS (SELECT 1 FROM `order_items` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_bin = CAST('AB-1000' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)",
@@ -3184,7 +3200,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.row-is-not-a-scalar-source",
-        "at": "12-aggregates.sqlt:516",
+        "at": "12-aggregates.sqlt:536",
         "dialect": "mariadb",
         "source": "ANY(ITEMS, I, COUNT(I) == 2)",
         "expect": None,
@@ -3200,7 +3216,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.nested-in-itself",
-        "at": "12-aggregates.sqlt:530",
+        "at": "12-aggregates.sqlt:550",
         "dialect": "mariadb",
         "source": "ANY(ITEMS, I, ANY(ITEMS, J, J[\"QTY\"] > I[\"QTY\"]))",
         "expect": None,
@@ -3216,7 +3232,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.two-relations-nest-fine",
-        "at": "12-aggregates.sqlt:547",
+        "at": "12-aggregates.sqlt:567",
         "dialect": "mariadb",
         "source": "ANY(ITEMS, I, ANY(SKUS, S, S $== I[\"SKU\"]))",
         "expect": "EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND (EXISTS (SELECT 1 FROM `skus` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_bin = CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)) IS TRUE)",
@@ -3232,7 +3248,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.count.list-yielding-call-is-not-a-scalar",
-        "at": "12-aggregates.sqlt:559",
+        "at": "12-aggregates.sqlt:579",
         "dialect": "mariadb",
         "source": "COUNT(SPLIT(\"a,b\", \",\"))",
         "expect": None,
@@ -3248,7 +3264,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.has.list-yielding-call-is-not-a-scalar",
-        "at": "12-aggregates.sqlt:572",
+        "at": "12-aggregates.sqlt:592",
         "dialect": "sqlite",
         "source": "HAS(SPLIT(\"a,b\", \",\"), 1)",
         "expect": None,
@@ -3264,7 +3280,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.relation.in-folds-null-to-false",
-        "at": "12-aggregates.sqlt:580",
+        "at": "12-aggregates.sqlt:600",
         "dialect": "mariadb",
         "source": "NOT(\"flag\" IN NOTES)",
         "expect": "(NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))",
