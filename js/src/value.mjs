@@ -123,7 +123,7 @@ export class Value {
     if (v.kind !== TEXT) {
       fail('E_NOT_NUM', `expected a number, got ${v.kind.toLowerCase()}`, pos);
     }
-    const d = D.parse(v.scalar);
+    const d = D.parse(v.scalar, pos);
     if (d === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(v.scalar)}`, pos);
     return d;
   }
@@ -131,9 +131,14 @@ export class Value {
   // Non-throwing probe for ISNUM.
   looksNumeric() {
     if (this.kind === NONE && this.size() === 0) return false;
-    let v;
-    try { v = this.scalarSource(null); } catch { return false; }
-    return v.kind === TEXT && D.parse(v.scalar) !== null;
+    // A well-formed numeral too big to hold raises E_RANGE out of parse. The
+    // probe answers no rather than raising, so ISNUM is true exactly when the
+    // value can be used as a number — before the cap it said true for a
+    // 2 000 000-digit text that then failed on first use.
+    try {
+      const v = this.scalarSource(null);
+      return v.kind === TEXT && D.parse(v.scalar) !== null;
+    } catch { return false; }
   }
 
   // --- copying --------------------------------------------------------------

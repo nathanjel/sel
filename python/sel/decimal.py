@@ -24,10 +24,43 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import sys
 
 from .errors import Pos, fail
 
 DIV_SCALE = 10
+
+# spec/SPEC.md §6.4. These bound the *value*; ROUND's scale cap and POWER's
+# exponent cap bound *arguments*, and an argument cap is not a value cap —
+# POWER's base is unbounded, so nesting one POWER inside another multiplies the
+# exponents and steps straight over the exponent cap. Two independent numbers
+# rather than one shared budget, because ROUND(99.5, 1000000) is 1 000 002
+# digits and legal under the scale cap: a shared budget would have shrunk what
+# the spec already sanctions.
+MAX_INT_DIGITS = 1000000
+MAX_FRAC_DIGITS = 1000000
+
+# The bit length at or above which a magnitude *may* have more than
+# MAX_INT_DIGITS digits: floor(MAX_INT_DIGITS * log2(10)) + 1. Below it, it
+# certainly does not. Used as an O(1) gate so the exact count is computed only
+# for numbers that are actually near the cap.
+_MAX_INT_BITS = 3321929
+
+# CPython refuses int<->str conversion above 4300 digits by default — a guard
+# against quadratic conversion, and a host policy, not SEL's answer. Under it a
+# number this language admits could not be lexed or rendered at all: the Python
+# host raised a ValueError out of the lexer for a 4301-digit literal that the
+# other four hosts evaluated. Raised to exactly what SEL admits and no further.
+#
+# This mutates a process-global interpreter setting from inside a library, which
+# is worth stating plainly. It is done in the one direction that cannot weaken a
+# choice the application made: 0 means "unlimited" and is left alone, and a
+# limit already above what SEL needs is left alone too.
+_NEEDED_STR_DIGITS = MAX_INT_DIGITS + MAX_FRAC_DIGITS
+if hasattr(sys, 'set_int_max_str_digits'):  # 3.11+
+    _current = sys.get_int_max_str_digits()
+    if _current != 0 and _current < _NEEDED_STR_DIGITS:
+        sys.set_int_max_str_digits(_NEEDED_STR_DIGITS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +74,52 @@ def make(neg: bool, digits: int, scale: int) -> Dec:
     return Dec(False if digits == 0 else neg, digits, scale)
 
 
+_POW10: dict[int, int] = {}
+
+
+def _pow10(k: int) -> int:
+    v = _POW10.get(k)
+    if v is None:
+        v = 10 ** k
+        _POW10[k] = v
+    return v
+
+
+def _num_digits(n: int) -> int:
+    """Digit count of a non-negative int, without str().
+
+    str() is exactly what CPython refuses above its own limit, so a check that
+    used it could not report on the values it exists to refuse. bit_length gives
+    an upper bound (30103/100000 is just above log10(2)); one comparison walks
+    it down to the exact count.
+    """
+    if n == 0:
+        return 1
+    d = (n.bit_length() * 30103) // 100000 + 1
+    while n < _pow10(d - 1):
+        d -= 1
+    return d
+
+
+def _guard(d: Dec, pos: Pos | None) -> Dec:
+    """Refuses a value SEL cannot hold, where it is built rather than where it
+    is rendered. Every operation that can grow a number passes its result
+    through here, so power() — repeated squaring over mul() — trips on an
+    intermediate and the enormous value is never allocated.
+
+    The four hosts that store digits as a string read the count with strlen.
+    Here it is an int, so the same question costs a bit_length gate and, only
+    for numbers near the cap, an exact count.
+    """
+    if d.scale > MAX_FRAC_DIGITS:
+        fail('E_RANGE', f'number has more than {MAX_FRAC_DIGITS} fractional digits', pos)
+    # Negative when the value is below 1: those render as a single "0".
+    if (d.digits.bit_length() >= _MAX_INT_BITS
+            and _num_digits(d.digits) - d.scale > MAX_INT_DIGITS):
+        fail('E_RANGE', f'number has more than {MAX_INT_DIGITS} integer digits', pos)
+    return d
+
+
 ZERO = make(False, 0, 0)
 
 _NUM_RE = re.compile(r'^-?[0-9]+(\.[0-9]+)?$')
@@ -52,7 +131,7 @@ _NUM_RE = re.compile(r'^-?[0-9]+(\.[0-9]+)?$')
 # corner; `$` is left in the pattern only because it costs nothing and reads.
 
 
-def parse(text: str) -> Dec | None:
+def parse(text: str, pos: Pos | None = None) -> Dec | None:
     """None when the text is not a number; callers raise E_NOT_NUM with the
     position of the offending node. No trimming — " 2" is not a number.
 
@@ -68,7 +147,16 @@ def parse(text: str) -> Dec | None:
     dot = body.find('.')
     int_part = body if dot < 0 else body[:dot]
     frac_part = '' if dot < 0 else body[dot + 1:]
-    return make(neg, int(int_part + frac_part), len(frac_part))
+    # Measured before int(), because int() is the conversion CPython refuses on
+    # a string this long. Leading zeros are stripped first: the string hosts
+    # store strip(int_part + frac_part), so "0001" is one digit there and must
+    # be one digit here.
+    stripped = (int_part + frac_part).lstrip('0') or '0'
+    if len(frac_part) > MAX_FRAC_DIGITS:
+        fail('E_RANGE', f'number has more than {MAX_FRAC_DIGITS} fractional digits', pos)
+    if len(stripped) - len(frac_part) > MAX_INT_DIGITS:
+        fail('E_RANGE', f'number has more than {MAX_INT_DIGITS} integer digits', pos)
+    return make(neg, int(stripped), len(frac_part))
 
 
 def format(d: Dec) -> str:  # noqa: A001 - mirrors format() in the other hosts
@@ -118,21 +206,23 @@ def _aligned(a: Dec, b: Dec) -> tuple[int, int, int]:
     return a.digits * 10 ** (s - a.scale), b.digits * 10 ** (s - b.scale), s
 
 
-def add(a: Dec, b: Dec) -> Dec:
+def add(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     A, B, s = _aligned(a, b)
+    # Only true addition can grow: a difference is never wider than its
+    # operands, and the aligned scale is the larger of two already legal ones.
     if a.neg == b.neg:
-        return make(a.neg, A + B, s)
+        return _guard(make(a.neg, A + B, s), pos)
     if A == B:
         return make(False, 0, s)
     return make(a.neg, A - B, s) if A > B else make(b.neg, B - A, s)
 
 
-def sub(a: Dec, b: Dec) -> Dec:
-    return add(a, negate(b))
+def sub(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
+    return add(a, negate(b), pos)
 
 
-def mul(a: Dec, b: Dec) -> Dec:
-    return make(a.neg != b.neg, a.digits * b.digits, a.scale + b.scale)
+def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
+    return _guard(make(a.neg != b.neg, a.digits * b.digits, a.scale + b.scale), pos)
 
 
 def cmp(a: Dec, b: Dec) -> int:
@@ -164,8 +254,8 @@ def div(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
             scale -= 1
         if digits == 0:
             scale = 0
-        return make(neg, digits, scale)
-    return make(neg, q + 1 if 2 * r >= D else q, DIV_SCALE)
+        return _guard(make(neg, digits, scale), pos)
+    return _guard(make(neg, q + 1 if 2 * r >= D else q, DIV_SCALE), pos)
 
 
 def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
@@ -182,12 +272,13 @@ def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 # make(). Python's own round() is half-to-even and must never appear here; nor
 # may math.floor/ceil, which take floats.
 
-def round(d: Dec, n: int) -> Dec:  # noqa: A001 - mirrors round() in the other hosts
+def round(d: Dec, n: int, pos: Pos | None = None) -> Dec:  # noqa: A001 - mirrors round() in the other hosts
     if n >= d.scale:
-        return make(d.neg, d.digits * 10 ** (n - d.scale), n)
+        return _guard(make(d.neg, d.digits * 10 ** (n - d.scale), n), pos)
     p = 10 ** (d.scale - n)
     q, r = divmod(d.digits, p)
-    return make(d.neg, q + 1 if 2 * r >= p else q, n)
+    # Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
+    return _guard(make(d.neg, q + 1 if 2 * r >= p else q, n), pos)
 
 
 def trunc(d: Dec) -> Dec:
@@ -210,7 +301,7 @@ def ceil(d: Dec) -> Dec:
     return make(d.neg, q + 1 if not d.neg and r != 0 else q, 0)
 
 
-def power(a: Dec, n: int) -> Dec:
+def power(a: Dec, n: int, pos: Pos | None = None) -> Dec:
     """n must be a non-negative integer; the result scale is scale(x) * n, which
     falls out of repeated multiplication.
     """
@@ -219,8 +310,8 @@ def power(a: Dec, n: int) -> Dec:
     e = n
     while e > 0:
         if e % 2 == 1:
-            result = mul(result, base)
+            result = mul(result, base, pos)
         e //= 2
         if e > 0:
-            base = mul(base, base)
+            base = mul(base, base, pos)
     return result

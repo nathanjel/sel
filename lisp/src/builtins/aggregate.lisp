@@ -75,7 +75,7 @@
       (aggregate-walk a ctx
                       (lambda (r key item body)
                         (declare (ignore key item))
-                        (setf total (dec-add total (as-dec r (node-pos body))))
+                        (setf total (dec-add total (as-dec r (node-pos body)) (node-pos body)))
                         nil))
       (make-num total)))
   :lazy t :binds t)

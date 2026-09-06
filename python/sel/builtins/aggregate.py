@@ -88,7 +88,7 @@ def _sum(args, ctx):
     total = [D.ZERO]
 
     def visit(r, k, i, body):
-        total[0] = D.add(total[0], r.as_decimal(body.pos))
+        total[0] = D.add(total[0], r.as_decimal(body.pos), body.pos)
         return None
 
     walk(args, ctx, visit)

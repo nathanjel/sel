@@ -228,13 +228,13 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     # can be read against the other four without a footnote.
     if op == '+':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.add(a, b))
+        return Value.num(D.add(a, b, node.pos))
     if op == '-':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.sub(a, b))
+        return Value.num(D.sub(a, b, node.pos))
     if op == '*':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.mul(a, b))
+        return Value.num(D.mul(a, b, node.pos))
     if op == '/':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
         return Value.num(D.div(a, b, node.pos))
@@ -339,11 +339,11 @@ def _eval_assign(node: Node, ctx: Context) -> Value:
             a = current.as_decimal(tp)
             b = rhs.as_decimal(vp)
             if bin_op == '+':
-                res = D.add(a, b)
+                res = D.add(a, b, node.pos)
             elif bin_op == '-':
-                res = D.sub(a, b)
+                res = D.sub(a, b, node.pos)
             elif bin_op == '*':
-                res = D.mul(a, b)
+                res = D.mul(a, b, node.pos)
             elif bin_op == '/':
                 res = D.div(a, b, node.pos)
             else:

@@ -17,7 +17,17 @@
 
 (in-package #:sel)
 
-(defconstant +div-scale+ 10)
+ (defconstant +div-scale+ 10)
+
+;;; spec/SPEC.md 6.4. These bound the *value*; ROUND's scale cap and POWER's
+;;; exponent cap bound *arguments*, and an argument cap is not a value cap --
+;;; POWER's base is unbounded, so nesting one POWER inside another multiplies
+;;; the exponents and steps straight over the exponent cap. Two independent
+;;; numbers rather than one shared budget, because ROUND(99.5, 1000000) is
+;;; 1 000 002 digits and legal under the scale cap: a shared budget would have
+;;; shrunk what the spec already sanctions.
+(defconstant +max-int-digits+ 1000000)
+(defconstant +max-frac-digits+ 1000000)
 
 (defstruct (dec (:constructor %make-dec (neg digits scale)))
   (neg nil :type boolean)
@@ -27,6 +37,22 @@
 (defun dec-make (neg digits scale)
   (let ((d (coerce digits 'simple-string)))
     (%make-dec (if (string= d "0") nil (and neg t)) d scale)))
+
+;;; Refuses a value SEL cannot hold, where it is built rather than where it is
+;;; rendered. Every operation that can grow a number passes its result through
+;;; here, so DEC-POWER -- repeated squaring over DEC-MUL -- trips on an
+;;; intermediate and the enormous value is never allocated.
+(defun dec-guard (d at)
+  (when (> (dec-scale d) +max-frac-digits+)
+    (fail "E_RANGE"
+          (format nil "number has more than ~D fractional digits" +max-frac-digits+)
+          at))
+  ;; Negative when the value is below 1: those render as a single "0".
+  (when (> (- (length (dec-digits d)) (dec-scale d)) +max-int-digits+)
+    (fail "E_RANGE"
+          (format nil "number has more than ~D integer digits" +max-int-digits+)
+          at))
+  d)
 
 ;;; --- digit-string primitives (non-negative, no leading zeros) ---------------
 
@@ -143,16 +169,22 @@ No trimming, no sign but a leading minus, no exponent, no leading or trailing do
              (not (find #\. text :start (1+ dot))))
         (digits-only-p text i n))))
 
-(defun dec-parse (text)
+(defun dec-parse (text &optional at)
   "Return a DEC, or NIL when TEXT is not a number. Callers raise E_NOT_NUM with
-the position of the offending node."
+the position of the offending node.
+
+A well-formed numeral too big to hold is E_RANGE, not NIL: every character of it
+is a digit, so \"not a number\" would be false. Callers that must not signal --
+ISNUM's probe -- catch it and answer no."
   (when (and (stringp text) (dec-number-string-p text))
     (let* ((neg (char= (char text 0) #\-))
            (body (if neg (subseq text 1) text))
            (dot (position #\. body))
            (int-part (if dot (subseq body 0 dot) body))
            (frac-part (if dot (subseq body (1+ dot)) "")))
-      (dec-make neg (dstrip (concatenate 'string int-part frac-part)) (length frac-part)))))
+      (dec-guard (dec-make neg (dstrip (concatenate 'string int-part frac-part))
+                           (length frac-part))
+                 at))))
 
 (defun dec-format (d)
   (let ((sign (if (dec-neg d) "-" ""))
@@ -194,21 +226,24 @@ the position of the offending node."
             (scale-up (dec-digits b) (- s (dec-scale b)))
             s)))
 
-(defun dec-add (a b)
+(defun dec-add (a b &optional at)
   (multiple-value-bind (aa bb s) (dec-aligned a b)
+    ;; Only true addition can grow: a difference is never wider than its
+    ;; operands, and the aligned scale is the larger of two already legal ones.
     (if (eq (dec-neg a) (dec-neg b))
-        (dec-make (dec-neg a) (add-abs aa bb) s)
+        (dec-guard (dec-make (dec-neg a) (add-abs aa bb) s) at)
         (let ((c (cmp-abs aa bb)))
           (cond ((zerop c) (dec-make nil "0" s))
                 ((plusp c) (dec-make (dec-neg a) (sub-abs aa bb) s))
                 (t (dec-make (dec-neg b) (sub-abs bb aa) s)))))))
 
-(defun dec-sub (a b) (dec-add a (dec-negate b)))
+(defun dec-sub (a b &optional at) (dec-add a (dec-negate b) at))
 
-(defun dec-mul (a b)
-  (dec-make (not (eq (dec-neg a) (dec-neg b)))
-            (mul-abs (dec-digits a) (dec-digits b))
-            (+ (dec-scale a) (dec-scale b))))
+(defun dec-mul (a b &optional at)
+  (dec-guard (dec-make (not (eq (dec-neg a) (dec-neg b)))
+                       (mul-abs (dec-digits a) (dec-digits b))
+                       (+ (dec-scale a) (dec-scale b)))
+             at))
 
 (defun dec-cmp (a b)
   (cond
@@ -238,10 +273,11 @@ the position of the offending node."
                   do (setf digits (subseq digits 0 (1- (length digits))))
                      (decf scale))
             (when (string= digits "0") (setf scale 0))
-            (dec-make neg digits scale))
-          (dec-make neg
-                    (if (>= (cmp-abs (add-abs r r) d) 0) (add-abs q "1") q)
-                    +div-scale+)))))
+            (dec-guard (dec-make neg digits scale) at))
+          (dec-guard (dec-make neg
+                               (if (>= (cmp-abs (add-abs r r) d) 0) (add-abs q "1") q)
+                               +div-scale+)
+                     at)))))
 
 ;;; Remainder of truncated division: takes the sign of the dividend.
 (defun dec-mod (a b &optional at)
@@ -253,14 +289,16 @@ the position of the offending node."
 
 ;;; --- rounding. Every rounding in SEL is half away from zero (§4.4). ---------
 
-(defun dec-round (d n)
+(defun dec-round (d n &optional at)
   (if (>= n (dec-scale d))
-      (dec-make (dec-neg d) (scale-up (dec-digits d) (- n (dec-scale d))) n)
+      (dec-guard (dec-make (dec-neg d) (scale-up (dec-digits d) (- n (dec-scale d))) n) at)
       (let ((p (pow10 (- (dec-scale d) n))))
         (multiple-value-bind (q r) (divmod-abs (dec-digits d) p)
-          (dec-make (dec-neg d)
-                    (if (>= (cmp-abs (add-abs r r) p) 0) (add-abs q "1") q)
-                    n)))))
+          ;; Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
+          (dec-guard (dec-make (dec-neg d)
+                               (if (>= (cmp-abs (add-abs r r) p) 0) (add-abs q "1") q)
+                               n)
+                     at)))))
 
 (defun dec-trunc (d)
   (if (zerop (dec-scale d))
@@ -287,14 +325,14 @@ the position of the offending node."
 
 ;;; N must be a non-negative integer; the result scale is scale(x) * n, which
 ;;; falls out of repeated multiplication.
-(defun dec-power (a n)
+(defun dec-power (a n &optional at)
   (let ((result (dec-make nil "1" 0))
         (base a)
         (e n))
     (loop while (plusp e)
-          do (when (oddp e) (setf result (dec-mul result base)))
+          do (when (oddp e) (setf result (dec-mul result base at)))
              (setf e (ash e -1))
-             (when (plusp e) (setf base (dec-mul base base))))
+             (when (plusp e) (setf base (dec-mul base base at))))
     result))
 
 ;;; Truncates towards zero and converts to a CL integer. Bignums make this exact

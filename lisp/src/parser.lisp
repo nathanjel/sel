@@ -233,7 +233,7 @@
          (p-next p)
          ;; Canonicalised once, here: the literal 007 is the value 7.
          (let ((n (make-node :num (token-pos tok))))
-           (setf (node-s n) (dec-format (dec-parse (token-value tok))))
+           (setf (node-s n) (dec-format (dec-parse (token-value tok) (token-pos tok))))
            n))
 
         (:text

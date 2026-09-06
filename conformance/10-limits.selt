@@ -211,3 +211,34 @@ LEN(POWER(POWER(0.1, 20), 100000))
 --- expect
 error E_RANGE
 ===
+### name: lim.numeral.runtime-text-past-the-cap
+--- note
+A numeral does not have to be written in the source to be too big. This text is
+well formed and 2 000 000 digits long, so it is a number SEL cannot hold, and
+arithmetic on it says exactly that: E_RANGE, not E_NOT_NUM. The distinction
+matters because "not a number" would be false -- every character is a digit.
+--- source
+REPEAT("1", 2000000) + 0
+--- expect
+error E_RANGE
+===
+### name: lim.numeral.isnum-stays-total
+--- note
+ISNUM is a probe and must answer rather than raise, so the value that makes
+arithmetic fail with E_RANGE makes ISNUM false. The pair is the contract: ISNUM
+is true exactly when the value can be used as a number. It answered TRUE here
+before the cap, which was the hidden assumption -- true, then E_RANGE on use.
+--- source
+ISNUM(REPEAT("1", 2000000))
+--- expect
+bool FALSE
+===
+### name: lim.numeral.isnum-below-the-cap
+--- note
+The same probe one order of magnitude down, to prove the cap is what changed
+the answer and not the length of the text.
+--- source
+ISNUM(REPEAT("1", 200000))
+--- expect
+bool TRUE
+===

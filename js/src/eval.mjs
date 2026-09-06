@@ -190,9 +190,9 @@ function evalBinary(node, ctx) {
   const lp = node.l.pos, rp = node.r.pos;
 
   switch (op) {
-    case '+': return Value.num(D.add(l.asDecimal(lp), r.asDecimal(rp)));
-    case '-': return Value.num(D.sub(l.asDecimal(lp), r.asDecimal(rp)));
-    case '*': return Value.num(D.mul(l.asDecimal(lp), r.asDecimal(rp)));
+    case '+': return Value.num(D.add(l.asDecimal(lp), r.asDecimal(rp), node.pos));
+    case '-': return Value.num(D.sub(l.asDecimal(lp), r.asDecimal(rp), node.pos));
+    case '*': return Value.num(D.mul(l.asDecimal(lp), r.asDecimal(rp), node.pos));
     case '/': return Value.num(D.div(l.asDecimal(lp), r.asDecimal(rp), node.pos));
     case '%': return Value.num(D.mod(l.asDecimal(lp), r.asDecimal(rp), node.pos));
 
@@ -282,9 +282,9 @@ function evalAssign(node, ctx) {
       value = concat(current, rhs, tp, vp);
     } else {
       const a = current.asDecimal(tp), b = rhs.asDecimal(vp);
-      const r = binOp === '+' ? D.add(a, b)
-        : binOp === '-' ? D.sub(a, b)
-          : binOp === '*' ? D.mul(a, b)
+      const r = binOp === '+' ? D.add(a, b, node.pos)
+        : binOp === '-' ? D.sub(a, b, node.pos)
+          : binOp === '*' ? D.mul(a, b, node.pos)
             : binOp === '/' ? D.div(a, b, node.pos)
               : D.mod(a, b, node.pos);
       value = Value.num(r);

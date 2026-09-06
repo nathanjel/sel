@@ -174,7 +174,7 @@ tail, count and index that keep lookup and append O(1)."
       (fail "E_NOT_NUM"
             (format nil "expected a number, got ~(~a~)" (value-kind s))
             at))
-    (or (dec-parse (value-scalar s))
+    (or (dec-parse (value-scalar s) at)
         (fail "E_NOT_NUM" (format nil "not a number: ~s" (value-scalar s)) at))))
 
 ;;; The non-throwing probe, as ISNUM uses.

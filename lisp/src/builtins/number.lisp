@@ -28,12 +28,12 @@
 (define-builtin "ROUND" 2 2
   (lambda (a ctx)
     (declare (ignore ctx))
-    (make-num (dec-round (args-dec a 0) (sized-arg a 1 +max-scale+ "ROUND scale")))))
+    (make-num (dec-round (args-dec a 0) (sized-arg a 1 +max-scale+ "ROUND scale") (args-pos a)))))
 
 (define-builtin "POWER" 2 2
   (lambda (a ctx)
     (declare (ignore ctx))
-    (make-num (dec-power (args-dec a 0) (sized-arg a 1 +max-power+ "POWER exponent")))))
+    (make-num (dec-power (args-dec a 0) (sized-arg a 1 +max-power+ "POWER exponent") (args-pos a)))))
 
 (define-builtin "MIN" 1 +variadic+
   (lambda (a ctx)

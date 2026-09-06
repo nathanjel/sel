@@ -16,6 +16,16 @@ final class Dec
 {
     public const DIV_SCALE = 10;
 
+    // spec/SPEC.md §6.4. These bound the *value*; ROUND's scale cap and POWER's
+    // exponent cap bound *arguments*, and an argument cap is not a value cap —
+    // POWER's base is unbounded, so nesting one POWER inside another multiplies
+    // the exponents and steps straight over the exponent cap. Two independent
+    // numbers rather than one shared budget, because ROUND(99.5, 1000000) is
+    // 1 000 002 digits and legal under the scale cap: a shared budget would have
+    // shrunk what the spec already sanctions.
+    public const MAX_INT_DIGITS = 1000000;
+    public const MAX_FRAC_DIGITS = 1000000;
+
     // --- digit-string primitives (non-negative, no leading zeros) ------------
 
     private static function strip(string $s): string
@@ -142,6 +152,29 @@ final class Dec
         return ['neg' => $digits === '0' ? false : $neg, 'digits' => $digits, 'scale' => $scale];
     }
 
+    /**
+     * Refuses a value SEL cannot hold, where it is built rather than where it is
+     * rendered. Every operation that can grow a number passes its result through
+     * here, so POWER — repeated squaring over mul — trips on an intermediate and
+     * the enormous value is never allocated: without that, nesting POWER three
+     * deep exhausted PHP's memory before any check could run.
+     *
+     * @param array{neg:bool,digits:string,scale:int} $d
+     * @param array{line:int,col:int,offset:int}|null $pos
+     * @return array{neg:bool,digits:string,scale:int}
+     */
+    private static function guard(array $d, ?array $pos): array
+    {
+        if ($d['scale'] > self::MAX_FRAC_DIGITS) {
+            fail('E_RANGE', 'number has more than ' . self::MAX_FRAC_DIGITS . ' fractional digits', $pos);
+        }
+        // Negative when the value is below 1: those render as a single "0".
+        if (strlen($d['digits']) - $d['scale'] > self::MAX_INT_DIGITS) {
+            fail('E_RANGE', 'number has more than ' . self::MAX_INT_DIGITS . ' integer digits', $pos);
+        }
+        return $d;
+    }
+
     /** @return array{neg:bool,digits:string,scale:int} */
     public static function zero(): array
     {
@@ -152,9 +185,14 @@ final class Dec
      * Null when the text is not a number; callers raise E_NOT_NUM with the
      * position of the offending node. No trimming — " 2" is not a number.
      *
+     * A well-formed numeral too big to hold is E_RANGE, not null: every
+     * character of it is a digit, so "not a number" would be false. Callers that
+     * must not raise — ISNUM's probe — catch it and answer no.
+     *
+     * @param array{line:int,col:int,offset:int}|null $pos
      * @return array{neg:bool,digits:string,scale:int}|null
      */
-    public static function parse(string $text): ?array
+    public static function parse(string $text, ?array $pos = null): ?array
     {
         // The D modifier. Without it PCRE's `$` matches both at the end of the
         // subject and immediately before a single trailing newline, so "5\n"
@@ -170,11 +208,14 @@ final class Dec
         $body = $neg ? substr($text, 1) : $text;
         $dot = strpos($body, '.');
         if ($dot === false) {
-            return self::make($neg, self::strip($body), 0);
+            return self::guard(self::make($neg, self::strip($body), 0), $pos);
         }
         $intPart = substr($body, 0, $dot);
         $fracPart = substr($body, $dot + 1);
-        return self::make($neg, self::strip($intPart . $fracPart), strlen($fracPart));
+        return self::guard(
+            self::make($neg, self::strip($intPart . $fracPart), strlen($fracPart)),
+            $pos,
+        );
     }
 
     /** @param array{neg:bool,digits:string,scale:int} $d */
@@ -267,11 +308,13 @@ final class Dec
      * @param array{neg:bool,digits:string,scale:int} $b
      * @return array{neg:bool,digits:string,scale:int}
      */
-    public static function add(array $a, array $b): array
+    public static function add(array $a, array $b, ?array $pos = null): array
     {
         [$A, $B, $s] = self::aligned($a, $b);
         if ($a['neg'] === $b['neg']) {
-            return self::make($a['neg'], self::addAbs($A, $B), $s);
+            // Only true addition can grow: a difference is never wider than its
+            // operands, and the aligned scale is the larger of two legal ones.
+            return self::guard(self::make($a['neg'], self::addAbs($A, $B), $s), $pos);
         }
         $c = self::cmpAbs($A, $B);
         if ($c === 0) {
@@ -287,9 +330,9 @@ final class Dec
      * @param array{neg:bool,digits:string,scale:int} $b
      * @return array{neg:bool,digits:string,scale:int}
      */
-    public static function sub(array $a, array $b): array
+    public static function sub(array $a, array $b, ?array $pos = null): array
     {
-        return self::add($a, self::negate($b));
+        return self::add($a, self::negate($b), $pos);
     }
 
     /**
@@ -297,13 +340,13 @@ final class Dec
      * @param array{neg:bool,digits:string,scale:int} $b
      * @return array{neg:bool,digits:string,scale:int}
      */
-    public static function mul(array $a, array $b): array
+    public static function mul(array $a, array $b, ?array $pos = null): array
     {
-        return self::make(
+        return self::guard(self::make(
             $a['neg'] !== $b['neg'],
             self::mulAbs($a['digits'], $b['digits']),
             $a['scale'] + $b['scale'],
-        );
+        ), $pos);
     }
 
     /**
@@ -354,10 +397,10 @@ final class Dec
             if ($digits === '0') {
                 $scale = 0;
             }
-            return self::make($neg, $digits, $scale);
+            return self::guard(self::make($neg, $digits, $scale), $pos);
         }
         $up = self::cmpAbs(self::addAbs($r, $r), $D) >= 0 ? self::addAbs($q, '1') : $q;
-        return self::make($neg, $up, self::DIV_SCALE);
+        return self::guard(self::make($neg, $up, self::DIV_SCALE), $pos);
     }
 
     /**
@@ -384,15 +427,16 @@ final class Dec
      * @param array{neg:bool,digits:string,scale:int} $d
      * @return array{neg:bool,digits:string,scale:int}
      */
-    public static function round(array $d, int $n): array
+    public static function round(array $d, int $n, ?array $pos = null): array
     {
         if ($n >= $d['scale']) {
-            return self::make($d['neg'], self::scaleUp($d['digits'], $n - $d['scale']), $n);
+            return self::guard(self::make($d['neg'], self::scaleUp($d['digits'], $n - $d['scale']), $n), $pos);
         }
         $p = self::pow10($d['scale'] - $n);
         [$q, $r] = self::divModAbs($d['digits'], $p);
+        // Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
         $up = self::cmpAbs(self::addAbs($r, $r), $p) >= 0 ? self::addAbs($q, '1') : $q;
-        return self::make($d['neg'], $up, $n);
+        return self::guard(self::make($d['neg'], $up, $n), $pos);
     }
 
     /**
@@ -441,7 +485,7 @@ final class Dec
      * @param array{neg:bool,digits:string,scale:int} $a
      * @return array{neg:bool,digits:string,scale:int}
      */
-    public static function power(array $a, int $n): array
+    public static function power(array $a, int $n, ?array $pos = null): array
     {
         $result = self::make(false, '1', 0);
         $base = $a;
@@ -452,11 +496,11 @@ final class Dec
             // exponent. Keeping the four cores literally the same code is the
             // point — see js/src/decimal.mjs.
             if ($e % 2 === 1) {
-                $result = self::mul($result, $base);
+                $result = self::mul($result, $base, $pos);
             }
             $e = intdiv($e, 2);
             if ($e > 0) {
-                $base = self::mul($base, $base);
+                $base = self::mul($base, $base, $pos);
             }
         }
         return $result;

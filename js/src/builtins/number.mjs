@@ -26,12 +26,12 @@ define({ name: 'TRUNC', min: 1, max: 1, fn: (a) => Value.num(D.trunc(a.dec(0))) 
 
 define({
   name: 'ROUND', min: 2, max: 2,
-  fn: (a) => Value.num(D.round(a.dec(0), sized(a, 1, MAX_SCALE, 'ROUND scale'))),
+  fn: (a) => Value.num(D.round(a.dec(0), sized(a, 1, MAX_SCALE, 'ROUND scale'), a.pos)),
 });
 
 define({
   name: 'POWER', min: 2, max: 2,
-  fn: (a) => Value.num(D.power(a.dec(0), sized(a, 1, MAX_POWER, 'POWER exponent'))),
+  fn: (a) => Value.num(D.power(a.dec(0), sized(a, 1, MAX_POWER, 'POWER exponent'), a.pos)),
 });
 
 define({

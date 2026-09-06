@@ -208,9 +208,9 @@
         ((member op '("+" "-" "*" "/" "%") :test #'string=)
          (let* ((a (as-dec l lp))
                 (b (as-dec r rp)))
-           (make-num (cond ((string= op "+") (dec-add a b))
-                           ((string= op "-") (dec-sub a b))
-                           ((string= op "*") (dec-mul a b))
+           (make-num (cond ((string= op "+") (dec-add a b (node-pos node)))
+                           ((string= op "-") (dec-sub a b (node-pos node)))
+                           ((string= op "*") (dec-mul a b (node-pos node)))
                            ((string= op "/") (dec-div a b (node-pos node)))
                            (t (dec-mod a b (node-pos node)))))))
 
@@ -315,9 +315,9 @@
                        (let* ((a (as-dec current tp))
                               (b (as-dec rhs vp)))
                          (make-num (case binop
-                                     (#\+ (dec-add a b))
-                                     (#\- (dec-sub a b))
-                                     (#\* (dec-mul a b))
+                                     (#\+ (dec-add a b (node-pos node)))
+                                     (#\- (dec-sub a b (node-pos node)))
+                                     (#\* (dec-mul a b (node-pos node)))
                                      (#\/ (dec-div a b (node-pos node)))
                                      (t (dec-mod a b (node-pos node)))))))))))) 
     ;; Re-derived after the right-hand side ran, which may have replaced or

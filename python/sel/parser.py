@@ -299,7 +299,7 @@ class Parser:
             if t.type == 'num':
                 self.next()
                 # Canonicalised once, here: the literal 007 is the value 7.
-                return Node('num', t.pos, v=D.format(D.parse(t.value)))
+                return Node('num', t.pos, v=D.format(D.parse(t.value, t.pos)))
 
             if t.type == 'text':
                 self.next()

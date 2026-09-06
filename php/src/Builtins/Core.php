@@ -166,7 +166,7 @@ final class Core
             'fn' => static function (Args $a, Context $ctx): Value {
                 $total = Dec::zero();
                 self::walk($a, $ctx, static function (Value $r, $k, $i, array $body) use (&$total): ?Value {
-                    $total = Dec::add($total, $r->asDecimal($body['pos']));
+                    $total = Dec::add($total, $r->asDecimal($body['pos']), $body['pos']);
                     return null;
                 });
                 return Value::num($total);

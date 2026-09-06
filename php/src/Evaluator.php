@@ -151,9 +151,9 @@ final class Evaluator
         $rp = $node['r']['pos'];
 
         switch ($op) {
-            case '+': return Value::num(Dec::add($l->asDecimal($lp), $r->asDecimal($rp)));
-            case '-': return Value::num(Dec::sub($l->asDecimal($lp), $r->asDecimal($rp)));
-            case '*': return Value::num(Dec::mul($l->asDecimal($lp), $r->asDecimal($rp)));
+            case '+': return Value::num(Dec::add($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
+            case '-': return Value::num(Dec::sub($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
+            case '*': return Value::num(Dec::mul($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
             case '/': return Value::num(Dec::div($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
             case '%': return Value::num(Dec::mod($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
 
@@ -267,9 +267,9 @@ final class Evaluator
                 $a = $current->asDecimal($tp);
                 $b = $rhs->asDecimal($vp);
                 $value = Value::num(match ($binOp) {
-                    '+' => Dec::add($a, $b),
-                    '-' => Dec::sub($a, $b),
-                    '*' => Dec::mul($a, $b),
+                    '+' => Dec::add($a, $b, $node['pos']),
+                    '-' => Dec::sub($a, $b, $node['pos']),
+                    '*' => Dec::mul($a, $b, $node['pos']),
                     '/' => Dec::div($a, $b, $node['pos']),
                     '%' => Dec::mod($a, $b, $node['pos']),
                 });

@@ -40,10 +40,10 @@ final class Number
             'fn' => static fn (Args $a): Value => Value::num(Dec::trunc($a->dec(0)))]);
 
         Registry::define(['name' => 'ROUND', 'min' => 2, 'max' => 2,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::round($a->dec(0), self::sized($a, 1, self::MAX_SCALE, 'ROUND scale')))]);
+            'fn' => static fn (Args $a): Value => Value::num(Dec::round($a->dec(0), self::sized($a, 1, self::MAX_SCALE, 'ROUND scale'), $a->pos))]);
 
         Registry::define(['name' => 'POWER', 'min' => 2, 'max' => 2,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::power($a->dec(0), self::sized($a, 1, self::MAX_POWER, 'POWER exponent')))]);
+            'fn' => static fn (Args $a): Value => Value::num(Dec::power($a->dec(0), self::sized($a, 1, self::MAX_POWER, 'POWER exponent'), $a->pos))]);
 
         Registry::define(['name' => 'MIN', 'min' => 1, 'max' => PHP_INT_MAX,
             'fn' => static function (Args $a): Value {

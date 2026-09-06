@@ -229,7 +229,7 @@ final class Value
         if ($v->kind !== self::TEXT) {
             fail('E_NOT_NUM', 'expected a number, got ' . strtolower($v->kind), $pos);
         }
-        $d = Dec::parse((string) $v->scalar);
+        $d = Dec::parse((string) $v->scalar, $pos);
         if ($d === null) {
             fail('E_NOT_NUM', 'not a number: ' . json_encode($v->scalar), $pos);
         }
@@ -244,10 +244,14 @@ final class Value
         }
         try {
             $v = $this->scalarSource(null);
+            // A well-formed numeral too big to hold raises E_RANGE out of parse.
+            // The probe answers no rather than raising, so ISNUM is true exactly
+            // when the value can be used as a number — before the cap it said
+            // TRUE for a 2 000 000-digit text that then failed on first use.
+            return $v->kind === self::TEXT && Dec::parse((string) $v->scalar) !== null;
         } catch (SelError) {
             return false;
         }
-        return $v->kind === self::TEXT && Dec::parse((string) $v->scalar) !== null;
     }
 
     // --- copying ------------------------------------------------------------

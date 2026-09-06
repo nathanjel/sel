@@ -190,7 +190,7 @@ class Value:
         v = self.scalar_source(pos)
         if v.kind != TEXT:
             fail('E_NOT_NUM', f'expected a number, got {v.kind.lower()}', pos)
-        d = D.parse(v.scalar)
+        d = D.parse(v.scalar, pos)
         if d is None:
             fail('E_NOT_NUM', f'not a number: {v.scalar!r}', pos)
         return d
@@ -199,11 +199,15 @@ class Value:
         """Non-throwing probe for ISNUM."""
         if self.kind == NONE and self.size() == 0:
             return False
+        # A well-formed numeral too big to hold raises E_RANGE out of parse.
+        # The probe answers no rather than raising, so ISNUM is true exactly
+        # when the value can be used as a number — before the cap it said true
+        # for a 2 000 000-digit text that then failed on first use.
         try:
             v = self.scalar_source(None)
+            return v.kind == TEXT and D.parse(v.scalar) is not None
         except SelError:
             return False
-        return v.kind == TEXT and D.parse(v.scalar) is not None
 
     # --- copying --------------------------------------------------------------
 

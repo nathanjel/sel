@@ -215,6 +215,15 @@ int bytes_compare(std::string_view a, std::string_view b) {
 
 constexpr long long DIV_SCALE = 10;
 
+// spec/SPEC.md §6.4. These bound the *value*; MAX_SCALE and MAX_POWER below
+// bound *arguments*, and an argument cap is not a value cap — POWER's base is
+// unbounded, so nesting one POWER inside another multiplies the exponents and
+// steps straight over MAX_POWER. Two independent numbers rather than one shared
+// budget, because ROUND(99.5, 1000000) is 1 000 002 digits and legal under the
+// scale cap: a shared budget would have shrunk what the spec already sanctions.
+constexpr long long MAX_INT_DIGITS = 1000000;
+constexpr long long MAX_FRAC_DIGITS = 1000000;
+
 // An upper bound on any scale a built-in will construct. Not a language limit —
 // spec/SPEC.md sets none — but a value beyond this asks for a string longer than
 // memory, and failing with E_RANGE beats either a wrapped integer or a crash.
@@ -335,6 +344,23 @@ Dec dec_make(bool neg, std::string digits, long long scale) {
   return d;
 }
 
+// Refuses a value SEL cannot hold, where it is built rather than where it is
+// rendered. Every operation that can grow a number passes its result through
+// here, so dec_power — repeated squaring over dec_mul — trips on an intermediate
+// and the enormous value is never allocated.
+Dec dec_guard(Dec d, Pos pos) {
+  if (d.scale > MAX_FRAC_DIGITS) {
+    fail("E_RANGE", "number has more than " + std::to_string(MAX_FRAC_DIGITS) + " fractional digits",
+         pos);
+  }
+  // Negative when the value is below 1: those render as a single "0".
+  if (static_cast<long long>(d.digits.size()) - d.scale > MAX_INT_DIGITS) {
+    fail("E_RANGE", "number has more than " + std::to_string(MAX_INT_DIGITS) + " integer digits",
+         pos);
+  }
+  return d;
+}
+
 const Dec DEC_ZERO = dec_make(false, "0", 0);
 
 bool dec_is_number(std::string_view text) {
@@ -353,7 +379,10 @@ bool dec_is_number(std::string_view text) {
 
 // Returns false when the text is not a number; callers raise E_NOT_NUM with the
 // position of the offending node. No trimming — " 2" is not a number.
-bool dec_parse(std::string_view text, Dec& out) {
+// A well-formed numeral too big to hold is E_RANGE, not false: every character
+// of it is a digit, so "not a number" would be false. Callers that must not
+// raise — ISNUM's probe — catch it and answer no.
+bool dec_parse(std::string_view text, Dec& out, Pos pos = {}) {
   if (!dec_is_number(text)) return false;
   const bool neg = text[0] == '-';
   const std::string_view body = neg ? text.substr(1) : text;
@@ -361,7 +390,9 @@ bool dec_parse(std::string_view text, Dec& out) {
   const std::string int_part(dot == std::string_view::npos ? body : body.substr(0, dot));
   const std::string frac_part(dot == std::string_view::npos ? std::string_view()
                                                             : body.substr(dot + 1));
-  out = dec_make(neg, strip(int_part + frac_part), static_cast<long long>(frac_part.size()));
+  out = dec_guard(dec_make(neg, strip(int_part + frac_part),
+                           static_cast<long long>(frac_part.size())),
+                  pos);
   return true;
 }
 
@@ -397,20 +428,22 @@ void dec_aligned(const Dec& a, const Dec& b, std::string& A, std::string& B, lon
   B = scale_up(b.digits, s - b.scale);
 }
 
-Dec dec_add(const Dec& a, const Dec& b) {
+Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
   std::string A, B;
   long long s;
   dec_aligned(a, b, A, B, s);
-  if (a.neg == b.neg) return dec_make(a.neg, add_abs(A, B), s);
+  // Only true addition can grow: a difference is never wider than its operands,
+  // and the aligned scale is the larger of two already legal ones.
+  if (a.neg == b.neg) return dec_guard(dec_make(a.neg, add_abs(A, B), s), pos);
   const int c = cmp_abs(A, B);
   if (c == 0) return dec_make(false, "0", s);
   return c > 0 ? dec_make(a.neg, sub_abs(A, B), s) : dec_make(b.neg, sub_abs(B, A), s);
 }
 
-Dec dec_sub(const Dec& a, const Dec& b) { return dec_add(a, dec_negate(b)); }
+Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
 
-Dec dec_mul(const Dec& a, const Dec& b) {
-  return dec_make(a.neg != b.neg, mul_abs(a.digits, b.digits), a.scale + b.scale);
+Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
+  return dec_guard(dec_make(a.neg != b.neg, mul_abs(a.digits, b.digits), a.scale + b.scale), pos);
 }
 
 int dec_cmp(const Dec& a, const Dec& b) {
@@ -443,10 +476,10 @@ Dec dec_div(const Dec& a, const Dec& b, Pos pos = {}) {
       scale--;
     }
     if (digits == "0") scale = 0;
-    return dec_make(neg, digits, scale);
+    return dec_guard(dec_make(neg, digits, scale), pos);
   }
   const std::string up = cmp_abs(add_abs(r, r), D) >= 0 ? add_abs(q, "1") : q;
-  return dec_make(neg, up, DIV_SCALE);
+  return dec_guard(dec_make(neg, up, DIV_SCALE), pos);
 }
 
 // Remainder of truncated division: takes the sign of the dividend.
@@ -462,14 +495,15 @@ Dec dec_mod(const Dec& a, const Dec& b, Pos pos = {}) {
 
 // --- rounding. Every rounding in SEL is half away from zero (spec §4.4).
 
-Dec dec_round(const Dec& d, long long n) {
-  if (n >= d.scale) return dec_make(d.neg, scale_up(d.digits, n - d.scale), n);
+Dec dec_round(const Dec& d, long long n, Pos pos = {}) {
+  if (n >= d.scale) return dec_guard(dec_make(d.neg, scale_up(d.digits, n - d.scale), n), pos);
   const long long k = d.scale - n;
   const std::string p = pow10(k);
   std::string q, r;
   divmod_abs(d.digits, p, q, r);
+  // Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
   const std::string up = cmp_abs(add_abs(r, r), p) >= 0 ? add_abs(q, "1") : q;
-  return dec_make(d.neg, up, n);
+  return dec_guard(dec_make(d.neg, up, n), pos);
 }
 
 Dec dec_trunc(const Dec& d) {
@@ -503,14 +537,14 @@ bool dec_is_integer(const Dec& d) {
 
 // n must be a non-negative integer; the result scale is scale(x) * n, which
 // falls out of repeated multiplication.
-Dec dec_power(const Dec& a, long long n) {
+Dec dec_power(const Dec& a, long long n, Pos pos = {}) {
   Dec result = dec_make(false, "1", 0);
   Dec base = a;
   long long e = n;
   while (e > 0) {
-    if (e & 1) result = dec_mul(result, base);
+    if (e & 1) result = dec_mul(result, base, pos);
     e >>= 1;
-    if (e > 0) base = dec_mul(base, base);
+    if (e > 0) base = dec_mul(base, base, pos);
   }
   return result;
 }
@@ -716,14 +750,17 @@ bool Value::as_bool(Pos pos) const {
 
 bool Value::looks_numeric() const {
   if (p_->kind == Kind::None && p_->children.empty()) return false;
-  const Value* v;
+  // A well-formed numeral too big to hold raises E_RANGE out of dec_parse. The
+  // probe answers no rather than raising, so ISNUM is true exactly when the
+  // value can be used as a number — before the cap it said true for a
+  // 2 000 000-digit text that then failed on first use.
   try {
-    v = &scalar_source();
+    const Value& v = scalar_source();
+    Dec d;
+    return v.p_->kind == Kind::Text && sel::dec_parse(v.p_->scalar, d);
   } catch (const SelError&) {
     return false;
   }
-  Dec d;
-  return v->p_->kind == Kind::Text && sel::dec_parse(v->p_->scalar, d);
 }
 
 // Same kind, equal scalars with numbers *not* normalised, children with the same
@@ -1474,7 +1511,7 @@ class Parser {
       next();
       // Canonicalised once, here: the literal 007 is the value 7.
       Dec d;
-      dec_parse(t.value, d);
+      dec_parse(t.value, d, t.pos);
       auto n = make(NT::Num, t.pos);
       n->s = dec_format(d);
       return n;
@@ -1628,7 +1665,7 @@ class Args {
            pos_of(i));
     }
     Dec d;
-    if (!dec_parse(v.scalar(), d)) {
+    if (!dec_parse(v.scalar(), d, pos_of(i))) {
       fail("E_NOT_NUM", "not a number: \"" + v.scalar() + "\"", pos_of(i));
     }
     return d;
@@ -1742,7 +1779,7 @@ Value eval_unary(const Node& node, Context& ctx) {
   if (node.s == "NOT") return Value::boolean(!v.as_bool(node.l->pos));
   const Value& src = v.scalar_source(node.l->pos);
   Dec d;
-  if (src.kind() != Kind::Text || !dec_parse(src.scalar(), d)) {
+  if (src.kind() != Kind::Text || !dec_parse(src.scalar(), d, node.l->pos)) {
     fail("E_NOT_NUM", "expected a number", node.l->pos);
   }
   return make_num(dec_negate(d));
@@ -1759,7 +1796,7 @@ Dec as_dec(const Value& v, Pos pos) {
          pos);
   }
   Dec d;
-  if (!dec_parse(src.scalar(), d)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
+  if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
   return d;
 }
 
@@ -1787,9 +1824,9 @@ Value eval_binary(const Node& node, Context& ctx) {
   if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
     const Dec a = as_dec(l, lp);
     const Dec b = as_dec(r, rp);
-    if (op == "+") return make_num(dec_add(a, b));
-    if (op == "-") return make_num(dec_sub(a, b));
-    if (op == "*") return make_num(dec_mul(a, b));
+    if (op == "+") return make_num(dec_add(a, b, node.pos));
+    if (op == "-") return make_num(dec_sub(a, b, node.pos));
+    if (op == "*") return make_num(dec_mul(a, b, node.pos));
     if (op == "/") return make_num(dec_div(a, b, node.pos));
     return make_num(dec_mod(a, b, node.pos));
   }
@@ -1921,9 +1958,9 @@ Value eval_assign(const Node& node, Context& ctx) {
       const Dec b = as_dec(rhs, vp);
       Dec res;
       switch (binop) {
-        case '+': res = dec_add(a, b); break;
-        case '-': res = dec_sub(a, b); break;
-        case '*': res = dec_mul(a, b); break;
+        case '+': res = dec_add(a, b, node.pos); break;
+        case '-': res = dec_sub(a, b, node.pos); break;
+        case '*': res = dec_mul(a, b, node.pos); break;
         case '/': res = dec_div(a, b, node.pos); break;
         default: res = dec_mod(a, b, node.pos); break;
       }
@@ -2161,7 +2198,7 @@ void register_aggregates() {
                 Dec total = DEC_ZERO;
                 walk(a, ctx, [&total](const Value& r, const std::string&, const Value&,
                                       const Node& body) -> std::optional<Value> {
-                  total = dec_add(total, as_dec(r, body.pos));
+                  total = dec_add(total, as_dec(r, body.pos), body.pos);
                   return std::nullopt;
                 });
                 return make_num(total);
@@ -2402,7 +2439,7 @@ void register_numbers() {
                            std::to_string(MAX_SCALE),
                        a.pos_of(1));
                 }
-                return make_num(dec_round(a.dec(0), n));
+                return make_num(dec_round(a.dec(0), n, a.pos()));
               }});
   define(Spec{"POWER", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const long long n = a.non_neg_int(1);
@@ -2412,7 +2449,7 @@ void register_numbers() {
                            std::to_string(MAX_POWER),
                        a.pos_of(1));
                 }
-                return make_num(dec_power(a.dec(0), n));
+                return make_num(dec_power(a.dec(0), n, a.pos()));
               }});
 
   define(Spec{"MIN", 1, VARIADIC, false, false, nullptr, [](Args& a, Context&) -> Value {

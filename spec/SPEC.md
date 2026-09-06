@@ -473,6 +473,41 @@ by a shift that silently truncates the exponent to 32 bits. A rule that asks for
 a million-digit scale is a mistake in the rule; the language should say so in the
 same vocabulary as every other mistake.
 
+**An argument cap is not a value cap.** The three caps above bound arguments
+that *name* a size; they say nothing about how big the number that comes out may
+be. `POWER`'s exponent is capped, but its base is not, so nesting one call
+inside another multiplies the exponents and steps straight over the cap:
+`POWER(POWER(10, 20), 100000)` is 2 000 001 digits, and every host produced it.
+One more level of nesting and a host does not report `E_RANGE`, it exhausts its
+memory. So the size of a *value* is capped too:
+
+| Value | Cap | Beyond it |
+|---|---|---|
+| integer digits of a number | 1 000 000 | `E_RANGE` |
+| fractional digits of a number | 1 000 000 | `E_RANGE` |
+
+Two independent caps rather than one budget shared between them, because
+`ROUND(99.5, 1000000)` is 1 000 002 digits and legal under the scale cap above:
+a single budget of 1 000 001 would have shrunk what this section already allows.
+Set where they are, the caps refuse nothing that the argument caps permit.
+
+Both are on the *rendered* size, which is what a host has to hold and what `LEN`
+counts — not on the stored digit string. The distinction is not academic:
+`POWER(POWER(0.1, 20), 100000)` stores the single digit `1` with a scale of
+2 000 000, because leading zeros are not stored, so a cap on the digit string
+would not notice it at all.
+
+The cap is checked wherever a number is built, not where it is rendered.
+`POWER` is repeated squaring over multiplication, so an over-large result is
+refused at an intermediate step and the value that would exhaust memory is never
+allocated.
+
+A numeral too long to hold is `E_RANGE` wherever it appears — as a literal, as
+the result of arithmetic, or as text that arithmetic reads. It is not
+`E_NOT_NUM`: every character of it is a digit, and "not a number" would be
+false. `ISNUM` is a probe and answers rather than raising, so it is `FALSE` for
+such a value: `ISNUM(x)` is true exactly when `x` can be used as a number.
+
 ---
 
 ## 7. Functions
