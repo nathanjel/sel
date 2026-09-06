@@ -402,29 +402,46 @@ true (`Parser.php:345`), so every read is `empty($node['grouped'])`
 would be fine; a rewrite that keeps the create-when-true style but reads it with
 `$node['grouped']` would emit notices and misbehave.
 
-### C++ — the hardest, and it changes the most
+### C++ — done
 
-`NodePtr (Parser::*sub)()` and both binary helpers delete entirely; that is the
-single biggest deletion in the exercise.
+Converted. `NodePtr (Parser::*sub)()` and both binary helpers are gone, along
+with the eleven one-line precedence functions between `parse_list` and
+`parse_unary` — the single biggest deletion in the exercise. `parse_list`,
+`parse_term`, `parse_prefix`, `parse_postfix` and `parse_primary` are what is
+left. `parse_sequence`'s `enter`/`leave` converged onto the protected form at
+the same time, which was the last host still leaving it to fall through.
 
-- The table wants a function-local `static const std::map<std::string,
-  std::pair<int, char>>`, matching the existing `static const std::set` house
-  style at `sel.cpp:1212,1217`.
-- **Nodes are `shared_ptr<const Node>`.** `parse_term` must hold a mutable
-  `std::shared_ptr<Node>` locally and convert only on return, or it cannot set
-  `s`/`l`/`r`. `grouped` still needs the copy at `sel.cpp:1496` for the same
-  reason.
-- **Do not rename node fields.** `l`/`r` serve `bin`, `index` *and* `assign`;
-  `items` serves `seq`, `list` *and* call arguments. Introducing Python's
-  `target`/`value`/`obj`/`idx` names means touching `eval`, `check_target` and
-  `dependencies` too, and that is a different change.
-- The `Leave` RAII type is already factored — the rider commit did it, because
-  it was about to be written out a fifth time. C++ has no `finally`; this is the
-  equivalent, and the conversion keeps the same five counted constructs.
-**This host's three deliverables**, in order:
+Three things this host did differently, none of them optional:
+
+- **The two tables are built, not written out.** `assign_ops()`,
+  `compare_ops()` and `compare_words()` are function-local `static const
+  std::set`s in the existing house style, and `infix_entry`'s two `std::map`s
+  are initialised by an immediately-invoked lambda that loops over them. C++
+  *can* loop in a static initialiser where PHP cannot, so unlike `INFIX_OPS`
+  there the twelve comparison operators are named once. This matters beyond
+  tidiness: **`is_compare_op` is also the evaluator's question** — `sel.cpp`'s
+  binary dispatch asks it whether an operator is a numeric comparison — so
+  writing the list out again in the table would have been the second of three
+  places to forget one.
+- **Nodes are `shared_ptr<const Node>`.** `make()` returns a mutable
+  `std::shared_ptr<Node>` and the conversion to `NodePtr` happens on return;
+  a `parse_term` that held `NodePtr` locally could not set `s`/`l`/`r`.
+  `grouped` still needs its copy in `parse_primary` for the same reason.
+- **Node fields were not renamed.** `l`/`r` serve `bin`, `index` *and*
+  `assign`; `items` serves `seq`, `list` *and* call arguments. Python's
+  `target`/`value`/`obj`/`idx` names would have dragged `eval`, `check_target`
+  and `dependencies` into the same commit.
+
+`BP_SEQ` and `BP_LIST` are `[[maybe_unused]]`: they exist so the table reads as
+all sixteen levels of spec/SPEC.md §5, and `;` and `,` are N-ary loops that
+never consult them. Without the attribute `-Wall` is right to complain, and
+deleting them would leave two holes in a table whose whole claim is that it *is*
+the specification's §5.
+
+**This host's three deliverables**:
 
 1. **The index-bracket rider** — done, alone, ahead of the conversion.
-2. **The parser conversion** — everything above.
+2. **The parser conversion** — done.
 3. **The SQL translator** — `php/src/Sql/` is 6,381 lines and
    `python/sel/sql/` is 5,459. **Deferred, and not by transcription from the
    Python.** The obvious C++ shape for the generated dialect map is a JSON blob

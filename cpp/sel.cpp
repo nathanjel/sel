@@ -1221,9 +1221,16 @@ std::vector<Token> tokenize(const std::string& source) { return Lexer(source).to
 // ============================================================================
 // --- parser
 //
-// Recursive descent, one function per precedence level, mirroring
-// spec/grammar.md exactly so that the four implementations can be read side by
-// side.
+// Precedence climbing. The sixteen levels of spec/SPEC.md §5 are the table
+// below rather than sixteen functions, so adding an operator is adding a row.
+// python/sel/parser.py is the reference implementation of this shape and its
+// module docstring is the rationale; docs/PARSER-MIGRATION.md records what
+// every host had to get right, each item of which produces a valid parse of
+// the WRONG TREE when it is wrong.
+//
+// `;` and `,` stay hand-written N-ary loops outside the table, because they
+// build N-ary nodes rather than binary ones -- dependencies() walks `items`,
+// and parse_call flattens a top-level list into the argument vector.
 // ============================================================================
 
 enum class NT { Num, Text, Bool, Var, Index, Seq, List, Un, Bin, Assign, Call };
@@ -1263,20 +1270,55 @@ std::string arity_text(const Spec& spec) {
   return std::to_string(spec.min) + " to " + std::to_string(spec.max) + " arguments";
 }
 
-bool is_assign_op(const Token& t) {
+// The operator families, named once. The precedence table is BUILT from these
+// rather than repeating them, and the evaluator asks compare_ops() whether an
+// operator is a numeric comparison -- so a new comparison operator is one edit
+// here and one row in the table, not three lists to keep in step.
+const std::set<std::string>& assign_ops() {
   static const std::set<std::string> ops = {"=", "+=", "-=", "*=", "/=", "%=", "&="};
-  return t.type == Tok::Op && ops.count(t.value) > 0;
+  return ops;
+}
+
+const std::set<std::string>& compare_ops() {
+  static const std::set<std::string> ops = {"==", "!=", "<", "<=", ">", ">=",
+                                            "$==", "$!=", "$<", "$<=", "$>", "$>="};
+  return ops;
+}
+
+const std::set<std::string>& compare_words() {
+  static const std::set<std::string> words = {"EQL", "IN"};
+  return words;
 }
 
 bool is_compare_op(const Token& t) {
-  static const std::set<std::string> ops = {"==", "!=", "<", "<=", ">", ">=",
-                                            "$==", "$!=", "$<", "$<=", "$>", "$>="};
-  return t.type == Tok::Op && ops.count(t.value) > 0;
+  return t.type == Tok::Op && compare_ops().count(t.value) > 0;
 }
 
-bool is_compare_word(const Token& t) {
-  return t.type == Tok::Ident && (t.value == "EQL" || t.value == "IN");
-}
+// spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
+// that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
+[[maybe_unused]] constexpr int BP_SEQ = 1;    // ;  documentation only:
+[[maybe_unused]] constexpr int BP_LIST = 2;   // ,  both are N-ary loops
+constexpr int BP_ASSIGN = 3;    // = += -= *= /= %= &=   (right associative)
+constexpr int BP_OR = 4;
+constexpr int BP_XOR = 5;
+constexpr int BP_AND = 6;
+constexpr int BP_NOT = 7;       // prefix
+constexpr int BP_COMPARE = 8;   // non-associative
+constexpr int BP_BOR = 9;
+constexpr int BP_BXOR = 10;
+constexpr int BP_BAND = 11;
+constexpr int BP_CONCAT = 12;   // &
+constexpr int BP_ADD = 13;      // + -
+constexpr int BP_MUL = 14;      // * / %
+constexpr int BP_NEG = 15;      // prefix
+
+// An infix operator's binding power and associativity. 'L' parses its right
+// side at bp + 1, 'R' at bp -- that is what makes it right-associative -- and
+// 'N' at bp + 1 and then rejects a second operator at the same level.
+struct Infix {
+  int bp;
+  char assoc;
+};
 
 // The target must be an identifier followed by zero or more index operations.
 void check_target(const NodePtr& node, const Token& op_tok) {
@@ -1305,7 +1347,6 @@ class Parser {
   const Token& peek() const { return toks_[i_]; }
   const Token& next() { return toks_[i_++]; }
   bool at_op(const char* v) const { return peek().type == Tok::Op && peek().value == v; }
-  bool at_word(const char* v) const { return peek().type == Tok::Ident && peek().value == v; }
   bool at_eof() const { return peek().type == Tok::Eof; }
 
   void expect_op(const char* v) {
@@ -1340,29 +1381,37 @@ class Parser {
   }
 
   // sequence = list { ";" list } [ ";" ]
+  //
+  // The guard around the counter is the last of the five to be protected. It
+  // costs nothing -- a failing parse abandons the Parser either way -- and this
+  // host was the only one left leaving it to fall through, which is the first
+  // thing a reviewer asks about.
   NodePtr parse_sequence() {
     const Pos start = peek().pos;
     enter(start);
-    std::vector<NodePtr> items{parse_list()};
-    while (at_op(";")) {
-      next();
-      // A trailing ';' before a closer or end of input is permitted.
-      if (at_eof() || at_op(")") || at_op("]")) break;
+    std::vector<NodePtr> items;
+    {
+      const Leave leave_guard{this};
       items.push_back(parse_list());
+      while (at_op(";")) {
+        next();
+        // A trailing ';' before a closer or end of input is permitted.
+        if (at_eof() || at_op(")") || at_op("]")) break;
+        items.push_back(parse_list());
+      }
     }
-    leave();
     if (items.size() == 1) return items[0];
     auto n = make(NT::Seq, items[0]->pos);
     n->items = std::move(items);
     return n;
   }
 
-  // list = assignment { "," assignment }
+  // list = term { "," term }
   NodePtr parse_list() {
-    std::vector<NodePtr> items{parse_assignment()};
+    std::vector<NodePtr> items{parse_term(BP_ASSIGN)};
     while (at_op(",")) {
       next();
-      items.push_back(parse_assignment());
+      items.push_back(parse_term(BP_ASSIGN));
     }
     if (items.size() == 1) return items[0];
     auto n = make(NT::List, items[0]->pos);
@@ -1370,130 +1419,144 @@ class Parser {
     return n;
   }
 
-  // assignment = disjunction [ assign_op assignment ]   (right associative)
-  NodePtr parse_assignment() {
-    NodePtr left = parse_or();
-    if (is_assign_op(peek())) {
-      const Token op = next();
-      check_target(left, op);
-      // Counted, for the reason given on parse_not: this recursion passes
-      // through neither parse_sequence nor parse_primary, so uncounted a chain
-      // of assignments is bounded by nothing. `A=` forty-four thousand times
-      // terminated this host with SIGSEGV through its public CLI.
-      enter(op.pos);
-      const Leave leave_guard{this};
-      NodePtr value = parse_assignment();
-      auto n = make(NT::Assign, left->pos);
-      n->s = op.value;
-      n->l = left;
-      n->r = value;
-      return n;
-    }
-    return left;
-  }
+  // --- the precedence-climbing loop -----------------------------------------
 
-  NodePtr parse_or() { return parse_word_binary("OR", &Parser::parse_xor); }
-  NodePtr parse_xor() { return parse_word_binary("XOR", &Parser::parse_and); }
-  NodePtr parse_and() { return parse_word_binary("AND", &Parser::parse_not); }
-
-  NodePtr parse_word_binary(const char* word, NodePtr (Parser::*sub)()) {
-    NodePtr left = (this->*sub)();
-    while (at_word(word)) {
-      const Token op = next();
-      NodePtr right = (this->*sub)();
-      auto n = make(NT::Bin, op.pos);
-      n->s = word;
-      n->l = left;
-      n->r = right;
-      left = n;
-    }
-    return left;
-  }
-
-  // negation = "NOT" negation | comparison
+  // The two tables are one lookup. Every question about an operator -- what it
+  // binds at, how it associates, and whether it may follow a comparison -- is
+  // answered from here, so adding an operator really is adding a row. Asking a
+  // separate list anywhere would put that claim back in doubt.
   //
-  // Counted. A prefix operator recurses into itself without passing through
-  // parse_sequence or parse_primary, which are the only two places depth is
-  // tracked — so an unbounded chain of them reached this host's own stack limit
-  // instead of E_DEPTH, and `--------...1` at about twenty thousand characters
-  // segfaulted the process. parse_unary below had the identical hazard. C++ has
-  // no `finally`, so the counter is released by the same RAII guard
-  // parse_primary uses. Entered only when a prefix operator is actually
-  // consumed, so every other expression's trip point is unchanged.
-  NodePtr parse_not() {
-    if (at_word("NOT")) {
-      const Token op = next();
-      enter(op.pos);
-      const Leave leave_guard{this};
-      auto n = make(NT::Un, op.pos);
-      n->s = "NOT";
-      n->l = parse_not();
-      return n;
-    }
-    return parse_comparison();
+  // Two tables and not one because word operators lex as identifiers and symbol
+  // operators as ops, so they cannot share a key space; the binding powers are
+  // one scale. Returns nullptr for a token that is not an infix operator, which
+  // is the same answer as "stop here".
+  static const Infix* infix_entry(const Token& t) {
+    static const std::map<std::string, Infix> ops = [] {
+      std::map<std::string, Infix> m = {
+          {"&", {BP_CONCAT, 'L'}},
+          {"+", {BP_ADD, 'L'}}, {"-", {BP_ADD, 'L'}},
+          {"*", {BP_MUL, 'L'}}, {"/", {BP_MUL, 'L'}}, {"%", {BP_MUL, 'L'}},
+      };
+      for (const std::string& op : assign_ops()) m[op] = {BP_ASSIGN, 'R'};
+      for (const std::string& op : compare_ops()) m[op] = {BP_COMPARE, 'N'};
+      return m;
+    }();
+    static const std::map<std::string, Infix> words = [] {
+      std::map<std::string, Infix> m = {
+          {"OR", {BP_OR, 'L'}}, {"XOR", {BP_XOR, 'L'}}, {"AND", {BP_AND, 'L'}},
+          {"BOR", {BP_BOR, 'L'}}, {"BXOR", {BP_BXOR, 'L'}}, {"BAND", {BP_BAND, 'L'}},
+      };
+      for (const std::string& w : compare_words()) m[w] = {BP_COMPARE, 'N'};
+      return m;
+    }();
+
+    const std::map<std::string, Infix>* table = nullptr;
+    if (t.type == Tok::Op) table = &ops;
+    else if (t.type == Tok::Ident) table = &words;
+    else return nullptr;
+    const auto it = table->find(t.value);
+    return it == table->end() ? nullptr : &it->second;
   }
 
-  // comparison = bit_or [ compare_op bit_or ]   — deliberately non-associative
-  NodePtr parse_comparison() {
-    NodePtr left = parse_bit_or();
-    const Token t = peek();
-    if (!is_compare_op(t) && !is_compare_word(t)) return left;
+  NodePtr parse_term(int min_bp) {
+    NodePtr left = parse_prefix(min_bp);
 
-    next();
-    NodePtr right = parse_bit_or();
-    const Token& after = peek();
-    if (is_compare_op(after) || is_compare_word(after)) {
-      fail("E_SYNTAX",
-           "comparison operators do not chain — parenthesise, as in (a " + t.value + " b) AND (b " +
-               after.value + " c)",
-           after.pos);
-    }
-    auto n = make(NT::Bin, t.pos);
-    n->s = t.value;
-    n->l = left;
-    n->r = right;
-    return n;
-  }
-
-  NodePtr parse_bit_or() { return parse_word_binary("BOR", &Parser::parse_bit_xor); }
-  NodePtr parse_bit_xor() { return parse_word_binary("BXOR", &Parser::parse_bit_and); }
-  NodePtr parse_bit_and() { return parse_word_binary("BAND", &Parser::parse_concat); }
-
-  NodePtr parse_concat() { return parse_op_binary({"&"}, &Parser::parse_additive); }
-  NodePtr parse_additive() { return parse_op_binary({"+", "-"}, &Parser::parse_multiplicative); }
-  NodePtr parse_multiplicative() { return parse_op_binary({"*", "/", "%"}, &Parser::parse_unary); }
-
-  NodePtr parse_op_binary(std::initializer_list<const char*> ops, NodePtr (Parser::*sub)()) {
-    NodePtr left = (this->*sub)();
     for (;;) {
       const Token t = peek();
-      if (t.type != Tok::Op) return left;
-      bool match = false;
-      for (const char* op : ops) {
-        if (t.value == op) { match = true; break; }
-      }
-      if (!match) return left;
+      const Infix* e = infix_entry(t);
+      if (e == nullptr || e->bp < min_bp) return left;
+
       next();
+
+      if (e->assoc == 'R') {
+        // Assignment. The target is validated against the AST shape, not against
+        // a value, which is what makes `(A) = 1` a compile error.
+        check_target(left, t);
+        // Counted, for the same reason parse_prefix counts: the right side
+        // recurses through neither parse_sequence nor parse_primary, so
+        // uncounted a chain of assignments is bounded by nothing but this host's
+        // own stack -- `A=` forty-four thousand times terminated it with SIGSEGV
+        // through the public CLI.
+        enter(t.pos);
+        const Leave leave_guard{this};
+        auto n = make(NT::Assign, left->pos);
+        n->s = t.value;
+        n->l = left;
+        n->r = parse_term(e->bp);        // bp, not bp + 1: right associative
+        left = n;
+        continue;
+      }
+
+      if (e->assoc == 'N') {
+        // Deliberately non-associative, and the E_SYNTAX is reported at the
+        // SECOND operator rather than at the first or at the expression.
+        NodePtr right = parse_term(e->bp + 1);
+        const Token& after = peek();
+        const Infix* ae = infix_entry(after);
+        if (ae != nullptr && ae->assoc == 'N') {
+          fail("E_SYNTAX",
+               "comparison operators do not chain — parenthesise, as in (a " + t.value +
+                   " b) AND (b " + after.value + " c)",
+               after.pos);
+        }
+        auto n = make(NT::Bin, t.pos);
+        n->s = t.value;
+        n->l = left;
+        n->r = right;
+        left = n;
+        continue;
+      }
+
       auto n = make(NT::Bin, t.pos);
       n->s = t.value;
       n->l = left;
-      n->r = (this->*sub)();
+      n->r = parse_term(e->bp + 1);
       left = n;
     }
   }
 
-  // unary = "-" unary | postfix
-  // Counted, for the reason given on parse_not.
-  NodePtr parse_unary() {
-    if (at_op("-")) {
-      const Token op = next();
-      enter(op.pos);
+  // NOT and unary minus.
+  //
+  // Each is accepted only where its own binding power reaches: NOT at bp 7
+  // cannot appear inside a comparison operand, which is parsed at bp 9, so
+  // `a == NOT b` falls through to parse_primary -- which sees the bare
+  // identifier NOT and raises E_RESERVED, the same error the transcribed parser
+  // gave, by a different route. `-NOT x` is E_RESERVED for the same reason.
+  //
+  // This is the part that is not textbook. Folding prefix operators into
+  // parse_primary, where precedence climbing usually puts them, would make
+  // `NOT a == b` parse as `(NOT a) == b` and would break lim.parse-depth and
+  // lim.prefix-depth-does-not-shift-parens at the same time.
+  //
+  // Counted, for the reason the two functions this replaced were counted:
+  // a prefix operator recurses through neither parse_sequence nor
+  // parse_primary, and uncounted it reached this host's own stack limit instead
+  // of E_DEPTH -- `--------...1` at about twenty thousand characters segfaulted
+  // the process. Entered only when a prefix operator is actually consumed, so
+  // every other expression's trip point is unchanged.
+  NodePtr parse_prefix(int min_bp) {
+    const Token t = peek();
+
+    if (t.type == Tok::Ident && t.value == "NOT" && min_bp <= BP_NOT) {
+      next();
+      enter(t.pos);
       const Leave leave_guard{this};
-      auto n = make(NT::Un, op.pos);
-      n->s = "NEG";
-      n->l = parse_unary();
+      auto n = make(NT::Un, t.pos);
+      n->s = "NOT";
+      n->l = parse_term(BP_NOT);
       return n;
     }
+
+    if (t.type == Tok::Op && t.value == "-" && min_bp <= BP_NEG) {
+      next();
+      enter(t.pos);
+      const Leave leave_guard{this};
+      auto n = make(NT::Un, t.pos);
+      n->s = "NEG";
+      n->l = parse_term(BP_NEG);
+      return n;
+    }
+
     return parse_postfix();
   }
 
