@@ -65,11 +65,16 @@ void test_decimal() {
   selt::eq(fmt(".5"), std::string("<not a number>"), "a leading dot is not a number");
   selt::eq(fmt("1e3"), std::string("<not a number>"), "no exponent notation");
 
-  auto bin = [](const char* a, const char* b, Dec (*op)(const Dec&, const Dec&)) {
+  // The Pos is part of the signature, not just of the call: dec_add and dec_mul
+  // report E_RANGE against a position when a result exceeds the value cap, and a
+  // default argument does not shrink a function's TYPE for taking its address.
+  // Naming two parameters here is what let this file stop compiling silently
+  // while a stale build/unit went on reporting 81 green checks.
+  auto bin = [](const char* a, const char* b, Dec (*op)(const Dec&, const Dec&, Pos)) {
     Dec x, y;
     dec_parse(a, x);
     dec_parse(b, y);
-    return dec_format(op(x, y));
+    return dec_format(op(x, y, Pos{}));
   };
 
   selt::eq(bin("2.50", "2.50", dec_add), std::string("5.00"), "money keeps its cents");

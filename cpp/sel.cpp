@@ -1270,10 +1270,16 @@ std::string arity_text(const Spec& spec) {
   return std::to_string(spec.min) + " to " + std::to_string(spec.max) + " arguments";
 }
 
-// The operator families, named once. The precedence table is BUILT from these
-// rather than repeating them, and the evaluator asks compare_ops() whether an
-// operator is a numeric comparison -- so a new comparison operator is one edit
-// here and one row in the table, not three lists to keep in step.
+// The operator families, named once for the PARSER. The precedence table is
+// built from these rather than repeating them, and the evaluator asks
+// compare_ops() whether an operator is a numeric comparison -- so the parser
+// and the evaluator cannot disagree about what a comparison is.
+//
+// That is the whole of the claim. Adding a comparison operator is still three
+// edits, and they are here, in operators() for the lexer, and in
+// compare_result() for its meaning. The third used to be the dangerous one: its
+// last branch answered for every operator it did not name, so an operator added
+// to the first two and forgotten here silently meant ">=". It now fails.
 const std::set<std::string>& assign_ops() {
   static const std::set<std::string> ops = {"=", "+=", "-=", "*=", "/=", "%=", "&="};
   return ops;
@@ -1793,13 +1799,20 @@ class Args {
   std::vector<std::optional<Value>> vals_;
 };
 
-bool compare_result(const std::string& op, int c) {
+bool compare_result(const std::string& op, int c, Pos pos) {
   if (op == "==") return c == 0;
   if (op == "!=") return c != 0;
   if (op == "<") return c < 0;
   if (op == "<=") return c <= 0;
   if (op == ">") return c > 0;
-  return c >= 0;   // ">="
+  if (op == ">=") return c >= 0;
+  // Not a fallthrough. `return c >= 0` stood here and answered for every
+  // operator it did not name: an operator added to the lexer and to
+  // compare_ops() but forgotten here evaluated as ">=" and reported nothing,
+  // which is the hidden assumption this project would rather fail than carry.
+  // Unreachable today -- the parser only builds these six -- and that is the
+  // point of saying so out loud.
+  fail("E_SYNTAX", "unknown comparison operator " + op, pos);
 }
 
 // TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
@@ -1935,12 +1948,12 @@ Value eval_binary(const Node& node, Context& ctx) {
   if (!op.empty() && op[0] == '$') {
     const std::string a = l.as_bytes(lp);
     const std::string b = r.as_bytes(rp);
-    return Value::boolean(compare_result(op.substr(1), bytes_compare(a, b)));
+    return Value::boolean(compare_result(op.substr(1), bytes_compare(a, b), node.pos));
   }
   if (is_compare_op(Token{Tok::Op, op, {}})) {
     const Dec a = as_dec(l, lp);
     const Dec b = as_dec(r, rp);
-    return Value::boolean(compare_result(op, dec_cmp(a, b)));
+    return Value::boolean(compare_result(op, dec_cmp(a, b), node.pos));
   }
 
   fail("E_SYNTAX", "unknown operator " + op, node.pos);

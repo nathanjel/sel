@@ -18,7 +18,11 @@ LINKED := conformance batch e2e sel api
 # and the other internals. They must not also link it.
 WHITEBOX := check-decimal
 
-BINS := $(addprefix $(BUILD)/,$(LINKED) $(WHITEBOX))
+# `unit` is in the default target and not only in `test`, because it was not:
+# `make` built everything else, tools/check.sh ran whatever build/unit happened
+# to be lying there, and once tests/unit.cpp stopped compiling against sel.cpp a
+# stale binary went on reporting 81 green checks for 27 commits.
+BINS := $(addprefix $(BUILD)/,$(LINKED) $(WHITEBOX) unit)
 
 .PHONY: all test clean
 all: $(BINS)
