@@ -1,15 +1,90 @@
-# Converting the parsers to precedence climbing
+# Finishing the C++ and Lisp hosts
 
 **This document has a finite life.** It describes work in progress across
 releases 0.4.0–0.7.0, and it is deleted in the 1.0.0 commit that finishes it.
 If you are reading it after 1.0.0, it should not exist.
 
+The file is called `PARSER-MIGRATION.md` because converting the parsers is what
+it started as. Three hosts finished that, and two more things attached
+themselves to the same turn — a host is opened once, and opening it three times
+to make three related changes is how the hosts drifted apart in the first place.
+The name stays because half a dozen source comments point at it; the scope is
+what the next section says.
+
+- [A host's turn: three deliverables](#a-hosts-turn-three-deliverables)
 - [Why](#why)
 - [The target shape](#the-target-shape)
 - [What must not change](#what-must-not-change)
 - [The five parity requirements](#the-five-parity-requirements)
+- [Rider: the index bracket must count a depth level](#rider-the-index-bracket-must-count-a-depth-level)
 - [Per host](#per-host)
 - [How to do one](#how-to-do-one)
+
+---
+
+## A host's turn: three deliverables
+
+C++ and Lisp each owe three things. They are listed together because they touch
+the same files and want the same review, not because they are one change — land
+them as separate commits, in this order.
+
+**1. The index-bracket rider** (see below). Two lines. Do it FIRST, on its own,
+before the parser is disturbed: it is the only open cross-host divergence, it is
+independent of everything else, and doing it first means the parser conversion is
+measured against a host that already agrees with the other three.
+
+```
+a[ ×150     js php python  →  E_DEPTH at 1:201
+            cpp lisp       →  E_UNDEF_VAR at 1:1     ← this
+```
+
+Whichever host goes last also moves the two parked cases into
+`conformance/10-limits.selt` and adds the sentence to `spec/SPEC.md` §6.4. Until
+then no test guards the boundary in any host, which is the actual cost of
+carrying this open.
+
+**2. The parser conversion** — the original subject of this document. Read
+[What must not change](#what-must-not-change) and
+[The five parity requirements](#the-five-parity-requirements) first; each of the
+five produces *a valid parse of the wrong tree* when it is wrong, so none is
+caught by a compiler.
+
+**3. The SEL→SQL translator.** `docs/SQL-TRANSLATION.md` is normative;
+§14 records what each previous port cost and why. In outline, per host:
+
+- an emitter in `tools/gen-sql-map.mjs` and one in `tools/gen-sql-cases.mjs`,
+  each one function plus one line in that file's `OUTPUTS`. **The other hosts'
+  generated files must regenerate byte-identical** — that is the check that you
+  added a host rather than changed shared data.
+- the layer itself, transcribed from `python/sel/sql/` (the JS port used Python
+  rather than the PHP original, and 368 of 368 passed on the first full run).
+- a `sqlt` runner, transcribed from `python/bin/sqlt`; the three host checks, not
+  PHP's five. `oracle` and `sqldoc` stay PHP-only — §14, M7 says why.
+- wiring in `tools/impls.sh` (`impl_sql`) and a check in `tools/mutate-sql.py`.
+  A check that cannot reach the code under test cannot measure it, so the mutation
+  harness needs the new runner before any mutation of the new layer means anything.
+- mutations in `sql/mutations.json` for whatever the host had to decide for
+  itself. Every host so far has had at least one such decision.
+
+**What the JS port learned that generalises.** Most of its host-shaped decisions
+were about JS objects and do not transfer. One does, and it is the one that
+changes emitted bytes:
+
+> **An aggregate's elements must live in an insertion-ordered container.** A
+> `clist` built by indexed assignment may mix word keys with the positional keys
+> `"1"`, `"2"`, … and it must unroll in the order the assignments were written.
+> A JS object reorders integer-like keys to the front; **C++'s `std::map` sorts
+> every key**, and a Lisp hash table has no order at all. `std::vector` of pairs
+> and an alist are the shapes that work.
+
+`conformance/`'s sibling case `agg.clist.mixed-keys-keep-insertion-order` in
+`sql/cases/12-aggregates.sqlt` pins this for every host, and
+`js-clist-order-through-a-plain-object` in `sql/mutations.json` proves the case
+still catches it. Both were written because the JS port needed them; both are
+waiting for C++ and Lisp.
+
+*The JS layer is under adversarial review as this is written. Anything it
+surfaces that generalises belongs in this subsection.*
 
 ---
 
@@ -295,9 +370,17 @@ single biggest deletion in the exercise.
 - The three textually identical local `Leave` RAII structs (`sel.cpp:1354`,
   `:1421`, `:1451`) collapse to two sites and should be factored into one type
   while you are there. C++ has no `finally`; this is the equivalent.
-- **The index-bracket rider above is outstanding for this host.** The bracket
-  loop needs its own `enter`/`leave` — a fourth `Leave` site, or the factored
-  type if you do that first.
+**This host's three deliverables**, in order:
+
+1. **The index-bracket rider** — the bracket loop needs its own `enter`/`leave`,
+   a fourth `Leave` site, or the factored type if you do that first. Land it
+   before the conversion, not with it.
+2. **The parser conversion** — everything above.
+3. **The SQL translator** — `php/src/Sql/` is 6,381 lines and
+   `python/sel/sql/` is 5,459; transcribe from the Python. The container warning
+   in [A host's turn](#a-hosts-turn-three-deliverables) is aimed squarely at this
+   host: `std::map` sorts its keys, so an aggregate's elements need a
+   `std::vector` of pairs or they unroll in the wrong order.
 
 ### Lisp
 
@@ -314,8 +397,16 @@ single biggest deletion in the exercise.
 - `parser.lisp:253` reads the lookahead without a bounds guard, relying on the
   EOF sentinel, where the other four guard explicitly. Keep the sentinel
   assumption or add the guard, but do it deliberately.
-- **The index-bracket rider above is outstanding for this host.** `with-depth`
-  around the bracket loop is the whole change.
+**This host's three deliverables**, in order:
+
+1. **The index-bracket rider** — `with-depth` around the bracket loop is the
+   whole change. Land it before the conversion, not with it.
+2. **The parser conversion** — everything above.
+3. **The SQL translator** — transcribe from `python/sel/sql/`. A hash table has
+   no iteration order, so an aggregate's elements want an alist; see the container
+   warning in [A host's turn](#a-hosts-turn-three-deliverables). Whichever of the
+   two hosts goes last also moves the two parked conformance cases and adds the
+   `spec/SPEC.md` §6.4 sentence.
 
 ### One inconsistency worth settling
 

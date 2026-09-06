@@ -2522,9 +2522,12 @@ the SQL layer is a separate entry point (`package.json` `"./sql"`), so a host
 that wants only the evaluator does not pay for the translator. `impl_sql
 js-bundle` returns 0 for that reason rather than skipping something.
 
-**Later, and separately:** C++ and Lisp ports. Each is a transcription of a
-design that four hosts will have already agreed on, which is the cheapest moment
-to do it.
+**Later:** C++ and Lisp ports. Each is a transcription of a design that four
+hosts will have already agreed on, which is the cheapest moment to do it — but
+not separately. Both hosts also owe a parser conversion and the index-bracket
+depth rider, and all three changes touch the same files and want the same review.
+`docs/PARSER-MIGRATION.md` tracks the three together, in the order they should
+land; the SQL half of that list points back here.
 
 A note on how to build M2–M3 and M5–M6: those are the phases where fanning work
 out pays. Authoring four dialect documents, writing the case files per category,

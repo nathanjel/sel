@@ -71,9 +71,10 @@ unknown function names are a **compile-time** error.
 precedence climbing; `cpp/sel.cpp` and `lisp/src/parser.lisp` still transcribe
 `spec/grammar.md` one function per production. Python was the pilot and the
 other two were transcribed from it. See
-[PARSER-MIGRATION.md](PARSER-MIGRATION.md), which is a working document that
-gets deleted when the last host is converted. Read it before touching any
-parser.
+[PARSER-MIGRATION.md](PARSER-MIGRATION.md), the working document that tracks
+what C++ and Lisp still owe — the parser, the index-bracket depth rider and the
+SQL layer, which land in that order because a host is opened once. It is deleted
+when the last host is finished. Read it before touching any parser.
 
 ---
 
@@ -559,7 +560,9 @@ like a parser bug.
 though less than they did. `js/src/parser.mjs`, `php/src/Parser.php` and
 `python/sel/parser.py` are precedence climbing; `cpp/sel.cpp` and
 `lisp/src/parser.lisp` are still transcribed one function per precedence level.
-See `docs/PARSER-MIGRATION.md`, which is deleted when the last two are done.
+See `docs/PARSER-MIGRATION.md`, which tracks the parser conversion together with
+the two other things those hosts still owe, and is deleted when the last one is
+done.
 
 In the three table-driven parsers it is a row:
 
