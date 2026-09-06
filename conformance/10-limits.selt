@@ -273,3 +273,30 @@ A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=
 --- expect
 num 1
 ===
+### name: lim.assign-depth-shares-the-paren-budget
+--- note
+Counting the assignment recursion means an assignment costs a level of the same
+200 the parentheses draw on, so an assignment nested deeply enough inside
+parentheses trips where the parentheses alone would not. That is the intended
+behaviour and it is what NOT and unary minus already do -- the same source with
+NOT TRUE in place of the assignment reports E_DEPTH at the same column -- but it
+narrows the set of programs that compile, so it is pinned rather than left to be
+rediscovered.
+
+lim.prefix-depth-does-not-shift-parens is the same guard for the prefix
+operators, from the other side: they must cost a level only when consumed. This
+is the pair for assignment.
+--- source
+(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((A = 1)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+--- expect
+error E_DEPTH at 1:104
+===
+### name: lim.assign-depth-inside-parens-just-under
+--- note
+One parenthesis shallower and the same rule compiles, so the cost is exactly one
+level and not two.
+--- source
+((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((A = 1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+--- expect
+num 1
+===

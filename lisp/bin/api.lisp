@@ -76,6 +76,13 @@
        (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "X = 1; X + Y"))))
   (say "program.deps.excludes.binder"
        (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "ALL(I, IT, IT > 0)"))))
+  ;; A PARENTHESISED binder is still treated as a binding name here, though the
+  ;; evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
+  ;; dependencies() answers as if IT were bound. Pinned because all seven hosts
+  ;; agree on it and nothing else records it -- not endorsed. See the note in
+  ;; docs/EXTENDING.md.
+  (say "program.deps.grouped.binder"
+       (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "ALL(I, (IT), IT > 0)"))))
   (let ((ctx (sel:make-none)))
     (sel:value-set ctx "TOTAL" (sel:make-num "59.97"))
     (say "program.run.reads.context" (sel:value-dump (sel:evaluate "TOTAL > 10.00" ctx)))

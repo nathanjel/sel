@@ -97,6 +97,12 @@ p = sel_compile('IF(A > B, A, C)')
 say('program.dependencies', ' '.join(p.dependencies()))
 say('program.deps.excludes.assigned', ' '.join(sel_compile('X = 1; X + Y').dependencies()))
 say('program.deps.excludes.binder', ' '.join(sel_compile('ALL(I, IT, IT > 0)').dependencies()))
+# A PARENTHESISED binder is still treated as a binding name here, though the
+# evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
+# dependencies() answers as if IT were bound. Pinned because all seven hosts
+# agree on it and nothing else records it -- not endorsed. See the note in
+# docs/EXTENDING.md.
+say('program.deps.grouped.binder', ' '.join(sel_compile('ALL(I, (IT), IT > 0)').dependencies()))
 ctx = Value.none()
 ctx.set('TOTAL', Value.num('59.97'))
 say('program.run.reads.context', evaluate('TOTAL > 10.00', ctx).dump())

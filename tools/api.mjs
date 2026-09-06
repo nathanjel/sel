@@ -82,6 +82,12 @@ const p = compile('IF(A > B, A, C)');
 say('program.dependencies', p.dependencies().join(' '));
 say('program.deps.excludes.assigned', compile('X = 1; X + Y').dependencies().join(' '));
 say('program.deps.excludes.binder', compile('ALL(I, IT, IT > 0)').dependencies().join(' '));
+// A PARENTHESISED binder is still treated as a binding name here, though the
+// evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
+// dependencies() answers as if IT were bound. Pinned because all seven hosts
+// agree on it and nothing else records it -- not endorsed. See the note in
+// docs/EXTENDING.md.
+say('program.deps.grouped.binder', compile('ALL(I, (IT), IT > 0)').dependencies().join(' '));
 const ctx = Value.none();
 ctx.set('TOTAL', Value.num('59.97'));
 say('program.run.reads.context', evaluate('TOTAL > 10.00', ctx).dump());
