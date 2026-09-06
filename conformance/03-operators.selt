@@ -58,6 +58,92 @@ tree -{"1"=t"3", "2"=t"4"}
 --- expect
 error E_SYNTAX at 1:7
 ===
+### name: op.compare.no-chaining.reports-the-second-operator
+--- note
+Four operators, one error, and it is at the SECOND -- not the third, and not the
+expression. A rewrite that checks for chaining after the whole run of operators
+rather than after the first pair would report 1:11 and still look correct.
+--- source
+1 < 2 < 3 < 4
+--- expect
+error E_SYNTAX at 1:7
+===
+### name: op.compare.no-chaining.word-form
+--- note
+The word spellings are the same precedence level and chain no more than the
+symbols do. Before this, the whole of parity requirement 2 rested on `<`.
+--- source
+1 EQL 2 EQL 3
+--- expect
+error E_SYNTAX at 1:9
+===
+### name: op.compare.no-chaining.symbol-then-word
+--- note
+The mixed pairings are the ones a table-driven parser is most likely to get
+wrong: symbol operators lex as `op` tokens and word operators as identifiers, so
+the guard has to consult both tables. Consulting only the symbol table lets
+`1 < 2 EQL 3` chain silently -- a valid parse of a wrong tree, with no error
+anywhere.
+--- source
+1 < 2 EQL 3
+--- expect
+error E_SYNTAX at 1:7
+===
+### name: op.compare.no-chaining.word-then-symbol
+--- note
+The same pairing the other way round, because a guard can be wrong in one
+direction only.
+--- source
+1 EQL 2 < 3
+--- expect
+error E_SYNTAX at 1:9
+===
+### name: op.compare.no-chaining.dollar-form
+--- note
+The text-comparison spellings are the same level too.
+--- source
+1 $< 2 $< 3
+--- expect
+error E_SYNTAX at 1:8
+===
+### name: op.compare.no-chaining.in-form
+--- note
+IN is a comparison operator, so a second one after it is the same error, even
+though its right operand is a list.
+--- source
+1 IN (1, 2) IN (TRUE)
+--- expect
+error E_SYNTAX at 1:13
+===
+### name: op.compare.parenthesised-is-not-chaining
+--- note
+The refusal is about the operators being adjacent at one level, not about
+comparisons nesting: parenthesised, the inner one is an ordinary operand. This
+is the form the error message tells the reader to write.
+--- source
+TRUE EQL (1 < 2)
+--- expect
+bool TRUE
+===
+### name: op.compare.as-an-assignment-value
+--- note
+Assignment binds looser than comparison, so the comparison is the value and no
+chain guard fires.
+--- source
+A = 1 < 2; A
+--- expect
+bool TRUE
+===
+### name: op.compare.under-not
+--- note
+NOT binds looser than comparison, so its operand is the whole comparison rather
+than the left side of one -- the tree that parity requirement 1 exists to pin,
+seen from the comparison side.
+--- source
+NOT 1 < 2
+--- expect
+bool FALSE
+===
 ### name: op.unary-minus
 --- source
 - 2 - -3
