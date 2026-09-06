@@ -1,6 +1,18 @@
 <?php
-// Recursive descent, one function per precedence level, mirroring spec/grammar.md
-// and js/src/parser.mjs so the two can be read side by side.
+// Precedence climbing, mirroring js/src/parser.mjs and python/sel/parser.py so
+// the three can be read side by side. See docs/PARSER-MIGRATION.md.
+//
+// This file used to transcribe spec/grammar.md one function per production,
+// seventeen deep, with an `fn () => ...` closure at each of the nine binary
+// helpers. That cost 35 stack frames per level of parenthesis nesting, and
+// E_DEPTH does not trip until 100 nested parens -- invisible here, fatal on the
+// Python host, whose default recursion limit is 1000. The ladder below is that
+// chain, as data.
+//
+// The depth arithmetic is unchanged and is not free to change: conformance/
+// 10-limits.selt pins two increments per paren (parseSequence + parsePrimary),
+// E_DEPTH at 1:101 for 100 parens, 1:200 for a `-` chain and 1:797 for a NOT
+// chain. Prefix operators are counted only when actually consumed.
 
 declare(strict_types=1);
 
@@ -15,6 +27,74 @@ final class Parser
         '==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
     ];
     private const COMPARE_WORDS = ['EQL', 'IN'];
+
+    // spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
+    // that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
+    private const BP_SEQ = 1;       // ;
+    private const BP_LIST = 2;      // ,
+    private const BP_ASSIGN = 3;    // = += -= *= /= %= &=   (right associative)
+    private const BP_OR = 4;
+    private const BP_XOR = 5;
+    private const BP_AND = 6;
+    private const BP_NOT = 7;       // prefix
+    private const BP_COMPARE = 8;   // non-associative
+    private const BP_BOR = 9;
+    private const BP_BXOR = 10;
+    private const BP_BAND = 11;
+    private const BP_CONCAT = 12;   // &
+    private const BP_ADD = 13;      // + -
+    private const BP_MUL = 14;      // * / %
+    private const BP_NEG = 15;      // prefix
+
+    // BP_SEQ and BP_LIST are deliberately unused: `;` and `,` build N-ary nodes,
+    // so they stay hand-written loops in parseSequence/parseList rather than
+    // table rows. They are declared anyway so the ladder above reads as
+    // spec/SPEC.md §5 does, with no silent gap at the loose end.
+
+    /**
+     * Word operator -> [binding power, associativity]. Word operators lex as
+     * identifiers and symbol operators as `op` tokens, so they are two tables
+     * sharing one set of binding powers.
+     *
+     * EQL and IN are named here and again in COMPARE_WORDS above, which the
+     * chain check reads; python/sel/parser.py carries the same pair twice for
+     * the same reason.
+     */
+    private const INFIX_WORDS = [
+        'OR' => [self::BP_OR, 'L'], 'XOR' => [self::BP_XOR, 'L'], 'AND' => [self::BP_AND, 'L'],
+        'BOR' => [self::BP_BOR, 'L'], 'BXOR' => [self::BP_BXOR, 'L'], 'BAND' => [self::BP_BAND, 'L'],
+        'EQL' => [self::BP_COMPARE, 'N'], 'IN' => [self::BP_COMPARE, 'N'],
+    ];
+
+    /** @var array<string, array{int, string}>|null */
+    private static ?array $infixOps = null;
+
+    /**
+     * Symbol operator -> [binding power, associativity]. Built once from the
+     * lists above rather than written out a second time: PHP has no loop in a
+     * constant expression, and the assignment and comparison operators are
+     * already named there — two copies would be two places to forget one.
+     *
+     * @return array<string, array{int, string}>
+     */
+    private static function infixOps(): array
+    {
+        if (self::$infixOps === null) {
+            $t = [
+                '&' => [self::BP_CONCAT, 'L'],
+                '+' => [self::BP_ADD, 'L'], '-' => [self::BP_ADD, 'L'],
+                '*' => [self::BP_MUL, 'L'], '/' => [self::BP_MUL, 'L'], '%' => [self::BP_MUL, 'L'],
+            ];
+            foreach (self::ASSIGN_OPS as $op) {
+                $t[$op] = [self::BP_ASSIGN, 'R'];
+            }
+            foreach (self::COMPARE_OPS as $op) {
+                $t[$op] = [self::BP_COMPARE, 'N'];
+            }
+            self::$infixOps = $t;
+        }
+        return self::$infixOps;
+    }
 
     /** @var list<array<string,mixed>> */
     private array $toks;
@@ -95,18 +175,25 @@ final class Parser
     /** @return array<string,mixed> */
     private function parseSequence(): array
     {
+        // The try/finally is new. It costs nothing — a failing parse abandons the
+        // Parser either way — and the Lisp and Python hosts already protect this
+        // counter, so this is the asymmetry docs/PARSER-MIGRATION.md asks the
+        // transcribed hosts to converge on rather than a deviation.
         $start = $this->peek();
         $this->enter($start);
-        $items = [$this->parseList()];
-        while ($this->atOp(';')) {
-            $this->next();
-            // A trailing ';' before a closer or end of input is permitted.
-            if ($this->atEof() || $this->atOp(')') || $this->atOp(']')) {
-                break;
+        try {
+            $items = [$this->parseList()];
+            while ($this->atOp(';')) {
+                $this->next();
+                // A trailing ';' before a closer or end of input is permitted.
+                if ($this->atEof() || $this->atOp(')') || $this->atOp(']')) {
+                    break;
+                }
+                $items[] = $this->parseList();
             }
-            $items[] = $this->parseList();
+        } finally {
+            $this->leave();
         }
-        $this->leave();
         return count($items) === 1
             ? $items[0]
             : ['t' => 'seq', 'items' => $items, 'pos' => $items[0]['pos']];
@@ -115,177 +202,117 @@ final class Parser
     /** @return array<string,mixed> */
     private function parseList(): array
     {
-        $items = [$this->parseAssignment()];
+        $items = [$this->parseTerm(self::BP_ASSIGN)];
         while ($this->atOp(',')) {
             $this->next();
-            $items[] = $this->parseAssignment();
+            $items[] = $this->parseTerm(self::BP_ASSIGN);
         }
         return count($items) === 1
             ? $items[0]
             : ['t' => 'list', 'items' => $items, 'pos' => $items[0]['pos']];
     }
 
-    /** @return array<string,mixed> */
-    private function parseAssignment(): array
-    {
-        $left = $this->parseOr();
-        $t = $this->peek();
-        if ($t['type'] === 'op' && in_array($t['value'], self::ASSIGN_OPS, true)) {
-            $this->next();
-            self::checkTarget($left, $t);
-            $value = $this->parseAssignment();
-            return [
-                't' => 'assign', 'op' => $t['value'], 'target' => $left,
-                'value' => $value, 'pos' => $left['pos'],
-            ];
-        }
-        return $left;
-    }
+    // --- the precedence-climbing loop ----------------------------------------
 
     /** @return array<string,mixed> */
-    private function parseOr(): array
+    private function parseTerm(int $minBp): array
     {
-        return $this->parseWordBinary('OR', fn () => $this->parseXor());
-    }
+        $left = $this->parsePrefix($minBp);
 
-    /** @return array<string,mixed> */
-    private function parseXor(): array
-    {
-        return $this->parseWordBinary('XOR', fn () => $this->parseAnd());
-    }
-
-    /** @return array<string,mixed> */
-    private function parseAnd(): array
-    {
-        return $this->parseWordBinary('AND', fn () => $this->parseNot());
-    }
-
-    /** @return array<string,mixed> */
-    private function parseWordBinary(string $word, callable $sub): array
-    {
-        $left = $sub();
-        while ($this->atWord($word)) {
-            $op = $this->next();
-            $right = $sub();
-            $left = ['t' => 'bin', 'op' => $word, 'l' => $left, 'r' => $right, 'pos' => $op];
-        }
-        return $left;
-    }
-
-    /** @return array<string,mixed> */
-    // Counted. A prefix operator recurses into itself without passing through
-    // parseSequence or parsePrimary, which are the only two places depth is
-    // tracked — so an unbounded chain of them used to reach the host's own stack
-    // limit instead of E_DEPTH. That was a segfault in the C++ host, from a rule
-    // that is just `-` repeated. parseUnary below has the identical hazard. The
-    // counter is entered only when a prefix operator is actually consumed, so
-    // every other expression's trip point is unchanged.
-    private function parseNot(): array
-    {
-        if ($this->atWord('NOT')) {
-            $op = $this->next();
-            $this->enter($op);
-            try {
-                return ['t' => 'un', 'op' => 'NOT', 'x' => $this->parseNot(), 'pos' => $op];
-            } finally {
-                $this->leave();
+        for (;;) {
+            $t = $this->peek();
+            $entry = null;
+            if ($t['type'] === 'op') {
+                $entry = self::infixOps()[$t['value']] ?? null;
+            } elseif ($t['type'] === 'ident') {
+                $entry = self::INFIX_WORDS[$t['value']] ?? null;
             }
+            if ($entry === null) {
+                return $left;
+            }
+            [$bp, $assoc] = $entry;
+            if ($bp < $minBp) {
+                return $left;
+            }
+
+            $this->next();
+
+            if ($assoc === 'R') {
+                // Assignment. The target is validated against the AST shape, not
+                // against a value, which is what makes `(A) = 1` a compile error.
+                // Parsing the right side at $bp rather than $bp + 1 is what makes
+                // it right associative.
+                self::checkTarget($left, $t);
+                $value = $this->parseTerm($bp);
+                $left = [
+                    't' => 'assign', 'op' => $t['value'], 'target' => $left,
+                    'value' => $value, 'pos' => $left['pos'],
+                ];
+                continue;
+            }
+
+            if ($assoc === 'N') {
+                $right = $this->parseTerm($bp + 1);
+                $after = $this->peek();
+                if (($after['type'] === 'op' && in_array($after['value'], self::COMPARE_OPS, true))
+                    || ($after['type'] === 'ident' && in_array($after['value'], self::COMPARE_WORDS, true))) {
+                    fail(
+                        'E_SYNTAX',
+                        "comparison operators do not chain — parenthesise, as in (a {$t['value']} b) AND (b {$after['value']} c)",
+                        $after,
+                    );
+                }
+                $left = ['t' => 'bin', 'op' => $t['value'], 'l' => $left, 'r' => $right, 'pos' => $t];
+                continue;
+            }
+
+            $right = $this->parseTerm($bp + 1);
+            $left = ['t' => 'bin', 'op' => $t['value'], 'l' => $left, 'r' => $right, 'pos' => $t];
         }
-        return $this->parseComparison();
-    }
-
-    /** Deliberately non-associative: `a < b < c` is a parse error. */
-    /** @return array<string,mixed> */
-    private function parseComparison(): array
-    {
-        $left = $this->parseBitOr();
-        $t = $this->peek();
-        $isOp = $t['type'] === 'op' && in_array($t['value'], self::COMPARE_OPS, true);
-        $isWord = $t['type'] === 'ident' && in_array($t['value'], self::COMPARE_WORDS, true);
-        if (!$isOp && !$isWord) {
-            return $left;
-        }
-
-        $this->next();
-        $right = $this->parseBitOr();
-        $after = $this->peek();
-        if (($after['type'] === 'op' && in_array($after['value'], self::COMPARE_OPS, true))
-            || ($after['type'] === 'ident' && in_array($after['value'], self::COMPARE_WORDS, true))) {
-            fail(
-                'E_SYNTAX',
-                "comparison operators do not chain — parenthesise, as in (a {$t['value']} b) AND (b {$after['value']} c)",
-                $after,
-            );
-        }
-        return ['t' => 'bin', 'op' => $t['value'], 'l' => $left, 'r' => $right, 'pos' => $t];
-    }
-
-    /** @return array<string,mixed> */
-    private function parseBitOr(): array
-    {
-        return $this->parseWordBinary('BOR', fn () => $this->parseBitXor());
-    }
-
-    /** @return array<string,mixed> */
-    private function parseBitXor(): array
-    {
-        return $this->parseWordBinary('BXOR', fn () => $this->parseBitAnd());
-    }
-
-    /** @return array<string,mixed> */
-    private function parseBitAnd(): array
-    {
-        return $this->parseWordBinary('BAND', fn () => $this->parseConcat());
-    }
-
-    /** @return array<string,mixed> */
-    private function parseConcat(): array
-    {
-        return $this->parseOpBinary(['&'], fn () => $this->parseAdditive());
-    }
-
-    /** @return array<string,mixed> */
-    private function parseAdditive(): array
-    {
-        return $this->parseOpBinary(['+', '-'], fn () => $this->parseMultiplicative());
-    }
-
-    /** @return array<string,mixed> */
-    private function parseMultiplicative(): array
-    {
-        return $this->parseOpBinary(['*', '/', '%'], fn () => $this->parseUnary());
     }
 
     /**
-     * @param list<string> $ops
+     * NOT and unary minus.
+     *
+     * Each is accepted only where its own binding power reaches: NOT at 7 cannot
+     * appear inside a comparison operand (parsed at 9), so `a == NOT b` falls
+     * through to parsePrimary, which sees the bare identifier NOT and raises
+     * E_RESERVED — the same error the transcribed parser gave, by a different
+     * route. Folding these into parsePrimary, which is where textbook precedence
+     * climbing puts prefix operators, would make `NOT a == b` parse as
+     * `(NOT a) == b` and would break the depth pins at the same time.
+     *
+     * Counted, and only when actually consumed: a prefix operator recurses
+     * without passing through parseSequence or parsePrimary, and uncounted it
+     * reached the host’s own stack limit instead of E_DEPTH — that was a
+     * segfault in the C++ host, from a rule that is just `-` repeated.
+     *
      * @return array<string,mixed>
      */
-    private function parseOpBinary(array $ops, callable $sub): array
+    private function parsePrefix(int $minBp): array
     {
-        $left = $sub();
-        for (;;) {
-            $t = $this->peek();
-            if ($t['type'] !== 'op' || !in_array($t['value'], $ops, true)) {
-                return $left;
-            }
-            $this->next();
-            $left = ['t' => 'bin', 'op' => $t['value'], 'l' => $left, 'r' => $sub(), 'pos' => $t];
-        }
-    }
+        $t = $this->peek();
 
-    /** @return array<string,mixed> */
-    // Counted, for the reason given on parseNot.
-    private function parseUnary(): array
-    {
-        if ($this->atOp('-')) {
-            $op = $this->next();
-            $this->enter($op);
+        if ($t['type'] === 'ident' && $t['value'] === 'NOT' && $minBp <= self::BP_NOT) {
+            $this->next();
+            $this->enter($t);
             try {
-                return ['t' => 'un', 'op' => 'NEG', 'x' => $this->parseUnary(), 'pos' => $op];
+                return ['t' => 'un', 'op' => 'NOT', 'x' => $this->parseTerm(self::BP_NOT), 'pos' => $t];
             } finally {
                 $this->leave();
             }
         }
+
+        if ($t['type'] === 'op' && $t['value'] === '-' && $minBp <= self::BP_NEG) {
+            $this->next();
+            $this->enter($t);
+            try {
+                return ['t' => 'un', 'op' => 'NEG', 'x' => $this->parseTerm(self::BP_NEG), 'pos' => $t];
+            } finally {
+                $this->leave();
+            }
+        }
+
         return $this->parsePostfix();
     }
 

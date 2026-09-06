@@ -132,7 +132,15 @@ One wrinkle: `pos` in this host *is* the token object (tokens carry
 `line`/`col`/`offset` inline), so table-driven `fail` calls keep passing tokens
 rather than a separate `Pos`.
 
-### PHP
+### PHP — done
+
+Converted. The nine `fn () => …` closures and both helpers are gone. `INFIX_WORDS`
+is a `private const`; `INFIX_OPS` is built once by a private static method
+instead, because PHP has no loop in a constant expression and the assignment and
+comparison operators are already named in `ASSIGN_OPS`/`COMPARE_OPS` — writing
+them out a second time would be two places to forget one. The create-when-true
+`grouped` idiom and its `empty()` reads are untouched. `parseSequence`'s
+`enter`/`leave` was converged onto the protected form at the same time.
 
 Structurally identical to JS. The nine `fn () => …` closures and both helpers
 delete. The tables can stay `private const` arrays — constant arrays referencing
