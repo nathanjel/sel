@@ -251,13 +251,26 @@ class Parser {
   }
 
   // postfix = primary { "[" sequence "]" }
+  //
+  // The bracket counts a level of its own. Without it an index is the one
+  // nesting door that recurses from outside parsePrimary's enter/leave, so it
+  // charged one level per nesting where "(", "f(" and the prefix operators all
+  // charge for the frames they actually cost. Five stack frames against one
+  // level of the budget put a[a[...]] over CPython's 1000-frame limit before
+  // the 200-level guard could fire, which is why the Python host raised
+  // RecursionError at 198 while the others still answered.
   parsePostfix() {
     let node = this.parsePrimary();
     while (this.atOp('[')) {
       const br = this.next();
-      const idx = this.parseSequence();
-      this.expectOp(']');
-      node = { t: 'index', obj: node, idx, pos: br };
+      this.enter(br);
+      try {
+        const idx = this.parseSequence();
+        this.expectOp(']');
+        node = { t: 'index', obj: node, idx, pos: br };
+      } finally {
+        this.leave();
+      }
     }
     return node;
   }

@@ -115,6 +115,115 @@ wrong tree* when it is wrong, so none of them is caught by a compiler.
    `list` and `seq` take `items[0]`'s, `assign` takes the *target*'s, `index`
    takes the `[`'s.
 
+## Rider: the index bracket must count a depth level
+
+Not part of the conversion, but delivered *with* it host by host, because it
+touches the same `parse_postfix` and would otherwise need a second pass over
+five files.
+
+An index is the one nesting door that recurses from **outside**
+`parse_primary`'s `enter`/`leave` — the `while (at_op('['))` loop sits in
+`parse_postfix`. So `a[a[…]]` charged one depth level per nesting where `(`,
+`f(` and the prefix operators charge two. The counter and the stack disagreed:
+
+| construct | host frames / level | levels charged | frames per charged level | frames when the guard fires |
+|---|---|---|---|---|
+| assign | 1 | 1 | 1.0 | 212 |
+| neg / not | 2 | 1 | 2.0 | 411 |
+| paren | 6 | 2 | 3.0 | 608 |
+| call | 7 | 2 | 3.5 | 708 |
+| **index, before** | **5** | **1** | **5.0** | **1008** |
+| index, after | 5 | 2 | 2.5 | 508 |
+
+(Frame counts are CPython's, measured with the guard lifted. The ratios are a
+property of the grammar, not of Python; Python is just the host with the
+tightest stack, so it is where the gap shows first.)
+
+At 5.0 frames per charged level, `a[` ×198 reached CPython's 1000-frame limit
+before the 200-level guard could fire: the Python host raised `RecursionError`
+through its public CLI while the other four returned a clean `E_UNDEF_VAR`. Pure
+index nesting is the worst case — every mix (`ABS(a[…])`, `(a[…])`, `a[1;…]`,
+`a[-…]`) spends part of the same 200-level budget on cheaper constructs and
+stays under 1000.
+
+The fix is one `enter`/`leave` around the bracket, so `[` costs two levels like
+`(` and `f(`:
+
+```js
+while (this.atOp('[')) {
+  const br = this.next();
+  this.enter(br);
+  try {
+    const idx = this.parseSequence();
+    this.expectOp(']');
+    node = { t: 'index', obj: node, idx, pos: br };
+  } finally {
+    this.leave();
+  }
+}
+```
+
+This is a **semantic change in every host**, not a Python repair: it moves the
+accept/reject boundary from ~198 nestings to 99 and the reported position from
+`1:399` to `1:201`. The deepest index nesting anywhere in `conformance/`,
+`sql/cases/`, `docs/`, `spec/` and `examples/` is 3 — and that one is JSON
+inside a SQL fixture, not SEL indexing; the fuzzer's deepest in 20 000 generated
+programs is 4. So nothing real is near the old boundary or the new one.
+
+### Why it lands host by host rather than all at once
+
+Until the last host has it, the hosts disagree above 99 nestings. That is
+tolerated deliberately and it is bounded: `conformance/` tops out at 3 levels and
+the generator at 4, so neither the suite nor the differential fuzz can see it.
+What it does mean is that **the pinning cases cannot go into `conformance/`
+yet** — that suite is normative for every host at once, with no per-host
+expectations, so a case pinning `1:201` would fail the hosts that have not had
+their turn.
+
+They are written and parked here instead, to be added verbatim to
+`conformance/10-limits.selt` in the same commit as the **last** host:
+
+```
+### name: lim.index-depth
+--- note
+An index bracket costs a level of the same 200 the parentheses draw on, because
+the bracket loop recurses from outside the primary rule that would otherwise
+count it. Uncounted it charged one level for five stack frames, and `a[` ×198
+exhausted CPython's stack before the guard fired -- a host crash through the
+public CLI, while the other four hosts still returned a clean error.
+
+The error lands on the 100th bracket: 99 brackets and their sequences spend 198
+levels, the outer sequence one more, and the 100th bracket is the 201st.
+--- source
+<a[ ×100, then 1, then ] ×100>
+--- expect
+error E_DEPTH at 1:201
+===
+### name: lim.index-depth-just-under
+--- note
+One shorter, and it is an ordinary program -- E_UNDEF_VAR, because `a` is not
+bound, which is the point: it got past the parser. Pinning both sides so a host
+that counts the bracket twice, or not at all, fails here rather than somewhere
+far away.
+--- source
+<a[ ×99, then 1, then ] ×99>
+--- expect
+error E_UNDEF_VAR at 1:1
+===
+```
+
+Per-host status:
+
+- **JS** — done, with the conversion.
+- **PHP** — done, with the conversion.
+- **Python** — outstanding. This is the host the change is *for*; it keeps
+  raising `RecursionError` at `a[` ×198 until it lands. Its parser is already
+  precedence climbing, so this is the only change it needs.
+- **C++** — outstanding, to land with its conversion.
+- **Lisp** — outstanding, to land with its conversion. Whichever of these three
+  goes last also adds the two cases above to `conformance/10-limits.selt` and
+  the sentence to `spec/SPEC.md` §6.4.
+
 ## Per host
 
 ### JS — done
@@ -124,6 +233,8 @@ Converted. The nine arrow thunks and both binary helpers are gone; `parseTerm`,
 are `Map`s rather than plain objects so that a token spelled like a name on
 `Object.prototype` cannot answer for a real operator. `parseSequence`'s
 `enter`/`leave` was converged onto the protected form at the same time.
+
+The index-bracket rider above landed here too: `parsePostfix` counts the `[`.
 
 The easiest, and the one whose 35 frames motivated the exercise. The nine arrow
 thunks and both binary helpers delete outright.
@@ -138,7 +249,8 @@ Converted. The nine `fn () => …` closures and both helpers are gone. `INFIX_WO
 is a `private const`; `INFIX_OPS` is built once by a private static method
 instead, because PHP has no loop in a constant expression and the assignment and
 comparison operators are already named in `ASSIGN_OPS`/`COMPARE_OPS` — writing
-them out a second time would be two places to forget one. The create-when-true
+them out a second time would be two places to forget one. The index-bracket
+rider above landed here too: `parsePostfix` counts the `[`. The create-when-true
 `grouped` idiom and its `empty()` reads are untouched. `parseSequence`'s
 `enter`/`leave` was converged onto the protected form at the same time.
 
@@ -178,6 +290,9 @@ single biggest deletion in the exercise.
 - The three textually identical local `Leave` RAII structs (`sel.cpp:1354`,
   `:1421`, `:1451`) collapse to two sites and should be factored into one type
   while you are there. C++ has no `finally`; this is the equivalent.
+- **The index-bracket rider above is outstanding for this host.** The bracket
+  loop needs its own `enter`/`leave` — a fourth `Leave` site, or the factored
+  type if you do that first.
 
 ### Lisp
 
@@ -194,6 +309,8 @@ single biggest deletion in the exercise.
 - `parser.lisp:253` reads the lookahead without a bounds guard, relying on the
   EOF sentinel, where the other four guard explicitly. Keep the sentinel
   assumption or add the guard, but do it deliberately.
+- **The index-bracket rider above is outstanding for this host.** `with-depth`
+  around the bracket loop is the whole change.
 
 ### One inconsistency worth settling
 

@@ -350,15 +350,29 @@ final class Parser
         return $this->parsePostfix();
     }
 
+    // postfix = primary { "[" sequence "]" }
+    //
+    // The bracket counts a level of its own. Without it an index is the one
+    // nesting door that recurses from outside parsePrimary's enter/leave, so it
+    // charged one level per nesting where "(", "f(" and the prefix operators all
+    // charge for the frames they actually cost. Five stack frames against one
+    // level of the budget put a[a[...]] over CPython's 1000-frame limit before
+    // the 200-level guard could fire, which is why the Python host raised
+    // RecursionError at 198 while the others still answered.
     /** @return array<string,mixed> */
     private function parsePostfix(): array
     {
         $node = $this->parsePrimary();
         while ($this->atOp('[')) {
             $br = $this->next();
-            $idx = $this->parseSequence();
-            $this->expectOp(']');
-            $node = ['t' => 'index', 'obj' => $node, 'idx' => $idx, 'pos' => $br];
+            $this->enter($br);
+            try {
+                $idx = $this->parseSequence();
+                $this->expectOp(']');
+                $node = ['t' => 'index', 'obj' => $node, 'idx' => $idx, 'pos' => $br];
+            } finally {
+                $this->leave();
+            }
         }
         return $node;
     }
