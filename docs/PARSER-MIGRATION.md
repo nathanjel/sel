@@ -117,7 +117,13 @@ wrong tree* when it is wrong, so none of them is caught by a compiler.
 
 ## Per host
 
-### JS — do this one first
+### JS — done
+
+Converted. The nine arrow thunks and both binary helpers are gone; `parseTerm`,
+`parsePrefix`, `parsePostfix` and `parsePrimary` are what is left, and the tables
+are `Map`s rather than plain objects so that a token spelled like a name on
+`Object.prototype` cannot answer for a real operator. `parseSequence`'s
+`enter`/`leave` was converged onto the protected form at the same time.
 
 The easiest, and the one whose 35 frames motivated the exercise. The nine arrow
 thunks and both binary helpers delete outright; the tables are plain objects.
@@ -194,7 +200,7 @@ the protected form.
 One host per release, so a regression is attributable to one commit.
 
 1. Convert the parser. Do not touch the lexer, the evaluator or the node shape.
-2. `tools/check.sh` — all 587 cases on every host, plus the API probes, the doc
+2. `tools/check.sh` — all 600 cases on every host, plus the API probes, the doc
    examples and the fuzzer. The battery is what makes this safe: a parser
    rewrite that keeps every pinned `E_SYNTAX`, `E_DEPTH`, `E_ARITY`,
    `E_BAD_ASSIGN` and `E_RESERVED` position is a rewrite that did not change the
