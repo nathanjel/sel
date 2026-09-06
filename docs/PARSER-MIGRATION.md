@@ -83,8 +83,31 @@ changes emitted bytes:
 still catches it. Both were written because the JS port needed them; both are
 waiting for C++ and Lisp.
 
-*The JS layer is under adversarial review as this is written. Anything it
-surfaces that generalises belongs in this subsection.*
+**What the JS review found that generalises.** The four-lens review of the JS
+layer confirmed six findings; one was a shipped defect and its lesson is not
+about JS:
+
+> **Template substitution must be LITERAL and GLOBAL, and you must check that
+> your host's string replace is both.** Python's `str.replace` and PHP's
+> `str_replace` are; JS's `String.prototype.replace(string, string)` is neither
+> — it rewrites only the first occurrence, and it interprets `$$`, `$&`,
+> `` $` ``, `$'` and `$1`-`$9` inside the *replacement*. The replacement is
+> rendered SQL carrying identifiers the application chose, so a column named
+> ``a$'b`` spliced the template's own tail back into the output and produced a
+> query asking about a different column. `replaceAll` does not fix it.
+>
+> C++ has no string replace at all, so this arrives as "write the loop"; Lisp's
+> `cl-ppcre:regex-replace-all` treats its replacement as a template where `\1`
+> and `\&` are directives, which is the same trap in a different spelling —
+> `search`/`replace` on subseqs, or `:simple-calls`, is the shape that works.
+
+`review.slot.dollar-pattern-in-an-identifier`, `review.slot.repeated-in-a-skeleton`
+and `review.slot.repeated-in-a-numeric-wrap` in `sql/cases/13-review.sqlt` pin
+all three sites for every host, and `js-slot-replace-is-not-literal` in
+`sql/mutations.json` proves they still catch it.
+
+The other five findings were host-local or cosmetic and are recorded in the
+commit that fixed them; none changes what C++ or Lisp should do.
 
 ---
 

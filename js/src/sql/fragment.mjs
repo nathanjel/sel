@@ -51,7 +51,7 @@ export class Fragment {
     if (this.kind === 'BOOL') return this.#join(mode);
     if (this.kind === 'UNKNOWN') {
       const tpl = map.lexical(this.dialect, 'isTrue');
-      return tpl.replace('{0}', this.#join(mode));
+      return emit.fillSlot(tpl, '{0}', this.#join(mode));
     }
     refuse('E_SQL_SHAPE',
       `a condition must be BOOL, and this expression is ${this.kind}; `

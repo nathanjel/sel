@@ -588,6 +588,13 @@
       "file": "python/sel/sql/translator.py",
       "from": "        if n not in tpl or tpl[n] is None:",
       "to": "        if n not in tpl:"
+    },
+    {
+      "name": "js-slot-replace-is-not-literal",
+      "was": "Found by the JS layer's adversarial review, and it had shipped. Every host substitutes a template slot with its language's string replace; JS's gets it wrong twice, silently. It rewrites only the FIRST occurrence, where Python's str.replace and PHP's str_replace rewrite every one -- so a template naming {0} twice left the second copy unfilled. And its REPLACEMENT argument is not literal: $$, $&, $backtick, $' and $1-$9 are substitution directives even when the pattern is a plain string, and the replacement here is rendered SQL carrying identifiers the application chose. A column named with $' spliced the template's own tail back into the output and asked about a different column, quoted throughout so the query still parsed. replaceAll does NOT fix it -- global, still interpolating. split/join is literal and global, which is str.replace's actual contract.",
+      "file": "js/src/sql/emit.mjs",
+      "from": "  return tpl.split(slot).join(value);",
+      "to": "  return tpl.replace(slot, value);"
     }
   ]
 }

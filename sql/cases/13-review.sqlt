@@ -521,3 +521,59 @@ TO_UTF8("a") $== TO_UTF8("a")
 --- expect
 (convert_to(CAST('a' AS TEXT), 'UTF8') = convert_to(CAST('a' AS TEXT), 'UTF8'))
 ===
+### name: review.slot.dollar-pattern-in-an-identifier
+--- note
+JS's String.prototype.replace treats $$, $&, $`, $' and $1-$9 in the REPLACEMENT
+as substitution directives even when the pattern is a plain string, where
+Python's str.replace and PHP's str_replace are literal. asCondition() fills the
+dialect's isTrue template with rendered SQL, and that SQL carries identifiers the
+application chose -- so a column named with $' spliced the template's own tail
+back into the output and produced a different condition. Quoted throughout, so
+the query still parsed; it just asked about something else.
+
+The column name is deliberately hostile rather than minimal: it is the shape a
+reader has to see is INERT once the quoting is right.
+--- dialect
+postgresql
+--- as
+condition
+--- bindings
+{"COL": {"kind": "column", "column": "active$' -- oops"}}
+--- source
+COL
+--- expect
+(("active$' -- oops") IS TRUE)
+===
+### name: review.slot.repeated-in-a-skeleton
+--- note
+The same line, the other half of the same defect. JS's replace rewrites only the
+FIRST occurrence where the other two hosts rewrite every one, so a template
+naming {0} twice left the second copy unfilled here and filled there. Registered
+rather than shipped, because no shipped dialect repeats a lexical placeholder --
+which is exactly why nothing caught it.
+--- dialect
+twice
+--- register
+[{"dialect": "twice", "extends": "postgresql", "lexical": {"isTrue": "({0} IS TRUE AND {0} IS NOT NULL)"}}]
+--- as
+condition
+--- bindings
+{"COL": {"kind": "column", "column": "c"}}
+--- source
+COL
+--- expect
+("c" IS TRUE AND "c" IS NOT NULL)
+===
+### name: review.slot.repeated-in-a-numeric-wrap
+--- note
+And the third site: numericLiteral, which sqlite uses to spell a number as text.
+A wrap naming {0} twice is legal data and was half-filled.
+--- dialect
+wrapped
+--- register
+[{"dialect": "wrapped", "extends": "sqlite", "lexical": {"numericLiteral": "({0} || '' || {0})"}}]
+--- source
+1
+--- expect
+(1 || '' || 1)
+===

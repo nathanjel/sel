@@ -25,6 +25,28 @@ function slotIndex(s) {
   return SLOT.test(s) ? Number(s) : null;
 }
 
+// Substitute a template slot, the way every other host's string replace already
+// works and JS's does not.
+//
+// `String.prototype.replace(string, string)` gets this wrong TWICE, and both
+// mistakes are silent:
+//
+//   1. It replaces only the FIRST occurrence. Python's str.replace and PHP's
+//      str_replace replace every one, so a template naming {0} twice bound the
+//      second copy to nothing here and to the operand there.
+//   2. The REPLACEMENT string is not literal: $$, $&, $`, $' and $1-$9 are
+//      substitution directives even when the pattern is a plain string. The
+//      replacement here is rendered SQL carrying caller-supplied identifiers, so
+//      a column named `a$'b` spliced the template's own tail back into the
+//      output and produced a different query. `replaceAll` does NOT fix this —
+//      it is global but still interprets the dollar patterns.
+//
+// split/join is literal and global, which is exactly str.replace's contract.
+// Emit.ident already used this idiom for the same reason; these sites did not.
+export function fillSlot(tpl, slot, value) {
+  return tpl.split(slot).join(value);
+}
+
 // --- literals ----------------------------------------------------------------
 
 // A SEL value as a SQL literal, in the form the caller says it has.
@@ -49,7 +71,7 @@ export function literal(dialect, v, form = 'TEXT', pos = null) {
     if (typeof tpl !== 'string') {
       refuse('E_SQL_UNSUPPORTED', `dialect ${dialect} has no binary literal syntax`, pos);
     }
-    return tpl.replace('{hex}', bytesToHex(v.asBytes(pos)));
+    return fillSlot(tpl, '{hex}', bytesToHex(v.asBytes(pos)));
   }
   // A NONE value has no characters, and asking for them raises a SelError —
   // which tryTranslate() does not catch, so a host using the refusal-tolerant
@@ -97,7 +119,7 @@ function numericLiteral(dialect, v, pos) {
   // digits-by-construction guarantee is unaffected: it decides how to spell a
   // number that has already been proved to be one.
   const wrap = map.lexical(dialect, 'numericLiteral');
-  if (typeof wrap === 'string' && wrap !== '{0}') return wrap.replace('{0}', n);
+  if (typeof wrap === 'string' && wrap !== '{0}') return fillSlot(wrap, '{0}', n);
 
   // A negative number is parenthesised so that unary minus in front of it cannot
   // produce `--`. MariaDB reads that as double negation and gets the right answer
@@ -139,7 +161,7 @@ export function textLiteral(dialect, text) {
 // The params-mode placeholder for slot n, 1-based.
 export function placeholder(dialect, n) {
   const tpl = String(map.lexical(dialect, 'placeholder'));
-  return tpl.includes('{n}') ? tpl.replace('{n}', String(n)) : tpl;
+  return tpl.includes('{n}') ? fillSlot(tpl, '{n}', String(n)) : tpl;
 }
 
 // The dialect-bound half: identifiers, templates, and the byte-comparison
@@ -293,7 +315,7 @@ export class Emit {
         splice(args[castArg]);
         continue;
       }
-      for (const p of this.fill(val.replace('{0}', `{${arg}}`), args, pos)) {
+      for (const p of this.fill(fillSlot(val, '{0}', `{${arg}}`), args, pos)) {
         if (typeof p === 'string') push(p);
         else parts.push(p);
       }
