@@ -96,7 +96,6 @@ class Parser {
   peek() { return this.toks[this.i]; }
   next() { return this.toks[this.i++]; }
   atOp(v) { const t = this.peek(); return t.type === 'op' && t.value === v; }
-  atWord(v) { const t = this.peek(); return t.type === 'ident' && t.value === v; }
   atEof() { return this.peek().type === 'eof'; }
 
   expectOp(v) {

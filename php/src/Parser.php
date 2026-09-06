@@ -155,11 +155,6 @@ final class Parser
         return $t['type'] === 'op' && $t['value'] === $v;
     }
 
-    private function atWord(string $v): bool
-    {
-        $t = $this->peek();
-        return $t['type'] === 'ident' && $t['value'] === $v;
-    }
 
     private function atEof(): bool
     {

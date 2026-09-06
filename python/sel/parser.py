@@ -154,9 +154,6 @@ class Parser:
         t = self.peek()
         return t.type == 'op' and t.value == v
 
-    def at_word(self, v: str) -> bool:
-        t = self.peek()
-        return t.type == 'ident' and t.value == v
 
     def at_eof(self) -> bool:
         return self.peek().type == 'eof'

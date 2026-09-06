@@ -13,8 +13,15 @@
 # be worse than one that never offered it. Widen to include it:
 #
 #   SEL_IMPLS="js js-bundle php cpp lisp python python-wheel" tools/check.sh
+#
+# js-bundle-min IS in the default list, unlike python-wheel, because it needs no
+# install: `npm run build` writes dist/sel.mjs and dist/sel.min.mjs in one step,
+# so a tree that can run js-bundle can already run this. It is published as
+# package.json's "./bundle.min" and was the one shipped artefact nothing graded --
+# a minifier that renamed something it should not have would have reached a user
+# before it reached the suite.
 
-SEL_IMPLS="${SEL_IMPLS:-js js-bundle php cpp lisp python}"
+SEL_IMPLS="${SEL_IMPLS:-js js-bundle js-bundle-min php cpp lisp python}"
 
 # Where python-wheel looks for its interpreter: a venv with the built wheel
 # installed, so the *package* is held to the same suite as the source tree.
@@ -37,6 +44,7 @@ impl_conformance() {
   case "$impl" in
     js)   node js/bin/conformance.mjs "$@" ;;
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node js/bin/conformance.mjs "$@" ;;
+    js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node js/bin/conformance.mjs "$@" ;;
     php)  php php/bin/conformance "$@" ;;
     cpp)  cpp/build/conformance "$@" ;;
     lisp) lisp/bin/conformance "$@" ;;
@@ -51,6 +59,7 @@ impl_batch() {
   case "$impl" in
     js)   node tools/run-batch.mjs "$@" ;;
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node tools/run-batch.mjs "$@" ;;
+    js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node tools/run-batch.mjs "$@" ;;
     php)  php tools/run-batch.php "$@" ;;
     cpp)  cpp/build/batch "$@" ;;
     lisp) lisp/bin/batch "$@" ;;
@@ -65,6 +74,7 @@ impl_e2e() {
   case "$impl" in
     js)   node examples/e2e.mjs "$@" ;;
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node examples/e2e.mjs "$@" ;;
+    js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node examples/e2e.mjs "$@" ;;
     php)  php examples/e2e.php "$@" ;;
     cpp)  cpp/build/e2e "$@" ;;
     lisp) lisp/bin/e2e "$@" ;;
@@ -81,6 +91,7 @@ impl_api() {
   case "$impl" in
     js)   node tools/api.mjs "$@" ;;
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node tools/api.mjs "$@" ;;
+    js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node tools/api.mjs "$@" ;;
     php)  php tools/api.php "$@" ;;
     cpp)  cpp/build/api "$@" ;;
     lisp) lisp/bin/api "$@" ;;
@@ -96,7 +107,7 @@ impl_decimal() {
     js)   node tools/check-decimal.mjs "$@" ;;
     # The oracle is a whitebox check on js/src/decimal.mjs, which the bundle
     # inlines verbatim. Running it twice would test the same code.
-    js-bundle) echo "js-bundle: decimal core is js/src/decimal.mjs, covered above" ;;
+    js-bundle|js-bundle-min) echo "$impl: decimal core is js/src/decimal.mjs, covered above" ;;
     php)  php tools/check-decimal.php "$@" ;;
     cpp)  cpp/build/check-decimal "$@" ;;
     lisp) lisp/bin/check-decimal "$@" ;;
@@ -121,7 +132,7 @@ impl_sql() {
     # layer -- it is a separate entry point (package.json "./sql"), so a host
     # that only wants the evaluator does not carry the translator. Nothing to
     # grade here, rather than something skipped.
-    js-bundle) return 0 ;;
+    js-bundle|js-bundle-min) return 0 ;;
     cpp|lisp) return 0 ;;                       # no SQL layer yet
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlt "$@" ;;
     # The runner adds python/ to sys.path only when `sel` is not already
@@ -143,7 +154,7 @@ impl_oracle() {
     # oracle measures whether the MAP means what SEL means, and the map is data
     # every host consumes unchanged, so a second harness would ask one server
     # the same question twice.
-    js|js-bundle|cpp|lisp) return 0 ;;
+    js|js-bundle|js-bundle-min|cpp|lisp) return 0 ;;
     python|python-wheel) return 0 ;;            # M6
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
@@ -155,7 +166,7 @@ impl_sqldoc() {
   local impl="$1"; shift
   case "$impl" in
     php)  php php/bin/sqldoc "$@" ;;
-    js|js-bundle|cpp|lisp) return 0 ;;          # a property of the design doc
+    js|js-bundle|js-bundle-min|cpp|lisp) return 0 ;;   # a property of the design doc
     python|python-wheel) return 0 ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
@@ -166,7 +177,7 @@ impl_sqldoc() {
 impl_unit() {
   local impl="$1"; shift
   case "$impl" in
-    js|js-bundle|php) return 0 ;;
+    js|js-bundle|js-bundle-min|php) return 0 ;;
     # `python3 -m pytest`, not `pytest`: the binary is often only on a venv's
     # PATH while the module is importable by the interpreter we actually use.
     python)
@@ -194,6 +205,8 @@ impl_available() {
     # bundle is a different implementation from the one in js/src, and it should
     # say so rather than fail later with a confusing TypeError.
     js-bundle) [ -f dist/sel.mjs ] && [ -z "$(find js/src -newer dist/sel.mjs -print -quit 2>/dev/null)" ] ;;
+    js-bundle-min) [ -f dist/sel.min.mjs ] \
+      && [ -z "$(find js/src -newer dist/sel.min.mjs -print -quit 2>/dev/null)" ] ;;
     php)  command -v php  >/dev/null 2>&1 ;;
     cpp)  [ -x cpp/build/conformance ] ;;
     lisp) command -v sbcl >/dev/null 2>&1 && [ -x lisp/bin/conformance ] ;;

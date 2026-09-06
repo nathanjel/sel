@@ -87,14 +87,22 @@ recreates its tables on every run. See `sql/oracle/README.md`.
 | `e2e` | `examples/e2e.mjs` | `examples/e2e.php` | `cpp/build/e2e` | `lisp/bin/e2e` | `examples/e2e.py` |
 | `api` | `tools/api.mjs` | `tools/api.php` | `cpp/build/api` | `lisp/bin/api` | `python/bin/api.py` |
 | `check-decimal` | `tools/check-decimal.mjs` | `tools/check-decimal.php` | `cpp/build/check-decimal` | `lisp/bin/check-decimal` | `python/bin/check-decimal.py` |
-| `sql` | — | `php/bin/sqlt` | — | — | M6 |
-| `oracle` | — | `php/bin/sqlo` | — | — | M6 |
-| `sqldoc` | — | `php/bin/sqldoc` | — | — | M6 |
+| `sql` | `js/bin/sqlt.mjs` | `php/bin/sqlt` | — | — | `python/bin/sqlt` |
+| `oracle` | — | `php/bin/sqlo` | — | — | — |
+| `sqldoc` | — | `php/bin/sqldoc` | — | — | — |
 
-Two implementations in `tools/impls.sh` are the same code reached a second way:
-`js-bundle` runs `dist/sel.mjs`, and `python-wheel` runs the built wheel from a
-venv. Both are guarded on being newer than the sources they were built from, and
-both exist to catch the failures that only packaging can produce.
+`oracle` and `sqldoc` are PHP-only by design rather than unfinished: both ask
+about `sql/dialects/*.json` and `sql/cases/*.sqlt`, which are shared data every
+host consumes unchanged, so a second copy would ask one server the same question
+twice. See docs/SQL-TRANSLATION.md §14, M7.
+
+Three implementations in `tools/impls.sh` are the same code reached a second way:
+`js-bundle` runs `dist/sel.mjs`, `js-bundle-min` runs `dist/sel.min.mjs`, and
+`python-wheel` runs the built wheel from a venv. All three are guarded on being
+newer than the sources they were built from, and all three exist to catch the
+failures that only packaging can produce — a minifier that renames something it
+should not have is exactly that failure, and `dist/sel.min.mjs` is published as
+package.json's `"./bundle.min"`, so it is graded rather than merely shipped.
 
 ---
 

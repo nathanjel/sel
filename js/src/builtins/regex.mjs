@@ -224,7 +224,11 @@ function compile(pattern, flags, pos, patPos) {
     }
   }
 
-  const key = (ignoreCase ? 'i ' : ' ') + pattern;
+  // '\\0' as an escape, never the byte itself. Written literally the NUL made
+  // this file `data` rather than text, and GNU grep silently skips a binary
+  // file's contents -- so every `grep -r` across js/src missed this module
+  // entirely, in a repo whose reviews are grep-driven.
+  const key = (ignoreCase ? 'i\0' : '\0') + pattern;
   let re = cache.get(key);
   if (!re) {
     const source = validate(pattern, patPos);
