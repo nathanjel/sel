@@ -8,7 +8,9 @@ import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { bytesCompare } from './utf8.mjs';
 
-const MAX_DEPTH = 200;
+// Exported so the SQL translator can say "as deep as the evaluator counts"
+// rather than repeating 200, the same way python/sel/sql does.
+export const MAX_DEPTH = 200;
 
 export class Context {
   constructor(root) {
