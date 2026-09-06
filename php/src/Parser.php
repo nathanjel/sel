@@ -51,23 +51,11 @@ final class Parser
     // table rows. They are declared anyway so the ladder above reads as
     // spec/SPEC.md §5 does, with no silent gap at the loose end.
 
-    /**
-     * Word operator -> [binding power, associativity]. Word operators lex as
-     * identifiers and symbol operators as `op` tokens, so they are two tables
-     * sharing one set of binding powers.
-     *
-     * EQL and IN are named here and again in COMPARE_WORDS above, which the
-     * chain check reads; python/sel/parser.py carries the same pair twice for
-     * the same reason.
-     */
-    private const INFIX_WORDS = [
-        'OR' => [self::BP_OR, 'L'], 'XOR' => [self::BP_XOR, 'L'], 'AND' => [self::BP_AND, 'L'],
-        'BOR' => [self::BP_BOR, 'L'], 'BXOR' => [self::BP_BXOR, 'L'], 'BAND' => [self::BP_BAND, 'L'],
-        'EQL' => [self::BP_COMPARE, 'N'], 'IN' => [self::BP_COMPARE, 'N'],
-    ];
-
     /** @var array<string, array{int, string}>|null */
     private static ?array $infixOps = null;
+
+    /** @var array<string, array{int, string}>|null */
+    private static ?array $infixWords = null;
 
     /**
      * Symbol operator -> [binding power, associativity]. Built once from the
@@ -94,6 +82,48 @@ final class Parser
             self::$infixOps = $t;
         }
         return self::$infixOps;
+    }
+
+    /**
+     * Word operator -> [binding power, associativity]. Word operators lex as
+     * identifiers and symbol operators as `op` tokens, so they are two tables
+     * sharing one set of binding powers, built the same way from the same lists.
+     *
+     * @return array<string, array{int, string}>
+     */
+    private static function infixWords(): array
+    {
+        if (self::$infixWords === null) {
+            $t = [
+                'OR' => [self::BP_OR, 'L'], 'XOR' => [self::BP_XOR, 'L'], 'AND' => [self::BP_AND, 'L'],
+                'BOR' => [self::BP_BOR, 'L'], 'BXOR' => [self::BP_BXOR, 'L'], 'BAND' => [self::BP_BAND, 'L'],
+            ];
+            foreach (self::COMPARE_WORDS as $w) {
+                $t[$w] = [self::BP_COMPARE, 'N'];
+            }
+            self::$infixWords = $t;
+        }
+        return self::$infixWords;
+    }
+
+    /**
+     * The two tables are one lookup. Every question about an operator — what it
+     * binds at, how it associates, and whether it may follow a comparison — is
+     * answered from here, so adding an operator really is adding a row. Asking a
+     * separate list anywhere would put that claim back in doubt.
+     *
+     * @param array<string,mixed> $t
+     * @return array{int, string}|null
+     */
+    private static function infixEntry(array $t): ?array
+    {
+        if ($t['type'] === 'op') {
+            return self::infixOps()[$t['value']] ?? null;
+        }
+        if ($t['type'] === 'ident') {
+            return self::infixWords()[$t['value']] ?? null;
+        }
+        return null;
     }
 
     /** @var list<array<string,mixed>> */
@@ -221,12 +251,7 @@ final class Parser
 
         for (;;) {
             $t = $this->peek();
-            $entry = null;
-            if ($t['type'] === 'op') {
-                $entry = self::infixOps()[$t['value']] ?? null;
-            } elseif ($t['type'] === 'ident') {
-                $entry = self::INFIX_WORDS[$t['value']] ?? null;
-            }
+            $entry = self::infixEntry($t);
             if ($entry === null) {
                 return $left;
             }
@@ -263,8 +288,8 @@ final class Parser
             if ($assoc === 'N') {
                 $right = $this->parseTerm($bp + 1);
                 $after = $this->peek();
-                if (($after['type'] === 'op' && in_array($after['value'], self::COMPARE_OPS, true))
-                    || ($after['type'] === 'ident' && in_array($after['value'], self::COMPARE_WORDS, true))) {
+                $afterEntry = self::infixEntry($after);
+                if ($afterEntry !== null && $afterEntry[1] === 'N') {
                     fail(
                         'E_SYNTAX',
                         "comparison operators do not chain — parenthesise, as in (a {$t['value']} b) AND (b {$after['value']} c)",

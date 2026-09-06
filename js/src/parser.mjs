@@ -73,7 +73,7 @@ const INFIX_OPS = new Map([
 const INFIX_WORDS = new Map([
   ['OR', [BP_OR, 'L']], ['XOR', [BP_XOR, 'L']], ['AND', [BP_AND, 'L']],
   ['BOR', [BP_BOR, 'L']], ['BXOR', [BP_BXOR, 'L']], ['BAND', [BP_BAND, 'L']],
-  ['EQL', [BP_COMPARE, 'N']], ['IN', [BP_COMPARE, 'N']],
+  ...[...COMPARE_WORDS].map((w) => [w, [BP_COMPARE, 'N']]),
 ]);
 
 class Parser {
@@ -81,6 +81,16 @@ class Parser {
     this.toks = tokens;
     this.i = 0;
     this.depth = 0;
+  }
+
+  // The two tables are one lookup. Every question about an operator — what it
+  // binds at, how it associates, and whether it may follow a comparison — is
+  // answered from here, so adding an operator really is adding a row. Asking a
+  // separate list anywhere would put that claim back in doubt.
+  infixEntry(t) {
+    if (t.type === 'op') return INFIX_OPS.get(t.value);
+    if (t.type === 'ident') return INFIX_WORDS.get(t.value);
+    return undefined;
   }
 
   peek() { return this.toks[this.i]; }
@@ -154,9 +164,7 @@ class Parser {
 
     for (;;) {
       const t = this.peek();
-      let entry;
-      if (t.type === 'op') entry = INFIX_OPS.get(t.value);
-      else if (t.type === 'ident') entry = INFIX_WORDS.get(t.value);
+      const entry = this.infixEntry(t);
       if (entry === undefined) return left;
       const [bp, assoc] = entry;
       if (bp < minBp) return left;
@@ -187,8 +195,8 @@ class Parser {
       if (assoc === 'N') {
         const right = this.parseTerm(bp + 1);
         const after = this.peek();
-        if ((after.type === 'op' && COMPARE_OPS.has(after.value))
-          || (after.type === 'ident' && COMPARE_WORDS.has(after.value))) {
+        const afterEntry = this.infixEntry(after);
+        if (afterEntry !== undefined && afterEntry[1] === 'N') {
           fail('E_SYNTAX',
             `comparison operators do not chain — parenthesise, as in (a ${t.value} b) AND (b ${after.value} c)`,
             after);

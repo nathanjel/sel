@@ -94,7 +94,7 @@ INFIX_OPS: dict[str, tuple[int, str]] = {
 INFIX_WORDS: dict[str, tuple[int, str]] = {
     'OR': (BP_OR, 'L'), 'XOR': (BP_XOR, 'L'), 'AND': (BP_AND, 'L'),
     'BOR': (BP_BOR, 'L'), 'BXOR': (BP_BXOR, 'L'), 'BAND': (BP_BAND, 'L'),
-    'EQL': (BP_COMPARE, 'N'), 'IN': (BP_COMPARE, 'N'),
+    **{w: (BP_COMPARE, 'N') for w in COMPARE_WORDS},
 }
 
 
@@ -127,6 +127,20 @@ class Parser:
         self.depth = 0
 
     # --- token helpers --------------------------------------------------------
+
+    def infix_entry(self, t: Token) -> tuple[int, str] | None:
+        """The two tables are one lookup.
+
+        Every question about an operator -- what it binds at, how it associates,
+        and whether it may follow a comparison -- is answered from here, so
+        adding an operator really is adding a row. Asking a separate list
+        anywhere would put that claim back in doubt.
+        """
+        if t.type == 'op':
+            return INFIX_OPS.get(t.value)
+        if t.type == 'ident':
+            return INFIX_WORDS.get(t.value)
+        return None
 
     def peek(self) -> Token:
         return self.toks[self.i]
@@ -211,12 +225,7 @@ class Parser:
 
         while True:
             t = self.peek()
-            if t.type == 'op':
-                entry = INFIX_OPS.get(t.value)
-            elif t.type == 'ident':
-                entry = INFIX_WORDS.get(t.value)
-            else:
-                entry = None
+            entry = self.infix_entry(t)
             if entry is None:
                 return left
             bp, assoc = entry
@@ -246,8 +255,8 @@ class Parser:
             if assoc == 'N':
                 right = self.parse_term(bp + 1)
                 after = self.peek()
-                if ((after.type == 'op' and after.value in COMPARE_OPS)
-                        or (after.type == 'ident' and after.value in COMPARE_WORDS)):
+                after_entry = self.infix_entry(after)
+                if after_entry is not None and after_entry[1] == 'N':
                     fail('E_SYNTAX',
                          'comparison operators do not chain — parenthesise, as in '
                          f'(a {t.value} b) AND (b {after.value} c)',
