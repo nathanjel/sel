@@ -1045,3 +1045,57 @@ nosuch(1)
 --- expect
 error E_UNKNOWN_FUNC at 1:1
 ===
+### name: mis.reserved.not-in-a-tight-position
+--- note
+NOT is a prefix operator at binding power 7, looser than comparison at 8, so it
+cannot appear as a comparison operand. The parser falls through to the primary
+rule, which sees a bare reserved word.
+--- setup
+A = TRUE; B = TRUE
+--- source
+A == NOT B
+--- expect
+error E_RESERVED at 1:6
+===
+### name: mis.reserved.not-with-parens-is-read-as-a-call
+--- note
+The same expression with parentheses is a different error, because the primary
+rule tries the call lookahead -- an identifier followed by "(" -- before it
+rejects a reserved word. NOT( therefore looks like a call to a function named
+NOT, and that is E_UNKNOWN_FUNC rather than E_RESERVED.
+
+Nothing pinned this before. It is not obviously the right answer and it is not
+written down anywhere, which is exactly why it is pinned now: all six hosts agree
+on it today, and the parser rewrites have no business changing it by accident.
+The branch order in the primary rule is what decides it, so a host that reorders
+those two checks would silently swap the code.
+--- setup
+A = TRUE; B = TRUE
+--- source
+A == NOT(B)
+--- expect
+error E_UNKNOWN_FUNC at 1:6
+===
+### name: mis.reserved.not-with-parens-where-the-prefix-is-allowed
+--- note
+Where NOT *is* allowed as a prefix it wins over the call reading, because the
+prefix rule is consulted first and only falls through when its binding power
+does not reach. So the parenthesised form is an ordinary negation here.
+--- setup
+B = TRUE
+--- source
+NOT(B)
+--- expect
+bool FALSE
+===
+### name: mis.reserved.not-with-parens-after-unary-minus
+--- note
+Unary minus binds at 15, tighter than NOT at 7, so its operand is another tight
+position and the call reading applies there too.
+--- setup
+B = TRUE
+--- source
+-NOT(B)
+--- expect
+error E_UNKNOWN_FUNC at 1:2
+===
