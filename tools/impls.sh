@@ -30,6 +30,13 @@ SEL_IMPLS="${SEL_IMPLS:-js js-bundle js-bundle-min php cpp lisp python}"
 #   python/.venv-wheel/bin/pip install dist/python/*.whl
 SEL_PY_WHEEL_BIN="${SEL_PY_WHEEL_BIN:-$PWD/python/.venv-wheel/bin/python3}"
 
+# Extra flags for every `php` invocation below. Empty normally: a host is graded
+# as it ships. tools/stress.sh sets `-d memory_limit=-1`, because it feeds every
+# host a program of several hundred thousand nodes and PHP's default 128M ceiling
+# stops it at about 90,000 -- which would report "PHP disagrees" for a question
+# about how much memory PHP was configured to have rather than about the code.
+SEL_PHP_FLAGS="${SEL_PHP_FLAGS:-}"
+
 # The first implementation in the list is the reference the others are diffed
 # against in fuzz.sh. It is only a reporting convenience: a disagreement is a
 # disagreement whichever side of it you stand on, and spec/ decides who is wrong.
@@ -60,7 +67,10 @@ impl_batch() {
     js)   node tools/run-batch.mjs "$@" ;;
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node tools/run-batch.mjs "$@" ;;
     js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node tools/run-batch.mjs "$@" ;;
-    php)  php tools/run-batch.php "$@" ;;
+    # Unquoted on purpose: SEL_PHP_FLAGS is a controlled internal variable
+    # and its words are separate arguments.
+    # shellcheck disable=SC2086
+    php)  php $SEL_PHP_FLAGS tools/run-batch.php "$@" ;;
     cpp)  cpp/build/batch "$@" ;;
     lisp) lisp/bin/batch "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/batch.py "$@" ;;
@@ -86,6 +96,25 @@ impl_e2e() {
 
 # The host API surface: same probes, each through its own binding. See
 # tools/check-api.sh.
+# `--deps` on one source file, for tools/stress.sh. Every CLI prints one name per
+# line and they already agree byte for byte, so this needs no normalising layer
+# the way impl_batch does -- it is here so the roster lives in one file.
+impl_deps() {
+  local impl="$1"; shift
+  case "$impl" in
+    js)   node js/bin/sel.mjs --deps "$@" ;;
+    js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node js/bin/sel.mjs --deps "$@" ;;
+    js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node js/bin/sel.mjs --deps "$@" ;;
+    # shellcheck disable=SC2086
+    php)  php $SEL_PHP_FLAGS php/bin/sel --deps "$@" ;;
+    cpp)  cpp/build/sel --deps "$@" ;;
+    lisp) lisp/bin/sel --deps "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 -m sel --deps "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" -m sel --deps "$@" ;;
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
 impl_api() {
   local impl="$1"; shift
   case "$impl" in
