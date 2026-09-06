@@ -20,7 +20,6 @@ namespace Sel;
 
 final class Parser
 {
-    private const MAX_DEPTH = 200;
 
     private const ASSIGN_OPS = ['=', '+=', '-=', '*=', '/=', '%=', '&='];
     private const COMPARE_OPS = [
@@ -174,7 +173,7 @@ final class Parser
     /** @param array<string,mixed> $pos */
     private function enter(array $pos): void
     {
-        if (++$this->depth > self::MAX_DEPTH) {
+        if (++$this->depth > MAX_DEPTH) {
             fail('E_DEPTH', 'expression nested too deeply', $pos);
         }
     }

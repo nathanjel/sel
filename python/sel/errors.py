@@ -38,3 +38,11 @@ class SelError(Exception):
 def fail(code: str, message: str, pos: Pos | None = None) -> NoReturn:
     """Raise at the innermost point of failure. Nothing wraps this on the way out."""
     raise SelError(code, message, pos)
+
+# spec/SPEC.md §6.4's three caps, which are one number. The parser's nesting, the
+# evaluator's, and a value's -- each is a recursion over a structure the input can
+# grow without bound, and each finds this host's own stack instead of an error if
+# it is not counted. It lives here, with fail(), because this module is the one
+# every other imports and none imports back, and because the number and the
+# E_DEPTH it raises are the same fact.
+MAX_DEPTH = 200

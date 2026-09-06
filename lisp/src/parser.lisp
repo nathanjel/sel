@@ -4,7 +4,6 @@
 
 (in-package #:sel)
 
-(defconstant +max-depth+ 200)
 
 (defstruct (node (:constructor make-node (kind pos)))
   ;; :num :text :bool :var :index :seq :list :un :bin :assign :call

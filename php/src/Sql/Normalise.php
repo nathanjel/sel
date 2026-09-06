@@ -159,10 +159,10 @@ final class Normalise
         // deepest expression this layer accepts was decided by the host: PHP
         // recursed as far as it liked and Python died of its own stack at around
         // 510 terms, which is an implementation accident rather than a decision.
-        if (++$depth > \Sel\Evaluator::MAX_DEPTH) {
+        if (++$depth > \Sel\MAX_DEPTH) {
             refuse('E_SQL_DEPTH',
                 'this expression nests deeper than SEL will evaluate ('
-                . \Sel\Evaluator::MAX_DEPTH . '), so there is nothing to translate; '
+                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it', $node['pos']);
         }
         switch ($node['t']) {

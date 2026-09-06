@@ -150,6 +150,29 @@ int main() {
     say("error.host.hugenum", e.code());
   }
 
+  // A value nested past the cap is refused by every walk of it. Reachable from the
+  // host API with no source involved at all -- set() does not refuse, because a
+  // value is built from the leaf up and nothing knows how deep it will end up --
+  // so the operations that walk it are where the cap has to hold. The numeral cap
+  // probed two lines up is the same shape of rule.
+  {
+    const auto nest = [](int n) {
+      Value v = Value::text("x");
+      for (int i = 0; i < n; i++) {
+        Value p = Value::none();
+        p.set("1", v);
+        v = p;
+      }
+      return v;
+    };
+    say("value.depth.under", nest(199).dump().empty() ? "no" : "ok");
+    try {
+      nest(200).dump();
+    } catch (const SelError& e) {
+      say("value.depth.over", e.code());
+    }
+  }
+
   // dependencies() walks the tree without evaluating it, so it is bounded by
   // neither the parser's nesting depth nor the evaluator's -- and in every host it
   // was bounded by nothing at all, until a flat chain of about fifty thousand

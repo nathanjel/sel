@@ -3,14 +3,17 @@
 // Nothing here catches a SelError. An error surfaces from the innermost node
 // that failed, carrying that node's position, and no layer rewrites it.
 
-import { fail } from './errors.mjs';
+import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { bytesCompare } from './utf8.mjs';
 
 // Exported so the SQL translator can say "as deep as the evaluator counts"
 // rather than repeating 200, the same way python/sel/sql does.
-export const MAX_DEPTH = 200;
+// Re-exported so that sel.mjs, which asks for the same cap on the static walk,
+// keeps naming the module that owns the depth rather than the one that owns
+// the number.
+export { MAX_DEPTH };
 
 export class Context {
   constructor(root) {
@@ -209,7 +212,7 @@ function evalBinary(node, ctx) {
       return Value.bool(compareResult(op.slice(1), c, node.pos));
     }
 
-    case 'EQL': return Value.bool(l.eql(r));
+    case 'EQL': return Value.bool(l.eql(r, node.pos));
     case 'IN': return Value.bool(isIn(l, r));
 
     case 'XOR': return Value.bool(l.asBool(lp) !== r.asBool(rp));
@@ -280,7 +283,7 @@ function evalAssign(node, ctx) {
 
   let value;
   if (node.op === '=') {
-    value = evalNode(node.value, ctx).clone();
+    value = evalNode(node.value, ctx).clone(node.pos);
   } else {
     const current = walkCreate(ctx, path, path.length - 1).get(key);
     if (current === undefined) {
@@ -339,6 +342,15 @@ function resolveTarget(target, ctx) {
 
   if (ctx.isBound(n.name)) {
     fail('E_BAD_ASSIGN', `${n.name} is an aggregate binder and cannot be assigned`, target.pos);
+  }
+  // The chain was walked iteratively, which is why nothing has counted it yet:
+  // `A[1][2][3]` is a chain of index nodes, not a nesting of them, so neither the
+  // parser's depth nor the evaluator's ever sees it -- and the value it is about
+  // to build is one level deeper than the chain is long. Uncounted, that built a
+  // value deeper than clone, eql and dump can walk, so the assignment succeeded and
+  // reading the result back afterwards failed.
+  if (chain.length + 1 > MAX_DEPTH) {
+    fail('E_DEPTH', 'value nested too deeply', target.pos);
   }
   const path = [n.name];
   if (chain.length === 0) return path;

@@ -300,3 +300,35 @@ level and not two.
 --- expect
 num 1
 ===
+### name: lim.value-depth
+--- note
+A value's nesting is the third thing §6.4 caps, after the parser's and the
+evaluator's, and it was the last one left uncounted. Every host walks a value
+recursively to copy it, compare it or dump it, and a chain of index brackets in
+an assignment TARGET is walked iteratively -- it is a chain of index nodes, not a
+nesting of them -- so neither of the other two counters ever saw it.
+
+Uncounted, this built a value deeper than those walks could survive, and the
+hosts disagreed about where: an uncaught RecursionError on Python at about a
+thousand levels, an uncaught RangeError on JS at about four thousand, a segfault
+on C++ at about sixty thousand, while PHP and Lisp still answered.
+
+200 brackets make a value 201 levels deep, which is the first one refused. The
+error lands on the assignment target -- the OUTERMOST index, which is the last
+bracket in the source, since A[1][1] parses as (A[1])[1] -- so the column moves
+with the length of the chain and pins that the whole chain was counted.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; A EQL A
+--- expect
+error E_DEPTH at 1:599
+===
+### name: lim.value-depth-just-under
+--- note
+One bracket shallower is exactly 200 levels and is an ordinary program, so the
+boundary is pinned from both sides: a host that counts the chain twice, or not
+at all, fails here rather than somewhere far away.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; A EQL A
+--- expect
+bool TRUE
+===

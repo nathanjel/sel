@@ -118,11 +118,11 @@ final class Translator
         // Counted the way Evaluator counts, at the same constant read from
         // there, so the two cannot drift: 200 terms translate and 201 refuse,
         // exactly as 200 evaluate and 201 raise.
-        if (++$this->depth > \Sel\Evaluator::MAX_DEPTH) {
+        if (++$this->depth > \Sel\MAX_DEPTH) {
             $this->depth--;
             refuse('E_SQL_DEPTH',
                 'this expression nests deeper than SEL will evaluate ('
-                . \Sel\Evaluator::MAX_DEPTH . '), so there is nothing to translate; '
+                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it', $n['pos']);
         }
         try {

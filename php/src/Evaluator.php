@@ -16,7 +16,6 @@ final class Evaluator
      * would have evaluated. A second copy of 200 would be a second thing to keep
      * in step, and the two drifting means the database answers where SEL raises.
      */
-    public const MAX_DEPTH = 200;
 
     private const COMPOUND = [
         '+=' => '+', '-=' => '-', '*=' => '*', '/=' => '/', '%=' => '%', '&=' => '&',
@@ -25,7 +24,7 @@ final class Evaluator
     /** @param array<string,mixed> $node */
     public static function evalNode(array $node, Context $ctx): Value
     {
-        if (++$ctx->depth > self::MAX_DEPTH) {
+        if (++$ctx->depth > MAX_DEPTH) {
             $ctx->depth--;
             fail('E_DEPTH', 'evaluation nested too deeply', $node['pos']);
         }
@@ -167,7 +166,7 @@ final class Evaluator
                 $c = strcmp($l->asBytes($lp), $r->asBytes($rp));
                 return Value::bool(self::compareResult(substr($op, 1), $c <=> 0, $node['pos']));
 
-            case 'EQL': return Value::bool($l->eql($r));
+            case 'EQL': return Value::bool($l->eql($r, $node['pos']));
             case 'IN': return Value::bool(self::isIn($l, $r));
 
             case 'XOR': return Value::bool($l->asBool($lp) !== $r->asBool($rp));
@@ -264,7 +263,7 @@ final class Evaluator
         $key = $path[count($path) - 1];
 
         if ($node['op'] === '=') {
-            $value = self::evalNode($node['value'], $ctx)->copy();
+            $value = self::evalNode($node['value'], $ctx)->copy($node['pos']);
         } else {
             $current = self::walkCreate($ctx, $path, count($path) - 1)->get($key);
             if ($current === null) {
@@ -345,7 +344,17 @@ final class Evaluator
                 $target['pos'],
             );
         }
-        $path = [$n['name']];
+                // The chain was walked iteratively, which is why nothing has counted it
+        // yet: `A[1][2][3]` is a chain of index nodes, not a nesting of them, so
+        // neither the parser's depth nor the evaluator's ever sees it -- and the
+        // value it is about to build is one level deeper than the chain is long.
+        // Uncounted, that built a value deeper than copy, eql and dump can walk,
+        // so the assignment succeeded and reading the result back afterwards
+        // failed.
+        if (count($chain) + 1 > MAX_DEPTH) {
+            fail('E_DEPTH', 'value nested too deeply', $target['pos']);
+        }
+$path = [$n['name']];
         if (!$chain) {
             return $path;
         }

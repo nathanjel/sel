@@ -73,7 +73,7 @@ final class Program
         array &$assigned,
         int $depth,
     ): void {
-        if ($depth > Evaluator::MAX_DEPTH) {
+        if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'expression nested too deeply', $node['pos']);
         }
         switch ($node['t']) {

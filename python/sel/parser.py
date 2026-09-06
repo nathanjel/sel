@@ -52,11 +52,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import decimal as D
-from .errors import Pos, fail
+from .errors import MAX_DEPTH, Pos, fail
 from .lexer import RESERVED, Token, tokenize
 from .registry import Spec, lookup
-
-MAX_DEPTH = 200
 
 ASSIGN_OPS = frozenset(['=', '+=', '-=', '*=', '/=', '%=', '&='])
 COMPARE_OPS = frozenset(['==', '!=', '<', '<=', '>', '>=',

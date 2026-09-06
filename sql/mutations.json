@@ -516,8 +516,8 @@
       "name": "depth-guard-is-off-by-one",
       "was": "The boundary itself, which is the only part of a limit worth testing. `>=` refuses at 200, which the evaluator accepts -- a translation refusing a rule SEL answers is the mirror of the defect the guard exists for, and quieter, because a false refusal just looks like the layer being conservative.",
       "file": "php/src/Sql/Translator.php",
-      "from": "        if (++$this->depth > \\Sel\\Evaluator::MAX_DEPTH) {",
-      "to": "        if (++$this->depth >= \\Sel\\Evaluator::MAX_DEPTH) {"
+      "from": "        if (++$this->depth > \\Sel\\MAX_DEPTH) {",
+      "to": "        if (++$this->depth >= \\Sel\\MAX_DEPTH) {"
     },
     {
       "name": "stage-one-is-unbounded",

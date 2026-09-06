@@ -225,7 +225,7 @@
 
         ((string= op "&") (sel-concat l r lp rp))
 
-        ((string= op "EQL") (make-bool (value-eql l r)))
+        ((string= op "EQL") (make-bool (value-eql l r (node-pos node))))
         ((string= op "IN") (make-bool (value-in l r)))
 
         ((string= op "XOR")
@@ -285,6 +285,15 @@
             (format nil "~a is an aggregate binder and cannot be assigned" (node-s n))
             (node-pos target)))
 
+    ;; The chain was walked iteratively, which is why nothing has counted it yet:
+    ;; `A[1][2][3]` is a chain of index nodes, not a nesting of them, so neither
+    ;; the parser's depth nor the evaluator's ever sees it -- and the value it is
+    ;; about to build is one level deeper than the chain is long. Uncounted, that
+    ;; built a value deeper than VALUE-COPY, VALUE-EQL and VALUE-DUMP can walk, so
+    ;; the assignment succeeded and reading the result back afterwards failed.
+    (when (> (1+ (length chain)) +max-depth+)
+      (fail "E_DEPTH" "value nested too deeply" (node-pos target)))
+
     (let ((path (list (node-s n))))
       (when (null chain)
         (return-from resolve-target path))
@@ -309,7 +318,7 @@
          (upto (1- (length path)))
          (value
            (if (string= (node-s node) "=")
-               (value-copy (eval-node (node-r node) ctx))
+               (value-copy (eval-node (node-r node) ctx) (node-pos node))
                (let ((current (value-get (walk-create ctx path upto) key)))
                  (unless current
                    (fail "E_UNDEF_VAR"

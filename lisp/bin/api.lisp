@@ -108,6 +108,22 @@
   (handler-case (sel:make-num (make-string 2000001 :initial-element #\1))
     (sel:sel-error (e) (say "error.host.hugenum" (sel:sel-error-code e))))
 
+  ;; A value nested past the cap is refused by every walk of it. Reachable from the
+  ;; host API with no source involved at all -- set() does not refuse, because a
+  ;; value is built from the leaf up and nothing knows how deep it will end up --
+  ;; so the operations that walk it are where the cap has to hold. The numeral cap
+  ;; probed two lines up is the same shape of rule.
+  (flet ((nest (n)
+           (let ((v (sel:make-text "x")))
+             (dotimes (i n v)
+               (let ((p (sel:make-none)))
+                 (sel:value-set p "1" v)
+                 (setf v p))))))
+    (say "value.depth.under"
+         (if (plusp (length (sel:value-dump (nest 199)))) "ok" "no"))
+    (handler-case (sel:value-dump (nest 200))
+      (sel:sel-error (e) (say "value.depth.over" (sel:sel-error-code e)))))
+
   ;; dependencies() walks the tree without evaluating it, so it is bounded by
   ;; neither the parser's nesting depth nor the evaluator's -- and in every host
   ;; it was bounded by nothing at all, until a flat chain of about fifty thousand

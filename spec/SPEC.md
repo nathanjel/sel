@@ -460,12 +460,30 @@ Lisp, and a segfault on C++ and PHP. That a program's dependencies cannot be
 computed exactly when the program could not have been evaluated is the reason
 the two share a limit rather than each having one.
 
+**A value's nesting is capped by the same number, and exceeding it is
+`E_DEPTH`.** Every host walks a value recursively to copy it, to compare it with
+`EQL`, to dump it, and to convert it to and from native data. A chain of index
+brackets in an assignment *target* is walked iteratively — `A[1][2][3]` is a
+chain of index nodes, not a nesting of them — so neither of the two depths above
+ever saw it, and the value it built could be nested past what those walks
+survive. Uncounted, the hosts disagreed about where: an uncaught
+`RecursionError` on Python at about a thousand levels, an uncaught `RangeError`
+on JS at about four thousand, a segfault on C++ at about sixty thousand, while
+PHP and Lisp still answered. The error is reported at the assignment target.
+
+A value can also be nested past the cap through a host's own API, where there is
+no source and nothing to report a position against: building a value from the
+leaf up, nothing knows how deep it will end up, so the cap is enforced by the
+operations that walk it rather than by the one that adds a child. Such a value
+can be held; it cannot be copied, compared, dumped or converted.
+
 **A depth counts nesting in the source; a walk of the tree counts nodes.** The
 two are the same number for `((((1))))` and wildly different for `1+1+1+…`,
 which nests nothing and yet builds a tree as deep as it is long. A cap on the
-first does not bound the second, and any walk of the tree — evaluating it,
-analysing it, or freeing it — needs its own count or it will find the host's
-stack instead.
+first does not bound the second, and any walk of a tree — evaluating it,
+analysing it, copying it, or freeing it — needs its own count or it will find
+the host's stack instead. That is the general rule the three caps are instances
+of, and every one of them was found the same way.
 
 Three arguments name a size rather than a value, and a large one asks for more
 work or more memory than any host has. Each is capped, and exceeding the cap is

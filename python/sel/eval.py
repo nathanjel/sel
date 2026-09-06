@@ -9,12 +9,11 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from . import decimal as D
-from .errors import Pos, fail
+from .errors import MAX_DEPTH, Pos, fail
 from .parser import Node
 from .utf8 import bytes_compare
 from .value import BIN, BOOL, NONE, TEXT, Value
 
-MAX_DEPTH = 200
 
 
 class Context:
@@ -254,7 +253,7 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
         return Value.bool(_compare_result(op[1:], bytes_compare(a, b), node.pos))
 
     if op == 'EQL':
-        return Value.bool(l.eql(r))
+        return Value.bool(l.eql(r, node.pos))
     if op == 'IN':
         return Value.bool(_is_in(l, r))
 
@@ -335,7 +334,7 @@ def _eval_assign(node: Node, ctx: Context) -> Value:
     key = path[-1]
 
     if node.op == '=':
-        value = eval_node(node.value, ctx).clone()
+        value = eval_node(node.value, ctx).clone(node.pos)
     else:
         current = _walk_create(ctx, path, len(path) - 1).get(key)
         if current is None:
@@ -400,6 +399,14 @@ def _resolve_target(target: Node, ctx: Context) -> list[str]:
     if ctx.is_bound(n.name):
         fail('E_BAD_ASSIGN',
              f'{n.name} is an aggregate binder and cannot be assigned', target.pos)
+    # The chain was walked iteratively, which is why nothing has counted it yet:
+    # `A[1][2][3]` is a chain of index nodes, not a nesting of them, so neither
+    # the parser's depth nor the evaluator's ever sees it -- and the value it is
+    # about to build is one level deeper than the chain is long. Uncounted, that
+    # built a value deeper than clone, eql and dump can walk, so the assignment
+    # succeeded and reading the result back afterwards failed.
+    if len(chain) + 1 > MAX_DEPTH:
+        fail('E_DEPTH', 'value nested too deeply', target.pos)
     path = [n.name]
     if not chain:
         return path

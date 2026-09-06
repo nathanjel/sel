@@ -135,6 +135,25 @@ try:
 except SelError as e:
     say('error.host.hugenum', e.code)
 
+# A value nested past the cap is refused by every walk of it. Reachable from the
+# host API with no source involved at all -- set() does not refuse, because a
+# value is built from the leaf up and nothing knows how deep it will end up --
+# so the operations that walk it are where the cap has to hold. Value::num's
+# numeral cap is the same shape of rule and is probed two lines up.
+def _nest(n):
+    v = Value.text('x')
+    for _ in range(n):
+        p = Value.none()
+        p.set('1', v)
+        v = p
+    return v
+
+say('value.depth.under', 'ok' if len(_nest(199).dump()) > 0 else 'no')
+try:
+    _nest(200).dump()
+except SelError as e:
+    say('value.depth.over', e.code)
+
 # dependencies() walks the tree without evaluating it, so it is bounded by
 # neither the parser's nesting depth nor the evaluator's -- and in every host it
 # was bounded by nothing at all, until a flat chain of about fifty thousand

@@ -24,6 +24,13 @@
 #   lists and sequences are one node with many children and must not recurse at
 #   all. If one of those starts failing, the counter broke rather than a walker.
 #
+#   The two value shapes are the same hazard one level down, in the VALUE tree
+#   rather than the parse tree: an assignment target's bracket chain is walked
+#   iteratively, so it built a value deeper than clone, eql and dump could walk.
+#   value-self-nest is scaled to hundreds rather than hundreds of thousands
+#   because it is O(N^2) -- every assignment clones the whole value again -- and
+#   the cap is 200, so it only has to reach past that.
+#
 # A host may answer with a value or with a SEL error. What it may not do is
 # crash, hang, or raise a HOST-level failure -- a RangeError, a RecursionError,
 # an exhausted control stack, a segfault -- and it may not disagree with the
@@ -91,6 +98,8 @@ prefix-not|eval|400000|'NOT ' * N + 'TRUE'
 assign-chain|eval|400000|'A=' * N + '1'
 nested-paren|eval|400000|'(' * N + '1' + ')' * N
 nested-index|eval|200000|'a[' * N + '1' + ']' * N
+value-deep-write|eval|200000|'A' + '[1]' * N + '=1; B = A; C = (B EQL A); C'
+value-self-nest|eval|300|'A[1]=A;' * N + 'A EQL A'
 SHAPES_END
 
 failures=0

@@ -52,6 +52,13 @@ namespace {
   throw SelError(code, message, pos);
 }
 
+// spec/SPEC.md §6.4's three caps, which are one number. The parser's nesting,
+// the evaluator's, and a value's -- each is a recursion over a structure the
+// input can grow without bound, and each finds this host's stack instead of an
+// error if it is not counted. Declared here rather than beside the parser
+// because Value, five hundred lines above it, is now one of the three.
+constexpr int MAX_DEPTH = 200;
+
 }  // namespace
 
 SelError::SelError(std::string code, std::string message, Pos pos)
@@ -593,17 +600,67 @@ Value::Value() : p_(std::make_shared<Impl>()) {}
 
 // The deep copy. Recursive, because children are handles too: copying the
 // vector alone would share every subtree.
-Value Value::clone() const {
+// The three recursive walks over a value, and the cap they share.
+//
+// A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
+// parser's and the evaluator's, and it was the last one left uncounted. These
+// three -- and the destructor below -- recurse once per level, so a value nested
+// deeply enough reached the host's own stack: RecursionError on Python at about
+// a thousand levels, an uncaught RangeError on JS at about four, a segfault here
+// at about sixty. Three hosts answered where two died, on the same program.
+//
+// The depth rides as a parameter, as it does in dependencies(): there is nothing
+// to release on the way out, so no guard object is needed and all five hosts
+// spell it the same way. A value of exactly MAX_DEPTH levels is fine; the level
+// past it is refused.
+//
+// `pos` is the caller's, reported when there is one: the evaluator knows which
+// node asked for the clone or the comparison, and every other E_DEPTH in this
+// file names a position. A call from host code has no node to name and passes
+// the empty Pos, the way Value::num already does.
+Value Value::clone_at(int depth, Pos pos) const {
+  if (depth > MAX_DEPTH) {
+    fail("E_DEPTH", "value nested too deeply", pos);
+  }
   Value out;
   out.p_->kind = p_->kind;
   out.p_->scalar = p_->scalar;
   out.p_->boolean = p_->boolean;
   out.p_->children.reserve(p_->children.size());
   for (const Entry& e : p_->children) {
-    out.p_->children.emplace_back(e.first, e.second.clone());
+    out.p_->children.emplace_back(e.first, e.second.clone_at(depth + 1, pos));
   }
   out.p_->index = p_->index;
   return out;
+}
+
+Value Value::clone(Pos pos) const { return clone_at(1, pos); }
+
+// Iterative, for the reason Node's destructor is: destroying a child is usually
+// the last reference to it, so freeing a deep tree recursed once per level and
+// found the stack at about a hundred thousand of them. The language cannot build
+// one that deep any more -- resolve_target refuses the path and clone_at refuses
+// the copy -- but `set()` is public, an embedding application can still nest a
+// value by hand, and a destructor is the one operation that cannot refuse.
+//
+// Same shape as Node::~Node: take this value's children into a worklist, pop,
+// and take a popped value's own children first WHEN we are its last owner and it
+// is therefore about to be destroyed.
+Value::Impl::~Impl() {
+  std::vector<std::shared_ptr<Impl>> pending;
+  const auto steal = [&pending](Impl& impl) {
+    for (Entry& e : impl.children) {
+      if (e.second.p_) pending.push_back(std::move(e.second.p_));
+    }
+    impl.children.clear();
+  };
+
+  steal(*this);
+  while (!pending.empty()) {
+    const std::shared_ptr<Impl> held = std::move(pending.back());
+    pending.pop_back();
+    if (held.use_count() == 1) steal(*held);
+  }
 }
 
 namespace {
@@ -766,7 +823,12 @@ bool Value::looks_numeric() const {
 
 // Same kind, equal scalars with numbers *not* normalised, children with the same
 // keys in the same order, pairwise EQL.
-bool Value::eql(const Value& other) const {
+bool Value::eql(const Value& other, Pos pos) const { return eql_at(other, 1, pos); }
+
+bool Value::eql_at(const Value& other, int depth, Pos pos) const {
+  if (depth > MAX_DEPTH) {
+    fail("E_DEPTH", "value nested too deeply", pos);
+  }
   if (p_->kind != other.p_->kind) return false;
   if (p_->kind == Kind::Text || p_->kind == Kind::Bin) {
     if (p_->scalar != other.p_->scalar) return false;
@@ -776,12 +838,19 @@ bool Value::eql(const Value& other) const {
   if (p_->children.size() != other.p_->children.size()) return false;
   for (std::size_t i = 0; i < p_->children.size(); i++) {
     if (p_->children[i].first != other.p_->children[i].first) return false;   // order is normative
-    if (!p_->children[i].second.eql(other.p_->children[i].second)) return false;
+    if (!p_->children[i].second.eql_at(other.p_->children[i].second, depth + 1, pos)) {
+      return false;
+    }
   }
   return true;
 }
 
-std::string Value::dump() const {
+std::string Value::dump() const { return dump_at(1); }
+
+std::string Value::dump_at(int depth) const {
+  if (depth > MAX_DEPTH) {
+    fail("E_DEPTH", "value nested too deeply", {});
+  }
   std::string s;
   switch (p_->kind) {
     case Kind::None: s = "-"; break;
@@ -793,7 +862,8 @@ std::string Value::dump() const {
   s += "{";
   for (std::size_t i = 0; i < p_->children.size(); i++) {
     if (i > 0) s += ", ";
-    s += sel::quote_dump(p_->children[i].first) + "=" + p_->children[i].second.dump();
+    s += sel::quote_dump(p_->children[i].first) + "=" +
+         p_->children[i].second.dump_at(depth + 1);
   }
   return s + "}";
 }
@@ -1306,8 +1376,6 @@ inline Node::~Node() {
 }
 
 namespace {
-
-constexpr int MAX_DEPTH = 200;
 
 std::string describe(const Token& t) {
   switch (t.type) {
@@ -1986,7 +2054,7 @@ Value eval_binary(const Node& node, Context& ctx) {
 
   if (op == "&") return concat(l, r, lp, rp);
 
-  if (op == "EQL") return Value::boolean(l.eql(r));
+  if (op == "EQL") return Value::boolean(l.eql(r, node.pos));
   if (op == "IN") return Value::boolean(is_in(l, r));
   if (op == "XOR") {
     const bool a = l.as_bool(lp);
@@ -2061,6 +2129,16 @@ std::vector<std::string> resolve_target(const Node& target, Context& ctx) {
   if (ctx.is_bound(n->s)) {
     fail("E_BAD_ASSIGN", n->s + " is an aggregate binder and cannot be assigned", target.pos);
   }
+  // The chain was walked iteratively, which is why nothing has counted it yet:
+  // `A[1][2][3]` is a chain of index nodes, not a nesting of them, so neither
+  // the parser's depth nor the evaluator's ever sees it -- and the value it is
+  // about to build is one level deeper than the chain is long. Uncounted, that
+  // built a value deeper than clone(), dump() and eql() can walk, so the
+  // assignment succeeded and reading the result back afterwards failed. The
+  // position is the target's, which is what every other E_DEPTH here reports.
+  if (static_cast<int>(chain.size()) + 1 > MAX_DEPTH) {
+    fail("E_DEPTH", "value nested too deeply", target.pos);
+  }
   std::vector<std::string> path{n->s};
   if (chain.empty()) return path;
 
@@ -2094,7 +2172,7 @@ Value eval_assign(const Node& node, Context& ctx) {
     // side, and `A[1] = A` would answer with the A the store had just mutated
     // instead of the value that was assigned. js/src/eval.mjs:262 clones in
     // exactly this position, for exactly this reason.
-    value = eval_node(*node.r, ctx).clone();
+    value = eval_node(*node.r, ctx).clone(node.pos);
   } else {
     const Value* current = walk_create(ctx, path, path.size() - 1)->get(key);
     if (!current) fail("E_UNDEF_VAR", node.s + " needs an existing target", node.l->pos);

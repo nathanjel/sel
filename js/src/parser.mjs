@@ -19,12 +19,11 @@
 // E_DEPTH at 1:101 for 100 parens, 1:200 for a `-` chain and 1:797 for a NOT
 // chain. Prefix operators are counted only when actually consumed.
 
-import { fail } from './errors.mjs';
+import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { tokenize, RESERVED } from './lexer.mjs';
 import { lookup } from './registry.mjs';
 
-const MAX_DEPTH = 200;
 
 const ASSIGN_OPS = new Set(['=', '+=', '-=', '*=', '/=', '%=', '&=']);
 const COMPARE_OPS = new Set([
