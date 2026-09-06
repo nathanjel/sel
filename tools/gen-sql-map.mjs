@@ -622,11 +622,39 @@ RULES: dict[str, Any] = ${pyValue(rules, 0)}
 `;
 }
 
+// The JS emitter is the shortest of the three because the data is already
+// JSON-shaped and JSON is a subset of JS: there is no quoting dialect to
+// translate into, so `JSON.stringify` is the whole of it. Two spaces and sorted
+// keys make the diff readable when a dialect document changes; nothing reads
+// this file by hand.
+function emitJs(dialects, rules) {
+  return `// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+//
+// Every dialect, with its chain already flattened, so a lookup is a property
+// access and nothing else. Runtime registration is what re-introduces the
+// chain, and it is the only thing that does.
+
+export const DIALECTS = ${JSON.stringify(dialects, null, 2)};
+
+// The map's own vocabulary, so map.define can enforce at run time what
+// tools/gen-sql-map.mjs enforces at generation time.
+//
+// Emitted rather than retyped in each host. Every divergence a cross-host review
+// found in runtime registration — an entry with no "ret", a "tpl" that was a
+// JSON list, an "arity" of strings, a caveat somebody invented — was an entry
+// the generator would have rejected and the runtime would not, after which the
+// two hosts improvised differently. Improvising is what code does when it has no
+// rule; this is the rule, as data.
+export const RULES = ${JSON.stringify(rules, null, 2)};
+`;
+}
+
 // --- main ------------------------------------------------------------------
 
 const OUTPUTS = [
   ['php/src/Sql/MapData.php', emitPhp],
   ['python/sel/sql/_map.py', emitPython],
+  ['js/src/sql/_map.mjs', emitJs],
 ];
 
 const docs = load();
