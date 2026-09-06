@@ -1498,6 +1498,8 @@ final class Translator
                                 string $what, array $pos): string
     {
         if (isset($entry['variants'])) {
+            // isset() is right here rather than array_key_exists: a null
+            // variant is a withdrawal, and refusing is exactly what it asks for.
             if ($variant === null || !isset($entry['variants'][$variant])) {
                 refuse('E_SQL_UNSUPPORTED',
                     "{$what} has no mapping in dialect {$this->dialect} for "
@@ -1510,12 +1512,17 @@ final class Translator
             return $tpl;
         }
         $n = (string) count($args);
-        // `*` is the fallback for counts the entry does not name one by one, so
-        // an open-ended arity can still special-case the counts that need it.
-        if (!isset($tpl[$n]) && isset($tpl['*'])) {
+        // `*` is the fallback for counts the entry does not NAME, and naming a
+        // count with null names it: sql/MAP.md §2 says null is a refusal without
+        // a reason, so `{"1": null, "*": …}` withdraws the one-argument form and
+        // the fallback must not rescue it. array_key_exists rather than isset is
+        // the whole of that rule; with isset the withdrawal was unwritable, and
+        // on the Python host the null reached the renderer and emitted the
+        // literal text `None` into the SQL.
+        if (!array_key_exists($n, $tpl) && array_key_exists('*', $tpl)) {
             $n = '*';
         }
-        if (!isset($tpl[$n])) {
+        if (!array_key_exists($n, $tpl) || $tpl[$n] === null) {
             $have = array_keys($tpl);
             sort($have);
             refuse('E_SQL_UNSUPPORTED',

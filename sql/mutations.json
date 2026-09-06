@@ -103,8 +103,8 @@
       "name": "arity-fallback-ignored",
       "was": "The `*` key added for MIN. Without it an unbounded arity resolves no template.",
       "file": "php/src/Sql/Translator.php",
-      "from": "if (!isset($tpl[$n]) && isset($tpl['*'])) {",
-      "to": "if (false) {"
+      "from": "        if (!array_key_exists($n, $tpl) && array_key_exists('*', $tpl)) {",
+      "to": "        if (false) {"
     },
     {
       "name": "kinds-unify-loosely",
@@ -525,6 +525,13 @@
       "file": "python/sel/sql/normalise.py",
       "from": "    if depth > MAX_DEPTH:",
       "to": "    if False:"
+    },
+    {
+      "name": "arity-null-is-rescued-by-the-fallback",
+      "was": "How it shipped, and the reason sql/MAP.md §2 needed saying twice. null is a refusal without a reason, so a template map keyed {\"1\": null, \"*\": ...} withdraws the one-argument form -- and isset() reads the null as ABSENT, so the `*` fallback rescued the entry the author had just withdrawn. The withdrawal was unwritable on the PHP host and, on the Python one, the null reached the renderer and emitted the literal text `None` into the SQL.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (!array_key_exists($n, $tpl) || $tpl[$n] === null) {",
+      "to": "        if (!array_key_exists($n, $tpl)) {"
     }
   ]
 }

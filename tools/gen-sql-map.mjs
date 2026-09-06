@@ -22,7 +22,7 @@ import { dirname, resolve, basename } from 'node:path';
 // what lets an entry's `arity` be checked against SEL's own declared arity
 // rather than against a second copy of it that could drift.
 import '../js/src/sel.mjs';
-import { lookup as selLookup } from '../js/src/registry.mjs';
+import { lookup as selLookup, names as selNames } from '../js/src/registry.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIALECT_DIR = resolve(ROOT, 'sql/dialects');
@@ -94,6 +94,68 @@ const SKEL_SLOTS = {
   join: ['from', 'corr', 'body', 'sep'],
   inRelation: ['needle', 'from', 'corr', 'body'],
 };
+
+// The type each lexical key must have. sql/MAP.md §3.
+//
+// Emitted, and read at run time by every host's Map::define, because a lexical
+// value with the wrong type is not a style problem: `textEscape` given as a
+// STRING made both hosts skip escaping entirely and emit 'it's' unquoted, which
+// is an injection, and `true` given as a JSON boolean rendered as `1` on one
+// host and `True` on the other. Neither was noticed because nothing checked.
+//
+// `null` is a WITHDRAWAL wherever it appears, and is therefore always allowed --
+// sql/MAP.md §3 says a null binaryLiteral refuses BIN literals. The hosts look
+// lexical keys up by PRESENCE for the same reason.
+const LEXICAL_TYPES = {
+  identQuote: 'string', identEscape: 'string', textQuote: 'string',
+  textEscape: 'map', true: 'string', false: 'string',
+  binaryLiteral: 'string', numericLiteral: 'string', textCollate: 'string',
+  textCast: 'string', numericCast: 'string', binaryCast: 'string',
+  isTrue: 'string', isNotTrue: 'string', placeholder: 'string',
+};
+
+/**
+ * The vocabulary, emitted as data.
+ *
+ * Everything above is what this file checks the shipped map against. Nothing
+ * checked a map entry registered at RUN time, so `Map::define` accepted an entry
+ * with no `ret`, a `tpl` that was a JSON list, an `arity` of strings, a `since`
+ * of "abc" and a caveat somebody invented -- and the two hosts then improvised
+ * differently over each one, because improvising is what code does when it has
+ * no rule. Every one of those is an entry this file would have rejected.
+ *
+ * So the lists are emitted rather than retyped in six languages. The LOGIC is
+ * necessarily per host, because the translator is; the VOCABULARY is data, and
+ * data is generated.
+ */
+function buildRules(dialects) {
+  const ops = new Set();
+  for (const d of Object.values(dialects)) {
+    for (const k of Object.keys(d.ops ?? {})) ops.add(k);
+  }
+  const funcs = {};
+  for (const name of selNames()) {
+    if (LOWERED.has(name)) continue;          // stage 2 lowers these
+    const spec = selLookup(name);
+    funcs[name] = [spec.min, spec.max === Infinity ? null : spec.max];
+  }
+  const opArityOut = {};
+  for (const k of [...ops].sort()) {
+    const a = opArity(k);
+    opArityOut[k] = a === Infinity ? [1, null] : [a, a];
+  }
+  return {
+    sections: ['ops', 'funcs', 'skel'],
+    caveats: [...CAVEATS].sort(),
+    retKinds: [...RET_KINDS].sort(),
+    opArity: opArityOut,
+    funcArity: funcs,
+    variants: VARIANT_FAMILIES,
+    skelSlots: SKEL_SLOTS,
+    lexicalTypes: LEXICAL_TYPES,
+    templateKeys: LEXICAL_TEMPLATE_KEYS,
+  };
+}
 
 // ---------------------------------------------------------------------------
 
@@ -470,7 +532,7 @@ function phpValue(v, indent) {
   return `[\n${body}\n${pad}]`;
 }
 
-function emitPhp(dialects) {
+function emitPhp(dialects, rules) {
   const body = Object.entries(dialects)
     .map(([name, d]) => `        ${phpStr(name)} => ${phpValue(d, 8)},`)
     .join('\n');
@@ -493,6 +555,21 @@ final class MapData
     public const DIALECTS = [
 ${body}
     ];
+
+    /**
+     * The map's own vocabulary, so Map::define can enforce at run time what
+     * tools/gen-sql-map.mjs enforces at generation time.
+     *
+     * Emitted rather than retyped in each host. Every divergence a cross-host
+     * review found in runtime registration -- an entry with no "ret", a "tpl"
+     * that was a JSON list, an "arity" of strings, a caveat somebody invented --
+     * was an entry the generator would have rejected and the runtime would not,
+     * after which the two hosts improvised differently. Improvising is what code
+     * does when it has no rule; this is the rule, as data.
+     *
+     * @var array<string, mixed>
+     */
+    public const RULES = ${phpValue(rules, 4)};
 }
 `;
 }
@@ -513,7 +590,7 @@ function pyValue(v, indent) {
   return `{\n${inner}\n${pad}}`;
 }
 
-function emitPython(dialects) {
+function emitPython(dialects, rules) {
   const body = Object.entries(dialects)
     .map(([name, d]) => `    ${JSON.stringify(name)}: ${pyValue(d, 4)},`)
     .join('\n');
@@ -531,6 +608,17 @@ from typing import Any
 DIALECTS: dict[str, dict[str, Any]] = {
 ${body}
 }
+
+#: The map's own vocabulary, so map.define can enforce at run time what
+#: tools/gen-sql-map.mjs enforces at generation time.
+#:
+#: Emitted rather than retyped in each host. Every divergence a cross-host review
+#: found in runtime registration -- an entry with no "ret", a "tpl" that was a
+#: JSON list, an "arity" of strings, a caveat somebody invented -- was an entry
+#: the generator would have rejected and the runtime would not, after which the
+#: two hosts improvised differently. Improvising is what code does when it has no
+#: rule; this is the rule, as data.
+RULES: dict[str, Any] = ${pyValue(rules, 0)}
 `;
 }
 
@@ -558,9 +646,10 @@ if (errors.length) {
 
 const check = process.argv.includes('--check');
 let stale = 0;
+const rules = buildRules(dialects);
 for (const [rel, emit] of OUTPUTS) {
   const path = resolve(ROOT, rel);
-  const text = emit(dialects);
+  const text = emit(dialects, rules);
   if (check) {
     let have = null;
     try { have = readFileSync(path, 'utf8'); } catch { /* absent counts as stale */ }

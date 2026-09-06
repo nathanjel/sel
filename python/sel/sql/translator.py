@@ -1128,7 +1128,8 @@ class Translator:
     def _template_of(self, entry: dict[str, Any], args: list[Fragment],
                      variant: str | None, what: str, pos: Pos) -> str:
         if entry.get('variants') is not None:
-            if variant is None or variant not in entry['variants']:
+            if (variant is None or variant not in entry['variants']
+                    or entry['variants'][variant] is None):
                 shape = 'this shape' if variant is None else f'{variant} operands'
                 refuse('E_SQL_UNSUPPORTED',
                        f'{what} has no mapping in dialect {self.dialect} for {shape}',
@@ -1138,11 +1139,15 @@ class Translator:
         if isinstance(tpl, str):
             return tpl
         n = str(len(args))
-        # `*` is the fallback for counts the entry does not name one by one, so an
-        # open-ended arity can still special-case the counts that need it.
+        # `*` is the fallback for counts the entry does not NAME, and naming a
+        # count with null names it: sql/MAP.md §2 says null is a refusal without a
+        # reason, so `{"1": None, "*": …}` withdraws the one-argument form and the
+        # fallback must not rescue it. Membership rather than a None test is the
+        # whole of that rule; without it the withdrawal was unwritable, and the
+        # None reached the renderer and emitted the literal text `None` into SQL.
         if n not in tpl and '*' in tpl:
             n = '*'
-        if n not in tpl:
+        if n not in tpl or tpl[n] is None:
             refuse('E_SQL_UNSUPPORTED',
                    f'{what} has no mapping in dialect {self.dialect} for {n} '
                    'argument(s); it maps ' + ', '.join(sorted(tpl)), pos)

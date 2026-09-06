@@ -39,6 +39,10 @@ final class Map
      */
     public static function defineDialect(string $name, array $spec): void
     {
+        if (self::exists($name)) {
+            throw new \LogicException(
+                "SQL dialect {$name} is already defined; a name means one dialect");
+        }
         $extends = $spec['extends'] ?? null;
         if ($extends === null) {
             throw new \LogicException("SQL dialect {$name} must extend another dialect");
@@ -46,11 +50,35 @@ final class Map
         if (!self::exists($extends)) {
             throw new \LogicException("SQL dialect {$name} extends {$extends}, which does not exist");
         }
+        $version = $spec['version'] ?? self::record($extends)['version'];
+        // Dotted-numeric, as sql/MAP.md §4.5 says and nothing cleverer. A live
+        // server reports "11.8.8-MariaDB", which is the natural thing to pass and
+        // is not a version this map can compare: PHP's intval read it as 11.8.8
+        // by guessing and Python's int() raised a ValueError out of the first
+        // translation that had a `since`. Refused here, at the line that wrote
+        // it, so nothing downstream has to guess.
+        if (!is_string($version) || preg_match('/\A[0-9]+(\.[0-9]+)*\z/', $version) !== 1) {
+            throw new \LogicException("SQL dialect {$name} has version "
+                . var_export($version, true) . ', which is not dotted-numeric; '
+                . 'strip any suffix a server reports (11.8.8-MariaDB is 11.8.8)');
+        }
+        $target = $spec['target'] ?? true;
+        if (!is_bool($target)) {
+            throw new \LogicException("SQL dialect {$name} has a target that is not "
+                . 'a boolean; truthiness differs between hosts and must not decide this');
+        }
+        $lexical = $spec['lexical'] ?? [];
+        if (!is_array($lexical)) {
+            throw new \LogicException("SQL dialect {$name} has a lexical that is not a map");
+        }
+        foreach ($lexical as $k => $v) {
+            self::checkLexical((string) $k, $v, "SQL dialect {$name}");
+        }
         self::$extra[$name] = [
             'extends' => $extends,
-            'version' => $spec['version'] ?? self::record($extends)['version'],
-            'target' => $spec['target'] ?? true,
-            'lexical' => $spec['lexical'] ?? [],
+            'version' => $version,
+            'target' => $target,
+            'lexical' => $lexical,
         ];
     }
 
@@ -71,6 +99,8 @@ final class Map
         if (!self::exists($dialect)) {
             throw new \LogicException("SQL dialect {$dialect} does not exist");
         }
+        self::checkKey($section, $key);
+        self::checkEntry($section, $key, $entry);
         // Only `funcs` keys are SEL function names, which are case-insensitive.
         // `ops` keys are operator tokens and `skel` keys are camel-case names
         // the translator looks up verbatim — upper-casing those stored a
@@ -176,9 +206,14 @@ final class Map
      */
     public static function lexical(string $dialect, string $key)
     {
+        // array_key_exists, not isset, and for the same reason entry() uses it:
+        // sql/MAP.md §3 says a null lexical value is a WITHDRAWAL -- "a null
+        // binaryLiteral refuses BIN literals" -- and isset() reads that as
+        // "absent" and walks on to the base, which handed the withdrawn value
+        // back. The documented withdrawal was unimplementable, in both hosts.
         foreach (self::chain($dialect) as $d) {
             $r = self::record($d);
-            if (isset($r['lexical'][$key])) {
+            if (array_key_exists($key, $r['lexical'] ?? [])) {
                 return $r['lexical'][$key];
             }
         }
@@ -289,6 +324,207 @@ final class Map
         self::$trace = null;
         sort($seen);
         return $seen;
+    }
+
+    // --- registration validation ------------------------------------------
+    //
+    // What tools/gen-sql-map.mjs enforces at generation time, enforced here at
+    // registration time, against the vocabulary that file EMITS rather than a
+    // second copy of it. Every one of these refusals closes a place where the
+    // two hosts improvised differently over an entry the generator would never
+    // have accepted -- a JSON list where a template belongs, an arity of
+    // strings, a `ret` that was not there at all.
+    //
+    // LogicException, not SqlError: a malformed registration is a mistake in the
+    // application's startup, and tryTranslate() must not swallow it.
+
+    /** @param mixed $v */
+    private static function checkLexical(string $key, $v, string $where): void
+    {
+        $types = MapData::RULES['lexicalTypes'];
+        if (!isset($types[$key])) {
+            throw new \LogicException("{$where} sets the unknown lexical key {$key}; "
+                . 'known keys are ' . implode(', ', array_keys($types)));
+        }
+        // null is a WITHDRAWAL everywhere in the map, so it is always allowed --
+        // sql/MAP.md §3 says a null binaryLiteral refuses BIN literals, and
+        // lexical() looks keys up by presence so that it can.
+        if ($v === null) {
+            return;
+        }
+        if ($types[$key] === 'map') {
+            // textEscape given as a STRING made both hosts skip escaping
+            // entirely and emit 'it's' unquoted. That is an injection, it was in
+            // both hosts, and nothing checked.
+            if (!is_array($v)) {
+                throw new \LogicException("{$where} sets {$key} to a "
+                    . get_debug_type($v) . '; it must be a map of character to replacement');
+            }
+            foreach ($v as $from => $to) {
+                if ($from === '' || !is_string($to)) {
+                    throw new \LogicException("{$where}'s {$key} maps "
+                        . var_export($from, true) . ' to something that is not a string');
+                }
+            }
+            return;
+        }
+        // Everything else is a string, and is never cast to one: `true` given as
+        // a JSON boolean rendered as `1` here and `True` on the Python host.
+        if (!is_string($v)) {
+            throw new \LogicException("{$where} sets {$key} to a "
+                . get_debug_type($v) . '; it must be a string');
+        }
+    }
+
+    private static function checkKey(string $section, string $key): void
+    {
+        $rules = MapData::RULES;
+        if ($section === 'ops' && !isset($rules['opArity'][$key])) {
+            throw new \LogicException("{$key} is not a SEL operator, so an ops entry "
+                . 'for it would never be looked up');
+        }
+        // `funcs` keys are SEL function names and case-insensitive; ops and skel
+        // keys are looked up verbatim, which is why define() upper-cases only the
+        // first. Registering `and` or `Case` used to be silently dead.
+        if ($section === 'funcs' && !isset($rules['funcArity'][strtoupper($key)])) {
+            throw new \LogicException("{$key} is not a SEL function this layer maps; "
+                . 'the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by '
+                . 'stage 2 and never reach the funcs table');
+        }
+        if ($section === 'skel' && !isset($rules['skelSlots'][$key])) {
+            throw new \LogicException("{$key} is not a skeleton; known ones are "
+                . implode(', ', array_keys($rules['skelSlots'])));
+        }
+    }
+
+    /** @param mixed $entry */
+    private static function checkEntry(string $section, string $key, $entry): void
+    {
+        $where = "the {$section} entry for {$key}";
+        // A string is a refusal carrying its reason; null is a refusal without
+        // one. Both are entries, and neither has anything else to check.
+        if ($entry === null || is_string($entry)) {
+            return;
+        }
+        if (!is_array($entry)) {
+            throw new \LogicException("{$where} must be a map, a string or null, and is "
+                . get_debug_type($entry));
+        }
+        if (isset($entry['builder'])) {
+            if (!is_callable($entry['builder'])) {
+                throw new \LogicException("{$where} has a builder that is not callable; "
+                    . 'use Map::defineBuilder()');
+            }
+            return;
+        }
+        $rules = MapData::RULES;
+
+        // A skeleton is a template with NAMED slots and no kind: the translator
+        // decides what a CASE or a subquery yields, not the map. So it is checked
+        // for its slots and nothing else.
+        if ($section === 'skel') {
+            if (!is_string($entry['tpl'] ?? null)) {
+                throw new \LogicException("{$where} needs a tpl that is a string");
+            }
+            $allowed = $rules['skelSlots'][$key];
+            preg_match_all('/\{([^}]*)\}/', $entry['tpl'], $m);
+            foreach ($m[1] as $slot) {
+                if (!in_array($slot, $allowed, true)) {
+                    throw new \LogicException("{$where} uses the slot {{$slot}}; "
+                        . "{$key} has " . implode(', ', $allowed)
+                        . ' — a typo would survive as literal text in every query');
+                }
+            }
+            if (isset($entry['caveat'])
+                && !in_array($entry['caveat'], $rules['caveats'], true)) {
+                throw new \LogicException("{$where} declares the caveat "
+                    . var_export($entry['caveat'], true) . ', which is not on the '
+                    . 'closed list in sql/MAP.md §4.6');
+            }
+            return;
+        }
+
+        if (array_key_exists('tpl', $entry) === array_key_exists('variants', $entry)) {
+            throw new \LogicException("{$where} needs exactly one of tpl and variants");
+        }
+        $ret = $entry['ret'] ?? null;
+        if (!is_string($ret)
+            || (!in_array($ret, $rules['retKinds'], true) && $ret !== '@concat'
+                && preg_match('/\A@unify:[0-9]+(,[0-9]+)*\z/', $ret) !== 1)) {
+            throw new \LogicException("{$where} has ret " . var_export($ret, true)
+                . '; use one of ' . implode(', ', $rules['retKinds'])
+                . ', @concat or @unify:<n>[,<n>...]');
+        }
+        if (isset($entry['caveat']) && !in_array($entry['caveat'], $rules['caveats'], true)) {
+            throw new \LogicException("{$where} declares the caveat "
+                . var_export($entry['caveat'], true) . ', which is not on the closed '
+                . 'list in sql/MAP.md §4.6; a caveat an application cannot branch on '
+                . 'is prose');
+        }
+        if (isset($entry['since'])
+            && (!is_string($entry['since'])
+                || preg_match('/\A[0-9]+(\.[0-9]+)*\z/', $entry['since']) !== 1)) {
+            throw new \LogicException("{$where} has a since that is not dotted-numeric");
+        }
+        if (isset($entry['arity'])) {
+            $a = $entry['arity'];
+            if (!is_array($a) || count($a) !== 2 || !is_int($a[0] ?? null)
+                || !is_int($a[1] ?? null) || $a[0] < 0 || $a[1] < $a[0]) {
+                throw new \LogicException("{$where} has an arity that is not "
+                    . '[min, max] of two integers');
+            }
+        }
+        if (isset($entry['variants'])) {
+            if (!is_array($entry['variants']) || $entry['variants'] === []) {
+                throw new \LogicException("{$where} has variants that are not a map");
+            }
+            $allowed = $rules['variants'][$key] ?? null;
+            if ($allowed === null) {
+                throw new \LogicException("{$where} uses variants, and {$key} is not "
+                    . 'a variant family');
+            }
+            foreach (array_keys($entry['variants']) as $name) {
+                if (!in_array($name, $allowed, true)) {
+                    throw new \LogicException("{$where} declares the variant {$name}; "
+                        . "{$key} has " . implode(', ', $allowed));
+                }
+            }
+        }
+        if (array_key_exists('tpl', $entry) && is_array($entry['tpl'])) {
+            // Every key is an argument COUNT the entry can actually be called
+            // with, checked against SEL's own arity narrowed by the entry's.
+            //
+            // Checking the shape alone is not enough, and PHP is why: a JSON
+            // list ["a", "b"] decodes to an array whose keys are 0 and 1, which
+            // are perfectly good count keys, so it is indistinguishable from
+            // {"0": "a", "1": "b"} -- and it reached the renderer and emitted the
+            // literal `b`. Against UPPER's arity of [1, 1] the count 0 is out of
+            // range, and the list is refused for the reason it is actually wrong.
+            [$min, $max] = $section === 'ops'
+                ? $rules['opArity'][$key]
+                : $rules['funcArity'][strtoupper($key)];
+            if (isset($entry['arity'])) {
+                $min = max($min, $entry['arity'][0]);
+                $max = $max === null ? $entry['arity'][1]
+                                     : min($max, $entry['arity'][1]);
+            }
+            foreach (array_keys($entry['tpl']) as $n) {
+                if ($n === '*') {
+                    continue;
+                }
+                if (preg_match('/\A(?:0|[1-9][0-9]{0,2})\z/', (string) $n) !== 1) {
+                    throw new \LogicException("{$where} keys a template by "
+                        . var_export($n, true) . '; an arity-keyed template uses a '
+                        . 'count or *');
+                }
+                $c = (int) $n;
+                if ($c < $min || ($max !== null && $c > $max)) {
+                    throw new \LogicException("{$where} keys a template by {$c}, and "
+                        . "{$key} takes {$min} to " . ($max ?? 'any')
+                        . ' argument(s), so that template could never be chosen');
+                }
+            }
+        }
     }
 
     private static function checkSection(string $section): void

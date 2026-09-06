@@ -82,6 +82,16 @@ decision it explains, reaches every host and every caller.
 **Refusing in a child withdraws a parent's support.** Absent means "ask the
 parent"; a string or `null` means "stop, this dialect cannot".
 
+**`null` withdraws wherever it appears, and every lookup tests presence rather
+than non-nullness so that it can.** A `null` lexical value withdraws that lexical
+entry — §3's "a null `binaryLiteral` refuses BIN literals" is exactly this — and
+a `null` at one count of an arity-keyed template withdraws that form, which the
+`*` fallback does not rescue. Both were read as *absent* until a cross-host
+review asked what a withdrawal actually did: the base's live value was inherited
+in its place, so the documented withdrawal was unwritable in both hosts, and on
+one of them the `null` reached the renderer and emitted the literal text `None`
+into the SQL.
+
 ---
 
 ## 3. `lexical`
@@ -261,6 +271,29 @@ special code anywhere because it is only another link:
 { "dialect": "mariadb-10.1", "extends": "mariadb", "version": "10.1", "target": true,
   "funcs": { "RMATCH": "MariaDB 10.1 has no REGEXP_REPLACE-based anchoring rewrite" } }
 ```
+
+### 4.5½ Registration is checked against this document, at run time
+
+Everything §4 and §5 require of a *shipped* entry, `Map::define` and
+`Map::defineDialect` require of a *registered* one — against the same
+vocabulary, because `tools/gen-sql-map.mjs` **emits** it into the generated map
+as `RULES` rather than each host retyping the list.
+
+That is not tidiness. Nothing checked a runtime registration, so an entry with
+no `ret`, a `tpl` that was a JSON list, an `arity` of strings, a `since` of
+`"abc"` and a caveat somebody invented were all accepted — and the hosts then
+improvised differently over each one, because improvising is what code does when
+it has no rule. Two of those improvisations were wrong in *both* hosts at once:
+a `textEscape` given as a string made both skip escaping entirely and emit
+`'it's'` unquoted, and a `null` lexical value — which §3 documents as a
+withdrawal — was read as absent and inherited from the base, so the documented
+withdrawal was unimplementable.
+
+A malformed registration raises the **host's startup-error class**
+(`LogicException`, `RuntimeError`, …) and never `SqlError`: it is a mistake in
+the application's start-up, not a rule that cannot be translated, and
+`tryTranslate()` must not swallow it. `sql/cases/18-host-neutrality.sqlt` pins
+one case per rule, so every future host inherits them.
 
 ### 4.6 `caveat`
 

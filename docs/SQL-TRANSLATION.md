@@ -2423,6 +2423,39 @@ docstring says so where somebody would go to add them: `caveat_pins` and
 that PHP already measures. Running them twice measures the same thing twice.
 That is also why `python/sel/sql/map.py` has no trace facility.
 
+**M6½ — the leakage round. DONE.** An adversarial review asked one question:
+why does a parsed AST, driven by a map generated from one source, become
+different SQL depending on which language the translator was written in? The
+answer was that the host's own rules were deciding — PHP's `(bool)"0"`,
+`empty("0")`, `intval`, `isset`-versus-`in`, `str_replace('')`, left-wins `+`;
+Python's truthiness, strict `int()`, right-wins merge, recursion limit — and none
+of it was a decision anybody made.
+
+Four fixes, in the order they were made, and the first is the one worth
+remembering because no PHP-against-Python comparison could ever have found it:
+
+- **Keys are strings.** `V["01"]` and `V["1\n"]` resolved to element 1 in *both*
+  hosts, where SEL says `E_NO_KEY` — `^[0-9]+$` accepts a trailing newline in
+  both languages and both integer parsers swallow leading zeros. The translator
+  no longer hands a key to its host's integer parser: a key names a position iff
+  it fully matches `[1-9][0-9]{0,8}`.
+- **`E_SQL_DEPTH`.** Both hosts translated expressions the evaluator refuses with
+  `E_DEPTH`, so the database answered a rule SEL has no answer for. The walk is
+  bounded at `Evaluator::MAX_DEPTH`, **read** from there rather than copied.
+- **Bindings are constructors.** The API took a nested map shaped like JSON and
+  validated that shape by hand in each host; §5 has the full account.
+- **Registration is validated against emitted data.** Everything the generator
+  requires of a shipped entry, `Map::define` now requires of a registered one,
+  against a `RULES` block the generator emits rather than each host retyping the
+  list. Two of the divergences it closes were wrong in *both* hosts at once: a
+  `textEscape` given as a string made both skip escaping and emit `'it's'`
+  unquoted, and a `null` lexical — a documented withdrawal — was read as absent
+  and the base's value inherited in its place.
+
+`sql/cases/18-host-neutrality.sqlt` pins every one, because a case file is the
+only witness the next four ports inherit automatically: mutations target PHP and
+JSON, and `sql/oracle/` is PHP-only.
+
 **M7 — superseded, and the reason is worth keeping.** As planned this was
 "`python/tests/sql/`, the differential runner, the three backends" — a second
 database harness in the second host. It is not being built. `sql/oracle/`
