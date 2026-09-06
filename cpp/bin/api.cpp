@@ -129,6 +129,14 @@ int main() {
   } catch (const SelError& e) {
     say("error.host.badnum", e.code());
   }
+  // Every character is a digit, so this is E_RANGE and not E_NOT_NUM. Value::num
+  // is public API, so an embedding application can reach the numeral cap without
+  // compiling a rule at all -- and all six hosts must refuse it the same way.
+  try {
+    Value::num(std::string(2000001, '1'));
+  } catch (const SelError& e) {
+    say("error.host.hugenum", e.code());
+  }
 
   std::cout << join(out, "\n") << "\n";
   return 0;

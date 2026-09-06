@@ -95,6 +95,11 @@
     (sel:sel-error (e) (say "error.compile.unknown.func" (sel:sel-error-code e))))
   (handler-case (sel:make-num "x")
     (sel:sel-error (e) (say "error.host.badnum" (sel:sel-error-code e))))
+  ;; Every character is a digit, so this is E_RANGE and not E_NOT_NUM. MAKE-NUM
+  ;; is public API, so an embedding application can reach the numeral cap without
+  ;; compiling a rule at all -- and all six hosts must refuse it the same way.
+  (handler-case (sel:make-num (make-string 2000001 :initial-element #\1))
+    (sel:sel-error (e) (say "error.host.hugenum" (sel:sel-error-code e))))
 
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))
