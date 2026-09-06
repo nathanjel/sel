@@ -1247,9 +1247,64 @@ struct Node {
   std::vector<std::shared_ptr<const Node>> items;   // Seq/List/Call arguments
   const Spec* spec = nullptr;             // Call
 
+  Node() = default;
+  // Kept explicitly: declaring a destructor makes the implicit copy deprecated,
+  // and parse_primary copies a node to set `grouped`.
+  Node(const Node&) = default;
+  Node& operator=(const Node&) = default;
+  ~Node();
 };
 
 using NodePtr = std::shared_ptr<const Node>;
+
+// Teardown is iterative, and it has to be.
+//
+// The compiler-generated destructor destroys `l`, which is usually the last
+// reference to that child, whose destructor destroys ITS `l` -- so freeing the
+// tree recursed once per level, about 64 bytes of stack each. A left-leaning
+// chain is as deep as the source is long: `1+1+1...` is one level per operator,
+// and parse_term builds it in a loop, so the parser's nesting counter (which
+// counts nesting, and a flat chain nests nothing) never sees it. At about
+// 131,000 operators -- 262KB of source -- this host segfaulted, and it did so
+// while UNWINDING the E_DEPTH the evaluator had correctly just raised, so the
+// process died with no output at all rather than printing the error. Chained
+// trailing brackets, `A[1][1][1]...`, build the same shape and did the same.
+//
+// So the chain is walked instead of recursed: take this node's children into a
+// worklist, and pop from it, taking a popped node's own children first WHEN we
+// are its last owner and it is therefore about to be destroyed. Its destructor
+// then finds nothing left to walk and the loop stays flat, whatever the depth.
+//
+// The `use_count() == 1` test is what makes this safe rather than merely
+// shallow: a node with another owner is only released here, never emptied.
+// parse_primary's `grouped` copy is exactly that case -- two nodes holding one
+// set of children -- and it is why the test cannot be skipped.
+inline Node::~Node() {
+  std::vector<std::shared_ptr<const Node>> pending;
+
+  // const_cast is safe here and only here: every node is created non-const by
+  // make_shared and only ever HELD as const, so the object itself is not const
+  // and mutating it is defined. Nothing else in this file may do this.
+  const auto steal = [&pending](const Node& node) {
+    Node& n = const_cast<Node&>(node);
+    if (n.l) pending.push_back(std::move(n.l));
+    if (n.r) pending.push_back(std::move(n.r));
+    for (auto& item : n.items) {
+      if (item) pending.push_back(std::move(item));
+    }
+    n.items.clear();
+  };
+
+  steal(*this);
+  while (!pending.empty()) {
+    const std::shared_ptr<const Node> held = std::move(pending.back());
+    pending.pop_back();
+    if (held.use_count() == 1) steal(*held);
+    // `held` is released here. Either it was the last reference, and the node is
+    // freed with its children already taken, or another owner keeps it alive.
+  }
+}
+
 namespace {
 
 constexpr int MAX_DEPTH = 200;
