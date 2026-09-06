@@ -451,6 +451,22 @@ the C++ one**, which is precisely the failure this cap exists to prevent. The
 error is reported at the operator that crossed the limit, not at the start of
 the chain.
 
+**`dependencies()` is capped by the evaluation depth and raises the same
+`E_DEPTH` at the same node.** It walks the tree without evaluating it, so it is
+neither of the two depths above and was left uncounted in every host; `A+A+A…`
+repeated about fifty thousand times then reached each host's own stack —
+`RangeError` on JS, `RecursionError` on Python, an exhausted control stack on
+Lisp, and a segfault on C++ and PHP. That a program's dependencies cannot be
+computed exactly when the program could not have been evaluated is the reason
+the two share a limit rather than each having one.
+
+**A depth counts nesting in the source; a walk of the tree counts nodes.** The
+two are the same number for `((((1))))` and wildly different for `1+1+1+…`,
+which nests nothing and yet builds a tree as deep as it is long. A cap on the
+first does not bound the second, and any walk of the tree — evaluating it,
+analysing it, or freeing it — needs its own count or it will find the host's
+stack instead.
+
 Three arguments name a size rather than a value, and a large one asks for more
 work or more memory than any host has. Each is capped, and exceeding the cap is
 an ordinary SEL error rather than a host failure:

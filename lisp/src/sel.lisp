@@ -25,9 +25,24 @@ is mutated in place by any assignment the program performs."
 
 ;;; --- dependencies ----------------------------------------------------------
 
-(defun collect-deps (node bound reads assigned)
-  "BOUND, READS and ASSIGNED are hash tables keyed by name."
+(defun collect-deps (node bound reads assigned depth)
+  "BOUND, READS and ASSIGNED are hash tables keyed by name.
+
+The static walk of the tree, and the third thing in each host that recurses
+over it. spec/SPEC.md 6.4 caps the other two -- the parser's nesting and the
+evaluator's -- and says why: uncounted recursion over a tree the source can
+make arbitrarily deep reaches the host's own stack limit. This walk was
+uncounted, and `dependencies()` on a flat chain of about 48,000 operators
+exhausted the control stack.
+
+The depth rides as a parameter rather than as a counter with a guard, because
+there is nothing to release on the way out -- which is also what lets the five
+hosts spell this identically. Capped at the same MAX_DEPTH the evaluator uses
+and tripping at the same node, so a program whose dependencies cannot be
+computed is exactly a program that could not have been evaluated."
   (when node
+    (when (> depth +max-depth+)
+      (fail "E_DEPTH" "expression nested too deeply" (node-pos node)))
     (case (node-kind node)
       (:var
        (unless (gethash (node-s node) bound)
@@ -37,7 +52,7 @@ is mutated in place by any assignment the program performs."
        (let ((target (node-l node))
              (n (node-l node)))
          (loop while (eq (node-kind n) :index)
-               do (collect-deps (node-r n) bound reads assigned)
+               do (collect-deps (node-r n) bound reads assigned (1+ depth))
                   (setf n (node-l n)))
          ;; `A = x` defines A; `A[k] = x` and `A += x` also read it.
          (when (or (not (eq (node-kind target) :var))
@@ -45,7 +60,7 @@ is mutated in place by any assignment the program performs."
            (unless (gethash (node-s n) bound)
              (setf (gethash (node-s n) reads) t)))
          (setf (gethash (node-s n) assigned) t)
-         (collect-deps (node-r node) bound reads assigned)))
+         (collect-deps (node-r node) bound reads assigned (1+ depth))))
 
       (:call
        ;; An aggregate's three-argument form binds its second argument as a name
@@ -55,27 +70,27 @@ is mutated in place by any assignment the program performs."
          (cond
            ((and spec (spec-binds spec) (= (length items) 3)
                  (eq (node-kind (second items)) :var))
-            (collect-deps (first items) bound reads assigned)
+            (collect-deps (first items) bound reads assigned (1+ depth))
             (let ((inner (copy-name-table bound)))
               (setf (gethash (node-s (second items)) inner) t)
               (setf (gethash "_K" inner) t)
-              (collect-deps (third items) inner reads assigned)))
+              (collect-deps (third items) inner reads assigned (1+ depth))))
            ((and spec (spec-binds spec) (= (length items) 2))
-            (collect-deps (first items) bound reads assigned)
+            (collect-deps (first items) bound reads assigned (1+ depth))
             (let ((inner (copy-name-table bound)))
               (setf (gethash "_" inner) t)
               (setf (gethash "_K" inner) t)
-              (collect-deps (second items) inner reads assigned)))
-           (t (dolist (arg items) (collect-deps arg bound reads assigned))))))
+              (collect-deps (second items) inner reads assigned (1+ depth))))
+           (t (dolist (arg items) (collect-deps arg bound reads assigned (1+ depth)))))))
 
       ((:seq :list)
-       (dolist (item (node-items node)) (collect-deps item bound reads assigned)))
+       (dolist (item (node-items node)) (collect-deps item bound reads assigned (1+ depth))))
 
       ((:index :bin)
-       (collect-deps (node-l node) bound reads assigned)
-       (collect-deps (node-r node) bound reads assigned))
+       (collect-deps (node-l node) bound reads assigned (1+ depth))
+       (collect-deps (node-r node) bound reads assigned (1+ depth)))
 
-      (:un (collect-deps (node-l node) bound reads assigned))
+      (:un (collect-deps (node-l node) bound reads assigned (1+ depth)))
 
       (t nil))))
 
@@ -92,7 +107,7 @@ re-trigger which rule."
   (let ((bound (make-hash-table :test #'equal))
         (reads (make-hash-table :test #'equal))
         (assigned (make-hash-table :test #'equal)))
-    (collect-deps (program-ast program) bound reads assigned)
+    (collect-deps (program-ast program) bound reads assigned 1)
     (sort (loop for name being the hash-keys of reads
                 unless (gethash name assigned) collect name)
           #'string<)))

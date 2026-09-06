@@ -124,4 +124,18 @@ try {
   say('error.host.hugenum', e.code);
 }
 
+// dependencies() walks the tree without evaluating it, so it is bounded by
+// neither the parser's nesting depth nor the evaluator's -- and in every host it
+// was bounded by nothing at all, until a flat chain of about fifty thousand
+// operators found the host's own stack. It shares the evaluation cap now, and
+// trips at the same node: a program whose dependencies cannot be computed is
+// exactly a program that could not have been evaluated. Both sides are pinned,
+// because a walk that counts twice or not at all fails one of them.
+say('deps.depth.under', compile('A' + '+A'.repeat(199)).dependencies().join(' '));
+try {
+  compile('A' + '+A'.repeat(200)).dependencies();
+} catch (e) {
+  say('deps.depth.over', e.code + ' ' + e.line + ':' + e.col);
+}
+
 process.stdout.write(out.join('\n') + '\n');

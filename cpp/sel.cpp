@@ -1246,10 +1246,10 @@ struct Node {
   std::shared_ptr<const Node> l, r;       // Bin: operands. Index: obj, idx. Assign: target, value.
   std::vector<std::shared_ptr<const Node>> items;   // Seq/List/Call arguments
   const Spec* spec = nullptr;             // Call
+
 };
 
 using NodePtr = std::shared_ptr<const Node>;
-
 namespace {
 
 constexpr int MAX_DEPTH = 200;
@@ -3157,9 +3157,23 @@ void register_builtins() {
 
 // --- dependencies -----------------------------------------------------------
 
+// The static walk of the tree, and the third thing in this host that recurses
+// over it. spec/SPEC.md §6.4 caps the other two -- the parser's nesting and the
+// evaluator's -- and says why: uncounted recursion over a tree the source can
+// make arbitrarily deep reaches the host's own stack limit, which segfaulted
+// this host and raised a host-level RangeError on JS. This walk was uncounted,
+// and did both: `sel --deps` on a flat chain of about 48,000 operators died
+// here with no error at all.
+//
+// The depth rides as a parameter rather than as a member with an RAII guard,
+// because there is nothing to release on the way out -- which is also what lets
+// the five hosts spell this identically. It is capped at the same MAX_DEPTH the
+// evaluator uses and trips at the same node, so a program whose dependencies
+// cannot be computed is exactly a program that could not have been evaluated.
 void collect(const Node* node, std::set<std::string>& bound, std::set<std::string>& reads,
-             std::set<std::string>& assigned) {
+             std::set<std::string>& assigned, int depth) {
   if (!node) return;
+  if (depth > MAX_DEPTH) fail("E_DEPTH", "expression nested too deeply", node->pos);
   switch (node->t) {
     case NT::Var:
       if (!bound.count(node->s)) reads.insert(node->s);
@@ -3169,7 +3183,7 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
       const Node* target = node->l.get();
       const Node* t = target;
       while (t->t == NT::Index) {
-        collect(t->r.get(), bound, reads, assigned);
+        collect(t->r.get(), bound, reads, assigned, depth + 1);
         t = t->l.get();
       }
       // `A = x` defines A; `A[k] = x` and `A += x` also read it.
@@ -3177,7 +3191,7 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
         if (!bound.count(t->s)) reads.insert(t->s);
       }
       assigned.insert(t->s);
-      collect(node->r.get(), bound, reads, assigned);
+      collect(node->r.get(), bound, reads, assigned, depth + 1);
       return;
     }
 
@@ -3186,38 +3200,38 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
       // for the duration of the third.
       if (node->spec && node->spec->binds && node->items.size() == 3 &&
           node->items[1]->t == NT::Var) {
-        collect(node->items[0].get(), bound, reads, assigned);
+        collect(node->items[0].get(), bound, reads, assigned, depth + 1);
         std::set<std::string> inner = bound;
         inner.insert(node->items[1]->s);
         inner.insert("_K");
-        collect(node->items[2].get(), inner, reads, assigned);
+        collect(node->items[2].get(), inner, reads, assigned, depth + 1);
         return;
       }
       if (node->spec && node->spec->binds && node->items.size() == 2) {
-        collect(node->items[0].get(), bound, reads, assigned);
+        collect(node->items[0].get(), bound, reads, assigned, depth + 1);
         std::set<std::string> inner = bound;
         inner.insert("_");
         inner.insert("_K");
-        collect(node->items[1].get(), inner, reads, assigned);
+        collect(node->items[1].get(), inner, reads, assigned, depth + 1);
         return;
       }
-      for (const auto& arg : node->items) collect(arg.get(), bound, reads, assigned);
+      for (const auto& arg : node->items) collect(arg.get(), bound, reads, assigned, depth + 1);
       return;
     }
 
     case NT::Seq:
     case NT::List:
-      for (const auto& item : node->items) collect(item.get(), bound, reads, assigned);
+      for (const auto& item : node->items) collect(item.get(), bound, reads, assigned, depth + 1);
       return;
 
     case NT::Index:
     case NT::Bin:
-      collect(node->l.get(), bound, reads, assigned);
-      collect(node->r.get(), bound, reads, assigned);
+      collect(node->l.get(), bound, reads, assigned, depth + 1);
+      collect(node->r.get(), bound, reads, assigned, depth + 1);
       return;
 
     case NT::Un:
-      collect(node->l.get(), bound, reads, assigned);
+      collect(node->l.get(), bound, reads, assigned, depth + 1);
       return;
 
     default:
@@ -3246,7 +3260,7 @@ Value Program::run() const {
 
 std::vector<std::string> Program::dependencies() const {
   std::set<std::string> bound, reads, assigned;
-  collect(ast_.get(), bound, reads, assigned);
+  collect(ast_.get(), bound, reads, assigned, 1);
   std::vector<std::string> out;
   for (const std::string& r : reads) {
     if (!assigned.count(r)) out.push_back(r);

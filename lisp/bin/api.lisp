@@ -108,5 +108,24 @@
   (handler-case (sel:make-num (make-string 2000001 :initial-element #\1))
     (sel:sel-error (e) (say "error.host.hugenum" (sel:sel-error-code e))))
 
+  ;; dependencies() walks the tree without evaluating it, so it is bounded by
+  ;; neither the parser's nesting depth nor the evaluator's -- and in every host
+  ;; it was bounded by nothing at all, until a flat chain of about fifty thousand
+  ;; operators found the host's own stack. It shares the evaluation cap now, and
+  ;; trips at the same node: a program whose dependencies cannot be computed is
+  ;; exactly a program that could not have been evaluated. Both sides are pinned,
+  ;; because a walk that counts twice or not at all fails one of them.
+  (flet ((chain (n)
+           (with-output-to-string (s)
+             (write-string "A" s)
+             (dotimes (i n) (write-string "+A" s)))))
+    (say "deps.depth.under"
+         (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source (chain 199)))))
+    (handler-case (sel:dependencies (sel:compile-source (chain 200)))
+      (sel:sel-error (e)
+        (say "deps.depth.over"
+             (format nil "~a ~d:~d" (sel:sel-error-code e)
+                     (sel:sel-error-line e) (sel:sel-error-col e))))))
+
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

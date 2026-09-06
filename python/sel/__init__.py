@@ -17,8 +17,8 @@ from __future__ import annotations
 from typing import Any
 
 from . import builtins as _builtins   # noqa: F401  registers the function table
-from .errors import Pos, SelError
-from .eval import Context, eval_node
+from .errors import Pos, SelError, fail
+from .eval import MAX_DEPTH, Context, eval_node
 from .parser import Node, parse
 from .registry import names as _names
 from .value import BIN, BOOL, NONE, TEXT, Value
@@ -53,13 +53,29 @@ class Program:
         """
         reads: set[str] = set()
         assigned: set[str] = set()
-        _collect(self.ast, frozenset(), reads, assigned)
+        _collect(self.ast, frozenset(), reads, assigned, 1)
         return sorted(n for n in reads if n not in assigned)
 
 
-def _collect(node: Node | None, bound: frozenset, reads: set, assigned: set) -> None:
+def _collect(node: Node | None, bound: frozenset, reads: set, assigned: set,
+             depth: int) -> None:
+    """The static walk of the tree, and the third thing in each host that recurses
+over it. spec/SPEC.md 6.4 caps the other two -- the parser's nesting and the
+evaluator's -- and says why: uncounted recursion over a tree the source can
+make arbitrarily deep reaches the host's own stack limit. This walk was
+uncounted, and `dependencies()` on a flat chain of about 48,000 operators
+raised an uncaught RecursionError, which is not a SEL error at all.
+
+The depth rides as a parameter rather than as a counter with a guard, because
+there is nothing to release on the way out -- which is also what lets the five
+hosts spell this identically. Capped at the same MAX_DEPTH the evaluator uses
+and tripping at the same node, so a program whose dependencies cannot be
+computed is exactly a program that could not have been evaluated.
+    """
     if node is None:
         return
+    if depth > MAX_DEPTH:
+        fail('E_DEPTH', 'expression nested too deeply', node.pos)
     t = node.t
 
     if t == 'var':
@@ -70,50 +86,50 @@ def _collect(node: Node | None, bound: frozenset, reads: set, assigned: set) -> 
     if t == 'assign':
         target = node.target
         while target.t == 'index':
-            _collect(target.idx, bound, reads, assigned)
+            _collect(target.idx, bound, reads, assigned, depth + 1)
             target = target.obj
         # `A = x` defines A; `A[k] = x` and `A += x` also read it.
         if node.target.t != 'var' or node.op != '=':
             if target.name not in bound:
                 reads.add(target.name)
         assigned.add(target.name)
-        _collect(node.value, bound, reads, assigned)
+        _collect(node.value, bound, reads, assigned, depth + 1)
         return
 
     if t == 'call':
         # An aggregate's three-argument form binds its second argument as a name
         # for the duration of the third.
         if node.spec and node.spec.binds and len(node.args) == 3 and node.args[1].t == 'var':
-            _collect(node.args[0], bound, reads, assigned)
+            _collect(node.args[0], bound, reads, assigned, depth + 1)
             inner = bound | {node.args[1].name, '_K'}
-            _collect(node.args[2], inner, reads, assigned)
+            _collect(node.args[2], inner, reads, assigned, depth + 1)
             return
         if node.spec and node.spec.binds and len(node.args) == 2:
-            _collect(node.args[0], bound, reads, assigned)
+            _collect(node.args[0], bound, reads, assigned, depth + 1)
             inner = bound | {'_', '_K'}
-            _collect(node.args[1], inner, reads, assigned)
+            _collect(node.args[1], inner, reads, assigned, depth + 1)
             return
         for a in node.args:
-            _collect(a, bound, reads, assigned)
+            _collect(a, bound, reads, assigned, depth + 1)
         return
 
     if t in ('seq', 'list'):
         for item in node.items:
-            _collect(item, bound, reads, assigned)
+            _collect(item, bound, reads, assigned, depth + 1)
         return
 
     if t == 'index':
-        _collect(node.obj, bound, reads, assigned)
-        _collect(node.idx, bound, reads, assigned)
+        _collect(node.obj, bound, reads, assigned, depth + 1)
+        _collect(node.idx, bound, reads, assigned, depth + 1)
         return
 
     if t == 'bin':
-        _collect(node.l, bound, reads, assigned)
-        _collect(node.r, bound, reads, assigned)
+        _collect(node.l, bound, reads, assigned, depth + 1)
+        _collect(node.r, bound, reads, assigned, depth + 1)
         return
 
     if t == 'un':
-        _collect(node.x, bound, reads, assigned)
+        _collect(node.x, bound, reads, assigned, depth + 1)
         return
 
 
