@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Translate a corpus of SEL programs and print one canonical line each.
+
+    python/bin/sqlfuzz corpus.selc [dialect]
+
+The counterpart of js/bin/sqlfuzz.mjs and php/bin/sqlfuzz; see the first for why
+this lane exists. The corpus format and the one-line-per-program protocol are
+specified in tools/README.md.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# The source tree is added only when `sel` is not already importable, so running
+# this under the wheel's interpreter grades the WHEEL. Same probe as sqlt.
+try:
+    import sel as _probe                                            # noqa: F401
+except ImportError:
+    sys.path.insert(0, os.path.join(_HERE, '..'))
+
+import sel                                                          # noqa: E402
+from sel.errors import SelError                                     # noqa: E402
+from sel.sql import Sql, SqlError                                   # noqa: E402
+
+
+def read_corpus(text: str) -> list[str]:
+    records: list[list[str]] = []
+    cur: list[str] | None = None
+    # .split('\n') and remove exactly one trailing newline: splitlines() would
+    # also break on \v, \f and U+2028, which the corpus contains deliberately.
+    for line in text.split('\n'):
+        if line.startswith('### '):
+            cur = []
+            records.append(cur)
+            continue
+        if cur is not None:
+            cur.append(line)
+    out = []
+    for lines in records:
+        joined = '\n'.join(lines)
+        out.append(joined[:-1] if joined.endswith('\n') else joined)
+    return out
+
+
+def main(argv: list[str]) -> int:
+    path = argv[1]
+    dialect = argv[2] if len(argv) > 2 else 'mariadb'
+    with open(path, encoding='utf-8') as fh:
+        corpus = read_corpus(fh.read())
+
+    lines = []
+    for src in corpus:
+        try:
+            program = sel.compile(src)
+        except SelError:
+            lines.append('-')
+            continue
+        except Exception as e:                                      # noqa: BLE001
+            lines.append(f'!HOST {type(e).__name__}')
+            continue
+        try:
+            # Three renderings; see js/bin/sqlfuzz.mjs for why.
+            f = Sql.translate(program, dialect)
+            lines.append(' | '.join([
+                f.as_value(), f.as_value('params'),
+                ','.join(v.dump() for v in f.bindings())]))
+        except SqlError as e:
+            lines.append(f'!{e.code}@{e.line}:{e.col}')
+        except SelError as e:
+            lines.append(f'!SEL {e.code}@{e.line}:{e.col}')
+        except Exception as e:                                      # noqa: BLE001
+            lines.append(f'!HOST {type(e).__name__}: {e}')
+
+    sys.stdout.reconfigure(encoding='utf-8', newline='\n')
+    sys.stdout.write('\n'.join(l.replace('\n', '\\n') for l in lines) + '\n')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))

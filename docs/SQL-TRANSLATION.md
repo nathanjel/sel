@@ -2456,7 +2456,11 @@ remembering because no PHP-against-Python comparison could ever have found it:
 only witness the next four ports inherit automatically: mutations target PHP and
 JSON, and `sql/oracle/` is PHP-only.
 
-**M7 — superseded, and the reason is worth keeping.** As planned this was
+**M7 — superseded, and the reason is worth keeping.** *(The replacement it
+named — translate each fuzzed program with every host that has a translator
+and diff the result, no database needed — was finally built: `impl_sqlfuzz`
+and the first half of `tools/fuzz-sql.sh`. Until then the whole SQL fuzz lane
+was a no-op wherever no DSN was set.)* As planned this was
 "`python/tests/sql/`, the differential runner, the three backends" — a second
 database harness in the second host. It is not being built. `sql/oracle/`
 measures whether the *map* means what SEL means, and the map is data both hosts

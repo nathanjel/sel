@@ -176,6 +176,27 @@ impl_sql() {
 # and by a real database. Where impl_sql asks "is this the string we meant to
 # emit?", this asks "does that string mean what SEL means?" -- the question a
 # case file cannot answer about itself. Skips itself when no DSN is set.
+# Translate a corpus and print one canonical line per program, so that the hosts
+# WITH a translator can be diffed against each other. This is the lane
+# docs/SQL-TRANSLATION.md §14 M7 asked for: impl_oracle answers "does the emitted
+# SQL mean what SEL means?" and needs a database, this one answers "do the hosts
+# emit the same thing?" and needs nothing -- which matters, because without it
+# the SQL fuzz step did nothing at all on a machine with no DSN, and that is
+# every machine by default.
+impl_sqlfuzz() {
+  local impl="$1"; shift
+  case "$impl" in
+    php)  php $SEL_PHP_FLAGS php/bin/sqlfuzz "$@" ;;
+    js)   node js/bin/sqlfuzz.mjs "$@" ;;
+    # The bundle does not import the SQL layer; see impl_sql.
+    js-bundle|js-bundle-min) return 0 ;;
+    cpp|lisp) return 0 ;;                       # no SQL layer yet
+    python) PYTHONPATH="$PWD/python" python3 python/bin/sqlfuzz "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlfuzz "$@" ;;
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
 impl_oracle() {
   local impl="$1"; shift
   case "$impl" in

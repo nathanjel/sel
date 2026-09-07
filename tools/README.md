@@ -38,6 +38,7 @@ rather than a comparison of the standard library with itself.
 |---|---|---|---|
 | `conformance [file…]` | `conformance/*.selt` | a human report | non-zero on any failure |
 | `batch [--show] <corpus>` | a corpus file | one canonical line per program | 0 unless it cannot read the corpus |
+| `sqlfuzz <corpus> [dialect]` | a corpus file | one canonical line per program: the inline SQL, the `params` SQL and the bound values, or a refusal | 0 unless it cannot read the corpus |
 | `e2e` | `examples/order-validation.sel` | the scenario report | 0 |
 | `api` | nothing | the API parity report, one `NN name = value` line per probe | 0 |
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
