@@ -13,6 +13,7 @@
 // this project. See the traps list in docs/EXTENDING.md.
 
 #include "sel.hpp"
+#include "sel_ast.hpp"
 
 // SEL rejects \p{...} at compile time as non-portable, so SRELL's Unicode
 // property tables are unreachable from this language. Leaving them out cuts the
@@ -51,6 +52,13 @@ namespace {
 [[noreturn]] void fail(const char* code, const std::string& message, Pos pos = {}) {
   throw SelError(code, message, pos);
 }
+
+// spec/SPEC.md §6.4's three caps live in sel.hpp now: the SEL->SQL translator is
+// a fourth caller and is a separate translation unit, and one number cannot be
+// in an anonymous namespace and shared at the same time. Nothing is declared
+// here, deliberately -- a second definition at this scope would be ambiguous
+// with sel::MAX_DEPTH rather than shadowing it, which is the compiler making the
+// same point.
 
 }  // namespace
 
@@ -215,9 +223,19 @@ int bytes_compare(std::string_view a, std::string_view b) {
 
 constexpr long long DIV_SCALE = 10;
 
-// An upper bound on any scale a built-in will construct. Not a language limit —
-// spec/SPEC.md sets none — but a value beyond this asks for a string longer than
-// memory, and failing with E_RANGE beats either a wrapped integer or a crash.
+// spec/SPEC.md §6.4. These bound the *value*; MAX_SCALE and MAX_POWER below
+// bound *arguments*, and an argument cap is not a value cap — POWER's base is
+// unbounded, so nesting one POWER inside another multiplies the exponents and
+// steps straight over MAX_POWER. Two independent numbers rather than one shared
+// budget, because ROUND(99.5, 1000000) is 1 000 002 digits and legal under the
+// scale cap: a shared budget would have shrunk what the spec already sanctions.
+constexpr long long MAX_INT_DIGITS = 1000000;
+constexpr long long MAX_FRAC_DIGITS = 1000000;
+
+// Upper bounds on the arguments that name a size, from spec/SPEC.md §6.4's
+// first table. These are not the same as the value caps above: they bound what
+// a call may ask for, not how big the answer may be, and an argument cap alone
+// left POWER's base free to step over MAX_POWER by nesting.
 constexpr long long MAX_SCALE = 1000000;
 constexpr long long MAX_POWER = 100000;
 constexpr long long MAX_QUANTIFIER = 65535;   // PCRE2's own hard limit
@@ -335,6 +353,23 @@ Dec dec_make(bool neg, std::string digits, long long scale) {
   return d;
 }
 
+// Refuses a value SEL cannot hold, where it is built rather than where it is
+// rendered. Every operation that can grow a number passes its result through
+// here, so dec_power — repeated squaring over dec_mul — trips on an intermediate
+// and the enormous value is never allocated.
+Dec dec_guard(Dec d, Pos pos) {
+  if (d.scale > MAX_FRAC_DIGITS) {
+    fail("E_RANGE", "number has more than " + std::to_string(MAX_FRAC_DIGITS) + " fractional digits",
+         pos);
+  }
+  // Negative when the value is below 1: those render as a single "0".
+  if (static_cast<long long>(d.digits.size()) - d.scale > MAX_INT_DIGITS) {
+    fail("E_RANGE", "number has more than " + std::to_string(MAX_INT_DIGITS) + " integer digits",
+         pos);
+  }
+  return d;
+}
+
 const Dec DEC_ZERO = dec_make(false, "0", 0);
 
 bool dec_is_number(std::string_view text) {
@@ -353,7 +388,10 @@ bool dec_is_number(std::string_view text) {
 
 // Returns false when the text is not a number; callers raise E_NOT_NUM with the
 // position of the offending node. No trimming — " 2" is not a number.
-bool dec_parse(std::string_view text, Dec& out) {
+// A well-formed numeral too big to hold is E_RANGE, not false: every character
+// of it is a digit, so "not a number" would be false. Callers that must not
+// raise — ISNUM's probe — catch it and answer no.
+bool dec_parse(std::string_view text, Dec& out, Pos pos = {}) {
   if (!dec_is_number(text)) return false;
   const bool neg = text[0] == '-';
   const std::string_view body = neg ? text.substr(1) : text;
@@ -361,7 +399,9 @@ bool dec_parse(std::string_view text, Dec& out) {
   const std::string int_part(dot == std::string_view::npos ? body : body.substr(0, dot));
   const std::string frac_part(dot == std::string_view::npos ? std::string_view()
                                                             : body.substr(dot + 1));
-  out = dec_make(neg, strip(int_part + frac_part), static_cast<long long>(frac_part.size()));
+  out = dec_guard(dec_make(neg, strip(int_part + frac_part),
+                           static_cast<long long>(frac_part.size())),
+                  pos);
   return true;
 }
 
@@ -397,20 +437,22 @@ void dec_aligned(const Dec& a, const Dec& b, std::string& A, std::string& B, lon
   B = scale_up(b.digits, s - b.scale);
 }
 
-Dec dec_add(const Dec& a, const Dec& b) {
+Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
   std::string A, B;
   long long s;
   dec_aligned(a, b, A, B, s);
-  if (a.neg == b.neg) return dec_make(a.neg, add_abs(A, B), s);
+  // Only true addition can grow: a difference is never wider than its operands,
+  // and the aligned scale is the larger of two already legal ones.
+  if (a.neg == b.neg) return dec_guard(dec_make(a.neg, add_abs(A, B), s), pos);
   const int c = cmp_abs(A, B);
   if (c == 0) return dec_make(false, "0", s);
   return c > 0 ? dec_make(a.neg, sub_abs(A, B), s) : dec_make(b.neg, sub_abs(B, A), s);
 }
 
-Dec dec_sub(const Dec& a, const Dec& b) { return dec_add(a, dec_negate(b)); }
+Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
 
-Dec dec_mul(const Dec& a, const Dec& b) {
-  return dec_make(a.neg != b.neg, mul_abs(a.digits, b.digits), a.scale + b.scale);
+Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
+  return dec_guard(dec_make(a.neg != b.neg, mul_abs(a.digits, b.digits), a.scale + b.scale), pos);
 }
 
 int dec_cmp(const Dec& a, const Dec& b) {
@@ -443,10 +485,10 @@ Dec dec_div(const Dec& a, const Dec& b, Pos pos = {}) {
       scale--;
     }
     if (digits == "0") scale = 0;
-    return dec_make(neg, digits, scale);
+    return dec_guard(dec_make(neg, digits, scale), pos);
   }
   const std::string up = cmp_abs(add_abs(r, r), D) >= 0 ? add_abs(q, "1") : q;
-  return dec_make(neg, up, DIV_SCALE);
+  return dec_guard(dec_make(neg, up, DIV_SCALE), pos);
 }
 
 // Remainder of truncated division: takes the sign of the dividend.
@@ -462,14 +504,15 @@ Dec dec_mod(const Dec& a, const Dec& b, Pos pos = {}) {
 
 // --- rounding. Every rounding in SEL is half away from zero (spec §4.4).
 
-Dec dec_round(const Dec& d, long long n) {
-  if (n >= d.scale) return dec_make(d.neg, scale_up(d.digits, n - d.scale), n);
+Dec dec_round(const Dec& d, long long n, Pos pos = {}) {
+  if (n >= d.scale) return dec_guard(dec_make(d.neg, scale_up(d.digits, n - d.scale), n), pos);
   const long long k = d.scale - n;
   const std::string p = pow10(k);
   std::string q, r;
   divmod_abs(d.digits, p, q, r);
+  // Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
   const std::string up = cmp_abs(add_abs(r, r), p) >= 0 ? add_abs(q, "1") : q;
-  return dec_make(d.neg, up, n);
+  return dec_guard(dec_make(d.neg, up, n), pos);
 }
 
 Dec dec_trunc(const Dec& d) {
@@ -503,14 +546,14 @@ bool dec_is_integer(const Dec& d) {
 
 // n must be a non-negative integer; the result scale is scale(x) * n, which
 // falls out of repeated multiplication.
-Dec dec_power(const Dec& a, long long n) {
+Dec dec_power(const Dec& a, long long n, Pos pos = {}) {
   Dec result = dec_make(false, "1", 0);
   Dec base = a;
   long long e = n;
   while (e > 0) {
-    if (e & 1) result = dec_mul(result, base);
+    if (e & 1) result = dec_mul(result, base, pos);
     e >>= 1;
-    if (e > 0) base = dec_mul(base, base);
+    if (e > 0) base = dec_mul(base, base, pos);
   }
   return result;
 }
@@ -558,17 +601,67 @@ Value::Value() : p_(std::make_shared<Impl>()) {}
 
 // The deep copy. Recursive, because children are handles too: copying the
 // vector alone would share every subtree.
-Value Value::clone() const {
+// The three recursive walks over a value, and the cap they share.
+//
+// A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
+// parser's and the evaluator's, and it was the last one left uncounted. These
+// three -- and the destructor below -- recurse once per level, so a value nested
+// deeply enough reached the host's own stack: RecursionError on Python at about
+// a thousand levels, an uncaught RangeError on JS at about four, a segfault here
+// at about sixty. Three hosts answered where two died, on the same program.
+//
+// The depth rides as a parameter, as it does in dependencies(): there is nothing
+// to release on the way out, so no guard object is needed and all five hosts
+// spell it the same way. A value of exactly MAX_DEPTH levels is fine; the level
+// past it is refused.
+//
+// `pos` is the caller's, reported when there is one: the evaluator knows which
+// node asked for the clone or the comparison, and every other E_DEPTH in this
+// file names a position. A call from host code has no node to name and passes
+// the empty Pos, the way Value::num already does.
+Value Value::clone_at(int depth, Pos pos) const {
+  if (depth > MAX_DEPTH) {
+    fail("E_DEPTH", "value nested too deeply", pos);
+  }
   Value out;
   out.p_->kind = p_->kind;
   out.p_->scalar = p_->scalar;
   out.p_->boolean = p_->boolean;
   out.p_->children.reserve(p_->children.size());
   for (const Entry& e : p_->children) {
-    out.p_->children.emplace_back(e.first, e.second.clone());
+    out.p_->children.emplace_back(e.first, e.second.clone_at(depth + 1, pos));
   }
   out.p_->index = p_->index;
   return out;
+}
+
+Value Value::clone(Pos pos) const { return clone_at(1, pos); }
+
+// Iterative, for the reason Node's destructor is: destroying a child is usually
+// the last reference to it, so freeing a deep tree recursed once per level and
+// found the stack at about a hundred thousand of them. The language cannot build
+// one that deep any more -- resolve_target refuses the path and clone_at refuses
+// the copy -- but `set()` is public, an embedding application can still nest a
+// value by hand, and a destructor is the one operation that cannot refuse.
+//
+// Same shape as Node::~Node: take this value's children into a worklist, pop,
+// and take a popped value's own children first WHEN we are its last owner and it
+// is therefore about to be destroyed.
+Value::Impl::~Impl() {
+  std::vector<std::shared_ptr<Impl>> pending;
+  const auto steal = [&pending](Impl& impl) {
+    for (Entry& e : impl.children) {
+      if (e.second.p_) pending.push_back(std::move(e.second.p_));
+    }
+    impl.children.clear();
+  };
+
+  steal(*this);
+  while (!pending.empty()) {
+    const std::shared_ptr<Impl> held = std::move(pending.back());
+    pending.pop_back();
+    if (held.use_count() == 1) steal(*held);
+  }
 }
 
 namespace {
@@ -716,19 +809,27 @@ bool Value::as_bool(Pos pos) const {
 
 bool Value::looks_numeric() const {
   if (p_->kind == Kind::None && p_->children.empty()) return false;
-  const Value* v;
+  // A well-formed numeral too big to hold raises E_RANGE out of dec_parse. The
+  // probe answers no rather than raising, so ISNUM is true exactly when the
+  // value can be used as a number — before the cap it said true for a
+  // 2 000 000-digit text that then failed on first use.
   try {
-    v = &scalar_source();
+    const Value& v = scalar_source();
+    Dec d;
+    return v.p_->kind == Kind::Text && sel::dec_parse(v.p_->scalar, d);
   } catch (const SelError&) {
     return false;
   }
-  Dec d;
-  return v->p_->kind == Kind::Text && sel::dec_parse(v->p_->scalar, d);
 }
 
 // Same kind, equal scalars with numbers *not* normalised, children with the same
 // keys in the same order, pairwise EQL.
-bool Value::eql(const Value& other) const {
+bool Value::eql(const Value& other, Pos pos) const { return eql_at(other, 1, pos); }
+
+bool Value::eql_at(const Value& other, int depth, Pos pos) const {
+  if (depth > MAX_DEPTH) {
+    fail("E_DEPTH", "value nested too deeply", pos);
+  }
   if (p_->kind != other.p_->kind) return false;
   if (p_->kind == Kind::Text || p_->kind == Kind::Bin) {
     if (p_->scalar != other.p_->scalar) return false;
@@ -738,12 +839,19 @@ bool Value::eql(const Value& other) const {
   if (p_->children.size() != other.p_->children.size()) return false;
   for (std::size_t i = 0; i < p_->children.size(); i++) {
     if (p_->children[i].first != other.p_->children[i].first) return false;   // order is normative
-    if (!p_->children[i].second.eql(other.p_->children[i].second)) return false;
+    if (!p_->children[i].second.eql_at(other.p_->children[i].second, depth + 1, pos)) {
+      return false;
+    }
   }
   return true;
 }
 
-std::string Value::dump() const {
+std::string Value::dump() const { return dump_at(1); }
+
+std::string Value::dump_at(int depth) const {
+  if (depth > MAX_DEPTH) {
+    fail("E_DEPTH", "value nested too deeply", {});
+  }
   std::string s;
   switch (p_->kind) {
     case Kind::None: s = "-"; break;
@@ -755,7 +863,8 @@ std::string Value::dump() const {
   s += "{";
   for (std::size_t i = 0; i < p_->children.size(); i++) {
     if (i > 0) s += ", ";
-    s += sel::quote_dump(p_->children[i].first) + "=" + p_->children[i].second.dump();
+    s += sel::quote_dump(p_->children[i].first) + "=" +
+         p_->children[i].second.dump_at(depth + 1);
   }
   return s + "}";
 }
@@ -793,22 +902,7 @@ std::string quote_dump(std::string_view s) {
 // unknown name and a wrong argument count be compile-time errors.
 // ============================================================================
 
-class Args;
-struct Context;
 
-constexpr int VARIADIC = 1 << 20;
-
-struct Spec {
-  std::string name;
-  int min = 0;
-  int max = 0;
-  bool lazy = false;
-  bool binds = false;   // introduces an element binder; see dependencies()
-  // Optional extra arity rule, checked after min/max. Returns a message when the
-  // count is wrong and an empty string when it is fine.
-  std::string (*arity_error)(int) = nullptr;
-  Value (*fn)(Args&, Context&) = nullptr;
-};
 
 // A function-local static, so the table is built on first use rather than
 // depending on the order of static initialisers across the translation unit.
@@ -1183,31 +1277,19 @@ std::vector<Token> tokenize(const std::string& source) { return Lexer(source).to
 // ============================================================================
 // --- parser
 //
-// Recursive descent, one function per precedence level, mirroring
-// spec/grammar.md exactly so that the four implementations can be read side by
-// side.
+// Precedence climbing. The sixteen levels of spec/SPEC.md §5 are the table
+// below rather than sixteen functions, so adding an operator is adding a row.
+// python/sel/parser.py is the reference implementation of this shape and its
+// module docstring is the rationale; docs/EXTENDING.md, "Adding an operator",
+// step 5, records what every host had to get right, each item of which
+// produces a valid parse of the WRONG TREE when it is wrong.
+//
+// `;` and `,` stay hand-written N-ary loops outside the table, because they
+// build N-ary nodes rather than binary ones -- dependencies() walks `items`,
+// and parse_call flattens a top-level list into the argument vector.
 // ============================================================================
 
-enum class NT { Num, Text, Bool, Var, Index, Seq, List, Un, Bin, Assign, Call };
-
-struct Node {
-  NT t = NT::Num;
-  Pos pos;
-
-  std::string s;        // Num/Text: the literal. Var: the name. Un/Bin/Assign: the operator.
-  bool b = false;       // Bool: the value.
-  bool grouped = false; // came from ( ), so F((1,2)) passes one list not two arguments
-
-  std::shared_ptr<const Node> l, r;       // Bin: operands. Index: obj, idx. Assign: target, value.
-  std::vector<std::shared_ptr<const Node>> items;   // Seq/List/Call arguments
-  const Spec* spec = nullptr;             // Call
-};
-
-using NodePtr = std::shared_ptr<const Node>;
-
 namespace {
-
-constexpr int MAX_DEPTH = 200;
 
 std::string describe(const Token& t) {
   switch (t.type) {
@@ -1225,20 +1307,61 @@ std::string arity_text(const Spec& spec) {
   return std::to_string(spec.min) + " to " + std::to_string(spec.max) + " arguments";
 }
 
-bool is_assign_op(const Token& t) {
+// The operator families, named once for the PARSER. The precedence table is
+// built from these rather than repeating them, and the evaluator asks
+// compare_ops() whether an operator is a numeric comparison -- so the parser
+// and the evaluator cannot disagree about what a comparison is.
+//
+// That is the whole of the claim. Adding a comparison operator is still three
+// edits, and they are here, in operators() for the lexer, and in
+// compare_result() for its meaning. The third used to be the dangerous one: its
+// last branch answered for every operator it did not name, so an operator added
+// to the first two and forgotten here silently meant ">=". It now fails.
+const std::set<std::string>& assign_ops() {
   static const std::set<std::string> ops = {"=", "+=", "-=", "*=", "/=", "%=", "&="};
-  return t.type == Tok::Op && ops.count(t.value) > 0;
+  return ops;
+}
+
+const std::set<std::string>& compare_ops() {
+  static const std::set<std::string> ops = {"==", "!=", "<", "<=", ">", ">=",
+                                            "$==", "$!=", "$<", "$<=", "$>", "$>="};
+  return ops;
+}
+
+const std::set<std::string>& compare_words() {
+  static const std::set<std::string> words = {"EQL", "IN"};
+  return words;
 }
 
 bool is_compare_op(const Token& t) {
-  static const std::set<std::string> ops = {"==", "!=", "<", "<=", ">", ">=",
-                                            "$==", "$!=", "$<", "$<=", "$>", "$>="};
-  return t.type == Tok::Op && ops.count(t.value) > 0;
+  return t.type == Tok::Op && compare_ops().count(t.value) > 0;
 }
 
-bool is_compare_word(const Token& t) {
-  return t.type == Tok::Ident && (t.value == "EQL" || t.value == "IN");
-}
+// spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
+// that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
+[[maybe_unused]] constexpr int BP_SEQ = 1;    // ;  documentation only:
+[[maybe_unused]] constexpr int BP_LIST = 2;   // ,  both are N-ary loops
+constexpr int BP_ASSIGN = 3;    // = += -= *= /= %= &=   (right associative)
+constexpr int BP_OR = 4;
+constexpr int BP_XOR = 5;
+constexpr int BP_AND = 6;
+constexpr int BP_NOT = 7;       // prefix
+constexpr int BP_COMPARE = 8;   // non-associative
+constexpr int BP_BOR = 9;
+constexpr int BP_BXOR = 10;
+constexpr int BP_BAND = 11;
+constexpr int BP_CONCAT = 12;   // &
+constexpr int BP_ADD = 13;      // + -
+constexpr int BP_MUL = 14;      // * / %
+constexpr int BP_NEG = 15;      // prefix
+
+// An infix operator's binding power and associativity. 'L' parses its right
+// side at bp + 1, 'R' at bp -- that is what makes it right-associative -- and
+// 'N' at bp + 1 and then rejects a second operator at the same level.
+struct Infix {
+  int bp;
+  char assoc;
+};
 
 // The target must be an identifier followed by zero or more index operations.
 void check_target(const NodePtr& node, const Token& op_tok) {
@@ -1267,7 +1390,6 @@ class Parser {
   const Token& peek() const { return toks_[i_]; }
   const Token& next() { return toks_[i_++]; }
   bool at_op(const char* v) const { return peek().type == Tok::Op && peek().value == v; }
-  bool at_word(const char* v) const { return peek().type == Tok::Ident && peek().value == v; }
   bool at_eof() const { return peek().type == Tok::Eof; }
 
   void expect_op(const char* v) {
@@ -1282,6 +1404,18 @@ class Parser {
   }
   void leave() { depth_--; }
 
+  // C++ has no `finally`, so every enter() is released by one of these going out
+  // of scope -- including on the throw fail() raises, which is the whole point.
+  // It was written out locally at each of the four counted constructs; the fifth
+  // is what made one type worth having.
+  struct Leave {
+    Parser* p;
+    explicit Leave(Parser* parser) : p(parser) {}
+    ~Leave() { p->leave(); }
+    Leave(const Leave&) = delete;
+    Leave& operator=(const Leave&) = delete;
+  };
+
   static std::shared_ptr<Node> make(NT t, Pos pos) {
     auto n = std::make_shared<Node>();
     n->t = t;
@@ -1290,29 +1424,37 @@ class Parser {
   }
 
   // sequence = list { ";" list } [ ";" ]
+  //
+  // The guard around the counter is the last of the five to be protected. It
+  // costs nothing -- a failing parse abandons the Parser either way -- and this
+  // host was the only one left leaving it to fall through, which is the first
+  // thing a reviewer asks about.
   NodePtr parse_sequence() {
     const Pos start = peek().pos;
     enter(start);
-    std::vector<NodePtr> items{parse_list()};
-    while (at_op(";")) {
-      next();
-      // A trailing ';' before a closer or end of input is permitted.
-      if (at_eof() || at_op(")") || at_op("]")) break;
+    std::vector<NodePtr> items;
+    {
+      const Leave leave_guard{this};
       items.push_back(parse_list());
+      while (at_op(";")) {
+        next();
+        // A trailing ';' before a closer or end of input is permitted.
+        if (at_eof() || at_op(")") || at_op("]")) break;
+        items.push_back(parse_list());
+      }
     }
-    leave();
     if (items.size() == 1) return items[0];
     auto n = make(NT::Seq, items[0]->pos);
     n->items = std::move(items);
     return n;
   }
 
-  // list = assignment { "," assignment }
+  // list = term { "," term }
   NodePtr parse_list() {
-    std::vector<NodePtr> items{parse_assignment()};
+    std::vector<NodePtr> items{parse_term(BP_ASSIGN)};
     while (at_op(",")) {
       next();
-      items.push_back(parse_assignment());
+      items.push_back(parse_term(BP_ASSIGN));
     }
     if (items.size() == 1) return items[0];
     auto n = make(NT::List, items[0]->pos);
@@ -1320,138 +1462,165 @@ class Parser {
     return n;
   }
 
-  // assignment = disjunction [ assign_op assignment ]   (right associative)
-  NodePtr parse_assignment() {
-    NodePtr left = parse_or();
-    if (is_assign_op(peek())) {
-      const Token op = next();
-      check_target(left, op);
-      NodePtr value = parse_assignment();
-      auto n = make(NT::Assign, left->pos);
-      n->s = op.value;
-      n->l = left;
-      n->r = value;
-      return n;
-    }
-    return left;
-  }
+  // --- the precedence-climbing loop -----------------------------------------
 
-  NodePtr parse_or() { return parse_word_binary("OR", &Parser::parse_xor); }
-  NodePtr parse_xor() { return parse_word_binary("XOR", &Parser::parse_and); }
-  NodePtr parse_and() { return parse_word_binary("AND", &Parser::parse_not); }
-
-  NodePtr parse_word_binary(const char* word, NodePtr (Parser::*sub)()) {
-    NodePtr left = (this->*sub)();
-    while (at_word(word)) {
-      const Token op = next();
-      NodePtr right = (this->*sub)();
-      auto n = make(NT::Bin, op.pos);
-      n->s = word;
-      n->l = left;
-      n->r = right;
-      left = n;
-    }
-    return left;
-  }
-
-  // negation = "NOT" negation | comparison
+  // The two tables are one lookup. Every question about an operator -- what it
+  // binds at, how it associates, and whether it may follow a comparison -- is
+  // answered from here, so adding an operator really is adding a row. Asking a
+  // separate list anywhere would put that claim back in doubt.
   //
-  // Counted. A prefix operator recurses into itself without passing through
-  // parse_sequence or parse_primary, which are the only two places depth is
-  // tracked — so an unbounded chain of them reached this host's own stack limit
-  // instead of E_DEPTH, and `--------...1` at about twenty thousand characters
-  // segfaulted the process. parse_unary below had the identical hazard. C++ has
-  // no `finally`, so the counter is released by the same RAII guard
-  // parse_primary uses. Entered only when a prefix operator is actually
-  // consumed, so every other expression's trip point is unchanged.
-  NodePtr parse_not() {
-    if (at_word("NOT")) {
-      const Token op = next();
-      enter(op.pos);
-      struct Leave {
-        Parser* p;
-        ~Leave() { p->leave(); }
-      } leave_guard{this};
-      auto n = make(NT::Un, op.pos);
-      n->s = "NOT";
-      n->l = parse_not();
-      return n;
-    }
-    return parse_comparison();
+  // Two tables and not one because word operators lex as identifiers and symbol
+  // operators as ops, so they cannot share a key space; the binding powers are
+  // one scale. Returns nullptr for a token that is not an infix operator, which
+  // is the same answer as "stop here".
+  static const Infix* infix_entry(const Token& t) {
+    static const std::map<std::string, Infix> ops = [] {
+      std::map<std::string, Infix> m = {
+          {"&", {BP_CONCAT, 'L'}},
+          {"+", {BP_ADD, 'L'}}, {"-", {BP_ADD, 'L'}},
+          {"*", {BP_MUL, 'L'}}, {"/", {BP_MUL, 'L'}}, {"%", {BP_MUL, 'L'}},
+      };
+      for (const std::string& op : assign_ops()) m[op] = {BP_ASSIGN, 'R'};
+      for (const std::string& op : compare_ops()) m[op] = {BP_COMPARE, 'N'};
+      return m;
+    }();
+    static const std::map<std::string, Infix> words = [] {
+      std::map<std::string, Infix> m = {
+          {"OR", {BP_OR, 'L'}}, {"XOR", {BP_XOR, 'L'}}, {"AND", {BP_AND, 'L'}},
+          {"BOR", {BP_BOR, 'L'}}, {"BXOR", {BP_BXOR, 'L'}}, {"BAND", {BP_BAND, 'L'}},
+      };
+      for (const std::string& w : compare_words()) m[w] = {BP_COMPARE, 'N'};
+      return m;
+    }();
+
+    const std::map<std::string, Infix>* table = nullptr;
+    if (t.type == Tok::Op) table = &ops;
+    else if (t.type == Tok::Ident) table = &words;
+    else return nullptr;
+    const auto it = table->find(t.value);
+    return it == table->end() ? nullptr : &it->second;
   }
 
-  // comparison = bit_or [ compare_op bit_or ]   — deliberately non-associative
-  NodePtr parse_comparison() {
-    NodePtr left = parse_bit_or();
-    const Token t = peek();
-    if (!is_compare_op(t) && !is_compare_word(t)) return left;
+  NodePtr parse_term(int min_bp) {
+    NodePtr left = parse_prefix(min_bp);
 
-    next();
-    NodePtr right = parse_bit_or();
-    const Token& after = peek();
-    if (is_compare_op(after) || is_compare_word(after)) {
-      fail("E_SYNTAX",
-           "comparison operators do not chain — parenthesise, as in (a " + t.value + " b) AND (b " +
-               after.value + " c)",
-           after.pos);
-    }
-    auto n = make(NT::Bin, t.pos);
-    n->s = t.value;
-    n->l = left;
-    n->r = right;
-    return n;
-  }
-
-  NodePtr parse_bit_or() { return parse_word_binary("BOR", &Parser::parse_bit_xor); }
-  NodePtr parse_bit_xor() { return parse_word_binary("BXOR", &Parser::parse_bit_and); }
-  NodePtr parse_bit_and() { return parse_word_binary("BAND", &Parser::parse_concat); }
-
-  NodePtr parse_concat() { return parse_op_binary({"&"}, &Parser::parse_additive); }
-  NodePtr parse_additive() { return parse_op_binary({"+", "-"}, &Parser::parse_multiplicative); }
-  NodePtr parse_multiplicative() { return parse_op_binary({"*", "/", "%"}, &Parser::parse_unary); }
-
-  NodePtr parse_op_binary(std::initializer_list<const char*> ops, NodePtr (Parser::*sub)()) {
-    NodePtr left = (this->*sub)();
     for (;;) {
       const Token t = peek();
-      if (t.type != Tok::Op) return left;
-      bool match = false;
-      for (const char* op : ops) {
-        if (t.value == op) { match = true; break; }
-      }
-      if (!match) return left;
+      const Infix* e = infix_entry(t);
+      if (e == nullptr || e->bp < min_bp) return left;
+
       next();
+
+      if (e->assoc == 'R') {
+        // Assignment. The target is validated against the AST shape, not against
+        // a value, which is what makes `(A) = 1` a compile error.
+        check_target(left, t);
+        // Counted, for the same reason parse_prefix counts: the right side
+        // recurses through neither parse_sequence nor parse_primary, so
+        // uncounted a chain of assignments is bounded by nothing but this host's
+        // own stack -- `A=` forty-four thousand times terminated it with SIGSEGV
+        // through the public CLI.
+        enter(t.pos);
+        const Leave leave_guard{this};
+        auto n = make(NT::Assign, left->pos);
+        n->s = t.value;
+        n->l = left;
+        n->r = parse_term(e->bp);        // bp, not bp + 1: right associative
+        left = n;
+        continue;
+      }
+
+      if (e->assoc == 'N') {
+        // Deliberately non-associative, and the E_SYNTAX is reported at the
+        // SECOND operator rather than at the first or at the expression.
+        NodePtr right = parse_term(e->bp + 1);
+        const Token& after = peek();
+        const Infix* ae = infix_entry(after);
+        if (ae != nullptr && ae->assoc == 'N') {
+          fail("E_SYNTAX",
+               "comparison operators do not chain — parenthesise, as in (a " + t.value +
+                   " b) AND (b " + after.value + " c)",
+               after.pos);
+        }
+        auto n = make(NT::Bin, t.pos);
+        n->s = t.value;
+        n->l = left;
+        n->r = right;
+        left = n;
+        continue;
+      }
+
       auto n = make(NT::Bin, t.pos);
       n->s = t.value;
       n->l = left;
-      n->r = (this->*sub)();
+      n->r = parse_term(e->bp + 1);
       left = n;
     }
   }
 
-  // unary = "-" unary | postfix
-  // Counted, for the reason given on parse_not.
-  NodePtr parse_unary() {
-    if (at_op("-")) {
-      const Token op = next();
-      enter(op.pos);
-      struct Leave {
-        Parser* p;
-        ~Leave() { p->leave(); }
-      } leave_guard{this};
-      auto n = make(NT::Un, op.pos);
-      n->s = "NEG";
-      n->l = parse_unary();
+  // NOT and unary minus.
+  //
+  // Each is accepted only where its own binding power reaches: NOT at bp 7
+  // cannot appear inside a comparison operand, which is parsed at bp 9, so
+  // `a == NOT b` falls through to parse_primary -- which sees the bare
+  // identifier NOT and raises E_RESERVED, the same error the transcribed parser
+  // gave, by a different route. `-NOT x` is E_RESERVED for the same reason.
+  //
+  // This is the part that is not textbook. Folding prefix operators into
+  // parse_primary, where precedence climbing usually puts them, would make
+  // `NOT a == b` parse as `(NOT a) == b` and would break lim.parse-depth and
+  // lim.prefix-depth-does-not-shift-parens at the same time.
+  //
+  // Counted, for the reason the two functions this replaced were counted:
+  // a prefix operator recurses through neither parse_sequence nor
+  // parse_primary, and uncounted it reached this host's own stack limit instead
+  // of E_DEPTH -- `--------...1` at about twenty thousand characters segfaulted
+  // the process. Entered only when a prefix operator is actually consumed, so
+  // every other expression's trip point is unchanged.
+  NodePtr parse_prefix(int min_bp) {
+    const Token t = peek();
+
+    if (t.type == Tok::Ident && t.value == "NOT" && min_bp <= BP_NOT) {
+      next();
+      enter(t.pos);
+      const Leave leave_guard{this};
+      auto n = make(NT::Un, t.pos);
+      n->s = "NOT";
+      n->l = parse_term(BP_NOT);
       return n;
     }
+
+    if (t.type == Tok::Op && t.value == "-" && min_bp <= BP_NEG) {
+      next();
+      enter(t.pos);
+      const Leave leave_guard{this};
+      auto n = make(NT::Un, t.pos);
+      n->s = "NEG";
+      n->l = parse_term(BP_NEG);
+      return n;
+    }
+
     return parse_postfix();
   }
 
   // postfix = primary { "[" sequence "]" }
+  //
+  // The bracket counts a level of its own. Without it an index is the one
+  // nesting door that recurses from OUTSIDE parse_primary's enter/leave -- this
+  // loop is where it happens -- so it charged one level per nesting where "(",
+  // "f(" and the prefix operators all charge two. Five stack frames against one
+  // level of the budget is the widest ratio in the grammar, and it put a[a[...]]
+  // over CPython's stack before the 200-level guard could fire: a host crash
+  // through the public CLI while this host still answered. Counting the bracket
+  // halves the density to 2.5 and moves the boundary from ~198 nestings to 99.
+  // conformance/10-limits.selt pins both sides; spec/SPEC.md §6.4 says what each
+  // nesting construct costs.
   NodePtr parse_postfix() {
     NodePtr node = parse_primary();
     while (at_op("[")) {
       const Token br = next();
+      enter(br.pos);
+      const Leave leave_guard{this};
       NodePtr idx = parse_sequence();
       expect_op("]");
       auto n = make(NT::Index, br.pos);
@@ -1465,16 +1634,13 @@ class Parser {
   NodePtr parse_primary() {
     const Token t = peek();
     enter(t.pos);
-    struct Leave {
-      Parser* p;
-      ~Leave() { p->leave(); }
-    } leave_guard{this};
+    const Leave leave_guard{this};
 
     if (t.type == Tok::Num) {
       next();
       // Canonicalised once, here: the literal 007 is the value 7.
       Dec d;
-      dec_parse(t.value, d);
+      dec_parse(t.value, d, t.pos);
       auto n = make(NT::Num, t.pos);
       n->s = dec_format(d);
       return n;
@@ -1562,6 +1728,16 @@ NodePtr parse(const std::string& source) {
 // that failed, carrying that node's position, and no layer rewrites it.
 // ============================================================================
 
+}  // namespace
+
+// Context, Args and eval_node are at sel:: scope rather than in the anonymous
+// namespace above, and not by preference: Spec's `fn` is a
+// `Value (*)(Args&, Context&)`, Node holds a `const Spec*`, and Node lives in
+// sel_ast.hpp so that a second translation unit can walk the tree. A type in an
+// anonymous namespace cannot be named across translation units, so naming Spec
+// in a header names these two as well. eval_node comes with them because its
+// declaration sits between them and has to be on the same side as its
+// definition.
 struct Context {
   Value* root;
   // Aggregate binders. The only scoping SEL has: one name for the duration of
@@ -1628,7 +1804,7 @@ class Args {
            pos_of(i));
     }
     Dec d;
-    if (!dec_parse(v.scalar(), d)) {
+    if (!dec_parse(v.scalar(), d, pos_of(i))) {
       fail("E_NOT_NUM", "not a number: \"" + v.scalar() + "\"", pos_of(i));
     }
     return d;
@@ -1671,13 +1847,22 @@ class Args {
   std::vector<std::optional<Value>> vals_;
 };
 
-bool compare_result(const std::string& op, int c) {
+namespace {
+
+bool compare_result(const std::string& op, int c, Pos pos) {
   if (op == "==") return c == 0;
   if (op == "!=") return c != 0;
   if (op == "<") return c < 0;
   if (op == "<=") return c <= 0;
   if (op == ">") return c > 0;
-  return c >= 0;   // ">="
+  if (op == ">=") return c >= 0;
+  // Not a fallthrough. `return c >= 0` stood here and answered for every
+  // operator it did not name: an operator added to the lexer and to
+  // compare_ops() but forgotten here evaluated as ">=" and reported nothing,
+  // which is the hidden assumption this project would rather fail than carry.
+  // Unreachable today -- the parser only builds these six -- and that is the
+  // point of saying so out loud.
+  fail("E_SYNTAX", "unknown comparison operator " + op, pos);
 }
 
 // TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
@@ -1742,7 +1927,7 @@ Value eval_unary(const Node& node, Context& ctx) {
   if (node.s == "NOT") return Value::boolean(!v.as_bool(node.l->pos));
   const Value& src = v.scalar_source(node.l->pos);
   Dec d;
-  if (src.kind() != Kind::Text || !dec_parse(src.scalar(), d)) {
+  if (src.kind() != Kind::Text || !dec_parse(src.scalar(), d, node.l->pos)) {
     fail("E_NOT_NUM", "expected a number", node.l->pos);
   }
   return make_num(dec_negate(d));
@@ -1759,7 +1944,7 @@ Dec as_dec(const Value& v, Pos pos) {
          pos);
   }
   Dec d;
-  if (!dec_parse(src.scalar(), d)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
+  if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
   return d;
 }
 
@@ -1787,16 +1972,16 @@ Value eval_binary(const Node& node, Context& ctx) {
   if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
     const Dec a = as_dec(l, lp);
     const Dec b = as_dec(r, rp);
-    if (op == "+") return make_num(dec_add(a, b));
-    if (op == "-") return make_num(dec_sub(a, b));
-    if (op == "*") return make_num(dec_mul(a, b));
+    if (op == "+") return make_num(dec_add(a, b, node.pos));
+    if (op == "-") return make_num(dec_sub(a, b, node.pos));
+    if (op == "*") return make_num(dec_mul(a, b, node.pos));
     if (op == "/") return make_num(dec_div(a, b, node.pos));
     return make_num(dec_mod(a, b, node.pos));
   }
 
   if (op == "&") return concat(l, r, lp, rp);
 
-  if (op == "EQL") return Value::boolean(l.eql(r));
+  if (op == "EQL") return Value::boolean(l.eql(r, node.pos));
   if (op == "IN") return Value::boolean(is_in(l, r));
   if (op == "XOR") {
     const bool a = l.as_bool(lp);
@@ -1813,12 +1998,12 @@ Value eval_binary(const Node& node, Context& ctx) {
   if (!op.empty() && op[0] == '$') {
     const std::string a = l.as_bytes(lp);
     const std::string b = r.as_bytes(rp);
-    return Value::boolean(compare_result(op.substr(1), bytes_compare(a, b)));
+    return Value::boolean(compare_result(op.substr(1), bytes_compare(a, b), node.pos));
   }
   if (is_compare_op(Token{Tok::Op, op, {}})) {
     const Dec a = as_dec(l, lp);
     const Dec b = as_dec(r, rp);
-    return Value::boolean(compare_result(op, dec_cmp(a, b)));
+    return Value::boolean(compare_result(op, dec_cmp(a, b), node.pos));
   }
 
   fail("E_SYNTAX", "unknown operator " + op, node.pos);
@@ -1871,6 +2056,16 @@ std::vector<std::string> resolve_target(const Node& target, Context& ctx) {
   if (ctx.is_bound(n->s)) {
     fail("E_BAD_ASSIGN", n->s + " is an aggregate binder and cannot be assigned", target.pos);
   }
+  // The chain was walked iteratively, which is why nothing has counted it yet:
+  // `A[1][2][3]` is a chain of index nodes, not a nesting of them, so neither
+  // the parser's depth nor the evaluator's ever sees it -- and the value it is
+  // about to build is one level deeper than the chain is long. Uncounted, that
+  // built a value deeper than clone(), dump() and eql() can walk, so the
+  // assignment succeeded and reading the result back afterwards failed. The
+  // position is the target's, which is what every other E_DEPTH here reports.
+  if (static_cast<int>(chain.size()) + 1 > MAX_DEPTH) {
+    fail("E_DEPTH", "value nested too deeply", target.pos);
+  }
   std::vector<std::string> path{n->s};
   if (chain.empty()) return path;
 
@@ -1904,7 +2099,7 @@ Value eval_assign(const Node& node, Context& ctx) {
     // side, and `A[1] = A` would answer with the A the store had just mutated
     // instead of the value that was assigned. js/src/eval.mjs:262 clones in
     // exactly this position, for exactly this reason.
-    value = eval_node(*node.r, ctx).clone();
+    value = eval_node(*node.r, ctx).clone(node.pos);
   } else {
     const Value* current = walk_create(ctx, path, path.size() - 1)->get(key);
     if (!current) fail("E_UNDEF_VAR", node.s + " needs an existing target", node.l->pos);
@@ -1921,9 +2116,9 @@ Value eval_assign(const Node& node, Context& ctx) {
       const Dec b = as_dec(rhs, vp);
       Dec res;
       switch (binop) {
-        case '+': res = dec_add(a, b); break;
-        case '-': res = dec_sub(a, b); break;
-        case '*': res = dec_mul(a, b); break;
+        case '+': res = dec_add(a, b, node.pos); break;
+        case '-': res = dec_sub(a, b, node.pos); break;
+        case '*': res = dec_mul(a, b, node.pos); break;
         case '/': res = dec_div(a, b, node.pos); break;
         default: res = dec_mod(a, b, node.pos); break;
       }
@@ -1982,6 +2177,8 @@ Value eval_dispatch(const Node& node, Context& ctx) {
   fail("E_SYNTAX", "cannot evaluate node", node.pos);
 }
 
+}  // namespace
+
 Value eval_node(const Node& node, Context& ctx) {
   if (++ctx.depth > MAX_DEPTH) {
     ctx.depth--;
@@ -1993,6 +2190,8 @@ Value eval_node(const Node& node, Context& ctx) {
   } pop{&ctx};
   return eval_dispatch(node, ctx);
 }
+
+namespace {
 
 // ============================================================================
 // --- builtins
@@ -2161,7 +2360,7 @@ void register_aggregates() {
                 Dec total = DEC_ZERO;
                 walk(a, ctx, [&total](const Value& r, const std::string&, const Value&,
                                       const Node& body) -> std::optional<Value> {
-                  total = dec_add(total, as_dec(r, body.pos));
+                  total = dec_add(total, as_dec(r, body.pos), body.pos);
                   return std::nullopt;
                 });
                 return make_num(total);
@@ -2402,7 +2601,7 @@ void register_numbers() {
                            std::to_string(MAX_SCALE),
                        a.pos_of(1));
                 }
-                return make_num(dec_round(a.dec(0), n));
+                return make_num(dec_round(a.dec(0), n, a.pos()));
               }});
   define(Spec{"POWER", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const long long n = a.non_neg_int(1);
@@ -2412,7 +2611,7 @@ void register_numbers() {
                            std::to_string(MAX_POWER),
                        a.pos_of(1));
                 }
-                return make_num(dec_power(a.dec(0), n));
+                return make_num(dec_power(a.dec(0), n, a.pos()));
               }});
 
   define(Spec{"MIN", 1, VARIADIC, false, false, nullptr, [](Args& a, Context&) -> Value {
@@ -2774,8 +2973,13 @@ std::string validate_class(const CodePoints& p, std::size_t start, const std::st
   bad_regex("unterminated character class", pattern, start, pos);
 }
 
+}  // namespace
+
 // Validates and rewrites in one pass, returning source that means the same thing
-// to every engine. All four hosts run this, so all four compile the same pattern.
+// to every engine. Every host runs this, so every host compiles the same
+// pattern -- and the SEL→SQL translator is a fifth caller from another
+// translation unit, which is why it is declared in sel_ast.hpp and defined at
+// namespace scope rather than in the anonymous namespace above.
 std::string validate_pattern(const std::string& pattern, Pos pos) {
   const CodePoints p = decode_utf8(pattern, pos);
   const std::size_t n = p.size();
@@ -2841,6 +3045,8 @@ std::string validate_pattern(const std::string& pattern, Pos pos) {
   }
   return out;
 }
+
+namespace {
 
 using Regex = srell::u32regex;
 
@@ -3022,9 +3228,23 @@ void register_builtins() {
 
 // --- dependencies -----------------------------------------------------------
 
+// The static walk of the tree, and the third thing in this host that recurses
+// over it. spec/SPEC.md §6.4 caps the other two -- the parser's nesting and the
+// evaluator's -- and says why: uncounted recursion over a tree the source can
+// make arbitrarily deep reaches the host's own stack limit, which segfaulted
+// this host and raised a host-level RangeError on JS. This walk was uncounted,
+// and did both: `sel --deps` on a flat chain of about 48,000 operators died
+// here with no error at all.
+//
+// The depth rides as a parameter rather than as a member with an RAII guard,
+// because there is nothing to release on the way out -- which is also what lets
+// the five hosts spell this identically. It is capped at the same MAX_DEPTH the
+// evaluator uses and trips at the same node, so a program whose dependencies
+// cannot be computed is exactly a program that could not have been evaluated.
 void collect(const Node* node, std::set<std::string>& bound, std::set<std::string>& reads,
-             std::set<std::string>& assigned) {
+             std::set<std::string>& assigned, int depth) {
   if (!node) return;
+  if (depth > MAX_DEPTH) fail("E_DEPTH", "expression nested too deeply", node->pos);
   switch (node->t) {
     case NT::Var:
       if (!bound.count(node->s)) reads.insert(node->s);
@@ -3034,7 +3254,7 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
       const Node* target = node->l.get();
       const Node* t = target;
       while (t->t == NT::Index) {
-        collect(t->r.get(), bound, reads, assigned);
+        collect(t->r.get(), bound, reads, assigned, depth + 1);
         t = t->l.get();
       }
       // `A = x` defines A; `A[k] = x` and `A += x` also read it.
@@ -3042,7 +3262,7 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
         if (!bound.count(t->s)) reads.insert(t->s);
       }
       assigned.insert(t->s);
-      collect(node->r.get(), bound, reads, assigned);
+      collect(node->r.get(), bound, reads, assigned, depth + 1);
       return;
     }
 
@@ -3051,38 +3271,38 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
       // for the duration of the third.
       if (node->spec && node->spec->binds && node->items.size() == 3 &&
           node->items[1]->t == NT::Var) {
-        collect(node->items[0].get(), bound, reads, assigned);
+        collect(node->items[0].get(), bound, reads, assigned, depth + 1);
         std::set<std::string> inner = bound;
         inner.insert(node->items[1]->s);
         inner.insert("_K");
-        collect(node->items[2].get(), inner, reads, assigned);
+        collect(node->items[2].get(), inner, reads, assigned, depth + 1);
         return;
       }
       if (node->spec && node->spec->binds && node->items.size() == 2) {
-        collect(node->items[0].get(), bound, reads, assigned);
+        collect(node->items[0].get(), bound, reads, assigned, depth + 1);
         std::set<std::string> inner = bound;
         inner.insert("_");
         inner.insert("_K");
-        collect(node->items[1].get(), inner, reads, assigned);
+        collect(node->items[1].get(), inner, reads, assigned, depth + 1);
         return;
       }
-      for (const auto& arg : node->items) collect(arg.get(), bound, reads, assigned);
+      for (const auto& arg : node->items) collect(arg.get(), bound, reads, assigned, depth + 1);
       return;
     }
 
     case NT::Seq:
     case NT::List:
-      for (const auto& item : node->items) collect(item.get(), bound, reads, assigned);
+      for (const auto& item : node->items) collect(item.get(), bound, reads, assigned, depth + 1);
       return;
 
     case NT::Index:
     case NT::Bin:
-      collect(node->l.get(), bound, reads, assigned);
-      collect(node->r.get(), bound, reads, assigned);
+      collect(node->l.get(), bound, reads, assigned, depth + 1);
+      collect(node->r.get(), bound, reads, assigned, depth + 1);
       return;
 
     case NT::Un:
-      collect(node->l.get(), bound, reads, assigned);
+      collect(node->l.get(), bound, reads, assigned, depth + 1);
       return;
 
     default:
@@ -3111,7 +3331,7 @@ Value Program::run() const {
 
 std::vector<std::string> Program::dependencies() const {
   std::set<std::string> bound, reads, assigned;
-  collect(ast_.get(), bound, reads, assigned);
+  collect(ast_.get(), bound, reads, assigned, 1);
   std::vector<std::string> out;
   for (const std::string& r : reads) {
     if (!assigned.count(r)) out.push_back(r);

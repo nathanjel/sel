@@ -150,13 +150,22 @@
         (make-bool (not (as-bool v (node-pos (node-l node)))))
         (make-num (dec-negate (as-dec v (node-pos (node-l node))))))))
 
-(defun compare-result (op c)
+;;; The six comparisons, and nothing else.
+;;;
+;;; The last clause was `(t (>= c 0))`, which answered for every operator it did
+;;; not name. This host is the one where that mattered most: the caller reaches
+;;; here through `(member op +compare-ops+)` and through a bare test on a
+;;; leading `$`, so an operator added to +compare-ops+ and forgotten here really
+;;; would have evaluated as `>=` and reported nothing. Unreachable today, and
+;;; that is the point of saying so out loud rather than answering.
+(defun compare-result (op c pos)
   (cond ((string= op "==") (zerop c))
         ((string= op "!=") (not (zerop c)))
         ((string= op "<") (minusp c))
         ((string= op "<=") (<= c 0))
         ((string= op ">") (plusp c))
-        (t (>= c 0))))
+        ((string= op ">=") (>= c 0))
+        (t (fail "E_SYNTAX" (format nil "unknown comparison operator ~a" op) pos))))
 
 ;;; TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
 (defun sel-concat (l r lp rp)
@@ -208,15 +217,15 @@
         ((member op '("+" "-" "*" "/" "%") :test #'string=)
          (let* ((a (as-dec l lp))
                 (b (as-dec r rp)))
-           (make-num (cond ((string= op "+") (dec-add a b))
-                           ((string= op "-") (dec-sub a b))
-                           ((string= op "*") (dec-mul a b))
+           (make-num (cond ((string= op "+") (dec-add a b (node-pos node)))
+                           ((string= op "-") (dec-sub a b (node-pos node)))
+                           ((string= op "*") (dec-mul a b (node-pos node)))
                            ((string= op "/") (dec-div a b (node-pos node)))
                            (t (dec-mod a b (node-pos node)))))))
 
         ((string= op "&") (sel-concat l r lp rp))
 
-        ((string= op "EQL") (make-bool (value-eql l r)))
+        ((string= op "EQL") (make-bool (value-eql l r (node-pos node))))
         ((string= op "IN") (make-bool (value-in l r)))
 
         ((string= op "XOR")
@@ -232,12 +241,12 @@
         ((char= (char op 0) #\$)
          (let* ((a (as-bytes l lp))
                 (b (as-bytes r rp)))
-           (make-bool (compare-result (subseq op 1) (bytes-compare a b)))))
+           (make-bool (compare-result (subseq op 1) (bytes-compare a b) (node-pos node)))))
 
         ((member op +compare-ops+ :test #'string=)
          (let* ((a (as-dec l lp))
                 (b (as-dec r rp)))
-           (make-bool (compare-result op (dec-cmp a b)))))
+           (make-bool (compare-result op (dec-cmp a b) (node-pos node)))))
 
         (t (fail "E_SYNTAX" (format nil "unknown operator ~a" op) (node-pos node)))))))
 
@@ -276,6 +285,15 @@
             (format nil "~a is an aggregate binder and cannot be assigned" (node-s n))
             (node-pos target)))
 
+    ;; The chain was walked iteratively, which is why nothing has counted it yet:
+    ;; `A[1][2][3]` is a chain of index nodes, not a nesting of them, so neither
+    ;; the parser's depth nor the evaluator's ever sees it -- and the value it is
+    ;; about to build is one level deeper than the chain is long. Uncounted, that
+    ;; built a value deeper than VALUE-COPY, VALUE-EQL and VALUE-DUMP can walk, so
+    ;; the assignment succeeded and reading the result back afterwards failed.
+    (when (> (1+ (length chain)) +max-depth+)
+      (fail "E_DEPTH" "value nested too deeply" (node-pos target)))
+
     (let ((path (list (node-s n))))
       (when (null chain)
         (return-from resolve-target path))
@@ -300,7 +318,7 @@
          (upto (1- (length path)))
          (value
            (if (string= (node-s node) "=")
-               (value-copy (eval-node (node-r node) ctx))
+               (value-copy (eval-node (node-r node) ctx) (node-pos node))
                (let ((current (value-get (walk-create ctx path upto) key)))
                  (unless current
                    (fail "E_UNDEF_VAR"
@@ -315,9 +333,9 @@
                        (let* ((a (as-dec current tp))
                               (b (as-dec rhs vp)))
                          (make-num (case binop
-                                     (#\+ (dec-add a b))
-                                     (#\- (dec-sub a b))
-                                     (#\* (dec-mul a b))
+                                     (#\+ (dec-add a b (node-pos node)))
+                                     (#\- (dec-sub a b (node-pos node)))
+                                     (#\* (dec-mul a b (node-pos node)))
                                      (#\/ (dec-div a b (node-pos node)))
                                      (t (dec-mod a b (node-pos node)))))))))))) 
     ;; Re-derived after the right-hand side ran, which may have replaced or

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Runs the SEL->SQL conformance suite against the Common Lisp implementation.
+# Run from the repository root.
+here="$(cd "$(dirname "$0")" && pwd)"
+exec sbcl --noinform --disable-debugger --non-interactive \
+  --load "$here/boot.lisp" \
+  --load "$here/sqlt.lisp" \
+  --eval '(sb-ext:exit :code (sel-sqlt:main))' \
+  --end-toplevel-options "$@"

@@ -1,0 +1,56 @@
+% A caveat is advisory by default and fatal under strict. One switch between
+% "best effort, and I know what I signed up for" and "only what is exactly
+% equivalent".
+
+### name: strict.off.division-is-translated
+--- note
+MariaDB's DECIMAL division adds four fractional digits where SEL's adds ten.
+Verified on 11.8: SELECT 1/3 is 0.3333 and SEL says 0.3333333333.
+--- dialect
+mariadb
+--- source
+1 / 3
+--- expect
+(1 / 3)
+===
+### name: strict.on.division-is-refused
+--- dialect
+mariadb
+--- options
+{"strict": true}
+--- source
+1 / 3
+--- error
+E_SQL_UNSUPPORTED 1:3
+===
+### name: strict.on.upper-is-refused
+--- note
+UPPER is ASCII-only in SEL and Unicode-aware in MariaDB.
+--- dialect
+mariadb
+--- options
+{"strict": true}
+--- source
+UPPER("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: strict.on.exact-functions-still-translate
+--- dialect
+mariadb
+--- options
+{"strict": true}
+--- source
+TRIM("  x  ")
+--- expect
+REGEXP_REPLACE('  x  ', '^[ \\t\\r\\n]+|[ \\t\\r\\n]+$', '')
+===
+### name: strict.on.comparison-is-exact
+--- dialect
+mariadb
+--- options
+{"strict": true}
+--- source
+1 < 2
+--- expect
+(1 < 2)

@@ -1,0 +1,189 @@
+% Runtime registration: what an application adds to the map at startup. The
+% runner calls Map::reset() before every case, so nothing here leaks.
+
+### name: register.define.adds-a-function
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "CRC32", {"tpl": "MY_CRC({0})", "ret": "TEXT"}]}]
+--- source
+CRC32("x")
+--- expect
+MY_CRC('x')
+===
+### name: register.define.withdraws-with-a-reason
+--- note
+The reason reaches the caller as the message, exactly as a reason authored in
+the JSON does. Same mechanism, no second path.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", "this deployment forbids case folding in SQL"]}]
+--- source
+UPPER("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: register.define.on-a-base-reaches-every-leaf
+--- note
+The precedence rule Map::entry exists to get right. The generated tables are
+pre-flattened, so consulting them per level would let mariadb's own inherited
+UPPER shadow an entry registered against ansi — and registering against a base
+is documented to reach everything below it.
+--- dialect
+mariadb
+--- register
+[{"define": ["ansi", "funcs", "UPPER", {"tpl": "ANSI_UPPER({0})", "ret": "TEXT"}]}]
+--- source
+UPPER("a")
+--- expect
+ANSI_UPPER('a')
+===
+### name: register.define.leaf-still-wins-over-a-base
+--- dialect
+mariadb
+--- register
+[{"define": ["ansi", "funcs", "UPPER", {"tpl": "ANSI_UPPER({0})", "ret": "TEXT"}]},
+ {"define": ["mariadb", "funcs", "UPPER", {"tpl": "LEAF_UPPER({0})", "ret": "TEXT"}]}]
+--- source
+UPPER("a")
+--- expect
+LEAF_UPPER('a')
+===
+### name: register.define.an-operator
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "ops", "&", {"variants": {"text": "({0} || {1})"}, "ret": "@concat"}]}]
+--- source
+"a" & "b"
+--- expect
+('a' || 'b')
+===
+### name: register.dialect.escapes-apply-longest-first
+--- note
+Escaping is a single left-to-right pass with the longest rule tried first, so
+a two-character rule fires before the one-character rule that is its prefix.
+No shipped dialect has a multi-character escape key -- mariadb maps ' and \\,
+both one character -- so the rule is a no-op on shipped data and nothing
+asserted it until a mutation reversing the sort walked through the whole
+suite. A registered dialect is the only place it can be seen.
+--- dialect
+longest
+--- register
+[{"dialect": "longest", "extends": "mariadb", "version": "10.5",
+  "lexical": {"textEscape": {"ab": "<AB>", "a": "<A>"}}}]
+--- source
+"ab"
+--- expect
+'<AB>'
+===
+### name: register.define.lexical-references-expand-at-run-time
+--- note
+The generator expands these for the shipped map. An application writing a
+template never passes through the generator and gets the same vocabulary.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "LEN", {"tpl": "LEN({0}{textCollate})", "ret": "NUM"}]}]
+--- source
+LEN("a")
+--- expect
+LEN('a' COLLATE utf8mb4_bin)
+===
+### name: register.skel.withdrawn-refuses-before-the-operands
+--- note
+A skeleton the dialect cannot express is checked BEFORE the expression's own
+operands are rendered, so the answer names the dialect gap rather than
+whatever the first operand happens to be wrong about. Python and PHP get the
+order from left-to-right argument evaluation -- `_fill_named(_skeleton(...),
+_slots(...))` -- and a host that builds the slot map as its own statement
+first reverses it, answering E_SQL_UNBOUND here instead. No shipped dialect
+withdraws inRelation, so only a registration can ask.
+--- dialect
+norel
+--- register
+[{"dialect": "norel", "extends": "mariadb", "version": "10.5"},
+ {"define": ["norel", "skel", "inRelation", null]}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "t", "alias": "oi", "scalar": "sku",
+           "fields": {"sku": {"column": "sku", "table": "oi", "type": "TEXT"}},
+           "correlate": {"raw": "oi.o = o.id"}}}
+--- source
+UNBOUND IN ITEMS
+--- error
+E_SQL_UNSUPPORTED 1:9
+===
+### name: register.since.gates-on-the-target-version
+--- note
+mariadb declares 10.5, so an entry needing 99.0 is refused. The version
+compared is always the target's, never a base's.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "99.0"}]}]
+--- source
+UPPER("a")
+--- error
+E_SQL_DIALECT 1:1
+===
+### name: register.dialect.a-newer-version-passes-the-same-gate
+--- note
+This is the whole mechanism for "keep maps for different versions": a version
+is another link in the chain and needs no special code anywhere.
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"},
+ {"define": ["mariadb", "funcs", "UPPER", {"tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "11.0"}]}]
+--- source
+UPPER("a")
+--- expect
+NEW_UPPER('a')
+===
+### name: register.dialect.inherits-everything-else
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"}]
+--- source
+"A" $== "a"
+--- expect
+(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: register.dialect.may-override-a-lexical-key
+--- dialect
+mariadb-nocollate
+--- register
+[{"dialect": "mariadb-nocollate", "extends": "mariadb", "version": "10.5",
+  "lexical": {"textCollate": " COLLATE utf8mb4_0900_bin"}}]
+--- source
+"A" $== "a"
+--- expect
+(CAST('A' AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a' AS CHAR) COLLATE utf8mb4_0900_bin)
+===
+### name: register.dialect.unknown-parent-is-a-programming-error
+--- note
+Deliberately not an E_SQL_ code. Registering against a dialect that does not
+exist is a mistake in the application's startup, not a rule that cannot be
+translated — and the difference matters, because tryTranslate() swallows the
+second and must not swallow the first. Sel\Registry::define draws the same line
+for a duplicate function.
+--- dialect
+mariadb
+--- register
+[{"dialect": "wishful", "extends": "nosuchdialect", "version": "1.0"}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: register.define.unknown-section-is-a-programming-error
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "nonesuch", "UPPER", null]}]
+--- source
+1 + 1
+--- throws
+LogicException

@@ -1,7 +1,9 @@
 // SEL — Simple Expression Language, C++23 implementation.
 //
-// Drop `sel.hpp`, `sel.cpp` and `third_party/srell/` into a project and compile
-// sel.cpp. There is nothing else to fetch and nothing to build first.
+// Drop `sel.hpp`, `sel_ast.hpp`, `sel.cpp` and `third_party/srell/` into a
+// project and compile sel.cpp. There is nothing else to fetch and nothing to
+// build first. You include this file; `sel_ast.hpp` is internal and only has to
+// sit beside `sel.cpp`.
 //
 //     #include "sel.hpp"
 //
@@ -60,6 +62,22 @@ class SelError : public std::exception {
   std::string message_;
   Pos pos_;
 };
+
+// --- limits -----------------------------------------------------------------
+
+// spec/SPEC.md §6.4's three caps, which are one number: the parser's nesting,
+// the evaluator's, and a value's. Each is a recursion over a structure the input
+// can grow without bound, and each finds this host's stack instead of an error
+// if it is not counted.
+//
+// Public because it is part of the language's contract rather than this
+// implementation's tuning -- every host caps at the same place, and a program
+// refused here is refused everywhere. The SEL->SQL translator is the caller that
+// made it public: it has a fourth use for the number, refusing to translate an
+// expression that nests deeper than SEL will evaluate rather than emitting SQL
+// for a rule that could never run. It reads this rather than repeating 200, so
+// the two cannot drift.
+inline constexpr int MAX_DEPTH = 200;
 
 // --- values -----------------------------------------------------------------
 
@@ -142,7 +160,10 @@ class Value {
 
   // --- structural equality, as EQL uses: same kind, equal scalars with numbers
   // *not* normalised, and children with the same keys in the same order.
-  bool eql(const Value& other) const;
+  //
+  // Throws E_DEPTH past the value-nesting cap, reporting `pos` when one is
+  // supplied — the same convention as as_text() and the rest.
+  bool eql(const Value& other, Pos pos = {}) const;
 
   // The canonical dump in conformance/README.md, byte-identical across every
   // implementation. Order is normative, so a dump mismatch caused purely by
@@ -152,7 +173,12 @@ class Value {
   // A deep copy, sharing nothing with this value. What `=` does in the language
   // (§5.7), and what `,` and the aggregates do with what they collect. Copying
   // a Value does *not* do this — see the note on the class.
-  Value clone() const;
+  //
+  // Throws E_DEPTH past the value-nesting cap of spec/SPEC.md §6.4, as dump()
+  // and eql() do: these three walk the tree recursively, and a value nested past
+  // the cap would find this host's own stack rather than an error. `pos` is
+  // reported when one is supplied, the same convention as as_text().
+  Value clone(Pos pos = {}) const;
 
  private:
   friend struct Internals;
@@ -172,9 +198,27 @@ class Value {
     bool boolean = false;  // BOOL only.
     std::vector<Entry> children;
     std::unordered_map<std::string, std::size_t> index;
+
+    // Torn down iteratively, for the reason Node is: destroying a child is
+    // usually the last reference to it, so freeing a deep tree recursed once per
+    // level and found the stack. The language cannot build one that deep any
+    // more, but `set()` is public and an embedding application still can, and a
+    // destructor is the one operation it cannot be refused by.
+    Impl() = default;
+    Impl(const Impl&) = default;
+    Impl& operator=(const Impl&) = default;
+    ~Impl();
   };
 
   static constexpr std::size_t INDEX_THRESHOLD = 16;
+
+  // The recursive halves of clone(), eql() and dump(). The public three are one
+  // line each; these carry the depth that spec/SPEC.md §6.4 caps, so that a
+  // value nested past it is refused rather than answered from a stack that is
+  // about to run out. Private because the depth is not the caller's business.
+  Value clone_at(int depth, Pos pos) const;
+  bool eql_at(const Value& other, int depth, Pos pos) const;
+  std::string dump_at(int depth) const;
 
   // Never null. Shared between handles; clone() is what breaks the sharing.
   //
@@ -210,6 +254,13 @@ class Program {
   std::vector<std::string> dependencies() const;
 
   const std::string& source() const { return source_; }
+
+  // The parse tree. `Node` is opaque through this header — `sel_ast.hpp` is what
+  // defines it, and only code that walks the tree needs that. Public because the
+  // SEL→SQL translator is a separate translation unit and the tree is its input;
+  // every other host exposes the same thing (`program.ast` in Python and JS,
+  // `$program->ast` in PHP, `program-ast` in Lisp).
+  std::shared_ptr<const Node> ast() const { return ast_; }
 
  private:
   std::string source_;

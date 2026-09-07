@@ -23,9 +23,9 @@ define('FLOOR', 1, 1, fn=lambda a, ctx: Value.num(D.floor(a.dec(0))))
 define('TRUNC', 1, 1, fn=lambda a, ctx: Value.num(D.trunc(a.dec(0))))
 
 define('ROUND', 2, 2,
-       fn=lambda a, ctx: Value.num(D.round(a.dec(0), _sized(a, 1, MAX_SCALE, 'ROUND scale'))))
+       fn=lambda a, ctx: Value.num(D.round(a.dec(0), _sized(a, 1, MAX_SCALE, 'ROUND scale'), a.pos)))
 define('POWER', 2, 2,
-       fn=lambda a, ctx: Value.num(D.power(a.dec(0), _sized(a, 1, MAX_POWER, 'POWER exponent'))))
+       fn=lambda a, ctx: Value.num(D.power(a.dec(0), _sized(a, 1, MAX_POWER, 'POWER exponent'), a.pos)))
 
 
 def _min(a, ctx):

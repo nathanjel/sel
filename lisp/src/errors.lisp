@@ -34,3 +34,11 @@
          :line (if at (pos-line at) 0)
          :col (if at (pos-col at) 0)
          :offset (if at (pos-offset at) 0)))
+
+;;; spec/SPEC.md §6.4's three caps, which are one number. The parser's nesting,
+;;; the evaluator's, and a value's -- each is a recursion over a structure the
+;;; input can grow without bound, and each finds this host's own control stack
+;;; instead of an error if it is not counted. It lives here, with FAIL, because
+;;; this file loads before every other and none loads before it, and because the
+;;; number and the E_DEPTH it raises are the same fact.
+(defconstant +max-depth+ 200)

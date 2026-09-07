@@ -1,0 +1,278 @@
+% The mapped functions. Argument reordering, arity-keyed templates, and the
+% wrappers that make a server's answer match SEL's.
+
+### name: func.text.upper
+--- dialect
+mariadb
+--- source
+UPPER("abc")
+--- expect
+UPPER('abc')
+===
+### name: func.text.len-counts-characters
+--- dialect
+mariadb
+--- source
+LEN("zażółć")
+--- expect
+CHAR_LENGTH('zażółć')
+===
+### name: func.text.find-reorders-its-arguments
+--- note
+SEL is FIND(needle, hay); SQL is INSTR(hay, needle). A map that could not
+reorder would need a wrapper function in every host.
+--- dialect
+mariadb
+--- source
+FIND("a", "banana")
+--- expect
+INSTR('banana', 'a')
+===
+### name: func.text.find-three-argument-form-is-a-different-function
+--- dialect
+mariadb
+--- source
+FIND("a", "banana", 3)
+--- expect
+LOCATE('a', 'banana', 3)
+===
+### name: func.text.replace-reorders-three
+--- dialect
+mariadb
+--- source
+REPLACE("a", "b", "banana")
+--- expect
+REPLACE('banana', 'a', 'b')
+===
+### name: func.text.substr-two-arguments
+--- dialect
+mariadb
+--- source
+SUBSTR("banana", 2)
+--- expect
+SUBSTRING('banana', 2)
+===
+### name: func.text.substr-three-arguments
+--- dialect
+mariadb
+--- source
+SUBSTR("banana", 2, 3)
+--- expect
+SUBSTRING('banana', 2, 3)
+===
+### name: func.text.trim-strips-sel-s-four-characters
+--- note
+SEL strips space, tab, CR and LF. TRIM(BOTH x FROM s) takes one string rather
+than a character set, so it cannot express that; REGEXP_REPLACE can.
+--- dialect
+mariadb
+--- source
+TRIM("  x  ")
+--- expect
+REGEXP_REPLACE('  x  ', '^[ \\t\\r\\n]+|[ \\t\\r\\n]+$', '')
+===
+### name: func.text.pad
+--- note
+LPAD truncates an argument already wider than the target width and SEL's PADL
+returns it unchanged, so the template guards the call rather than making it.
+The guard repeats {0} and {1}: a slot emitted twice is bound twice, which is
+what Fragment::bindings() walking the output is for.
+--- dialect
+mariadb
+--- source
+PADL("7", 3, "0")
+--- expect
+IF(CHAR_LENGTH('7') >= 3, '7', LPAD('7', 3, '0'))
+===
+### name: func.text.pad-does-not-truncate
+--- note
+Found by the oracle, not by anyone reading the manual: LPAD('7777', 2, '0') is
+'77' and PADL("7777", 2, "0") is "7777".
+--- dialect
+mariadb
+--- source
+PADR("7777", 2, "0")
+--- expect
+IF(CHAR_LENGTH('7777') >= 2, '7777', RPAD('7777', 2, '0'))
+===
+### name: func.num.min-of-one-argument
+--- note
+LEAST and GREATEST are variadic but need two arguments, and SEL's MIN takes one.
+`*` is the arity-keyed template's fallback; `1` is the count that needs its own.
+--- dialect
+mariadb
+--- source
+MIN(1)
+--- expect
+1
+===
+### name: func.num.min-of-several
+--- dialect
+mariadb
+--- source
+MIN(3, 1, 2)
+--- expect
+LEAST(3, 1, 2)
+===
+### name: func.number.min-is-a-scalar-not-an-aggregate
+--- dialect
+mariadb
+--- source
+MIN(3, 1, 2)
+--- expect
+LEAST(3, 1, 2)
+===
+### name: func.number.min-is-variadic
+--- dialect
+mariadb
+--- source
+MIN(5, 4, 3, 2, 1)
+--- expect
+LEAST(5, 4, 3, 2, 1)
+===
+### name: func.number.round
+--- dialect
+mariadb
+--- source
+ROUND(2.5, 0)
+--- expect
+ROUND(2.5, 0)
+===
+### name: func.number.isnum-is-a-regex
+--- note
+\A and \z, not ^ and $. ICU's $ matches before a trailing newline, so
+ISNUM("12\n") answered 1 on MariaDB and MySQL where SEL says FALSE -- a value
+that is not a number saying it is, which is the wrong direction for a
+validation rule to be wrong in. The two servers also disagreed with each other
+on \r. See the isnum-anchor note in mysql-family.json.
+--- dialect
+mariadb
+--- source
+ISNUM("-12.50")
+--- expect
+('-12.50' REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z')
+===
+### name: func.binary.to-hex-is-lower-cased
+--- note
+MariaDB's HEX returns upper case and spec §7.7 says lower.
+--- dialect
+mariadb
+--- source
+TO_HEX(TO_UTF8("a"))
+--- expect
+LOWER(HEX(CAST('a' AS BINARY)))
+===
+### name: func.binary.base64-strips-the-wrapping
+--- note
+The doubled CAST is TO_UTF8's own template meeting {binaryCast:0}, and it stays.
+Eliding it would mean the translator knowing which templates already produce
+bytes, which is exactly the kind of cleverness that has cost this layer defects;
+a redundant cast costs a few characters and nothing else.
+--- note
+TO_BASE64 wraps every 76 characters; SEL's does not.
+--- dialect
+mariadb
+--- source
+ENCODE_BASE64(TO_UTF8("a"))
+--- expect
+REPLACE(REPLACE(TO_BASE64(CAST('a' AS BINARY)), CHAR(10), ''), CHAR(13), '')
+===
+### name: func.binary.crc32-is-padded-hex
+--- dialect
+mariadb
+--- source
+CRC32("hello")
+--- expect
+LPAD(LOWER(HEX(CRC32(CAST('hello' AS BINARY)))), 8, '0')
+===
+### name: func.regex.rmatch-forces-collation-and-dotall
+--- note
+MariaDB's REGEXP follows the operand's collation and is case-insensitive by
+default; and its . does not match a newline where SEL's does.
+--- dialect
+mariadb
+--- source
+RMATCH('^a.c$', "abc")
+--- expect
+('abc' COLLATE utf8mb4_bin REGEXP '(?s)^a.c$')
+===
+### name: func.regex.rfind
+--- dialect
+mariadb
+--- source
+RFIND('ó', "zażółć")
+--- expect
+REGEXP_INSTR('zażółć' COLLATE utf8mb4_bin, '(?s)ó')
+===
+### name: func.refused.code-is-not-a-code-point
+--- note
+ORD reads the first character's bytes as an integer. ASCII agrees by accident,
+which is worse than disagreeing.
+--- dialect
+mariadb
+--- source
+CODE("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: func.refused.char-is-the-inverse
+--- dialect
+mariadb
+--- source
+CHAR(233)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: func.refused.rreplace-replacement-syntax-differs
+--- dialect
+mariadb
+--- source
+RREPLACE('a', "b", "banana")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: func.refused.split-yields-a-list
+--- dialect
+mariadb
+--- source
+SPLIT("a,b", ",")
+--- error
+E_SQL_UNSUPPORTED 1:1
+### name: func.bin.reads-its-argument-as-bytes
+--- note
+SEL's BIN functions take bytes, and a TEXT or NUM argument is coerced through
+UTF-8. HEX(1) hexes the NUMBER and answers "1"; SEL answers "31", the hex of the
+character. {binaryCast:0} is the lexical form of "read this operand as bytes",
+the same shape textCast has for byte comparisons.
+
+Found by the fuzz lane. Every case here used TO_UTF8 explicitly, so nothing in
+the suite ever handed one of these a number.
+--- dialect
+mariadb
+--- source
+TO_HEX(1)
+--- expect
+LOWER(HEX(CAST(1 AS BINARY)))
+===
+### name: func.bin.length-of-a-number
+--- dialect
+mariadb
+--- source
+BLEN(2.50)
+--- expect
+LENGTH(CAST(2.50 AS BINARY))
+===
+### name: func.regex.unportable-pattern-is-refused-not-thrown
+--- note
+A pattern outside SEL's portable subset raises SelError in the evaluator, but
+only when the call is reached. Translation walks every branch, so it arrives
+here from branches the evaluator never takes -- and a SelError escaping
+Sql::translate would break what tryTranslate() promises. Found by the fuzz lane,
+as a fatal error mid-run.
+--- dialect
+mariadb
+--- source
+RMATCH('\p{L}', "x")
+--- error
+E_SQL_UNSUPPORTED
+===

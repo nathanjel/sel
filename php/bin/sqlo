@@ -1,0 +1,1093 @@
+#!/usr/bin/env php
+<?php
+// SQL oracle runner. Where php/bin/sqlt asserts the string the translator emits,
+// this asks a real server whether that string MEANS what SEL means.
+//
+// The difference matters because a map entry is a claim about semantics and the
+// case suite only ever checks syntax. `CHAR({0} USING utf8mb4)` is the right
+// string and the wrong meaning; a case asserting it passes forever. See
+// docs/SQL-TESTING.md §3.
+//
+//     php/bin/sqlo [expressions|rows|coverage|all] [--dialect=mariadb] [--verbose]
+//
+// `coverage` asks a different question from the other two: not "does this agree
+// with a server" but "did anything ask?". It needs no database and runs anyway,
+// which matters — an entry nobody ever exercised is exactly the state a machine
+// with no database would otherwise leave unexamined.
+//
+// `fuzz --corpus=FILE` runs the same comparison over generated programs. It is
+// not part of `all`; tools/fuzz-sql.sh generates the corpus and calls it.
+//
+// The connection comes from the environment and there is no default:
+//
+//     SEL_SQL_MARIADB_DSN='mysql:unix_socket=/var/lib/mysql/mysql.sock;charset=utf8mb4'
+//     SEL_SQL_MARIADB_USER=someone
+//     SEL_SQL_MARIADB_PASS=
+//
+// With no DSN the run prints a skip and succeeds. A checkout with no database
+// must stay green, the same way a checkout with no C++ toolchain does.
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/Sql/bootstrap.php';
+require_once __DIR__ . '/json-bindings.php';
+
+use Sel\Dec;
+use Sel\Sel;
+use Sel\SelError;
+use Sel\Sql\Fragment;
+use Sel\Sql\Map;
+use Sel\Sql\Sql;
+use Sel\Sql\SqlError;
+use Sel\Value;
+
+const ORACLE = __DIR__ . '/../../sql/oracle';
+
+// --- corpus -----------------------------------------------------------------
+
+/**
+ * Parse a .selo corpus: `### entry: <key>` opens a group, `%` is a comment, and
+ * every other non-blank line is one expression.
+ *
+ * `### bindings: <json>` sets the bindings for everything after it, until the
+ * next one; `### bindings: {}` clears them. Almost every expression here is
+ * closed, which is what lets one corpus serve every dialect — but a BIN literal
+ * has no SEL syntax and can only arrive through a `value` binding, so without
+ * this the one literal form the emitter handles specially had no witness at all.
+ *
+ * @return list<array{entry:string, src:string, at:string, bindings:array<string,mixed>}>
+ */
+function parse_selo(string $text, string $file): array
+{
+    $out = [];
+    $entry = null;
+    $bindings = [];
+    // Where the header is, not just what it says: two groups may carry the same
+    // header, and checking them together lets a mislabelled one hide behind an
+    // honest one. Found by mislabelling a group and watching the gate pass.
+    $group = null;
+    foreach (explode("\n", $text) as $i => $line) {
+        $at = $file . ':' . ($i + 1);
+        if ($line === '' || str_starts_with($line, '%')) {
+            continue;
+        }
+        if (str_starts_with($line, '### ')) {
+            if (preg_match('/^###\s+bindings:\s*(.*)$/', $line, $m) === 1) {
+                $decoded = json_decode(trim($m[1]), true);
+                if (!is_array($decoded)) {
+                    throw new RuntimeException("{$at}: bindings header is not a JSON object");
+                }
+                $bindings = selo_bindings($decoded, $at);
+                continue;
+            }
+            if (preg_match('/^###\s+entry:\s*(\S+)\s*$/', $line, $m) !== 1) {
+                throw new RuntimeException("{$at}: malformed group header");
+            }
+            // Two header shapes and no third. `<section>.<KEY>` is a claim the
+            // coverage gate checks against a trace; `mixed:<label>` is a group
+            // that deliberately covers no single entry. Anything else is a typo
+            // -- `func.UPPER` for `funcs.UPPER` would otherwise be a group whose
+            // claim is never checked because the checker does not recognise it,
+            // which is the quietest way for a coverage gate to lie.
+            if (preg_match('/^(ops|funcs|skel)\.\S+$|^mixed(:\S+)?$/', $m[1]) !== 1) {
+                throw new RuntimeException("{$at}: group header \"{$m[1]}\" is neither "
+                    . 'ops/funcs/skel.<KEY> nor mixed:<label>');
+            }
+            $entry = $m[1];
+            $group = $at;
+            continue;
+        }
+        if ($entry === null) {
+            throw new RuntimeException("{$at}: expression before any `### entry:` header");
+        }
+        // `!E_RANGE  LEFT("abc", -1)` — an expression SEL rejects, and every
+        // dialect must refuse rather than translate. Before the translator
+        // asked SEL about constant arguments this line could not have been
+        // written: LEFT("abc", -1) translated cleanly into all four dialects
+        // and they answered '', '', 'ab' and 'abc'. See docs/SQL-TESTING.md §8.
+        $rejects = null;
+        if (str_starts_with($line, '!')) {
+            if (preg_match('/^!(E_[A-Z_]+)\s+(\S.*)$/', $line, $m) !== 1) {
+                throw new RuntimeException("{$at}: a `!` line must be "
+                    . '`!E_CODE  <expression>`');
+            }
+            $rejects = $m[1];
+            $line = $m[2];
+        }
+        $out[] = ['entry' => $entry, 'group' => $group, 'src' => $line, 'at' => $at,
+                  'bindings' => $bindings, 'rejects' => $rejects];
+    }
+    return $out;
+}
+
+// --- comparison -------------------------------------------------------------
+
+/**
+ * Compare what SEL answered with what the server answered, in the fragment's own
+ * kind.
+ *
+ * NUM is compared as a decimal, not as a string and never as a float: `10 / 4`
+ * is 2.5 to SEL and 2.5000 to a DECIMAL column, and those are one number. A
+ * float comparison in the oracle of a language whose whole contract is exact
+ * decimal arithmetic would be the check quietly agreeing to the thing it exists
+ * to catch.
+ *
+ * Returns null when they agree, else a description of how they differ.
+ */
+function compare(Value $sel, $db, string $kind): ?string
+{
+    if ($db === null) {
+        return 'the server answered NULL';
+    }
+    switch ($kind) {
+        case 'BOOL':
+            // Drivers disagree about what a truth value looks like coming back,
+            // and the disagreement is not the translator's. MySQL and SQLite
+            // have no boolean type and answer the integers 1 and 0; PostgreSQL
+            // has one and PDO hands back a PHP bool, so `(string) false` is the
+            // empty string and 66 correct translations were reported as wrong on
+            // this dialect's first run. Normalise here, where the transport is,
+            // rather than asking the map to paper over it.
+            $want = $sel->asBool();
+            $got = is_bool($db)
+                ? $db
+                : in_array(strtolower((string) $db), ['1', 't', 'true', 'on'], true);
+            return $got === $want ? null
+                : 'SEL=' . ($want ? 'TRUE' : 'FALSE') . ' DB=' . var_export($db, true);
+
+        case 'NUM':
+            $want = $sel->asText();
+            $got = (string) $db;
+            $a = Dec::parse($want);
+            $b = Dec::parse(plain_number($got));
+            if ($a === null || $b === null) {
+                return "SEL={$want} DB={$got} (not both numbers)";
+            }
+            return Dec::cmp($a, $b) === 0 ? null : "SEL={$want} DB={$got}";
+
+        case 'BIN':
+            // PDO_PGSQL hands bytea back as a stream, so (string) $db is
+            // "Resource id #34" -- which bin2hex will happily encode, reporting
+            // every correct binary translation as a mismatch against a number
+            // that changes each run.
+            $raw = is_resource($db) ? (string) stream_get_contents($db) : (string) $db;
+            $want = bin2hex($sel->asBytes());
+            $got = bin2hex($raw);
+            return $got === $want ? null : "SEL=x'{$want}' DB=x'{$got}'";
+
+        default:
+            // TEXT and UNKNOWN both compare byte for byte. A SEL number is a
+            // TEXT value, so scale is part of it here and 2.50 is not 2.5 —
+            // which is right: whatever produced a TEXT fragment promised bytes.
+            $want = $sel->isBool() ? ($sel->asBool() ? 'TRUE' : 'FALSE') : $sel->asText();
+            $got = (string) $db;
+            return $got === $want ? null : "SEL=" . Value::quoteDump($want)
+                . ' DB=' . Value::quoteDump($got);
+    }
+}
+
+/**
+ * A server's number in a form Dec::parse accepts.
+ *
+ * SQLite prints a large REAL as `1.2345678901234567e+19`, and Dec::parse rejects
+ * scientific notation because SEL has none. Without this the comparator would
+ * answer "not both numbers" and report a DIFFER on every large-number
+ * expression, which is a defect in the CHECK rather than in the translation --
+ * the value may well be right, and if it is wrong the caveat is what should say
+ * so, not a parse failure.
+ *
+ * The expansion is exact: it moves the point, it does not round. A value that
+ * lost precision inside the server has already lost it, and that difference is
+ * what decimal-float declares.
+ */
+function plain_number(string $text): string
+{
+    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]+))?[eE]([-+]?[0-9]+)$/', $text, $m) !== 1) {
+        return $text;
+    }
+    [, $sign, $int, $frac, $exp] = $m + [3 => ''];
+    $digits = $int . $frac;
+    $point = strlen($int) + (int) $exp;
+    if ($point <= 0) {
+        return $sign . '0.' . str_repeat('0', -$point) . $digits;
+    }
+    if ($point >= strlen($digits)) {
+        return $sign . $digits . str_repeat('0', $point - strlen($digits));
+    }
+    return $sign . substr($digits, 0, $point) . '.' . substr($digits, $point);
+}
+
+// --- expressions ------------------------------------------------------------
+
+/**
+ * Every expression, twice: once with literals inlined and once through native
+ * prepared statements.
+ *
+ * Both renderings, because they fail differently. In `inline` mode a literal is
+ * quoted at the position it belongs to, so a fragment whose parameter pool is in
+ * the wrong order still emits the right string — an ordering defect is invisible.
+ * Only `params` mode can show it, and only with emulation off: PDO's default
+ * inlines client-side, and an emulated run passes whatever the binding order is.
+ * That is not hypothetical, it is how 23 green comparisons hid the defect that
+ * Fragment::bindings() now exists to prevent.
+ */
+/**
+ * Every caveat this dialect declares must have been seen doing its job.
+ *
+ * The oracle's rule is that an inexact translation is allowed to differ. The
+ * missing half was that it is REQUIRED to -- somewhere, on some expression --
+ * or the declaration is unfalsifiable. Two mutations proved it: adding
+ * `length-units` to LEN silenced four real disagreements and changed no output
+ * character, and dropping `numeric-scale` from MIN was invisible because the
+ * comparator reads NUM through Dec, where 17.000 and 17 are one number.
+ *
+ * A caveat no closed corpus can cross is excused by name in coverage.json, with
+ * a reason a person wrote.
+ *
+ * @param array<string,bool> $witnessed
+ * @return list<string>
+ */
+function caveat_symmetry(string $dialect, array $witnessed): array
+{
+    $excused = [];
+    $file = ORACLE . '/coverage.json';
+    if (is_file($file)) {
+        $decoded = json_decode((string) file_get_contents($file), true);
+        $excused = (array) (($decoded['caveats_unwitnessable'] ?? [])[$dialect] ?? []);
+    }
+
+    $declared = [];
+    foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (Map::entries($dialect, $section) as $key => $entry) {
+            if (is_array($entry) && isset($entry['caveat'])) {
+                $declared[$entry['caveat']][] = "{$section}.{$key}";
+            }
+        }
+    }
+
+    $out = [];
+    foreach ($declared as $caveat => $where) {
+        if (isset($witnessed[$caveat]) || isset($excused[$caveat])) {
+            continue;
+        }
+        sort($where);
+        $out[] = "{$dialect} declares the caveat `{$caveat}` on " . implode(' ', $where)
+            . ', and no corpus expression ever differed under it. Add one that '
+            . 'crosses its boundary, remove the caveat, or excuse it by name in '
+            . 'sql/oracle/coverage.json under caveats_unwitnessable';
+    }
+    foreach (array_keys($excused) as $caveat) {
+        if (isset($declared[$caveat]) && isset($witnessed[$caveat])) {
+            $out[] = "{$dialect} excuses `{$caveat}` as unwitnessable in "
+                . 'coverage.json and the corpus witnessed it; remove the excuse';
+        }
+    }
+    return $out;
+}
+
+function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
+{
+    $cases = parse_selo((string) file_get_contents(ORACLE . '/expressions.selo'),
+        'expressions.selo');
+    if ($cases === []) {
+        throw new RuntimeException('the corpus is empty');
+    }
+
+    $stats = ['ok' => 0, 'refused' => 0, 'caveat' => 0, 'rejected' => 0];
+    $bad = [];
+    $entries = [];
+    // Which caveats actually excused a difference. A caveat is a claim that an
+    // entry may disagree with SEL, and until an expression makes it disagree
+    // nothing has checked whether the claim is true, still needed, or hiding a
+    // defect -- and inventing one is free, silences every check on that entry,
+    // and changes no output character.
+    //
+    // Credited only when the fragment carries exactly one. A fragment carrying
+    // two says which entries were inexact and not which one caused this
+    // difference, and crediting both would let a real divergence launder an
+    // invented caveat sitting beside it.
+    //
+    // The strictness costs nothing today, which was measured rather than
+    // assumed: relaxing the rule to two credits no caveat that a single-caveat
+    // line does not already witness, so no caveat is excused in coverage.json
+    // for want of this. If a future caveat has only multi-caveat witnesses the
+    // symmetry check will say so by name, and the answer is a narrower corpus
+    // line rather than a laxer rule here.
+    $witnessed = [];
+
+    foreach ($cases as $c) {
+        $entries[$c['entry']] = ($entries[$c['entry']] ?? 0) + 1;
+        try {
+            $sel = Sel::compile($c['src'])->run(selo_context($c['bindings']));
+            if ($c['rejects'] !== null) {
+                $bad[] = [$c, '', "the corpus says SEL rejects this with {$c['rejects']}, "
+                    . 'and SEL evaluated it'];
+                continue;
+            }
+        } catch (SelError $e) {
+            if ($c['rejects'] === null) {
+                $bad[] = [$c, '', 'the corpus expression does not evaluate: ' . $e->getMessage()];
+                continue;
+            }
+            if ($e->code !== $c['rejects']) {
+                $bad[] = [$c, '', "the corpus says SEL rejects this with {$c['rejects']}, "
+                    . "and SEL raised {$e->code}"];
+                continue;
+            }
+            // The assertion is on the translator, and it is the strong one: an
+            // expression SEL will not evaluate must not become SQL. A database
+            // has an answer for every one of these, and none of the answers is
+            // SEL's.
+            try {
+                $sql = Sql::translate(Sel::compile($c['src']), $dialect,
+                    bindings_from_json($c['bindings'], $c['at']))->asValue();
+                $bad[] = [$c, $sql, "SEL rejects this with {$c['rejects']} and "
+                    . 'the translation succeeded; the server would answer something'];
+            } catch (SqlError $e2) {
+                $stats['rejected']++;
+                if ($verbose) {
+                    printf("  rejected %-52s %s -> %s\n", $c['src'], $c['rejects'], $e2->code);
+                }
+            }
+            continue;
+        }
+        try {
+            $frag = Sql::translate(Sel::compile($c['src']), $dialect,
+                bindings_from_json($c['bindings'], $c['at']));
+        } catch (SqlError $e) {
+            // A refusal is an outcome, not a failure: the corpus is allowed to
+            // contain things a dialect cannot do, and saying so is the point.
+            $stats['refused']++;
+            if ($verbose) {
+                printf("  refused  %-52s %s\n", $c['src'], $e->code);
+            }
+            continue;
+        }
+
+        foreach (['inline', 'params'] as $mode) {
+            try {
+                $sql = $frag->asValue($mode);
+            } catch (SqlError $e) {
+                $stats['refused']++;
+                break;
+            }
+            try {
+                if ($mode === 'inline') {
+                    $db = $pdo->query('SELECT ' . $sql)->fetchColumn();
+                } else {
+                    $st = $pdo->prepare('SELECT ' . $sql);
+                    $st->execute(array_map(bind_value(...), $frag->bindings()));
+                    $db = $st->fetchColumn();
+                }
+            } catch (Throwable $e) {
+                $bad[] = [$c, $sql, "{$mode}: the server refused it: " . $e->getMessage()];
+                continue;
+            }
+
+            $why = compare($sel, $db, $frag->kind);
+            if ($why === null) {
+                if ($mode === 'params') {
+                    $stats['ok']++;
+                }
+                continue;
+            }
+            // An inexact translation is allowed to differ, and says so in
+            // advance. An exact one is not: that is the whole promise.
+            if (!$frag->isExact()) {
+                if ($mode === 'params') {
+                    $stats['caveat']++;
+                }
+                if (count($frag->caveats) === 1) {
+                    $witnessed[$frag->caveats[0]] = true;
+                }
+                if ($verbose) {
+                    printf("  caveat   %-40s %s  [%s]\n", $c['src'], $why,
+                        implode(' ', $frag->caveats));
+                }
+                continue;
+            }
+            $bad[] = [$c, $sql, "{$mode}: {$why}"];
+        }
+    }
+
+    foreach (caveat_symmetry($dialect, $witnessed) as $why) {
+        $bad[] = [['src' => '(caveat symmetry)', 'at' => 'sql/oracle/coverage.json'],
+                  '', $why];
+    }
+
+    foreach ($bad as [$c, $sql, $why]) {
+        printf("DIFFER  %s   (%s)\n        %s\n        %s\n", $c['src'], $c['at'], $sql, $why);
+    }
+    printf("{$label}expressions: %d agree, %d differ, %d refused, %d inexact-by-declaration,"
+        . " %d rejected-by-SEL-and-not-translated (%d expressions, %d groups)\n",
+        $stats['ok'], count($bad), $stats['refused'], $stats['caveat'],
+        $stats['rejected'], count($cases), count($entries));
+
+    return ['failed' => count($bad)];
+}
+
+/**
+ * Corpus bindings, with one convention JSON cannot express on its own.
+ *
+ * `{"bin": "7ac3a9"}` becomes a BIN Value. SEL has no BIN literal — bytes only
+ * ever arrive from TO_UTF8, FROM_HEX or a host — so without a spelling here the
+ * corpus could not name one, and the branch of Emit::literal that renders a
+ * binary literal would have no witness. A hex escape is an ordinary thing for a
+ * test format to have; it is not part of the bindings API.
+ *
+ * @param array<string,mixed> $bindings
+ * @return array<string,mixed>
+ */
+function selo_bindings(array $bindings, string $at): array
+{
+    foreach ($bindings as $name => &$b) {
+        if (!is_array($b['value'] ?? null) || !isset($b['value']['bin'])) {
+            continue;
+        }
+        $bytes = @hex2bin((string) $b['value']['bin']);
+        if ($bytes === false) {
+            throw new RuntimeException("{$at}: the bin value for {$name} is not hex");
+        }
+        $b['value'] = Value::bin($bytes);
+    }
+    return $bindings;
+}
+
+/**
+ * The evaluator's view of a corpus `value` binding.
+ *
+ * A `value` binding is a constant supplied at translation time, so the evaluator
+ * gets the same constant under the same name. Any other binding kind names a
+ * column or a table, which a closed expression has no business referring to.
+ *
+ * @param array<string,mixed> $bindings
+ * @return array<string,mixed>
+ */
+function selo_context(array $bindings): array
+{
+    $ctx = [];
+    foreach ($bindings as $name => $b) {
+        if (($b['kind'] ?? null) !== 'value') {
+            throw new RuntimeException("the corpus binding {$name} is not a value; "
+                . 'expressions.selo is closed except for constants');
+        }
+        $ctx[$name] = $b['value'];
+    }
+    return $ctx;
+}
+
+/** A bound value as the driver wants it: SQL has no BOOL to bind, so send 1/0. */
+function bind_value(Value $v): string
+{
+    if ($v->isBool()) {
+        return $v->asBool() ? '1' : '0';
+    }
+    return $v->isBin() ? $v->asBytes() : $v->asText();
+}
+
+// --- rows -------------------------------------------------------------------
+
+/**
+ * Row parity: the translated condition selects the same rows the evaluator
+ * accepts, over the same data.
+ *
+ * This is the only oracle that reaches a `relation` binding, because a
+ * correlated subquery needs a query to correlate to. It is also the only one
+ * where a defect can hide behind agreement: two sides that both answer "no rows"
+ * agree about nothing, so a rule that does not discriminate is a failure of the
+ * fixture and is reported as one.
+ */
+function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
+{
+    $spec = json_decode((string) file_get_contents(ORACLE . '/rows.json'), true);
+    if (!is_array($spec)) {
+        throw new RuntimeException('rows.json is not JSON');
+    }
+
+    // The driver owns the fixture. Reconstructing it every run is what stops the
+    // check depending on a database somebody made at a shell once.
+    //
+    // Comments come out before the split, not after: a statement preceded by a
+    // comment block otherwise arrives with the comment attached, and a "skip
+    // anything starting with --" rule then drops the statement with it. That is
+    // how this loaded nothing at all the first time, and it did not error — it
+    // reported nine rules disagreeing over zero rows.
+    // Per dialect: the DDL is the one thing in this file that cannot be
+    // portable, because the type systems are what differ.
+    $fixture = is_array($spec['fixture'])
+        ? ($spec['fixture'][$dialect] ?? null)
+        : $spec['fixture'];
+    if ($fixture === null) {
+        echo "{$label}rows: no fixture for {$dialect}, skipped\n";
+        return ['failed' => 0];
+    }
+    $sql = (string) file_get_contents(ORACLE . '/' . $fixture);
+    $sql = preg_replace('/^\s*--.*$/m', '', $sql) ?? '';
+    $statements = 0;
+    foreach (explode(';', $sql) as $stmt) {
+        if (trim($stmt) !== '') {
+            $pdo->exec($stmt);
+            $statements++;
+        }
+    }
+    if ($statements === 0) {
+        throw new RuntimeException("{$fixture} contained no statements");
+    }
+
+    // `raw` is where a host writes SQL the map cannot know, so it is the one
+    // thing in this file that cannot be portable. A raw value written as an
+    // object is a per-dialect table; resolve it before anything sees it.
+    // resolve_raw picks the per-dialect `raw` first, then the typed
+    // constructors judge the result -- so a rows.json rule with a malformed
+    // binding is a suite error here rather than SQL at the server.
+    $bindings = bindings_from_json(
+        resolve_raw($spec['bindings'], $dialect, $label), $label);
+
+    $ctx = load_context($pdo, $spec['context']);
+    $total = count($ctx);
+
+    $bad = [];
+    $ok = 0;
+    $refused = 0;
+    foreach ($spec['rules'] as $rule) {
+        try {
+            $program = Sel::compile($rule['sel']);
+            $frag = Sql::translate($program, $dialect, $bindings);
+        } catch (SqlError $e) {
+            // A rule this dialect cannot express is an outcome, not a failure.
+            // sqlite has no REGEXP, so the SKU-format rule simply is not a rule
+            // it can be asked -- and saying so is the whole point of refusal.
+            $refused++;
+            if ($verbose) {
+                printf("  refused  %-28s %s\n", $rule['name'], $e->code);
+            }
+            continue;
+        }
+        try {
+            $sql = str_replace('{}', $frag->asCondition(), $spec['select']);
+            $db = array_map('intval', $pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN));
+        } catch (Throwable $e) {
+            $bad[] = [$rule['name'], '', get_class($e) . ': ' . $e->getMessage()];
+            continue;
+        }
+
+        $sel = [];
+        foreach ($ctx as $id => $row) {
+            if ($program->run($row)->asBool()) {
+                $sel[] = $id;
+            }
+        }
+
+        // The rule has to be able to disagree before its agreeing means
+        // anything. A rule that selects everything or nothing is exempt only if
+        // it says why.
+        if (!isset($rule['degenerate']) && (count($sel) === 0 || count($sel) === $total)) {
+            $bad[] = [$rule['name'], $sql,
+                'selects ' . (count($sel) === 0 ? 'no' : 'every')
+                . ' order, so agreement proves nothing — fix the fixture or '
+                . 'declare "degenerate" with a reason'];
+            continue;
+        }
+        if ($sel !== ($rule['expect'] ?? $sel)) {
+            $bad[] = [$rule['name'], $sql, 'SEL selects [' . implode(',', $sel)
+                . '] but rows.json expects [' . implode(',', $rule['expect'])
+                . ']; the fixture and the corpus have drifted apart'];
+            continue;
+        }
+        if ($db !== $sel) {
+            $bad[] = [$rule['name'], $sql,
+                'SQL=[' . implode(',', $db) . ']  SEL=[' . implode(',', $sel) . ']'];
+            continue;
+        }
+        $ok++;
+        if ($verbose) {
+            printf("  ok       %-28s [%s]\n", $rule['name'], implode(',', $sel));
+        }
+    }
+
+    foreach ($bad as [$name, $sql, $why]) {
+        printf("DIFFER  %s\n        %s\n        %s\n", $name, $sql, $why);
+    }
+    printf("{$label}rows: %d rules agree, %d differ, %d refused, over %d orders\n",
+        $ok, count($bad), $refused, $total);
+
+    return ['failed' => count($bad)];
+}
+
+/**
+ * Replace every `raw` written as a per-dialect object with this dialect's string.
+ *
+ * @param array<string,mixed> $node
+ * @return array<string,mixed>
+ */
+function resolve_raw(array $node, string $dialect, string $label): array
+{
+    foreach ($node as $k => $v) {
+        if (!is_array($v)) {
+            continue;
+        }
+        if ($k === 'raw') {
+            if (!isset($v[$dialect])) {
+                throw new RuntimeException("a raw binding names no SQL for {$dialect}");
+            }
+            $node[$k] = $v[$dialect];
+            continue;
+        }
+        $node[$k] = resolve_raw($v, $dialect, $label);
+    }
+    return $node;
+}
+
+/**
+ * Load the fixture into SEL contexts, one per parent row, so the evaluator is
+ * handed the same facts the query is.
+ *
+ * @return array<int, array<string,mixed>>
+ */
+function load_context(PDO $pdo, array $spec): array
+{
+    $ctx = [];
+    foreach ($pdo->query($spec['query'])->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $one = [];
+        foreach ($spec['columns'] as $col => $name) {
+            $one[$name] = $r[$col];
+        }
+        foreach ($spec['children'] as $name => $_) {
+            $one[$name] = [];
+        }
+        $ctx[(int) $r[$spec['key']]] = $one;
+    }
+    foreach ($spec['children'] as $name => $child) {
+        foreach ($pdo->query($child['query'])->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            // A one-column relation is a list of scalars on the SEL side, and a
+            // multi-column one is a list of maps. Which of the two a binding is
+            // decides what `x IN it` can mean, so the context has to be able to
+            // say — modelling every relation as maps is what made the two sides
+            // of `IN` disagree.
+            $ctx[(int) $r[$child['parent']]][$name][] = isset($child['scalar'])
+                ? $r[$child['scalar']]
+                : array_combine(array_values($child['columns']),
+                    array_map(static fn ($c) => $r[$c], array_keys($child['columns'])));
+        }
+    }
+    return $ctx;
+}
+
+// --- fuzz -------------------------------------------------------------------
+
+/**
+ * The same comparison as run_expressions, over programs nobody wrote.
+ *
+ * The hand-written corpus is written by asking "which entries have I covered?".
+ * That question never produces `"OPEN"` against `"open"`, or `3.0` against `3`,
+ * or a call whose SQL spelling reorders its arguments — the asymmetric pairs
+ * where a distinction collapses. Three defects lived there through 73 green
+ * comparisons. A generator has no such blind spot because it has no model to be
+ * blind with.
+ *
+ * The programs come from tools/gen-programs.mjs, the generator the six-host
+ * differential already uses, so this inherits its bias toward awkward inputs
+ * rather than restating it. They assign variables and then use them, which stage
+ * 1 inlines, so they are closed by the time the translator sees them.
+ *
+ * Outcomes, and why each is what it is:
+ *
+ *   agree            SEL and the server gave the same answer
+ *   differ           they did not, and the fragment claimed to be exact — a bug
+ *   refused          the translator would not translate it; an ordinary outcome
+ *   sel-error        the program does not evaluate; nothing to compare against
+ *   caveat           they differ and the fragment said in advance that it might
+ *   out-of-range     the server rejected the VALUES as too large or malformed
+ *   invalid-sql      the server rejected the SYNTAX — always a defect
+ *
+ * The last two are the split that matters. SEL's arithmetic is unbounded and
+ * DECIMAL(65,10) is not, so a translated expression can be perfectly correct and
+ * still overflow: that is the accepted limit of pushing a rule into a database,
+ * and it is an abstention. A syntax error is never that. It means the layer
+ * emitted something that is not SQL, which no input should be able to cause.
+ */
+function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose, string $label = ''): array
+{
+    $programs = [];
+    $cur = null;
+    foreach (explode("\n", (string) file_get_contents($corpus)) as $line) {
+        if (str_starts_with($line, '### ')) {
+            if ($cur !== null) {
+                $programs[] = rtrim($cur, "\n");
+            }
+            $cur = '';
+            continue;
+        }
+        if ($cur !== null) {
+            $cur .= $line . "\n";
+        }
+    }
+    if ($cur !== null) {
+        $programs[] = rtrim($cur, "\n");
+    }
+    if ($programs === []) {
+        throw new RuntimeException("{$corpus} holds no programs");
+    }
+
+    $n = ['agree' => 0, 'refused' => 0, 'sel-error' => 0, 'caveat' => 0,
+          'out-of-range' => 0, 'sel-rejected-and-refused' => 0];
+    // What the refusals are, not just how many. A lane can abstain honestly and
+    // it can abstain because something translatable is being turned away; the
+    // difference is only visible as a histogram.
+    $refusals = [];
+    $bad = [];
+
+    foreach ($programs as $src) {
+        try {
+            $sel = Sel::evaluate($src);
+        } catch (SelError $e) {
+            $n['sel-error']++;
+            // A program SEL will not evaluate must not become SQL. This lane
+            // generated 776 of them per run and asked nothing about any of them,
+            // which is exactly the question expressions.selo's `!E_CODE` lines
+            // exist to ask -- and the generator reaches shapes a hand-written
+            // corpus does not. Currently 0 slip through; the check is here so
+            // that stays a measurement.
+            try {
+                $sql = Sql::translate(Sel::compile($src), $dialect)->asValue();
+                $bad[] = [$src, $sql, "SEL rejects this with {$e->code} and the "
+                    . 'translation succeeded'];
+            } catch (SqlError $ignored) {
+                $n['sel-rejected-and-refused']++;
+            } catch (SelError $ignored) {
+                // It does not even parse, so there is nothing to translate and
+                // nothing to claim. Only a program that COMPILES and then fails
+                // to evaluate is a candidate for translating wrongly.
+                $n['sel-rejected-and-refused']++;
+            }
+            continue;
+        }
+        try {
+            $frag = Sql::translate(Sel::compile($src), $dialect);
+            $rendered = ['inline' => $frag->asValue('inline'),
+                         'params' => $frag->asValue('params')];
+        } catch (SqlError $e) {
+            $n['refused']++;
+            $refusals[$e->code] = ($refusals[$e->code] ?? 0) + 1;
+            continue;
+        }
+
+        $agreedBoth = true;
+        foreach ($rendered as $mode => $sql) {
+            try {
+                if ($mode === 'inline') {
+                    $db = $pdo->query('SELECT ' . $sql)->fetchColumn();
+                } else {
+                    $st = $pdo->prepare('SELECT ' . $sql);
+                    $st->execute(array_map(bind_value(...), $frag->bindings()));
+                    $db = $st->fetchColumn();
+                }
+            } catch (PDOException $e) {
+                // 42xxx is syntax and access: the layer emitted something that
+                // is not SQL, and no input may cause that. Everything else is
+                // the server refusing the values, which is the accepted cost of
+                // pushing unbounded arithmetic into a fixed-width column.
+                if (str_starts_with((string) $e->getCode(), '42')) {
+                    $bad[] = [$src, $sql, "{$mode}: invalid SQL: " . $e->getMessage()];
+                } else {
+                    $n['out-of-range']++;
+                }
+                $agreedBoth = false;
+                break;
+            }
+
+            $why = compare($sel, $db, $frag->kind);
+            if ($why === null) {
+                continue;
+            }
+            if (!$frag->isExact()) {
+                $n['caveat']++;
+                $agreedBoth = false;
+                break;
+            }
+            $bad[] = [$src, $sql, "{$mode}: {$why}"];
+            $agreedBoth = false;
+            break;
+        }
+        if ($agreedBoth) {
+            $n['agree']++;
+        }
+    }
+
+    $shown = 0;
+    foreach ($bad as [$src, $sql, $why]) {
+        if (++$shown > 25) {
+            break;
+        }
+        printf("DIFFER  %s\n        %s\n        %s\n", $src, $sql, $why);
+    }
+
+    $compared = $n['agree'] + count($bad) + $n['caveat'];
+    printf("{$label}fuzz: %d programs — %d agree, %d differ, %d inexact-by-declaration; "
+        . "%d refused, %d do not evaluate (%d of them also refused by the translator), "
+        . "%d out of range\n",
+        count($programs), $n['agree'], count($bad), $n['caveat'],
+        $n['refused'], $n['sel-error'], $n['sel-rejected-and-refused'],
+        $n['out-of-range']);
+
+    if ($verbose && $refusals !== []) {
+        arsort($refusals);
+        foreach ($refusals as $code => $count) {
+            printf("  refused  %-24s %d\n", $code, $count);
+        }
+    }
+
+    // A lane that abstains on almost everything is not a lane. It would report
+    // success for years while comparing nothing, which is the failure mode this
+    // whole exercise is about — a check that is itself unchecked.
+    $floor = (int) (count($programs) * 0.05);
+    if ($compared < max(1, $floor)) {
+        printf("fuzz: only %d of %d programs reached the server — the lane is not "
+            . "comparing anything\n", $compared, count($programs));
+        return ['failed' => count($bad) + 1];
+    }
+    return ['failed' => count($bad)];
+}
+
+// --- coverage ---------------------------------------------------------------
+
+/**
+ * Which map entries the corpus actually reaches, and which it does not.
+ *
+ * There is no percentage and no threshold. A threshold is precisely the "broad
+ * set with hidden assumptions" this layer exists not to be: 94% coverage is a
+ * number that sounds like progress and names nothing. Every supported entry
+ * either has an oracle expression that reaches it, or is listed in
+ * coverage.json with a reason someone wrote down.
+ *
+ * Coverage is measured from a trace of Map::entry(), not from the `### entry:`
+ * headers. The headers are checked *against* the trace: a header no expression
+ * under it reaches is a claim about the corpus that the corpus does not support,
+ * which is the same species of defect as everything else in this directory.
+ *
+ * This needs no database, so it runs whether or not a DSN is set.
+ */
+function run_coverage(string $dialect, bool $verbose, string $label = ''): array
+{
+    $exclusions = [];
+    $declared = [];
+    $file = ORACLE . '/coverage.json';
+    if (is_file($file)) {
+        $decoded = json_decode((string) file_get_contents($file), true);
+        $exclusions = is_array($decoded['exclude'] ?? null) ? $decoded['exclude'] : [];
+        $declared = is_array($decoded['supported'] ?? null) ? $decoded['supported'] : [];
+    }
+
+    // What the corpus reaches, per group and in total.
+    $seen = [];
+    $byGroup = [];
+    $problems = [];
+
+    $cases = parse_selo((string) file_get_contents(ORACLE . '/expressions.selo'),
+        'expressions.selo');
+    foreach ($cases as $c) {
+        Map::traceOn();
+        try {
+            Sql::translate(Sel::compile($c['src']), $dialect,
+                bindings_from_json($c['bindings'], $c['at']));
+        } catch (Throwable $e) {
+            // A refusal still looked the entry up, which is what is being
+            // counted: the corpus reached it and the map said no.
+        }
+        foreach (Map::traceOff() as $e) {
+            $seen[$e] = true;
+            $byGroup[$c['group']]['reached'][$e] = true;
+            $byGroup[$c['group']]['entry'] = $c['entry'];
+        }
+    }
+
+    // The bound rules reach what a closed expression cannot: the relation
+    // skeletons exist only where there is a query to correlate to.
+    $spec = json_decode((string) file_get_contents(ORACLE . '/rows.json'), true);
+    foreach ($spec['rules'] as $rule) {
+        Map::traceOn();
+        try {
+            Sql::translate(Sel::compile($rule['sel']), $dialect,
+                bindings_from_json(resolve_raw($spec['bindings'], $dialect, $label), $label));
+        } catch (Throwable $e) {
+        }
+        foreach (Map::traceOff() as $e) {
+            $seen[$e] = true;
+        }
+    }
+
+    // A header is a claim. `mixed` is the one group that deliberately names no
+    // single entry, and it is spelled out rather than inferred so a typo in a
+    // real header cannot pass as one.
+    foreach ($byGroup as $at => $g) {
+        if (str_starts_with($g['entry'], 'mixed')) {
+            continue;
+        }
+        if (!isset($g['reached'][$g['entry']])) {
+            $problems[] = "{$at}: group `### entry: {$g['entry']}` never reaches it";
+        }
+    }
+
+    // What there is to cover: every entry that is not a refusal. A refusal has
+    // no semantics to check — it is the absence of them.
+    $missing = [];
+    $supported = 0;
+    $live = [];
+    foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (Map::entries($dialect, $section) as $key => $entry) {
+            if (!is_array($entry)) {
+                continue;                       // a refusal, or null
+            }
+            $supported++;
+            $name = "{$section}.{$key}";
+            $live[$name] = true;
+            if (isset($seen[$name]) || isset($exclusions[$name])) {
+                continue;
+            }
+            $missing[] = $name;
+        }
+    }
+
+    // The denominator has to come from somewhere other than the code under
+    // test. Recomputing it here meant withdrawing an entry shrank supply and
+    // demand together: `66 of 66 entries reached` stayed green while ABS
+    // silently stopped being translatable on every dialect. Checked both ways,
+    // because undeclared support is the same kind of drift as a withdrawal.
+    $recorded = [];
+    foreach ((array) ($declared[$dialect] ?? []) as $name) {
+        $recorded[$name] = true;
+    }
+    if ($recorded === []) {
+        $problems[] = "sql/oracle/coverage.json records no supported set for "
+            . "{$dialect}; the gate cannot check a denominator it does not have";
+    } else {
+        $withdrawn = array_diff_key($recorded, $live);
+        $undeclared = array_diff_key($live, $recorded);
+        if ($withdrawn !== []) {
+            $problems[] = 'these entries are recorded as supported and the map no '
+                . 'longer has them: ' . implode(' ', array_keys($withdrawn));
+        }
+        if ($undeclared !== []) {
+            $problems[] = 'these entries are supported and not recorded in '
+                . 'coverage.json: ' . implode(' ', array_keys($undeclared));
+        }
+    }
+
+    foreach ($problems as $p) {
+        echo "COVERAGE  {$p}\n";
+    }
+    if ($missing !== []) {
+        echo "COVERAGE  no oracle expression reaches: " . implode(' ', $missing) . "\n";
+        echo "          add one to sql/oracle/expressions.selo, or list it in "
+            . "sql/oracle/coverage.json with a reason\n";
+    }
+    if ($verbose) {
+        foreach ($exclusions as $name => $why) {
+            printf("  excluded %-24s %s\n", $name, $why);
+        }
+    }
+    printf("{$label}coverage: %d of %d supported %s entries reached, %d excluded by reason\n",
+        $supported - count($missing), $supported, $dialect, count($exclusions));
+
+    return ['failed' => count($missing) + count($problems)];
+}
+
+// --- main -------------------------------------------------------------------
+
+$mode = 'all';
+$only = null;
+$corpus = null;
+$verbose = false;
+foreach (array_slice($argv, 1) as $arg) {
+    if (str_starts_with($arg, '--dialect=')) {
+        $only = substr($arg, 10);
+    } elseif ($arg === '--verbose' || $arg === '-v') {
+        $verbose = true;
+    } elseif (str_starts_with($arg, '--corpus=')) {
+        $corpus = substr($arg, 9);
+        $mode = 'fuzz';
+    } elseif (in_array($arg, ['expressions', 'rows', 'coverage', 'fuzz', 'all'], true)) {
+        $mode = $arg;
+    } else {
+        fwrite(STDERR, "usage: sqlo [expressions|rows|coverage|fuzz|all] "
+            . "[--corpus=FILE] [--dialect=NAME] [--verbose]\n");
+        exit(2);
+    }
+}
+
+// Every target, not one with a flag. A dialect nobody runs the oracle against is
+// a dialect whose map is a set of claims, and the point of adding a second one
+// was to find out whether the checks generalise -- so they have to run over
+// whatever targets exist rather than over the one that was written first.
+$targets = Sql::dialects();
+if ($only !== null) {
+    if (!in_array($only, $targets, true)) {
+        fwrite(STDERR, "sqlo: {$only} is not a target dialect; have "
+            . implode(', ', $targets) . "\n");
+        exit(2);
+    }
+    $targets = [$only];
+}
+
+$failed = 0;
+foreach ($targets as $dialect) {
+    $label = count($targets) > 1 ? "{$dialect}: " : '';
+
+    // Coverage is a question about the map and the corpus, not about a server,
+    // so it runs whether or not there is a database — which matters: it is the
+    // check that says an entry was never asked about, and that is exactly the
+    // state a machine with no database would otherwise leave unexamined.
+    try {
+        if ($mode === 'coverage' || $mode === 'all') {
+            $failed += run_coverage($dialect, $verbose, $label)['failed'];
+        }
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");
+        exit(2);
+    }
+    if ($mode === 'coverage') {
+        continue;
+    }
+
+    $env = 'SEL_SQL_' . strtoupper(str_replace('-', '_', $dialect));
+    $dsn = getenv($env . '_DSN');
+    if ($dsn === false || $dsn === '') {
+        echo "{$label}{$env}_DSN is not set, the database oracles are skipped\n";
+        continue;
+    }
+
+    try {
+        $pdo = new PDO($dsn, (string) (getenv($env . '_USER') ?: ''),
+            (string) (getenv($env . '_PASS') ?: ''), [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                // Not negotiable. With emulation on, the driver inlines the
+                // values client-side and `params` mode stops being a second
+                // rendering at all — it becomes `inline` with extra steps, and
+                // the binding-order defect it exists to catch passes.
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+    } catch (Throwable $e) {
+        fwrite(STDERR, "sqlo: cannot connect ({$env}_DSN): {$e->getMessage()}\n");
+        exit(1);
+    }
+
+    try {
+        if ($mode === 'expressions' || $mode === 'all') {
+            $failed += run_expressions($pdo, $dialect, $verbose, $label)['failed'];
+        }
+        if ($mode === 'rows' || $mode === 'all') {
+            $failed += run_rows($pdo, $dialect, $verbose, $label)['failed'];
+        }
+        if ($mode === 'fuzz') {
+            if ($corpus === null || !is_file($corpus)) {
+                fwrite(STDERR, "sqlo fuzz needs --corpus=FILE\n");
+                exit(2);
+            }
+            $failed += run_fuzz($pdo, $dialect, $corpus, $verbose, $label)['failed'];
+        }
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, "sqlo: SUITE ERROR {$e->getMessage()}\n");
+        exit(2);
+    }
+}
+exit($failed === 0 ? 0 : 1);

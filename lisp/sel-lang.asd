@@ -46,11 +46,39 @@
      (:file "sel"))))
   :in-order-to ((test-op (test-op "sel-lang/tests"))))
 
+;;; The SEL->SQL layer. A separate system, for the reason the JS host keeps its
+;;; translator behind a separate entry point: a program that only wants the
+;;; evaluator should not carry the dialect map. `(ql:quickload :sel-lang/sql)`
+;;; brings in both.
+(defsystem "sel-lang/sql"
+  :description "SEL -> SQL translation"
+  :author "Marcin Gałczyński"
+  :license "MIT"
+  :version "0.3.0"
+  :depends-on ("sel-lang")
+  :serial t
+  :components
+  ((:module "src/sql"
+    :serial t
+    :components
+    ((:file "package")
+     (:file "errors")
+     (:file "map-data")
+     (:file "map")
+     (:file "fragment")
+     (:file "emit")
+     (:file "binding")
+     (:file "stage1")
+     (:file "translator")))))
+
 (defsystem "sel-lang/tests"
   :description "Unit tests for the layers underneath the conformance suite"
   :author "Marcin Gałczyński"
   :license "MIT"
-  :depends-on ("sel-lang" "fiveam")
+  ;; The SQL layer too: two of its failure modes -- a dialect that is not a
+  ;; string, and a caller's rebound *PRINT-BASE* -- are reachable only from host
+  ;; code, so the .sqlt corpus cannot express them and only a test here can.
+  :depends-on ("sel-lang" "sel-lang/sql" "fiveam")
   :serial t
   :components
   ((:module "tests"

@@ -1,0 +1,21 @@
+{
+  "dialect": "mariadb",
+  "extends": "mysql-family",
+  "version": "10.5",
+  "target": true,
+  "lexical": {},
+  "ops": {},
+  "funcs": {},
+  "skel": {
+    "case": {
+      "tpl": "CASE {branches} ELSE {else} END",
+      "caveat": "numeric-scale"
+    }
+  },
+  "notes": {
+    "purpose": "The reference dialect. It is what examples/sql-php.php proves end to end and what the functional suite runs first, so it is authored before its sibling rather than derived from it.",
+    "version": "10.5 is the minimum this document assumes, and it is what every `since` is compared against — not the server actually on the other end of the connection, which a static translator never sees. A deployment on something newer that wants entries gated above 10.5 registers a derived dialect: Map::defineDialect('mariadb-11.8', ['extends' => 'mariadb', 'version' => '11.8']). Being conservative by default is the right way round: refusing a rule that would have worked costs a fallback to the evaluator, while accepting one that will not costs a query that fails at run time.",
+    "no-overrides": "This leaf overrides nothing any more. RMATCH was its one entry and moved to mysql-family once MySQL 8.4 confirmed the same template, which is what the family layer is for. A leaf that declares only a version is not an empty file: `version` is what every `since` is compared against, and `target: true` is what makes the name usable in translate().",
+    "case-pads-the-scale": "This file's first override, and it repeats ansi's template to add a caveat. MariaDB gives a CASE over NUM branches one type and pads the scale of the others: CASE WHEN FALSE THEN 2.50 ELSE 3 END is 3.00 here and 3 on MySQL 8.4, PostgreSQL and SQLite, and 3 in SEL. Scale is part of a SEL number (spec §4.1), so this is exactly what numeric-scale names -- the value is equal and the scale is not. Invisible while the result is read as a number, because the oracle compares NUM through Dec::cmp where 3 and 3.00 are one number; LEN(IF(FALSE, 2.50, 3)) is 1 in SEL and 4 here, and that is the corpus line that witnesses it. It is also why mysql.json is no longer empty-by-parity: see its notes."
+  }
+}

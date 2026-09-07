@@ -1,0 +1,109 @@
+# SEL → SQL translator error codes
+
+Normative registry for the translator. Codes are **stable identifiers**;
+messages are not — but unlike `spec/errors.md`, the message here is expected to
+be read. A translator error is not a bug report, it is an answer: *this rule
+cannot be pushed into this database, and here is what stopped it.* The
+`sql/cases/*.sqlt` suite asserts on code and position only, so messages stay
+free to change and to be translated.
+
+These codes are deliberately **not** in `spec/errors.md`. They are translator
+failures, not language failures. A SEL program that cannot be translated is not
+a wrong program — it is a program that will be evaluated the ordinary way.
+
+Every error carries the same four fields a `SelError` does:
+
+| Field | Meaning |
+|---|---|
+| `code` | one of the identifiers below |
+| `message` | human text, written to be acted on |
+| `line`, `col` | 1-based, in code points, of the node that failed |
+| `offset` | 0-based code point offset from the start of source |
+
+There is one class, `SqlError`, and one message. No diagnostics object, no
+second reporting channel, no `explain()` API.
+
+---
+
+## Codes
+
+| Code | Raised when |
+|---|---|
+| `E_SQL_DIALECT` | the named dialect does not exist, is a base rather than a target, or is below an entry's `since` |
+| `E_SQL_UNSUPPORTED` | an operator or function has no mapping in this dialect — or has one carrying a `caveat` while `strict` is set |
+| `E_SQL_UNBOUND` | a variable is read that the bindings do not name |
+| `E_SQL_BINDING` | a binding is malformed, names an unknown field, or collides with another relation's alias. *Malformed* is checked rather than assumed: a `column`, `raw` or `table` that is not a string, an identifier that is empty or contains a NUL, an alias that is not a string, and a `value` declaring `type: NUM` whose text is not SEL's canonical form for that number |
+| `E_SQL_ASSIGN` | stage 1 refuses an assignment or a sequence: compound assignment, reassignment, a read before the write, an assignment inside an aggregate body or a call argument, a non-constant index on the target, or a non-assignment before the result expression |
+| `E_SQL_INVALID` | every argument is knowable and SEL rejects the expression: an out-of-range length or position, a fractional count, text that is not a number, a zero divisor. *Knowable* means a literal, a scalar `value` binding, or an assignment over those. The message carries SEL's own code and the position is SEL's own innermost failing node |
+| `E_SQL_DEPTH` | the expression nests deeper than SEL will evaluate. The limit is the evaluator's own `MAX_DEPTH`, read from there and not copied, so a rule that translates is a rule that evaluates |
+| `E_SQL_SHAPE` | a list where a scalar is required; `_K` inside a relation body; a non-BOOL where a condition is required; an aggregate over something that is neither a list, a `columns` binding nor a `relation` binding; `asCondition()` on a non-BOOL fragment. Also every place a **row of a multi-field relation** is treated as one value, because it is a map in SEL: a bare `_`, `IN`, `COUNT`, `HAS`, indexing by position, and iterating it. `HAS` over a relation is refused outright — a relation's keys are positions, and the answer needs the row count |
+
+---
+
+## Where the message comes from
+
+For `E_SQL_UNSUPPORTED`, from the map itself. A refusal in `sql/dialects/*.json`
+may be spelled as a string, and that string is the reason (`sql/MAP.md` §2):
+
+```json
+"CRC32": "PostgreSQL has no built-in CRC-32; pgcrypto's digest() offers other algorithms, not this one"
+```
+
+produces
+
+```
+E_SQL_UNSUPPORTED at 1:1: CRC32 has no mapping in dialect postgresql —
+PostgreSQL has no built-in CRC-32; pgcrypto's digest() offers other
+algorithms, not this one
+```
+
+Writing the reason next to the decision is what makes one class and one message
+sufficient. The alternative — a generic "unsupported" plus an API to go and ask
+why — puts the explanation somewhere the person who made the decision will never
+look again.
+
+For every other code the message is written at the raise site, and it names the
+thing that was wrong rather than the rule that was violated: `ITEMS is bound as
+a column, so ALL cannot iterate it` rather than `bad aggregate source`.
+
+`E_SQL_INVALID` is the one code whose message comes from somewhere else again:
+from SEL. The translator hands the constant subtree to SEL's own evaluator and
+quotes what comes back, so the reason a translation was refused is the reason
+the expression would have failed had nobody tried to translate it:
+
+```
+E_SQL_INVALID at 1:13: SEL rejects this expression (E_RANGE: LEFT argument 2
+must not be negative), so there is nothing to translate; a database would
+answer something rather than fail
+```
+
+`E_SQL_DEPTH` is the same idea reached from the other side. `E_SQL_INVALID`
+refuses an expression SEL *rejects*; this refuses one SEL will not *reach*. A
+flat chain of 201 operators is `E_DEPTH` in the evaluator, and before the guard
+existed every host translated it — so the server answered a rule SEL has no
+answer for, which is the whole of §11.4's defect in a different costume. Both
+walks that touch the tree carry the bound: stage 1's substitution and the
+render walk.
+
+It is raised only where the answer is knowable, and the residual is exactly one
+thing: **a column**. A literal is knowable, a scalar `value` binding is a literal
+the host wrote down, and an assignment is knowable when its right-hand side is —
+including an assignment nothing reads, which stage 1 would otherwise drop before
+anyone looked at it. A column is not, and will not be until the query runs. The
+same mistake written with a column in it is not detected, and
+`docs/SQL-TRANSLATION.md` §11.4 says so rather than leaving it to be discovered.
+
+---
+
+## Refusal is an ordinary outcome
+
+```php
+Sql::translate($program, $dialect, $bindings, $options): Fragment    // throws
+Sql::tryTranslate($program, $dialect, $bindings, $options): ?Fragment  // null
+```
+
+`tryTranslate` catches `SqlError` and nothing else — a bug in the translator
+must not be swallowed by the code path that exists to handle expected refusals.
+Use it in an application's hot path, where "this one stays in PHP" is the
+answer. Use `translate` when you want the reason: during development, in a
+build-time audit of a rule set, or in a test.

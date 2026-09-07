@@ -207,3 +207,67 @@ b\"c\\d")))
   ;; Non-portable syntax is refused rather than quietly differing.
   (raises "E_REGEX_SYNTAX" (sel:evaluate "RMATCH('\\b', \"x\")"))
   (raises "E_REGEX_SYNTAX" (sel:evaluate "RMATCH('(?=a)', \"a\")")))
+
+;;; The SEL->SQL layer. Everything about it that a case file can state lives in
+;;; sql/cases/ and is run by lisp/bin/sqlt against the same corpus as the other
+;;; four hosts. These two cannot be stated there: a `.sqlt` case carries its
+;;; dialect as a string and runs under the standard printer, so neither the
+;;; shape of a host-supplied dialect nor the caller's printer settings is
+;;; something the corpus can vary. Both were live defects in this host alone.
+
+(test sql-dialect-need-not-be-a-string
+  ;; The dialect arrives from host code, not from a case file, so it can be any
+  ;; object at all. Whatever it is, TRY-TRANSLATE must answer NIL: it catches
+  ;; SQL-ERROR and nothing else, so a TYPE-ERROR raised deeper in the translator
+  ;; would escape the very call whose purpose is to absorb a refusal.
+  (let ((p (sel:compile-source "1")))
+    (is (null (sel.sql:try-translate p nil)))
+    (is (null (sel.sql:try-translate p :mariadb)))    ; a keyword, not "mariadb"
+    (is (null (sel.sql:try-translate p 42)))
+    (is (null (sel.sql:try-translate p '(1 2))))
+    (is (null (sel.sql:try-translate p "nonesuch")))))
+
+(test sql-numbers-are-decimal-whatever-the-caller-prints-in
+  ;; *PRINT-BASE* belongs to the caller and this layer may not read it. A number
+  ;; the translator decides at translation time -- COUNT over a known list is
+  ;; the one that does -- is a SEL number, and SEL numbers are decimal by
+  ;; specification (spec/SPEC.md §4). Rendered with PRINC-TO-STRING under the
+  ;; binding below, 12 comes out "C", MAKE-NUM raises E_NOT_NUM, and that
+  ;; SEL-ERROR escapes TRY-TRANSLATE.
+  (let* ((cols (apply #'sel.sql:binding-columns
+                      (loop for i from 1 to 12
+                            collect (sel.sql:binding-column (format nil "c~D" i)))))
+         (bindings (list (cons "COLS" cols)))
+         (program (sel:compile-source "COUNT(COLS)")))
+    (is (string= "12" (sel.sql:as-value
+                       (sel.sql:translate program "mariadb" bindings))))
+    (let ((*print-base* 16))
+      (is (string= "12" (sel.sql:as-value
+                         (sel.sql:translate program "mariadb" bindings)))))
+    (let ((*print-base* 2))
+      (is (string= "12" (sel.sql:as-value
+                         (sel.sql:translate program "mariadb" bindings)))))))
+
+(test sql-builder-receives-the-dialect
+  ;; A builder is the map's escape hatch, and the only entry point that hands
+  ;; application code anything of this layer's own. What it gets is the dialect:
+  ;; Python passes its builder `self.emit` and C++ an `Emit&`, and every emit
+  ;; function in this host takes a dialect as its first argument, so the dialect
+  ;; IS the emitter here. Handing over the translator instead -- which is what
+  ;; this host did -- gives host code an internal structure no other host
+  ;; passes, and a builder written against the documented contract breaks.
+  ;;
+  ;; No .sqlt case can watch this: a case's registrations are JSON and a builder
+  ;; is a function, so the corpus cannot express one at all.
+  (let ((seen :never-ran))
+    (unwind-protect
+         (progn
+           (sel.sql:define-builder "mariadb" :funcs "UPPER"
+             (lambda (emitter args pos)
+               (declare (ignore args pos))
+               (setf seen emitter)
+               (sel.sql::refuse "E_SQL_UNSUPPORTED" "the builder ran" nil)))
+           (sel.sql:try-translate (sel:compile-source "UPPER(\"a\")") "mariadb")
+           (is (equal "mariadb" seen)))
+      (sel.sql:map-reset))))
+

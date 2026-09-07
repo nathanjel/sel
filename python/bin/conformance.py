@@ -214,6 +214,14 @@ def run_case(c):
         return {'value': sel_compile(c['source']).run(root)}
     except SelError as e:
         return {'error': e}
+    except Exception as e:                           # noqa: BLE001
+        # The same guard the setup phase above already has. Without it a host
+        # exception escaped run_case and took the whole run with it, so this
+        # host reported nothing at all rather than one failing case: a 4301-digit
+        # literal raised ValueError out of CPython's int() and 599 other cases
+        # went unreported. A host failing where the other five return a value is
+        # exactly what the suite exists to show, so it has to survive being told.
+        return {'suite_error': f'host error: {type(e).__name__}: {e}'}
 
 
 def main():

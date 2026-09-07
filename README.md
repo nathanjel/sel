@@ -126,8 +126,9 @@ import { compile, Value } from './path/to/js/src/sel.mjs';   // any ESM runtime
 
 Python, PHP and JS need nothing at all — no pip, no Composer, no npm, no build
 step; copying `python/sel/`, `php/src/` or `js/src/` into a project works. C++ is
-a two-file drop-in, `cpp/sel.hpp` and `cpp/sel.cpp`, plus the vendored and pinned
-`cpp/third_party/srell/` (BSD-2); it also installs as a CMake package, so
+a three-file drop-in — `cpp/sel.hpp`, `cpp/sel_ast.hpp` and `cpp/sel.cpp` —
+plus the vendored and pinned `cpp/third_party/srell/` (BSD-2), with the SEL→SQL
+layer a strict addition of `cpp/sel_sql*.{hpp,cpp}` beside them; it also installs as a CMake package, so
 `find_package(sel-lang)` and `sel-lang::sel-lang` work. Common Lisp is an
 ordinary ASDF system whose one dependency is cl-ppcre (BSD-2).
 
@@ -313,7 +314,7 @@ catch (e) { if (e instanceof SelError) console.log(e.code); }   // E_NOT_BOOL
 ```
 
 The APIs are deliberately parallel, and `tools/check-api.sh` holds them to it —
-48 probes run through each host's own binding and diffed. `size()` is a method
+54 probes run through each host's own binding and diffed. `size()` is a method
 in all five, not a property in one of them, and the only remaining differences
 are the ones a language forces: how each spells a kind, and camelCase in PHP and
 JS against snake_case in C++ and Python.
@@ -344,9 +345,17 @@ PHP floats outright rather than pretend otherwise.
 
 ## Calling it from C++
 
-Two files to copy — `cpp/sel.hpp` and `cpp/sel.cpp` — plus the vendored
-`cpp/third_party/srell/`. Compile `sel.cpp` as part of your target; there is no
-library to build and nothing to fetch.
+Three files to copy — `cpp/sel.hpp`, `cpp/sel_ast.hpp` and `cpp/sel.cpp` — plus
+the vendored `cpp/third_party/srell/`. You include `sel.hpp`; `sel_ast.hpp` is
+internal and only has to sit beside `sel.cpp`, which is what includes it. Compile
+`sel.cpp` as part of your target; there is no library to build and nothing to fetch.
+
+For SEL→SQL as well, add `cpp/sel_sql.hpp` and the five internal headers and six
+`.cpp` files beside it (`sel_sql*.{hpp,cpp}`), and include `sel_sql.hpp`. It is a
+strict addition — the evaluator's own list does not change — and a target that
+never calls `Sql::translate` pays nothing for it: the generated dialect table is
+`constexpr` `.rodata` with no static constructor, and `--gc-sections` drops all
+of it. Or link the library and get both.
 
 ```cpp
 #include "sel.hpp"
@@ -642,11 +651,12 @@ land on the same set.
 spec/          SPEC.md, grammar.md, errors.md — normative
 conformance/   *.selt — normative; every implementation must pass
 docs/          LANGUAGE.md (rule authors), EXTENDING.md (contributors)
-               PARSER-MIGRATION.md (temporary; deleted at 1.0.0)
+               SQL-TRANSLATION.md + SQL-TESTING.md (the SEL->SQL layer)
+sql/           MAP.md, errors.md, dialects/*.json, cases/*.sqlt, mutations.json
 python/        sel/ (package sel), bin/, tests/
 php/           src/ (namespace Sel\), bin/sel, bin/conformance
 js/            src/ (ESM), bin/sel.mjs, bin/conformance.mjs
-cpp/           sel.hpp + sel.cpp (the drop-in), third_party/srell/, bin/, tests/
+cpp/           sel.hpp + sel_ast.hpp + sel.cpp (the drop-in), sel_sql*.* (SEL→SQL), third_party/srell/
 lisp/          sel.asd, src/ (package SEL), bin/, tests/
 examples/      host API, integration patterns, a real rule set
 tools/         fuzzer, decimal oracle, doc checker, check scripts
@@ -663,7 +673,7 @@ passes the same suite; `tools/impls.sh` is where it registers itself, and
 tools/check.sh
 ```
 
-Seven layers, each catching what the others miss:
+Eleven layers, each catching what the others miss:
 
 - **Conformance** — the normative suite, run by every implementation.
 - **Unit tests** — for the layers underneath the suite, where a bug otherwise
@@ -684,6 +694,30 @@ Seven layers, each catching what the others miss:
   comparing values, error codes and error positions. Roughly a third of the
   corpus is invalid on purpose: agreement on *where* a rule failed is as much
   part of the promise as agreement on what it returned.
+- **Manifest versions** — every package manifest declares the same version, so a
+  release cannot go out half-numbered.
+- **SEL→SQL map replay** — the shipped dialect map rebuilt through nothing but
+  each host's public registration API, and diffed against itself: 217 calls, 564
+  lookups, no differences. It asserts that anything the map contains an
+  application could have registered, which is what lets a host ship its map as
+  generated *code* rather than as a data file to deploy and parse.
+- **SEL→SQL translation** — the dialect map and the case table are generated, and
+  both are checked for staleness; then `sql/cases/*.sqlt` runs through every host
+  that has a translator, asserting the *exact* emitted string. Three hosts
+  agreeing on 377 exact strings is a measurement rather than an intention. The
+  design document's own worked examples are checked against the cases that
+  produced them, and `tools/mutate-sql.py` damages the layer ninety ways to prove
+  the cases can fail.
+- **SQL against a database** — the same expressions evaluated by SEL and by a
+  real MariaDB, MySQL, PostgreSQL or SQLite. Every other layer asks "is this the
+  string we meant to emit?"; only this one asks "does that string *mean* what SEL
+  means?". It skips itself when no DSN is set, which is why it is last: it is the
+  only layer that cannot run everywhere.
+
+Two more exist and are not in `tools/check.sh`, deliberately, because they take
+minutes rather than seconds: `tools/stress.sh` (deep structures, the shapes a
+fuzzer never emits) and `cd cpp && make asan` (the suite under the leak and
+undefined-behaviour checkers).
 
 The fuzzer is the one that earns its keep. It caught the `\d` UCP divergence; it
 caught C++ evaluating `TRUE $== FALSE`'s operands right-to-left, because the

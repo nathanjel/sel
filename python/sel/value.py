@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Iterator
 
 from . import decimal as D
-from .errors import Pos, SelError, fail
+from .errors import MAX_DEPTH, Pos, SelError, fail
 from .utf8 import bytes_to_hex, decode_utf8, encode_utf8, to_code_points
 
 NONE = 'NONE'
@@ -142,11 +142,6 @@ class Value:
         self.children[key] = value
         return self
 
-    def delete(self, key: str) -> Value:
-        if self.children:
-            self.children.pop(key, None)
-        return self
-
     # --- scalar context (§3.2) ------------------------------------------------
 
     def scalar_source(self, pos: Pos | None = None) -> Value:
@@ -190,7 +185,7 @@ class Value:
         v = self.scalar_source(pos)
         if v.kind != TEXT:
             fail('E_NOT_NUM', f'expected a number, got {v.kind.lower()}', pos)
-        d = D.parse(v.scalar)
+        d = D.parse(v.scalar, pos)
         if d is None:
             fail('E_NOT_NUM', f'not a number: {v.scalar!r}', pos)
         return d
@@ -199,19 +194,45 @@ class Value:
         """Non-throwing probe for ISNUM."""
         if self.kind == NONE and self.size() == 0:
             return False
+        # A well-formed numeral too big to hold raises E_RANGE out of parse.
+        # The probe answers no rather than raising, so ISNUM is true exactly
+        # when the value can be used as a number — before the cap it said true
+        # for a 2 000 000-digit text that then failed on first use.
         try:
             v = self.scalar_source(None)
+            return v.kind == TEXT and D.parse(v.scalar) is not None
         except SelError:
             return False
-        return v.kind == TEXT and D.parse(v.scalar) is not None
 
     # --- copying --------------------------------------------------------------
 
-    def clone(self) -> Value:
-        """Assignment copies by value: two variables never share structure (§5.7)."""
+    def clone(self, pos: Pos | None = None) -> Value:
+        """Assignment copies by value: two variables never share structure (§5.7).
+
+A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
+parser's and the evaluator's, and it was the last one left uncounted. clone,
+eql, dump and the two native conversions each recurse once per level, so a
+value nested deeply enough reached the host's own stack: RecursionError here
+at about a thousand levels, an uncaught RangeError on JS at about four, a
+segfault on C++ at about sixty. Three hosts answered where two died, on the
+same program.
+
+The depth rides as a parameter, as it does in dependencies(): nothing has to be
+released on the way out, so no guard object is needed and all five hosts spell
+it the same way. A value of exactly MAX_DEPTH levels is fine; the level past it
+is refused. `pos` is reported when the caller has one -- the evaluator knows
+which node asked -- and is None for a call from host code, the same convention
+as as_text().
+        """
+        return self._clone_at(1, pos)
+
+    def _clone_at(self, depth: int, pos: Pos | None) -> Value:
+        if depth > MAX_DEPTH:
+            fail('E_DEPTH', 'value nested too deeply', pos)
         out = Value(self.kind, self.scalar)
         if self.children:
-            out.children = {k: v.clone() for k, v in self.children.items()}
+            out.children = {k: v._clone_at(depth + 1, pos)
+                            for k, v in self.children.items()}
         return out
 
     # PHP spells the deep copy `->copy()`; the alias means a reader coming from
@@ -220,7 +241,12 @@ class Value:
 
     # --- structural equality (§5.4) -------------------------------------------
 
-    def eql(self, other: Value) -> bool:
+    def eql(self, other: Value, pos: Pos | None = None) -> bool:
+        return self._eql_at(other, 1, pos)
+
+    def _eql_at(self, other: Value, depth: int, pos: Pos | None) -> bool:
+        if depth > MAX_DEPTH:
+            fail('E_DEPTH', 'value nested too deeply', pos)
         if self.kind != other.kind:
             return False
         if self.kind in (TEXT, BOOL, BIN):
@@ -234,13 +260,18 @@ class Value:
         for i in range(len(a)):
             if a[i][0] != b[i][0]:      # key order is normative
                 return False
-            if not a[i][1].eql(b[i][1]):
+            if not a[i][1]._eql_at(b[i][1], depth + 1, pos):
                 return False
         return True
 
     # --- canonical dump (conformance/README.md) -------------------------------
 
     def dump(self) -> str:
+        return self._dump_at(1)
+
+    def _dump_at(self, depth: int) -> str:
+        if depth > MAX_DEPTH:
+            fail('E_DEPTH', 'value nested too deeply', None)
         if self.kind == NONE:
             s = '-'
         elif self.kind == TEXT:
@@ -251,13 +282,19 @@ class Value:
             s = 'TRUE' if self.scalar else 'FALSE'
         if self.size() == 0:
             return s
-        parts = [f'{quote_dump(k)}={v.dump()}' for k, v in self.entries()]
+        parts = [f'{quote_dump(k)}={v._dump_at(depth + 1)}' for k, v in self.entries()]
         return s + '{' + ', '.join(parts) + '}'
 
     # --- host convenience -----------------------------------------------------
 
     @staticmethod
     def from_native(x: Any) -> Value:
+        return Value._from_native_at(x, 1)
+
+    @staticmethod
+    def _from_native_at(x: Any, depth: int) -> Value:
+        if depth > MAX_DEPTH:
+            fail('E_DEPTH', 'value nested too deeply', None)
         if x is None:
             return Value.none()
         if isinstance(x, Value):
@@ -279,22 +316,27 @@ class Value:
         if isinstance(x, (bytes, bytearray)):
             return Value.bin(x)
         if isinstance(x, (list, tuple)):
-            return Value.list([Value.from_native(i) for i in x])
+            return Value.list([Value._from_native_at(i, depth + 1) for i in x])
         if isinstance(x, dict):
             v = Value.none()
             for k, item in x.items():
-                v.set(str(k), Value.from_native(item))
+                v.set(str(k), Value._from_native_at(item, depth + 1))
             return v
         raise TypeError(f'cannot convert {type(x).__name__} to SEL')
 
     def to_native(self) -> Any:
+        return self._to_native_at(1)
+
+    def _to_native_at(self, depth: int) -> Any:
+        if depth > MAX_DEPTH:
+            fail('E_DEPTH', 'value nested too deeply', None)
         if self.kind == TEXT or self.kind == BIN or self.kind == BOOL:
             scalar = self.scalar
         else:
             scalar = None
         if self.size() == 0:
             return scalar
-        obj = {k: v.to_native() for k, v in self.entries()}
+        obj = {k: v._to_native_at(depth + 1) for k, v in self.entries()}
         if scalar is None:
             return obj
         return {'_': scalar, **obj}

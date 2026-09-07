@@ -52,11 +52,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import decimal as D
-from .errors import Pos, fail
+from .errors import MAX_DEPTH, Pos, fail
 from .lexer import RESERVED, Token, tokenize
 from .registry import Spec, lookup
-
-MAX_DEPTH = 200
 
 ASSIGN_OPS = frozenset(['=', '+=', '-=', '*=', '/=', '%=', '&='])
 COMPARE_OPS = frozenset(['==', '!=', '<', '<=', '>', '>=',
@@ -94,7 +92,7 @@ INFIX_OPS: dict[str, tuple[int, str]] = {
 INFIX_WORDS: dict[str, tuple[int, str]] = {
     'OR': (BP_OR, 'L'), 'XOR': (BP_XOR, 'L'), 'AND': (BP_AND, 'L'),
     'BOR': (BP_BOR, 'L'), 'BXOR': (BP_BXOR, 'L'), 'BAND': (BP_BAND, 'L'),
-    'EQL': (BP_COMPARE, 'N'), 'IN': (BP_COMPARE, 'N'),
+    **{w: (BP_COMPARE, 'N') for w in COMPARE_WORDS},
 }
 
 
@@ -128,6 +126,20 @@ class Parser:
 
     # --- token helpers --------------------------------------------------------
 
+    def infix_entry(self, t: Token) -> tuple[int, str] | None:
+        """The two tables are one lookup.
+
+        Every question about an operator -- what it binds at, how it associates,
+        and whether it may follow a comparison -- is answered from here, so
+        adding an operator really is adding a row. Asking a separate list
+        anywhere would put that claim back in doubt.
+        """
+        if t.type == 'op':
+            return INFIX_OPS.get(t.value)
+        if t.type == 'ident':
+            return INFIX_WORDS.get(t.value)
+        return None
+
     def peek(self) -> Token:
         return self.toks[self.i]
 
@@ -140,9 +152,6 @@ class Parser:
         t = self.peek()
         return t.type == 'op' and t.value == v
 
-    def at_word(self, v: str) -> bool:
-        t = self.peek()
-        return t.type == 'ident' and t.value == v
 
     def at_eof(self) -> bool:
         return self.peek().type == 'eof'
@@ -211,12 +220,7 @@ class Parser:
 
         while True:
             t = self.peek()
-            if t.type == 'op':
-                entry = INFIX_OPS.get(t.value)
-            elif t.type == 'ident':
-                entry = INFIX_WORDS.get(t.value)
-            else:
-                entry = None
+            entry = self.infix_entry(t)
             if entry is None:
                 return left
             bp, assoc = entry
@@ -229,15 +233,25 @@ class Parser:
                 # Assignment. The target is validated against the AST shape, not
                 # against a value, which is what makes `(A) = 1` a compile error.
                 check_target(left, t)
-                value = self.parse_term(bp)
-                left = Node('assign', left.pos, op=t.value, target=left, value=value)
+                # Counted, for the same reason parse_prefix counts: the right
+                # side recurses without passing through parse_sequence or
+                # parse_primary, so uncounted a chain of assignments is bounded
+                # by nothing but the host's own stack -- and this host has the
+                # least of it, raising RecursionError where four others were
+                # still returning E_DEPTH.
+                self.enter(t.pos)
+                try:
+                    value = self.parse_term(bp)
+                    left = Node('assign', left.pos, op=t.value, target=left, value=value)
+                finally:
+                    self.leave()
                 continue
 
             if assoc == 'N':
                 right = self.parse_term(bp + 1)
                 after = self.peek()
-                if ((after.type == 'op' and after.value in COMPARE_OPS)
-                        or (after.type == 'ident' and after.value in COMPARE_WORDS)):
+                after_entry = self.infix_entry(after)
+                if after_entry is not None and after_entry[1] == 'N':
                     fail('E_SYNTAX',
                          'comparison operators do not chain — parenthesise, as in '
                          f'(a {t.value} b) AND (b {after.value} c)',
@@ -283,13 +297,28 @@ class Parser:
         return self.parse_postfix()
 
     # postfix = primary { "[" sequence "]" }
+    # postfix = primary { "[" sequence "]" }
+    #
+    # The bracket counts a level of its own. Without it an index is the one
+    # nesting door that recurses from outside parse_primary's enter/leave, so it
+    # charged one level per nesting where "(", "f(" and the prefix operators all
+    # charge for the frames they actually cost. Five stack frames against one
+    # level of the budget put a[a[...]] over CPython's 1000-frame limit before
+    # the 200-level guard could fire, and this is the host where that showed:
+    # `a[` x198 raised RecursionError through the public CLI while the others
+    # still answered. Counting the bracket halves the density to 2.5 frames per
+    # level, which puts the guard back in front of the stack at every depth.
     def parse_postfix(self) -> Node:
         node = self.parse_primary()
         while self.at_op('['):
             br = self.next()
-            idx = self.parse_sequence()
-            self.expect_op(']')
-            node = Node('index', br.pos, obj=node, idx=idx)
+            self.enter(br.pos)
+            try:
+                idx = self.parse_sequence()
+                self.expect_op(']')
+                node = Node('index', br.pos, obj=node, idx=idx)
+            finally:
+                self.leave()
         return node
 
     def parse_primary(self) -> Node:
@@ -299,7 +328,7 @@ class Parser:
             if t.type == 'num':
                 self.next()
                 # Canonicalised once, here: the literal 007 is the value 7.
-                return Node('num', t.pos, v=D.format(D.parse(t.value)))
+                return Node('num', t.pos, v=D.format(D.parse(t.value, t.pos)))
 
             if t.type == 'text':
                 self.next()

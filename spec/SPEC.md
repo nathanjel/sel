@@ -442,6 +442,15 @@ Parser nesting depth and evaluation depth are capped (implementation-defined,
 at least 200) and exceeding either is `E_DEPTH`. This is a denial-of-service
 guard, not a language feature.
 
+**What each construct costs is part of the contract, not an implementation
+detail.** A parenthesis, a call's parentheses and an index bracket each cost two
+levels — the construct's own and the sequence inside it — while a prefix
+operator and an assignment cost one. Those numbers are what
+`conformance/10-limits.selt` pins, at exact columns, and they are what makes
+`E_DEPTH` land in the same place on every host. The index bracket is the one
+that drifted: it recurses from outside the rule that counts, so four hosts
+charged it one level for five stack frames until it was counted separately.
+
 **Every construct that can nest is counted, including prefix operators.** A
 chain of `NOT` or unary `-` recurses in the parser without passing through a
 parenthesis, a call or an index, so it is easy to leave out of the count — and
@@ -450,6 +459,40 @@ thousand times raised a host-level `RangeError` on the JS host and **segfaulted
 the C++ one**, which is precisely the failure this cap exists to prevent. The
 error is reported at the operator that crossed the limit, not at the start of
 the chain.
+
+**`dependencies()` is capped by the evaluation depth and raises the same
+`E_DEPTH` at the same node.** It walks the tree without evaluating it, so it is
+neither of the two depths above and was left uncounted in every host; `A+A+A…`
+repeated about fifty thousand times then reached each host's own stack —
+`RangeError` on JS, `RecursionError` on Python, an exhausted control stack on
+Lisp, and a segfault on C++ and PHP. That a program's dependencies cannot be
+computed exactly when the program could not have been evaluated is the reason
+the two share a limit rather than each having one.
+
+**A value's nesting is capped by the same number, and exceeding it is
+`E_DEPTH`.** Every host walks a value recursively to copy it, to compare it with
+`EQL`, to dump it, and to convert it to and from native data. A chain of index
+brackets in an assignment *target* is walked iteratively — `A[1][2][3]` is a
+chain of index nodes, not a nesting of them — so neither of the two depths above
+ever saw it, and the value it built could be nested past what those walks
+survive. Uncounted, the hosts disagreed about where: an uncaught
+`RecursionError` on Python at about a thousand levels, an uncaught `RangeError`
+on JS at about four thousand, a segfault on C++ at about sixty thousand, while
+PHP and Lisp still answered. The error is reported at the assignment target.
+
+A value can also be nested past the cap through a host's own API, where there is
+no source and nothing to report a position against: building a value from the
+leaf up, nothing knows how deep it will end up, so the cap is enforced by the
+operations that walk it rather than by the one that adds a child. Such a value
+can be held; it cannot be copied, compared, dumped or converted.
+
+**A depth counts nesting in the source; a walk of the tree counts nodes.** The
+two are the same number for `((((1))))` and wildly different for `1+1+1+…`,
+which nests nothing and yet builds a tree as deep as it is long. A cap on the
+first does not bound the second, and any walk of a tree — evaluating it,
+analysing it, copying it, or freeing it — needs its own count or it will find
+the host's stack instead. That is the general rule the three caps are instances
+of, and every one of them was found the same way.
 
 Three arguments name a size rather than a value, and a large one asks for more
 work or more memory than any host has. Each is capped, and exceeding the cap is
@@ -472,6 +515,41 @@ on two hosts and raised a host-level `RangeError` on a third, while
 by a shift that silently truncates the exponent to 32 bits. A rule that asks for
 a million-digit scale is a mistake in the rule; the language should say so in the
 same vocabulary as every other mistake.
+
+**An argument cap is not a value cap.** The three caps above bound arguments
+that *name* a size; they say nothing about how big the number that comes out may
+be. `POWER`'s exponent is capped, but its base is not, so nesting one call
+inside another multiplies the exponents and steps straight over the cap:
+`POWER(POWER(10, 20), 100000)` is 2 000 001 digits, and every host produced it.
+One more level of nesting and a host does not report `E_RANGE`, it exhausts its
+memory. So the size of a *value* is capped too:
+
+| Value | Cap | Beyond it |
+|---|---|---|
+| integer digits of a number | 1 000 000 | `E_RANGE` |
+| fractional digits of a number | 1 000 000 | `E_RANGE` |
+
+Two independent caps rather than one budget shared between them, because
+`ROUND(99.5, 1000000)` is 1 000 002 digits and legal under the scale cap above:
+a single budget of 1 000 001 would have shrunk what this section already allows.
+Set where they are, the caps refuse nothing that the argument caps permit.
+
+Both are on the *rendered* size, which is what a host has to hold and what `LEN`
+counts — not on the stored digit string. The distinction is not academic:
+`POWER(POWER(0.1, 20), 100000)` stores the single digit `1` with a scale of
+2 000 000, because leading zeros are not stored, so a cap on the digit string
+would not notice it at all.
+
+The cap is checked wherever a number is built, not where it is rendered.
+`POWER` is repeated squaring over multiplication, so an over-large result is
+refused at an intermediate step and the value that would exhaust memory is never
+allocated.
+
+A numeral too long to hold is `E_RANGE` wherever it appears — as a literal, as
+the result of arithmetic, or as text that arithmetic reads. It is not
+`E_NOT_NUM`: every character of it is a digit, and "not a number" would be
+false. `ISNUM` is a probe and answers rather than raising, so it is `FALSE` for
+such a value: `ISNUM(x)` is true exactly when `x` can be used as a number.
 
 ---
 
@@ -624,8 +702,10 @@ Functions taking BIN accept TEXT and encode it as UTF-8 first.
 
 ### 7.8 Regular expressions
 
-SEL accepts a **subset of syntax that PCRE and ECMAScript agree on**, checked at
-compile time. Anything outside the subset is `E_REGEX_SYNTAX` with the offset of
+SEL accepts a **subset of syntax every host's regex engine agrees on**, checked
+at compile time. There are four of them behind five hosts — PCRE in PHP,
+ECMAScript in JS and (through SRELL) in C++, Python's `re`, and cl-ppcre in Lisp
+— and the subset is the intersection. Anything outside the subset is `E_REGEX_SYNTAX` with the offset of
 the offending character — a clear failure instead of a silent divergence between
 backend and frontend.
 
@@ -656,8 +736,8 @@ lookbehind, atomic groups, possessive quantifiers, inline modifiers `(?i)`,
   Negate the whole class instead. A leading `]` is likewise rejected — PCRE reads
   `[]` as a literal bracket and ECMAScript as an empty class — so write `\]`.
 
-**`\d`, `\w` and `\s` are rewritten, not passed through.** Both hosts expand them
-into explicit ASCII classes before compiling:
+**`\d`, `\w` and `\s` are rewritten, not passed through.** Every host expands
+them into explicit ASCII classes before compiling:
 
 | Escape | Becomes |
 |---|---|
@@ -683,9 +763,15 @@ between backend and frontend. Instead:
   `[^\n]` when you mean "not a newline"; that is portable and says what it means.
 - **`^` and `$` anchor only to the ends of the subject.** PCRE's `$` otherwise
   also matches before a trailing newline, so PHP must additionally compile with
-  the `D` modifier.
+  the `D` modifier. Python's `re` and cl-ppcre behave like PCRE here and have no
+  such modifier, so both hosts instead **lower `^` and `$` to `\A` and `\Z`**
+  after validating the pattern — the same rule reached by rewriting rather than
+  by a flag.
 
-Four requirements on implementations, without which the two hosts diverge:
+Four requirements on implementations, without which the hosts diverge. Each is
+written for the two engines SEL started with; the three added since each needed
+its own spelling of the same rule, and the third requirement below is where they
+differ most:
 
 1. **Compile with `u` and dotall in both hosts** (`us` in JS, `usD` in PHP), and
    expand the class escapes as above. `u` gives code point matching in both; the
@@ -705,15 +791,29 @@ A capture that did not participate in the match yields TEXT `""`.
 
 ## 8. Host interface
 
-Both implementations expose the same shape:
+Every implementation exposes the same shape:
 
 ```
 Sel.compile(source)          -> Program        # throws on syntax error
 Program.run(context)         -> Value
 Program.dependencies()       -> array of variable names, upper case
-Value.text/bin/num/bool/list/fromNative/toNative
+Program.ast                  -> the parse tree
+Value.text/bin/num/bool/list
+Value.fromNative/toNative                      # where the host has native data
 Value.isNone/isText/isBin/isBool               # kind predicates
 ```
+
+`fromNative`/`toNative` convert between a host's own maps and lists and a
+`Value`. C++ has neither, and deliberately: it has no native map or list to
+convert *from* — `Value.list` and `Value.set` are how a C++ program builds one,
+and a conversion from `std::map<std::string, std::variant<…>>` would be inventing
+a native type rather than accepting one. The other four hosts have an obvious
+candidate and all four have it.
+
+`Program.ast` is the parse tree, and it is public because the SEL→SQL layer is
+the second thing that walks it. It is the one part of this list whose *shape* is
+not specified here: `spec/grammar.md` names the productions, and a host's own
+tree is its business.
 
 **Constructors validate at the boundary.** `Value.text` raises `E_UTF8` on input
 that is not valid UTF-8, and `Value.num` canonicalises its argument (§4.1) and

@@ -1,0 +1,76 @@
+% IF and COND are one construct: condition/result pairs and a default.
+
+### name: cond.if.three-argument
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+IF(N > 0, "yes", "no")
+--- expect
+CASE WHEN (`n` > 0) THEN 'yes' ELSE 'no' END
+===
+### name: cond.if.two-argument-defaults-to-empty-text
+--- note
+spec §7.2: the two-argument form yields TEXT "" when the condition is false.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+IF(N > 0, "yes")
+--- expect
+CASE WHEN (`n` > 0) THEN 'yes' ELSE '' END
+===
+### name: cond.cond.ladder
+--- dialect
+mariadb
+--- bindings
+{"S": {"kind": "column", "column": "score", "type": "NUM"}}
+--- source
+COND(S >= 90, "A", S >= 80, "B", "F")
+--- expect
+CASE WHEN (`score` >= 90) THEN 'A' WHEN (`score` >= 80) THEN 'B' ELSE 'F' END
+===
+### name: cond.kind.unifies-when-the-branches-agree
+--- note
+Both branches are TEXT, so the CASE is TEXT — and asCondition() refuses it,
+which is the point of tracking the kind at all.
+--- dialect
+mariadb
+--- as
+condition
+--- source
+IF(TRUE, "a", "b")
+--- error
+E_SQL_SHAPE
+===
+### name: cond.kind.bool-branches-make-a-condition
+--- dialect
+mariadb
+--- as
+condition
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+IF(N > 0, N > 10, FALSE)
+--- expect
+CASE WHEN (`n` > 0) THEN (`n` > 10) ELSE FALSE END
+===
+### name: cond.refuse.condition-must-be-bool
+--- dialect
+mariadb
+--- source
+IF("yes", 1, 2)
+--- error
+E_SQL_SHAPE 1:4
+===
+### name: cond.nested
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+IF(N > 0, IF(N > 10, "big", "small"), "none")
+--- expect
+CASE WHEN (`n` > 0) THEN CASE WHEN (`n` > 10) THEN 'big' ELSE 'small' END ELSE 'none' END

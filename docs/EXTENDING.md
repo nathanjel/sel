@@ -66,12 +66,17 @@ are imported from `js/src/builtins/index.mjs` and Python's from
 `python/sel/builtins/__init__.py`. All three must happen before parsing, because
 unknown function names are a **compile-time** error.
 
-**One host does not match the table's spirit, on purpose.**
-`python/sel/parser.py` is precedence climbing, where the other four transcribe
-`spec/grammar.md` one function per production. It is the pilot for moving all
-five to that shape: see [PARSER-MIGRATION.md](PARSER-MIGRATION.md), which is a
-working document that gets deleted when the last host is converted. Read it
-before touching any parser.
+**All five parsers are precedence climbing**, and the table is true at the
+function level as well as the file level: `parse_program` → `parse_sequence` →
+`parse_list` → `parse_term` → `parse_prefix` → `parse_postfix` → `parse_primary`
+in every host, with the sixteen precedence levels of `spec/SPEC.md` §5 as a pair
+of lookup tables rather than sixteen functions. `python/sel/parser.py` was the
+pilot and its module docstring is the rationale; the other four were transcribed
+from it, one host at a time.
+
+Nothing differs between the hosts now. All five parse by precedence climbing,
+and all five have the SEL→SQL layer; `docs/SQL-TRANSLATION.md` is the design and
+`sql/cases/*.sqlt` grades every one of them against it.
 
 ---
 
@@ -553,26 +558,47 @@ its neighbours, associativity, and the failure modes.
 Getting this wrong makes `//` lex as two `/` tokens and the failure will look
 like a parser bug.
 
-**5. Every parser** — and this is the one step where the hosts currently differ.
-
-In the four transcribed parsers, `parseMultiplicative` already loops over a list:
-
-```js
-parseMultiplicative() { return this.parseOpBinary(['*', '/', '%', '//'], () => this.parseUnary()); }
-```
-
-A *new* precedence level means a new method in each of those, wired into the
-chain in the same place, and mirrored in `grammar.md`.
-
-In `python/sel/parser.py` it is a row in a table instead:
+**5. Every parser** — a row in a table, in all five, which is the whole point of
+the migration that finished:
 
 ```python
-INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }
+INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }        # python
+```
+```js
+const INFIX_OPS = new Map([ ..., ['//', [BP_MUL, 'L']], ... ]);   // js
+```
+```php
+private const INFIX_OPS = [ ..., '//' => [self::BP_MUL, 'L'], ... ];   // php
+```
+```cpp
+static const std::map<std::string, Infix> ops = { ..., {"//", {BP_MUL, 'L'}}, ... };
+```
+```lisp
+(setf (gethash "//" m) (cons +bp-mul+ #\L))          ; lisp
 ```
 
-and a new precedence level is a new `BP_` constant with the ones above it
-renumbered — no new function, and nothing to wire into a chain. That asymmetry
-is temporary and deliberate; see the note under "Where everything lives".
+A *new* precedence level is a new `BP_` constant with the ones above it
+renumbered — no new function, and nothing to wire into a chain. A **word**
+operator goes in the second table (`INFIX_WORDS`), because words lex as
+identifiers and symbols as ops, so they cannot share a key space.
+
+Three things the tables get wrong quietly, none of which the compiler catches,
+because each produces *a valid parse of the wrong tree*:
+
+- **Associativity is three-valued.** `L` parses its right side at `bp + 1`, `R`
+  at `bp` — that is what makes it right-associative — and `N` at `bp + 1` and
+  then rejects a second operator at the same level. A comparison is `N`, and its
+  `E_SYNTAX` is reported at the **second** operator.
+- **A prefix operator is not a primary.** `NOT` binds at 7 and unary `-` at 15,
+  and `parse_prefix` accepts each only when the caller's `min_bp` reaches it.
+  Putting them in `parse_primary`, where textbook precedence climbing puts them,
+  makes `NOT a == b` parse as `(NOT a) == b` and breaks two of the depth pins at
+  the same time.
+- **The list keys are compared as strings.** Lisp's table needs
+  `:test #'equal`; with the default `eql` no operator ever matches and every
+  program is a syntax error at its own first operator. JS uses a `Map` rather
+  than an object so that a token spelled like a name on `Object.prototype`
+  cannot answer for a real operator.
 
 **6. Every evaluator** — a branch in `evalBinary` / `eval_binary` /
 `eval-binary`. Use the operand's own position for type errors and the operator's
@@ -585,6 +611,15 @@ case '//': return Value.num(D.trunc(D.div(l.asDecimal(lp), r.asDecimal(rp), node
 In C++ and Lisp, bind the two coerced operands to named locals first. Writing
 them as two arguments to one call leaves their order unspecified in C++, and
 which operand's position an error reports is observable — see the traps.
+
+A **comparison** operator is the one case where the evaluator is two edits, not
+one: the branch in `evalBinary` hands off to `compareResult` /
+`compare_result` / `compare-result`, which turns a `-1 | 0 | 1` into a boolean
+and must learn the new operator too. Every host used to answer for an operator
+it did not name — `>=` in four of them, `FALSE` in JS — so forgetting this
+second edit produced wrong answers rather than an error. All five now refuse
+with `E_SYNTAX unknown comparison operator`, which is what you will see if you
+skip it.
 
 **7. `Program.dependencies()`** — nothing to do for a binary operator; `bin`
 nodes are already walked. A node type that binds names is a different story.
@@ -739,10 +774,11 @@ replacements are sliced from the original.
 
 **Watch `E_DEPTH`.** Every host caps parse and evaluation nesting at 200. If you
 add recursion, it must be counted, or a hostile rule becomes a stack overflow.
-This is not hypothetical and the rule was already broken once: `parseNot` and
-`parseUnary` recursed into themselves without passing through either of the two
-functions that track depth, so a chain of prefix operators was bounded by
-nothing. `-` repeated about twenty thousand times raised a `RangeError` in JS and
+This is not hypothetical and the rule was already broken once: the prefix
+operators recursed into themselves without passing through either of the two
+functions that track depth, so a chain of them was bounded by nothing. They live
+in `parsePrefix` in the table-driven hosts and in `parseNot`/`parseUnary` in the
+transcribed ones; the hazard is the same in both shapes. `-` repeated about twenty thousand times raised a `RangeError` in JS and
 **segfaulted the C++ host** through its public CLI. Count the nesting *only when
 the operator is actually consumed*, or every other expression loses a level and
 `lim.parse-depth` moves.
@@ -805,7 +841,7 @@ tools/check.sh                 everything, in order
 C++ has to be built first, or it is skipped with a note:
 
 ```
-cd cpp && make            builds build/{sel,conformance,batch,e2e,check-decimal}
+cd cpp && make            builds build/{sel,conformance,batch,e2e,api,ast,check-decimal,unit}
 cd cpp && make test       unit tests, then the suite
 lisp/bin/test             the Lisp unit tests
 PYTHONPATH=$PWD/python pytest python/tests    the Python unit tests

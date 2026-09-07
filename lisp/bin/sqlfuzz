@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Translates a generated corpus with the Common Lisp host, one line per program.
+here="$(cd "$(dirname "$0")" && pwd)"
+exec sbcl --noinform --disable-debugger --non-interactive \
+  --load "$here/boot.lisp" \
+  --load "$here/sqlfuzz.lisp" \
+  --eval '(sb-ext:exit :code (sel-sqlfuzz:main))' \
+  --end-toplevel-options "$@"

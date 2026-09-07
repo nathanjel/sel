@@ -3,12 +3,17 @@
 // Nothing here catches a SelError. An error surfaces from the innermost node
 // that failed, carrying that node's position, and no layer rewrites it.
 
-import { fail } from './errors.mjs';
+import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { bytesCompare } from './utf8.mjs';
 
-const MAX_DEPTH = 200;
+// Exported so the SQL translator can say "as deep as the evaluator counts"
+// rather than repeating 200, the same way python/sel/sql does.
+// Re-exported so that sel.mjs, which asks for the same cap on the static walk,
+// keeps naming the module that owns the depth rather than the one that owns
+// the number.
+export { MAX_DEPTH };
 
 export class Context {
   constructor(root) {
@@ -190,9 +195,9 @@ function evalBinary(node, ctx) {
   const lp = node.l.pos, rp = node.r.pos;
 
   switch (op) {
-    case '+': return Value.num(D.add(l.asDecimal(lp), r.asDecimal(rp)));
-    case '-': return Value.num(D.sub(l.asDecimal(lp), r.asDecimal(rp)));
-    case '*': return Value.num(D.mul(l.asDecimal(lp), r.asDecimal(rp)));
+    case '+': return Value.num(D.add(l.asDecimal(lp), r.asDecimal(rp), node.pos));
+    case '-': return Value.num(D.sub(l.asDecimal(lp), r.asDecimal(rp), node.pos));
+    case '*': return Value.num(D.mul(l.asDecimal(lp), r.asDecimal(rp), node.pos));
     case '/': return Value.num(D.div(l.asDecimal(lp), r.asDecimal(rp), node.pos));
     case '%': return Value.num(D.mod(l.asDecimal(lp), r.asDecimal(rp), node.pos));
 
@@ -200,14 +205,14 @@ function evalBinary(node, ctx) {
 
     case '==': case '!=': case '<': case '<=': case '>': case '>=': {
       const c = D.cmp(l.asDecimal(lp), r.asDecimal(rp));
-      return Value.bool(compareResult(op, c));
+      return Value.bool(compareResult(op, c, node.pos));
     }
     case '$==': case '$!=': case '$<': case '$<=': case '$>': case '$>=': {
       const c = bytesCompare(l.asBytes(lp), r.asBytes(rp));
-      return Value.bool(compareResult(op.slice(1), c));
+      return Value.bool(compareResult(op.slice(1), c, node.pos));
     }
 
-    case 'EQL': return Value.bool(l.eql(r));
+    case 'EQL': return Value.bool(l.eql(r, node.pos));
     case 'IN': return Value.bool(isIn(l, r));
 
     case 'XOR': return Value.bool(l.asBool(lp) !== r.asBool(rp));
@@ -218,7 +223,15 @@ function evalBinary(node, ctx) {
   fail('E_SYNTAX', `unknown operator ${op}`, node.pos);
 }
 
-function compareResult(op, c) {
+// The six comparisons, and nothing else.
+//
+// This switch had no default, so an operator it did not name fell off the end
+// as `undefined` and Value.bool made that FALSE -- a comparison operator added
+// to the parser and forgotten here answered FALSE for every pair of operands
+// and reported nothing. Unreachable today, since the caller only reaches this
+// with the six, and that is the point of saying so out loud rather than
+// answering.
+function compareResult(op, c, pos) {
   switch (op) {
     case '==': return c === 0;
     case '!=': return c !== 0;
@@ -227,6 +240,7 @@ function compareResult(op, c) {
     case '>': return c > 0;
     case '>=': return c >= 0;
   }
+  fail('E_SYNTAX', `unknown comparison operator ${op}`, pos);
 }
 
 // TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
@@ -269,7 +283,7 @@ function evalAssign(node, ctx) {
 
   let value;
   if (node.op === '=') {
-    value = evalNode(node.value, ctx).clone();
+    value = evalNode(node.value, ctx).clone(node.pos);
   } else {
     const current = walkCreate(ctx, path, path.length - 1).get(key);
     if (current === undefined) {
@@ -282,9 +296,9 @@ function evalAssign(node, ctx) {
       value = concat(current, rhs, tp, vp);
     } else {
       const a = current.asDecimal(tp), b = rhs.asDecimal(vp);
-      const r = binOp === '+' ? D.add(a, b)
-        : binOp === '-' ? D.sub(a, b)
-          : binOp === '*' ? D.mul(a, b)
+      const r = binOp === '+' ? D.add(a, b, node.pos)
+        : binOp === '-' ? D.sub(a, b, node.pos)
+          : binOp === '*' ? D.mul(a, b, node.pos)
             : binOp === '/' ? D.div(a, b, node.pos)
               : D.mod(a, b, node.pos);
       value = Value.num(r);
@@ -328,6 +342,15 @@ function resolveTarget(target, ctx) {
 
   if (ctx.isBound(n.name)) {
     fail('E_BAD_ASSIGN', `${n.name} is an aggregate binder and cannot be assigned`, target.pos);
+  }
+  // The chain was walked iteratively, which is why nothing has counted it yet:
+  // `A[1][2][3]` is a chain of index nodes, not a nesting of them, so neither the
+  // parser's depth nor the evaluator's ever sees it -- and the value it is about
+  // to build is one level deeper than the chain is long. Uncounted, that built a
+  // value deeper than clone, eql and dump can walk, so the assignment succeeded and
+  // reading the result back afterwards failed.
+  if (chain.length + 1 > MAX_DEPTH) {
+    fail('E_DEPTH', 'value nested too deeply', target.pos);
   }
   const path = [n.name];
   if (chain.length === 0) return path;

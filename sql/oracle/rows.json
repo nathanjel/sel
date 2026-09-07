@@ -1,0 +1,229 @@
+{
+  "note": [
+    "The row-parity oracle. Each rule is translated to a WHERE clause and run",
+    "against the fixture, and evaluated by SEL over the same rows loaded as a",
+    "context. The two id lists must match.",
+    "",
+    "This is the only oracle that exercises the `relation` binding, because a",
+    "correlated subquery has nothing to correlate to without a query around it.",
+    "The closed corpus in expressions.selo covers everything that does not need",
+    "a table; this covers what does.",
+    "",
+    "`expect` is not the answer being asserted -- the answer is whatever SEL",
+    "says. It is a guard that the fixture still makes the rule discriminate:",
+    "the driver fails if a rule selects every order or none, because a rule that",
+    "does agrees for no reason.",
+    "",
+    "`correlate.raw` is raw SQL by design -- it is the one place a host says something the map cannot know -- and raw SQL does not travel between dialects. So it is written per dialect here, and the driver picks. Backticks are MySQL-family and SQLite; PostgreSQL wants double quotes."
+  ],
+  "fixture": {
+    "mariadb": "fixture-mysql-family.sql",
+    "mysql": "fixture-mysql-family.sql",
+    "sqlite": "fixture-sqlite.sql",
+    "postgresql": "fixture-postgresql.sql"
+  },
+  "select": "SELECT id FROM o WHERE {} ORDER BY id",
+  "bindings": {
+    "CREDIT_LIMIT": {
+      "kind": "column",
+      "table": "o",
+      "column": "credit_limit",
+      "type": "NUM"
+    },
+    "SKUS": {
+      "kind": "relation",
+      "from": "order_items",
+      "alias": "sk",
+      "correlate": {
+        "raw": {
+          "mariadb": "`sk`.`order_id` = `o`.`id`",
+          "mysql": "`sk`.`order_id` = `o`.`id`",
+          "sqlite": "`sk`.`order_id` = `o`.`id`",
+          "postgresql": "\"sk\".\"order_id\" = \"o\".\"id\""
+        }
+      },
+      "scalar": "SKU",
+      "fields": {
+        "SKU": {
+          "table": "sk",
+          "column": "sku",
+          "type": "TEXT"
+        }
+      }
+    },
+    "ITEMS": {
+      "kind": "relation",
+      "from": "order_items",
+      "alias": "oi",
+      "correlate": {
+        "raw": {
+          "mariadb": "`oi`.`order_id` = `o`.`id`",
+          "mysql": "`oi`.`order_id` = `o`.`id`",
+          "sqlite": "`oi`.`order_id` = `o`.`id`",
+          "postgresql": "\"oi\".\"order_id\" = \"o\".\"id\""
+        }
+      },
+      "scalar": "SKU",
+      "fields": {
+        "QTY": {
+          "table": "oi",
+          "column": "qty",
+          "type": "NUM"
+        },
+        "PRICE": {
+          "table": "oi",
+          "column": "price",
+          "type": "NUM"
+        },
+        "SKU": {
+          "table": "oi",
+          "column": "sku",
+          "type": "TEXT"
+        }
+      }
+    },
+    "NOTES": {
+      "kind": "relation",
+      "from": "order_items",
+      "alias": "nt",
+      "correlate": {
+        "raw": {
+          "mariadb": "`nt`.`order_id` = `o`.`id`",
+          "mysql": "`nt`.`order_id` = `o`.`id`",
+          "sqlite": "`nt`.`order_id` = `o`.`id`",
+          "postgresql": "\"nt\".\"order_id\" = \"o\".\"id\""
+        }
+      },
+      "scalar": "NOTE",
+      "fields": {
+        "NOTE": {
+          "table": "nt",
+          "column": "note",
+          "type": "TEXT"
+        }
+      }
+    }
+  },
+  "context": {
+    "query": "SELECT id, credit_limit FROM o ORDER BY id",
+    "key": "id",
+    "columns": {
+      "credit_limit": "CREDIT_LIMIT"
+    },
+    "children": {
+      "ITEMS": {
+        "query": "SELECT order_id, qty, price, sku FROM order_items ORDER BY order_id, sku",
+        "parent": "order_id",
+        "columns": {
+          "qty": "QTY",
+          "price": "PRICE",
+          "sku": "SKU"
+        }
+      },
+      "SKUS": {
+        "query": "SELECT order_id, sku FROM order_items ORDER BY order_id, sku",
+        "parent": "order_id",
+        "scalar": "sku"
+      },
+      "NOTES": {
+        "query": "SELECT order_id, note FROM order_items ORDER BY order_id, sku",
+        "parent": "order_id",
+        "scalar": "note"
+      }
+    }
+  },
+  "rules": [
+    {
+      "name": "all lines have quantity",
+      "sel": "ALL(ITEMS, I, I[\"QTY\"] > 0)",
+      "expect": [
+        1,
+        2,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "any big line",
+      "sel": "ANY(ITEMS, I, I[\"QTY\"] > 4)",
+      "expect": [
+        2,
+        5
+      ]
+    },
+    {
+      "name": "has no lines",
+      "sel": "COUNT(ITEMS) == 0",
+      "expect": [
+        3
+      ]
+    },
+    {
+      "name": "over credit limit",
+      "sel": "SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"]) > CREDIT_LIMIT",
+      "expect": [
+        2
+      ]
+    },
+    {
+      "name": "empty lines counted",
+      "sel": "COUNT(FILTER(ITEMS, _[\"QTY\"] <= 0)) > 0",
+      "expect": [
+        4
+      ]
+    },
+    {
+      "name": "all skus well formed",
+      "sel": "ALL(ITEMS, RMATCH('^[A-Z]{2}-\\d{4}$', _[\"SKU\"]))",
+      "expect": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "name": "filtered lines all cheap",
+      "sel": "ALL(FILTER(ITEMS, _[\"QTY\"] > 0), _[\"PRICE\"] < 20)",
+      "expect": [
+        1,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "sku in the line set",
+      "note": "SKUS projects one column, so SEL reads it as a list of scalars and IN means the same thing on both sides. IN over the multi-field ITEMS is refused; see the refusal case in sql/cases/09-refusals.sqlt.",
+      "sel": "\"AB-1000\" IN SKUS",
+      "expect": [
+        1
+      ]
+    },
+    {
+      "name": "sku matches, exact case",
+      "sel": "ANY(ITEMS, _[\"SKU\"] $== \"AB-1000\")",
+      "expect": [
+        1
+      ]
+    },
+    {
+      "name": "sku matches, wrong case",
+      "sel": "ANY(ITEMS, _[\"SKU\"] $== \"ab-1000\")",
+      "expect": [],
+      "degenerate": "Empty is the point. The fixture's columns are utf8mb4_general_ci, so a server comparing them under the column collation answers [1] and SEL answers []. This rule is the collation carried into a correlated subquery, which nothing else here checks."
+    },
+    {
+      "name": "a NULL among the rows must not swallow a NOT",
+      "sel": "NOT(\"flag\" IN NOTES)"
+    },
+    {
+      "name": "a NULL inside an ALL body is not a failed row",
+      "sel": "ALL(ITEMS, I, NOT(I[\"SKU\"] IN NOTES))"
+    },
+    {
+      "name": "a NULL matched positively still answers",
+      "sel": "ANY(ITEMS, I, I[\"SKU\"] IN NOTES)"
+    }
+  ]
+}

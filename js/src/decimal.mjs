@@ -14,6 +14,16 @@ import { fail } from './errors.mjs';
 
 export const DIV_SCALE = 10;
 
+// spec/SPEC.md §6.4. These bound the *value*; ROUND's scale cap and POWER's
+// exponent cap bound *arguments*, and an argument cap is not a value cap —
+// POWER's base is unbounded, so nesting one POWER inside another multiplies the
+// exponents and steps straight over the exponent cap. Two independent numbers
+// rather than one shared budget, because ROUND(99.5, 1000000) is 1 000 002
+// digits and legal under the scale cap: a shared budget would have shrunk what
+// the spec already sanctions.
+export const MAX_INT_DIGITS = 1000000;
+export const MAX_FRAC_DIGITS = 1000000;
+
 // --- digit-string primitives (non-negative, no leading zeros) ----------------
 
 function strip(s) {
@@ -96,20 +106,38 @@ function make(neg, digits, scale) {
   return { neg: digits === '0' ? false : neg, digits, scale };
 }
 
+// Refuses a value SEL cannot hold, where it is built rather than where it is
+// rendered. Every operation that can grow a number passes its result through
+// here, so POWER — repeated squaring over mul — trips on an intermediate and the
+// enormous value is never allocated: without that, nesting POWER three deep
+// exhausted the host's memory before any check could run.
+function guard(d, pos) {
+  if (d.scale > MAX_FRAC_DIGITS) fail('E_RANGE', `number has more than ${MAX_FRAC_DIGITS} fractional digits`, pos);
+  // Negative when the value is below 1: those render as a single "0".
+  if (d.digits.length - d.scale > MAX_INT_DIGITS) {
+    fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
+  }
+  return d;
+}
+
 export const ZERO = make(false, '0', 0);
 
 const NUM_RE = /^-?[0-9]+(\.[0-9]+)?$/;
 
 // Returns null when the text is not a number; callers raise E_NOT_NUM with the
 // position of the offending node. No trimming — " 2" is not a number.
-export function parse(text) {
+//
+// A well-formed numeral too big to hold is E_RANGE, not null: every character of
+// it is a digit, so "not a number" would be false. Callers that must not raise —
+// ISNUM's probe — catch it and answer no.
+export function parse(text, pos) {
   if (typeof text !== 'string' || !NUM_RE.test(text)) return null;
   const neg = text.charCodeAt(0) === 45;
   const body = neg ? text.slice(1) : text;
   const dot = body.indexOf('.');
   const intPart = dot < 0 ? body : body.slice(0, dot);
   const fracPart = dot < 0 ? '' : body.slice(dot + 1);
-  return make(neg, strip(intPart + fracPart), fracPart.length);
+  return guard(make(neg, strip(intPart + fracPart), fracPart.length), pos);
 }
 
 export function format(d) {
@@ -151,18 +179,20 @@ function aligned(a, b) {
   return [ scaleUp(a.digits, s - a.scale), scaleUp(b.digits, s - b.scale), s ];
 }
 
-export function add(a, b) {
+export function add(a, b, pos) {
   const [A, B, s] = aligned(a, b);
-  if (a.neg === b.neg) return make(a.neg, addAbs(A, B), s);
+  // Only true addition can grow: a difference is never wider than its operands,
+  // and the aligned scale is the larger of two already legal ones.
+  if (a.neg === b.neg) return guard(make(a.neg, addAbs(A, B), s), pos);
   const c = cmpAbs(A, B);
   if (c === 0) return make(false, '0', s);
   return c > 0 ? make(a.neg, subAbs(A, B), s) : make(b.neg, subAbs(B, A), s);
 }
 
-export function sub(a, b) { return add(a, negate(b)); }
+export function sub(a, b, pos) { return add(a, negate(b), pos); }
 
-export function mul(a, b) {
-  return make(a.neg !== b.neg, mulAbs(a.digits, b.digits), a.scale + b.scale);
+export function mul(a, b, pos) {
+  return guard(make(a.neg !== b.neg, mulAbs(a.digits, b.digits), a.scale + b.scale), pos);
 }
 
 export function cmp(a, b) {
@@ -191,10 +221,10 @@ export function div(a, b, pos) {
       scale--;
     }
     if (digits === '0') scale = 0;
-    return make(neg, digits, scale);
+    return guard(make(neg, digits, scale), pos);
   }
   const up = cmpAbs(addAbs(r, r), D) >= 0 ? addAbs(q, '1') : q;
-  return make(neg, up, DIV_SCALE);
+  return guard(make(neg, up, DIV_SCALE), pos);
 }
 
 // Remainder of truncated division: takes the sign of the dividend.
@@ -207,13 +237,14 @@ export function mod(a, b, pos) {
 
 // --- rounding ---------------------------------------------------------------
 
-export function round(d, n) {
-  if (n >= d.scale) return make(d.neg, scaleUp(d.digits, n - d.scale), n);
+export function round(d, n, pos) {
+  if (n >= d.scale) return guard(make(d.neg, scaleUp(d.digits, n - d.scale), n), pos);
   const k = d.scale - n;
   const p = POW10(k);
   const [q, r] = divModAbs(d.digits, p);
+  // Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
   const up = cmpAbs(addAbs(r, r), p) >= 0 ? addAbs(q, '1') : q;
-  return make(d.neg, up, n);
+  return guard(make(d.neg, up, n), pos);
 }
 
 export function trunc(d) {
@@ -236,7 +267,7 @@ export function ceil(d) {
 
 // n must be a non-negative integer; the result scale is scale(x) * n, which
 // falls out of repeated multiplication.
-export function power(a, n) {
+export function power(a, n, pos) {
   let result = make(false, '1', 0);
   let base = a;
   // Arithmetic, not bit operators: JS's `&` and `>>` coerce to *32 bits*, so a
@@ -244,9 +275,9 @@ export function power(a, n) {
   // 1000 with total confidence. Numbers are exact integers to 2^53 here.
   let e = n;
   while (e > 0) {
-    if (e % 2 === 1) result = mul(result, base);
+    if (e % 2 === 1) result = mul(result, base, pos);
     e = Math.floor(e / 2);
-    if (e > 0) base = mul(base, base);
+    if (e > 0) base = mul(base, base, pos);
   }
   return result;
 }

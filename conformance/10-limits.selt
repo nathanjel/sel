@@ -97,3 +97,264 @@ every expression a level, this case would fail and lim.parse-depth would too.
 --- expect
 error E_DEPTH at 1:101
 ===
+### name: lim.numeral.literal-past-a-host-limit
+--- note
+CPython refuses int(text) above 4300 digits by default, so this program did not
+merely evaluate differently on the Python host -- it did not compile there at
+all, raising a host ValueError out of the lexer, before any SEL rule had a say.
+Four other hosts returned the length. How long a numeral may be is a question
+6.4 answers; no host may answer it privately, and none may answer it by
+crashing. The differential never caught this because it does not generate a
+numeral this long -- which is why the case is pinned by hand.
+--- source
+LEN(11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111)
+--- expect
+num 4301
+===
+### name: lim.numeral.arithmetic-past-a-host-limit
+--- note
+The same host limit reached through arithmetic rather than a literal: the value
+is built as an integer and then rendered, and it was the rendering CPython
+refused. Compact to write, so it belongs beside the literal case.
+--- source
+LEN(POWER(10, 5000))
+--- expect
+num 5001
+===
+### name: lim.numeral.integer-digits-at-the-cap
+--- note
+Exactly 1 000 000 integer digits: 10^999999, reached as 10^900000 * 10^99999
+because POWER's own exponent cap is 100 000 and no single call can get there.
+This is the largest magnitude SEL admits, and it must keep working.
+--- source
+A = POWER(10, 100000); B = A*A*A*A*A*A*A*A*A; LEN(B * POWER(10, 99999))
+--- expect
+num 1000000
+===
+### name: lim.numeral.integer-digits-past-the-cap
+--- note
+One digit more -- 10^1000000 -- and the same expression is refused. Every host
+computed it happily before the cap existed.
+--- source
+A = POWER(10, 100000); B = A*A*A*A*A*A*A*A*A; LEN(B * A)
+--- expect
+error E_RANGE
+===
+### name: lim.numeral.scale-at-the-cap
+--- note
+The other axis. 0.1^100000 is exact -- digits "1", scale 100 000 -- so ten of
+them multiplied give scale 1 000 000 with a single significant digit. A cap on
+the length of the digit string alone would not notice this number at all; what
+is capped is the rendered size, and here all of it is fractional. LEN counts
+the leading "0" and the point, hence 1 000 002 for a scale of 1 000 000.
+--- source
+C = POWER(0.1, 100000); LEN(C*C*C*C*C*C*C*C*C*C)
+--- expect
+num 1000002
+===
+### name: lim.numeral.scale-past-the-cap
+--- note
+One fractional digit more, and it is refused -- the mirror of
+lim.numeral.integer-digits-past-the-cap, and the reason the cap is two numbers
+rather than one sum: magnitude and precision are bounded independently, so
+neither steals room from the other.
+--- source
+C = POWER(0.1, 100000); LEN(C*C*C*C*C*C*C*C*C*C*0.1)
+--- expect
+error E_RANGE
+===
+### name: lim.numeral.round-at-the-scale-cap
+--- note
+6.4 already caps ROUND's scale at 1 000 000, so a number with 1 000 000
+fractional digits is legal SEL and four hosts already produced it. The value cap
+is set at ROUND's ceiling rather than under it, so this costs nothing.
+--- source
+LEN(ROUND(1.5, 1000000))
+--- expect
+num 1000002
+===
+### name: lim.numeral.round-at-the-scale-cap-keeps-its-integer-part
+--- note
+Two integer digits at the maximum scale: 1 000 002 digits in total, and legal,
+because the two caps are independent rather than a single budget shared between
+them. A cap on total rendered digits set at 1 000 001 would have refused this,
+which is why there is no such cap -- ROUND at its own documented ceiling must
+work whatever the integer part is.
+--- source
+LEN(ROUND(99.5, 1000000))
+--- expect
+num 1000003
+===
+### name: lim.numeral.power-base-is-not-capped
+--- note
+The hole stated plainly. POWER's exponent is capped at 100 000; its *base* is
+not, so nesting one POWER inside another multiplies the exponents and steps over
+the cap: 2 000 001 digits on all five working hosts, refused by none. Nest it
+once more and PHP does not raise E_RANGE, it dies with "Allowed memory size of
+134217728 bytes exhausted" -- the host-specific failure 6.4 exists to prevent,
+reached through the front door. The guard is on the result of every growing
+operation rather than on POWER's arguments, so repeated squaring trips it at an
+intermediate step and the enormous value is never built.
+--- source
+LEN(POWER(POWER(10, 20), 100000))
+--- expect
+error E_RANGE
+===
+### name: lim.numeral.power-base-is-not-capped-fractionally
+--- note
+The same escape through the other door, and the one a digit-length cap would
+miss entirely: the digit string here is "1" no matter how deep the nesting goes,
+because leading zeros are stripped -- all the growth is in the scale. 2 000 000
+fractional digits on every working host today.
+--- source
+LEN(POWER(POWER(0.1, 20), 100000))
+--- expect
+error E_RANGE
+===
+### name: lim.numeral.runtime-text-past-the-cap
+--- note
+A numeral does not have to be written in the source to be too big. This text is
+well formed and 2 000 000 digits long, so it is a number SEL cannot hold, and
+arithmetic on it says exactly that: E_RANGE, not E_NOT_NUM. The distinction
+matters because "not a number" would be false -- every character is a digit.
+--- source
+REPEAT("1", 2000000) + 0
+--- expect
+error E_RANGE
+===
+### name: lim.numeral.isnum-stays-total
+--- note
+ISNUM is a probe and must answer rather than raise, so the value that makes
+arithmetic fail with E_RANGE makes ISNUM false. The pair is the contract: ISNUM
+is true exactly when the value can be used as a number. It answered TRUE here
+before the cap, which was the hidden assumption -- true, then E_RANGE on use.
+--- source
+ISNUM(REPEAT("1", 2000000))
+--- expect
+bool FALSE
+===
+### name: lim.numeral.isnum-below-the-cap
+--- note
+The same probe one order of magnitude down, to prove the cap is what changed
+the answer and not the length of the text.
+--- source
+ISNUM(REPEAT("1", 200000))
+--- expect
+bool TRUE
+===
+### name: lim.assign-depth
+--- note
+Assignment is right associative, so the right-hand side recurses -- and that
+recursion passed through neither of the two functions that track depth, exactly
+the hole `lim.prefix-depth-neg` closed for prefix operators, still open through
+`=` until it was counted.
+
+Uncounted it was bounded by nothing but each host's own stack, and the hosts
+failed in four different ways on the same input: `A=` forty-four thousand times
+terminated the C++ host with SIGSEGV through its public CLI, the Lisp host
+exhausted its control stack, the JS host raised a RangeError, and the Python
+host raised RecursionError from as few as a thousand -- while the others were
+still returning a clean error. PHP survived to two hundred thousand and then
+exhausted memory.
+
+The error lands on the primary after the 199th `=`, because the primary rule
+counts a level of its own on top of the chain.
+--- source
+A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=1
+--- expect
+error E_DEPTH at 1:399
+===
+### name: lim.assign-depth-just-under
+--- note
+One shorter, and it is an ordinary program. Pinning both sides so a host that
+counts the chain twice, or not at all, fails here rather than somewhere far away.
+--- source
+A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=A=1
+--- expect
+num 1
+===
+### name: lim.assign-depth-shares-the-paren-budget
+--- note
+Counting the assignment recursion means an assignment costs a level of the same
+200 the parentheses draw on, so an assignment nested deeply enough inside
+parentheses trips where the parentheses alone would not. That is the intended
+behaviour and it is what NOT and unary minus already do -- the same source with
+NOT TRUE in place of the assignment reports E_DEPTH at the same column -- but it
+narrows the set of programs that compile, so it is pinned rather than left to be
+rediscovered.
+
+lim.prefix-depth-does-not-shift-parens is the same guard for the prefix
+operators, from the other side: they must cost a level only when consumed. This
+is the pair for assignment.
+--- source
+(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((A = 1)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+--- expect
+error E_DEPTH at 1:104
+===
+### name: lim.assign-depth-inside-parens-just-under
+--- note
+One parenthesis shallower and the same rule compiles, so the cost is exactly one
+level and not two.
+--- source
+((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((A = 1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+--- expect
+num 1
+===
+### name: lim.value-depth
+--- note
+A value's nesting is the third thing §6.4 caps, after the parser's and the
+evaluator's, and it was the last one left uncounted. Every host walks a value
+recursively to copy it, compare it or dump it, and a chain of index brackets in
+an assignment TARGET is walked iteratively -- it is a chain of index nodes, not a
+nesting of them -- so neither of the other two counters ever saw it.
+
+Uncounted, this built a value deeper than those walks could survive, and the
+hosts disagreed about where: an uncaught RecursionError on Python at about a
+thousand levels, an uncaught RangeError on JS at about four thousand, a segfault
+on C++ at about sixty thousand, while PHP and Lisp still answered.
+
+200 brackets make a value 201 levels deep, which is the first one refused. The
+error lands on the assignment target -- the OUTERMOST index, which is the last
+bracket in the source, since A[1][1] parses as (A[1])[1] -- so the column moves
+with the length of the chain and pins that the whole chain was counted.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; A EQL A
+--- expect
+error E_DEPTH at 1:599
+===
+### name: lim.value-depth-just-under
+--- note
+One bracket shallower is exactly 200 levels and is an ordinary program, so the
+boundary is pinned from both sides: a host that counts the chain twice, or not
+at all, fails here rather than somewhere far away.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; A EQL A
+--- expect
+bool TRUE
+===
+### name: lim.index-depth
+--- note
+An index bracket costs a level of the same 200 the parentheses draw on, because
+the bracket loop recurses from outside the primary rule that would otherwise
+count it. Uncounted it charged one level for five stack frames, and `a[` x198
+exhausted CPython's stack before the guard fired -- a host crash through the
+public CLI, while the other four hosts still returned a clean error.
+
+The error lands on the 100th bracket: 99 brackets and their sequences spend 198
+levels, the outer sequence one more, and the 100th bracket is the 201st.
+--- source
+a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+--- expect
+error E_DEPTH at 1:201
+===
+### name: lim.index-depth-just-under
+--- note
+One shorter, and it is an ordinary program -- E_UNDEF_VAR, because `a` is not
+bound, which is the point: it got past the parser. Pinning both sides so a host
+that counts the bracket twice, or not at all, fails here rather than somewhere
+far away.
+--- source
+a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+--- expect
+error E_UNDEF_VAR at 1:1
+===

@@ -1,7 +1,7 @@
 {
   "name": "sel-lang",
   "version": "0.3.0",
-  "description": "A small expression language for validation rules — one rule file evaluates identically on JavaScript, PHP, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness.",
+  "description": "A small expression language for validation rules — one rule file evaluates identically on JavaScript, PHP, Python, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness.",
   "keywords": [
     "validation",
     "rules",
@@ -25,6 +25,7 @@
   "type": "module",
   "exports": {
     ".": "./js/src/sel.mjs",
+    "./sql": "./js/src/sql/index.mjs",
     "./package.json": "./package.json",
     "./bundle": "./dist/sel.mjs",
     "./bundle.min": "./dist/sel.min.mjs"
@@ -39,9 +40,11 @@
     "./js/src/builtins/*.mjs"
   ],
   "files": [
-    "dist/",
+    "dist/sel.mjs",
+    "dist/sel.min.mjs",
     "js/src/",
     "js/bin/",
+    "conformance/",
     "docs/",
     "spec/",
     "examples/order-validation.sel",

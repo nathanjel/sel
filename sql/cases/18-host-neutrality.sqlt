@@ -1,0 +1,499 @@
+% Where a host language's own rules were deciding the answer.
+%
+% Every case here separates a correct implementation from one that reached for
+% its host's nearest built-in. They exist because a cross-host review found the
+% SQL layer letting PHP's and Python's semantics choose the output -- and, in the
+% worst of them, letting BOTH hosts choose the same wrong output, which no
+% PHP-against-Python comparison can ever see.
+%
+% These run under every host that has a SQL layer, which is what makes them the
+% enforcement mechanism: sql/mutations.json targets PHP and JSON, and
+% sql/oracle/ is PHP-only, so a case file is the only witness the next four
+% ports inherit automatically.
+
+### name: neutral.key.unicode-digits-are-not-a-position
+--- note
+SEL list keys are the canonical ASCII decimals, so a key written with an
+Arabic-Indic digit names no position and the evaluator answers E_NO_KEY. Every
+host gets that from a character class -- `[1-9][0-9]{0,8}` -- except Common
+Lisp, whose DIGIT-CHAR-P accepts every Unicode decimal digit. The key below is
+"1" followed by ARABIC-INDIC DIGIT THREE, which that host read as 13 and
+resolved to the thirteenth column; the binding has thirteen so the answer was a
+real identifier, not a refusal. Thirteen columns for that reason: a shorter
+binding refuses on the range check and cannot tell the two readings apart.
+
+THREE and not ZERO, which would have needed only ten: SBCL 2.6.6's
+DIGIT-CHAR-P answers NIL for U+0660 and 0 for every other Unicode decimal zero
+tried (Devanagari, Bengali, N'Ko, Myanmar, fullwidth), so a key written with
+that one character refuses under both readings and pins nothing. THREE is not
+hostage to the quirk: it is read as a position by any host whose digit test is
+the Unicode one, quirk or no quirk.
+--- dialect
+mariadb
+--- bindings
+{"COLS": {"kind": "columns", "items": [{"column": "c1"}, {"column": "c2"}, {"column": "c3"}, {"column": "c4"}, {"column": "c5"}, {"column": "c6"}, {"column": "c7"}, {"column": "c8"}, {"column": "c9"}, {"column": "c10"}, {"column": "c11"}, {"column": "c12"}, {"column": "c13"}]}}
+--- source
+COLS["1\u{663}"]
+--- error
+E_SQL_BINDING 1:5
+===
+### name: neutral.key.leading-zero-is-not-a-position
+--- note
+SEL list keys are the canonical decimals "1", "2", … so "01" is not a key and
+the evaluator answers E_NO_KEY. Both hosts answered *element 1*: PHP's
+(int)"01" and Python's int("01") are both 1, and neither regex said no.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}]}}
+--- source
+V["01"]
+--- error
+E_SQL_BINDING 1:2
+===
+### name: neutral.key.trailing-newline-is-not-a-position
+--- note
+The regex was `^[0-9]+$` in both hosts. PHP's `$` matches before a trailing
+newline unless the D modifier is given, and Python's does too -- so "1\n"
+selected element 1 in both. Dec::parse and decimal.py already carry the fix for
+exactly this; the SQL layer had not inherited it. A full match is the rule.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}]}}
+--- source
+V["1\n"]
+--- error
+E_SQL_BINDING 1:2
+===
+### name: neutral.key.canonical-position-still-resolves
+--- note
+The guard above must not cost the ordinary case.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}]}}
+--- source
+V["2"]
+--- expect
+`b`
+===
+### name: neutral.key.leading-zero-over-a-static-list
+--- note
+The same key rule reached through an aggregate binder rather than a binding:
+childOf() walks a `list` node and used the same host int parse.
+--- dialect
+mariadb
+--- source
+ALL((1, 2), _K $== "1" AND _["01"] EQL 9)
+--- error
+E_SQL_BINDING 1:29
+===
+### name: neutral.key.leading-zero-is-not-a-relation-position
+--- note
+`rel[1]` is refused because rows have no order. "01" is not a position, so it
+falls to the field lookup and is refused as a missing field -- which is what SEL
+does with it. The two refusals must not be swapped by a lax regex.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi",
+           "fields": {"QTY": {"column": "qty", "type": "NUM"}}}}
+--- source
+ANY(ITEMS, I, I["01"] > 0)
+--- error
+E_SQL_BINDING 1:16
+===
+### name: neutral.slot.leading-zero-is-not-a-slot
+--- note
+tools/gen-sql-map.mjs refused `{01}` and Map::define did not, so the shipped map
+and a runtime-registered template were read by two grammars. Now one: canonical,
+full-match, three digits.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({01})", "ret": "TEXT"}]}]
+--- source
+UPPER("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: neutral.slot.trailing-newline-is-not-a-slot
+--- note
+JS reads `^[0-9]+$` strictly, so the generator always refused this; PHP did not.
+The runtime grammar now matches the generator's.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0\n})", "ret": "TEXT"}]}]
+--- source
+UPPER("a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: neutral.slot.canonical-slot-still-fills
+--- note
+And the ordinary registered template still works, including the {n:} rest form.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT"}]}]
+--- source
+UPPER("a")
+--- expect
+U('a')
+===
+### name: neutral.depth.at-the-limit-still-translates
+--- note
+The guard must not cost the ordinary case, and the boundary is the whole point,
+so it is pinned rather than reasoned about. 200 is Evaluator::MAX_DEPTH, read
+from there by both hosts rather than copied -- a second 200 would be a second
+thing to keep in step, and the two drifting means the database answers where SEL
+raises. The long lines are the contract; they are data, not prose.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "a", "type": "NUM"}}
+--- source
+A + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
+--- expect
+(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`a` + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1)
+===
+### name: neutral.depth.one-past-the-limit-is-refused
+--- note
+201 terms: the evaluator answers E_DEPTH, and until this guard existed both
+hosts translated it anyway -- PHP rendering ~2400 characters of SQL a server
+would happily answer, and Python dying of its own stack at around 510 terms,
+which is an implementation accident rather than a decision. A rule the database
+answers and SEL does not is exactly what §11.4 exists to prevent.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "a", "type": "NUM"}}
+--- source
+A + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
+--- error
+E_SQL_DEPTH
+===
+### name: neutral.depth.stage-one-is-bounded-too
+--- note
+Two walks reach the tree, so both carry the bound. Stage 1 substitutes before
+the translator's guard can see anything, so without this the limit was still the
+host's: an all-constant chain reached Normalise first.
+--- dialect
+mariadb
+--- source
+1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
+--- error
+E_SQL_DEPTH
+===
+### name: neutral.depth.a-source-past-the-host-stack
+--- note
+600 terms. The point of this one is not the refusal -- 201 already covers that --
+it is WHERE the refusal happens. Stage 1 walks the source before the render walk
+sees anything, so a host with a stack limit dies in Normalise unless Normalise
+carries the bound too. This host did, at around 510 terms, with a RecursionError
+that escaped try_translate. In PHP the same guard is redundant, which is why the
+mutation that guards it targets python/sel/sql/normalise.py: a mutation cannot
+prove a guard load-bearing in a host where it is not.
+--- dialect
+mariadb
+--- source
+1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
+--- error
+E_SQL_DEPTH
+===
+% Registration: what the generator refuses, the runtime now refuses too.
+%
+% Every case below is an entry tools/gen-sql-map.mjs would have rejected and
+% Map::define accepted -- after which the two hosts improvised differently over
+% it, because improvising is what code does when it has no rule. The rule is now
+% data: MapData::RULES is emitted by the generator from the same constants it
+% validates the shipped map against, and every host checks against that rather
+% than against a copy of the list.
+%
+% They throw rather than refusing: a malformed registration is a mistake in the
+% application's startup, not a rule that cannot be translated, and tryTranslate()
+% must not swallow it.
+
+### name: neutral.register.no-ret
+--- note
+an entry with no ret emitted with an empty kind on one host and raised a KeyError on the other.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.tpl-as-a-list
+--- note
+a JSON list where a template belongs emitted the literal b on one host and refused on the other. PHP cannot tell a two-element list from a map keyed 0 and 1 -- both have those keys -- so the rule that catches it is arity: UPPER takes one argument, so a template keyed 0 could never be chosen.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": ["a", "b"], "ret": "TEXT"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.arity-of-strings
+--- note
+a TypeError on one host, accepted on the other.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT", "arity": ["1", "1"]}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.since-not-numeric
+--- note
+intval read it as 0 and translated; int() raised a ValueError out of the first translation with a since.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT", "since": "abc"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.invented-caveat
+--- note
+accepted by both, which quietly ends Fragment::caveats being a closed set an application can branch on.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "U({0})", "ret": "TEXT", "caveat": "made-up"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.lowercase-op-key
+--- note
+ops and skel keys are looked up verbatim, so a lowercase one was silently dead in both hosts.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "ops", "and", {"tpl": "({0} AND {1})", "ret": "BOOL"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.lowered-function
+--- note
+COUNT is lowered by stage 2 and never reaches the funcs table, so an entry for it could never be looked up.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "COUNT", {"tpl": "X({0})", "ret": "NUM"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.skeleton-slot-typo
+--- note
+a named slot that is not one of the skeleton's would survive as literal text in every query the skeleton renders.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "skel", "case", {"tpl": "CASE {branchez} ELSE {else} END"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.dialect-redefined
+--- note
+redefining a shipped dialect silently replaced it in both hosts; a name means one dialect.
+--- dialect
+mariadb
+--- register
+[{"dialect": "mariadb", "extends": "mysql"}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.target-not-a-boolean
+--- note
+PHP read the string zero as false and refused the dialect as a base; Python read it as true and translated. Truthiness must not decide this.
+--- dialect
+mariadb
+--- register
+[{"dialect": "d1", "extends": "mariadb", "target": "0"}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.version-with-a-suffix
+--- note
+SELECT VERSION() reports 11.8.8-MariaDB, which is the natural thing to pass. intval guessed 11.8.8 from it; int() raised. Refused at the line that wrote it.
+--- dialect
+mariadb
+--- register
+[{"dialect": "d2", "extends": "mariadb", "version": "11.8.8-MariaDB"}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.text-escape-as-a-string
+--- note
+the worst of them: both hosts skipped escaping entirely and emitted an apostrophe unquoted. An injection, in both, and nothing checked.
+--- dialect
+mariadb
+--- register
+[{"dialect": "d3", "extends": "mariadb", "lexical": {"textEscape": "x"}}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.lexical-true-as-a-boolean
+--- note
+rendered as 1 on one host and True on the other, because both cast a lexical value to string rather than requiring one.
+--- dialect
+mariadb
+--- register
+[{"dialect": "d4", "extends": "mariadb", "lexical": {"true": true}}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.unknown-lexical-key
+--- note
+a typo in a lexical key is a key nothing reads, and nothing said so.
+--- dialect
+mariadb
+--- register
+[{"dialect": "d5", "extends": "mariadb", "lexical": {"identQuot": "`"}}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: neutral.register.arity-null-withdraws
+--- note
+sql/MAP.md §2 says null is a refusal without a reason, so naming a count with
+null withdraws that form and the * fallback must not rescue it. isset() read the
+null as absent, so the withdrawal was unwritable on one host -- and on the other
+the null reached the renderer and emitted the literal text None into the SQL.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "MIN", {"tpl": {"1": null, "*": "LEAST({*})"}, "ret": "NUM"}]}]
+--- source
+MIN(5)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: neutral.register.arity-fallback-still-applies
+--- note
+And the fallback still covers the counts the entry does not name, or the rule
+above would just be a way to break every open-ended template.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "MIN", {"tpl": {"1": null, "*": "LEAST({*})"}, "ret": "NUM"}]}]
+--- source
+MIN(5, 3)
+--- expect
+LEAST(5, 3)
+===
+### name: neutral.ordinal.tenth-column
+--- note
+Nothing else in this corpus has ten of anything. Every index the translator
+decides -- a list key, a column position, a placeholder ordinal, an arity -- is
+a number it renders into a string, and every host renders one to nine
+identically no matter how wrong its spelling is. Ten is where a host's own
+notion of "print a number" starts to show, and until these four cases the whole
+boundary was unwatched in all five.
+
+This one is the column list. Common Lisp built the keys with PRINC-TO-STRING,
+which follows the caller's *PRINT-BASE*: an application that had rebound it got
+the tenth column keyed "A", and "10" then named nothing.
+--- dialect
+mariadb
+--- bindings
+{"COLS": {"kind": "columns", "items": [{"column": "c1"}, {"column": "c2"}, {"column": "c3"}, {"column": "c4"}, {"column": "c5"}, {"column": "c6"}, {"column": "c7"}, {"column": "c8"}, {"column": "c9"}, {"column": "c10"}, {"column": "c11"}, {"column": "c12"}]}}
+--- source
+COLS["10"]
+--- expect
+`c10`
+===
+### name: neutral.ordinal.tenth-column-by-name
+--- note
+And the same twelve columns asked by key rather than by position. Indexing
+resolves a position and never consults what the position is called, so the case
+above cannot see the key the translator wrote; HAS is the shape that reads it
+back. Both are needed: one pins the lookup, the other pins the name.
+--- dialect
+mariadb
+--- bindings
+{"COLS": {"kind": "columns", "items": [{"column": "c1"}, {"column": "c2"}, {"column": "c3"}, {"column": "c4"}, {"column": "c5"}, {"column": "c6"}, {"column": "c7"}, {"column": "c8"}, {"column": "c9"}, {"column": "c10"}, {"column": "c11"}, {"column": "c12"}]}}
+--- source
+HAS(COLS, "10")
+--- expect
+TRUE
+===
+### name: neutral.ordinal.tenth-element
+--- note
+The same boundary for a list the program itself writes, whose keys the
+translator builds from its own counter. HAS is the shape that reads those keys
+back by name -- indexing into an expression's result is refused, and the
+aggregates walk the list in order without ever asking what a position is
+called -- so it is the only one that can tell key "10" from key "A".
+--- dialect
+mariadb
+--- source
+HAS((1,2,3,4,5,6,7,8,9,10,11,12), "10")
+--- expect
+TRUE
+===
+### name: neutral.ordinal.arity-key-past-nine
+--- note
+An arity-keyed template may name any count, and the shipped map happens to name
+only 1, 2 and 3 -- so a host that rendered the count wrongly still landed on the
+`*` fallback and looked correct. This registers a double-digit arity, which is
+what makes the difference between naming 10 and naming "A" visible at all.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "MIN", {"tpl": {"10": "TEN({*})", "*": "LEAST({*})"}, "ret": "NUM"}]}]
+--- source
+MIN(1,2,3,4,5,6,7,8,9,10)
+--- expect
+TEN(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+===
+### name: neutral.ordinal.placeholder-past-nine
+--- note
+And the placeholder ordinal. `?` carries no ordinal, so all four shipped
+dialects are blind to this; a numbered placeholder is the only witness, and
+sql/cases/15-postgresql.sqlt never needed more than two.
+--- dialect
+pg-numbered
+--- mode
+params
+--- register
+[{"dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": true,
+  "lexical": {"placeholder": "${n}"}}]
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T IN ("a","b","c","d","e","f","g","h","i","j","k")
+--- expect
+(((((((((((CAST("t" AS TEXT) COLLATE "C" = CAST($1 AS TEXT) COLLATE "C") OR (CAST("t" AS TEXT) COLLATE "C" = CAST($2 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($3 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($4 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($5 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($6 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($7 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($8 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($9 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($10 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($11 AS TEXT) COLLATE "C"))
+--- params
+t"a", t"b", t"c", t"d", t"e", t"f", t"g", t"h", t"i", t"j", t"k"

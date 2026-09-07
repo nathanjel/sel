@@ -34,6 +34,12 @@ std::string kind_name(sel::Kind k) {
   }
 }
 
+std::string repeat(const std::string& unit, int n) {
+  std::string s;
+  for (int i = 0; i < n; i++) s += unit;
+  return s;
+}
+
 std::string join(const std::vector<std::string>& xs, const std::string& sep) {
   std::string s;
   for (std::size_t i = 0; i < xs.size(); i++) {
@@ -102,6 +108,12 @@ int main() {
   say("program.dependencies", join(p.dependencies(), " "));
   say("program.deps.excludes.assigned", join(compile("X = 1; X + Y").dependencies(), " "));
   say("program.deps.excludes.binder", join(compile("ALL(I, IT, IT > 0)").dependencies(), " "));
+  // A PARENTHESISED binder is still treated as a binding name here, though the
+  // evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
+  // dependencies() answers as if IT were bound. Pinned because all seven hosts
+  // agree on it and nothing else records it -- not endorsed. See the note in
+  // docs/EXTENDING.md.
+  say("program.deps.grouped.binder", join(compile("ALL(I, (IT), IT > 0)").dependencies(), " "));
   Value ctx = Value::none();
   ctx.set("TOTAL", Value::num("59.97"));
   say("program.run.reads.context", evaluate("TOTAL > 10.00", ctx).dump());
@@ -128,6 +140,52 @@ int main() {
     Value::num("x");
   } catch (const SelError& e) {
     say("error.host.badnum", e.code());
+  }
+  // Every character is a digit, so this is E_RANGE and not E_NOT_NUM. Value::num
+  // is public API, so an embedding application can reach the numeral cap without
+  // compiling a rule at all -- and all six hosts must refuse it the same way.
+  try {
+    Value::num(std::string(2000001, '1'));
+  } catch (const SelError& e) {
+    say("error.host.hugenum", e.code());
+  }
+
+  // A value nested past the cap is refused by every walk of it. Reachable from the
+  // host API with no source involved at all -- set() does not refuse, because a
+  // value is built from the leaf up and nothing knows how deep it will end up --
+  // so the operations that walk it are where the cap has to hold. The numeral cap
+  // probed two lines up is the same shape of rule.
+  {
+    const auto nest = [](int n) {
+      Value v = Value::text("x");
+      for (int i = 0; i < n; i++) {
+        Value p = Value::none();
+        p.set("1", v);
+        v = p;
+      }
+      return v;
+    };
+    say("value.depth.under", nest(199).dump().empty() ? "no" : "ok");
+    try {
+      nest(200).dump();
+    } catch (const SelError& e) {
+      say("value.depth.over", e.code());
+    }
+  }
+
+  // dependencies() walks the tree without evaluating it, so it is bounded by
+  // neither the parser's nesting depth nor the evaluator's -- and in every host it
+  // was bounded by nothing at all, until a flat chain of about fifty thousand
+  // operators found the host's own stack. It shares the evaluation cap now, and
+  // trips at the same node: a program whose dependencies cannot be computed is
+  // exactly a program that could not have been evaluated. Both sides are pinned,
+  // because a walk that counts twice or not at all fails one of them.
+  say("deps.depth.under", join(compile("A" + repeat("+A", 199)).dependencies(), " "));
+  try {
+    compile("A" + repeat("+A", 200)).dependencies();
+  } catch (const SelError& e) {
+    say("deps.depth.over", e.code() + " " + std::to_string(e.line()) + ":" +
+                              std::to_string(e.col()));
   }
 
   std::cout << join(out, "\n") << "\n";

@@ -76,6 +76,13 @@
        (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "X = 1; X + Y"))))
   (say "program.deps.excludes.binder"
        (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "ALL(I, IT, IT > 0)"))))
+  ;; A PARENTHESISED binder is still treated as a binding name here, though the
+  ;; evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
+  ;; dependencies() answers as if IT were bound. Pinned because all seven hosts
+  ;; agree on it and nothing else records it -- not endorsed. See the note in
+  ;; docs/EXTENDING.md.
+  (say "program.deps.grouped.binder"
+       (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "ALL(I, (IT), IT > 0)"))))
   (let ((ctx (sel:make-none)))
     (sel:value-set ctx "TOTAL" (sel:make-num "59.97"))
     (say "program.run.reads.context" (sel:value-dump (sel:evaluate "TOTAL > 10.00" ctx)))
@@ -95,6 +102,46 @@
     (sel:sel-error (e) (say "error.compile.unknown.func" (sel:sel-error-code e))))
   (handler-case (sel:make-num "x")
     (sel:sel-error (e) (say "error.host.badnum" (sel:sel-error-code e))))
+  ;; Every character is a digit, so this is E_RANGE and not E_NOT_NUM. MAKE-NUM
+  ;; is public API, so an embedding application can reach the numeral cap without
+  ;; compiling a rule at all -- and all six hosts must refuse it the same way.
+  (handler-case (sel:make-num (make-string 2000001 :initial-element #\1))
+    (sel:sel-error (e) (say "error.host.hugenum" (sel:sel-error-code e))))
+
+  ;; A value nested past the cap is refused by every walk of it. Reachable from the
+  ;; host API with no source involved at all -- set() does not refuse, because a
+  ;; value is built from the leaf up and nothing knows how deep it will end up --
+  ;; so the operations that walk it are where the cap has to hold. The numeral cap
+  ;; probed two lines up is the same shape of rule.
+  (flet ((nest (n)
+           (let ((v (sel:make-text "x")))
+             (dotimes (i n v)
+               (let ((p (sel:make-none)))
+                 (sel:value-set p "1" v)
+                 (setf v p))))))
+    (say "value.depth.under"
+         (if (plusp (length (sel:value-dump (nest 199)))) "ok" "no"))
+    (handler-case (sel:value-dump (nest 200))
+      (sel:sel-error (e) (say "value.depth.over" (sel:sel-error-code e)))))
+
+  ;; dependencies() walks the tree without evaluating it, so it is bounded by
+  ;; neither the parser's nesting depth nor the evaluator's -- and in every host
+  ;; it was bounded by nothing at all, until a flat chain of about fifty thousand
+  ;; operators found the host's own stack. It shares the evaluation cap now, and
+  ;; trips at the same node: a program whose dependencies cannot be computed is
+  ;; exactly a program that could not have been evaluated. Both sides are pinned,
+  ;; because a walk that counts twice or not at all fails one of them.
+  (flet ((chain (n)
+           (with-output-to-string (s)
+             (write-string "A" s)
+             (dotimes (i n) (write-string "+A" s)))))
+    (say "deps.depth.under"
+         (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source (chain 199)))))
+    (handler-case (sel:dependencies (sel:compile-source (chain 200)))
+      (sel:sel-error (e)
+        (say "deps.depth.over"
+             (format nil "~a ~d:~d" (sel:sel-error-code e)
+                     (sel:sel-error-line e) (sel:sel-error-col e))))))
 
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

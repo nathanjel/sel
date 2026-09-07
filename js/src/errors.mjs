@@ -19,3 +19,11 @@ export class SelError extends Error {
 export function fail(code, message, pos) {
   throw new SelError(code, message, pos);
 }
+
+// spec/SPEC.md §6.4's three caps, which are one number. The parser's nesting,
+// the evaluator's, and a value's -- each is a recursion over a structure the
+// input can grow without bound, and each finds this host's own stack instead of
+// an error if it is not counted. It lives here, with fail(), because this module
+// is the one every other imports and none imports back, and because the number
+// and the E_DEPTH it raises are the same fact.
+export const MAX_DEPTH = 200;

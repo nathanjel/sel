@@ -2,8 +2,13 @@
 #
 # Three ways to consume this, in increasing order of ceremony:
 #
-#   1. Copy sel.hpp, sel.cpp and third_party/srell/ into your project and
-#      compile sel.cpp. Nothing here is needed. This remains the primary story.
+#   1. Copy sel.hpp, sel_ast.hpp, sel.cpp and third_party/srell/ into your
+#      project and compile sel.cpp. Nothing here is needed, and you include only
+#      sel.hpp. This remains the primary story.
+#      For SEL->SQL as well, add sel_sql.hpp, sel_sql_emit.hpp, sel_sql_map.hpp,
+#      sel_sql_node.hpp, sel_sql_stage1.hpp, sel_sql_translator.hpp and the six
+#      sel_sql_*.cpp beside them, and include sel_sql.hpp. It is a strict
+#      addition: the evaluator's own file list does not change.
 #   2. add_subdirectory(path/to/sel/cpp) and link `sel-lang::sel-lang`.
 #   3. Install it (or take it from Conan or vcpkg) and find_package(sel-lang).
 #
@@ -20,12 +25,25 @@ include(CMakePackageConfigHelpers)
 
 # SRELL is vendored by default. It is available in vcpkg at exactly the pinned
 # release (2026.05) and not in Conan Center at all, so the copy is what makes the
-# package build the same way everywhere — and what keeps "copy two files and
+# package build the same way everywhere — and what keeps "copy the files and
 # compile" true. Turn this on to link a package manager's copy instead; it must
 # be the same release, and tools/check.sh is what tells you it is.
 option(SEL_USE_SYSTEM_SRELL "Use an external SRELL instead of the vendored one" OFF)
 
-add_library(sel-lang sel.cpp)
+# The SQL layer is part of the one library rather than a second target. It costs
+# a consumer who never calls it nothing: the generated dialect table is entirely
+# constexpr .rodata with no static constructor, and --gc-sections drops all of it
+# from a link that never asks for it. Measured, not assumed.
+add_library(sel-lang
+  sel.cpp
+  sel_sql.cpp
+  sel_sql_binding.cpp
+  sel_sql_emit.cpp
+  sel_sql_map.cpp
+  sel_sql_map_data.cpp
+  sel_sql_node.cpp
+  sel_sql_stage1.cpp
+  sel_sql_translator.cpp)
 # The package is `sel-lang` everywhere it is published, so the exported target
 # matches. `sel::sel` is kept as a shorter alias for in-tree use.
 add_library(sel-lang::sel-lang ALIAS sel-lang)
@@ -41,7 +59,7 @@ endif()
 set_target_properties(sel-lang PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
-  PUBLIC_HEADER sel.hpp)
+  PUBLIC_HEADER "sel.hpp;sel_sql.hpp")
 
 # The build tree needs this directory so sel.cpp can reach third_party/srell/.
 # Consumers get only the installed include directory.
@@ -95,7 +113,9 @@ endforeach()
 option(SEL_BUILD_TOOLS "Build the SEL CLI and test harness" OFF)
 
 if(SEL_BUILD_TOOLS)
-  foreach(tool sel conformance batch e2e api)
+  # `ast` also includes sel_ast.hpp; `sqlmap` and `sqlt` include the SQL
+  # layer's own internal headers; the others use sel.hpp alone.
+  foreach(tool sel conformance batch e2e api ast sqlmap)
     add_executable(sel-${tool} bin/${tool}.cpp)
     target_link_libraries(sel-${tool} PRIVATE sel-lang)
   endforeach()

@@ -1,0 +1,817 @@
+{
+  "note": [
+    "Defects this layer has actually shipped, or plausible neighbours of them,",
+    "written back into the code on purpose. tools/mutate-sql.sh applies each one",
+    "to a copy of the tree and requires some check to notice.",
+    "",
+    "Every other tool here answers 'is the code right?'. This answers 'would we",
+    "know if it weren't?', which is a different question and the one that was",
+    "never asked. The slot invariant added after the code review was a no-op: it",
+    "was committed, trusted, and did not fire when the bug it existed for was put",
+    "back by hand. Nothing said so, because nothing tried.",
+    "",
+    "`from` must occur exactly once. A pattern that matches nothing is a suite",
+    "error, never a pass -- a stale pattern would otherwise be scored by whatever",
+    "the checks say about unmutated code, which is this tool's own failure mode."
+  ],
+  "mutations": [
+    {
+      "name": "collation-dropped",
+      "was": "M1. MariaDB's REGEXP and = follow the operand's collation, which is case-insensitive by default, so \"A\" $== \"a\" was TRUE on the server and FALSE in SEL.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"textCollate\": \" COLLATE utf8mb4_bin\",",
+      "to": "\"textCollate\": \"\","
+    },
+    {
+      "name": "find-args-swapped",
+      "was": "The reordering template that made Fragment::bindings() walk the output rather than return the pool.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"2\": \"INSTR({1}, {0})\",",
+      "to": "\"2\": \"INSTR({0}, {1})\","
+    },
+    {
+      "name": "binary-operand-not-cast",
+      "was": "Found by the fuzz lane. HEX(1) hexes the number and answers \"1\"; SEL's TO_HEX(1) is \"31\".",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"tpl\": \"LOWER(HEX({binaryCast:0}))\"",
+      "to": "\"tpl\": \"LOWER(HEX({0}))\""
+    },
+    {
+      "name": "pad-truncates-again",
+      "was": "Found by the oracle. LPAD('7777', 2, '0') is '77'; SEL's PADL returns \"7777\".",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"tpl\": \"IF(CHAR_LENGTH({0}) >= {1}, {0}, LPAD({0}, {1}, {2}))\"",
+      "to": "\"tpl\": \"LPAD({0}, {1}, {2})\""
+    },
+    {
+      "name": "min-of-one-argument",
+      "was": "Found by the oracle. LEAST and GREATEST are variadic but need two arguments; SEL's MIN takes one.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"tpl\": {\n        \"1\": \"{0}\",\n        \"*\": \"LEAST({*})\"\n      },",
+      "to": "\"tpl\": \"LEAST({*})\","
+    },
+    {
+      "name": "bindings-unwalked",
+      "was": "Code review. Returning the pool ignores reordering templates and repeated slots.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "        $out = [];\n        foreach ($this->parts as $p) {\n            if (!is_string($p) && !$this->isInline($p)) {\n                $out[] = $this->params[$p - 1];\n            }\n        }\n        return $out;",
+      "to": "        return $this->params;"
+    },
+    {
+      "name": "number-becomes-a-placeholder",
+      "was": "The params-mode defect the fuzz lane found: no coercion of a bound string reproduces a bare decimal literal.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "if ($mode !== 'inline' && $this->isInline($p)) {",
+      "to": "if (false) {"
+    },
+    {
+      "name": "field-names-are-not-normalised",
+      "was": "Was `union-instead-of-merge`: PHP's `+` keeps the LEFT value, so a relation binding's field-name normalisation was discarded and every lookup failed. That defect is now unrepresentable -- Binding builds the record rather than merging into one the host supplied, so there is no left operand to win. What remains worth guarding is the normalisation itself: consumers look fields up upper-cased, and a binding declaring `qty` must answer to `QTY`.",
+      "file": "php/src/Sql/Binding.php",
+      "from": "            $out[strtoupper((string) $name)] = $b->spec;",
+      "to": "            $out[(string) $name] = $b->spec;"
+    },
+    {
+      "name": "concat-treated-as-comparison",
+      "was": "Class F. The collation fix keyed on the variant name `text`, which `&` also uses.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "static $ops = ['$==' => 0,",
+      "to": "static $ops = ['&' => 0, '$==' => 0,"
+    },
+    {
+      "name": "define-upper-cases-everything",
+      "was": "Code review. Skeleton names are camel-case, so upper-casing every key made runtime skel registration silently dead.",
+      "file": "php/src/Sql/Map.php",
+      "from": "$section === 'funcs' ? strtoupper($key) : $key",
+      "to": "strtoupper($key)"
+    },
+    {
+      "name": "negative-literal-unparenthesised",
+      "was": "MariaDB reads -- as double negation and gets the right answer by luck; PostgreSQL and SQLite read it as a comment.",
+      "file": "php/src/Sql/Emit.php",
+      "from": "return str_starts_with($n, '-') ? '(' . $n . ')' : $n;",
+      "to": "return $n;"
+    },
+    {
+      "name": "relation-slots-collide",
+      "was": "Item 6 absorbed: the three relation skeletons merge two slot maps that were disjoint by inspection and by nothing else.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "return ['from' => [$from],",
+      "to": "return ['body' => ['x'], 'from' => [$from],"
+    },
+    {
+      "name": "arity-fallback-ignored",
+      "was": "The `*` key added for MIN. Without it an unbounded arity resolves no template.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (!array_key_exists($n, $tpl) && array_key_exists('*', $tpl)) {",
+      "to": "        if (false) {"
+    },
+    {
+      "name": "kinds-unify-loosely",
+      "was": "Found by the fuzz lane. IF(TRUE, TRUE, \"A-1\") is \"TRUE\" in SEL and 1 on the server.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            } elseif ($kind !== $f->kind) {\n                refuse('E_SQL_SHAPE',",
+      "to": "            } elseif ($kind !== $f->kind) {\n                return 'UNKNOWN';\n            } elseif (false) {\n                refuse('E_SQL_SHAPE',"
+    },
+    {
+      "name": "bool-compared-to-a-number",
+      "was": "Found by the fuzz lane. CAST(0 AS CHAR) and CAST(FALSE AS CHAR) are both '0'.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            self::requireComparableKinds($l, $r, $op, $n['pos']);\n",
+      "to": ""
+    },
+    {
+      "name": "bool-compared-to-a-number-in-a-list",
+      "was": "The same guard on the IN path. inOperator and binary() lower different operators, and the mutation runner found only one of the two was pinned.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            self::requireComparableKinds($l, $r, 'IN', $n['pos']);\n",
+      "to": ""
+    },
+    {
+      "name": "regex-dotall-dropped",
+      "was": "M1. Dotall is permanently on in SEL and off by default in the server.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "$inline = '(?s)';",
+      "to": "$inline = '';"
+    },
+    {
+      "name": "regex-flag-by-count",
+      "was": "Code review. Choosing the case-insensitive template by argument count made RMATCH(p, s, \"\") match case-insensitively.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        $text = (string) $flags['v'];\n",
+      "to": "        $text = 'i';\n"
+    },
+    {
+      "name": "binary-literal-broken",
+      "was": "The BIN branch of Emit::literal, which no closed expression can reach -- SEL has no BIN literal. Only the corpus's value bindings get there.",
+      "file": "sql/dialects/ansi.json",
+      "from": "\"binaryLiteral\": \"X'{hex}'\",",
+      "to": "\"binaryLiteral\": \"X'00{hex}'\","
+    },
+    {
+      "name": "sqlite-numbers-unquoted",
+      "was": "The decision the whole sqlite dialect turns on. Bare 2.50 is a REAL that prints as 2.5, so `2.50 $== 2.5` becomes TRUE where SEL says FALSE.",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"numericLiteral\": \"'{0}'\",",
+      "to": "\"numericLiteral\": \"{0}\","
+    },
+    {
+      "name": "sqlite-comparison-stops-coercing",
+      "was": "The consequence of quoting numbers: without the cast, two quoted numbers compare as text and 2.50 == 2.5 is FALSE where SEL says TRUE.",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"num\": \"({numericCast:0} = {numericCast:1})\",",
+      "to": "\"num\": \"({0} = {1})\","
+    },
+    {
+      "name": "sqlite-integer-division",
+      "was": "SQLite's / between integers is INTEGER division: 10 / 4 is 2 where SEL says 2.5. A different operation, not an imprecise one.",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"tpl\": \"({0} * 1.0 / {1})\",",
+      "to": "\"tpl\": \"({0} / {1})\","
+    },
+    {
+      "name": "sqlite-right-of-zero",
+      "was": "Found by the fuzz lane on sqlite's first run. substr(X, -0) is substr(X, 0), which behaves like substr(X, 1), so RIGHT(\"a\", 0) answered \"a\".",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"tpl\": \"substr({0}, -{1}, {1})\",",
+      "to": "\"tpl\": \"substr({0}, -{1})\","
+    },
+    {
+      "name": "arity-not-enforced",
+      "was": "sql/MAP.md has documented `arity` as narrowing a dialect's accepted argument counts since M1. The generator validated the field and nothing enforced it, so a narrowed entry took the call anyway and dropped the arguments its template did not name.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (isset($entry['arity'])) {\n            [$min, $max] = $entry['arity'];",
+      "to": "        if (false) {\n            [$min, $max] = $entry['arity'];"
+    },
+    {
+      "name": "bool-becomes-a-placeholder",
+      "was": "Found by the fuzz lane on sqlite. 1 = '1' is 0 in SQLite -- INTEGER and TEXT are different storage classes -- so a BOOL bound as a string made TRUE XOR TRUE answer TRUE in params mode and FALSE inline.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "        return $kind === 'NUM' || $kind === 'BOOL' || $kind === 'BIN';",
+      "to": "        return $kind === 'NUM' || $kind === 'BIN';"
+    },
+    {
+      "name": "family-leaves-diverge",
+      "was": "mysql-family is defined as the spellings MariaDB and MySQL agree on, and both leaves override nothing. An override added to one and not the other breaks that silently -- the two dialects would emit different SQL for the same rule and each would pass its own cases.",
+      "file": "sql/dialects/mysql.json",
+      "from": "  \"target\": true,",
+      "to": "  \"target\": true,\n  \"funcs\": { \"UPPER\": { \"tpl\": \"UCASE({0})\", \"ret\": \"TEXT\", \"caveat\": \"unicode-case\" } },"
+    },
+    {
+      "name": "regex-promoted-without-checking",
+      "was": "RMATCH moved from the mariadb leaf to mysql-family once MySQL 8.4 was asked and agreed. Downgrading it to a refusal is the interesting direction: a refusal is a legitimate outcome, so the oracle abstains and the coverage gate stops counting the entry at all. Only a case asserting the emitted string notices.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "    \"RMATCH\": {\n      \"tpl\": \"({1}{textCollate} REGEXP {0})\",\n      \"arity\": [\n        2,\n        2\n      ],\n      \"ret\": \"BOOL\",\n      \"caveat\": \"regex-engine\"\n    },",
+      "to": "    \"RMATCH\": \"downgraded to a refusal by the mutation runner\","
+    },
+    {
+      "name": "pg-text-operands-uncast",
+      "was": "PostgreSQL will not coerce: upper(integer) and reverse(numeric) are `function does not exist`. SEL numbers ARE text values, so a NUM fragment reaches a text function legitimately.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"tpl\": \"upper({textCast:0})\",",
+      "to": "\"tpl\": \"upper({0})\","
+    },
+    {
+      "name": "pg-integer-overload",
+      "was": "Given an INTEGER argument PostgreSQL resolves sign() to its DOUBLE PRECISION overload, so an expression that looks exact quietly leaves exact-decimal territory. A precision loss, not a type error.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"tpl\": \"sign({numericCast:0})\",",
+      "to": "\"tpl\": \"sign({0})\","
+    },
+    {
+      "name": "pg-collation-dropped",
+      "was": "COLLATE \"C\" is what makes the ORDERING half of the byte family agree: 'a' < 'B' is TRUE under the default collation and FALSE under \"C\", and SEL compares bytes.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"textCollate\": \" COLLATE \\\"C\\\"\",",
+      "to": "\"textCollate\": \"\","
+    },
+    {
+      "name": "pg-binary-cast-naive",
+      "was": "The inner CAST AS TEXT dropped. convert_to takes text, so a NUM operand -- SEL numbers are text values, and BLEN(1+1) is an ordinary thing to write -- has no matching function and the query dies. The original form of this mutation targeted the old double-cast template and went stale when that was fixed; the hazard it names is still real, one layer in.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"binaryCast\": \"convert_to(CAST({0} AS TEXT), 'UTF8')\"",
+      "to": "\"binaryCast\": \"convert_to({0}, 'UTF8')\""
+    },
+    {
+      "name": "bool-in-a-numeric-comparison",
+      "was": "0 != FALSE is E_NOT_NUM in SEL. MariaDB and SQLite coerce the boolean to 1 or 0 and answer anyway -- a wrong answer with no error attached -- and it took PostgreSQL's `cannot cast type boolean to numeric` to make the gap visible.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $this->requireNotBool($l, $n['l']['pos'], $op);\n            $this->requireNotBool($r, $n['r']['pos'], $op);\n",
+      "to": ""
+    },
+    {
+      "name": "raw-binding-unchecked",
+      "was": "(string) on an array yields \"Array\" plus a warning, and that string is then spliced into a correlated subquery as if it were a join condition. The check moved from Bindings' hand-validation into the Binding constructor, where the shape cannot get past the door -- and it has to be an explicit check rather than a parameter type, because Python, JS and Lisp do not enforce declarations.",
+      "file": "php/src/Sql/Binding.php",
+      "from": "            self::checkString(\"a relation binding's correlate\", $correlate);",
+      "to": "            $correlate = $correlate;"
+    },
+    {
+      "name": "constant-validation-removed",
+      "was": "M5. The translator answered 'can this be pushed down' without asking 'is this a SEL expression'. LEFT(\"abc\", -1) translated into all four dialects and they answered '', '', 'ab' and 'abc'. Killed by every `!` line in the corpus and by every case in 16-constants.sqlt.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        Constants::validate($n, $this->constCtx);",
+      "to": "        // Constants::validate($n, $this->constCtx);"
+    },
+    {
+      "name": "constant-negation-not-constant",
+      "was": "The constancy test walking `bin` but not `un`. Every out-of-range argument in the corpus is written `-1`, which is a NEG over a literal, so the check would have looked present and validated nothing that mattered.",
+      "file": "php/src/Sql/Constants.php",
+      "from": "            case 'un':\n                return self::isConstant($n['x'], $bound);",
+      "to": "            case 'un':\n                return false;"
+    },
+    {
+      "name": "constant-check-runs-before-dispatch",
+      "was": "Validating on the way in rather than on the way out. Every refusal the translator already had -- ABORT, an unportable regex, a BOOL where a number belongs -- would be replaced by the vaguer 'SEL rejects this expression'.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $f = $this->dispatch($n);\n            Constants::validate($n, $this->constCtx);\n\n            return $f;",
+      "to": "            Constants::validate($n, $this->constCtx);\n            $f = $this->dispatch($n);\n\n            return $f;"
+    },
+    {
+      "name": "sqlite-comparison-claims-exactness",
+      "was": "M5. SQLite's CAST(text AS NUMERIC) is an INTEGER to 19 digits and a REAL at 20, so CAST('99999999999999999999' AS NUMERIC) = CAST('99999999999999999998' AS NUMERIC) is 1 where SEL says FALSE. Without the caveat the corpus's 20-digit comparison is a DIFFER.",
+      "file": "sql/dialects/sqlite.json",
+      "from": "        \"num\": \"({numericCast:0} = {numericCast:1})\",\n        \"coerce\": \"({numericCast:0} = {numericCast:1})\"\n      },\n      \"ret\": \"BOOL\",\n      \"caveat\": \"decimal-float\"",
+      "to": "        \"num\": \"({numericCast:0} = {numericCast:1})\",\n        \"coerce\": \"({numericCast:0} = {numericCast:1})\"\n      },\n      \"ret\": \"BOOL\""
+    },
+    {
+      "name": "mysql-family-multiply-claims-exactness",
+      "was": "M5. DECIMAL caps the result scale of a product at 30 on MySQL and 38 on MariaDB, and SEL has no cap, so 0.00000000000000000000000000000001 * 2 is 2e-32 in SEL and zero on MySQL. The corpus carries one expression past each boundary, so stripping the caveat is a DIFFER on both leaves and not just the one that found it.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "      \"caveat\": \"scale-limit\"",
+      "to": "      \"ret\": \"NUM\""
+    },
+    {
+      "name": "constant-check-outermost-only",
+      "was": "Checking only the outermost constant node, which is what the first version did. SEL is lazy, so FALSE AND (1 / 0 > 0) is constant and answers FALSE without dividing -- the AND passes, the division is never looked at, and (1 / 0) goes into the SQL. The same division beside a column was refused. Killed by the const.lazy.* cases. Not by the corpus: a `!` line asserts SEL raises, and SEL does not raise here -- it is lazy and answers FALSE. An expression SEL accepts and the translator refuses can only be asserted as a case.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $f = $this->dispatch($n);\n            Constants::validate($n, $this->constCtx);",
+      "to": "            static $in = false;\n            if ($in) {\n                return $this->dispatch($n);\n            }\n            $in = true;\n            try {\n                $f = $this->dispatch($n);\n            } finally {\n                $in = false;\n            }\n            Constants::validate($n, $this->constCtx);"
+    },
+    {
+      "name": "caveated-entry-answers-anything",
+      "was": "A caveat does not narrow what an entry may answer; it suspends the oracle's verdict for it. ansi's LOWER already carries unicode-case, so every disagreement it produces is reported as inexact-by-declaration and passes -- and no .sqlt case names LOWER on any dialect. The entry can therefore return the wrong function's answer. This is Class A with the check switched off by a field that was added for an honest reason.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"LOWER\": {\n      \"tpl\": \"LOWER({0})\",",
+      "to": "    \"LOWER\": {\n      \"tpl\": \"UPPER({0})\","
+    },
+    {
+      "name": "exactness-invented",
+      "was": "The reverse of mysql-family-multiply-claims-exactness, and the direction almost nothing checks: isExact() is only ever used to EXCUSE a difference, so declaring a caveat an entry does not need leaves the string unchanged and an agreeing caveated entry still counted as agreeing. CAUGHT, by sqlite.strict.allows-text -- the one case in 273 that puts $== under strict. That is the whole of what stops it: see exactness-invented-where-nothing-is-strict, which is the same edit one entry over and survives.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"$==\": {\n      \"variants\": {\n        \"text\": \"({0} = {1})\"\n      },\n      \"ret\": \"BOOL\"\n    },",
+      "to": "    \"$==\": {\n      \"variants\": {\n        \"text\": \"({0} = {1})\"\n      },\n      \"ret\": \"BOOL\",\n      \"caveat\": \"text-collation\"\n    },"
+    },
+    {
+      "name": "entry-withdrawn-silently",
+      "was": "Withdrawing a working entry, the way ansi already withdraws the ones it cannot spell. A refusal is an outcome the oracle counts and never fails on, and the coverage gate measures Map::entry() LOOKUPS, which a withdrawn entry still performs -- while Map::entries() stops counting it as supported, so the denominator shrinks to match. Twenty of mariadb's sixty-seven supported entries have no .sqlt case at all, and every one of them can be turned off like this.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"ABS\": {\n      \"tpl\": \"ABS({0})\",\n      \"ret\": \"NUM\"\n    },",
+      "to": "    \"ABS\": \"withdrawn: ABS of a DECIMAL widens the result type on some servers\","
+    },
+    {
+      "name": "text-quote-escape-halved",
+      "was": "The injection sql/cases/01-lexical.sqlt exists to stop, one dialect over. Every case in that file is --- dialect mariadb, so postgresql's and sqlite's quoting have no witness anywhere; and no expression in the corpus or in rows.json contains an apostrophe, so nothing ever asks either. lex.text.single-quote-doubles is the case that would have caught this, written for the wrong dialect.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "    \"textEscape\": {\n      \"'\": \"''\"\n    },",
+      "to": "    \"textEscape\": {\n      \"'\": \"'\"\n    },"
+    },
+    {
+      "name": "family-leaf-diverges-where-no-case-looks",
+      "was": "mysql.json's own notes say \"adding an override to one leaf without the other fails the suite\", citing MIRRORS in php/bin/sqlt. That holds only for entries some mariadb case reaches. No case reaches TRUNC, so this override makes MySQL emit a different string from MariaDB for it and the mirror never looks. Semantically identical, so the oracle agrees on both leaves -- which is the point: the family's claim is about BYTES.",
+      "file": "sql/dialects/mysql.json",
+      "from": "  \"notes\": {",
+      "to": "  \"funcs\": {\n    \"TRUNC\": { \"tpl\": \"TRUNCATE({0},0)\", \"ret\": \"NUM\" }\n  },\n  \"notes\": {"
+    },
+    {
+      "name": "placeholder-ordinal-counts-inlined-slots",
+      "was": "The binding-order defect from M2, in the one form the suite cannot see. bindings() walks the output and skips inlined slots; join() must number placeholders the same way or the nth value lands in the wrong placeholder. Every shipped dialect spells its placeholder `?`, which carries no ordinal, so the error is invisible there -- and the one case that registers a numbered placeholder, pg.params.numbered-for-a-libpq-host, has no NUM or BOOL literal in front of its bound ones. Neither does the single --- mode debug case.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "            $kind = $this->paramKinds[$p - 1] ?? 'TEXT';\n            if ($mode !== 'inline' && $this->isInline($p)) {\n                // Never a placeholder; see isInline(). It does not advance $nth\n                // either, because it emits no placeholder for a binding to land\n                // in.\n                $out .= Emit::literal($this->dialect, $this->params[$p - 1], $kind);\n                continue;\n            }\n            $nth++;",
+      "to": "            $kind = $this->paramKinds[$p - 1] ?? 'TEXT';\n            $nth++;\n            if ($mode !== 'inline' && $this->isInline($p)) {\n                $out .= Emit::literal($this->dialect, $this->params[$p - 1], $kind);\n                continue;\n            }"
+    },
+    {
+      "name": "mirror-compares-mariadb-with-itself",
+      "was": "A check on a check, which is what §7 of docs/SQL-TESTING.md is about, and the PHP array-union trap this layer has already shipped twice. `+` keeps the LEFT operand for a duplicated key, so swapping the operands makes the mirror re-run every mariadb case AS mariadb. The pass count is unchanged, the \"also checked against a mirrored dialect\" line still prints the same number, and the only thing that makes mysql.json safe to leave empty has stopped happening.",
+      "file": "php/bin/sqlt",
+      "from": "    $mirrorCase = ['dialect' => $mirror] + $c;",
+      "to": "    $mirrorCase = $c + ['dialect' => $mirror];"
+    },
+    {
+      "name": "min-claims-exactness",
+      "was": "Same shape as mysql-family-multiply-claims-exactness and, unlike it, unfalsifiable by the comparator. LEAST(17, 123.456) is 17.000 and SEL's MIN(17, 123.456) is 17, which is what numeric-scale declares -- but no corpus line mixes scales in MIN, and if one did, sqlo's compare() reads a NUM fragment through Dec::cmp, where 17.000 and 17 are one number. Only an expression that reads a computed number as TEXT can see this caveat doing anything.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "        \"*\": \"LEAST({*})\"\n      },\n      \"ret\": \"NUM\",\n      \"caveat\": \"numeric-scale\"",
+      "to": "        \"*\": \"LEAST({*})\"\n      },\n      \"ret\": \"NUM\""
+    },
+    {
+      "name": "exactness-invented-where-nothing-is-strict",
+      "was": "exactness-invented, moved one entry over. That one was caught, by the single case in the suite that puts $== under strict -- sqlite.strict.allows-text. Six strict cases exist in 273, between them pinning the exactness of four entries; every other entry can be declared inexact for free. LEN is one, and after this the oracle can no longer fail on it.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\",\n      \"ret\": \"NUM\"\n    },",
+      "to": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\",\n      \"ret\": \"NUM\",\n      \"caveat\": \"length-units\"\n    },"
+    },
+    {
+      "name": "value-binding-is-not-constant",
+      "was": "The constant check not knowing about value bindings, which is how it shipped. §5.4 calls a value binding a constant inlined as a literal, so LEFT(\"abc\", X) with X bound to -1 is as knowable as LEFT(\"abc\", -1) and was as wrong. Killed by the mixed:edge-value-binding-is-constant corpus group.",
+      "file": "php/src/Sql/Constants.php",
+      "from": "            $names[$name] = true;\n            $root->set($name, $v);",
+      "to": "            $root->set($name, $v);"
+    },
+    {
+      "name": "assignment-value-not-validated",
+      "was": "Stage 1 recording a definition without validating it. A definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to TRUE and every server answered TRUE where SEL raises. Killed by the const.assign.* cases.",
+      "file": "php/src/Sql/Normalise.php",
+      "from": "        if (Constants::isConstant($value, $constNames)) {\n            Constants::validate($value, $ctx);\n        }",
+      "to": "        // if (Constants::isConstant($value, $constNames)) {}"
+    },
+    {
+      "name": "eql-compares-bool-ness-only",
+      "was": "The structural-comparison guard as it shipped: it asked whether both operands were BOOL, which let BIN through. TO_UTF8(\"a\") EQL \"a\" is FALSE in SEL and answered 1 on MariaDB, MySQL and SQLite.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "    private const EQL_CLASS = ['NUM' => 'text', 'TEXT' => 'text',\n                               'BOOL' => 'bool', 'BIN' => 'bin'];",
+      "to": "    private const EQL_CLASS = ['NUM' => 'text', 'TEXT' => 'text',\n                               'BOOL' => 'bool', 'BIN' => 'text'];"
+    },
+    {
+      "name": "arithmetic-guard-forgets-bin",
+      "was": "spec §4 says \"BOOL and BIN are never numbers\" and the guard implemented the first half. BLOB + 1 translated: MariaDB 2.0, MySQL 50, SQLite 1, PostgreSQL raises.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($f->kind !== 'BOOL' && $f->kind !== 'BIN') {",
+      "to": "        if ($f->kind !== 'BOOL') {"
+    },
+    {
+      "name": "concat-accepts-a-bool",
+      "was": "`&` left out of the kind guards because it is not arithmetic. FLAG & NAME concatenated, MariaDB answering '1a' and PostgreSQL 'truea', where SEL says E_NOT_TEXT.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($op === '&' || ($op[0] === '$' && $op !== '$')) {",
+      "to": "        if ($op[0] === '$' && $op !== '$') {"
+    },
+    {
+      "name": "function-arguments-are-unchecked",
+      "was": "No argument-kind check for funcs existed at all. 26 functions accepted a BOOL and 26 accepted a BIN where SEL raises -- UPPER(BLOB) answered '1' on three servers and '\\X31' on PostgreSQL.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $this->requireArgumentKind($name, $f, $arg['pos']);",
+      "to": "            // $this->requireArgumentKind($name, $f, $arg['pos']);"
+    },
+    {
+      "name": "byte-functions-lose-their-exemption",
+      "was": "The other direction: over-refusing. BLEN, TO_HEX and the rest genuinely take bytes, and a guard that refuses them would make the BIN half of the layer unusable while every check still passed.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "    private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,",
+      "to": "    private const BIN_ARGUMENT_OK = ['CRC32' => 0, 'ENCODE_BASE64' => 0,"
+    },
+    {
+      "name": "bare-binder-takes-the-scalar-field",
+      "was": "The multi-field guard IN got at M4 and the bare binder did not. ANY(ITEMS, _ $== \"AB-1000\") is [] in SEL -- a row is a map and comparing a map against text is structurally false -- and was [1] on all four servers.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "                if (count($rel['fields']) > 1) {\n                    refuse('E_SQL_SHAPE',\n                        \"{$n['name']} is a row of a relation with \"",
+      "to": "                if (false) {\n                    refuse('E_SQL_SHAPE',\n                        \"{$n['name']} is a row of a relation with \""
+    },
+    {
+      "name": "relation-row-gets-the-scalar-rule",
+      "was": "source()'s scalar fallback swallowing a multi-field row: COUNT(I) folded to 0 where SEL says 3, HAS(I,\"QTY\") to FALSE where SEL says TRUE.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "                if ($bound->shape === Binder::ROW && count($bound->payload['fields']) > 1) {",
+      "to": "                if (false) {"
+    },
+    {
+      "name": "list-yielding-call-gets-the-scalar-rule",
+      "was": "The same fallback reaching a call that yields a list, which bypassed the SPLIT/BTL/RGROUPS refusals under COUNT and HAS: COUNT(SPLIT(\"a,b\", \",\")) folded to 0 where SEL says 2.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($src['t'] === 'call' && self::yieldsList($src['name'])) {",
+      "to": "        if (false) {"
+    },
+    {
+      "name": "has-over-a-relation-answers-from-fields",
+      "was": "HAS folded by looking the key up in the binding's declared fields, which asks a different question from SEL's: HAS(ITEMS,\"QTY\") was TRUE where SEL says FALSE, HAS(SKUS,\"1\") was FALSE where SEL says TRUE.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($src['shape'] === 'relation') {\n            refuse('E_SQL_SHAPE',\n                'HAS over a relation asks whether it has a key",
+      "to": "        if (false) {\n            refuse('E_SQL_SHAPE',\n                'HAS over a relation asks whether it has a key"
+    },
+    {
+      "name": "relation-nests-inside-itself",
+      "was": "A relation nested in itself reusing its own fixed alias, so the inner FROM shadows the outer: the predicate became `oi`.`qty` > `oi`.`qty` and all four servers answered [] where SEL answers with every order whose lines differ.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "                if ($binder->shape === Binder::ROW\n                    && $this->relationAlias($binder->payload) === $alias) {",
+      "to": "                if (false) {"
+    },
+    {
+      "name": "relation-binding-can-be-indexed",
+      "was": "index() resolving a relation BINDING to a bare column reference. Outside an aggregate that is invalid SQL -- the alias is in no FROM clause. Inside one it emitted SQL byte-identical to the binder form and answered, where SEL raises E_NO_KEY.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            refuse('E_SQL_SHAPE',\n                \"{$obj['name']} is a relation, which is a list of rows; indexing it \"",
+      "to": "            return $this->columnRef($b['fields'][strtoupper($key)] ?? reset($b['fields']));\n            refuse('E_SQL_SHAPE',\n                \"{$obj['name']} is a relation, which is a list of rows; indexing it \""
+    },
+    {
+      "name": "pg-binary-cast-parses-bytea-escapes",
+      "was": "PostgreSQL's binaryCast as CAST(CAST({0} AS TEXT) AS BYTEA). text::bytea parses its input as a bytea literal, so any backslash changed the bytes or killed the query: BLEN('\\\\') was 1 against SEL's 2 and TO_HEX('a\\\\b') raised 22P02. A sweep of 13840 renderings gave 1290 server errors and 52 silent wrong answers, all on this dialect.",
+      "file": "sql/dialects/postgresql.json",
+      "from": "\"binaryCast\": \"convert_to(CAST({0} AS TEXT), 'UTF8')\"",
+      "to": "\"binaryCast\": \"CAST(CAST({0} AS TEXT) AS BYTEA)\""
+    },
+    {
+      "name": "binary-cast-applied-to-a-bin-operand",
+      "was": "binaryCast wrapping an operand that is already BIN. Harmless on the three dialects whose cast is idempotent and destructive on PostgreSQL, where the bytes go out through text and come back parsed as a bytea literal.",
+      "file": "php/src/Sql/Emit.php",
+      "from": "            $castArg = $key === 'binaryCast' ? self::slotIndex($arg) : null;",
+      "to": "            $castArg = false ? self::slotIndex($arg) : null;"
+    },
+    {
+      "name": "bin-is-parameterised",
+      "was": "A BIN literal rendered as a placeholder rather than inline. The driver sends the bytes through the connection's text encoding: on PostgreSQL 130 of 256 single-byte values failed, 129 as invalid byte sequence and 0x00 silently. Inline was correct for all 256 on all four dialects.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "        return $kind === 'NUM' || $kind === 'BOOL' || $kind === 'BIN';",
+      "to": "        return $kind === 'NUM' || $kind === 'BOOL';"
+    },
+    {
+      "name": "two-bins-compared-as-characters",
+      "was": "A byte comparison casting two BIN operands to CHAR. MariaDB and MySQL answer NULL when either side is not valid UTF-8, where SEL answers FALSE. The corpus's only BIN value was 7ac3a9 -- valid UTF-8, and precisely the byte string that could not show it.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            if ($l->kind !== 'BIN' || $r->kind !== 'BIN') {",
+      "to": "            if (true) {"
+    },
+    {
+      "name": "in-relation-does-not-fold-null",
+      "was": "skel.inRelation without the IS TRUE fold that `all` and `any` carry, which is how it shipped. A NULL among the subquery's rows makes x IN (...) answer NULL when nothing matches, NOT NULL is NULL, and the WHERE drops the row: NOT(\"flag\" IN NOTES) selected one order where SEL selects three.",
+      "file": "sql/dialects/ansi.json",
+      "from": "\"tpl\": \"(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)\"",
+      "to": "\"tpl\": \"({needle} IN (SELECT {body} FROM {from} WHERE {corr}))\""
+    },
+    {
+      "name": "skeleton-caveat-is-ignored",
+      "was": "skeleton() reading the template and never the caveat, which is how it shipped -- `skel` was the one section whose entries could declare an inexactness that never reached Fragment::caveats and that strict never refused. MariaDB's CASE pads the scale of a NUM branch and needs one.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (isset($s['caveat'])) {",
+      "to": "        if (false) {"
+    },
+    {
+      "name": "mirror-exception-is-not-guarded",
+      "was": "Not a defect this layer shipped: a defect the allow-list that hides defects could acquire. MIRROR_EXCEPTIONS names the one entry mariadb and mysql are allowed to disagree on, and an entry there silences the parity check for that name for good. Removing the entry must make parity fail -- if it does not, the exception was load-bearing for nothing and the check it guards has already gone vacuous.",
+      "file": "php/bin/sqlt",
+      "from": "    'skel.case' => 'MariaDB pads the scale of a CASE over NUM branches and '\n        . 'declares numeric-scale for it; MySQL 8.4 does not. See mariadb.json.',\n",
+      "to": ""
+    },
+    {
+      "name": "caveat-excuse-is-not-guarded",
+      "was": "The same question asked of the other allow-list. coverage.json's caveats_unwitnessable excuses a declared caveat from ever being seen doing its job, which is the oracle being told twice not to look. Renaming mariadb's concat-null excuse must make the symmetry check name the caveat it can no longer account for. Needs a database: without one this is reported skipped, because the check that would catch it did not run.",
+      "file": "sql/oracle/coverage.json",
+      "from": "\"mariadb\": {\n      \"concat-null\"",
+      "to": "\"mariadb\": {\n      \"concat-null-renamed-by-mutation\""
+    },
+    {
+      "name": "key-regex-accepts-a-trailing-newline",
+      "was": "How it shipped, in BOTH hosts, and the worst kind of defect this layer can have: they agreed, and they were both wrong, so no amount of comparing PHP against Python could see it. `^[0-9]+$` accepts \"1\\n\" because PHP's `$` matches before a trailing newline without the D modifier -- and `(int)\"01\"` is 1 -- so V[\"01\"] and V[\"1\\n\"] both resolved to element 1 where SEL answers E_NO_KEY. Dec::parse carries the D for exactly this reason and the SQL layer had not inherited it.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        return preg_match('/\\A[1-9][0-9]{0,8}\\z/', $k) === 1 ? (int) $k : null;",
+      "to": "        return preg_match('/^[0-9]+$/', $k) === 1 ? (int) $k : null;"
+    },
+    {
+      "name": "slot-regex-accepts-a-trailing-newline",
+      "was": "The same slip in the template grammar. tools/gen-sql-map.mjs refused `{1\\n}` because JS reads `$` strictly, and Map::define accepted it -- so the shipped map and a runtime-registered entry were being read by two different grammars, and only one of them was validated.",
+      "file": "php/src/Sql/Emit.php",
+      "from": "        return preg_match('/\\A(?:0|[1-9][0-9]{0,2})\\z/', $s) === 1 ? (int) $s : null;",
+      "to": "        return preg_match('/^[0-9]+$/', $s) === 1 ? (int) $s : null;"
+    },
+    {
+      "name": "depth-guard-is-off-by-one",
+      "was": "The boundary itself, which is the only part of a limit worth testing. `>=` refuses at 200, which the evaluator accepts -- a translation refusing a rule SEL answers is the mirror of the defect the guard exists for, and quieter, because a false refusal just looks like the layer being conservative.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (++$this->depth > \\Sel\\MAX_DEPTH) {",
+      "to": "        if (++$this->depth >= \\Sel\\MAX_DEPTH) {"
+    },
+    {
+      "name": "stage-one-is-unbounded",
+      "was": "How it shipped. Stage 1 substitutes before the render walk's guard can see anything, so with only one of the two bounds the deepest source the layer accepted was decided by the host's stack rather than by SEL. Targeted at PYTHON deliberately: in PHP this guard is redundant -- the render walk reaches the same refusal -- so a PHP mutation of it cannot fail, and reporting it as a hole would have been the tool lying about its own reach. It is load-bearing exactly where a host has a stack limit, which is why the case that catches it is 600 terms deep rather than 201.",
+      "file": "python/sel/sql/normalise.py",
+      "from": "    if depth > MAX_DEPTH:",
+      "to": "    if False:"
+    },
+    {
+      "name": "arity-null-is-rescued-by-the-fallback",
+      "was": "How it shipped, and the reason sql/MAP.md §2 needed saying twice. null is a refusal without a reason, so a template map keyed {\"1\": null, \"*\": ...} withdraws the one-argument form -- and isset() reads the null as ABSENT, so the `*` fallback rescued the entry the author had just withdrawn. The withdrawal was unwritable on the PHP host and, on the Python one, the null reached the renderer and emitted the literal text `None` into the SQL.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if (!array_key_exists($n, $tpl) || $tpl[$n] === null) {",
+      "to": "        if (!array_key_exists($n, $tpl)) {"
+    },
+    {
+      "name": "js-clist-order-through-a-plain-object",
+      "was": "The JS port's one host-shaped decision that changes emitted BYTES rather than defending against an exotic name. An aggregate's elements are keyed \"1\", \"2\", ... and a clist built by indexed assignment may mix those with word keys. A JS object enumerates integer-like keys FIRST, in numeric order, whatever the insertion order was, so R[\"b\"]=1; R[1]=2; R[\"a\"]=3 would unroll 2,1,3 here and 1,2,3 in the other two hosts. This mutation round-trips the Map through a plain object and keeps the Map API, so only the ORDER changes -- which is exactly how the defect would arrive.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "  return { shape: 'static', elements, filters: [], scalarRule };",
+      "to": "  return { shape: 'static', elements: new Map(Object.entries(Object.fromEntries(elements))), filters: [], scalarRule };"
+    },
+    {
+      "name": "js-num-literal-bound-as-a-parameter",
+      "was": "A NUM literal is the one thing emitted unquoted in every mode, because no coercion of a bound string reproduces a bare numeric literal: MariaDB reads 2.50 as DECIMAL with scale 2, a parameter is untyped, and (? = ?) compares two strings so 2.50 = 2.5 is FALSE. Dropping NUM from the inline set sends it as a placeholder instead.",
+      "file": "js/src/sql/fragment.mjs",
+      "from": "    return kind === 'NUM' || kind === 'BOOL' || kind === 'BIN';",
+      "to": "    return kind === 'BOOL' || kind === 'BIN';"
+    },
+    {
+      "name": "js-needle-rendered-eagerly",
+      "was": "How it shipped. `x IN y` has three branches -- a relation, an unrolled list, and a scalar -- and the needle must be rendered INSIDE the branch that uses it. Rendered up front, the relation branch never uses the fragment, and the value stays in `params` with no placeholder pointing at it: one more bound value than there are slots, which a driver silently misaligns. Invisible in inline mode, which is what most of the suite asserts, so the runner's own orphan check is the thing that has to notice.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "    const rhs = n.r;",
+      "to": "    const rhs = n.r; const eager = this.node(n.l); void eager;"
+    },
+    {
+      "name": "js-arity-not-enforced",
+      "was": "The map's `arity` narrows SEL's own for a dialect -- how PostgreSQL refuses the three-argument FIND its POSITION cannot express while MariaDB accepts it. Enforced by nobody, a narrowed entry takes the call anyway and fills the template it has, silently dropping the arguments the template does not name: FIND(\"a\",\"banana\",3) is 4 in SEL and instr('banana','a') is 2.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "      if (!(lo <= args.length && args.length <= hi)) {",
+      "to": "      if (false) {"
+    },
+    {
+      "name": "js-tpl-null-rescued-by-the-fallback",
+      "was": "The JS half of arity-null-is-rescued-by-the-fallback. sql/MAP.md §2: null is a refusal without a reason, so {\"1\": null, \"*\": ...} withdraws the one-argument form and the `*` fallback must not rescue it. Membership rather than a null test is the whole of that rule.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "    if (!Object.hasOwn(tpl, n) || tpl[n] === null) {",
+      "to": "    if (!Object.hasOwn(tpl, n)) {"
+    },
+    {
+      "name": "py-num-literal-bound-as-a-parameter",
+      "was": "The Python half of js-num-literal-bound-as-a-parameter. The rule is one line in each host and was believed rather than measured in both.",
+      "file": "python/sel/sql/fragment.py",
+      "from": "        return kind in ('NUM', 'BOOL', 'BIN')",
+      "to": "        return kind in ('BOOL', 'BIN')"
+    },
+    {
+      "name": "py-arity-not-enforced",
+      "was": "The Python half of js-arity-not-enforced. Only PHP's copy of this guard was measured; the other two were transcriptions nothing tried to break.",
+      "file": "python/sel/sql/translator.py",
+      "from": "            if not lo <= len(args) <= hi:",
+      "to": "            if False:"
+    },
+    {
+      "name": "py-tpl-null-rescued-by-the-fallback",
+      "was": "The Python half of arity-null-is-rescued-by-the-fallback, which was mutated in PHP only. On this host the null reached the renderer and emitted the literal text `None` into the SQL, which is the worse of the two failures and the one nothing was checking.",
+      "file": "python/sel/sql/translator.py",
+      "from": "        if n not in tpl or tpl[n] is None:",
+      "to": "        if n not in tpl:"
+    },
+    {
+      "name": "js-slot-replace-is-not-literal",
+      "was": "Found by the JS layer's adversarial review, and it had shipped. Every host substitutes a template slot with its language's string replace; JS's gets it wrong twice, silently. It rewrites only the FIRST occurrence, where Python's str.replace and PHP's str_replace rewrite every one -- so a template naming {0} twice left the second copy unfilled. And its REPLACEMENT argument is not literal: $$, $&, $backtick, $' and $1-$9 are substitution directives even when the pattern is a plain string, and the replacement here is rendered SQL carrying identifiers the application chose. A column named with $' spliced the template's own tail back into the output and asked about a different column, quoted throughout so the query still parsed. replaceAll does NOT fix it -- global, still interpolating. split/join is literal and global, which is str.replace's actual contract.",
+      "file": "js/src/sql/emit.mjs",
+      "from": "  return tpl.split(slot).join(value);",
+      "to": "  return tpl.replace(slot, value);"
+    },
+    {
+      "name": "js-lexical-cycle-unguarded",
+      "was": "How it shipped, and it crashed the host. A lexical value may reference another lexical key and nothing stopped one referencing itself, so a registered {textCast: 'X({textCast:0})'} recursed until JS raised RangeError through the public API -- the failure every other guard in this layer exists to prevent.",
+      "file": "js/src/sql/emit.mjs",
+      "from": "      if (expanding !== null && expanding.has(key)) {",
+      "to": "      if (false) {"
+    },
+    {
+      "name": "py-lexical-cycle-unguarded",
+      "was": "The Python half of js-lexical-cycle-unguarded; there it was RecursionError. Mutated in both because the guard is one line in each and a transcription can lose it in either.",
+      "file": "python/sel/sql/emit.py",
+      "from": "            if expanding is not None and key in expanding:",
+      "to": "            if False:"
+    },
+    {
+      "name": "unify-refusal-loses-its-position",
+      "was": "Every refusal in this layer reports where it happened; the kind-mismatch one reported 0:0 in all three hosts, because the only call that could supply a position passed none. Found by the JS layer's adversarial review and fixed in all three.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        return new Fragment($parts, self::unify($results, $n['pos']), $this->dialect);",
+      "to": "        return new Fragment($parts, self::unify($results), $this->dialect);"
+    },
+    {
+      "name": "empty-quote-accepted",
+      "was": "A quote character that is not a character cannot quote, and registering one was accepted. The hosts then disagreed about what it meant: str_replace and str.replace put the escape between every character AND at each end, JS's split/join only between. Both nonsense, differently.",
+      "file": "php/src/Sql/Map.php",
+      "from": "        if ($v === '' && ($key === 'identQuote' || $key === 'textQuote')) {",
+      "to": "        if (false) {"
+    },
+    {
+      "name": "php-binder-grouped-accepted",
+      "was": "The `grouped` half of the binder rule. Args::symbol refuses a binder that came from parentheses as well as one that is not a name at all; dropping the second half makes the translator accept `ALL(V, (C), C > 0)` and emit working SQL for a program the evaluator raises E_EXPECT_SYMBOL on. Accepting where the language refuses is the one direction this layer must never fail in.",
+      "file": "php/src/Sql/Constants.php",
+      "from": "        return ($node['t'] ?? null) === 'var' && empty($node['grouped']);",
+      "to": "        return ($node['t'] ?? null) === 'var';"
+    },
+    {
+      "name": "py-binder-grouped-accepted",
+      "was": "The Python half of php-binder-grouped-accepted.",
+      "file": "python/sel/sql/constants.py",
+      "from": "    return node.t == 'var' and not node.grouped",
+      "to": "    return node.t == 'var'"
+    },
+    {
+      "name": "js-binder-grouped-accepted",
+      "was": "The JS half of php-binder-grouped-accepted.",
+      "file": "js/src/sql/constants.mjs",
+      "from": "  return node.t === 'var' && !node.grouped;",
+      "to": "  return node.t === 'var';"
+    },
+    {
+      "name": "py-relation-field-folds-eszett",
+      "was": "M6 named `str.upper()` is not `strtoupper` as one of the three places the obvious Python spelling is a DIFFERENT function, and this is the site: a relation binding's field names are folded to build its lookup, and str.upper() turns \"ß\" into \"SS\" -- a longer key that no later lookup can find. PHP's strtoupper is ASCII-only, so the hosts would disagree about whether a field exists.",
+      "file": "python/sel/sql/binding.py",
+      "from": "        out[ascii_upper(str(name))] = b.spec",
+      "to": "        out[str(name).upper()] = b.spec"
+    },
+    {
+      "name": "js-relation-field-folds-eszett",
+      "was": "The JS half of py-relation-field-folds-eszett: toUpperCase folds \"ß\" to \"SS\" where asciiUpper does not.",
+      "file": "js/src/sql/binding.mjs",
+      "from": "    out[asciiUpper(String(name))] = b.spec;",
+      "to": "    out[String(name).toUpperCase()] = b.spec;"
+    },
+    {
+      "name": "root-dialect-refused-again",
+      "was": "A dialect with no parent must be declarable, or the runtime API can build every dialect except the one they all descend from -- and 'generated code is what an application could have written' stops being true. Restoring the old blanket refusal must fail register.dialect.root-has-no-parent.",
+      "file": "php/src/Sql/Map.php",
+      "from": "        if ($extends !== null && !self::exists($extends)) {",
+      "to": "        if ($extends === null || !self::exists($extends)) {"
+    },
+    {
+      "name": "dialect-spec-keys-unchecked",
+      "was": "ops, funcs and skel passed to defineDialect were accepted and silently dropped. Dropping the unknown-key check must fail register.dialect.entries-are-not-declared-here.",
+      "file": "php/src/Sql/Map.php",
+      "from": "        $unknown = array_diff(array_keys($spec), self::DIALECT_KEYS);",
+      "to": "        $unknown = [];"
+    },
+    {
+      "name": "cpp-list-key-accepts-leading-zero",
+      "was": "SEL list keys are the canonical decimals, so \"01\" is not a key and the evaluator answers E_NO_KEY. Accepting a leading zero made this layer answer element 1 for it, in every host; the C++ port has its own copy of the rule and so its own way to lose it.",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;",
+      "to": "if (k.empty() || k.size() > 9 || k[0] < '0' || k[0] > '9') return std::nullopt;"
+    },
+    {
+      "name": "cpp-nul-in-a-name-not-refused",
+      "was": "A NUL terminates the C string libpq and sqlite3 are handed, so a column named a\\0b is malformed SQL on all four servers. C++ is the host where this is easiest to lose twice -- once in the check, once in the string literal that carries the name.",
+      "file": "cpp/sel_sql_binding.cpp",
+      "from": "if (v.find('\\0') != std::string::npos) {",
+      "to": "if (false) {"
+    },
+    {
+      "name": "cpp-escapes-not-longest-first",
+      "was": "Escaping must apply the longest rule first, or a rule for a two-character sequence never fires and the shorter one rewrites its own output.",
+      "file": "cpp/sel_sql_emit.cpp",
+      "from": "return a->from.size() > b->from.size();",
+      "to": "return a->from.size() < b->from.size();"
+    },
+    {
+      "name": "cpp-bin-slot-bound-as-a-parameter",
+      "was": "A BIN slot must be inlined, never bound: a driver sends bytes through the connection's text encoding, and on PostgreSQL 130 of the 256 single-byte values then failed. Only the params rendering can see this, which is why the fuzz lane compares three renderings.",
+      "file": "cpp/sel_sql.cpp",
+      "from": "return k == SqlKind::Num || k == SqlKind::Bool || k == SqlKind::Bin;",
+      "to": "return k == SqlKind::Num || k == SqlKind::Bool;"
+    },
+    {
+      "name": "cpp-star-rescues-a-withdrawn-arity",
+      "was": "sql/MAP.md 2 makes a null arm a WITHDRAWAL of that count, and the * fallback must not rescue it: {\"1\": null, \"*\": \"LEAST({*})\"} refuses MIN(5) and still answers MIN(5, 3). Membership first, then the null test.",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "if (!arm && star) arm = star;",
+      "to": "if (star && (!arm || !arm->value.present)) arm = star;"
+    },
+    {
+      "name": "lisp-assoc-defaults-to-eql",
+      "was": "ASSOC compares with EQL unless told otherwise, and EQL is false for two equal strings that are not the same object. Every string-keyed lookup in this host therefore needs :test #'equal, and the one that forgets it silently finds nothing -- a whole class only this host can have.",
+      "file": "lisp/src/sql/map.lisp",
+      "from": "(or (cdr (assoc name *extra* :test #'equal))",
+      "to": "(or (cdr (assoc name *extra*))"
+    },
+    {
+      "name": "lisp-regex-anchors-lowered-into-sql",
+      "was": "This host lowers ^ and $ to \\A and \\z for cl-ppcre, whose $ also matches before a trailing newline. The Python host keeps that in a separate pass because validate()'s output is shared with hosts whose engines have no \\A -- and a translated pattern goes to a server, which is one of those.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(sel::validate-pattern (sel::node-s pat) (snode-pos pat) t nil)",
+      "to": "(sel::validate-pattern (sel::node-s pat) (snode-pos pat))"
+    },
+    {
+      "name": "lisp-classify-falls-through-to-the-scalar-rule",
+      "was": "CLASSIFY's branches fall through to the scalar rule, so a branch that merely EVALUATES to a source builds one and throws it away. Without the RETURN-FROM, ALL((1,2,3), _ > 0) refuses and COUNT((1,2,3)) answers 0.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "    (:list (return-from classify",
+      "to": "    (:list (progn"
+    },
+    {
+      "name": "lisp-bin-slot-bound-as-a-parameter",
+      "was": "A BIN slot must be inlined, never bound: a driver sends bytes through the connection's text encoding, and on PostgreSQL 130 of the 256 single-byte values then failed. Only the params rendering can see this.",
+      "file": "lisp/src/sql/fragment.lisp",
+      "from": "(and k (member k '(:num :bool :bin)) t)",
+      "to": "(and k (member k '(:num :bool)) t)"
+    },
+    {
+      "name": "lisp-extends-absent-reads-as-nil",
+      "was": "GETF cannot tell a plist key that is absent from one whose value is NIL, and sql/MAP.md 2 needs both: a dialect with no parent is a real thing, and forgetting the key is a typo. Without the +ABSENT+ sentinel a missing :extends is read as an explicit NIL and quietly declares a root that inherits nothing.",
+      "file": "lisp/src/sql/map.lisp",
+      "from": "(defun plist-get (plist key) (getf plist key +absent+))",
+      "to": "(defun plist-get (plist key) (getf plist key))"
+    },
+    {
+      "name": "lisp-escapes-not-longest-first",
+      "was": "Escaping must apply the longest rule first, or a rule for a two-character sequence never fires and the shorter one rewrites its own output. COPY-LIST matters too: SORT is destructive in CL, and sorting the shipped alist in place would corrupt the map for every later call.",
+      "file": "lisp/src/sql/emit.lisp",
+      "from": "(stable-sort (copy-list escape) #'> :key (lambda (c) (length (car c))))",
+      "to": "(stable-sort (copy-list escape) #'< :key (lambda (c) (length (car c))))"
+    },
+    {
+      "name": "lisp-unicode-digits-are-positions",
+      "was": "CL's DIGIT-CHAR-P accepts every Unicode decimal digit -- (digit-char-p #\\U+0663) is 3 -- and every numeral grammar in this layer is ASCII by specification. Without ASCII-DIGIT-P this host answered column 13 for \"1<U+0663>\" where the other four answer none. The same predicate gates template slots, arity keys, @unify positions and dotted versions.",
+      "file": "lisp/src/sql/errors.lisp",
+      "from": "  (char<= #\\0 c #\\9))",
+      "to": "  (digit-char-p c))"
+    },
+    {
+      "name": "lisp-dialect-checked-after-the-translator-is-built",
+      "was": "REQUIRE-TARGET ran after %TRANSLATOR had already been built from the dialect, so a dialect that is not a string -- NIL, the keyword :MARIADB, anything host code passes by mistake -- reached the map lookup first and raised a TYPE-ERROR. That escaped TRY-TRANSLATE, which catches SQL-ERROR alone, so the one entry point whose job is to absorb a refusal signalled instead.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "  (require-target dialect)\n  (let ((tr (%translator dialect (make-bindings (or bindings '()))\n                         (and (getf options :strict) t))))\n    (bindings-check-aliases (translator-bindings tr))",
+      "to": "  (let ((tr (%translator dialect (make-bindings (or bindings '()))\n                         (and (getf options :strict) t))))\n    (require-target dialect)\n    (bindings-check-aliases (translator-bindings tr))"
+    },
+    {
+      "name": "lisp-count-renders-in-the-callers-print-base",
+      "was": "PRINC-TO-STRING reads the caller's *PRINT-BASE*, so an application that had rebound it saw COUNT over a twelve-element list translated as \"C\". MAKE-NUM then raised E_NOT_NUM and that SEL-ERROR escaped TRY-TRANSLATE. SEL numbers are decimal by specification (spec/SPEC.md 4) and this layer may not read the caller's printer.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(sel:make-num (format nil \"~D\" (length (source-elements src))))",
+      "to": "(sel:make-num (princ-to-string (length (source-elements src))))"
+    },
+    {
+      "name": "lisp-arity-slot-in-the-callers-print-base",
+      "was": "A template's {n} slot is the arity the entry was chosen for. PRINC-TO-STRING renders it in the caller's *PRINT-BASE*, so an application that had rebound it got a different slot filled in -- or none.",
+      "file": "lisp/src/sql/emit.lisp",
+      "from": "(replace-all tpl \"{n}\" (format nil \"~D\" n))",
+      "to": "(replace-all tpl \"{n}\" (princ-to-string n))"
+    },
+    {
+      "name": "lisp-arity-key-in-the-callers-print-base",
+      "was": "The arity key an entry is looked up by. Under a caller's rebound *PRINT-BASE* a ten-argument call asks the map for entry \"A\", which no dialect declares, and a call SEL can evaluate is refused.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(let* ((n (format nil \"~D\" (length args)))",
+      "to": "(let* ((n (princ-to-string (length args)))"
+    },
+    {
+      "name": "lisp-node-list-keys-in-the-callers-print-base",
+      "was": "SEL list keys are the canonical ASCII decimals. Built with PRINC-TO-STRING they follow the caller's *PRINT-BASE*, so element 10 of a bound node list is keyed \"A\" and nothing can find it.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "collect (cons (format nil \"~D\" i) (binder-node item))",
+      "to": "collect (cons (princ-to-string i) (binder-node item))"
+    },
+    {
+      "name": "lisp-column-list-keys-in-the-callers-print-base",
+      "was": "The same for a columns binding: past nine columns the keys stop being decimals under a caller that had rebound *PRINT-BASE*.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "collect (cons (format nil \"~D\" i) (binder-column item))",
+      "to": "collect (cons (princ-to-string i) (binder-column item))"
+    },
+    {
+      "name": "lisp-debug-ordinal-in-the-callers-print-base",
+      "was": "The :debug rendering numbers each slot ~n~, and ~a renders that ordinal through the caller's *PRINT-BASE*. An application that had rebound it saw slot 10 as ~A~. Found by neutral.ordinal.placeholder-past-nine, which is the first case in the corpus with more than nine parameters.",
+      "file": "lisp/src/sql/fragment.lisp",
+      "from": "(:debug (format out \"~~~D~~\" nth))",
+      "to": "(:debug (format out \"~~~a~~\" nth))"
+    },
+    {
+      "name": "lisp-builder-receives-the-translator-not-the-dialect",
+      "was": "A builder is registered by the application and its contract is the dialect it is building for. Handing it the translator instead gives host code an internal structure the other four hosts never pass, and the argument it was written against is gone.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(return-from apply-entry (funcall builder d args pos))",
+      "to": "(return-from apply-entry (funcall builder tr args pos))"
+    }
+  ]
+}

@@ -9,12 +9,11 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from . import decimal as D
-from .errors import Pos, fail
+from .errors import MAX_DEPTH, Pos, fail
 from .parser import Node
 from .utf8 import bytes_compare
 from .value import BIN, BOOL, NONE, TEXT, Value
 
-MAX_DEPTH = 200
 
 
 class Context:
@@ -228,13 +227,13 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     # can be read against the other four without a footnote.
     if op == '+':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.add(a, b))
+        return Value.num(D.add(a, b, node.pos))
     if op == '-':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.sub(a, b))
+        return Value.num(D.sub(a, b, node.pos))
     if op == '*':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.mul(a, b))
+        return Value.num(D.mul(a, b, node.pos))
     if op == '/':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
         return Value.num(D.div(a, b, node.pos))
@@ -247,14 +246,14 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
 
     if op in ('==', '!=', '<', '<=', '>', '>='):
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.bool(_compare_result(op, D.cmp(a, b)))
+        return Value.bool(_compare_result(op, D.cmp(a, b), node.pos))
 
     if op in ('$==', '$!=', '$<', '$<=', '$>', '$>='):
         a = l.as_bytes(lp); b = r.as_bytes(rp)
-        return Value.bool(_compare_result(op[1:], bytes_compare(a, b)))
+        return Value.bool(_compare_result(op[1:], bytes_compare(a, b), node.pos))
 
     if op == 'EQL':
-        return Value.bool(l.eql(r))
+        return Value.bool(l.eql(r, node.pos))
     if op == 'IN':
         return Value.bool(_is_in(l, r))
 
@@ -269,7 +268,15 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     fail('E_SYNTAX', f'unknown operator {op}', node.pos)
 
 
-def _compare_result(op: str, c: int) -> bool:
+def _compare_result(op: str, c: int, pos: Pos) -> bool:
+    """The six comparisons, and nothing else.
+
+    The last branch was `return c >= 0`, which answered for every operator it
+    did not name -- so a comparison operator added to the parser and forgotten
+    here evaluated as `>=` and reported nothing. Unreachable today, since the
+    caller only reaches this with the six, and that is the point of saying so
+    out loud rather than answering.
+    """
     if op == '==':
         return c == 0
     if op == '!=':
@@ -280,7 +287,9 @@ def _compare_result(op: str, c: int) -> bool:
         return c <= 0
     if op == '>':
         return c > 0
-    return c >= 0
+    if op == '>=':
+        return c >= 0
+    fail('E_SYNTAX', f'unknown comparison operator {op}', pos)
 
 
 def _concat(l: Value, r: Value, lp: Pos, rp: Pos) -> Value:
@@ -325,7 +334,7 @@ def _eval_assign(node: Node, ctx: Context) -> Value:
     key = path[-1]
 
     if node.op == '=':
-        value = eval_node(node.value, ctx).clone()
+        value = eval_node(node.value, ctx).clone(node.pos)
     else:
         current = _walk_create(ctx, path, len(path) - 1).get(key)
         if current is None:
@@ -339,11 +348,11 @@ def _eval_assign(node: Node, ctx: Context) -> Value:
             a = current.as_decimal(tp)
             b = rhs.as_decimal(vp)
             if bin_op == '+':
-                res = D.add(a, b)
+                res = D.add(a, b, node.pos)
             elif bin_op == '-':
-                res = D.sub(a, b)
+                res = D.sub(a, b, node.pos)
             elif bin_op == '*':
-                res = D.mul(a, b)
+                res = D.mul(a, b, node.pos)
             elif bin_op == '/':
                 res = D.div(a, b, node.pos)
             else:
@@ -390,6 +399,14 @@ def _resolve_target(target: Node, ctx: Context) -> list[str]:
     if ctx.is_bound(n.name):
         fail('E_BAD_ASSIGN',
              f'{n.name} is an aggregate binder and cannot be assigned', target.pos)
+    # The chain was walked iteratively, which is why nothing has counted it yet:
+    # `A[1][2][3]` is a chain of index nodes, not a nesting of them, so neither
+    # the parser's depth nor the evaluator's ever sees it -- and the value it is
+    # about to build is one level deeper than the chain is long. Uncounted, that
+    # built a value deeper than clone, eql and dump can walk, so the assignment
+    # succeeded and reading the result back afterwards failed.
+    if len(chain) + 1 > MAX_DEPTH:
+        fail('E_DEPTH', 'value nested too deeply', target.pos)
     path = [n.name]
     if not chain:
         return path

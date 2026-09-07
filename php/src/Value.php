@@ -229,7 +229,7 @@ final class Value
         if ($v->kind !== self::TEXT) {
             fail('E_NOT_NUM', 'expected a number, got ' . strtolower($v->kind), $pos);
         }
-        $d = Dec::parse((string) $v->scalar);
+        $d = Dec::parse((string) $v->scalar, $pos);
         if ($d === null) {
             fail('E_NOT_NUM', 'not a number: ' . json_encode($v->scalar), $pos);
         }
@@ -244,28 +244,68 @@ final class Value
         }
         try {
             $v = $this->scalarSource(null);
+            // A well-formed numeral too big to hold raises E_RANGE out of parse.
+            // The probe answers no rather than raising, so ISNUM is true exactly
+            // when the value can be used as a number — before the cap it said
+            // TRUE for a 2 000 000-digit text that then failed on first use.
+            return $v->kind === self::TEXT && Dec::parse((string) $v->scalar) !== null;
         } catch (SelError) {
             return false;
         }
-        return $v->kind === self::TEXT && Dec::parse((string) $v->scalar) !== null;
     }
 
     // --- copying ------------------------------------------------------------
 
-    /** Assignment copies by value: two variables never share structure (§5.7). */
-    public function copy(): Value
+    /**
+     * Assignment copies by value: two variables never share structure (§5.7).
+     *
+     * A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the parser's
+     * and the evaluator's, and it was the last one left uncounted. copy, eql, dump and
+     * the two native conversions each recurse once per level, so a value nested deeply
+     * enough reached the host's own stack: RecursionError on Python at about a thousand
+     * levels, an uncaught RangeError on JS at about four, a segfault on C++ at about
+     * sixty. Three hosts answered where two died, on the same program.
+     *
+     * The depth rides as a parameter, as it does in dependencies(): nothing has to be
+     * released on the way out, so all five hosts spell it the same way. A value of
+     * exactly MAX_DEPTH levels is fine; the level past it is refused. `$pos` is
+     * reported when the caller has one -- the evaluator knows which node asked -- and
+     * is null for a call from host code, the same convention as asText().
+     *
+     * @param array<string,mixed>|null $pos
+     */
+    public function copy(?array $pos = null): Value
     {
+        return $this->copyAt(1, $pos);
+    }
+
+    /** @param array<string,mixed>|null $pos */
+    private function copyAt(int $depth, ?array $pos): Value
+    {
+        if ($depth > MAX_DEPTH) {
+            fail('E_DEPTH', 'value nested too deeply', $pos);
+        }
         $out = new self($this->kind, $this->scalar);
         foreach ($this->children as $k => $v) {
-            $out->children[$k] = $v->copy();
+            $out->children[$k] = $v->copyAt($depth + 1, $pos);
         }
         return $out;
     }
 
     // --- structural equality (§5.4) -----------------------------------------
 
-    public function eql(Value $other): bool
+    /** @param array<string,mixed>|null $pos */
+    public function eql(Value $other, ?array $pos = null): bool
     {
+        return $this->eqlAt($other, 1, $pos);
+    }
+
+    /** @param array<string,mixed>|null $pos */
+    private function eqlAt(Value $other, int $depth, ?array $pos): bool
+    {
+        if ($depth > MAX_DEPTH) {
+            fail('E_DEPTH', 'value nested too deeply', $pos);
+        }
         if ($this->kind !== $other->kind) {
             return false;
         }
@@ -281,7 +321,7 @@ final class Value
             if ($key !== $b[$i][0]) {   // key order is normative
                 return false;
             }
-            if (!$val->eql($b[$i][1])) {
+            if (!$val->eqlAt($b[$i][1], $depth + 1, $pos)) {
                 return false;
             }
         }
@@ -292,6 +332,14 @@ final class Value
 
     public function dump(): string
     {
+        return $this->dumpAt(1);
+    }
+
+    private function dumpAt(int $depth): string
+    {
+        if ($depth > MAX_DEPTH) {
+            fail('E_DEPTH', 'value nested too deeply', null);
+        }
         $s = match ($this->kind) {
             self::NONE => '-',
             self::TEXT => 't' . self::quoteDump((string) $this->scalar),
@@ -303,7 +351,7 @@ final class Value
         }
         $parts = [];
         foreach ($this->entries() as [$k, $v]) {
-            $parts[] = self::quoteDump($k) . '=' . $v->dump();
+            $parts[] = self::quoteDump($k) . '=' . $v->dumpAt($depth + 1);
         }
         return $s . '{' . implode(', ', $parts) . '}';
     }
@@ -331,6 +379,15 @@ final class Value
     /** @param mixed $x */
     public static function fromNative($x): Value
     {
+        return self::fromNativeAt($x, 1);
+    }
+
+    /** @param mixed $x */
+    private static function fromNativeAt($x, int $depth): Value
+    {
+        if ($depth > MAX_DEPTH) {
+            fail('E_DEPTH', 'value nested too deeply', null);
+        }
         if ($x === null) {
             return self::none();
         }
@@ -361,12 +418,12 @@ final class Value
             if (array_is_list($x)) {
                 $i = 0;
                 foreach ($x as $item) {
-                    $v->set((string) (++$i), self::fromNative($item));
+                    $v->set((string) (++$i), self::fromNativeAt($item, $depth + 1));
                 }
                 return $v;
             }
             foreach ($x as $k => $item) {
-                $v->set((string) $k, self::fromNative($item));
+                $v->set((string) $k, self::fromNativeAt($item, $depth + 1));
             }
             return $v;
         }
@@ -376,6 +433,15 @@ final class Value
     /** @return mixed */
     public function toNative()
     {
+        return $this->toNativeAt(1);
+    }
+
+    /** @return mixed */
+    private function toNativeAt(int $depth)
+    {
+        if ($depth > MAX_DEPTH) {
+            fail('E_DEPTH', 'value nested too deeply', null);
+        }
         $scalar = $this->kind === self::NONE ? null : $this->scalar;
         if (!$this->children) {
             return $scalar;
@@ -385,7 +451,7 @@ final class Value
             $out['_'] = $scalar;
         }
         foreach ($this->entries() as [$k, $v]) {
-            $out[$k] = $v->toNative();
+            $out[$k] = $v->toNativeAt($depth + 1);
         }
         return $out;
     }

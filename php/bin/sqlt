@@ -1,0 +1,402 @@
+#!/usr/bin/env php
+<?php
+// SQL translation case runner. The suite in sql/cases/ is normative for what
+// the translator emits; this program has no opinions of its own beyond the file
+// format described in sql/cases/README.md.
+//
+// The cases assert an exact string. That is what makes them a cross-host parity
+// check rather than a smoke test: if two hosts emit different SQL for the same
+// input, the suite says so, and no database is needed to find out.
+//
+//     php/bin/sqlt [name-substring ...]
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/Sql/bootstrap.php';
+
+use Sel\Sel;
+use Sel\SelError;
+use Sel\Value;
+use Sel\Sql\Binding;
+use Sel\Sql\Fragment;
+use Sel\Sql\Map;
+use Sel\Sql\Sql;
+use Sel\Sql\SqlError;
+
+require_once __DIR__ . '/CaseData.php';
+
+/**
+ * Dialects that must emit byte-identical SQL for the same case.
+ *
+ * `mysql-family` is defined as the spellings MariaDB and MySQL agree on, and
+ * both leaves override nothing. That is a *claim*, and this is what turns it
+ * into a check: every case written for one is re-run under the other and must
+ * produce the same string, the same error, the same parameters.
+ *
+ * The alternative was a `14-mysql.sqlt` full of copies, which would have been
+ * two hundred lines asserting that a copy is a copy. This asserts the property
+ * the family layer exists for, over every case that already exists, and it fails
+ * the moment someone adds an override to one leaf without the other.
+ */
+const MIRRORS = ['mariadb' => 'mysql'];
+
+/**
+ * The entries a mirrored pair is allowed to differ on, and why.
+ *
+ * Re-running every mariadb case under mysql proves parity only for entries some
+ * case reaches, and twenty of mariadb's supported entries have no case at all --
+ * so an override could be added to one leaf and not the other and the suite
+ * would pass. This compares the two maps directly instead of inferring parity
+ * from whatever cases happen to exist, which makes mysql.json's "adding an
+ * override to one leaf without the other fails the suite" true rather than
+ * nearly true.
+ *
+ * A declared difference belongs here with its reason. Caveats are compared too:
+ * a caveat changes no output character, so the case-based mirror cannot see one
+ * appear or vanish.
+ */
+const MIRROR_EXCEPTIONS = [
+    'skel.case' => 'MariaDB pads the scale of a CASE over NUM branches and '
+        . 'declares numeric-scale for it; MySQL 8.4 does not. See mariadb.json.',
+];
+
+/**
+ * Every entry carrying a caveat must be pinned by a case.
+ *
+ * A caveat is the oracle being told not to fail on this entry, so the entry's
+ * semantics stop being checked against a server and only the emitted string is
+ * left. Mutating ansi's LOWER to UPPER proved the gap: the oracle printed it as
+ * a caveat line and reported 0 differ, because LOWER already carried
+ * unicode-case for an honest reason and no case named LOWER on any dialect.
+ *
+ * @param array<string, array<string,bool>> $pinned
+ * @return list<string>
+ */
+function caveat_pins(array $pinned): array
+{
+    $out = [];
+    foreach (Sql::dialects() as $dialect) {
+        foreach (['ops', 'funcs', 'skel'] as $section) {
+            foreach (Map::entries($dialect, $section) as $key => $entry) {
+                if (!is_array($entry) || !isset($entry['caveat'])) {
+                    continue;
+                }
+                $name = "{$section}.{$key}";
+                if (isset($pinned[$dialect][$name])) {
+                    continue;
+                }
+                $out[] = "{$dialect} {$name} carries the caveat "
+                    . "`{$entry['caveat']}`, so the oracle may not fail on it, and no "
+                    . 'case pins the string it emits; add one';
+            }
+        }
+    }
+    return $out;
+}
+
+/**
+ * Assert the two leaves of a mirrored pair declare the same map.
+ *
+ * @return list<string>
+ */
+function mirror_parity(): array
+{
+    $bad = [];
+    foreach (MIRRORS as $left => $right) {
+        foreach (['ops', 'funcs', 'skel'] as $section) {
+            $l = Map::entries($left, $section);
+            $r = Map::entries($right, $section);
+            foreach (array_keys($l + $r) as $key) {
+                $name = "{$section}.{$key}";
+                $same = ($l[$key] ?? null) == ($r[$key] ?? null);
+                if ($same && isset(MIRROR_EXCEPTIONS[$name])) {
+                    $bad[] = "{$name} is listed as a mirror exception and the two "
+                        . 'leaves agree on it; remove the exception';
+                    continue;
+                }
+                if (!$same && !isset(MIRROR_EXCEPTIONS[$name])) {
+                    $bad[] = "{$left} and {$right} disagree on {$name}, and no "
+                        . 'MIRROR_EXCEPTIONS entry says why';
+                }
+            }
+        }
+    }
+    return $bad;
+}
+
+/**
+ * Apply a case's runtime registrations before translating.
+ *
+ * A JSON list of operations, each either a dialect or an entry:
+ *
+ *   [{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"},
+ *    {"define": ["mariadb", "funcs", "CRC32", {"tpl": "X({0})", "ret": "TEXT"}]},
+ *    {"define": ["mariadb", "funcs", "UPPER", "we do not allow this one"]}]
+ *
+ * The runner calls Map::reset() before every case, so nothing leaks between
+ * them and a registration case cannot pass because of a neighbour.
+ */
+function apply_registrations(?array $ops): void
+{
+    if ($ops === null) {
+        return;
+    }
+    foreach ($ops as $op) {
+        if (isset($op['define'])) {
+            [$dialect, $section, $key, $entry] = $op['define'];
+            Map::define($dialect, $section, $key, $entry);
+            continue;
+        }
+        if (isset($op['dialect'])) {
+            $name = $op['dialect'];
+            unset($op['dialect']);
+            Map::defineDialect($name, $op);
+            continue;
+        }
+        throw new RuntimeException('a register op needs a dialect or a define');
+    }
+}
+
+/** null when the case passes, else what went wrong. */
+function run_case(array $c): ?string
+{
+    $dialect = $c['dialect'] ?? null;
+    if ($dialect === null || $dialect === '') {
+        throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- dialect");
+    }
+    $options = $c['options'] ?? [];
+    $as = $c['as'] ?? 'value';
+    $mode = $c['mode'] ?? 'inline';
+
+    $sql = null;
+    $error = null;
+    $thrown = null;
+    Map::traceOn();
+    try {
+        // Inside the try: a bad registration is one of the outcomes a case may
+        // assert, so it has to be catchable rather than fatal.
+        apply_registrations($c['register']);
+        // Inside the try: a Binding constructor refuses a malformed binding at
+        // the earliest possible moment, which is construction rather than
+        // translation, and that refusal is one of the outcomes a case asserts.
+        $bindings = ($c['bindings'])();
+        $program = Sel::compile($c['source']);
+        $frag = Sql::translate($program, $dialect, $bindings, $options);
+        $sql = $as === 'condition' ? $frag->asCondition($mode) : $frag->asValue($mode);
+    } catch (SqlError $e) {
+        $error = $e;
+    } catch (SelError $e) {
+        return "the source did not compile: {$e}";
+    } catch (\Throwable $e) {
+        $thrown = $e;
+    } finally {
+        // Which map entries the cases actually pin. A caveated entry has lost
+        // its semantic check -- the oracle is not allowed to fail on it -- so
+        // the string it emits is the only thing left holding it, and that is
+        // only true if some case asserts the string. See caveat_pins().
+        foreach (Map::traceOff() as $e) {
+            $GLOBALS['pinned'][$dialect][$e] = true;
+        }
+    }
+
+    // A malformed map or binding is a mistake in the application's startup and
+    // raises the host's own error type; a rule that cannot be translated raises
+    // SqlError. Keeping the two apart is why `throws` exists as its own outcome
+    // rather than as another E_SQL_ code.
+    if ($c['throws'] !== null) {
+        if ($thrown === null) {
+            return "expected {$c['throws']}, got "
+                . ($error !== null ? (string) $error : var_export($sql, true));
+        }
+        $got = get_class($thrown);
+        return $got === $c['throws'] || is_a($thrown, $c['throws'])
+            ? null
+            : "expected {$c['throws']}, got {$got} ({$thrown->getMessage()})";
+    }
+    if ($thrown !== null) {
+        throw new RuntimeException("{$c['at']}: unexpected "
+            . get_class($thrown) . ": {$thrown->getMessage()}");
+    }
+
+    if ($c['error'] !== null) {
+        if ($error === null) {
+            return "expected {$c['error']}, got " . var_export($sql, true);
+        }
+        if (preg_match('/^(\S+)(?:\s+(\d+):(\d+))?$/', $c['error'], $m) !== 1) {
+            throw new RuntimeException("{$c['at']}: malformed error expectation");
+        }
+        if ($error->code !== $m[1]) {
+            return "expected {$m[1]}, got {$error->code} ({$error->getMessage()})";
+        }
+        if (isset($m[2])) {
+            $want = "{$m[2]}:{$m[3]}";
+            $got = "{$error->line}:{$error->col}";
+            if ($want !== $got) {
+                return "expected {$m[1]} at {$want}, got it at {$got}";
+            }
+        }
+        return null;
+    }
+
+    if ($error !== null) {
+        return "expected SQL, got {$error->code} ({$error->getMessage()})";
+    }
+    if ($sql !== $c['expect']) {
+        return "got:  {$sql}\n     want: {$c['expect']}";
+    }
+    // Checked for every case that produces a fragment, not only those asking
+    // about params: the slot numbers must read 1, 2, 3, … in the order they
+    // appear in the part list.
+    //
+    // What it does NOT demand is that the slots read 1, 2, 3 in output order.
+    // They cannot: a reordering template like INSTR({1}, {0}) emits the second
+    // slot created before the first, and the template is data. Binding order is
+    // taken from the output instead — see Fragment::bindings() — which is what
+    // makes reordering templates and repeated slots both correct.
+    //
+    // What is left over and still worth catching: a value bound but never
+    // emitted, which means a Fragment was rendered and thrown away, and a count
+    // mismatch between bindings() and the placeholders actually emitted. Both
+    // are invisible in `inline` mode, which is what the rest of the suite
+    // asserts.
+    $seen = [];
+    foreach ($frag->parts as $p) {
+        if (is_string($p)) {
+            continue;
+        }
+        if ($p < 1 || $p > count($frag->params)) {
+            return "parameter slot {$p} has no value in params";
+        }
+        $seen[$p] = true;
+    }
+    $orphans = array_values(array_diff(
+        $frag->params === [] ? [] : range(1, count($frag->params)), array_keys($seen)));
+    if ($orphans !== []) {
+        return 'parameter slot(s) ' . json_encode($orphans) . ' were bound but never '
+            . 'emitted — a fragment was rendered and discarded';
+    }
+    // `~1~`, not bare tildes: PostgreSQL's regex operator IS `~`, so counting
+    // them divided a regex fragment's odd tilde count by two and compared an
+    // integer against 2.5. §9 anticipated the collision and named the marker
+    // accordingly; this check did not get the memo, and stayed latent until the
+    // first PostgreSQL regex case existed to trip it.
+    if (count($frag->bindings())
+            !== preg_match_all('/~\d+~/', $frag->asValue('debug'))) {
+        return 'bindings() and the emitted placeholders disagree in count';
+    }
+
+    if ($c['params'] !== null) {
+        $got = implode(', ', array_map(
+            static fn ($v): string => $v->dump(), $frag->bindings()));
+        if ($got !== $c['params']) {
+            return "params got:  {$got}\n     want: {$c['params']}";
+        }
+    }
+    return null;
+}
+
+// --- main -------------------------------------------------------------------
+
+$filters = array_slice($argv, 1);
+$cases = sql_cases();
+
+// `--names` prints what this host loaded and stops. Kept as a cheap way to see
+// the roster; the two hosts cannot disagree about it any more, because
+// tools/gen-sql-cases.mjs is the only thing that reads sql/cases/*.sqlt and both
+// load what it wrote.
+if ($filters === ['--names']) {
+    foreach ($cases as $c) {
+        echo "{$c['at']}\t{$c['name']}\n";
+    }
+    exit(0);
+}
+
+$passed = 0;
+$mirrored = 0;
+$failures = [];
+$suiteErrors = 0;
+
+foreach ($cases as $c) {
+    if ($filters !== []) {
+        $keep = false;
+        foreach ($filters as $f) {
+            if (str_contains($c['name'], $f)) {
+                $keep = true;
+                break;
+            }
+        }
+        if (!$keep) {
+            continue;
+        }
+    }
+    Map::reset();                 // no case may leak a registration into another
+    try {
+        $problem = run_case($c);
+    } catch (RuntimeException $e) {
+        echo "SUITE ERROR {$e->getMessage()}\n";
+        $suiteErrors++;
+        continue;
+    }
+    if ($problem !== null) {
+        $failures[] = ['case' => $c, 'problem' => $problem];
+        continue;
+    }
+    $passed++;
+
+    // The same case under the mirrored dialect. A registration case is exempt:
+    // it names its dialect in the register data, so re-running it under another
+    // name would be testing something it does not claim.
+    $mirror = MIRRORS[$c['dialect']] ?? null;
+    if ($mirror === null || $c['register'] !== null) {
+        continue;
+    }
+    Map::reset();
+    // PHP's `+` keeps the LEFT operand's value for a duplicated key, so writing
+    // this as `$c + ['dialect' => $mirror]` re-runs every mariadb case AS
+    // mariadb -- the count line still prints a plausible number and the check
+    // that makes mysql.json safe to leave empty has silently stopped happening.
+    $mirrorCase = ['dialect' => $mirror] + $c;
+    if ($mirrorCase['dialect'] !== $mirror) {
+        echo "SUITE ERROR the mirrored case for {$c['name']} is still "
+            . "{$mirrorCase['dialect']}, so nothing is being mirrored\n";
+        $suiteErrors++;
+        continue;
+    }
+    try {
+        $problem = run_case($mirrorCase);
+    } catch (RuntimeException $e) {
+        echo "SUITE ERROR (mirrored to {$mirror}) {$e->getMessage()}\n";
+        $suiteErrors++;
+        continue;
+    }
+    if ($problem === null) {
+        $mirrored++;
+    } else {
+        $failures[] = ['case' => $c,
+            'problem' => "mirrored to {$mirror}, which must agree with "
+                . "{$c['dialect']}: {$problem}"];
+    }
+}
+
+foreach ($failures as $f) {
+    echo "FAIL {$f['case']['name']}  ({$f['case']['at']})\n";
+    echo "     {$f['problem']}\n";
+}
+
+// Map::reset() so the parity check reads the shipped map rather than whatever
+// the last registration case left behind.
+Map::reset();
+foreach (caveat_pins($GLOBALS['pinned'] ?? []) as $p) {
+    echo "UNPINNED {$p}\n";
+    $suiteErrors++;
+}
+$parity = mirror_parity();
+foreach ($parity as $p) {
+    echo "PARITY {$p}\n";
+    $suiteErrors++;
+}
+
+echo "\n{$passed} passed ({$mirrored} also checked against a mirrored dialect, "
+    . count(MIRRORS) . ' leaf pair compared entry by entry), '
+    . count($failures) . ' failed, ' . "{$suiteErrors} suite errors\n";
+exit($failures === [] && $suiteErrors === 0 ? 0 : 1);

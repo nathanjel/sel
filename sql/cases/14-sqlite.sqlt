@@ -1,0 +1,185 @@
+% SQLite. The second target, and the first evidence that the map is a map rather
+% than one server's spellings written down twice.
+%
+% Read this file next to 03-functions.sqlt and 02-operators.sqlt: the same SEL,
+% two documents, two very different renderings, no host code involved in the
+% difference.
+%
+% The TRIM family is deliberately absent here and covered by sql/oracle instead:
+% its template embeds a literal tab and newline, which a case file can hold but
+% cannot show.
+
+### name: sqlite.num.literals-are-text
+--- note
+The one that decides the shape of the dialect. SQLite has no exact decimal, and
+2.50 as a bare literal is a REAL that prints as 2.5 -- so `2.50 $== 2.5` would be
+TRUE here and FALSE in SEL. Quoted, SEL's exact characters survive and SQLite's
+dynamic typing still reads them as a number: '2.50' + '2.50' is 5.0.
+--- dialect
+sqlite
+--- source
+2.50 + 2.50
+--- expect
+('2.50' + '2.50')
+===
+### name: sqlite.num.byte-comparison-sees-the-scale
+--- dialect
+sqlite
+--- source
+"2.50" $== "2.5"
+--- expect
+(CAST('2.50' AS TEXT) = CAST('2.5' AS TEXT))
+===
+### name: sqlite.num.comparison-always-coerces
+--- note
+The consequence: two quoted numbers would compare as text, and SEL's == is
+numeric. Both variants carry the same template, which is the data saying so.
+--- dialect
+sqlite
+--- source
+2.50 == 2.5
+--- expect
+(CAST('2.50' AS NUMERIC) = CAST('2.5' AS NUMERIC))
+===
+### name: sqlite.num.division-is-forced-real
+--- note
+SQLite's / between two integers is INTEGER division: 10 / 4 is 2 where SEL says
+2.5. The * 1.0 makes it the same operation, inexactly, which decimal-float then
+declares.
+--- dialect
+sqlite
+--- source
+10 / 4
+--- expect
+('10' * 1.0 / '4')
+===
+### name: sqlite.text.no-collation-needed
+--- note
+SQLite's default collation is BINARY, so textCollate is empty and 'A' = 'a' is
+already 0. textCast is still there: without it two numeric operands compare as
+numbers. Compare 02-operators.sqlt, where mariadb needs COLLATE utf8mb4_bin.
+--- dialect
+sqlite
+--- source
+"A" $== "a"
+--- expect
+(CAST('A' AS TEXT) = CAST('a' AS TEXT))
+===
+### name: sqlite.text.concat-is-an-operator
+--- dialect
+sqlite
+--- source
+"a" & "b"
+--- expect
+('a' || 'b')
+===
+### name: sqlite.text.upper-needs-no-caveat
+--- note
+SQLite's upper() changes ASCII letters only, which is exactly what SEL
+specifies -- so the ansi entry's unicode-case caveat is overridden away here,
+where mysql-family has to keep it.
+--- dialect
+sqlite
+--- source
+UPPER("zażółć")
+--- expect
+upper('zażółć')
+===
+### name: sqlite.text.right-of-zero
+--- note
+substr(X, -N) alone is wrong for N = 0: -0 is 0, and substr(X, 0) behaves like
+substr(X, 1), so RIGHT("a", 0) answered "a" where SEL says "". The explicit
+length pins it. Found by the fuzz lane on sqlite's first run.
+--- dialect
+sqlite
+--- source
+RIGHT("a", 0)
+--- expect
+substr('a', -'0', '0')
+===
+### name: sqlite.text.code-point-in
+--- note
+Supported here and refused by mysql-family: SQLite's unicode() is a code point,
+MariaDB's ORD is a byte sequence. The map earning its keep in the other
+direction.
+--- dialect
+sqlite
+--- source
+CODE("é")
+--- expect
+unicode('é')
+===
+### name: sqlite.text.code-point-out
+--- dialect
+sqlite
+--- source
+CHAR(233)
+--- expect
+char('233')
+===
+### name: sqlite.func.min-takes-one-argument
+--- note
+No arity-keyed template needed: min() accepts one argument where LEAST does not.
+--- dialect
+sqlite
+--- source
+MIN(1)
+--- expect
+min('1')
+===
+### name: sqlite.func.find-has-no-start-position
+--- note
+instr() takes no start position, so the entry narrows arity to [2,2] and the
+three-argument call is refused. The map has documented `arity` as doing this
+since M1 and nothing enforced it until sqlite was written -- see 13-review.
+--- dialect
+sqlite
+--- source
+FIND("a", "banana", 3)
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: sqlite.refuse.no-regexp
+--- dialect
+sqlite
+--- source
+RMATCH('^a', "ab")
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: sqlite.refuse.no-lpad
+--- dialect
+sqlite
+--- source
+PADL("7", 3, "0")
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: sqlite.strict.refuses-arithmetic
+--- note
+Every arithmetic entry carries decimal-float, so `strict` refuses the lot. That
+is the option doing its job: a caller who needs SEL's contract rather than an
+approximation of it gets a refusal instead of a number that is nearly right.
+--- dialect
+sqlite
+--- options
+{"strict": true}
+--- source
+2.50 + 2.50
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: sqlite.strict.allows-text
+--- note
+And the other half: the non-numeric side of this dialect is exact, so strict
+passes it. If everything were caveated, `strict` would mean "refuse sqlite" and
+the caveats would have stopped discriminating.
+--- dialect
+sqlite
+--- options
+{"strict": true}
+--- source
+UPPER("abc") $== "ABC"
+--- expect
+(CAST(upper('abc') AS TEXT) = CAST('ABC' AS TEXT))
+===

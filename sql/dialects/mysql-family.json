@@ -1,0 +1,203 @@
+{
+  "dialect": "mysql-family",
+  "extends": "ansi",
+  "version": "0",
+  "target": false,
+  "lexical": {
+    "identQuote": "`",
+    "identEscape": "``",
+    "textQuote": "'",
+    "textEscape": {
+      "'": "''",
+      "\\": "\\\\"
+    },
+    "textCollate": " COLLATE utf8mb4_bin",
+    "numericCast": "CAST({0} AS DECIMAL(65,10))",
+    "textCast": "CAST({0} AS CHAR)"
+  },
+  "ops": {
+    "*": {
+      "tpl": "({0} * {1})",
+      "ret": "NUM",
+      "caveat": "scale-limit"
+    },
+    "&": {
+      "variants": {
+        "text": "CONCAT({0}, {1})",
+        "bin": "CONCAT({0}, {1})"
+      },
+      "ret": "@concat",
+      "caveat": "concat-null"
+    },
+    "XOR": {
+      "tpl": "({0} XOR {1})",
+      "ret": "BOOL"
+    }
+  },
+  "funcs": {
+    "LEFT": {
+      "tpl": "LEFT({0}, {1})",
+      "ret": "TEXT"
+    },
+    "RIGHT": {
+      "tpl": "RIGHT({0}, {1})",
+      "ret": "TEXT"
+    },
+    "SUBSTR": {
+      "tpl": {
+        "2": "SUBSTRING({0}, {1})",
+        "3": "SUBSTRING({0}, {1}, {2})"
+      },
+      "ret": "TEXT"
+    },
+    "FIND": {
+      "tpl": {
+        "2": "INSTR({1}, {0})",
+        "3": "LOCATE({0}, {1}, {2})"
+      },
+      "ret": "NUM"
+    },
+    "REPLACE": {
+      "tpl": "REPLACE({2}, {0}, {1})",
+      "ret": "TEXT"
+    },
+    "TRIM": {
+      "tpl": "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '')",
+      "ret": "TEXT"
+    },
+    "LTRIM": {
+      "tpl": "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+', '')",
+      "ret": "TEXT"
+    },
+    "RTRIM": {
+      "tpl": "REGEXP_REPLACE({0}, '[ \\\\t\\\\r\\\\n]+$', '')",
+      "ret": "TEXT"
+    },
+    "BACKWARDS": {
+      "tpl": "REVERSE({0})",
+      "ret": "TEXT"
+    },
+    "REPEAT": {
+      "tpl": "REPEAT({0}, {1})",
+      "ret": "TEXT"
+    },
+    "PADL": {
+      "tpl": "IF(CHAR_LENGTH({0}) >= {1}, {0}, LPAD({0}, {1}, {2}))",
+      "ret": "TEXT"
+    },
+    "PADR": {
+      "tpl": "IF(CHAR_LENGTH({0}) >= {1}, {0}, RPAD({0}, {1}, {2}))",
+      "ret": "TEXT"
+    },
+    "CHAR": "CHAR(n USING utf8mb4) reads n as a byte sequence in that charset, not as a code point: CHAR(233 USING utf8mb4) is NULL because 0xE9 alone is not valid UTF-8, where SEL says the character is e-acute",
+    "CODE": "ORD returns the first character's bytes read as an integer, not its code point; SEL's CODE is a code point",
+    "SIGN": {
+      "tpl": "SIGN({0})",
+      "ret": "NUM"
+    },
+    "TRUNC": {
+      "tpl": "TRUNCATE({0}, 0)",
+      "ret": "NUM"
+    },
+    "ROUND": {
+      "tpl": "ROUND({0}, {1})",
+      "ret": "NUM"
+    },
+    "MIN": {
+      "tpl": {
+        "1": "{0}",
+        "*": "LEAST({*})"
+      },
+      "ret": "NUM",
+      "caveat": "numeric-scale"
+    },
+    "MAX": {
+      "tpl": {
+        "1": "{0}",
+        "*": "GREATEST({*})"
+      },
+      "ret": "NUM",
+      "caveat": "numeric-scale"
+    },
+    "ISNUM": {
+      "tpl": "({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')",
+      "ret": "BOOL"
+    },
+    "BLEN": {
+      "tpl": "LENGTH({binaryCast:0})",
+      "ret": "NUM"
+    },
+    "TO_UTF8": {
+      "tpl": "CAST({0} AS BINARY)",
+      "ret": "BIN"
+    },
+    "FROM_UTF8": {
+      "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
+      "ret": "TEXT"
+    },
+    "TO_HEX": {
+      "tpl": "LOWER(HEX({binaryCast:0}))",
+      "ret": "TEXT"
+    },
+    "FROM_HEX": {
+      "tpl": "UNHEX({0})",
+      "ret": "BIN"
+    },
+    "ENCODE_BASE64": {
+      "tpl": "REPLACE(REPLACE(TO_BASE64({binaryCast:0}), CHAR(10), ''), CHAR(13), '')",
+      "ret": "TEXT"
+    },
+    "DECODE_BASE64": {
+      "tpl": "FROM_BASE64({0})",
+      "ret": "BIN",
+      "caveat": "input-laxity"
+    },
+    "CRC32": {
+      "tpl": "LPAD(LOWER(HEX(CRC32({binaryCast:0}))), 8, '0')",
+      "ret": "TEXT"
+    },
+    "RFIND": {
+      "tpl": "REGEXP_INSTR({1}{textCollate}, {0})",
+      "arity": [
+        2,
+        2
+      ],
+      "ret": "NUM",
+      "caveat": "regex-engine"
+    },
+    "RMATCH": {
+      "tpl": "({1}{textCollate} REGEXP {0})",
+      "arity": [
+        2,
+        2
+      ],
+      "ret": "BOOL",
+      "caveat": "regex-engine"
+    },
+    "RREPLACE": "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express"
+  },
+  "skel": {
+    "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"
+  },
+  "notes": {
+    "purpose": "The spellings MariaDB and MySQL agree on. Neither is a parent of the other: MariaDB is the reference this project tests against, and a reference dialect should not inherit from one nobody has exercised. Version-gated entries belong in the leaves, since `since` is compared against the target's version.",
+    "textEscape": "The backslash entry is not optional. Under the default sql_mode both servers treat \\ as an escape inside a string literal, so a text value containing one must double it. PostgreSQL and SQLite do not, and their documents omit this key.",
+    "numericCast": "DECIMAL(65,10) rather than ansi's DECIMAL(38,10): 65 is the maximum precision both servers support, and SEL numbers have no width limit of their own, so taking all of it is the least surprising choice.",
+    "TRIM": "SEL strips space, tab, CR and LF. TRIM(BOTH x FROM s) takes one string rather than a character set, so it cannot express that; REGEXP_REPLACE can. The doubled backslashes survive the string literal and reach the regex engine as \\t, \\r and \\n.",
+    "ENCODE_BASE64": "TO_BASE64 wraps its output with a newline every 76 characters. SEL's does not, so the newlines are stripped. The result is then exactly the standard padded alphabet SEL specifies.",
+    "DECODE_BASE64": "FROM_BASE64 accepts whitespace and is lenient where SEL requires padding and rejects any invalid character. It decodes valid input identically; it is the invalid input the two disagree about.",
+    "CODE": "ORD('e-acute') is 50089 on a utf8mb4 column — the two UTF-8 bytes read as a big-endian integer — where SEL says 233. ASCII agrees by accident, which is worse than disagreeing, so this is refused rather than caveated.",
+    "CHAR": "The inverse of CODE and refused for the inverse reason. Verified against MariaDB 11.8: SELECT CHAR(233 USING utf8mb4) is NULL. Code points below 128 would work, but an entry that is right for ASCII and silently wrong above it is the worst of the three options.",
+    "sql_mode": "This document assumes the default sql_mode, specifically that NO_BACKSLASH_ESCAPES is off. Two things depend on it: textEscape doubles backslashes inside string literals, and the TRIM family's regex escapes reach the engine as \\t, \\r and \\n only because the literal parser consumes one backslash of each pair. A deployment running NO_BACKSLASH_ESCAPES needs a derived dialect overriding both. ENCODE_BASE64 deliberately uses CHAR(10) and CHAR(13) instead, since REPLACE is not a regex and had nothing to gain from the assumption.",
+    "regex-flags": "The pattern reaches here already rewritten by the translator: expanded through Sel\\Builtins\\Regex::portableSource, and prefixed with the inline modifier (?s), or (?si) when SEL's i flag was given. So the flag is not an argument this template sees — which is the point. It was arity-keyed and selected by argument count for a while, and that gave every three-argument call the case-insensitive form, including RMATCH(p, s, \"\") where SEL is case-sensitive. Folding the modifier into the pattern puts the decision where the flag is already being validated.",
+    "regex-collation": "MariaDB's REGEXP is case-insensitive by default, because it follows the operand's collation and utf8mb4_general_ci is what most columns carry. SEL's regex is case-sensitive unless the i flag is given. Verified on 11.8: SELECT 'ABC' REGEXP 'abc' is 1, and SELECT 'ABC' COLLATE utf8mb4_bin REGEXP 'abc' is 0. Forcing the binary collation is what makes the two agree, and it leaves code-point matching intact — 'zazolc-with-diacritics' COLLATE utf8mb4_bin REGEXP '^.{6}$' is still 1.",
+    "regex-dotall": "SEL specifies dotall permanently on: . means any code point, newline included. MariaDB's . does not match a newline by default. The (?s) prefix turns it on. SEL rejects inline modifiers in a user's pattern, which is a rule about what a rule author may write and not about what the translator may emit.",
+    "regex-caveat": "What the caveat still covers, after the collation and dotall fixes: MariaDB's $ also matches immediately before a trailing newline, where SEL's anchors to the end of the subject and nothing else. Verified on 11.8: SELECT 'abc\\n' REGEXP '^abc$' is 1 where SEL says FALSE. \\z fixes it, but only by rewriting the pattern, which is possible only when the pattern is a literal — so it is a caveat rather than a template.",
+    "regex-literal-only": "Both the pattern and the flags must be literals. The pattern is rewritten through Sel\\Builtins\\Regex::portableSource before it is emitted — \\d becomes [0-9] and so on, per spec 7.8 — and a pattern taken from a column cannot be rewritten. The flag must be a literal because it selects the template.",
+    "RREPLACE": "Refused in mysql-family, and MariaDB inherits the refusal even though it has had REGEXP_REPLACE since 10.0.5. The obstacle is the replacement string, not the function: SEL spells a capture $1 and MariaDB spells it \\1, and $$ means a literal $ where MariaDB has no such rule. Rewriting is possible when the replacement is a literal, which is a translator feature and not something the map can express.",
+    "regex-verified-on-both": "RMATCH lived in mariadb.json until a real MySQL 8.4 could be asked, because a spelling nobody has probed on both servers is not something the FAMILY layer may claim -- that layer means 'verified to agree'. It does: on MySQL 8.4.11, ('abc' COLLATE utf8mb4_bin REGEXP '(?s)^[a-z]+$') is 1, ('ABC' ...) is 0, ('a\\nc' ... REGEXP '(?s)^a.c$') is 1 and the Arabic-Indic digit does not match [0-9] -- the same four answers MariaDB 11.8 gives. MySQL uses ICU and MariaDB uses PCRE2, and the inline (?s) modifier is accepted by both.",
+    "scale-limit": "The * entry repeats ansi's template and adds a caveat, which is the only reason it is written here at all. DECIMAL has a maximum result scale and SEL has none, so a product needing more fractional digits than the server keeps is truncated to it -- not rounded near the answer, truncated to zero when every surviving digit is one. 0.00000000000000000000000000000001 * 2 is 0.00000000000000000000000000000002 in SEL and on MariaDB, and 0.000000000000000000000000000000 on MySQL 8.4: the boundary is 30 there and 38 on MariaDB, and the corpus carries one expression past each so the caveat is visibly doing work on both leaves rather than only on one. It sits on the family and not on the mysql leaf because both servers truncate; only the digit they stop at differs. It is not on ansi because ansi is the base a future dialect inherits, and a dialect with an exact numeric type should not inherit a declared imprecision. + and - do not truncate on either server -- the result scale is the larger operand's -- and / already declares division-scale for the same shape of loss.",
+    "isnum-anchor": "\\A and \\z rather than ^ and $, and that is the same ICU behaviour the regex-caveat note below describes, reached through a template instead of a user's pattern. $ matches before a trailing newline, so ISNUM(\"12\\n\") was 1 on both servers and FALSE in SEL -- a value that is not a number answering that it is, which is the wrong direction for a validation rule to be wrong in. The note's stated excuse for living with it on RMATCH -- that rewriting needs a literal pattern -- does not apply here, because this pattern IS a literal. MariaDB and MySQL disagree with each other on \\r as well (0 and 1), so the anchor was hiding a leaf divergence too. PostgreSQL's ARE anchors at end-of-string and needed no change.",
+    "rounding-is-exact-here": "ROUND used to declare rounding-mode and does not need it. The operands reach it through numericCast, so they are DECIMAL, and MySQL and MariaDB both round DECIMAL half away from zero -- which is what SEL does. Probed rather than reasoned about: ROUND(-2.5,0) is -3, ROUND(2.5,0) is 3, ROUND(0.5,0) is 1, ROUND(-0.5,0) is -1 and ROUND(2.675,2) is 2.68 on both servers, all agreeing with SEL. The caveat was declared for the FLOAT behaviour, which the cast means these operands never have. Removing it is a coverage gain: a caveat exempts every expression touching that entry from the exactness check, so this one was silencing every ROUND in the corpus."
+  }
+}

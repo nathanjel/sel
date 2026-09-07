@@ -40,12 +40,36 @@ for impl in $IMPLS; do
   step "unit tests ($impl)" impl_unit "$impl"
 done
 
+# Before the two content checks below, and unlike them it does not skip when
+# Node is missing: a release ships these artifacts already generated so that no
+# downstream user needs Node, and the machine cutting the release is exactly
+# where a stale one would go unnoticed.
+step "generated artifacts" ./tools/check-generated.sh
+step "sql dialect map" ./tools/check-sql-map.sh
+step "sql case data" ./tools/check-sql-cases.sh
+
+for impl in $IMPLS; do
+  step "sql translation ($impl)" impl_sql "$impl"
+done
+
+# Before the cases, because it is cheaper and because it asks a more basic
+# question: can this host's own API build the map it ships? If it cannot, the
+# map is data rather than code, and a host with no JSON reader has nowhere to
+# put it. sql/MAP.md §4.5¼.
+for impl in $IMPLS; do
+  step "sql map replay ($impl)" impl_sqlreplay "$impl"
+done
+
+step "sql documented examples" ./tools/check-sql-docs.sh
+step "sql mutations" ./tools/mutate-sql.sh
+step "sql semantic oracle" ./tools/check-sql-oracle.sh
 step "manifest versions" ./tools/check-version.sh
 step "host API parity" ./tools/check-api.sh
 step "documentation examples" ./tools/check-docs.sh
 step "decimal vs python oracle" ./tools/check-decimal.sh "${DECIMAL_COUNT:-4000}"
 step "end to end, every host API" ./tools/e2e.sh
 step "differential fuzz" ./tools/fuzz.sh "${FUZZ_COUNT:-4000}" "${FUZZ_SEED:-20260813}"
+step "differential fuzz, sql" ./tools/fuzz-sql.sh "${SQL_FUZZ_COUNT:-2000}" "${SQL_FUZZ_SEED:-20260905}"
 
 echo
 if [ "$status" -eq 0 ]; then

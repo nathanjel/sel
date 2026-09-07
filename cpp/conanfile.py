@@ -24,7 +24,7 @@ class SelConan(ConanFile):
     homepage = "https://github.com/nathanjel/sel"
     description = (
         "A small expression language for validation rules that evaluate "
-        "identically on PHP, JavaScript, C++ and Common Lisp"
+        "identically on PHP, JavaScript, Python, C++ and Common Lisp"
     )
     topics = ("expression-language", "validation", "rules", "decimal", "interpreter")
 
@@ -43,7 +43,7 @@ class SelConan(ConanFile):
         # parent directory ("copy() it is not possible to use relative patterns
         # starting with '..'"). It lands at the root of the source folder, which
         # is why CMakeLists.txt looks for it in both places.
-        for pattern in ("CMakeLists.txt", "sel.hpp", "sel.cpp", "third_party/*"):
+        for pattern in ("CMakeLists.txt", "sel.hpp", "sel_ast.hpp", "sel.cpp", "third_party/*"):
             copy(self, pattern, self.recipe_folder, self.export_sources_folder)
         copy(self, "LICENSE",
              os.path.join(self.recipe_folder, ".."), self.export_sources_folder)

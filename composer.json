@@ -1,6 +1,6 @@
 {
   "name": "nathanjel/sel-lang",
-  "description": "A small expression language for validation rules — one rule file evaluates identically on PHP, JavaScript, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness.",
+  "description": "A small expression language for validation rules — one rule file evaluates identically on PHP, JavaScript, Python, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness.",
   "type": "library",
   "keywords": [
     "validation",
@@ -27,7 +27,8 @@
   },
   "autoload": {
     "files": [
-      "php/src/bootstrap.php"
+      "php/src/bootstrap.php",
+      "php/src/Sql/bootstrap.php"
     ]
   },
   "scripts": {

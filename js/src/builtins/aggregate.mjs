@@ -86,7 +86,7 @@ define({
   fn: (args, ctx) => {
     let total = D.ZERO;
     walk(args, ctx, (r, k, i, body) => {
-      total = D.add(total, r.asDecimal(body.pos));
+      total = D.add(total, r.asDecimal(body.pos), body.pos);
       return undefined;
     });
     return Value.num(total);

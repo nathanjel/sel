@@ -1,0 +1,246 @@
+{
+  "dialect": "postgresql",
+  "extends": "ansi",
+  "version": "15",
+  "target": true,
+  "lexical": {
+    "identQuote": "\"",
+    "identEscape": "\"\"",
+    "textQuote": "'",
+    "textEscape": {
+      "'": "''"
+    },
+    "true": "TRUE",
+    "false": "FALSE",
+    "binaryLiteral": "'\\x{hex}'::bytea",
+    "numericLiteral": "{0}",
+    "textCollate": " COLLATE \"C\"",
+    "textCast": "CAST({0} AS TEXT)",
+    "numericCast": "CAST({0} AS NUMERIC)",
+    "binaryCast": "convert_to(CAST({0} AS TEXT), 'UTF8')",
+    "isTrue": "(({0}) IS TRUE)",
+    "isNotTrue": "(({0}) IS NOT TRUE)",
+    "placeholder": "?"
+  },
+  "ops": {
+    "+": {
+      "tpl": "({numericCast:0} + {numericCast:1})",
+      "ret": "NUM"
+    },
+    "-": {
+      "tpl": "({numericCast:0} - {numericCast:1})",
+      "ret": "NUM"
+    },
+    "*": {
+      "tpl": "({numericCast:0} * {numericCast:1})",
+      "ret": "NUM"
+    },
+    "/": {
+      "tpl": "({numericCast:0} / {numericCast:1})",
+      "ret": "NUM",
+      "caveat": "division-scale"
+    },
+    "%": {
+      "tpl": "MOD({numericCast:0}, {numericCast:1})",
+      "ret": "NUM"
+    },
+    "NEG": {
+      "tpl": "(-{numericCast:0})",
+      "ret": "NUM"
+    },
+    "&": {
+      "variants": {
+        "text": "({textCast:0} || {textCast:1})",
+        "bin": "({0} || {1})"
+      },
+      "ret": "@concat",
+      "caveat": "concat-null"
+    }
+  },
+  "funcs": {
+    "LEN": {
+      "tpl": "length({textCast:0})",
+      "ret": "NUM"
+    },
+    "LEFT": {
+      "tpl": "left({textCast:0}, CAST({1} AS INTEGER))",
+      "ret": "TEXT"
+    },
+    "RIGHT": {
+      "tpl": "right({textCast:0}, CAST({1} AS INTEGER))",
+      "ret": "TEXT"
+    },
+    "FIND": {
+      "tpl": "strpos({textCast:1}, {textCast:0})",
+      "ret": "NUM",
+      "arity": [
+        2,
+        2
+      ]
+    },
+    "REPLACE": {
+      "tpl": "replace({textCast:2}, {textCast:0}, {textCast:1})",
+      "ret": "TEXT"
+    },
+    "TRIM": {
+      "tpl": "btrim({textCast:0}, E' \\t\\r\\n')",
+      "ret": "TEXT"
+    },
+    "LTRIM": {
+      "tpl": "ltrim({textCast:0}, E' \\t\\r\\n')",
+      "ret": "TEXT"
+    },
+    "RTRIM": {
+      "tpl": "rtrim({textCast:0}, E' \\t\\r\\n')",
+      "ret": "TEXT"
+    },
+    "BACKWARDS": {
+      "tpl": "reverse({textCast:0})",
+      "ret": "TEXT"
+    },
+    "REPEAT": {
+      "tpl": "repeat({textCast:0}, CAST({1} AS INTEGER))",
+      "ret": "TEXT"
+    },
+    "PADL": {
+      "tpl": "CASE WHEN length({textCast:0}) >= {1} THEN {textCast:0} ELSE lpad({textCast:0}, CAST({1} AS INTEGER), {textCast:2}) END",
+      "ret": "TEXT"
+    },
+    "PADR": {
+      "tpl": "CASE WHEN length({textCast:0}) >= {1} THEN {textCast:0} ELSE rpad({textCast:0}, CAST({1} AS INTEGER), {textCast:2}) END",
+      "ret": "TEXT"
+    },
+    "CODE": {
+      "tpl": "ascii({textCast:0})",
+      "ret": "NUM"
+    },
+    "CHAR": {
+      "tpl": "chr(CAST({0} AS INTEGER))",
+      "ret": "TEXT"
+    },
+    "SIGN": {
+      "tpl": "sign({numericCast:0})",
+      "ret": "NUM"
+    },
+    "TRUNC": {
+      "tpl": "trunc({numericCast:0})",
+      "ret": "NUM"
+    },
+    "ROUND": {
+      "tpl": "round({numericCast:0}, CAST({1} AS INTEGER))",
+      "ret": "NUM"
+    },
+    "MIN": {
+      "tpl": "least({*})",
+      "ret": "NUM"
+    },
+    "MAX": {
+      "tpl": "greatest({*})",
+      "ret": "NUM"
+    },
+    "POWER": {
+      "tpl": "power({numericCast:0}, {numericCast:1})",
+      "ret": "NUM",
+      "caveat": "numeric-scale"
+    },
+    "ISNUM": {
+      "tpl": "({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$')",
+      "ret": "BOOL"
+    },
+    "BLEN": {
+      "tpl": "octet_length({binaryCast:0})",
+      "ret": "NUM"
+    },
+    "TO_UTF8": {
+      "tpl": "{binaryCast:0}",
+      "ret": "BIN"
+    },
+    "FROM_UTF8": {
+      "tpl": "convert_from({binaryCast:0}, 'UTF8')",
+      "ret": "TEXT"
+    },
+    "TO_HEX": {
+      "tpl": "encode({binaryCast:0}, 'hex')",
+      "ret": "TEXT"
+    },
+    "FROM_HEX": {
+      "tpl": "decode({0}, 'hex')",
+      "ret": "BIN"
+    },
+    "ENCODE_BASE64": {
+      "tpl": "replace(replace(encode({binaryCast:0}, 'base64'), chr(10), ''), chr(13), '')",
+      "ret": "TEXT"
+    },
+    "DECODE_BASE64": {
+      "tpl": "decode({0}, 'base64')",
+      "ret": "BIN",
+      "caveat": "input-laxity"
+    },
+    "CRC32": "PostgreSQL has no CRC32 in core; pgcrypto supplies digests but not CRC32",
+    "RMATCH": {
+      "tpl": "({textCast:1}{textCollate} ~ {0})",
+      "arity": [
+        2,
+        2
+      ],
+      "ret": "BOOL",
+      "caveat": "regex-engine"
+    },
+    "RFIND": {
+      "tpl": "regexp_instr({textCast:1}{textCollate}, {0})",
+      "arity": [
+        2,
+        2
+      ],
+      "ret": "NUM",
+      "caveat": "regex-engine"
+    },
+    "UPPER": {
+      "tpl": "upper({textCast:0})",
+      "ret": "TEXT",
+      "caveat": "unicode-case"
+    },
+    "LOWER": {
+      "tpl": "lower({textCast:0})",
+      "ret": "TEXT",
+      "caveat": "unicode-case"
+    },
+    "SUBSTR": {
+      "tpl": {
+        "2": "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER))",
+        "3": "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER) FOR CAST({2} AS INTEGER))"
+      },
+      "ret": "TEXT"
+    },
+    "ABS": {
+      "tpl": "abs({numericCast:0})",
+      "ret": "NUM"
+    },
+    "CEIL": {
+      "tpl": "ceil({numericCast:0})",
+      "ret": "NUM"
+    },
+    "FLOOR": {
+      "tpl": "floor({numericCast:0})",
+      "ret": "NUM"
+    }
+  },
+  "notes": {
+    "purpose": "PostgreSQL 15 or later. 15 is where regexp_instr arrived, which RFIND needs; everything else here works further back.",
+    "closest-so-far": "PostgreSQL is the closest match to SEL of the three servers, and the interesting part is which caveats it does NOT need. Verified on 17.11: `%` on numeric is exact (5.5 % 2 is 1.5, where SQLite says 1.0); round() is half away from zero (round(2.5,0) is 3 and round(-2.5,0) is -3, where MySQL needs rounding-mode); least() does not rescale its result (least(17, 123.456) is 17, where MySQL gives 17.000 and needs numeric-scale); and 1/0 RAISES rather than answering NULL, which is what SEL does. So mysql-family's rounding-mode and numeric-scale and SQLite's modulo-integer and decimal-float are all absent here, and only the divergences that are really there are declared.",
+    "division": "The one arithmetic entry that needs help, and exactly as docs/SQL-TRANSLATION.md §11 predicted from the manual back at M1: / between two integers TRUNCATES in PostgreSQL, so 10 / 4 is 2 where SEL says 2.5. Casting both operands to numeric makes it a division rather than a different operation. What is left is scale -- 10::numeric / 4 is 2.5000000000000000, sixteen fractional digits against SEL's ten -- which is what division-scale names.",
+    "textCollate": "COLLATE \"C\" is byte ordering, and it is needed for the ORDERING half of the byte-comparison family rather than the equality half. Verified on 17.11: 'A' = 'a' is already false under the default collation, but 'a' < 'B' is TRUE there and FALSE under \"C\" -- and SEL compares bytes, where 'a' is 0x61 and 'B' is 0x42. The textCast is still needed for the same reason as everywhere else: without it two numeric operands compare as numbers.",
+    "binaryCast": "convert_to, not a cast. PostgreSQL's text::bytea does not reinterpret characters as bytes -- it parses the text as a bytea INPUT LITERAL, where \\\\ is one backslash and \\x41 and \\101 are escapes. So TO_UTF8 of any text containing a backslash either changed the bytes or failed the query: BLEN('\\\\') was 1 against SEL's 2, ENCODE_BASE64('\\\\') was \"XA==\" against \"XFw=\", and TO_HEX('a\\b') raised 22P02. A sweep of 13,840 renderings of hostile short strings gave 1290 server errors and 52 silent wrong answers, all here; the other three dialects gave none. The note this replaces argued the double cast was idempotent, and demonstrated it on 'abc' -- true for every string without a backslash, which is every string anyone had tried. convert_to(text, 'UTF8') is the function that means what SEL means. It is applied only to a non-BIN operand: see Emit::fill, because bytea->bytea needs nothing and convert_to would not typecheck.",
+    "placeholder": "`?`, because that is what a driver wants: PDO_PGSQL rewrites it to the wire protocol's $n, and a raw $1 handed to PDO is not recognised as a parameter at all -- verified, it binds nothing and returns NULL. PostgreSQL's own numbered spelling is available to a host that talks libpq directly, by registering a derived dialect with a numbered placeholder; sql/cases/15-postgresql.sqlt has the case, and it is the first thing in the project to exercise Emit::placeholder's {n} branch.",
+    "ENCODE_BASE64": "encode(..., 'base64') wraps its output with a newline every 76 characters, exactly as MySQL's TO_BASE64 does, and SEL's does not. Verified: encoding 200 'a' characters puts a newline at offset 77. The newlines are stripped by the same two REPLACEs mysql-family uses.",
+    "FIND": "arity [2, 2], which is the case sql/MAP.md §4.1 has cited as the reason `arity` exists since M1 -- 'how PostgreSQL refuses the three-argument form its POSITION cannot express'. strpos takes no start position. The field was enforced by nobody until SQLite exposed it; had that not happened, this entry would have silently dropped the start position and answered the wrong number.",
+    "regex": "POSIX ARE rather than PCRE2 or ICU, and it accepts the inline (?s) the translator prefixes. Verified on 17.11: 'ABC' ~ '(?s)^[a-z]+$' is false, E'a\\nc' ~ '(?s)^a.c$' is true, and 'zażółć' COLLATE \"C\" ~ '(?s)^.{6}$' is true, so the collation does not break code-point matching. The caveat stays because ARE and SEL's PCRE-and-ECMAScript intersection are not the same language everywhere: lazy quantifiers and some class shorthands differ, and the pattern rewriter only guarantees the subset it can see.",
+    "case-is-typed": "PostgreSQL requires every CASE branch to have one type -- CASE WHEN TRUE THEN 1 ELSE 'x' END is an ERROR, where MySQL and SQLite quietly coerce. That is stricter than SEL and agrees with the translator, which already refuses branches whose known kinds differ. The two arrived at the same rule independently, which is a small piece of evidence that the rule is right.",
+    "strong-typing": "The thing that makes this dialect different to write. SEL numbers ARE text values (spec §4), so a NUM fragment reaches a text function legitimately -- UPPER(13 + 4) is \"17\" -- and MySQL and SQLite coerce it without comment. PostgreSQL does not: upper(integer), reverse(numeric) and btrim(numeric, unknown) are all `function does not exist`. So every text operand is wrapped in {textCast:n}, which is the same key the byte-comparison family already uses for the same reason one level down.",
+    "numeric-overloads": "The mirror image, and the subtler half. Given an INTEGER argument PostgreSQL resolves sign(), power(), trunc(), ceil() and floor() to their DOUBLE PRECISION overloads -- pg_typeof(sign(13)) is `double precision` -- so an expression that looks exact quietly leaves exact-decimal territory. {numericCast:n} pins them to numeric. This is not a type error anybody would have seen; it is a precision loss, and it was found by the fuzz lane asking a server rather than by reading the manual.",
+    "integer-arguments": "left(), right(), substring(), repeat(), lpad(), chr() and round()'s second argument all take INTEGER, and a SEL number is numeric, so they are cast. A literal small enough resolves without help; a bigint one does not, which is how left('a', 9223372036854775807) surfaced. The cast makes columns work and makes an out-of-range literal an honest run-time error, which is the database type-checking limit this layer accepts rather than papers over.",
+    "arithmetic-operands": "Every arithmetic operand is cast, not just division's. SEL numbers are TEXT values, so a TEXT-kind fragment that happens to read as a number is a legal operand -- `x * BACKWARDS(y)` is arithmetic in SEL -- and PostgreSQL answers `operator does not exist: numeric * text`. The cast also puts the two sides on the same footing as SEL: a TEXT operand that does NOT read as a number raises here, exactly as SEL's E_NOT_NUM does, instead of quietly becoming 0 the way SQLite would.",
+    "concat-casts-both-operands": "Both operands, not one. PostgreSQL's || resolves through the text || anynonarray overload, so a concatenation with at least one TEXT operand worked and every corpus line had one. Two computed numbers have no overload at all: 2.50 & 2.50 emitted (2.50 || 2.50) and the server answered 42883 operator does not exist: numeric || numeric. That is a translation reporting success for a query that cannot run, and concatenating two computed numbers is an ordinary thing for a rule to do. The bin variant is left alone: bytea || bytea is a real operator.",
+    "to-utf8-uses-the-lexical": "TO_UTF8 spelled the old double cast out inline rather than referring to binaryCast, so fixing the lexical fixed BLEN, TO_HEX, ENCODE_BASE64 and FROM_UTF8 and left this one wrong -- FROM_UTF8(TO_UTF8('\\\\')) still came back one backslash instead of two, because the bytes were already damaged before FROM_UTF8 saw them. There is exactly one spelling of \"take this to bytes\" in a dialect and this is it."
+  }
+}

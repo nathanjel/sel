@@ -1,0 +1,214 @@
+% Inline, params and debug are three ways of joining one part list, not three
+% code paths. The renderer never concatenates a literal into a string.
+
+### name: mode.inline.is-the-default
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T > 100 AND T < 200
+--- expect
+((`t` > 100) AND (`t` < 200))
+===
+### name: mode.params.placeholders-in-order
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T & "a" & "b"
+--- expect
+CONCAT(CONCAT(`t`, ?), ?)
+--- params
+t"a", t"b"
+===
+### name: mode.params.a-number-is-never-a-placeholder
+--- note
+No coercion of a bound string reproduces a bare decimal literal. CAST(? AS
+DECIMAL(65,10)) pads the scale, so TRIM(2.50) answered "2.5000000000"; (? + 0)
+drops the scale and floats above seventeen digits; and with neither, (? = ?)
+compares two strings and 2.50 = 2.5 is FALSE. MariaDB reads the literal 2.50 as
+DECIMAL with scale 2, and only the literal does.
+
+Safe because of Emit::numericLiteral: the characters a NUM literal can contain
+are digits, one dot and a leading minus, by construction. It is the one value
+form that provably cannot carry a quote or a comment, so it is the one params
+mode has nothing to protect.
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T > 100 AND T < 200
+--- expect
+((`t` > 100) AND (`t` < 200))
+--- params
+
+===
+### name: mode.params.a-bin-value-binding-inlines-too
+--- note
+The third inline-forced form, and the one nothing asserted until a mutation
+walked through the whole suite. A BIN slot must never become a placeholder: a
+driver sends bytes through the connection's text encoding, and on PostgreSQL
+130 of the 256 single-byte values then failed -- 129 as `22021 invalid byte
+sequence for encoding "UTF8"` and 0x00 silently -- while the same values
+inlined through binaryLiteral were correct on all four dialects, all 256.
+Only the params rendering can see this, and only with an empty params list:
+inline mode looks identical either way.
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"B": {"kind": "value", "value": {"bin": "00ff"}}}
+--- source
+B EQL B
+--- expect
+(X'00ff' = X'00ff')
+--- params
+
+===
+### name: mode.params.a-num-value-binding-inlines-too
+--- note
+Not only literals from the AST: a host value declaring type NUM takes the same
+path, and binds nothing.
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}, "LIMIT": {"kind": "value", "value": "2.50", "type": "NUM"}}
+--- source
+T > LIMIT
+--- expect
+(`t` > 2.50)
+--- params
+
+===
+### name: mode.params.text-and-numbers-together
+--- note
+The numbers inline, the text binds, and the placeholder ordinals count only the
+placeholders actually emitted.
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+LEFT(T, 3) $== "abc"
+--- expect
+(CAST(LEFT(`t`, 3) AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)
+--- params
+t"abc"
+===
+### name: mode.debug.slots-are-visible
+--- note
+debug numbers what params would bind, so a NUM literal is absent from both.
+--- dialect
+mariadb
+--- mode
+debug
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T & "a" & "b"
+--- expect
+CONCAT(CONCAT(`t`, ~1~), ~2~)
+===
+### name: mode.params.a-literal-holding-a-placeholder-stays-a-literal
+--- note
+The reason a part list exists. Inline, the ? is inside a quoted string; in
+params mode the real placeholder is a separate slot and the two never mix.
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"S": {"kind": "column", "column": "s", "type": "TEXT"}}
+--- source
+S $== "?"
+--- expect
+(CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)
+--- params
+t"?"
+===
+### name: mode.params.same-expression-inline
+--- dialect
+mariadb
+--- bindings
+{"S": {"kind": "column", "column": "s", "type": "TEXT"}}
+--- source
+S $== "?"
+--- expect
+(CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('?' AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: mode.params.order-follows-the-text-not-the-tree
+--- note
+The condition is a BOOL literal and inlines; only the two branches bind. Their
+order in `params` follows the TEXT, which is what Fragment::bindings() walking
+the output is for.
+--- dialect
+mariadb
+--- mode
+params
+--- source
+COND(TRUE, "a", "b")
+--- expect
+CASE WHEN TRUE THEN ? ELSE ? END
+--- params
+t"a", t"b"
+===
+### name: mode.params.a-bool-is-never-a-placeholder
+--- note
+A BOOL renders as Map::lexical('true'|'false') -- a token out of the dialect
+document, not out of a rule -- so there is nothing for a placeholder to protect.
+Binding it as a string breaks SQLite outright: 1 = '1' is 0 there, because
+INTEGER and TEXT are different storage classes and no affinity applies to a bare
+parameter. TRUE XOR TRUE answered TRUE in params mode and FALSE inline until
+this. Found by the fuzz lane on sqlite's first run.
+--- dialect
+sqlite
+--- mode
+params
+--- source
+TRUE XOR TRUE
+--- expect
+((1) <> (1))
+--- params
+
+===
+### name: mode.params.literal-needle-in-a-list
+--- note
+Every slot must appear exactly once. The needle is rendered per comparison, so
+a three-element IN with a literal needle binds six values for six placeholders
+— not one value spliced three times, which is what a driver rejects.
+--- dialect
+mariadb
+--- mode
+params
+--- source
+"a" IN ("a", "b", "c")
+--- expect
+(((CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin) OR (CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)) OR (CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin))
+--- params
+t"a", t"a", t"a", t"b", t"a", t"c"
+===
+### name: mode.params.join-separator-is-bound-per-gap
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}, {"column": "c"}]}}
+--- source
+JOIN(V, "-")
+--- expect
+CONCAT(CONCAT(CONCAT(CONCAT(`a`, ?), `b`), ?), `c`)
+--- params
+t"-", t"-"

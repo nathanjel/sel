@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Rebuild the whole shipped map through the public registration API, then diff
+what the translator can observe against the map beside it.
+
+    python/bin/sqlreplay
+
+The counterpart of js/bin/sqlreplay.mjs and php/bin/sqlreplay; see the first for
+why this check exists. sql/MAP.md §4.5¼ is the property it asserts.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# map_replay.py is generated beside this script and is harness data, not part of
+# the package, so its directory is always added. Same shape as sqlt.
+sys.path.insert(0, _HERE)
+try:
+    import sel as _probe                                            # noqa: F401
+except ImportError:
+    sys.path.insert(1, os.path.join(_HERE, '..'))
+
+from map_replay import RAW                                          # noqa: E402
+from sel.sql import map as smap                                     # noqa: E402
+from sel.sql._map import DIALECTS                                   # noqa: E402
+
+SUF = '~replay'
+
+
+def main() -> int:
+    calls = 0
+    for doc in RAW:
+        parent = doc.get('extends')
+        smap.define_dialect(doc['dialect'] + SUF, {
+            'extends': None if parent is None else parent + SUF,
+            'version': doc.get('version'),
+            'target': doc.get('target', True),
+            'lexical': doc.get('lexical', {}),
+        })
+        calls += 1
+        for section in ('ops', 'funcs', 'skel'):
+            for key, entry in (doc.get(section) or {}).items():
+                smap.define(doc['dialect'] + SUF, section, key, entry)
+                calls += 1
+
+    def same(a, b):
+        return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+    problems, compared = [], 0
+    for name, flat in DIALECTS.items():
+        if not isinstance(flat, dict) or 'dialect' not in flat:
+            continue
+        compared += 1
+        if smap.version(name) != smap.version(name + SUF):
+            problems.append(f'{name}: version')
+        for key in (flat.get('lexical') or {}):
+            compared += 1
+            if not same(smap.lexical(name, key), smap.lexical(name + SUF, key)):
+                problems.append(f'{name}.lexical.{key}')
+        for section in ('ops', 'funcs', 'skel'):
+            for key in (flat.get(section) or {}):
+                compared += 1
+                if not same(smap.entry(name, section, key),
+                            smap.entry(name + SUF, section, key)):
+                    problems.append(f'{name}.{section}.{key}')
+
+    for p in problems:
+        print(f'  DIFFERS {p}')
+    print(f'{calls} registration calls rebuilt the map, {compared} lookups '
+          f'compared, {len(problems)} differences')
+    return 0 if not problems else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

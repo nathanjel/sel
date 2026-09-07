@@ -13,6 +13,12 @@ tools/check-api.sh          the same API probes through every host binding
 tools/check-version.sh      every manifest declares the same version
 cd cpp && make asan         the C++ suite under the address and leak sanitizers
 tools/fuzz.sh               seeded differential fuzzing, N-way
+tools/check-sql-map.sh      the dialect map, regenerated and diffed
+tools/check-sql-docs.sh     the design document quotes cases that run
+tools/mutate-sql.sh         break the SQL layer on purpose; the checks must notice
+tools/check-sql-oracle.sh   translated SQL against a real database
+tools/oracle-db.sh          starts pinned throwaway servers, runs the above, removes them
+tools/fuzz-sql.sh           seeded SQL differential fuzzing against a database
 ```
 
 Only the JS side owns generators: `gen-programs.mjs` (fuzz corpus),
@@ -33,11 +39,49 @@ rather than a comparison of the standard library with itself.
 |---|---|---|---|
 | `conformance [file…]` | `conformance/*.selt` | a human report | non-zero on any failure |
 | `batch [--show] <corpus>` | a corpus file | one canonical line per program | 0 unless it cannot read the corpus |
+| `sqlreplay` | nothing | the shipped map rebuilt through the public registration API, and diffed against itself | 0 unless the API cannot express the map |
+| `sqlfuzz <corpus> [dialect]` | a corpus file | one canonical line per program: the inline SQL, the `params` SQL and the bound values, or a refusal | 0 unless it cannot read the corpus |
 | `e2e` | `examples/order-validation.sel` | the scenario report | 0 |
 | `api` | nothing | the API parity report, one `NN name = value` line per probe | 0 |
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
+| `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure; **0 and silent** for a host with no SQL layer |
+| `oracle [mode]` | `sql/oracle/*` | a per-mode agreement report | non-zero on any disagreement; **0 with a skip line** when no DSN is set |
+| `sqldoc [file.md…]` | `docs/SQL-TRANSLATION.md`, `sql/cases/*.sqlt` | `N quote a case, M wrong` | non-zero on any mismatch, and on finding no blocks |
 
-All five run from the repository root and take paths relative to it.
+The first five are required. `sql` and `oracle` are optional in the same way
+`unit` is: a host with no SQL layer succeeds silently and the harness moves on.
+
+All of them run from the repository root and take paths relative to it.
+
+`oracle` needs a database and finds it in the environment, named for the dialect:
+
+```
+SEL_SQL_MARIADB_DSN='mysql:unix_socket=/var/lib/mysql/mysql.sock;dbname=sel_oracle;charset=utf8mb4'
+SEL_SQL_MARIADB_USER=you
+SEL_SQL_MARIADB_PASS=
+SEL_SQL_SQLITE_DSN='sqlite::memory:'
+SEL_SQL_MYSQL_DSN='mysql:host=127.0.0.1;port=13306;dbname=sel_oracle;charset=utf8mb4'
+SEL_SQL_MYSQL_USER=root
+```
+
+There is no MySQL on most machines, and MariaDB's `mysql`/`mysqld` binaries are
+compatibility symlinks rather than the thing itself. A container is the usual
+way to get a real one:
+
+```
+docker run -d --name sel-mysql -e MYSQL_ALLOW_EMPTY_PASSWORD=1 \
+  -e MYSQL_DATABASE=sel_oracle -p 13306:3306 mysql:8.4
+docker run -d --name sel-pg -e POSTGRES_PASSWORD=sel \
+  -e POSTGRES_DB=sel_oracle -p 15432:5432 postgres:17
+```
+
+One per target dialect, and the oracle runs every target it has a DSN for. With
+no DSN a dialect prints a skip and succeeds, so a fresh clone stays green — and
+SQLite needs nothing installed beyond `pdo_sqlite`, so in practice there is
+always at least one server to ask.
+
+A named schema must exist and must be disposable: the row oracle drops and
+recreates its tables on every run. See `sql/oracle/README.md`.
 
 | Role | js | php | cpp | lisp | python |
 |---|---|---|---|---|---|
@@ -46,11 +90,22 @@ All five run from the repository root and take paths relative to it.
 | `e2e` | `examples/e2e.mjs` | `examples/e2e.php` | `cpp/build/e2e` | `lisp/bin/e2e` | `examples/e2e.py` |
 | `api` | `tools/api.mjs` | `tools/api.php` | `cpp/build/api` | `lisp/bin/api` | `python/bin/api.py` |
 | `check-decimal` | `tools/check-decimal.mjs` | `tools/check-decimal.php` | `cpp/build/check-decimal` | `lisp/bin/check-decimal` | `python/bin/check-decimal.py` |
+| `sql` | `js/bin/sqlt.mjs` | `php/bin/sqlt` | — | — | `python/bin/sqlt` |
+| `oracle` | — | `php/bin/sqlo` | — | — | — |
+| `sqldoc` | — | `php/bin/sqldoc` | — | — | — |
 
-Two implementations in `tools/impls.sh` are the same code reached a second way:
-`js-bundle` runs `dist/sel.mjs`, and `python-wheel` runs the built wheel from a
-venv. Both are guarded on being newer than the sources they were built from, and
-both exist to catch the failures that only packaging can produce.
+`oracle` and `sqldoc` are PHP-only by design rather than unfinished: both ask
+about `sql/dialects/*.json` and `sql/cases/*.sqlt`, which are shared data every
+host consumes unchanged, so a second copy would ask one server the same question
+twice. See docs/SQL-TRANSLATION.md §14, M7.
+
+Three implementations in `tools/impls.sh` are the same code reached a second way:
+`js-bundle` runs `dist/sel.mjs`, `js-bundle-min` runs `dist/sel.min.mjs`, and
+`python-wheel` runs the built wheel from a venv. All three are guarded on being
+newer than the sources they were built from, and all three exist to catch the
+failures that only packaging can produce — a minifier that renames something it
+should not have is exactly that failure, and `dist/sel.min.mjs` is published as
+package.json's `"./bundle.min"`, so it is graded rather than merely shipped.
 
 ---
 

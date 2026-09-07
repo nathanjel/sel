@@ -5,6 +5,16 @@ declare(strict_types=1);
 
 namespace Sel;
 
+/**
+ * spec/SPEC.md §6.4's three caps, which are one number. The parser's nesting, the
+ * evaluator's, and a value's -- each is a recursion over a structure the input can
+ * grow without bound, and each finds this host's own stack instead of an error if
+ * it is not counted. It lives here, with fail(), because this file is the one
+ * every other requires and none requires back, and because the number and the
+ * E_DEPTH it raises are the same fact.
+ */
+const MAX_DEPTH = 200;
+
 final class SelError extends \Exception
 {
     // Untyped so it can override Exception::$code, whose type must be omitted.

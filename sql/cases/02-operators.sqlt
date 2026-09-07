@@ -1,0 +1,162 @@
+% Operators, and the three fixed variant selectors of sql/MAP.md §4.3.
+
+### name: op.arith.add
+--- dialect
+mariadb
+--- source
+1 + 2
+--- expect
+(1 + 2)
+===
+### name: op.arith.nesting-is-parenthesised-by-the-templates
+--- note
+Every binary template wraps itself, so correctness needs no precedence table
+and the output is byte-stable. Noisier than a human would write, on purpose.
+--- dialect
+mariadb
+--- source
+1 + 2 * 3 - 4
+--- expect
+((1 + (2 * 3)) - 4)
+===
+### name: op.arith.modulo-is-a-function-here
+--- dialect
+mariadb
+--- source
+5 % 3
+--- expect
+MOD(5, 3)
+===
+### name: op.arith.negate
+--- dialect
+mariadb
+--- source
+-(1 + 2)
+--- expect
+(-(1 + 2))
+===
+### name: op.concat.text
+--- dialect
+mariadb
+--- source
+"a" & "b"
+--- expect
+CONCAT('a', 'b')
+===
+### name: op.logic.and-or
+--- dialect
+mariadb
+--- source
+TRUE AND FALSE OR TRUE
+--- expect
+((TRUE AND FALSE) OR TRUE)
+===
+### name: op.logic.not
+--- dialect
+mariadb
+--- source
+NOT TRUE
+--- expect
+(NOT TRUE)
+===
+### name: op.logic.xor
+--- dialect
+mariadb
+--- source
+TRUE XOR FALSE
+--- expect
+(TRUE XOR FALSE)
+===
+### name: op.compare.num-variant-when-both-sides-are-numeric
+--- dialect
+mariadb
+--- source
+1 < 2
+--- expect
+(1 < 2)
+===
+### name: op.compare.coerce-variant-when-a-side-is-not
+--- note
+SEL's == compares numerically after aligning scale, so "5.00" == "5" is TRUE.
+A bare = between two text columns compares text and would say FALSE.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "a", "type": "TEXT"}}
+--- source
+A == 5
+--- expect
+(CAST(`a` AS DECIMAL(65,10)) = CAST(5 AS DECIMAL(65,10)))
+===
+### name: op.compare.coerce-variant-for-unknown-columns
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "a"}}
+--- source
+A >= 10
+--- expect
+(CAST(`a` AS DECIMAL(65,10)) >= CAST(10 AS DECIMAL(65,10)))
+===
+### name: op.compare.text-family-forces-a-binary-collation
+--- note
+MariaDB's default collation is case-insensitive, so a bare = would make
+"A" $== "a" true in the database and false in SEL.
+--- dialect
+mariadb
+--- source
+"A" $== "a"
+--- expect
+(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: op.compare.text-family-ordering
+--- dialect
+mariadb
+--- source
+"a" $< "b"
+--- expect
+(CAST('a' AS CHAR) COLLATE utf8mb4_bin < CAST('b' AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: op.eql.scalars-are-a-text-compare
+--- dialect
+mariadb
+--- source
+"a" EQL "a"
+--- expect
+(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: op.in.literal-list
+--- note
+Not SQL's IN. SEL's IN is EQL-based, so each element is a byte comparison, and
+casting each element inside a variadic template is not expressible. Casting only
+the needle is not enough either: CAST(3.0 AS CHAR) COLLATE utf8mb4_bin IN (3) is
+1 on MariaDB 11.8, because the numeric right-hand side pulls the comparison back
+to numbers. The cast has already cost the index SQL's IN would have used.
+--- dialect
+mariadb
+--- bindings
+{"S": {"kind": "column", "column": "state", "type": "TEXT"}}
+--- source
+S IN ("open", "held")
+--- expect
+((CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))
+===
+### name: op.in.scalar-right-hand-side
+--- note
+spec §5.4: a right operand with no children is compared directly.
+--- dialect
+mariadb
+--- source
+"a" IN "a"
+--- expect
+(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
+===
+### name: op.bitwise.refused-with-a-reason
+--- note
+The reason comes from the map and reaches the caller as the message.
+--- dialect
+mariadb
+--- source
+TO_UTF8("a") BAND TO_UTF8("b")
+--- error
+E_SQL_UNSUPPORTED 1:14

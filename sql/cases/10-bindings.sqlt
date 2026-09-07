@@ -1,0 +1,288 @@
+% The four binding kinds, in the positions M2 can use them.
+
+### name: bind.column.typed
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "table": "o", "column": "total", "type": "NUM"}}
+--- source
+T * 2
+--- expect
+(`o`.`total` * 2)
+===
+### name: bind.value.scalar-is-quoted-by-default
+--- note
+A host-supplied value is TEXT unless it says otherwise. Guessing from the
+characters would emit a product code of "00123" as the number 123.
+--- dialect
+mariadb
+--- bindings
+{"CODE": {"kind": "value", "value": "00123"}}
+--- source
+CODE
+--- expect
+'00123'
+===
+### name: bind.value.numeric-when-declared
+--- dialect
+mariadb
+--- bindings
+{"LIMIT": {"kind": "value", "value": "100", "type": "NUM"}}
+--- source
+LIMIT
+--- expect
+100
+===
+### name: bind.value.indexed
+--- dialect
+mariadb
+--- bindings
+{"L": {"kind": "value", "value": {"1": "a", "2": "b"}}}
+--- source
+L[2]
+--- expect
+'b'
+===
+### name: bind.value.list-is-not-a-scalar
+--- dialect
+mariadb
+--- bindings
+{"L": {"kind": "value", "value": {"1": "a", "2": "b"}}}
+--- source
+L
+--- error
+E_SQL_SHAPE 1:1
+===
+### name: bind.columns.indexed-positionally
+--- note
+Keys are "1", "2", … exactly as `,` builds them.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}, {"table": "x", "column": "b", "type": "NUM"}]}}
+--- source
+V[2] > 0
+--- expect
+(`x`.`b` > 0)
+===
+### name: bind.columns.index-out-of-range
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}]}}
+--- source
+V[5]
+--- error
+E_SQL_BINDING 1:2
+===
+### name: bind.relation.cannot-be-indexed-by-field
+--- note
+This case used to expect `(`oi`.`qty` > 0)`, which is not SQL any server will
+run: `oi` appears in no FROM clause, so MariaDB says "Unknown column 'oi.qty'"
+and PostgreSQL "missing FROM-clause entry". SEL agrees it means nothing --
+ITEMS is a list of row maps, so its keys are positions and ITEMS["QTY"] is
+E_NO_KEY.
+
+Inside an aggregate body it was worse than invalid. ALL(ITEMS, I, ITEMS["QTY"] >
+0) -- the binding name where the binder belongs -- emitted SQL byte-identical to
+the binder form, ran, and answered, for an expression SEL has no answer for.
+--- dialect
+mariadb
+--- bindings
+{"I": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+I["qty"] > 0
+--- error
+E_SQL_SHAPE
+===
+### name: bind.relation.field-through-its-binder
+--- note
+The supported spelling, unchanged.
+--- dialect
+mariadb
+--- bindings
+{"I": {"kind": "relation", "from": "order_items", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ALL(I, R, R["qty"] > 0)
+--- expect
+NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND ((`oi`.`qty` > 0)) IS NOT TRUE)
+### name: bind.value.num-must-already-be-canonical
+--- note
+This case used to expect `(7 + 1)`, and the reasoning it carried is still true:
+the NUM branch emits what Dec::parse recovered, because proving a string is a
+number and then emitting a different string is the gap "1 OR 1=1 -- " lived in.
+
+What was missing is that the evaluator is handed the host's original text and
+keeps it. So `007` translated to `7` while SEL kept "007", and the two agreed
+on `X + 1` and disagreed on everything that reads a number as text: LEN was 1
+against 3, TRIM was "7" against "007", `X $== "007"` was false against TRUE.
+Emit::numericLiteral's docblock states the assumption exactly -- "the two agree
+for everything the parser produces" -- and a value binding is not the parser.
+
+Refusing is the only outcome that holds: canonicalising here would still
+disagree with the evaluator, which never runs this code. The non-canonical set
+is small and entirely leading zeros and negative zero.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "007", "type": "NUM"}}
+--- source
+X + 1
+--- error
+E_SQL_BINDING
+===
+### name: bind.value.canonical-num-still-emits-bare
+--- note
+The other half: 2.50 round-trips, so it is unaffected. Scale is part of a SEL
+number and survives.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "2.50", "type": "NUM"}}
+--- source
+X + 1
+--- expect
+(2.50 + 1)
+===
+### name: bind.value.negative-zero-is-not-canonical
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "-0", "type": "NUM"}}
+--- source
+X + 1
+--- error
+E_SQL_BINDING
+===
+### name: bind.value.untyped-non-canonical-is-fine
+--- note
+Without `type: NUM` the value is text, goes out quoted, and the characters the
+host supplied are the characters SEL has. Nothing to refuse.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "007"}}
+--- source
+X & ""
+--- expect
+CONCAT('007', '')
+===
+### name: bind.value.empty-is-not-a-scalar
+--- note
+An empty result set as a value binding. Legal as the thing an aggregate
+iterates, nothing as a value -- and asking for its characters used to raise a
+SelError from inside asValue(), past tryTranslate(), which a host uses so it
+does not need a try/catch.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": []}}
+--- source
+X $== "a"
+--- error
+E_SQL_SHAPE
+===
+### name: bind.value.empty-is-still-an-aggregate-source
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": []}}
+--- source
+ALL(X, _ > 0)
+--- expect
+TRUE
+===
+### name: bind.column.nul-in-a-name-is-refused
+--- note
+Emit::ident doubles the quote character and passes everything else through,
+which is right for every character but two. A NUL terminates the C string
+libpq and sqlite3 are handed, so it is malformed SQL on all four servers; an
+empty name quotes to "" , which PostgreSQL rejects and the others accept.
+No dialect has an escape for either, and a column with a NUL in its name does
+not exist.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "column", "column": "a\u0000b"}}
+--- source
+X
+--- error
+E_SQL_BINDING
+===
+### name: bind.column.array-column-is-refused
+--- note
+`(string)` on an array is the characters "Array", and `Array` is a legal
+identifier -- so in a schema with a column of that name the wrong column is
+read and nothing says so. The same audit reached relation `from` and
+`correlate` and stopped there.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "column", "column": ["a", "b"]}}
+--- source
+X
+--- error
+E_SQL_BINDING
+===
+### name: bind.column.array-table-is-refused
+--- note
+Worse than "Array": this one reached Emit::column(?string) and raised a
+TypeError, which is not a SqlError, so tryTranslate() returned a fatal instead
+of null.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "column", "column": "c", "table": {"raw": "x"}}}
+--- source
+X
+--- error
+E_SQL_BINDING
+===
+### name: bind.relation.array-alias-is-refused
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "t", "alias": ["x"], "fields": {"Q": {"column": "q"}}}}
+--- source
+ALL(R, I, I["Q"] > 0)
+--- error
+E_SQL_BINDING
+===
+### name: bind.value.num-keeps-its-scale
+--- note
+Canonical is not the same as shortest: scale is part of a SEL number (spec §4.1)
+and part of what SQL DECIMAL arithmetic reads, so 2.50 stays 2.50.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": "2.50", "type": "NUM"}}
+--- source
+X + 1
+--- expect
+(2.50 + 1)
+===
+### name: bind.relation.correlate-must-be-raw-string
+--- note
+`raw` is the one place a host writes SQL this layer cannot check the meaning of.
+It can still check the shape, and must: (string) on an array yields "Array" plus
+a warning, and that string is then spliced into a correlated subquery as if it
+were a join condition.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "t", "alias": "r", "correlate": {"raw": {"mariadb": "1=1"}}, "fields": {"A": {"table": "r", "column": "a", "type": "NUM"}}}}
+--- source
+COUNT(R)
+--- error
+E_SQL_BINDING
+===
+### name: bind.relation.from-array-must-be-raw-string
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": {"query": "select 1"}, "alias": "r", "fields": {"A": {"table": "r", "column": "a", "type": "NUM"}}}}
+--- source
+COUNT(R)
+--- error
+E_SQL_BINDING
+===

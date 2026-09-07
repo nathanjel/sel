@@ -174,7 +174,7 @@ tail, count and index that keep lookup and append O(1)."
       (fail "E_NOT_NUM"
             (format nil "expected a number, got ~(~a~)" (value-kind s))
             at))
-    (or (dec-parse (value-scalar s))
+    (or (dec-parse (value-scalar s) at)
         (fail "E_NOT_NUM" (format nil "not a number: ~s" (value-scalar s)) at))))
 
 ;;; The non-throwing probe, as ISNUM uses.
@@ -190,19 +190,43 @@ tail, count and index that keep lookup and append O(1)."
 
 ;;; --- copying ---------------------------------------------------------------
 
-(defun value-copy (v)
+;;; A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
+;;; parser's and the evaluator's, and it was the last one left uncounted.
+;;; VALUE-COPY, VALUE-EQL, VALUE-DUMP and the two native conversions each recurse
+;;; once per level, so a value nested deeply enough reached the host's own stack:
+;;; RecursionError on Python at about a thousand levels, an uncaught RangeError on
+;;; JS at about four, a segfault on C++ at about sixty. Three hosts answered where
+;;; two died, on the same program.
+;;;
+;;; The depth rides as a parameter, as it does in COLLECT-DEPS: nothing has to be
+;;; released on the way out, so no WITH-DEPTH is needed and all five hosts spell
+;;; it the same way. A value of exactly +MAX-DEPTH+ levels is fine; the level past
+;;; it is refused. POS is reported when the caller has one -- the evaluator knows
+;;; which node asked -- and is NIL for a call from host code, the same convention
+;;; as AS-TEXT.
+(defun value-copy (v &optional pos)
   "Assignment copies by value: two variables never share structure (§5.7)."
+  (value-copy-at v 1 pos))
+
+(defun value-copy-at (v depth pos)
+  (when (> depth +max-depth+)
+    (fail "E_DEPTH" "value nested too deeply" pos))
   (%value-with-children
    (value-kind v)
    (if (eq (value-kind v) :bin) (copy-seq (value-scalar v)) (value-scalar v))
    (loop for (k . child) in (value-children v)
-         collect (cons k (value-copy child)))))
+         collect (cons k (value-copy-at child (1+ depth) pos)))))
 
 ;;; --- structural equality (§5.4) --------------------------------------------
 
-(defun value-eql (a b)
+(defun value-eql (a b &optional pos)
   "Same kind, equal scalars with numbers *not* normalised, and children with the
 same keys in the same order, pairwise EQL."
+  (value-eql-at a b 1 pos))
+
+(defun value-eql-at (a b depth pos)
+  (when (> depth +max-depth+)
+    (fail "E_DEPTH" "value nested too deeply" pos))
   (and (eq (value-kind a) (value-kind b))
        (case (value-kind a)
          (:text (string= (value-scalar a) (value-scalar b)))
@@ -213,7 +237,7 @@ same keys in the same order, pairwise EQL."
        (loop for (ka . va) in (value-children a)
              for (kb . vb) in (value-children b)
              always (and (string= ka kb)          ; key order is normative
-                         (value-eql va vb)))))
+                         (value-eql-at va vb (1+ depth) pos)))))
 
 ;;; --- canonical dump (conformance/README.md) --------------------------------
 
@@ -236,6 +260,11 @@ same keys in the same order, pairwise EQL."
     (write-char #\" out)))
 
 (defun value-dump (v)
+  (value-dump-at v 1))
+
+(defun value-dump-at (v depth)
+  (when (> depth +max-depth+)
+    (fail "E_DEPTH" "value nested too deeply" nil))
   (let ((s (case (value-kind v)
              (:none "-")
              (:text (concatenate 'string "t" (quote-dump (value-scalar v))))
@@ -247,7 +276,7 @@ same keys in the same order, pairwise EQL."
                      (format nil "~{~a~^, ~}"
                              (loop for (k . child) in (value-children v)
                                    collect (concatenate 'string (quote-dump k) "="
-                                                        (value-dump child))))
+                                                        (value-dump-at child (1+ depth)))))
                      "}"))))
 
 ;;; --- host convenience ------------------------------------------------------
@@ -255,6 +284,11 @@ same keys in the same order, pairwise EQL."
 (defun from-native (x)
   "Convert CL data to a SEL value. Floats are refused outright: they have no
 exact decimal form, and SEL has no floating point. Pass a string instead."
+  (from-native-at x 1))
+
+(defun from-native-at (x depth)
+  (when (> depth +max-depth+)
+    (fail "E_DEPTH" "value nested too deeply" nil))
   (etypecase x
     (null (make-none))
     (value x)
@@ -268,20 +302,26 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
     ;; line on every host. An alist is a keyed value.
     (cons (if (and (consp (first x)) (stringp (car (first x))))
               (let ((v (make-none)))
-                (loop for (k . val) in x do (value-set v k (from-native val)))
+                (loop for (k . val) in x
+                      do (value-set v k (from-native-at val (1+ depth))))
                 v)
-              (make-list-value (mapcar #'from-native x))))))
+              (make-list-value (mapcar (lambda (e) (from-native-at e (1+ depth))) x))))))
 
 (defun to-native (v)
   "The inverse of FROM-NATIVE, near enough for reporting: a bare scalar when the
 value has no children, otherwise an alist, with the scalar under \"_\"."
+  (to-native-at v 1))
+
+(defun to-native-at (v depth)
+  (when (> depth +max-depth+)
+    (fail "E_DEPTH" "value nested too deeply" nil))
   (let ((scalar (case (value-kind v)
                   ((:text :bin :bool) (value-scalar v))
                   (t nil))))
     (if (null (value-children v))
         scalar
         (let ((entries (loop for (k . child) in (value-children v)
-                             collect (cons k (to-native child)))))
+                             collect (cons k (to-native-at child (1+ depth))))))
           (if (and (null scalar) (not (eq (value-kind v) :bool)))
               entries
               (cons (cons "_" scalar) entries))))))

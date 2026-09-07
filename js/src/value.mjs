@@ -1,7 +1,7 @@
 // The SEL value. One class, used by the interpreter and by host code alike —
 // there is deliberately no second representation of state. See spec/SPEC.md §3.
 
-import { fail } from './errors.mjs';
+import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { encodeUtf8, decodeUtf8, bytesToHex, bytesEqual, toCodePoints } from './utf8.mjs';
 
@@ -77,11 +77,6 @@ export class Value {
     return this;
   }
 
-  delete(key) {
-    if (this.children) this.children.delete(key);
-    return this;
-  }
-
   // --- scalar context (§3.2) ------------------------------------------------
 
   // The value that supplies the scalar: itself, or its first child, recursively.
@@ -123,7 +118,7 @@ export class Value {
     if (v.kind !== TEXT) {
       fail('E_NOT_NUM', `expected a number, got ${v.kind.toLowerCase()}`, pos);
     }
-    const d = D.parse(v.scalar);
+    const d = D.parse(v.scalar, pos);
     if (d === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(v.scalar)}`, pos);
     return d;
   }
@@ -131,26 +126,52 @@ export class Value {
   // Non-throwing probe for ISNUM.
   looksNumeric() {
     if (this.kind === NONE && this.size() === 0) return false;
-    let v;
-    try { v = this.scalarSource(null); } catch { return false; }
-    return v.kind === TEXT && D.parse(v.scalar) !== null;
+    // A well-formed numeral too big to hold raises E_RANGE out of parse. The
+    // probe answers no rather than raising, so ISNUM is true exactly when the
+    // value can be used as a number — before the cap it said true for a
+    // 2 000 000-digit text that then failed on first use.
+    try {
+      const v = this.scalarSource(null);
+      return v.kind === TEXT && D.parse(v.scalar) !== null;
+    } catch { return false; }
   }
 
   // --- copying --------------------------------------------------------------
 
   // Assignment copies by value: two variables never share structure (§5.7).
-  clone() {
+  //
+  // A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the parser's
+  // and the evaluator's, and it was the last one left uncounted. clone, eql, dump
+  // and the two native conversions each recurse once per level, so a value nested
+  // deeply enough reached the host's own stack: an uncaught RangeError here at about
+  // four thousand levels, RecursionError on Python at about one thousand, a segfault
+  // on C++ at about sixty thousand. Three hosts answered where two died, on the same
+  // program.
+  //
+  // The depth rides as a parameter, as it does in dependencies(): nothing has to be
+  // released on the way out, so no guard object is needed and all five hosts spell it
+  // the same way. A value of exactly MAX_DEPTH levels is fine; the level past it is
+  // refused. `pos` is reported when the caller has one — the evaluator knows which
+  // node asked — and is null for a call from host code, the same convention as
+  // asText().
+  clone(pos = null) { return this.cloneAt(1, pos); }
+
+  cloneAt(depth, pos) {
+    if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
     const out = new Value(this.kind, this.kind === BIN ? this.scalar.slice() : this.scalar);
     if (this.children) {
       out.children = new Map();
-      for (const [k, v] of this.children) out.children.set(k, v.clone());
+      for (const [k, v] of this.children) out.children.set(k, v.cloneAt(depth + 1, pos));
     }
     return out;
   }
 
   // --- structural equality (§5.4) -------------------------------------------
 
-  eql(other) {
+  eql(other, pos = null) { return this.eqlAt(other, 1, pos); }
+
+  eqlAt(other, depth, pos) {
+    if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
     if (this.kind !== other.kind) return false;
     if (this.kind === TEXT || this.kind === BOOL) {
       if (this.scalar !== other.scalar) return false;
@@ -162,14 +183,17 @@ export class Value {
     const a = this.entries(), b = other.entries();
     for (let i = 0; i < a.length; i++) {
       if (a[i][0] !== b[i][0]) return false;      // key order is normative
-      if (!a[i][1].eql(b[i][1])) return false;
+      if (!a[i][1].eqlAt(b[i][1], depth + 1, pos)) return false;
     }
     return true;
   }
 
   // --- canonical dump (conformance/README.md) -------------------------------
 
-  dump() {
+  dump() { return this.dumpAt(1); }
+
+  dumpAt(depth) {
+    if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
     let s;
     switch (this.kind) {
       case NONE: s = '-'; break;
@@ -178,13 +202,16 @@ export class Value {
       case BOOL: s = this.scalar ? 'TRUE' : 'FALSE'; break;
     }
     if (this.size() === 0) return s;
-    const parts = this.entries().map(([k, v]) => `${quoteDump(k)}=${v.dump()}`);
+    const parts = this.entries().map(([k, v]) => `${quoteDump(k)}=${v.dumpAt(depth + 1)}`);
     return s + '{' + parts.join(', ') + '}';
   }
 
   // --- host convenience -----------------------------------------------------
 
-  static fromNative(x) {
+  static fromNative(x) { return Value.fromNativeAt(x, 1); }
+
+  static fromNativeAt(x, depth) {
+    if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
     if (x === null || x === undefined) return Value.none();
     if (typeof x === 'boolean') return Value.bool(x);
     if (typeof x === 'number') {
@@ -194,24 +221,27 @@ export class Value {
     if (typeof x === 'bigint') return Value.text(x.toString());
     if (typeof x === 'string') return Value.text(x);
     if (x instanceof Uint8Array) return Value.bin(x);
-    if (Array.isArray(x)) return Value.list(x.map(Value.fromNative));
+    if (Array.isArray(x)) return Value.list(x.map((e) => Value.fromNativeAt(e, depth + 1)));
     if (x instanceof Value) return x;
     if (typeof x === 'object') {
       const v = Value.none();
-      for (const k of Object.keys(x)) v.set(String(k), Value.fromNative(x[k]));
+      for (const k of Object.keys(x)) v.set(String(k), Value.fromNativeAt(x[k], depth + 1));
       return v;
     }
     throw new TypeError(`cannot convert ${typeof x} to SEL`);
   }
 
-  toNative() {
+  toNative() { return this.toNativeAt(1); }
+
+  toNativeAt(depth) {
+    if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
     const scalar =
       this.kind === TEXT ? this.scalar :
       this.kind === BIN ? this.scalar :
       this.kind === BOOL ? this.scalar : null;
     if (this.size() === 0) return scalar;
     const obj = {};
-    for (const [k, v] of this.children) obj[k] = v.toNative();
+    for (const [k, v] of this.children) obj[k] = v.toNativeAt(depth + 1);
     return scalar === null ? obj : { _: scalar, ...obj };
   }
 }

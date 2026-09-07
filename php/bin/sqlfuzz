@@ -1,0 +1,80 @@
+#!/usr/bin/env php
+<?php
+// Translate a corpus of SEL programs and print one canonical line each.
+//
+//   php php/bin/sqlfuzz corpus.selc [dialect]
+//
+// The counterpart of js/bin/sqlfuzz.mjs and python/bin/sqlfuzz; see the first
+// for why this lane exists. The corpus format and the one-line-per-program
+// protocol are specified in tools/README.md.
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/Sql/bootstrap.php';
+
+use Sel\Sel;
+use Sel\SelError;
+use Sel\Sql\Sql;
+use Sel\Sql\SqlError;
+
+/** @return list<string> */
+function readCorpus(string $text): array
+{
+    $records = [];
+    $cur = null;
+    // explode on "\n" and remove exactly one trailing newline: a regex strip
+    // would take two, because PCRE's `$` also matches before a final newline.
+    foreach (explode("\n", $text) as $line) {
+        if (str_starts_with($line, '### ')) {
+            $records[] = [];
+            $cur = count($records) - 1;
+            continue;
+        }
+        if ($cur !== null) {
+            $records[$cur][] = $line;
+        }
+    }
+    $out = [];
+    foreach ($records as $lines) {
+        $joined = implode("\n", $lines);
+        $out[] = str_ends_with($joined, "\n") ? substr($joined, 0, -1) : $joined;
+    }
+    return $out;
+}
+
+$path = $argv[1] ?? null;
+$dialect = $argv[2] ?? 'mariadb';
+if ($path === null) {
+    fwrite(STDERR, "usage: sqlfuzz corpus.selc [dialect]\n");
+    exit(2);
+}
+
+$lines = [];
+foreach (readCorpus((string) file_get_contents($path)) as $src) {
+    try {
+        $program = Sel::compile($src);
+    } catch (SelError $e) {
+        $lines[] = '-';
+        continue;
+    } catch (\Throwable $e) {
+        $lines[] = '!HOST ' . get_class($e);
+        continue;
+    }
+    try {
+        // Three renderings; see js/bin/sqlfuzz.mjs for why.
+        $f = Sql::translate($program, $dialect);
+        $lines[] = implode(' | ', [
+            $f->asValue(),
+            $f->asValue('params'),
+            implode(',', array_map(fn ($v) => $v->dump(), $f->bindings())),
+        ]);
+    } catch (SqlError $e) {
+        $lines[] = "!{$e->code}@{$e->line}:{$e->col}";
+    } catch (SelError $e) {
+        $lines[] = "!SEL {$e->code}@{$e->line}:{$e->col}";
+    } catch (\Throwable $e) {
+        $lines[] = '!HOST ' . get_class($e) . ': ' . $e->getMessage();
+    }
+}
+
+echo implode("\n", array_map(fn ($l) => str_replace("\n", '\\n', $l), $lines)), "\n";
