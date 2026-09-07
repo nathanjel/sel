@@ -183,6 +183,75 @@ final class Parser
         $this->depth--;
     }
 
+    // --- teardown -------------------------------------------------------------
+
+    /**
+     * Take a parse tree apart iteratively, so that dropping it does not recurse.
+     *
+     * The engine frees a nested array by freeing each element, which for a nested
+     * array means freeing that -- once per level. A left-leaning chain is as deep
+     * as the source is long, because parseTerm builds it in a loop and a flat
+     * chain nests nothing the depth counter can see, so at about two hundred
+     * thousand operators the free itself ran out of C stack. The process died
+     * with SIGSEGV *after* printing the right answer on a valid program, and
+     * with no output at all on an invalid one.
+     *
+     * C++ solves this in `~Node`, which runs on every path for free. PHP has no
+     * destructor for an array, so this is a call, and the two places that make
+     * one are Program::__destruct and the parser's own accumulating loops.
+     *
+     * Objects would not have helped: measured, a chain of stdClass dies at about
+     * half the depth a chain of arrays does, and an empty __destruct changes
+     * nothing because it is called from inside the same recursive free. It is
+     * the dismantling that matters, not the hook.
+     *
+     * Unlike the C++ version this needs no check on who else holds a node: a PHP
+     * array is a value, so every node has exactly one parent and taking it is
+     * always safe. If an application has copied `Program::$ast`, its copy is
+     * separated on the first write and freed on its own terms -- this neither
+     * helps nor harms it.
+     *
+     * @param array<string,mixed> $node
+     */
+    public static function dismantle(array &$node): void
+    {
+        $pending = [];
+        self::steal($node, $pending);
+        while ($pending) {
+            $cur = array_pop($pending);
+            self::steal($cur, $pending);
+            unset($cur);
+        }
+    }
+
+    /**
+     * Move a node's children into $pending and leave it childless, so that
+     * dropping it frees one shallow array rather than a chain.
+     *
+     * @param array<string,mixed> $node
+     * @param list<array<string,mixed>> $pending
+     */
+    private static function steal(array &$node, array &$pending): void
+    {
+        // Every key that holds a node. `pos` holds a token, `spec` a function
+        // entry and `v`/`op`/`name` scalars: naming the child keys rather than
+        // testing is_array() is what keeps those out of the worklist.
+        foreach (['l', 'r', 'target', 'value', 'obj', 'idx', 'x'] as $k) {
+            if (isset($node[$k])) {
+                $pending[] = $node[$k];
+                unset($node[$k]);
+            }
+        }
+        foreach (['items', 'args'] as $k) {
+            if (isset($node[$k])) {
+                foreach ($node[$k] as $child) {
+                    $pending[] = $child;
+                }
+                unset($node[$k]);
+            }
+        }
+    }
+
     // --- entry --------------------------------------------------------------
 
     /** @return array<string,mixed> */
@@ -205,8 +274,9 @@ final class Parser
         // transcribed hosts to converge on rather than a deviation.
         $start = $this->peek();
         $this->enter($start);
+        $items = [];
         try {
-            $items = [$this->parseList()];
+            $items[] = $this->parseList();
             while ($this->atOp(';')) {
                 $this->next();
                 // A trailing ';' before a closer or end of input is permitted.
@@ -215,6 +285,20 @@ final class Parser
                 }
                 $items[] = $this->parseList();
             }
+        } catch (\Throwable $e) {
+            // An abandoned tree is freed by the engine recursively; see
+            // dismantle(). An item collected before the failure can be as deep as
+            // the source is long, so it is taken apart before the exception
+            // carries on -- otherwise a syntax error in a large enough program
+            // kills the process before it can be reported.
+            // By reference: `foreach ($items as $item)` hands out a COPY, and
+            // dismantling a copy separates it and leaves the original deep --
+            // which looks like it works and changes nothing.
+            foreach ($items as &$item) {
+                self::dismantle($item);
+            }
+            unset($item);
+            throw $e;
         } finally {
             $this->leave();
         }
@@ -226,10 +310,19 @@ final class Parser
     /** @return array<string,mixed> */
     private function parseList(): array
     {
-        $items = [$this->parseTerm(self::BP_ASSIGN)];
-        while ($this->atOp(',')) {
-            $this->next();
+        $items = [];
+        try {
             $items[] = $this->parseTerm(self::BP_ASSIGN);
+            while ($this->atOp(',')) {
+                $this->next();
+                $items[] = $this->parseTerm(self::BP_ASSIGN);
+            }
+        } catch (\Throwable $e) {
+            foreach ($items as &$item) {         // by reference; see parseSequence
+                self::dismantle($item);
+            }
+            unset($item);
+            throw $e;
         }
         return count($items) === 1
             ? $items[0]
@@ -242,7 +335,25 @@ final class Parser
     private function parseTerm(int $minBp): array
     {
         $left = $this->parsePrefix($minBp);
+        try {
+            return $this->termLoop($left, $minBp);
+        } catch (\Throwable $e) {
+            // This is the loop that accumulates DEPTH -- `1+1+1...` is one frame
+            // building a chain as long as the source -- so this is the catch that
+            // matters. See dismantle(). $left is passed by reference so that what
+            // is taken apart is what the loop had reached, not what it started
+            // with.
+            self::dismantle($left);
+            throw $e;
+        }
+    }
 
+    /**
+     * @param array<string,mixed> $left
+     * @return array<string,mixed>
+     */
+    private function termLoop(array &$left, int $minBp): array
+    {
         for (;;) {
             $t = $this->peek();
             $entry = self::infixEntry($t);

@@ -19,6 +19,24 @@ final class Program
     }
 
     /**
+     * The parse tree is taken apart iteratively rather than dropped.
+     *
+     * Freeing a nested array recurses once per level, and a left-leaning chain is
+     * as deep as the source is long: at about two hundred thousand operators this
+     * host printed the right answer and was then killed by SIGSEGV on its way
+     * out. C++ does the same thing in `~Node`, which every path gets for free;
+     * PHP has no destructor for an array, so this is where the call goes for a
+     * program that compiled. Parser::parseTerm holds the other one, for a program
+     * that did not.
+     *
+     * Parser::dismantle explains the shape and why objects would not have helped.
+     */
+    public function __destruct()
+    {
+        Parser::dismantle($this->ast);
+    }
+
+    /**
      * $context may be a Value, a plain array, or null. Returns a Value; the
      * context is mutated in place by any assignments the program performs.
      *

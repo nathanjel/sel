@@ -24,6 +24,12 @@
 #   lists and sequences are one node with many children and must not recurse at
 #   all. If one of those starts failing, the counter broke rather than a walker.
 #
+#   The three bad-parse shapes are the same hazard on the way OUT: the tree the
+#   parser had built is abandoned when the syntax error is raised, and freeing it
+#   recursed too. That failure is the worse one -- the process died before the
+#   error could be printed, so a syntax error in a large enough program produced
+#   no output at all -- and it is invisible to every shape that parses.
+#
 #   The two value shapes are the same hazard one level down, in the VALUE tree
 #   rather than the parse tree: an assignment target's bracket chain is walked
 #   iteratively, so it built a value deeper than clone, eql and dump could walk.
@@ -38,18 +44,13 @@
 #
 #   tools/stress.sh [scale]        scale 1 is the default and takes a few minutes
 #
-# THIS IS CURRENTLY RED, on two shapes, both of them tracked and neither of them
-# new. It is written to go green as they land rather than to be silenced:
+# THIS IS CURRENTLY RED, on one shape, tracked and not new. It is written to go
+# green as it lands rather than to be silenced:
 #
 #   nested-index      lisp reports E_DEPTH at 1:399 where the other four report
 #                     1:201, because lisp has not had the index-bracket rider.
 #                     docs/PARSER-MIGRATION.md tracks it; the two conformance
 #                     cases parked in that document land in the same commit.
-#   every deep shape  php prints the right answer and is THEN killed by SIGSEGV,
-#                     which is the C++ node-destructor defect in the other host
-#                     that refcounts. C++ tears the tree down iteratively now;
-#                     php still unwinds it recursively and has no destructor to
-#                     hook, since its nodes are arrays rather than objects.
 #
 # An allowlist was deliberately not added. A harness that knows which failures
 # are acceptable stops being able to tell you that one of them changed.
@@ -100,6 +101,9 @@ nested-paren|eval|400000|'(' * N + '1' + ')' * N
 nested-index|eval|200000|'a[' * N + '1' + ']' * N
 value-deep-write|eval|200000|'A' + '[1]' * N + '=1; B = A; C = (B EQL A); C'
 value-self-nest|eval|300|'A[1]=A;' * N + 'A EQL A'
+flat-add-bad-parse|eval|400000|'1' + '+1' * N + '+'
+flat-add-bad-list|eval|400000|'1' + '+1' * N + ', +'
+flat-add-bad-seq|eval|400000|'1' + '+1' * N + '; +'
 SHAPES_END
 
 failures=0
