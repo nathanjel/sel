@@ -62,14 +62,13 @@ void check_numeric(const std::string& where, const sel::Value& v) {
   // path, where the lexer has already canonicalised, and wrong here, where the
   // application supplied the string and the evaluator was handed that same
   // string. "007" translated to 7 while SEL kept "007".
+  // looks_numeric() has already run, so this cannot be E_NOT_NUM. What it CAN
+  // be is E_RANGE, past §6.4's million-digit cap -- and that is the evaluator's
+  // answer about the value, which the other hosts let out as a SelError rather
+  // than folding into a binding refusal. Catching it here would hide it inside
+  // what try_translate() swallows.
   const std::string text = v.as_text();
-  std::string canonical;
-  try {
-    canonical = sel::Value::num(text).as_text();
-  } catch (const SelError&) {
-    refuse("E_SQL_BINDING", where + " declares type NUM and \"" + text +
-                                "\" is not a number");
-  }
+  const std::string canonical = sel::Value::num(text).as_text();
   if (canonical != text) {
     refuse("E_SQL_BINDING",
            where + " declares type NUM and is \"" + text +

@@ -60,7 +60,15 @@ std::string numeric_literal(const std::string& dialect, const Value& v, Pos pos)
   std::string n;
   try {
     n = Value::num(text).as_text();
-  } catch (const SelError&) {
+  } catch (const SelError& e) {
+    // Only "that is not a number" becomes a binding refusal. E_RANGE -- a
+    // numeral past spec/SPEC.md §6.4's million-digit cap -- is the EVALUATOR's
+    // answer about the value itself, and the other hosts let it out as a
+    // SelError: Python calls decimal.parse, which returns None for the first
+    // and raises for the second. Converting it here would put it inside what
+    // try_translate() swallows, so a rule the language refuses would come back
+    // as "cannot be pushed down" instead of as an error.
+    if (e.code() != "E_NOT_NUM") throw;
     refuse("E_SQL_BINDING",
            "a value bound as NUM must be a number, and \"" + text + "\" is not",
            pos);
