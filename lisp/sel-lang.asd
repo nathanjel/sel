@@ -67,7 +67,8 @@
      (:file "map")
      (:file "fragment")
      (:file "emit")
-     (:file "binding")))))
+     (:file "binding")
+     (:file "stage1")))))
 
 (defsystem "sel-lang/tests"
   :description "Unit tests for the layers underneath the conformance suite"
