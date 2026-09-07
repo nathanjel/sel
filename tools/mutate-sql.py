@@ -45,6 +45,13 @@ CHECKS = [
     ('sqldoc',            ['php', 'php/bin/sqldoc']),
     ('oracle coverage',   ['php', 'php/bin/sqlo', 'coverage']),
     ('oracle expressions',['php', 'php/bin/sqlo', 'expressions']),
+    # Last, deliberately. The loop breaks on the first check that catches, so a
+    # mutation any dynamic host sees never pays for a C++ build; this runs only
+    # for the ones nothing else caught, which is exactly the C++-local
+    # mutations below. Its own build has to happen in the WORK TREE -- build/ is
+    # not copied -- or it would grade the unmutated binary, which is this tool's
+    # signature failure mode.
+    ('sqlt (cpp)',        ['sh', '-c', 'make -s -C cpp build/sqlt && cpp/build/sqlt']),
     ('oracle rows',       ['php', 'php/bin/sqlo', 'rows']),
 ]
 NEEDS_DB = {'oracle coverage', 'oracle expressions', 'oracle rows'}

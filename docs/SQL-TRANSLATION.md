@@ -2535,11 +2535,29 @@ the SQL layer is a separate entry point (`package.json` `"./sql"`), so a host
 that wants only the evaluator does not pay for the translator. `impl_sql
 js-bundle` returns 0 for that reason rather than skipping something.
 
-**Later:** C++ and Lisp ports. Each is a transcription of a design three hosts
-have already agreed on, which is the cheapest moment to do it. Both hosts owed
-a parser conversion and the index-bracket depth rider as well; both landed
-first, so this is all that is left of that list.
-`docs/PARSER-MIGRATION.md` tracks it and points back here.
+**C++ has landed.** It was a transcription of a design three hosts had already
+agreed on, which was the cheapest moment to do it. It grades on the same three
+lanes they do: 383 `.sqlt` cases plus their mirrors, the 2000×4 translator fuzz
+diffed against js/php/python line for line, and the map replay — 217
+registration calls, 564 lookups, 0 differences.
+
+Two things it does differently, both because C++ has types where the others
+have shapes. Its map is `constexpr` static arrays rather than a language
+literal, so the replay check compares two genuinely different implementations
+instead of one against a near-copy of itself. And twelve `.sqlt` cases whose
+whole point is a malformed binding — a JSON array where a name belongs, a
+section that is not one of the three — cannot be *written* with its typed
+constructors: the compiler refuses them one stage earlier than the other hosts
+do. Those are reported as refused by the type system rather than skipped, so
+the total stays honest.
+
+Porting it also closed two gaps in the shared corpus that had nothing to do
+with C++: nothing asserted that a BIN slot is inlined rather than bound, and
+nothing asserted that escaping applies the longest rule first. Both were found
+by mutating the C++ layer and watching the mutation walk through all 381 cases.
+
+**Later:** the Lisp port. `docs/PARSER-MIGRATION.md` tracks it and points back
+here.
 
 A note on how to build M2–M3 and M5–M6: those are the phases where fanning work
 out pays. Authoring four dialect documents, writing the case files per category,

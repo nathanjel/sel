@@ -50,6 +50,29 @@ T > 100 AND T < 200
 --- params
 
 ===
+### name: mode.params.a-bin-value-binding-inlines-too
+--- note
+The third inline-forced form, and the one nothing asserted until a mutation
+walked through the whole suite. A BIN slot must never become a placeholder: a
+driver sends bytes through the connection's text encoding, and on PostgreSQL
+130 of the 256 single-byte values then failed -- 129 as `22021 invalid byte
+sequence for encoding "UTF8"` and 0x00 silently -- while the same values
+inlined through binaryLiteral were correct on all four dialects, all 256.
+Only the params rendering can see this, and only with an empty params list:
+inline mode looks identical either way.
+--- dialect
+mariadb
+--- mode
+params
+--- bindings
+{"B": {"kind": "value", "value": {"bin": "00ff"}}}
+--- source
+B EQL B
+--- expect
+(X'00ff' = X'00ff')
+--- params
+
+===
 ### name: mode.params.a-num-value-binding-inlines-too
 --- note
 Not only literals from the AST: a host value declaring type NUM takes the same

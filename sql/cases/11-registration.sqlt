@@ -60,6 +60,24 @@ mariadb
 --- expect
 ('a' || 'b')
 ===
+### name: register.dialect.escapes-apply-longest-first
+--- note
+Escaping is a single left-to-right pass with the longest rule tried first, so
+a two-character rule fires before the one-character rule that is its prefix.
+No shipped dialect has a multi-character escape key -- mariadb maps ' and \\,
+both one character -- so the rule is a no-op on shipped data and nothing
+asserted it until a mutation reversing the sort walked through the whole
+suite. A registered dialect is the only place it can be seen.
+--- dialect
+longest
+--- register
+[{"dialect": "longest", "extends": "mariadb", "version": "10.5",
+  "lexical": {"textEscape": {"ab": "<AB>", "a": "<A>"}}}]
+--- source
+"ab"
+--- expect
+'<AB>'
+===
 ### name: register.define.lexical-references-expand-at-run-time
 --- note
 The generator expands these for the shipped map. An application writing a
