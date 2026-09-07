@@ -29,6 +29,8 @@ the README.
 tools/check-generated.sh                          # artifacts freshly generated
 tools/check.sh                                    # ALL GREEN, full roster
 SEL_IMPLS="$SEL_IMPLS python-wheel" tools/check.sh # and through the built wheel
+tools/oracle-db.sh                                # the map, against real servers
+tools/oracle-db.sh run python3 tools/mutate-sql.py # every mutation, none skipped
 tools/check-version.sh 0.3.0                      # every manifest agrees
 ```
 

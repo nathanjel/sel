@@ -19,6 +19,26 @@ See `docs/SQL-TESTING.md` for the analysis this came out of.
 
 ## Running it
 
+The short way, which needs only Docker and takes about a minute:
+
+```
+tools/oracle-db.sh
+```
+
+That starts a pinned server per dialect — `mariadb:11.8`, `mysql:8.4`,
+`postgres:17`, and a temporary file for SQLite — runs every oracle against all
+four, and removes them again. One CPU and a few hundred megabytes each, data
+directory on a tmpfs, ephemeral ports and `$$` in the container names, so it
+runs beside everything else and two checkouts can do it at once.
+
+`tools/oracle-db.sh run <cmd>` does the same but hands the DSNs to a command of
+your choice — `tools/oracle-db.sh run python3 tools/mutate-sql.py` is the one
+worth knowing, because eight mutations can only be witnessed by a live server
+and report `skipped` without one. `up` leaves them running and prints the
+exports; `down` removes them.
+
+The long way, against a server you already have:
+
 ```
 SEL_SQL_MARIADB_DSN='mysql:unix_socket=/var/lib/mysql/mysql.sock;dbname=sel_oracle;charset=utf8mb4' \
 SEL_SQL_MARIADB_USER=you \
