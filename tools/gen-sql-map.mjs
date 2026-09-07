@@ -649,6 +649,217 @@ export const RULES = ${JSON.stringify(rules, null, 2)};
 `;
 }
 
+// --- C++ -------------------------------------------------------------------
+//
+// The other three hosts get a literal of their language's own map type. C++
+// gets `constexpr` aggregates over static arrays, which is the same data with
+// three properties the others have no need of: it is entirely .rodata, no
+// static constructor runs to build it, and a link that never calls
+// shipped_map() drops all of it under --gc-sections.
+//
+// Every initialiser below is DESIGNATED, and C++ requires those in declaration
+// order -- so the field order in cpp/sel_sql_map.hpp is this emitter's
+// contract. Reordering or renaming a member there fails the static_asserts
+// beside the structs, which is the file a reader can act on.
+
+function cppStr(s) {
+  let out = '"';
+  for (const b of Buffer.from(s, 'utf8')) {
+    if (b === 0x5c) out += '\\\\';
+    else if (b === 0x22) out += '\\"';
+    // Three-digit octal, which -- unlike \x -- cannot run on into the
+    // character beside it. No template holds a control byte today; this is here
+    // so that one could not silently change its neighbour if one ever did.
+    else if (b < 0x20 || b === 0x7f) out += '\\' + b.toString(8).padStart(3, '0');
+    else out += String.fromCharCode(b);
+  }
+  return out + '"';
+}
+
+// Indexed, so two dialect names cannot sanitise to the same identifier.
+// `mysql-family` and a future `mysql_family` would both be `mysql_family`.
+const cppIdent = (name, i) => `d${i}_${name.replace(/[^A-Za-z0-9]/g, '_')}`;
+
+function cppEntry(key, e, prefix, section, index, out) {
+  const f = [`.key = ${cppStr(key)}`];
+  // A string is a refusal carrying its reason. sql/MAP.md §4.2 -- the reason
+  // reaches the caller as the message, exactly as a runtime withdrawal's does.
+  if (typeof e === 'string' || e === null) {
+    f.push('.kind = EntryKind::Refusal');
+    if (e !== null) f.push(`.reason = {.present = true, .text = ${cppStr(e)}}`);
+    return `{${f.join(', ')}}`;
+  }
+  f.push('.kind = EntryKind::Template');
+  const body = e.variants ? 'Variants' : (typeof e.tpl === 'object' ? 'ByCount' : 'One');
+  if (body === 'One') {
+    f.push(`.one = ${cppStr(e.tpl)}`);
+  } else {
+    const arr = `${prefix}_${section}${index}`;
+    const arms = Object.entries(e.variants ?? e.tpl);
+    out.push(`constexpr Keyed ${arr}[] = {`);
+    for (const [k, v] of arms) {
+      out.push(`    {.key = ${cppStr(k)}, .value = ${cppStr(v)}},`);
+    }
+    out.push('};');
+    f.push(`.body = BodyKind::${body}`, `.keyed = ${arr}`);
+  }
+  // `skel` entries carry no ret: the translator decides what a CASE or a
+  // subquery yields, not the map.
+  if (e.ret !== undefined) f.push(`.ret = ${cppStr(e.ret)}`);
+  if (e.caveat !== undefined) f.push(`.caveat = ${cppStr(e.caveat)}`);
+  if (e.since !== undefined) f.push(`.since = ${cppStr(e.since)}`);
+  if (e.arity !== undefined) {
+    f.push('.has_arity = true', `.arity_min = ${e.arity[0]}`,
+           `.arity_max = ${e.arity[1]}`);
+  }
+  return `{${f.join(', ')}}`;
+}
+
+function emitCpp(dialects, rules) {
+  const out = [];
+  const rows = [];
+
+  Object.keys(dialects).forEach((name, i) => {
+    const d = dialects[name];
+    const p = cppIdent(name, i);
+    out.push('', `// --- ${name} ${'-'.repeat(Math.max(3, 72 - name.length))}`);
+
+    const lexRows = [];
+    Object.entries(d.lexical).forEach(([k, v], j) => {
+      if (v === null) {
+        lexRows.push(`    {.key = ${cppStr(k)}, .kind = LexKind::Withdrawn},`);
+      } else if (typeof v === 'object') {
+        const arr = `${p}_esc${j}`;
+        out.push(`constexpr Escape ${arr}[] = {`);
+        for (const [from, to] of Object.entries(v)) {
+          out.push(`    {.from = ${cppStr(from)}, .to = ${cppStr(to)}},`);
+        }
+        out.push('};');
+        lexRows.push(`    {.key = ${cppStr(k)}, .kind = LexKind::Escapes, ` +
+                     `.escapes = ${arr}},`);
+      } else {
+        lexRows.push(`    {.key = ${cppStr(k)}, .kind = LexKind::Text, ` +
+                     `.text = ${cppStr(v)}},`);
+      }
+    });
+    let lexName = '{}';
+    if (lexRows.length) {
+      lexName = `${p}_lexical`;
+      out.push(`constexpr Lexical ${lexName}[] = {`, ...lexRows, '};');
+    }
+
+    const secNames = {};
+    for (const section of ['ops', 'funcs', 'skel']) {
+      const entries = Object.entries(d[section]);
+      if (!entries.length) { secNames[section] = null; continue; }
+      const entryRows = entries.map(([k, e], j) =>
+        '    ' + cppEntry(k, e, p, section, j, out) + ',');
+      secNames[section] = `${p}_${section}`;
+      out.push(`constexpr Entry ${secNames[section]}[] = {`, ...entryRows, '};');
+    }
+
+    const f = [`.name = ${cppStr(name)}`];
+    // An empty `extends` is a root, as ansi is.
+    if (d.extends !== null) f.push(`.extends = ${cppStr(d.extends)}`);
+    f.push(`.version = ${cppStr(d.version)}`, `.target = ${d.target}`);
+    if (lexName !== '{}') f.push(`.lexical = ${lexName}`);
+    for (const section of ['ops', 'funcs', 'skel']) {
+      if (secNames[section]) f.push(`.${section} = ${secNames[section]}`);
+    }
+    rows.push(`    {${f.join(',\n     ')}},`);
+  });
+
+  // --- the vocabulary
+  const rule = [];
+  const svArray = (id, xs) =>
+    rule.push(`constexpr std::string_view ${id}[] = {${xs.map(cppStr).join(', ')}};`);
+  svArray('CAVEATS', rules.caveats);
+  svArray('RET_KINDS', rules.retKinds);
+  svArray('TEMPLATE_KEYS', rules.templateKeys);
+  const arity = (id, obj) => {
+    rule.push(`constexpr Arity ${id}[] = {`);
+    for (const [k, [lo, hi]] of Object.entries(obj)) {
+      rule.push(hi === null
+        ? `    {.key = ${cppStr(k)}, .min = ${lo}, .unbounded = true},`
+        : `    {.key = ${cppStr(k)}, .min = ${lo}, .max = ${hi}},`);
+    }
+    rule.push('};');
+  };
+  arity('OP_ARITY', rules.opArity);
+  arity('FUNC_ARITY', rules.funcArity);
+  const names = (id, obj, prefix) => {
+    const rs = [];
+    Object.entries(obj).forEach(([k, xs], i) => {
+      const arr = `${prefix}${i}`;
+      rule.push(`constexpr std::string_view ${arr}[] = {${xs.map(cppStr).join(', ')}};`);
+      rs.push(`    {.key = ${cppStr(k)}, .names = ${arr}},`);
+    });
+    rule.push(`constexpr Names ${id}[] = {`, ...rs, '};');
+  };
+  names('VARIANTS', rules.variants, 'variant');
+  names('SKEL_SLOTS', rules.skelSlots, 'slots');
+  rule.push('constexpr LexType LEX_TYPES[] = {');
+  for (const [k, t] of Object.entries(rules.lexicalTypes)) {
+    rule.push(`    {.key = ${cppStr(k)}, .escapes = ${t === 'map'}},`);
+  }
+  rule.push('};');
+
+  return `// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+//
+// Every dialect, with its chain already flattened, so a lookup is a scan of one
+// small array and nothing else. Runtime registration is what re-introduces the
+// chain, and it is the only thing that does.
+//
+// Entirely \`constexpr\`: this file contributes .rodata and no static
+// constructor, and --gc-sections drops all of it from a link that never calls
+// shipped_map(). That is the whole reason the C++ host has a generated source
+// file rather than a dialect document it reads at startup -- an application
+// deploying SEL ships an executable, not an executable plus a data directory.
+
+#include "sel_sql_map.hpp"
+
+namespace sel::sql {
+namespace {
+${out.join('\n')}
+
+// --- the map ----------------------------------------------------------------
+
+constexpr Dialect DIALECTS[] = {
+${rows.join('\n')}
+};
+
+// --- the map's own vocabulary -----------------------------------------------
+//
+// So that Map::define can enforce at registration time what this generator
+// enforces at generation time. Emitted rather than retyped in each host: every
+// divergence a cross-host review found in runtime registration -- an entry with
+// no "ret", a "tpl" that was a JSON list, an "arity" of strings, a caveat
+// somebody invented -- was an entry the generator would have rejected and the
+// runtime would not, after which the hosts improvised differently. Improvising
+// is what code does when it has no rule; this is the rule, as data.
+
+${rule.join('\n')}
+
+constexpr Rules RULES = {
+    .caveats = CAVEATS,
+    .ret_kinds = RET_KINDS,
+    .template_keys = TEMPLATE_KEYS,
+    .op_arity = OP_ARITY,
+    .func_arity = FUNC_ARITY,
+    .variants = VARIANTS,
+    .skel_slots = SKEL_SLOTS,
+    .lexical_types = LEX_TYPES,
+};
+
+}  // namespace
+
+std::span<const Dialect> shipped_map() { return DIALECTS; }
+const Rules& shipped_rules() { return RULES; }
+
+}  // namespace sel::sql
+`;
+}
+
 // --- main ------------------------------------------------------------------
 
 // The dialect documents as they are WRITTEN -- chain not flattened -- in an
@@ -744,6 +955,7 @@ const OUTPUTS = [
   ['php/src/Sql/MapData.php', emitPhp],
   ['python/sel/sql/_map.py', emitPython],
   ['js/src/sql/_map.mjs', emitJs],
+  ['cpp/sel_sql_map_data.cpp', emitCpp],
   ['php/bin/MapReplay.php', emitReplayPhp],
   ['python/bin/map_replay.py', emitReplayPython],
   ['js/bin/map-replay.mjs', emitReplayJs],

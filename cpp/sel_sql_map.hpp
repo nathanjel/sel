@@ -147,6 +147,27 @@ struct Dialect {
   std::span<const Entry> skel{};
 };
 
+// Field order is contract. tools/gen-sql-map.mjs emits DESIGNATED initialisers
+// for every one of the types above, and C++ requires those in declaration
+// order, so reordering or renaming a member here silently changes what the
+// generated file means -- or, more often, stops it compiling with the error
+// pointing at generated code nobody wrote. These name every field in order, so
+// that the break lands here instead, next to the reason.
+//
+// They cost nothing: each is a constant expression, and no object is emitted.
+static_assert(sizeof(Maybe{.present = {}, .text = {}}) == sizeof(Maybe));
+static_assert(sizeof(Keyed{.key = {}, .value = {}}) == sizeof(Keyed));
+static_assert(sizeof(Escape{.from = {}, .to = {}}) == sizeof(Escape));
+static_assert(sizeof(Entry{.key = {}, .kind = {}, .reason = {}, .body = {},
+                           .one = {}, .keyed = {}, .ret = {}, .caveat = {},
+                           .since = {}, .has_arity = {}, .arity_min = {},
+                           .arity_max = {}, .builder = {}}) == sizeof(Entry));
+static_assert(sizeof(Lexical{.key = {}, .kind = {}, .text = {},
+                             .escapes = {}}) == sizeof(Lexical));
+static_assert(sizeof(Dialect{.name = {}, .extends = {}, .version = {},
+                             .target = {}, .lexical = {}, .ops = {},
+                             .funcs = {}, .skel = {}}) == sizeof(Dialect));
+
 // --- the generator's own vocabulary ------------------------------------------
 //
 // What tools/gen-sql-map.mjs enforces at generation time, generated alongside
@@ -180,6 +201,14 @@ struct Rules {
   std::span<const Names> skel_slots{};
   std::span<const LexType> lexical_types{};
 };
+
+static_assert(sizeof(Arity{.key = {}, .min = {}, .max = {},
+                          .unbounded = {}}) == sizeof(Arity));
+static_assert(sizeof(Names{.key = {}, .names = {}}) == sizeof(Names));
+static_assert(sizeof(LexType{.key = {}, .escapes = {}}) == sizeof(LexType));
+static_assert(sizeof(Rules{.caveats = {}, .ret_kinds = {}, .template_keys = {},
+                           .op_arity = {}, .func_arity = {}, .variants = {},
+                           .skel_slots = {}, .lexical_types = {}}) == sizeof(Rules));
 
 // Defined by the generated sel_sql_map_data.cpp, and by nothing else.
 std::span<const Dialect> shipped_map();

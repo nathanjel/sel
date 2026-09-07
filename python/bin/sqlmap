@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""The same canonical dump cpp/bin/sqlmap.cpp writes, from this host's own
+generated table. tools/check-sql-map.sh diffs the two.
+
+Reading `_map.py` rather than `sql/dialects/*.json`: the question is whether two
+separate emitters rendered the same map, so both sides must come from generated
+output. A dump built from the JSON would prove only that this script can read
+JSON.
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
+from sel.sql._map import DIALECTS, RULES  # noqa: E402
+
+
+def esc(s):
+    return str(s).replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n')
+
+
+def absent(s):
+    return '-' if s is None or s == '' else esc(s)
+
+
+def row(*fields):
+    sys.stdout.write('\t'.join(str(f) for f in fields) + '\n')
+
+
+def dump_entries(dialect, section, entries):
+    for key, e in entries.items():
+        if e is None or isinstance(e, str):
+            kind, body = 'refusal', '-'
+            payload = '-' if e is None else esc(e)
+            ret = caveat = since = arity = '-'
+        else:
+            kind = 'template'
+            arms = e.get('variants')
+            if arms is not None:
+                body, payload = 'variants', ';'.join(
+                    f'{esc(k)}={esc(v)}' for k, v in arms.items())
+            elif isinstance(e.get('tpl'), dict):
+                body, payload = 'bycount', ';'.join(
+                    f'{esc(k)}={esc(v)}' for k, v in e['tpl'].items())
+            else:
+                body, payload = 'one', esc(e['tpl'])
+            ret = absent(e.get('ret'))
+            caveat = absent(e.get('caveat'))
+            since = absent(e.get('since'))
+            a = e.get('arity')
+            arity = '-' if a is None else f'{a[0]},{a[1]}'
+        row('E', dialect, section, esc(key), kind, body, ret, caveat, since,
+            arity, payload)
+
+
+for name, d in DIALECTS.items():
+    row('D', name, absent(d['extends']), esc(d['version']),
+        'yes' if d['target'] else 'no')
+    for key, v in d['lexical'].items():
+        if v is None:
+            kind, value = 'withdrawn', '-'
+        elif isinstance(v, dict):
+            kind = 'escapes'
+            value = ';'.join(f'{esc(a)}=>{esc(b)}' for a, b in v.items())
+        else:
+            kind, value = 'text', esc(v)
+        row('L', name, esc(key), kind, value)
+    for section in ('ops', 'funcs', 'skel'):
+        dump_entries(name, section, d[section])
+
+row('R', 'caveats', ','.join(esc(x) for x in RULES['caveats']))
+row('R', 'retKinds', ','.join(esc(x) for x in RULES['retKinds']))
+row('R', 'templateKeys', ','.join(esc(x) for x in RULES['templateKeys']))
+for label in ('opArity', 'funcArity'):
+    for key, (lo, hi) in RULES[label].items():
+        row('R', label, esc(key), lo, '*' if hi is None else hi)
+for label in ('variants', 'skelSlots'):
+    for key, xs in RULES[label].items():
+        row('R', label, esc(key), ','.join(esc(x) for x in xs))
+for key, t in RULES['lexicalTypes'].items():
+    row('R', 'lexicalTypes', esc(key), t)

@@ -24,11 +24,22 @@ INTERNAL := ast
 # and the other internals. They must not also link it.
 WHITEBOX := check-decimal
 
+# The SEL->SQL layer. Three translation units: the error type, the dialect
+# map's registry, and the map itself -- which is generated from
+# sql/dialects/*.json by tools/gen-sql-map.mjs and is entirely constexpr, so it
+# contributes .rodata and no static constructor and --gc-sections drops all of
+# it from a link that never asks for it.
+SQL_SRCS := sel_sql.cpp sel_sql_map.cpp sel_sql_map_data.cpp
+SQL_OBJS := $(addprefix $(BUILD)/,$(SQL_SRCS:.cpp=.o))
+SQL_HDRS := sel_sql.hpp sel_sql_map.hpp
+# Tools over that layer.
+SQLTOOLS := sqlmap
+
 # `unit` is in the default target and not only in `test`, because it was not:
 # `make` built everything else, tools/check.sh ran whatever build/unit happened
 # to be lying there, and once tests/unit.cpp stopped compiling against sel.cpp a
 # stale binary went on reporting 81 green checks for 27 commits.
-BINS := $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL) $(WHITEBOX) unit)
+BINS := $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL) $(WHITEBOX) $(SQLTOOLS) unit)
 
 .PHONY: all test clean
 all: $(BINS)
@@ -41,6 +52,12 @@ $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp sel.hpp sel_
 
 $(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<
+
+$(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(addprefix $(BUILD)/,$(SQLTOOLS)): $(BUILD)/%: bin/%.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS) $(BUILD)/sel.o
 
 $(BUILD)/unit: tests/unit.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<
