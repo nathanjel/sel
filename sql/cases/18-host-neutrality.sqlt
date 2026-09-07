@@ -35,7 +35,7 @@ mariadb
 --- source
 COLS["1\u{663}"]
 --- error
-E_SQL_BINDING
+E_SQL_BINDING 1:5
 ===
 ### name: neutral.key.leading-zero-is-not-a-position
 --- note

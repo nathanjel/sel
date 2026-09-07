@@ -5376,7 +5376,7 @@ SQL_CASES = [
         "dialect": "mariadb",
         "source": "COLS[\"1\\u{663}\"]",
         "expect": None,
-        "error": "E_SQL_BINDING",
+        "error": "E_SQL_BINDING 1:5",
         "throws": None,
         "params": None,
         "as": None,

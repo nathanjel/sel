@@ -5385,7 +5385,7 @@ function sql_cases(): array
             'dialect' => 'mariadb',
             'source' => 'COLS["1\\u{663}"]',
             'expect' => null,
-            'error' => 'E_SQL_BINDING',
+            'error' => 'E_SQL_BINDING 1:5',
             'throws' => null,
             'params' => null,
             'as' => null,

@@ -5053,7 +5053,7 @@
    :dialect "mariadb"
    :source "COLS[\"1\\u{663}\"]"
    :expect nil
-   :error "E_SQL_BINDING"
+   :error "E_SQL_BINDING 1:5"
    :throws nil
    :params nil
    :as nil
