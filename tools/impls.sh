@@ -163,7 +163,8 @@ impl_sql() {
     # that only wants the evaluator does not carry the translator. Nothing to
     # grade here, rather than something skipped.
     js-bundle|js-bundle-min) return 0 ;;
-    cpp|lisp) return 0 ;;                       # no SQL layer yet
+    cpp)  cpp/build/sqlt "$@" ;;
+    lisp) return 0 ;;                           # no SQL layer yet
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlt "$@" ;;
     # The runner adds python/ to sys.path only when `sel` is not already
     # importable, so this grades the installed wheel and not the source tree.

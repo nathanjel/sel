@@ -30,12 +30,13 @@ WHITEBOX := check-decimal
 # contributes .rodata and no static constructor and --gc-sections drops all of
 # it from a link that never asks for it.
 SQL_SRCS := sel_sql.cpp sel_sql_binding.cpp sel_sql_emit.cpp sel_sql_map.cpp \
-            sel_sql_map_data.cpp sel_sql_node.cpp sel_sql_stage1.cpp
+            sel_sql_map_data.cpp sel_sql_node.cpp sel_sql_stage1.cpp \
+            sel_sql_translator.cpp
 SQL_OBJS := $(addprefix $(BUILD)/,$(SQL_SRCS:.cpp=.o))
 SQL_HDRS := sel_sql.hpp sel_sql_emit.hpp sel_sql_map.hpp sel_sql_node.hpp \
-            sel_sql_stage1.hpp
+            sel_sql_stage1.hpp sel_sql_translator.hpp
 # Tools over that layer.
-SQLTOOLS := sqlmap
+SQLTOOLS := sqlmap sqlt
 
 # `unit` is in the default target and not only in `test`, because it was not:
 # `make` built everything else, tools/check.sh ran whatever build/unit happened
@@ -58,8 +59,17 @@ $(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp sel.cpp sel.hpp sel_as
 $(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(addprefix $(BUILD)/,$(SQLTOOLS)): $(BUILD)/%: bin/%.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+$(BUILD)/sqlmap: bin/sqlmap.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS) $(BUILD)/sel.o
+
+# The SQL suite, plus the case table tools/gen-sql-cases.mjs writes. That table
+# is source as far as this host is concerned -- it is committed, and a clone
+# runs the suite without Node.
+$(BUILD)/case_data.o: bin/case_data.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(BUILD)/sqlt: bin/sqlt.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp $(BUILD)/case_data.o $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(BUILD)/case_data.o $(SQL_OBJS) $(BUILD)/sel.o
 
 $(BUILD)/unit: tests/unit.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<

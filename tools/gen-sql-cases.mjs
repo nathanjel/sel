@@ -422,15 +422,24 @@ const shapeOf = (v) => Array.isArray(v) ? 'a list'
   : typeof v;
 
 function cppStr(s) {
+  const bytes = Buffer.from(String(s), 'utf8');
   let out = '"';
-  for (const b of Buffer.from(String(s), 'utf8')) {
+  for (const b of bytes) {
     if (b === 0x5c) out += '\\\\';
     else if (b === 0x22) out += '\\"';
     // Three-digit octal cannot run on into the character beside it, as \x can.
     else if (b < 0x20 || b === 0x7f) out += '\\' + b.toString(8).padStart(3, '0');
     else out += String.fromCharCode(b);
   }
-  return out + '"';
+  out += '"';
+  // A NUL does not survive a `const char*`. `Binding::column("a\0b")` builds a
+  // std::string that stops at the NUL, so the name becomes "a" and the very
+  // check the case exists for -- a NUL no dialect can quote -- never fires. The
+  // length form keeps the bytes. Emitted only when needed, so every other
+  // literal stays readable and still converts to const char* where the SqlCase
+  // fields want one; if a NUL ever reached one of those, this would be a
+  // compile error rather than a silent truncation.
+  return bytes.includes(0) ? `std::string(${out}, ${bytes.length})` : out;
 }
 
 function cppKind(t) {

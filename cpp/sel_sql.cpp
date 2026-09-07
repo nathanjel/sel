@@ -143,3 +143,34 @@ std::vector<Value> Fragment::bindings() const {
 }
 
 }  // namespace sel::sql
+
+// --- the public interface ----------------------------------------------------
+
+#include "sel_sql_translator.hpp"
+
+namespace sel::sql {
+
+Fragment Sql::translate(const Program& program, const std::string& dialect,
+                        const Bindings& bindings, const Options& options) {
+  // A fresh Translator per call, so the state a refusal leaves behind is
+  // unobservable through this API.
+  Translator t(dialect, bindings, options);
+  return t.translate(program.ast());
+}
+
+std::optional<Fragment> Sql::try_translate(const Program& program,
+                                           const std::string& dialect,
+                                           const Bindings& bindings,
+                                           const Options& options) {
+  // SqlError ONLY: a bug in the translator, or a malformed registration, must
+  // not be swallowed by the path that exists to handle refusals.
+  try {
+    return translate(program, dialect, bindings, options);
+  } catch (const SqlError&) {
+    return std::nullopt;
+  }
+}
+
+std::vector<std::string> Sql::dialects() { return Map::targets(); }
+
+}  // namespace sel::sql

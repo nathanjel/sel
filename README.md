@@ -127,7 +127,8 @@ import { compile, Value } from './path/to/js/src/sel.mjs';   // any ESM runtime
 Python, PHP and JS need nothing at all — no pip, no Composer, no npm, no build
 step; copying `python/sel/`, `php/src/` or `js/src/` into a project works. C++ is
 a three-file drop-in — `cpp/sel.hpp`, `cpp/sel_ast.hpp` and `cpp/sel.cpp` —
-plus the vendored and pinned `cpp/third_party/srell/` (BSD-2); it also installs as a CMake package, so
+plus the vendored and pinned `cpp/third_party/srell/` (BSD-2), with the SEL→SQL
+layer a strict addition of `cpp/sel_sql*.{hpp,cpp}` beside them; it also installs as a CMake package, so
 `find_package(sel-lang)` and `sel-lang::sel-lang` work. Common Lisp is an
 ordinary ASDF system whose one dependency is cl-ppcre (BSD-2).
 
@@ -348,6 +349,13 @@ Three files to copy — `cpp/sel.hpp`, `cpp/sel_ast.hpp` and `cpp/sel.cpp` — p
 the vendored `cpp/third_party/srell/`. You include `sel.hpp`; `sel_ast.hpp` is
 internal and only has to sit beside `sel.cpp`, which is what includes it. Compile
 `sel.cpp` as part of your target; there is no library to build and nothing to fetch.
+
+For SEL→SQL as well, add `cpp/sel_sql.hpp` and the five internal headers and six
+`.cpp` files beside it (`sel_sql*.{hpp,cpp}`), and include `sel_sql.hpp`. It is a
+strict addition — the evaluator's own list does not change — and a target that
+never calls `Sql::translate` pays nothing for it: the generated dialect table is
+`constexpr` `.rodata` with no static constructor, and `--gc-sections` drops all
+of it. Or link the library and get both.
 
 ```cpp
 #include "sel.hpp"
@@ -649,7 +657,7 @@ sql/           MAP.md, errors.md, dialects/*.json, cases/*.sqlt, mutations.json
 python/        sel/ (package sel), bin/, tests/
 php/           src/ (namespace Sel\), bin/sel, bin/conformance
 js/            src/ (ESM), bin/sel.mjs, bin/conformance.mjs
-cpp/           sel.hpp + sel_ast.hpp + sel.cpp (the drop-in), third_party/srell/
+cpp/           sel.hpp + sel_ast.hpp + sel.cpp (the drop-in), sel_sql*.* (SEL→SQL), third_party/srell/
 lisp/          sel.asd, src/ (package SEL), bin/, tests/
 examples/      host API, integration patterns, a real rule set
 tools/         fuzzer, decimal oracle, doc checker, check scripts

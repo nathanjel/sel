@@ -810,7 +810,7 @@ static std::vector<std::pair<std::string, Binding>> c129_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c130_bind() {
   return {
-      {"X", Binding::column("a\000b", std::nullopt, SqlKind::Unknown)},
+      {"X", Binding::column(std::string("a\000b", 3), std::nullopt, SqlKind::Unknown)},
   };
 }
 
