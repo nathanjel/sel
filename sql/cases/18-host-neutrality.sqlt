@@ -11,6 +11,32 @@
 % sql/oracle/ is PHP-only, so a case file is the only witness the next four
 % ports inherit automatically.
 
+### name: neutral.key.unicode-digits-are-not-a-position
+--- note
+SEL list keys are the canonical ASCII decimals, so a key written with an
+Arabic-Indic digit names no position and the evaluator answers E_NO_KEY. Every
+host gets that from a character class -- `[1-9][0-9]{0,8}` -- except Common
+Lisp, whose DIGIT-CHAR-P accepts every Unicode decimal digit. The key below is
+"1" followed by ARABIC-INDIC DIGIT THREE, which that host read as 13 and
+resolved to the thirteenth column; the binding has thirteen so the answer was a
+real identifier, not a refusal. Thirteen columns for that reason: a shorter
+binding refuses on the range check and cannot tell the two readings apart.
+
+THREE and not ZERO, which would have needed only ten: SBCL 2.6.6's
+DIGIT-CHAR-P answers NIL for U+0660 and 0 for every other Unicode decimal zero
+tried (Devanagari, Bengali, N'Ko, Myanmar, fullwidth), so a key written with
+that one character refuses under both readings and pins nothing. THREE is not
+hostage to the quirk: it is read as a position by any host whose digit test is
+the Unicode one, quirk or no quirk.
+--- dialect
+mariadb
+--- bindings
+{"COLS": {"kind": "columns", "items": [{"column": "c1"}, {"column": "c2"}, {"column": "c3"}, {"column": "c4"}, {"column": "c5"}, {"column": "c6"}, {"column": "c7"}, {"column": "c8"}, {"column": "c9"}, {"column": "c10"}, {"column": "c11"}, {"column": "c12"}, {"column": "c13"}]}}
+--- source
+COLS["1\u{663}"]
+--- error
+E_SQL_BINDING
+===
 ### name: neutral.key.leading-zero-is-not-a-position
 --- note
 SEL list keys are the canonical decimals "1", "2", … so "01" is not a key and
@@ -385,3 +411,89 @@ mariadb
 MIN(5, 3)
 --- expect
 LEAST(5, 3)
+===
+### name: neutral.ordinal.tenth-column
+--- note
+Nothing else in this corpus has ten of anything. Every index the translator
+decides -- a list key, a column position, a placeholder ordinal, an arity -- is
+a number it renders into a string, and every host renders one to nine
+identically no matter how wrong its spelling is. Ten is where a host's own
+notion of "print a number" starts to show, and until these four cases the whole
+boundary was unwatched in all five.
+
+This one is the column list. Common Lisp built the keys with PRINC-TO-STRING,
+which follows the caller's *PRINT-BASE*: an application that had rebound it got
+the tenth column keyed "A", and "10" then named nothing.
+--- dialect
+mariadb
+--- bindings
+{"COLS": {"kind": "columns", "items": [{"column": "c1"}, {"column": "c2"}, {"column": "c3"}, {"column": "c4"}, {"column": "c5"}, {"column": "c6"}, {"column": "c7"}, {"column": "c8"}, {"column": "c9"}, {"column": "c10"}, {"column": "c11"}, {"column": "c12"}]}}
+--- source
+COLS["10"]
+--- expect
+`c10`
+===
+### name: neutral.ordinal.tenth-column-by-name
+--- note
+And the same twelve columns asked by key rather than by position. Indexing
+resolves a position and never consults what the position is called, so the case
+above cannot see the key the translator wrote; HAS is the shape that reads it
+back. Both are needed: one pins the lookup, the other pins the name.
+--- dialect
+mariadb
+--- bindings
+{"COLS": {"kind": "columns", "items": [{"column": "c1"}, {"column": "c2"}, {"column": "c3"}, {"column": "c4"}, {"column": "c5"}, {"column": "c6"}, {"column": "c7"}, {"column": "c8"}, {"column": "c9"}, {"column": "c10"}, {"column": "c11"}, {"column": "c12"}]}}
+--- source
+HAS(COLS, "10")
+--- expect
+TRUE
+===
+### name: neutral.ordinal.tenth-element
+--- note
+The same boundary for a list the program itself writes, whose keys the
+translator builds from its own counter. HAS is the shape that reads those keys
+back by name -- indexing into an expression's result is refused, and the
+aggregates walk the list in order without ever asking what a position is
+called -- so it is the only one that can tell key "10" from key "A".
+--- dialect
+mariadb
+--- source
+HAS((1,2,3,4,5,6,7,8,9,10,11,12), "10")
+--- expect
+TRUE
+===
+### name: neutral.ordinal.arity-key-past-nine
+--- note
+An arity-keyed template may name any count, and the shipped map happens to name
+only 1, 2 and 3 -- so a host that rendered the count wrongly still landed on the
+`*` fallback and looked correct. This registers a double-digit arity, which is
+what makes the difference between naming 10 and naming "A" visible at all.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "MIN", {"tpl": {"10": "TEN({*})", "*": "LEAST({*})"}, "ret": "NUM"}]}]
+--- source
+MIN(1,2,3,4,5,6,7,8,9,10)
+--- expect
+TEN(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+===
+### name: neutral.ordinal.placeholder-past-nine
+--- note
+And the placeholder ordinal. `?` carries no ordinal, so all four shipped
+dialects are blind to this; a numbered placeholder is the only witness, and
+sql/cases/15-postgresql.sqlt never needed more than two.
+--- dialect
+pg-numbered
+--- mode
+params
+--- register
+[{"dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": true,
+  "lexical": {"placeholder": "${n}"}}]
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T IN ("a","b","c","d","e","f","g","h","i","j","k")
+--- expect
+(((((((((((CAST("t" AS TEXT) COLLATE "C" = CAST($1 AS TEXT) COLLATE "C") OR (CAST("t" AS TEXT) COLLATE "C" = CAST($2 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($3 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($4 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($5 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($6 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($7 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($8 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($9 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($10 AS TEXT) COLLATE "C")) OR (CAST("t" AS TEXT) COLLATE "C" = CAST($11 AS TEXT) COLLATE "C"))
+--- params
+t"a", t"b", t"c", t"d", t"e", t"f", t"g", t"h", t"i", t"j", t"k"

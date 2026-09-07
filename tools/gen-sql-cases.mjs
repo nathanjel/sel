@@ -502,7 +502,13 @@ function lispRegister(ops) {
       const [dialect, section, key, entry] = Array.isArray(a) ? a : [a, a, a, a];
       // An unknown section is a case in its own right; keyword-ise it so the
       // registry refuses it by name, as the other hosts do.
-      const sec = LISP_SECTIONS[section] ?? `:${String(section)}`;
+      // A STRING for anything that is not one of the three, never a bare
+      // keyword token. The Lisp reader UPCASES, so `:OPS` reads as the same
+      // symbol `:ops` does and an upper-case section would be ACCEPTED where
+      // Python refuses it; and a section containing a space truncates at the
+      // space rather than erroring. CHECK-SECTION refuses a string, which is
+      // the answer every other host gives.
+      const sec = LISP_SECTIONS[section] ?? lispStr(String(section));
       return `      (define-entry ${lispArg(dialect)} ${sec} ${lispArg(key)} ${lispEntrySpec(entry)})`;
     }
     if (op && typeof op === 'object' && 'dialect' in op) {

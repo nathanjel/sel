@@ -75,7 +75,11 @@ the 256 single-byte values then failed."
                       ;; slot id would not: it is a CREATION number, and a
                       ;; reordering template emits creation numbers out of order.
                       (:params (write-string (emit-placeholder (fragment-dialect f) nth) out))
-                      (:debug (format out "~~~a~~" nth)))))))))))
+                      ;; ~D, never ~a: ~a renders through *PRINT-BASE*, which
+                      ;; belongs to the calling application. A slot ordinal is a
+                      ;; position in the output, not a number for the caller to
+                      ;; format, and under a rebound base slot 10 came out ~A~.
+                      (:debug (format out "~~~D~~" nth)))))))))))
 
 (defun as-value (f &optional (mode :inline))
   "Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but LIST,

@@ -75,7 +75,10 @@
   :description "Unit tests for the layers underneath the conformance suite"
   :author "Marcin Gałczyński"
   :license "MIT"
-  :depends-on ("sel-lang" "fiveam")
+  ;; The SQL layer too: two of its failure modes -- a dialect that is not a
+  ;; string, and a caller's rebound *PRINT-BASE* -- are reachable only from host
+  ;; code, so the .sqlt corpus cannot express them and only a test here can.
+  :depends-on ("sel-lang" "sel-lang/sql" "fiveam")
   :serial t
   :components
   ((:module "tests"

@@ -25,6 +25,15 @@ rule spec/errors.md sets for the evaluator."
                     :col (if pos (sel::pos-col pos) 0)
                     :offset (if pos (sel::pos-offset pos) 0)))
 
+(defun ascii-digit-p (c)
+  "CL's DIGIT-CHAR-P accepts every Unicode decimal digit -- (digit-char-p #\\٣)
+is 3 -- and every numeral grammar in this layer is ASCII by specification. The
+other hosts get that from a regex character class; this host has to say it.
+
+Without it LIST-KEY answered element 13 for \"1٣\" where Python answers none,
+which is the defect _LIST_KEY's own comment describes in a different alphabet."
+  (char<= #\0 c #\9))
+
 (defun bad (fmt &rest args)
   "A malformed registration is a mistake in the application's startup, not a rule
 the database cannot run, so it is never a SQL-ERROR: TRY-TRANSLATE catches that

@@ -42,6 +42,19 @@ CHECKS = [
     # quickload-and-run is cheap next to a C++ build, and Lisp-local mutations
     # are then caught before anything expensive is attempted.
     ('sqlt (lisp)',       ['lisp/bin/sqlt']),
+    # The same corpus with the printer set hostile. *PRINT-BASE* belongs to the
+    # calling application and this layer may not read it, but a case file has no
+    # way to say so -- every runner above uses the standard printer. This costs
+    # one more quickload and covers every PRINC-TO-STRING the translator could
+    # grow, not just the ones a bespoke test happened to name.
+    ('sqlt (lisp, base 16)', ['lisp/bin/sqlt', '--print-base', '16']),
+    # The Lisp unit tests. Two of this host's failure modes -- a dialect that is
+    # not a string, and a caller's rebound *PRINT-BASE* -- arrive from host code
+    # rather than from a case file, so no .sqlt case can state them and none of
+    # the runners above can catch a mutation of either. Cheap: the same
+    # quickload the line above already pays for, against a suite that runs in a
+    # second.
+    ('lisp unit',         ['lisp/bin/test']),
     # Cheap, and the only check that asks whether the registration API can
     # express the shipped map. Nothing else covers php/bin/sqlreplay or the
     # defineDialect rules it exercises.

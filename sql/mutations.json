@@ -749,6 +749,69 @@
       "file": "lisp/src/sql/emit.lisp",
       "from": "(stable-sort (copy-list escape) #'> :key (lambda (c) (length (car c))))",
       "to": "(stable-sort (copy-list escape) #'< :key (lambda (c) (length (car c))))"
+    },
+    {
+      "name": "lisp-unicode-digits-are-positions",
+      "was": "CL's DIGIT-CHAR-P accepts every Unicode decimal digit -- (digit-char-p #\\U+0663) is 3 -- and every numeral grammar in this layer is ASCII by specification. Without ASCII-DIGIT-P this host answered column 13 for \"1<U+0663>\" where the other four answer none. The same predicate gates template slots, arity keys, @unify positions and dotted versions.",
+      "file": "lisp/src/sql/errors.lisp",
+      "from": "  (char<= #\\0 c #\\9))",
+      "to": "  (digit-char-p c))"
+    },
+    {
+      "name": "lisp-dialect-checked-after-the-translator-is-built",
+      "was": "REQUIRE-TARGET ran after %TRANSLATOR had already been built from the dialect, so a dialect that is not a string -- NIL, the keyword :MARIADB, anything host code passes by mistake -- reached the map lookup first and raised a TYPE-ERROR. That escaped TRY-TRANSLATE, which catches SQL-ERROR alone, so the one entry point whose job is to absorb a refusal signalled instead.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "  (require-target dialect)\n  (let ((tr (%translator dialect (make-bindings (or bindings '()))\n                         (and (getf options :strict) t))))\n    (bindings-check-aliases (translator-bindings tr))",
+      "to": "  (let ((tr (%translator dialect (make-bindings (or bindings '()))\n                         (and (getf options :strict) t))))\n    (require-target dialect)\n    (bindings-check-aliases (translator-bindings tr))"
+    },
+    {
+      "name": "lisp-count-renders-in-the-callers-print-base",
+      "was": "PRINC-TO-STRING reads the caller's *PRINT-BASE*, so an application that had rebound it saw COUNT over a twelve-element list translated as \"C\". MAKE-NUM then raised E_NOT_NUM and that SEL-ERROR escaped TRY-TRANSLATE. SEL numbers are decimal by specification (spec/SPEC.md 4) and this layer may not read the caller's printer.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(sel:make-num (format nil \"~D\" (length (source-elements src))))",
+      "to": "(sel:make-num (princ-to-string (length (source-elements src))))"
+    },
+    {
+      "name": "lisp-arity-slot-in-the-callers-print-base",
+      "was": "A template's {n} slot is the arity the entry was chosen for. PRINC-TO-STRING renders it in the caller's *PRINT-BASE*, so an application that had rebound it got a different slot filled in -- or none.",
+      "file": "lisp/src/sql/emit.lisp",
+      "from": "(replace-all tpl \"{n}\" (format nil \"~D\" n))",
+      "to": "(replace-all tpl \"{n}\" (princ-to-string n))"
+    },
+    {
+      "name": "lisp-arity-key-in-the-callers-print-base",
+      "was": "The arity key an entry is looked up by. Under a caller's rebound *PRINT-BASE* a ten-argument call asks the map for entry \"A\", which no dialect declares, and a call SEL can evaluate is refused.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(let* ((n (format nil \"~D\" (length args)))",
+      "to": "(let* ((n (princ-to-string (length args)))"
+    },
+    {
+      "name": "lisp-node-list-keys-in-the-callers-print-base",
+      "was": "SEL list keys are the canonical ASCII decimals. Built with PRINC-TO-STRING they follow the caller's *PRINT-BASE*, so element 10 of a bound node list is keyed \"A\" and nothing can find it.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "collect (cons (format nil \"~D\" i) (binder-node item))",
+      "to": "collect (cons (princ-to-string i) (binder-node item))"
+    },
+    {
+      "name": "lisp-column-list-keys-in-the-callers-print-base",
+      "was": "The same for a columns binding: past nine columns the keys stop being decimals under a caller that had rebound *PRINT-BASE*.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "collect (cons (format nil \"~D\" i) (binder-column item))",
+      "to": "collect (cons (princ-to-string i) (binder-column item))"
+    },
+    {
+      "name": "lisp-debug-ordinal-in-the-callers-print-base",
+      "was": "The :debug rendering numbers each slot ~n~, and ~a renders that ordinal through the caller's *PRINT-BASE*. An application that had rebound it saw slot 10 as ~A~. Found by neutral.ordinal.placeholder-past-nine, which is the first case in the corpus with more than nine parameters.",
+      "file": "lisp/src/sql/fragment.lisp",
+      "from": "(:debug (format out \"~~~D~~\" nth))",
+      "to": "(:debug (format out \"~~~a~~\" nth))"
+    },
+    {
+      "name": "lisp-builder-receives-the-translator-not-the-dialect",
+      "was": "A builder is registered by the application and its contract is the dialect it is building for. Handing it the translator instead gives host code an internal structure the other four hosts never pass, and the argument it was written against is gone.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(return-from apply-entry (funcall builder d args pos))",
+      "to": "(return-from apply-entry (funcall builder tr args pos))"
     }
   ]
 }

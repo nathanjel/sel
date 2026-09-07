@@ -3,6 +3,17 @@
 ;;;;   lisp/bin/sqlt                 every case
 ;;;;   lisp/bin/sqlt bind. agg.      only cases whose name contains one of these
 ;;;;   lisp/bin/sqlt --names         what this host loaded, and stop
+;;;;   lisp/bin/sqlt --print-base 16 every case, with the printer set hostile
+;;;;
+;;;; --print-base is this host's alone and pins something no case file can
+;;;; state. *PRINT-BASE* belongs to the calling application, and this layer may
+;;;; not read it: every number it decides at translation time is a SEL number,
+;;;; and SEL numbers are decimal by specification (spec/SPEC.md 4). A single
+;;;; PRINC-TO-STRING anywhere in the translator renders a twelve-element list's
+;;;; count as "C" under a caller that had rebound it, MAKE-NUM raises E_NOT_NUM,
+;;;; and that SEL-ERROR escapes TRY-TRANSLATE, which catches SQL-ERROR alone.
+;;;; Running the whole corpus this way says so for every such site at once, and
+;;;; keeps saying it for sites not written yet.
 ;;;;
 ;;;; The cases live in sql/cases/*.sqlt and reach here through
 ;;;; tools/gen-sql-cases.mjs, which is the only thing that reads them. Nothing
@@ -19,6 +30,11 @@
   (:export #:main))
 
 (in-package #:sel-sqlt)
+
+(defvar *corpus-print-base* 10
+  "What *PRINT-BASE* is bound to while a case translates -- see --print-base.
+Bound around the translation alone and not around this file's own reporting, so
+the counts in the summary stay readable whatever it is set to.")
 
 (load (merge-pathnames "case-data.lisp" (directory-namestring *load-truename*)))
 
@@ -149,7 +165,10 @@ fragment was rendered and discarded" orphans)))))
     nil))
 
 (defun main ()
-  (let* ((args (sel-cli:script-args))
+  (let* ((raw (sel-cli:script-args))
+         (bp (position "--print-base" raw :test #'string=))
+         (*corpus-print-base* (if bp (parse-integer (nth (1+ bp) raw)) 10))
+         (args (if bp (append (subseq raw 0 bp) (subseq raw (+ bp 2))) raw))
          (filters (remove-if (lambda (a) (string= a "--names")) args))
          (passed 0) (mirrored 0) (suite-errors 0) (failures '()))
     (when (member "--names" args :test #'string=)
@@ -159,7 +178,8 @@ fragment was rendered and discarded" orphans)))))
       (when (or (null filters)
                 (some (lambda (f) (search f (getf c :name))) filters))
         (map-reset)                       ; no case may leak a registration
-        (let ((problem (handler-case (run-case c (getf c :dialect))
+        (let ((problem (handler-case (let ((*print-base* *corpus-print-base*))
+                                          (run-case c (getf c :dialect)))
                          (suite-error (e)
                            (format t "SUITE ERROR ~a~%" e) (incf suite-errors) :skip))))
           (cond
@@ -171,7 +191,8 @@ fragment was rendered and discarded" orphans)))))
                (let ((m (cdr (assoc (getf c :dialect) +mirrors+ :test #'equal))))
                  (when (and m (null (getf c :register)))
                    (map-reset)
-                   (let ((p2 (handler-case (run-case c m)
+                   (let ((p2 (handler-case (let ((*print-base* *corpus-print-base*))
+                                       (run-case c m))
                                (suite-error (e)
                                  (format t "SUITE ERROR (mirrored to ~a) ~a~%" m e)
                                  (incf suite-errors) :skip))))

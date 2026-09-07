@@ -27,7 +27,7 @@ slots, and tools/gen-sql-map.mjs already refuses both -- so without this the
 shipped map and a runtime-registered template would be read by two different
 grammars."
   (when (and (stringp s) (plusp (length s)) (<= (length s) 3)
-             (every #'digit-char-p s)
+             (every #'ascii-digit-p s)
              (or (string= s "0") (char/= (char s 0) #\0)))
     (parse-integer s)))
 
@@ -142,7 +142,10 @@ aggregate can be given an empty binding" pos))
 
 (defun emit-placeholder (dialect n)
   (let ((tpl (lex-text dialect "placeholder")))
-    (if (search "{n}" tpl) (replace-all tpl "{n}" (princ-to-string n)) tpl)))
+    ;; ~D, not PRINC-TO-STRING: the latter reads the caller's *PRINT-BASE*, so an
+    ;; application that had rebound it would get $c where it wanted $12. Python's
+    ;; str(int) and PHP's strval have no such knob; this host does.
+    (if (search "{n}" tpl) (replace-all tpl "{n}" (format nil "~D" n)) tpl)))
 
 ;;; --- identifiers ----------------------------------------------------------
 

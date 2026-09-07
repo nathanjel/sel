@@ -42,7 +42,7 @@ implement this. No list this layer can build has a billion elements, so the cap
 costs nothing and removes the question."
   (when (and (stringp k) (<= 1 (length k) 9)
              (char<= #\1 (char k 0) #\9)
-             (every #'digit-char-p k))
+             (every #'ascii-digit-p k))
     (parse-integer k)))
 
 (defun declared-kind (spec v)
@@ -455,7 +455,7 @@ coerced, an unknown concat operand must not be treated as bytes."
     ;; template is NIL WITHDRAWS that arity, and the `*` fallback must not
     ;; rescue it. {"1": null, "*": "LEAST({*})"} refuses MIN(5) and still
     ;; answers MIN(5, 3).
-    (let* ((n (princ-to-string (length args)))
+    (let* ((n (format nil "~D" (length args)))     ; ~D, never PRINC-TO-STRING
            (arm (or (assoc n tpl :test #'equal) (assoc "*" tpl :test #'equal))))
       (unless (and arm (cdr arm))
         (refuse "E_SQL_UNSUPPORTED"
@@ -480,7 +480,13 @@ it maps ~{~a~^, ~}" what (translator-dialect tr) n
       (let ((builder (plist-get entry :builder)))
         (when (and (presentp builder) builder)
           ;; Skips arity, since, caveat and the template entirely.
-          (return-from apply-entry (funcall builder tr args pos))))
+          ;;
+          ;; The DIALECT, not the translator: Python hands its builder
+          ;; `self.emit` and C++ an `Emit&`, and this host's emit functions all
+          ;; take a dialect as their first argument, so that IS the emitter
+          ;; here. Passing the whole translator would make a builder written
+          ;; against one host unusable on another.
+          (return-from apply-entry (funcall builder d args pos))))
       (let ((arity (plist-get entry :arity)))
         (when (and (presentp arity) arity)
           (let ((n (length args)))
@@ -965,7 +971,7 @@ element is not enough. See docs/SQL-TRANSLATION.md 7.5"
              (%source :static
                       (loop for item in (sel::node-items src)
                             for i from 1
-                            collect (cons (princ-to-string i) (binder-node item)))
+                            collect (cons (format nil "~D" i) (binder-node item)))
                       nil '() nil)))
     (:clist (return-from classify
               (%source :static
@@ -994,7 +1000,7 @@ which is a map with one child per field; SQL has no way to iterate or count that
                        (%source :columns
                                 (loop for item in (getf spec :items)
                                       for i from 1
-                                      collect (cons (princ-to-string i) (binder-column item)))
+                                      collect (cons (format nil "~D" i) (binder-column item)))
                                 nil '() nil)))
            (:value
             (let ((v (getf spec :value)))
@@ -1160,7 +1166,11 @@ can only be the thing another aggregate iterates" name)
                                (relation-slots tr (source-relation src)) (snode-pos n))
                    :num (translator-dialect tr))))
     ;; Decided at translation time.
-    (make-literal tr (sel:make-num (princ-to-string (length (source-elements src)))) :num)))
+    ;;
+    ;; ~D, not PRINC-TO-STRING. Under a rebound *PRINT-BASE* the latter renders
+    ;; 12 as "C", MAKE-NUM then raises E_NOT_NUM, and that SEL-ERROR escapes
+    ;; TRY-TRANSLATE, which catches only SQL-ERROR.
+    (make-literal tr (sel:make-num (format nil "~D" (length (source-elements src)))) :num)))
 
 (defun translate-has (tr n)
   (let ((key-node (second (sel::node-items n))))
@@ -1330,11 +1340,19 @@ SQL counterpart" (snode-pos e)))
 
 Signals SQL-ERROR, whose message is written to be READ. Use this when you want
 to know why a rule cannot be pushed down."
+  ;; BEFORE the struct, not after. TRANSLATOR's DIALECT slot is declared
+  ;; :type string and SBCL enforces that at construction, so a non-string
+  ;; dialect signalled a raw TYPE-ERROR from inside %TRANSLATOR -- escaping
+  ;; TRY-TRANSLATE, which catches only SQL-ERROR -- before REQUIRE-TARGET, whose
+  ;; whole job is to turn a bad dialect name into a graceful refusal, ever ran.
+  ;; The slot type stays: it is a real invariant, and this moves its enforcement
+  ;; to after the refusal rather than removing it.
+  ;;
+  ;; The order below is contract too: a caller with both a bad dialect and a
+  ;; duplicate alias gets E_SQL_DIALECT, so those two must not be fused either.
+  (require-target dialect)
   (let ((tr (%translator dialect (make-bindings (or bindings '()))
                          (and (getf options :strict) t))))
-    ;; The order is contract: a caller with both a bad dialect and a duplicate
-    ;; alias gets E_SQL_DIALECT, so these two must not be fused into one pass.
-    (require-target dialect)
     (bindings-check-aliases (translator-bindings tr))
     (multiple-value-bind (names root) (const-scope (translator-bindings tr))
       (setf (translator-const-names tr) names

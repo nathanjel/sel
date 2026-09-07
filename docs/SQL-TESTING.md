@@ -599,14 +599,33 @@ immediately.
 ### Fix — mutation testing, as a committed tool
 
 *Built as `tools/mutate-sql.sh`, with the mutations as data in
-`sql/mutations.json`.* Eighteen of them, each a defect this layer has actually
-shipped or a plausible neighbour: drop the `textCollate`, swap `INSTR`'s
-arguments, return the params pool unwalked, use `+` where `array_merge` is meant,
-add `&` to the byte-comparison list, upper-case every registration key, drop the
-`(?s)` prefix, choose the regex flag by argument count. Each is applied to a copy
-of the tree and the checks run in order — `sqlt`, `sqldoc`, then the three oracle
-modes — until one fails. The first that does is reported, because it answers
-"what would have told you" with the cheapest true answer.
+`sql/mutations.json`.* A hundred and fourteen of them at the time of writing,
+each a defect this layer has actually shipped or a plausible neighbour: drop the
+`textCollate`, swap `INSTR`'s arguments, return the params pool unwalked, use `+`
+where `array_merge` is meant, add `&` to the byte-comparison list, upper-case
+every registration key, drop the `(?s)` prefix, choose the regex flag by argument
+count. They cover every host that translates — 50 in `php/`, 28 in the shared
+`sql/` data, 15 in `lisp/`, 9 in `js/`, 7 in `python/`, 5 in `cpp/` — because a
+host whose code nothing mutates is a host whose guards are believed rather than
+checked.
+
+Each is applied to a copy of the tree and the checks run in order until one
+fails: the four `sqlt` runners (PHP, Python, JS, Lisp), the Lisp corpus again
+under `--print-base 16`, the Lisp unit tests, the map replay, `sqldoc`, the
+oracle's coverage and expression modes, the C++ `sqlt`, and finally the oracle's
+row mode. The first that fails is reported, because it answers "what would have
+told you" with the cheapest true answer, and the order is cheapest-first for
+exactly that reason — a mutation any dynamic host can see never pays for a C++
+build.
+
+Two of those lanes exist because a `.sqlt` case cannot state what they check.
+`--print-base 16` runs the whole corpus with the printer set hostile: `*PRINT-BASE*`
+belongs to the calling application and this layer may not read it, but a case
+file has no way to say so, and every other runner uses the standard printer. The
+Lisp unit tests carry the two checks that are not about a number at all — that a
+dialect which is not a string is refused rather than raising a `TYPE-ERROR` past
+`TRY-TRANSLATE`, and that a builder receives the dialect the documented contract
+promises. A case's registrations are JSON, and a builder is a function.
 
 Three properties make it a check rather than a gesture:
 
