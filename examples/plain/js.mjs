@@ -19,11 +19,13 @@ console.log('   2.50 + 2.50 =>', evaluate('2.50 + 2.50').asText());
 // form you compile each rule once and keep it.
 
 console.log('2. compile once, run many');
+// EXAMPLE-BEGIN
 const rule = compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")');
 for (const row of [{ QTY: '3', PRICE: '19.99' }, { QTY: '1', PRICE: '5.00' }]) {
   const ctx = Value.fromNative({ ...row, LIMIT: '50.00' });
   console.log(`   QTY=${row.QTY} PRICE=${row.PRICE} =>`, rule.run(ctx).asText());
 }
+// EXAMPLE-END
 
 // 3 — building a context ------------------------------------------------------
 // Pass money as *strings*. A JS number is a double and has already lost the

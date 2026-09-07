@@ -51,11 +51,8 @@ glance.
 - [Why](#why)
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Calling it from Python](#calling-it-from-python)
-- [Calling it from PHP](#calling-it-from-php)
-- [Calling it from JS](#calling-it-from-js)
-- [Calling it from C++](#calling-it-from-c)
-- [Calling it from Common Lisp](#calling-it-from-common-lisp)
+- [Calling it from your host](#calling-it-from-your-host)
+- [One rule, one answer](#one-rule-one-answer-a-worked-example)
 - [Integration patterns](#integration-patterns)
 - [The language in one screen](#the-language-in-one-screen)
 - [What makes the hosts agree](#what-makes-the-hosts-agree)
@@ -162,256 +159,96 @@ sel> SUM(A, _)
 6
 ```
 
-## Calling it from Python
+## Calling it from your host
 
+Five implementations, one answer. Each host below has a complete, runnable
+walkthrough in **[examples/plain/](examples/plain/)** — evaluating, compiling
+once and running per row, building a context, reading results back, errors, and
+`dependencies()`.
+
+All five print **byte-identical** output, and `tools/check-examples.sh` diffs
+them against each other. The claim that the hosts agree is therefore checked on
+the code you are being invited to copy, not asserted in prose beside it.
+
+| Host | Run it |
+|---|---|
+| [Python](examples/plain/python.py) | `PYTHONPATH=python python3 examples/plain/python.py` |
+| [PHP](examples/plain/php.php) | `php examples/plain/php.php` |
+| [JS](examples/plain/js.mjs) | `node examples/plain/js.mjs` |
+| [C++](examples/plain/cpp.cpp) | `cd cpp && make && ./build/example-plain` |
+| [Common Lisp](examples/plain/lisp.lisp) | `see the header of the file` |
+
+Three things every host does the same way, and the examples show each:
+
+- **Money is text.** `"19.99"`, never a float — a double has already lost the
+  exactness SEL exists to preserve, and the dynamic hosts refuse one rather than
+  pretend otherwise.
+- **Every failure carries a stable code and the position of the node that
+  actually failed.** Assert on the code; the message is human text and may change.
+- **`dependencies()` is static.** It says which fields a rule reads without
+  running it, which is how a frontend knows what to re-validate.
+
+The same fragment — compile once, then run it per row — in each host:
+
+### Python
+
+<!-- from: examples/plain/python.py -->
 ```python
-from sel import compile, evaluate, Value, SelError
-
-# Compile once, at boot. A Program is immutable and reusable.
 rule = compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")')
-
-# Run per request.
-ctx = Value.from_native({'QTY': '3', 'PRICE': '19.99', 'LIMIT': '50.00'})
-rule.run(ctx).as_text()                   # "over budget"
+for row in [{'QTY': '3', 'PRICE': '19.99'}, {'QTY': '1', 'PRICE': '5.00'}]:
+    ctx = Value.from_native({**row, 'LIMIT': '50.00'})
+    print(f"   QTY={row['QTY']} PRICE={row['PRICE']} =>", rule.run(ctx).as_text())
 ```
 
-Nested data. A list becomes a 1-based SEL list, so `ITEMS[1]` is the first line —
-the same as in PHP and JS:
+### PHP
 
-```python
-order = Value.from_native({
-    'CUSTOMER': 'Zażółć',
-    'ITEMS': [
-        {'SKU': 'AB-1234', 'QTY': '3', 'PRICE': '19.99'},
-        {'SKU': 'CD-5678', 'QTY': '1', 'PRICE': '5.01'},
-    ],
-})
-compile('ITEMS[1]["SKU"]').run(order).as_text()                    # "AB-1234"
-compile('SUM(ITEMS, _["QTY"] * _["PRICE"])').run(order).as_text()  # "64.98"
-```
-
-**Pass money as strings.** `from_native` refuses a `float` outright rather than
-guess a decimal form for one, because `19.99` is already not 19.99 by the time
-Python hands it over:
-
-```python
-Value.from_native({'PRICE': 19.99})
-# TypeError: cannot convert float 19.99 to SEL — pass a string such as "19.99"
-```
-
-Reading results, and reading back what a rule assigned — `run()` mutates the
-context you hand it:
-
-```python
-v = evaluate('SPLIT("a,b,c", ",")')
-v.size()                # 3
-v.keys()                # ['1', '2', '3']
-v.get('2').as_text()    # "b"
-v.as_text()             # "a"   — scalar context takes the first
-v.to_native()           # {'1': 'a', '2': 'b', '3': 'c'}
-
-ctx = Value.from_native({'QTY': '3', 'PRICE': '19.99'})
-compile('NET = QTY*PRICE; VAT = ROUND(NET*0.23,2); GROSS = NET+VAT').run(ctx)
-ctx.get('GROSS').as_text()      # "73.76"
-```
-
-`len(v)`, `v['2']` and `'2' in v` also work, for code that would rather read as
-Python than as the shared API. They are conveniences on top of it, not a
-replacement: `size()`, `get()` and `has()` are the spellings that appear in
-every host.
-
-Errors carry a stable code and the position of the node that actually failed:
-
-```python
-try:
-    evaluate('3 + "A"')
-except SelError as e:
-    print(f'{e.code} at {e.line}:{e.col}')
-# E_NOT_NUM at 1:5   — points at the "A", not at the +
-```
-
-The method names are snake_case here and camelCase in PHP and JS, which is the
-only difference between the bindings; `tools/check-api.sh` runs the same numbered
-probes through all five and diffs the answers, so "the only difference" is
-measured rather than asserted.
-
-## Calling it from PHP
-
+<!-- from: examples/plain/php.php -->
 ```php
-require 'php/src/bootstrap.php';
-use Sel\Sel; use Sel\Value; use Sel\SelError;
-
-// Compile once, at boot. A Program is immutable and reusable.
 $rule = Sel::compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")');
-
-// Run per request.
-$ctx = Value::fromNative(['QTY' => '3', 'PRICE' => '19.99', 'LIMIT' => '50.00']);
-echo $rule->run($ctx)->asText();          // "over budget"
+foreach ([['QTY' => '3', 'PRICE' => '19.99'], ['QTY' => '1', 'PRICE' => '5.00']] as $row) {
+    $ctx = Value::fromNative($row + ['LIMIT' => '50.00']);
+    printf("   QTY=%s PRICE=%s => %s\n", $row['QTY'], $row['PRICE'], $rule->run($ctx)->asText());
+}
 ```
 
-Nested data. A packed array becomes a 1-based list, so `ITEMS[1]` is the first
-line — the same as in JS:
+### JS
 
-```php
-$order = Value::fromNative([
-    'CUSTOMER' => 'Zażółć',
-    'ITEMS' => [
-        ['SKU' => 'AB-1234', 'QTY' => '3', 'PRICE' => '19.99'],
-        ['SKU' => 'CD-5678', 'QTY' => '1', 'PRICE' => '5.01'],
-    ],
-]);
-Sel::compile('ITEMS[1]["SKU"]')->run($order)->asText();                    // "AB-1234"
-Sel::compile('SUM(ITEMS, _["QTY"] * _["PRICE"])')->run($order)->asText();  // "64.98"
-```
-
-Reading results, and reading back what a rule assigned — `run()` mutates the
-context you hand it:
-
-```php
-$v = Sel::evaluate('SPLIT("a,b,c", ",")');
-$v->size();             // 3
-$v->keys();             // ['1','2','3']
-$v->get('2')->asText(); // "b"
-$v->asText();           // "a"   — scalar context takes the first
-$v->toNative();         // ['1'=>'a','2'=>'b','3'=>'c']
-
-$ctx = Value::fromNative(['QTY' => '3', 'PRICE' => '19.99']);
-Sel::compile('NET = QTY*PRICE; VAT = ROUND(NET*0.23,2); GROSS = NET+VAT')->run($ctx);
-$ctx->get('GROSS')->asText();   // "73.76"
-```
-
-Errors carry a stable code and the position of the node that actually failed:
-
-```php
-try { Sel::evaluate('3 + "A"'); }
-catch (SelError $e) { echo "{$e->code} at {$e->line}:{$e->col}"; }
-// E_NOT_NUM at 1:5   — points at the "A", not at the +
-```
-
-Match on `->code`, never on the message. Codes are listed in
-[`spec/errors.md`](spec/errors.md).
-
-## Calling it from JS
-
-Same shapes, same results:
-
+<!-- from: examples/plain/js.mjs -->
 ```js
-import { compile, evaluate, Value, SelError } from './js/src/sel.mjs';
-
 const rule = compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")');
-const ctx  = Value.fromNative({ QTY: '3', PRICE: '19.99', LIMIT: '50.00' });
-rule.run(ctx).asText();                            // "over budget"
-
-evaluate('0.10 + 0.20').asText();                  // "0.30"  (JS says 0.30000000000000004)
-
-const v = evaluate('SPLIT("a,b,c", ",")');
-v.size();                // 3        — a method, as in every other host
-v.get('2').asText();     // "b"
-v.toNative();            // {"1":"a","2":"b","3":"c"}
-
-try { evaluate('IF(1, "a", "b")'); }
-catch (e) { if (e instanceof SelError) console.log(e.code); }   // E_NOT_BOOL
+for (const row of [{ QTY: '3', PRICE: '19.99' }, { QTY: '1', PRICE: '5.00' }]) {
+  const ctx = Value.fromNative({ ...row, LIMIT: '50.00' });
+  console.log(`   QTY=${row.QTY} PRICE=${row.PRICE} =>`, rule.run(ctx).asText());
+}
 ```
 
-The APIs are deliberately parallel, and `tools/check-api.sh` holds them to it —
-54 probes run through each host's own binding and diffed. `size()` is a method
-in all five, not a property in one of them, and the only remaining differences
-are the ones a language forces: how each spells a kind, and camelCase in PHP and
-JS against snake_case in C++ and Python.
+### C++
 
-**Branch on kind with the predicates**, which read the same everywhere:
-
-```js
-if (v.isText()) { ... }              // JS
-```
-```php
-if ($v->isText()) { ... }            // PHP
-```
+<!-- from: examples/plain/cpp.cpp -->
 ```cpp
-if (v.is_text()) { ... }             // C++
+  const sel::Program rule = sel::compile("IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")");
+  for (const auto& row : std::vector<std::pair<std::string, std::string>>{
+           {"3", "19.99"}, {"1", "5.00"}}) {
+    sel::Value ctx = sel::Value::none();
+    ctx.set("QTY", sel::Value::text(row.first));
+    ctx.set("PRICE", sel::Value::text(row.second));
+    ctx.set("LIMIT", sel::Value::text("50.00"));
+    std::cout << "   QTY=" << row.first << " PRICE=" << row.second
+              << " => " << rule.run(ctx).as_text() << "\n";
+  }
 ```
+
+### Common Lisp
+
+<!-- from: examples/plain/lisp.lisp -->
 ```lisp
-(when (sel:value-text-p v) ...)      ; Lisp
+  (let ((rule (sel:compile-source "IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")")))
+    (loop for (qty price) in '(("3" "19.99") ("1" "5.00"))
+          do (format t "   QTY=~a PRICE=~a => ~a~%" qty price
+                     (sel:as-text
+                      (sel:run rule (ctx-of `(("QTY" . ,qty) ("PRICE" . ,price)
+                                              ("LIMIT" . "50.00"))))))))
 ```
-
-The kind *values* cannot be uniform — they are a string in JS, a class constant
-in PHP, an enum in C++ and a keyword in Lisp — so the constants are exported in
-each host (`Value.BOOL`, `Value::BOOL`, `sel::Kind::Bool`, `:bool`) for code
-that would rather switch than branch, but the predicates are the portable form.
-
-**Pass money as strings, not native numbers.** A JS `number` or a PHP `float` has
-already lost the exactness SEL exists to preserve; `Value::fromNative` rejects
-PHP floats outright rather than pretend otherwise.
-
-## Calling it from C++
-
-Three files to copy — `cpp/sel.hpp`, `cpp/sel_ast.hpp` and `cpp/sel.cpp` — plus
-the vendored `cpp/third_party/srell/`. You include `sel.hpp`; `sel_ast.hpp` is
-internal and only has to sit beside `sel.cpp`, which is what includes it. Compile
-`sel.cpp` as part of your target; there is no library to build and nothing to fetch.
-
-For SEL→SQL as well, add `cpp/sel_sql.hpp` and the five internal headers and six
-`.cpp` files beside it (`sel_sql*.{hpp,cpp}`), and include `sel_sql.hpp`. It is a
-strict addition — the evaluator's own list does not change — and a target that
-never calls `Sql::translate` pays nothing for it: the generated dialect table is
-`constexpr` `.rodata` with no static constructor, and `--gc-sections` drops all
-of it. Or link the library and get both.
-
-```cpp
-#include "sel.hpp"
-
-sel::Program rule = sel::compile(R"(IF(QTY * PRICE > LIMIT, "over budget", "ok"))");
-
-sel::Value ctx = sel::Value::none();
-ctx.set("QTY", sel::Value::num("3"));
-ctx.set("PRICE", sel::Value::num("19.99"));
-ctx.set("LIMIT", sel::Value::num("50.00"));
-
-rule.run(ctx).as_text();                       // "over budget"
-sel::evaluate("0.10 + 0.20").as_text();        // "0.30"  (a double says 0.30000000000000004)
-
-for (const std::string& d : rule.dependencies()) { /* LIMIT, PRICE, QTY */ }
-
-try { sel::evaluate(R"(IF(1, "a", "b"))"); }
-catch (const sel::SelError& e) { e.code(); }   // E_NOT_BOOL
-```
-
-There is no `from_native(double)` on purpose: a `double` has already lost the
-exactness SEL exists to preserve, so money is passed as a string and the compiler
-says so rather than the arithmetic quietly disagreeing with the backend.
-
-`make` builds the CLI and the harness; `make test` runs the unit tests and the
-conformance suite. A `CMakeLists.txt` is there for projects that prefer it.
-
-**`Value` is a handle.** Copying one is cheap and the copies refer to the same
-value, as they do in every other host; `clone()` is the deep copy. If you are
-upgrading from 0.2.0 or earlier, that is the one thing that changed: `Value b =
-a;` no longer isolates `b`, and `a.clone()` does.
-
-## Calling it from Common Lisp
-
-An ordinary ASDF system. Its one dependency is cl-ppcre.
-
-```lisp
-(ql:quickload :sel-lang)
-
-(defparameter *rule* (sel:compile-source "IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")"))
-
-(let ((ctx (sel:from-native '(("QTY" . "3") ("PRICE" . "19.99") ("LIMIT" . "50.00")))))
-  (sel:as-text (sel:run *rule* ctx)))          ; => "over budget"
-
-(sel:as-text (sel:evaluate "0.10 + 0.20"))     ; => "0.30"
-(sel:dependencies *rule*)                      ; => ("LIMIT" "PRICE" "QTY")
-
-(handler-case (sel:evaluate "IF(1, \"a\", \"b\")")
-  (sel:sel-error (e) (sel:sel-error-code e)))  ; => "E_NOT_BOOL"
-```
-
-`from-native` refuses floats and ratios: a ratio cannot carry SEL's scale — 2.50
-and 5/2 are the same ratio and different SEL values — and a float has no exact
-decimal form at all. Pass decimal strings.
-
-Run the tests with `(asdf:test-system :sel-lang)`, or `lisp/bin/test`.
 
 ## One rule, one answer: a worked example
 
@@ -651,7 +488,7 @@ land on the same set.
 spec/          SPEC.md, grammar.md, errors.md — normative
 conformance/   *.selt — normative; every implementation must pass
 docs/          LANGUAGE.md (rule authors), EXTENDING.md (contributors)
-               SQL-TRANSLATION.md + SQL-TESTING.md (the SEL->SQL layer)
+               SQL-TRANSLATION.md + history/SQL-TESTING.md (the SEL->SQL layer)
 sql/           MAP.md, errors.md, dialects/*.json, cases/*.sqlt, mutations.json
 python/        sel/ (package sel), bin/, tests/
 php/           src/ (namespace Sel\), bin/sel, bin/conformance

@@ -4,7 +4,7 @@
 #
 # This is the check the .sqlt suite cannot be. A case asserts the string the
 # translator emits; a map entry is a claim that the string MEANS what SEL means,
-# and only a server can settle that. See docs/SQL-TESTING.md §3.
+# and only a server can settle that. See docs/history/SQL-TESTING.md §3.
 #
 # Needs a database, and says so rather than failing when there is none:
 #

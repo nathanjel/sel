@@ -31,7 +31,7 @@ CHECKS = [
     # JSON, which meant every Python-side guard was believed rather than
     # checked -- and the cross-host review's whole finding was that the two
     # hosts diverge exactly where nothing was watching. A check that cannot
-    # reach half the code under test is docs/SQL-TESTING.md's Class G.
+    # reach half the code under test is docs/history/SQL-TESTING.md's Class G.
     ('sqlt (python)',     ['python3', 'python/bin/sqlt']),
     # And the third host, for the same reason. js/src/sql is 3,300 lines whose
     # host-shaped decisions -- Map where the others use a native ordered map,

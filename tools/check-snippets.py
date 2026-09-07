@@ -30,7 +30,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCS = ['README.md', 'docs/LANGUAGE.md', 'docs/EXTENDING.md',
-        'docs/SQL-TRANSLATION.md', 'docs/SQL-TESTING.md', 'PACKAGING.md']
+        'docs/SQL-TRANSLATION.md', 'docs/history/SQL-TESTING.md', 'PACKAGING.md']
 
 FROM = re.compile(r'^<!--\s*from:\s*(\S+)\s*-->\s*$')
 

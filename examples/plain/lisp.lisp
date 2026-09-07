@@ -36,12 +36,14 @@
   ;; Parsing is cheap but not free, and a program is immutable and reusable.
 
   (format t "2. compile once, run many~%")
+  ;; EXAMPLE-BEGIN
   (let ((rule (sel:compile-source "IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")")))
     (loop for (qty price) in '(("3" "19.99") ("1" "5.00"))
           do (format t "   QTY=~a PRICE=~a => ~a~%" qty price
                      (sel:as-text
                       (sel:run rule (ctx-of `(("QTY" . ,qty) ("PRICE" . ,price)
                                               ("LIMIT" . "50.00"))))))))
+  ;; EXAMPLE-END
 
   ;; 3 — building a context ------------------------------------------------------
   ;; Money is TEXT, never a CL number. A ratio loses the scale (2.50 and 5/2 are

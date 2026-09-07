@@ -15,9 +15,7 @@
 // hosts import `map` from the same module they import `Sql` from; C++ keeps the
 // registry in sel_sql_map.hpp and the emitter in sel_sql_emit.hpp, both marked
 // internal to the SQL layer, so an application that registers a dialect
-// includes them alongside the public sel_sql.hpp. Registering is a startup-time
-// act by the program that ships the translator, not something a consumer of a
-// rule does, which is why the public header carries translation and not this.
+// includes those beside the public sel_sql.hpp.
 
 #include "../../cpp/sel_sql.hpp"
 #include "../../cpp/sel_sql_emit.hpp"

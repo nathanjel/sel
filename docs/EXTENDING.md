@@ -115,46 +115,11 @@ example is part of core SEL, so both can be lifted as-is.
 
 Worked example: `ORD_SUFFIX(n)`, returning `1st`, `2nd`, `3rd`, `4th`.
 
-#### 1. Spec
+All of it — the spec row, the conformance cases, and one file per host — is in
+**[examples/fn-simple/](../examples/fn-simple/)**, whose README carries the order
+of work and the three places that have no autoloader. The JS:
 
-Add a row to the right table in `spec/SPEC.md` §7. If it can fail in a new way,
-add the code to `spec/errors.md` — reuse an existing code unless the new
-condition is genuinely distinct.
-
-```markdown
-| `ORD_SUFFIX(n)` | TEXT — `n` with its English ordinal suffix; `n` must be a non-negative integer |
-```
-
-#### 2. Conformance cases
-
-In the matching `conformance/*.selt`. Write these before the code — they should
-fail for the right reason first.
-
-```
-### name: txt.ord-suffix.basic
---- source
-ORD_SUFFIX(1) & " " & ORD_SUFFIX(2) & " " & ORD_SUFFIX(3) & " " & ORD_SUFFIX(4)
---- expect
-text "1st 2nd 3rd 4th"
-===
-### name: txt.ord-suffix.teens
---- source
-ORD_SUFFIX(11) & " " & ORD_SUFFIX(12) & " " & ORD_SUFFIX(13)
---- expect
-text "11th 12th 13th"
-===
-### name: txt.ord-suffix.rejects-fraction
---- source
-ORD_SUFFIX(1.5)
---- expect
-error E_NOT_INT
-===
-```
-
-#### 3. JS
-
-In the relevant `js/src/builtins/*.mjs`:
-
+<!-- from: examples/fn-simple/js.mjs -->
 ```js
 define({
   name: 'ORD_SUFFIX', min: 1, max: 1,
@@ -168,86 +133,16 @@ define({
 });
 ```
 
+`php.php`, `cpp.cpp`, `lisp.lisp` and `python.py` sit beside it, saying the same
+thing in their own spelling.
+
 Note what is *not* there: no argument count check, no type check, no `eval` call,
 no try/catch. `nonNegInt(0)` evaluates argument 0 once, requires it to be a whole
 number ≥ 0, and raises `E_NOT_INT` or `E_RANGE` against **that argument's**
-source position if it is not.
+source position if it is not. That is [the Args API](#the-args-api) doing the
+work, and it is why a Lane A function is four lines rather than twenty.
 
-#### 4. PHP
-
-In the matching `php/src/Builtins/*.php`, inside `register()`:
-
-```php
-Registry::define(['name' => 'ORD_SUFFIX', 'min' => 1, 'max' => 1,
-    'fn' => static function (Args $a): Value {
-        $n = $a->nonNegInt(0);
-        $tens = $n % 100;
-        if ($tens >= 11 && $tens <= 13) {
-            return Value::text("{$n}th");
-        }
-        return Value::text($n . match ($n % 10) { 1 => 'st', 2 => 'nd', 3 => 'rd', default => 'th' });
-    }]);
-```
-
-#### 5. C++
-
-In the matching section of `cpp/sel.cpp`, inside the relevant `register_*()`:
-
-```cpp
-define(Spec{"ORD_SUFFIX", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-              const long long n = a.non_neg_int(0);
-              const long long tens = n % 100;
-              if (tens >= 11 && tens <= 13) return make_text(std::to_string(n) + "th");
-              switch (n % 10) {
-                case 1: return make_text(std::to_string(n) + "st");
-                case 2: return make_text(std::to_string(n) + "nd");
-                case 3: return make_text(std::to_string(n) + "rd");
-                default: return make_text(std::to_string(n) + "th");
-              }
-            }});
-```
-
-#### 6. Common Lisp
-
-In the matching `lisp/src/builtins/*.lisp`:
-
-```lisp
-(define-builtin "ORD_SUFFIX" 1 1
-  (lambda (a ctx)
-    (declare (ignore ctx))
-    (let* ((n (args-non-neg-int a 0))
-           (tens (mod n 100)))
-      (%text (format nil "~d~a" n
-                     (if (<= 11 tens 13)
-                         "th"
-                         (case (mod n 10) (1 "st") (2 "nd") (3 "rd") (t "th"))))))))
-```
-
-#### 7. Python
-
-In the matching `python/sel/builtins/*.py`:
-
-```python
-def _ord_suffix(a, ctx):
-    n = a.non_neg_int(0)
-    tens = n % 100
-    if 11 <= tens <= 13:
-        return Value.text(f'{n}th')
-    return Value.text(f'{n}' + {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th'))
-
-
-define('ORD_SUFFIX', 1, 1, fn=_ord_suffix)
-```
-
-A new file must be added to the `:components` list in `lisp/sel-lang.asd`, to
-`php/src/bootstrap.php` on the PHP side, and to the imports in
-`python/sel/builtins/__init__.py` — none of the three has an autoloader.
-
-#### 8. Check
-
-```
-tools/check.sh
-```
+Then `tools/check.sh`, green on every host, or it isn't done.
 
 ---
 
@@ -255,22 +150,13 @@ tools/check.sh
 
 A lazy function declares `lazy: true` and reads argument **nodes** instead of
 values. Nothing is evaluated for it; it decides what to evaluate, when, and how
-many times. The smallest possible example is `IF`, which is why `IF` needs no
-syntax:
-
-```js
-define({
-  name: 'IF', min: 2, max: 3, lazy: true,
-  fn: (args) => {
-    if (args.bool(0)) return args.val(1);        // arg 2 is never evaluated
-    if (args.count() === 3) return args.val(2);
-    return Value.text('');
-  },
-});
-```
+many times. The smallest one in core is `IF` — which is why `IF` needs no syntax
+— in `js/src/builtins/control.mjs` and its four siblings.
 
 The interesting half is a function that evaluates one body argument **once per
-element**, with a name bound to that element — an aggregate. Worked example:
+element**, with a name bound to that element: an aggregate. Worked example,
+again in all five hosts with its cases, in
+**[examples/fn-complex/](../examples/fn-complex/)**:
 
 **`FIRST(list, body)`** — the first element for which `body` is `TRUE`, or TEXT
 `""` if none matches. Like `FILTER`, but it stops at the first hit and returns
@@ -283,60 +169,7 @@ FIRST(ITEMS, IT, IT["QTY"] > 0)["SKU"]           # first line that has a quantit
 FIRST((1, 2), _ > 5)                             # "" — nothing matched
 ```
 
-Four things this has to get right, and all four are the reason Lane B is not the
-default:
-
-1. **Declare `binds: true`.** That is what tells `dependencies()` the second
-   argument of the three-argument form is a *binder*, not a variable being read.
-   Without it, `FIRST(ITEMS, IT, IT["QTY"] > 0)` reports `IT` as an input field
-   the host is expected to supply.
-2. **Push a frame per element, and pop it on the way out — including when the
-   body raises.** A body that fails must not leave the binder in scope for
-   whatever runs next.
-3. **Bind `_K` as well as the element**, so the body can see the key.
-4. **Handle the no-children cases** the way §7.3 specifies: a scalar behaves as a
-   one-element list containing itself, and a childless NONE is genuinely empty.
-   The second case is what `FILTER` returns when nothing matched.
-
-#### Conformance cases
-
-```
-### name: agg.first.matches
---- source
-FIRST((1, 8, 3, 9), _ > 5)
---- expect
-num 8
-===
-### name: agg.first.no-match-is-empty-text
---- source
-FIRST((1, 2), _ > 5)
---- expect
-text ""
-===
-### name: agg.first.stops-at-the-first-hit
---- note
-The body must not run for later elements — 1/0 would raise if it did.
---- source
-FIRST((8, 1), IF(_ > 5, TRUE, 1/0 == 1))
---- expect
-num 8
-===
-### name: agg.first.named-binder
---- source
-FIRST((1, 8), X, X > 5)
---- expect
-num 8
-===
-### name: agg.first.body-must-be-bool
---- source
-FIRST((1, 8), _)
---- expect
-error E_NOT_BOOL
-===
-```
-
-#### JS
-
+<!-- from: examples/fn-complex/js.mjs -->
 ```js
 import { define } from '../registry.mjs';
 import { Value, NONE } from '../value.mjs';
@@ -365,115 +198,20 @@ define({
 });
 ```
 
-#### PHP
+Four things that code has to get right, and all four are the reason Lane A is
+the default. [The README beside it](../examples/fn-complex/) says why each one
+bites:
 
-```php
-Registry::define(['name' => 'FIRST', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true,
-    'fn' => static function (Args $a, Context $ctx): Value {
-        $three = $a->count() === 3;
-        $binder = $three ? $a->symbol(1) : '_';
-        $body = $a->node($three ? 2 : 1);
+1. **Declare `binds: true`** — or `dependencies()` reports the binder as an
+   input field the host is expected to supply.
+2. **Push a frame per element and pop it on the way out, including when the body
+   raises** — or a failed body leaves the binder in scope for whatever runs next.
+3. **Bind `_K` as well as the element.**
+4. **Handle the no-children cases** the way spec/SPEC.md §7.3 specifies: a scalar
+   is a one-element list containing itself; a childless NONE is genuinely empty,
+   which is what `FILTER` returns when nothing matched.
 
-        $list = $a->val(0);
-        $items = $list->size() > 0 ? $list->entries()
-            : ($list->kind === Value::NONE ? [] : [['1', $list]]);
-
-        foreach ($items as [$key, $item]) {
-            $ctx->pushFrame([$binder => $item, '_K' => Value::text($key)]);
-            try {
-                if ($a->evalNode($body)->asBool($body['pos'])) {
-                    return $item->copy();
-                }
-            } finally {
-                $ctx->popFrame();
-            }
-        }
-        return Value::text('');
-    }]);
-```
-
-#### C++
-
-```cpp
-define(Spec{"FIRST", 2, 3, /*lazy=*/true, /*binds=*/true, nullptr,
-            [](Args& a, Context& ctx) -> Value {
-              const bool three = a.count() == 3;
-              const std::string binder = three ? a.symbol(1) : std::string("_");
-              const Node& body = a.node(three ? 2 : 1);
-
-              for (const auto& [key, item] : elements(a.val(0))) {
-                ctx.frames.push_back({{binder, item}, {"_K", make_text(key)}});
-                bool hit = false;
-                try {
-                  hit = a.eval(body).as_bool(body.pos);
-                } catch (...) {
-                  ctx.frames.pop_back();   // C++ has no `finally`
-                  throw;
-                }
-                ctx.frames.pop_back();
-                if (hit) return item;
-              }
-              return make_text("");
-            }});
-```
-
-`elements()` is the shared helper next to the core aggregates; it is the
-no-children rule from point 4 above, written once.
-
-#### Common Lisp
-
-```lisp
-(define-builtin "FIRST" 2 3
-  (lambda (a ctx)
-    (let* ((three (= (args-count a) 3))
-           (binder (if three (args-symbol a 1) "_"))
-           (body (args-node a (if three 2 1)))
-           (list (args-val a 0))
-           (items (cond ((plusp (value-size list)) (value-entries list))
-                        ((eq (value-kind list) :none) '())
-                        (t (list (cons "1" list))))))
-      (loop for (key . item) in items
-            do (ctx-push-frame ctx (list (cons binder item)
-                                         (cons "_K" (make-text key))))
-               (let ((hit (unwind-protect
-                               (as-bool (args-eval a body) (node-pos body))
-                            (ctx-pop-frame ctx))))
-                 (when hit (return (value-copy item))))
-            finally (return (make-text "")))))
-  :lazy t :binds t)
-```
-
-#### Python
-
-```python
-def _first(args, ctx):
-    three = args.count() == 3
-    binder = args.symbol(1) if three else '_'
-    body = args.node(2 if three else 1)
-
-    lst = args.val(0)
-    items = elements(lst)          # the shared no-children helper, point 4
-
-    for key, item in items:
-        ctx.push_frame({binder: item, '_K': Value.text(key)})
-        try:
-            if args.eval_node(body).as_bool(body.pos):
-                return item.clone()
-        finally:
-            ctx.pop_frame()
-    return Value.text('')
-
-
-define('FIRST', 2, 3, lazy=True, binds=True, fn=_first)
-```
-
-`try/finally` is point 2, and it is the same shape as JS's `finally`, PHP's
-`finally`, Lisp's `unwind-protect` and the explicit `catch(...)`-and-rethrow C++
-needs. `elements()` is the shared helper next to the core aggregates.
-
-All five return `t"8"` for `FIRST((1, 8, 3, 9), _ > 5)`, `t""` for no match, and
-`E_NOT_BOOL` at column 14 for `FIRST((1,8), _)` — which is what
-`tools/check.sh` is for.
+---
 
 ### Unusual arity
 

@@ -15,7 +15,7 @@ is a claim about semantics. A case asserting that `CHAR(233)` translates to
 the answer is `NULL` where SEL says `é`. Above 128 it disagrees, below 128 it
 agrees, and nothing in a case file can tell.
 
-See `docs/SQL-TESTING.md` for the analysis this came out of.
+See `docs/history/SQL-TESTING.md` for the analysis this came out of.
 
 ## Running it
 
@@ -288,7 +288,7 @@ Two guards, both of which have already caught something:
 
 `fixture.sql` exists because the original did not. The M3 row-parity check ran
 against a database made by hand at a shell, three commit messages cite its
-result, and the database is gone. See `docs/SQL-TESTING.md` §10.
+result, and the database is gone. See `docs/history/SQL-TESTING.md` §10.
 
 ## What it found on its first two runs
 

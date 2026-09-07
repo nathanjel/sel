@@ -30,10 +30,12 @@ print('   2.50 + 2.50 =>', evaluate('2.50 + 2.50').as_text())
 # form you compile each rule once and keep it.
 
 print('2. compile once, run many')
+# EXAMPLE-BEGIN
 rule = compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")')
 for row in [{'QTY': '3', 'PRICE': '19.99'}, {'QTY': '1', 'PRICE': '5.00'}]:
     ctx = Value.from_native({**row, 'LIMIT': '50.00'})
     print(f"   QTY={row['QTY']} PRICE={row['PRICE']} =>", rule.run(ctx).as_text())
+# EXAMPLE-END
 
 # 3 - building a context --------------------------------------------------------
 # Pass money as *strings*. A Python float has already lost the exactness SEL

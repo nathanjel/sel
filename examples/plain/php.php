@@ -26,11 +26,13 @@ echo '   2.50 + 2.50 => ', Sel::evaluate('2.50 + 2.50')->asText(), "\n";
 // web app you compile each rule once at boot and keep it.
 
 echo "2. compile once, run many\n";
+// EXAMPLE-BEGIN
 $rule = Sel::compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")');
 foreach ([['QTY' => '3', 'PRICE' => '19.99'], ['QTY' => '1', 'PRICE' => '5.00']] as $row) {
     $ctx = Value::fromNative($row + ['LIMIT' => '50.00']);
     printf("   QTY=%s PRICE=%s => %s\n", $row['QTY'], $row['PRICE'], $rule->run($ctx)->asText());
 }
+// EXAMPLE-END
 
 // 3 — building a context -------------------------------------------------------
 // Pass money as *strings*. A PHP float has already lost the exactness SEL exists

@@ -50,6 +50,7 @@ int main() {
   // Parsing is cheap but not free, and a Program is immutable and reusable.
 
   std::cout << "2. compile once, run many\n";
+  // EXAMPLE-BEGIN
   const sel::Program rule = sel::compile("IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")");
   for (const auto& row : std::vector<std::pair<std::string, std::string>>{
            {"3", "19.99"}, {"1", "5.00"}}) {
@@ -60,6 +61,7 @@ int main() {
     std::cout << "   QTY=" << row.first << " PRICE=" << row.second
               << " => " << rule.run(ctx).as_text() << "\n";
   }
+  // EXAMPLE-END
 
   // 3 — building a context ------------------------------------------------------
   // Money is TEXT, never a double. C++ has no exact decimal type and SEL has no
