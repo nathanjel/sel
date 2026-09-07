@@ -2473,10 +2473,16 @@ into *is the same translator*. §11.5 is the argument for it: 339 assertion case
 are 339 beliefs, and both of the transcription defects above were found by
 reading rather than by running.
 
-**M8 — alpha.** Commit to GitHub and mark it with a lightweight tag. Nothing
-is published to Packagist, npm or PyPI, and `tools/check.sh` is not required to
-be green: the point of the tag is to be able to name the state the PHP+MariaDB
-proof passed in, not to ship it. See §15.
+**M8 — alpha. NOT DONE, and it is the only one.** Commit to GitHub and mark it
+with a lightweight tag. Nothing is published to Packagist, npm or PyPI, and
+`tools/check.sh` is not required to be green: the point of the tag is to be able
+to name the state the PHP+MariaDB proof passed in, not to ship it. See §15.
+
+The tag was never cut. Work carried straight past it — M9, then the parser
+migration, then three rounds of limits — so the state it was meant to name is
+long gone, and the honest options now are to tag the present or to drop the
+milestone. It is left open rather than quietly deleted because an unmarked
+milestone in a tracker is how a tracker stops being one.
 
 **M9 — JS port. DONE.** Transcribed from the Python, generated map and generated
 case table consumed as-is, the same `sql/cases/` suite passing byte-identically:
@@ -2486,6 +2492,9 @@ case table consumed as-is, the same `sql/cases/` suite passing byte-identically:
 | `php/bin/sqlt` | 368 | 266, plus 1 leaf pair compared entry by entry |
 | `python/bin/sqlt` | 368 | 266 |
 | `js/bin/sqlt.mjs` | 368 | 266 |
+
+(The counts are M9's, and are left as they were: the suite has grown to 377 since,
+and a milestone record that silently tracks the present is not a record.)
 
 All 368 on the first full run, which is what M6 predicted would happen the second
 time: the map is data, so a third host consuming it has almost nothing left to
@@ -2551,8 +2560,8 @@ whatever plain version they carry, the tag names the commit, and the spelling
 problem is deferred to the first *published* prerelease, where the fix is a
 ten-line normalisation table in `check-version.sh`.
 
-`tools/check.sh` is likewise not a gate on the tag. It runs six implementations
-of a language of which two will have a SQL layer; a red step somewhere in that
+`tools/check.sh` is likewise not a gate on the tag. It runs eight configurations
+of a language of which three have a SQL layer; a red step somewhere in that
 matrix is not a reason to withhold a marker on work that has been proven
 end to end against a real MariaDB. **M4 is the gate that matters.** The tag is
 bookkeeping.

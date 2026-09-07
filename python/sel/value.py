@@ -142,11 +142,6 @@ class Value:
         self.children[key] = value
         return self
 
-    def delete(self, key: str) -> Value:
-        if self.children:
-            self.children.pop(key, None)
-        return self
-
     # --- scalar context (§3.2) ------------------------------------------------
 
     def scalar_source(self, pos: Pos | None = None) -> Value:

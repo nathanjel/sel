@@ -4,8 +4,8 @@
   "version-semver": "0.3.0",
   "description": [
     "A small expression language for validation rules.",
-    "One rule file evaluates identically on PHP, JavaScript, C++23 and Common Lisp, held to a normative spec by a conformance suite and a differential fuzzer that runs all four and compares them byte for byte.",
-    "Exact decimal arithmetic, no floating point, no truthiness, code-point-accurate text, and a regex subset both PCRE and ECMAScript agree on."
+    "One rule file evaluates identically on PHP, JavaScript, Python, C++23 and Common Lisp, held to a normative spec by a conformance suite and a differential fuzzer that runs all five and compares them byte for byte.",
+    "Exact decimal arithmetic, no floating point, no truthiness, code-point-accurate text, and a regex subset every host's engine agrees on."
   ],
   "homepage": "https://github.com/nathanjel/sel",
   "license": "MIT",

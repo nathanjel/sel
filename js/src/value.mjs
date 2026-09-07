@@ -77,11 +77,6 @@ export class Value {
     return this;
   }
 
-  delete(key) {
-    if (this.children) this.children.delete(key);
-    return this;
-  }
-
   // --- scalar context (§3.2) ------------------------------------------------
 
   // The value that supplies the scalar: itself, or its first child, recursively.

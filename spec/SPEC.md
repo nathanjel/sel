@@ -702,8 +702,10 @@ Functions taking BIN accept TEXT and encode it as UTF-8 first.
 
 ### 7.8 Regular expressions
 
-SEL accepts a **subset of syntax that PCRE and ECMAScript agree on**, checked at
-compile time. Anything outside the subset is `E_REGEX_SYNTAX` with the offset of
+SEL accepts a **subset of syntax every host's regex engine agrees on**, checked
+at compile time. There are four of them behind five hosts — PCRE in PHP,
+ECMAScript in JS and (through SRELL) in C++, Python's `re`, and cl-ppcre in Lisp
+— and the subset is the intersection. Anything outside the subset is `E_REGEX_SYNTAX` with the offset of
 the offending character — a clear failure instead of a silent divergence between
 backend and frontend.
 
@@ -734,8 +736,8 @@ lookbehind, atomic groups, possessive quantifiers, inline modifiers `(?i)`,
   Negate the whole class instead. A leading `]` is likewise rejected — PCRE reads
   `[]` as a literal bracket and ECMAScript as an empty class — so write `\]`.
 
-**`\d`, `\w` and `\s` are rewritten, not passed through.** Both hosts expand them
-into explicit ASCII classes before compiling:
+**`\d`, `\w` and `\s` are rewritten, not passed through.** Every host expands
+them into explicit ASCII classes before compiling:
 
 | Escape | Becomes |
 |---|---|
@@ -761,9 +763,15 @@ between backend and frontend. Instead:
   `[^\n]` when you mean "not a newline"; that is portable and says what it means.
 - **`^` and `$` anchor only to the ends of the subject.** PCRE's `$` otherwise
   also matches before a trailing newline, so PHP must additionally compile with
-  the `D` modifier.
+  the `D` modifier. Python's `re` and cl-ppcre behave like PCRE here and have no
+  such modifier, so both hosts instead **lower `^` and `$` to `\A` and `\Z`**
+  after validating the pattern — the same rule reached by rewriting rather than
+  by a flag.
 
-Four requirements on implementations, without which the two hosts diverge:
+Four requirements on implementations, without which the hosts diverge. Each is
+written for the two engines SEL started with; the three added since each needed
+its own spelling of the same rule, and the third requirement below is where they
+differ most:
 
 1. **Compile with `u` and dotall in both hosts** (`us` in JS, `usD` in PHP), and
    expand the class escapes as above. `u` gives code point matching in both; the
@@ -783,15 +791,29 @@ A capture that did not participate in the match yields TEXT `""`.
 
 ## 8. Host interface
 
-Both implementations expose the same shape:
+Every implementation exposes the same shape:
 
 ```
 Sel.compile(source)          -> Program        # throws on syntax error
 Program.run(context)         -> Value
 Program.dependencies()       -> array of variable names, upper case
-Value.text/bin/num/bool/list/fromNative/toNative
+Program.ast                  -> the parse tree
+Value.text/bin/num/bool/list
+Value.fromNative/toNative                      # where the host has native data
 Value.isNone/isText/isBin/isBool               # kind predicates
 ```
+
+`fromNative`/`toNative` convert between a host's own maps and lists and a
+`Value`. C++ has neither, and deliberately: it has no native map or list to
+convert *from* — `Value.list` and `Value.set` are how a C++ program builds one,
+and a conversion from `std::map<std::string, std::variant<…>>` would be inventing
+a native type rather than accepting one. The other four hosts have an obvious
+candidate and all four have it.
+
+`Program.ast` is the parse tree, and it is public because the SEL→SQL layer is
+the second thing that walks it. It is the one part of this list whose *shape* is
+not specified here: `spec/grammar.md` names the productions, and a host's own
+tree is its business.
 
 **Constructors validate at the boundary.** `Value.text` raises `E_UTF8` on input
 that is not valid UTF-8, and `Value.num` canonicalises its argument (§4.1) and

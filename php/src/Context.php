@@ -6,6 +6,12 @@ declare(strict_types=1);
 
 namespace Sel;
 
+/**
+ * @internal One evaluation's binder frames and recursion depth. spec/SPEC.md §8
+ * does not list it, nothing outside the evaluator constructs one, and C++ and
+ * Lisp never exposed it. PHP has no way to hide a namespaced class, so this
+ * says so instead; JS and Python stopped exporting theirs.
+ */
 final class Context
 {
     public Value $root;

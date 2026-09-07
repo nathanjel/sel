@@ -50,18 +50,27 @@ Categories:
 | `op` | operators, including variant selection |
 | `func` | the mapped functions, per dialect |
 | `norm` | stage 1: what inlines and what is refused |
-| `kind` | static kind inference and what it decides |
+| `kinds` | static kind inference and what it decides |
 | `cond` | `IF` and `COND` |
 | `mode` | inline, params and debug rendering |
 | `dialect` | targets, bases, versions and runtime registration |
 | `strict` | caveats made fatal |
 | `refuse` | everything that cannot be translated, and where it fails |
+| `agg` | the aggregates: unrolling, relations, `JOIN`, element order |
+| `bind` | the binding kinds and what each refuses |
+| `const` | constant folding, and what counts as knowable |
+| `register` | runtime `define` and `defineDialect` |
+| `pg` / `sqlite` | what one target does that the others do not |
+| `neutral` | that a host's own spelling does not reach the output |
+| `pin` | a rendering some other document quotes, so it cannot drift |
+| `review` | a finding from an adversarial review, kept as a case |
 
 ## How the cases are read
 
 **No host reads this directory.** `tools/gen-sql-cases.mjs` parses every `.sqlt`
-file and emits `php/bin/CaseData.php` and `python/bin/case_data.py`, which the
-runners load as code — the same relationship `sql/dialects/*.json` has with the
+file and emits `php/bin/CaseData.php`, `python/bin/case_data.py` and
+`js/bin/case-data.mjs`, one per host with a translator, which the runners load as
+code — the same relationship `sql/dialects/*.json` has with the
 generated dialect map. `tools/check-sql-cases.sh` fails if either generated file
 is stale, so editing a case means regenerating:
 

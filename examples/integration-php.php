@@ -39,10 +39,18 @@ final class RuleSet
      * @param array<string, mixed> $payload
      * @return array<string, string> field => message, only for failures
      */
-    public function validate(array $payload): array
+    /**
+     * @param array<string,mixed> $payload
+     * @param list<string>|null $only  re-run just these rules; null runs all
+     * @return array<string,string>
+     */
+    public function validate(array $payload, ?array $only = null): array
     {
         $messages = [];
         foreach ($this->rules as $field => $program) {
+            if ($only !== null && !in_array($field, $only, true)) {
+                continue;
+            }
             // Each rule gets its own context: rules must not see each other's
             // intermediate variables.
             $context = Value::fromNative($payload);
@@ -139,6 +147,13 @@ $messages = $rules->validate($payload);
 echo $messages ? '  ' . json_encode($messages) . "\n" : "  (none)\n";
 
 echo "watch map (field => rules to re-run):\n";
-foreach ($rules->watchMap() as $input => $affected) {
+$watch = $rules->watchMap();
+foreach ($watch as $input => $affected) {
     printf("  %-13s %s\n", $input, implode(', ', $affected));
 }
+
+// Only the affected rules re-run when one input changes.
+echo 'EMAIL changed, so re-running: ' . implode(', ', $watch['EMAIL']) . "\n";
+// JSON_FORCE_OBJECT so an empty result prints {} as it does in JS: PHP's empty
+// array is ambiguous between a list and a map, and json_encode picks the list.
+echo '   ' . json_encode($rules->validate($payload, $watch['EMAIL']), JSON_FORCE_OBJECT) . "\n";

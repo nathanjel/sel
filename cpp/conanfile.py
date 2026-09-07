@@ -24,7 +24,7 @@ class SelConan(ConanFile):
     homepage = "https://github.com/nathanjel/sel"
     description = (
         "A small expression language for validation rules that evaluate "
-        "identically on PHP, JavaScript, C++ and Common Lisp"
+        "identically on PHP, JavaScript, Python, C++ and Common Lisp"
     )
     topics = ("expression-language", "validation", "rules", "decimal", "interpreter")
 

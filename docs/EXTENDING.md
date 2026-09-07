@@ -841,7 +841,7 @@ tools/check.sh                 everything, in order
 C++ has to be built first, or it is skipped with a note:
 
 ```
-cd cpp && make            builds build/{sel,conformance,batch,e2e,check-decimal}
+cd cpp && make            builds build/{sel,conformance,batch,e2e,api,ast,check-decimal,unit}
 cd cpp && make test       unit tests, then the suite
 lisp/bin/test             the Lisp unit tests
 PYTHONPATH=$PWD/python pytest python/tests    the Python unit tests

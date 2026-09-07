@@ -49,7 +49,12 @@ $(BUILD):
 	mkdir -p $(BUILD)
 
 # Run from the repository root, where conformance/ lives.
-test: $(BUILD)/unit $(BUILD)/conformance
+#
+# Depends on everything, not just the two it runs. tools/impls.sh gates all of
+# C++'s availability on build/conformance alone, so a tree where only `make test`
+# had been run reported C++ as available and then failed in whichever lane
+# reached build/api, build/batch, build/e2e or build/check-decimal first.
+test: $(BINS)
 	$(BUILD)/unit
 	cd .. && cpp/$(BUILD)/conformance
 

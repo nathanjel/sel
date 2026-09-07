@@ -32,7 +32,9 @@ host:
 - the layer itself, transcribed from `python/sel/sql/` (the JS port used Python
   rather than the PHP original, and 368 of 368 passed on the first full run).
 - a `sqlt` runner, transcribed from `python/bin/sqlt`; the three host checks, not
-  PHP's five. `oracle` and `sqldoc` stay PHP-only — §14, M7 says why.
+  PHP's five. `oracle` stays PHP-only — §14, M7 says why — and so does `sqldoc`,
+  which checks the design document against the cases it quotes and is therefore
+  a property of that document rather than of any host.
 - wiring in `tools/impls.sh` (`impl_sql`) and a check in `tools/mutate-sql.py`.
   A check that cannot reach the code under test cannot measure it, so the mutation
   harness needs the new runner before any mutation of the new layer means anything.

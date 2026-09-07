@@ -18,13 +18,16 @@ from typing import Any
 
 from . import builtins as _builtins   # noqa: F401  registers the function table
 from .errors import Pos, SelError, fail
-from .eval import MAX_DEPTH, Context, eval_node
+from .eval import MAX_DEPTH, Context as _Context, eval_node
 from .parser import Node, parse
 from .registry import names as _names
 from .value import BIN, BOOL, NONE, TEXT, Value
 
 __all__ = [
-    'compile', 'evaluate', 'Program', 'Value', 'SelError', 'Context', 'Pos',
+    # Context is deliberately absent: it is one evaluation's binder frames and
+    # recursion depth, spec/SPEC.md §8 does not list it, nothing outside the
+    # evaluator constructs one, and C++ and Lisp never exposed it.
+    'compile', 'evaluate', 'Program', 'Value', 'SelError', 'Pos',
     'function_names', 'NONE', 'TEXT', 'BIN', 'BOOL', '__version__',
 ]
 
@@ -43,7 +46,7 @@ class Program:
         the context is mutated in place by any assignments the program performs.
         """
         root = context if isinstance(context, Value) else Value.from_native(context or {})
-        return eval_node(self.ast, Context(root))
+        return eval_node(self.ast, _Context(root))
 
     def dependencies(self) -> list[str]:
         """Every variable the program reads without having assigned it first,

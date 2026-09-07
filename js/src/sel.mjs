@@ -122,4 +122,9 @@ export function functionNames() { return names(); }
 // The kind constants travel with the Value class. Leaving them out of this
 // re-export meant `import { BOOL } from 'sel-lang'` failed and `Value.BOOL` was
 // undefined, so branching on kind required the literal string 'BOOL'.
-export { Value, SelError, Context, NONE, TEXT, BIN, BOOL };
+// Context is deliberately NOT here. It is one evaluation's binder frames and
+// recursion depth, spec/SPEC.md §8 does not list it, nothing outside the
+// evaluator constructs one, and C++ and Lisp never exposed it. Exporting it in
+// three hosts and not the other two was an accident of what was convenient to
+// import here.
+export { Value, SelError, NONE, TEXT, BIN, BOOL };

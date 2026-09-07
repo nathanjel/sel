@@ -67,7 +67,7 @@ lexer. The suite must not validate the lexer with the lexer.
 
 ## The `tree` dump
 
-`tree` compares against a canonical dump that both implementations must emit
+`tree` compares against a canonical dump that every implementation must emit
 **byte for byte**. Agreement on the dump is itself part of what is being tested.
 
 ```

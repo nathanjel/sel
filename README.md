@@ -313,7 +313,7 @@ catch (e) { if (e instanceof SelError) console.log(e.code); }   // E_NOT_BOOL
 ```
 
 The APIs are deliberately parallel, and `tools/check-api.sh` holds them to it —
-48 probes run through each host's own binding and diffed. `size()` is a method
+54 probes run through each host's own binding and diffed. `size()` is a method
 in all five, not a property in one of them, and the only remaining differences
 are the ones a language forces: how each spells a kind, and camelCase in PHP and
 JS against snake_case in C++ and Python.
@@ -643,7 +643,9 @@ land on the same set.
 spec/          SPEC.md, grammar.md, errors.md — normative
 conformance/   *.selt — normative; every implementation must pass
 docs/          LANGUAGE.md (rule authors), EXTENDING.md (contributors)
+               SQL-TRANSLATION.md + SQL-TESTING.md (the SEL->SQL layer)
                PARSER-MIGRATION.md (temporary; the SQL layer C++ and Lisp owe)
+sql/           MAP.md, errors.md, dialects/*.json, cases/*.sqlt, mutations.json
 python/        sel/ (package sel), bin/, tests/
 php/           src/ (namespace Sel\), bin/sel, bin/conformance
 js/            src/ (ESM), bin/sel.mjs, bin/conformance.mjs
@@ -664,7 +666,7 @@ passes the same suite; `tools/impls.sh` is where it registers itself, and
 tools/check.sh
 ```
 
-Seven layers, each catching what the others miss:
+Ten layers, each catching what the others miss:
 
 - **Conformance** — the normative suite, run by every implementation.
 - **Unit tests** — for the layers underneath the suite, where a bug otherwise
@@ -685,6 +687,25 @@ Seven layers, each catching what the others miss:
   comparing values, error codes and error positions. Roughly a third of the
   corpus is invalid on purpose: agreement on *where* a rule failed is as much
   part of the promise as agreement on what it returned.
+- **Manifest versions** — every package manifest declares the same version, so a
+  release cannot go out half-numbered.
+- **SEL→SQL translation** — the dialect map and the case table are generated, and
+  both are checked for staleness; then `sql/cases/*.sqlt` runs through every host
+  that has a translator, asserting the *exact* emitted string. Three hosts
+  agreeing on 377 exact strings is a measurement rather than an intention. The
+  design document's own worked examples are checked against the cases that
+  produced them, and `tools/mutate-sql.py` damages the layer ninety ways to prove
+  the cases can fail.
+- **SQL against a database** — the same expressions evaluated by SEL and by a
+  real MariaDB, MySQL, PostgreSQL or SQLite. Every other layer asks "is this the
+  string we meant to emit?"; only this one asks "does that string *mean* what SEL
+  means?". It skips itself when no DSN is set, which is why it is last: it is the
+  only layer that cannot run everywhere.
+
+Two more exist and are not in `tools/check.sh`, deliberately, because they take
+minutes rather than seconds: `tools/stress.sh` (deep structures, the shapes a
+fuzzer never emits) and `cd cpp && make asan` (the suite under the leak and
+undefined-behaviour checkers).
 
 The fuzzer is the one that earns its keep. It caught the `\d` UCP divergence; it
 caught C++ evaluating `TRUE $== FALSE`'s operands right-to-left, because the

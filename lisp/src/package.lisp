@@ -47,6 +47,9 @@
    #:program
    #:program-p
    #:program-source
+   ;; The parse tree. Public for the same reason C++'s Program::ast() is: the
+   ;; SEL->SQL layer is the second thing that walks it. See spec/SPEC.md §8.
+   #:program-ast
    #:compile-source
    #:run
    #:dependencies
