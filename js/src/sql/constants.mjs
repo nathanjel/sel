@@ -38,6 +38,20 @@ import { refuse } from './errors.mjs';
 //
 // Only scalars are lifted. A list-valued binding is what an aggregate iterates
 // and its shape is the translator's business, not the evaluator's.
+// Is this node an aggregate's binder NAME, rather than a read of one?
+//
+// The evaluator's rule, in Args.symbol: a bare `var` node that did NOT come from
+// parentheses. Both halves matter and the second was missing here, in all three
+// hosts. `(C)` parses as a `var` node carrying the parser's `grouped` flag --
+// which is exactly what makes `(A) = 1` an E_BAD_ASSIGN -- so testing only the
+// kind accepted a binder the evaluator refuses with E_EXPECT_SYMBOL, and
+// `ALL(V, (C), C > 0)` translated to working SQL for a rule that can never run.
+// A translation that is accepted where the language refuses is the one direction
+// this layer must never fail in.
+export function isBinderName(node) {
+  return node.t === 'var' && !node.grouped;
+}
+
 export function scope(bindings) {
   const names = new Map();
   const root = Value.none();
@@ -96,7 +110,8 @@ function constantCall(n, bound) {
   const inner = new Map(bound);
   let body = 1;
   if (args.length >= 3) {
-    if (args[1].t !== 'var') return false;   // malformed; let the evaluator say so
+    // Malformed; not constant, and _agg_shape refuses it for real.
+    if (!isBinderName(args[1])) return false;
     inner.set(args[1].name, true);
     body = 2;
   } else {

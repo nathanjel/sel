@@ -33,6 +33,20 @@ from ..value import Value
 from .errors import refuse
 
 
+def is_binder_name(node: Node) -> bool:
+    """Is this node an aggregate's binder NAME, rather than a read of one?
+
+    The evaluator's rule, in Args.symbol: a bare ``var`` node that did NOT come
+    from parentheses. Both halves matter and the second was missing here, in all
+    three hosts. ``(C)`` parses as a ``var`` node carrying the parser's
+    ``grouped`` flag -- which is exactly what makes ``(A) = 1`` an E_BAD_ASSIGN
+    -- so testing only the kind accepted a binder the evaluator refuses with
+    E_EXPECT_SYMBOL, and ``ALL(V, (C), C > 0)`` translated to working SQL for a
+    rule that can never run. A translation accepted where the language refuses is
+    the one direction this layer must never fail in.
+    """
+    return node.t == 'var' and not node.grouped
+
 def scope(bindings) -> tuple[dict[str, bool], Context]:
     """The value bindings, as a name set and an evaluation context.
 
@@ -114,8 +128,9 @@ def _constant_call(n: Node, bound: dict[str, bool]) -> bool:
     inner = dict(bound)
     body = 1
     if len(args) >= 3:
-        if args[1].t != 'var':
-            return False               # malformed; let the evaluator say so
+        # Malformed; not constant, and _agg_shape refuses it for real.
+        if not is_binder_name(args[1]):
+            return False
         inner[args[1].name] = True
         body = 2
     else:

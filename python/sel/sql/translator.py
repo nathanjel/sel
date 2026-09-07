@@ -1296,7 +1296,7 @@ def _static_source(elements: dict[str, Binder], scalar_rule: bool = False) -> di
 def _agg_shape(n: Node) -> tuple[str, Node]:
     """The 2- and 3-argument forms: ``_`` by default, a bare name when given."""
     if len(n.args) == 3:
-        if n.args[1].t != 'var':
+        if not _constants.is_binder_name(n.args[1]):
             refuse('E_SQL_SHAPE', f'the binder of {n.name} must be a bare name',
                    n.args[1].pos)
         return n.args[1].name, n.args[2]

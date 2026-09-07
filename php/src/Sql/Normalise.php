@@ -218,7 +218,7 @@ final class Normalise
                 if (!empty($node['spec']['binds'])) {
                     $n = count($node['args']);
                     $inner[] = '_K';
-                    $inner[] = $n === 3 && $node['args'][1]['t'] === 'var'
+                    $inner[] = $n === 3 && Constants::isBinderName($node['args'][1])
                         ? $node['args'][1]['name'] : '_';
                 }
                 foreach ($node['args'] as $i => $arg) {

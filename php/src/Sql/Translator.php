@@ -907,7 +907,7 @@ final class Translator
     private static function aggShape(array $n): array
     {
         if (count($n['args']) === 3) {
-            if ($n['args'][1]['t'] !== 'var') {
+            if (!Constants::isBinderName($n['args'][1])) {
                 refuse('E_SQL_SHAPE',
                     "the binder of {$n['name']} must be a bare name", $n['args'][1]['pos']);
             }

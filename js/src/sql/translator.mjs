@@ -1328,7 +1328,7 @@ function staticSource(elements, scalarRule = false) {
 // The 2- and 3-argument forms: `_` by default, a bare name when given.
 function aggShape(n) {
   if (n.args.length === 3) {
-    if (n.args[1].t !== 'var') {
+    if (!constants.isBinderName(n.args[1])) {
       refuse('E_SQL_SHAPE', `the binder of ${n.name} must be a bare name`, n.args[1].pos);
     }
     return [n.args[1].name, n.args[2]];

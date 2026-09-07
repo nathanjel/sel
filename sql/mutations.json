@@ -623,6 +623,27 @@
       "file": "php/src/Sql/Map.php",
       "from": "        if ($v === '' && ($key === 'identQuote' || $key === 'textQuote')) {",
       "to": "        if (false) {"
+    },
+    {
+      "name": "php-binder-grouped-accepted",
+      "was": "The `grouped` half of the binder rule. Args::symbol refuses a binder that came from parentheses as well as one that is not a name at all; dropping the second half makes the translator accept `ALL(V, (C), C > 0)` and emit working SQL for a program the evaluator raises E_EXPECT_SYMBOL on. Accepting where the language refuses is the one direction this layer must never fail in.",
+      "file": "php/src/Sql/Constants.php",
+      "from": "        return ($node['t'] ?? null) === 'var' && empty($node['grouped']);",
+      "to": "        return ($node['t'] ?? null) === 'var';"
+    },
+    {
+      "name": "py-binder-grouped-accepted",
+      "was": "The Python half of php-binder-grouped-accepted.",
+      "file": "python/sel/sql/constants.py",
+      "from": "    return node.t == 'var' and not node.grouped",
+      "to": "    return node.t == 'var'"
+    },
+    {
+      "name": "js-binder-grouped-accepted",
+      "was": "The JS half of php-binder-grouped-accepted.",
+      "file": "js/src/sql/constants.mjs",
+      "from": "  return node.t === 'var' && !node.grouped;",
+      "to": "  return node.t === 'var';"
     }
   ]
 }

@@ -188,12 +188,13 @@ function substitute(node, defs, bound, depth = 0) {
     if (binds) {
       const n = node.args.length;
       inner.push('_K');
-      inner.push(n === 3 && node.args[1].t === 'var' ? node.args[1].name : '_');
+      inner.push(n === 3 && constants.isBinderName(node.args[1])
+        ? node.args[1].name : '_');
     }
     const args = [];
     node.args.forEach((arg, i) => {
       // An aggregate's binder argument is a name, not a read of one.
-      if (binds && i === 1 && node.args.length === 3 && arg.t === 'var') {
+      if (binds && i === 1 && node.args.length === 3 && constants.isBinderName(arg)) {
         args.push(arg);
         return;
       }

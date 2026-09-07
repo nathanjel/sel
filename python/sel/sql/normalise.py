@@ -197,7 +197,8 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
             n = len(node.args)
             inner.append('_K')
             inner.append(node.args[1].name
-                         if n == 3 and node.args[1].t == 'var' else '_')
+                         if n == 3 and _constants.is_binder_name(node.args[1])
+                         else '_')
         args = []
         for i, arg in enumerate(node.args):
             # An aggregate's binder argument is a name, not a read of one.

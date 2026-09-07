@@ -627,3 +627,40 @@ mariadb
 --- throws
 LogicException
 ===
+### name: review.binder.parenthesised-is-refused
+--- note
+The evaluator's rule for an aggregate binder, in Args::symbol, is a bare `var`
+node that did NOT come from parentheses -- `(C)` carries the parser's `grouped`
+flag, the same flag that makes `(A) = 1` an E_BAD_ASSIGN, and running this is
+E_EXPECT_SYMBOL. All three translators tested only the node KIND, so they
+accepted the binder and emitted working SQL for a rule that can never run:
+`((`x`.`a` > 0) AND (`x`.`b` > 0))`, pushed down for a program the language
+refuses.
+
+Accepting where the language refuses is the one direction this layer must never
+fail in. Refusing is also the useful outcome: tryTranslate returns null, the
+application evaluates locally instead, and the evaluation raises the real error.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}, {"table": "x", "column": "b", "type": "NUM"}]}}
+--- source
+ALL(V, (C), C > 0)
+--- error
+E_SQL_SHAPE 1:9
+===
+### name: review.binder.bare-name-still-works
+--- note
+The same rule one character shorter, pinning that the fix refuses the
+parentheses and not the three-argument form itself.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"table": "x", "column": "a", "type": "NUM"}, {"table": "x", "column": "b", "type": "NUM"}]}}
+--- source
+ALL(V, C, C > 0)
+--- as
+condition
+--- expect
+((`x`.`a` > 0) AND (`x`.`b` > 0))
+===
