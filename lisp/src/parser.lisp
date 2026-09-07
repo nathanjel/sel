@@ -218,15 +218,26 @@
       (parse-postfix p)))
 
 ;;; postfix = primary { "[" sequence "]" }
+;;;
+;;; The bracket counts a level of its own. Without it an index is the one nesting
+;;; door that recurses from OUTSIDE parse-primary's counter -- this loop is where
+;;; it happens -- so it charged one level per nesting where "(", "f(" and the
+;;; prefix operators all charge two. Five stack frames against one level of the
+;;; budget is the widest ratio in the grammar, and it put a[a[...]] over CPython's
+;;; stack before the 200-level guard could fire: a host crash through the public
+;;; CLI, while this host still answered. Counting the bracket halves the density
+;;; and moves the boundary from about 198 nestings to 99, which is where the
+;;; other four hosts have been since they took the same change.
 (defun parse-postfix (p)
   (let ((node (parse-primary p)))
     (loop while (p-at-op p "[")
-          do (let* ((br (p-next p))
-                    (idx (parse-sequence p)))
-               (p-expect-op p "]")
-               (let ((n (make-node :index (token-pos br))))
-                 (setf (node-l n) node (node-r n) idx)
-                 (setf node n))))
+          do (let ((br (p-next p)))
+               (with-depth (p (token-pos br))
+                 (let ((idx (parse-sequence p)))
+                   (p-expect-op p "]")
+                   (let ((n (make-node :index (token-pos br))))
+                     (setf (node-l n) node (node-r n) idx)
+                     (setf node n))))))
     node))
 
 (defun parse-primary (p)

@@ -332,3 +332,29 @@ A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][
 --- expect
 bool TRUE
 ===
+### name: lim.index-depth
+--- note
+An index bracket costs a level of the same 200 the parentheses draw on, because
+the bracket loop recurses from outside the primary rule that would otherwise
+count it. Uncounted it charged one level for five stack frames, and `a[` x198
+exhausted CPython's stack before the guard fired -- a host crash through the
+public CLI, while the other four hosts still returned a clean error.
+
+The error lands on the 100th bracket: 99 brackets and their sequences spend 198
+levels, the outer sequence one more, and the 100th bracket is the 201st.
+--- source
+a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+--- expect
+error E_DEPTH at 1:201
+===
+### name: lim.index-depth-just-under
+--- note
+One shorter, and it is an ordinary program -- E_UNDEF_VAR, because `a` is not
+bound, which is the point: it got past the parser. Pinning both sides so a host
+that counts the bracket twice, or not at all, fails here rather than somewhere
+far away.
+--- source
+a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[a[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+--- expect
+error E_UNDEF_VAR at 1:1
+===

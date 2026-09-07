@@ -33,15 +33,12 @@ before the parser is disturbed: it is the only open cross-host divergence, it is
 independent of everything else, and doing it first means the parser conversion is
 measured against a host that already agrees with the other three.
 
-```
-a[ ×150     js php python  →  E_DEPTH at 1:201
-            cpp lisp       →  E_UNDEF_VAR at 1:1     ← this
-```
-
-Whichever host goes last also moves the two parked cases into
-`conformance/10-limits.selt` and adds the sentence to `spec/SPEC.md` §6.4. Until
-then no test guards the boundary in any host, which is the actual cost of
-carrying this open.
+**Done in all five.** `a[` ×100 is `E_DEPTH at 1:201` everywhere, and the two
+cases that pin it from both sides are no longer parked — they are
+`lim.index-depth` and `lim.index-depth-just-under` in
+`conformance/10-limits.selt`, which is normative for every host at once.
+`spec/SPEC.md` §6.4 now says what each nesting construct costs, which is the gap
+this drifted through.
 
 **2. The parser conversion** — the original subject of this document. Read
 [What must not change](#what-must-not-change) and
@@ -349,11 +346,9 @@ Per-host status:
 - **C++** — done, on its own, ahead of the conversion. The four textually
   identical local `Leave` RAII structs were factored into one class-scope type
   in the same commit, and the bracket loop is its fifth site.
-- **Lisp** — outstanding, to land with its conversion. Whichever of these two
-  goes last also adds the two cases above to `conformance/10-limits.selt` and
-  the sentence to `spec/SPEC.md` §6.4 — §6.4 already says every nesting
-  construct is counted and names the index among them, but says nothing about
-  what each one *costs*, which is the gap this drifted through.
+- **Lisp** — done, on its own, ahead of the conversion. Being last, it also
+  landed the two cases in `conformance/10-limits.selt` and the sentence in
+  `spec/SPEC.md` §6.4.
 
 ## Per host
 

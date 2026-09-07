@@ -442,6 +442,15 @@ Parser nesting depth and evaluation depth are capped (implementation-defined,
 at least 200) and exceeding either is `E_DEPTH`. This is a denial-of-service
 guard, not a language feature.
 
+**What each construct costs is part of the contract, not an implementation
+detail.** A parenthesis, a call's parentheses and an index bracket each cost two
+levels — the construct's own and the sequence inside it — while a prefix
+operator and an assignment cost one. Those numbers are what
+`conformance/10-limits.selt` pins, at exact columns, and they are what makes
+`E_DEPTH` land in the same place on every host. The index bracket is the one
+that drifted: it recurses from outside the rule that counts, so four hosts
+charged it one level for five stack frames until it was counted separately.
+
 **Every construct that can nest is counted, including prefix operators.** A
 chain of `NOT` or unary `-` recurses in the parser without passing through a
 parenthesis, a call or an index, so it is easy to leave out of the count — and
