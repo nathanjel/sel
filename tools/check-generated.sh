@@ -113,19 +113,29 @@ check_group() {
   fi
 }
 
-# The SEL->SQL dialect map. One authored source, seven renderings.
+# The SEL->SQL dialect map. One authored source, ten renderings.
+#
+# Every output the generator writes has to be listed here, not just the ones a
+# release is thought to need. With Node present the `--check` below is content
+# authoritative and would catch an unlisted file anyway; without it this falls
+# back to comparing timestamps, and a timestamp is only compared for a file
+# somebody remembered to name. That fallback is not a corner case -- it is the
+# whole point of the gate, since a C++ or Lisp consumer is precisely the one
+# with no JS tooling to run the generator with.
 check_group "sql dialect map" "node tools/gen-sql-map.mjs" \
   sql/dialects/*.json tools/gen-sql-map.mjs \
   -- \
   php/src/Sql/MapData.php python/sel/sql/_map.py js/src/sql/_map.mjs \
-  cpp/sel_sql_map_data.cpp php/bin/MapReplay.php python/bin/map_replay.py \
-  js/bin/map-replay.mjs
+  cpp/sel_sql_map_data.cpp lisp/src/sql/map-data.lisp \
+  php/bin/MapReplay.php python/bin/map_replay.py js/bin/map-replay.mjs \
+  cpp/bin/map_replay.cpp lisp/bin/map-replay.lisp
 
 # The SQL case tables, so a clone can run the suite without Node.
 check_group "sql case data" "node tools/gen-sql-cases.mjs" \
   sql/cases/*.sqlt tools/gen-sql-cases.mjs \
   -- \
-  php/bin/CaseData.php python/bin/case_data.py js/bin/case-data.mjs
+  php/bin/CaseData.php python/bin/case_data.py js/bin/case-data.mjs \
+  cpp/bin/case_data.cpp lisp/bin/case-data.lisp
 
 if [ "$status" -ne 0 ]; then
   echo "GENERATED ARTIFACTS ARE NOT CURRENT — run the command(s) above" >&2
