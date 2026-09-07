@@ -66,15 +66,17 @@ are imported from `js/src/builtins/index.mjs` and Python's from
 `python/sel/builtins/__init__.py`. All three must happen before parsing, because
 unknown function names are a **compile-time** error.
 
-**The parsers are mid-migration and do not all match the table's spirit.**
-`python/sel/parser.py`, `js/src/parser.mjs` and `php/src/Parser.php` are
-precedence climbing; `cpp/sel.cpp` and `lisp/src/parser.lisp` still transcribe
-`spec/grammar.md` one function per production. Python was the pilot and the
-other two were transcribed from it. See
-[PARSER-MIGRATION.md](PARSER-MIGRATION.md), the working document that tracks
-what C++ and Lisp still owe — the parser, the index-bracket depth rider and the
-SQL layer, which land in that order because a host is opened once. It is deleted
-when the last host is finished. Read it before touching any parser.
+**All five parsers are precedence climbing**, and the table is true at the
+function level as well as the file level: `parse_program` → `parse_sequence` →
+`parse_list` → `parse_term` → `parse_prefix` → `parse_postfix` → `parse_primary`
+in every host, with the sixteen precedence levels of `spec/SPEC.md` §5 as a pair
+of lookup tables rather than sixteen functions. `python/sel/parser.py` was the
+pilot and its module docstring is the rationale; the other four were transcribed
+from it, one per release, between 0.3.0 and 0.7.0.
+
+What still differs between the hosts is only the SEL→SQL layer, which PHP, JS
+and Python have and C++ and Lisp do not. `docs/PARSER-MIGRATION.md` keeps its
+name and tracks what is left of that.
 
 ---
 
@@ -556,33 +558,47 @@ its neighbours, associativity, and the failure modes.
 Getting this wrong makes `//` lex as two `/` tokens and the failure will look
 like a parser bug.
 
-**5. Every parser** — and this is the one step where the hosts still differ,
-though less than they did. `js/src/parser.mjs`, `php/src/Parser.php` and
-`python/sel/parser.py` are precedence climbing; `cpp/sel.cpp` and
-`lisp/src/parser.lisp` are still transcribed one function per precedence level.
-See `docs/PARSER-MIGRATION.md`, which tracks the parser conversion together with
-the two other things those hosts still owe, and is deleted when the last one is
-done.
-
-In the three table-driven parsers it is a row:
+**5. Every parser** — a row in a table, in all five, which is the whole point of
+the migration that finished in 0.7.0:
 
 ```python
-INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }
+INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }        # python
 ```
-
-and a *new* precedence level is a new `BP_` constant with the ones above it
-renumbered — no new function, and nothing to wire into a chain.
-
-In the two transcribed parsers — `cpp/sel.cpp` and `lisp/src/parser.lisp` —
-`parse_multiplicative` already loops over a list, so an operator at an existing
-level is one more entry in it:
-
+```js
+const INFIX_OPS = new Map([ ..., ['//', [BP_MUL, 'L']], ... ]);   // js
+```
+```php
+private const INFIX_OPS = [ ..., '//' => [self::BP_MUL, 'L'], ... ];   // php
+```
+```cpp
+static const std::map<std::string, Infix> ops = { ..., {"//", {BP_MUL, 'L'}}, ... };
+```
 ```lisp
-(defun parse-multiplicative (p) (parse-op-binary p '("*" "/" "%" "//") #'parse-unary))
+(setf (gethash "//" m) (cons +bp-mul+ #\L))          ; lisp
 ```
 
-and a new precedence level means a new function in each of them, wired into the
-chain in the same place, and mirrored in `grammar.md`.
+A *new* precedence level is a new `BP_` constant with the ones above it
+renumbered — no new function, and nothing to wire into a chain. A **word**
+operator goes in the second table (`INFIX_WORDS`), because words lex as
+identifiers and symbols as ops, so they cannot share a key space.
+
+Three things the tables get wrong quietly, none of which the compiler catches,
+because each produces *a valid parse of the wrong tree*:
+
+- **Associativity is three-valued.** `L` parses its right side at `bp + 1`, `R`
+  at `bp` — that is what makes it right-associative — and `N` at `bp + 1` and
+  then rejects a second operator at the same level. A comparison is `N`, and its
+  `E_SYNTAX` is reported at the **second** operator.
+- **A prefix operator is not a primary.** `NOT` binds at 7 and unary `-` at 15,
+  and `parse_prefix` accepts each only when the caller's `min_bp` reaches it.
+  Putting them in `parse_primary`, where textbook precedence climbing puts them,
+  makes `NOT a == b` parse as `(NOT a) == b` and breaks two of the depth pins at
+  the same time.
+- **The list keys are compared as strings.** Lisp's table needs
+  `:test #'equal`; with the default `eql` no operator ever matches and every
+  program is a syntax error at its own first operator. JS uses a `Map` rather
+  than an object so that a token spelled like a name on `Object.prototype`
+  cannot answer for a real operator.
 
 **6. Every evaluator** — a branch in `evalBinary` / `eval_binary` /
 `eval-binary`. Use the operand's own position for type errors and the operator's

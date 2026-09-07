@@ -1294,9 +1294,9 @@ std::vector<Token> tokenize(const std::string& source) { return Lexer(source).to
 // Precedence climbing. The sixteen levels of spec/SPEC.md §5 are the table
 // below rather than sixteen functions, so adding an operator is adding a row.
 // python/sel/parser.py is the reference implementation of this shape and its
-// module docstring is the rationale; docs/PARSER-MIGRATION.md records what
-// every host had to get right, each item of which produces a valid parse of
-// the WRONG TREE when it is wrong.
+// module docstring is the rationale; docs/EXTENDING.md, "Adding an operator",
+// step 5, records what every host had to get right, each item of which
+// produces a valid parse of the WRONG TREE when it is wrong.
 //
 // `;` and `,` stay hand-written N-ary loops outside the table, because they
 // build N-ary nodes rather than binary ones -- dependencies() walks `items`,
@@ -1699,7 +1699,8 @@ class Parser {
   // over CPython's stack before the 200-level guard could fire: a host crash
   // through the public CLI while this host still answered. Counting the bracket
   // halves the density to 2.5 and moves the boundary from ~198 nestings to 99.
-  // docs/PARSER-MIGRATION.md has the table and the measurement.
+  // conformance/10-limits.selt pins both sides; spec/SPEC.md §6.4 says what each
+  // nesting construct costs.
   NodePtr parse_postfix() {
     NodePtr node = parse_primary();
     while (at_op("[")) {

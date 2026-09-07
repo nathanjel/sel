@@ -1,54 +1,30 @@
-# Finishing the C++ and Lisp hosts
+# The SEL→SQL layer C++ and Lisp still owe
 
-**This document has a finite life.** It describes work in progress across
-releases 0.4.0–0.7.0, and it is deleted in the 1.0.0 commit that finishes it.
-If you are reading it after 1.0.0, it should not exist.
+**This document has a finite life.** It is deleted in the commit that finishes
+the work it describes. If you are reading it after that, it should not exist.
 
-The file is called `PARSER-MIGRATION.md` because converting the parsers is what
-it started as. Three hosts finished that, and two more things attached
-themselves to the same turn — a host is opened once, and opening it three times
-to make three related changes is how the hosts drifted apart in the first place.
-The name stays because half a dozen source comments point at it; the scope is
-what the next section says.
+The file is still called `PARSER-MIGRATION.md` because converting the parsers is
+what it started as, and half a dozen source comments point at the name. **That
+part is finished.** All five hosts are precedence climbing, all five count the
+index bracket, and `docs/EXTENDING.md` now describes the shared shape as the
+design it is rather than as a migration in progress. The parked conformance
+cases went into `conformance/10-limits.selt` with Lisp's turn, and `spec/SPEC.md`
+§6.4 gained the sentence about what each nesting construct costs.
 
-- [A host's turn: three deliverables](#a-hosts-turn-three-deliverables)
-- [Why](#why)
-- [The target shape](#the-target-shape)
-- [What must not change](#what-must-not-change)
-- [The five parity requirements](#the-five-parity-requirements)
-- [Rider: the index bracket must count a depth level](#rider-the-index-bracket-must-count-a-depth-level)
+What is left is one deliverable in two hosts.
+
+- [What is left](#what-is-left)
+- [What the JS port learned that generalises](#what-the-js-port-learned-that-generalises)
 - [Per host](#per-host)
 - [How to do one](#how-to-do-one)
 
 ---
 
-## A host's turn: three deliverables
+## What is left
 
-C++ and Lisp each owe three things. They are listed together because they touch
-the same files and want the same review, not because they are one change — land
-them as separate commits, in this order.
-
-**1. The index-bracket rider** (see below). Two lines. Do it FIRST, on its own,
-before the parser is disturbed: it is the only open cross-host divergence, it is
-independent of everything else, and doing it first means the parser conversion is
-measured against a host that already agrees with the other three.
-
-**Done in all five.** `a[` ×100 is `E_DEPTH at 1:201` everywhere, and the two
-cases that pin it from both sides are no longer parked — they are
-`lim.index-depth` and `lim.index-depth-just-under` in
-`conformance/10-limits.selt`, which is normative for every host at once.
-`spec/SPEC.md` §6.4 now says what each nesting construct costs, which is the gap
-this drifted through.
-
-**2. The parser conversion** — the original subject of this document. Read
-[What must not change](#what-must-not-change) and
-[The five parity requirements](#the-five-parity-requirements) first; each of the
-five produces *a valid parse of the wrong tree* when it is wrong, so none is
-caught by a compiler.
-
-**3. The SEL→SQL translator.** `docs/SQL-TRANSLATION.md` is normative;
-§14 records what each previous port cost and why. In outline, per host:
-
+**The SEL→SQL translator, in C++ and in Lisp.** `docs/SQL-TRANSLATION.md` is
+normative; §14 records what each previous port cost and why. In outline, per
+host:
 - an emitter in `tools/gen-sql-map.mjs` and one in `tools/gen-sql-cases.mjs`,
   each one function plus one line in that file's `OUTPUTS`. **The other hosts'
   generated files must regenerate byte-identical** — that is the check that you
@@ -131,375 +107,57 @@ right**, because the cases and mutations that pin them are shared:
 and `review.lexical.empty-quote-is-refused` in `sql/cases/13-review.sqlt` pin the
 first three for every host, and four mutations in `sql/mutations.json` prove the
 cases still catch them.
-
 ---
-
-## Why
-
-Four of the five parsers transcribe `spec/grammar.md` one function per
-production: `parseSequence` → `parseList` → `parseAssignment` → `parseOr` →
-`parseXor` → `parseAnd` → `parseNot` → `parseComparison` → `parseBitOr` →
-`parseBitXor` → `parseBitAnd` → `parseConcat` → `parseAdditive` →
-`parseMultiplicative` → `parseUnary` → `parsePostfix` → `parsePrimary`. It is a
-respectable style and it makes the parser a literal reading of the grammar.
-
-It also costs a stack frame per precedence level per level of nesting, and the
-JS and PHP hosts pay for a thunk at each binary helper on top:
-
-| Host | how the sub-parser is passed | frames per nesting level |
-|---|---|---|
-| JS | arrow thunk `() => this.parseXor()` ×9 | **35**, measured |
-| PHP | `fn () => $this->parseXor()` ×9 | 35 |
-| C++ | `NodePtr (Parser::*sub)()`, no frame | ~26 |
-| Lisp | `#'parse-xor` + `funcall`, no frame | ~26 |
-| **Python** | **precedence table** | **6** |
-
-The 35 is not an estimate: parsing `'('.repeat(n) + '1'` on the JS host and
-counting `Error.stack` frames gives 44 at one paren and 1409 at forty, dead
-linear at 35.0 per level. `E_DEPTH` trips at 100 nested parens, so a transcribed
-parser needs ~3500 frames to reach its own limit.
-
-That is invisible in JS, PHP, C++ and Lisp, and fatal in Python, whose default
-recursion limit is 1000. It is why `python/sel/parser.py` was written as
-precedence climbing rather than ported — and, having been written, it is the
-shape the other four should adopt. The payoff is not speed. It is that adding an
-operator stops being "a line in two tokenisers, a method in every parser, wired
-into the chain in the same place" and becomes **a row in a table**.
-
-## The target shape
-
-`python/sel/parser.py` is the reference. Read its module docstring first; it is
-written as the rationale for this document and is not repeated here.
-
-```
-parse_program → parse_sequence → parse_list → parse_term → parse_prefix
-                                            → parse_postfix → parse_primary
-```
-
-- **One integer per precedence level**, higher binds tighter, matching
-  `spec/SPEC.md` §5 line for line. `BP_SEQ` and `BP_LIST` exist for
-  documentation only — `;` and `,` stay hand-written N-ary loops in
-  `parse_sequence`/`parse_list`, outside the table, because they build N-ary
-  nodes rather than binary ones.
-- **Two tables, not one.** Word operators (`AND`, `EQL`, `BOR`, …) lex as
-  identifiers and symbol operators as `op` tokens, so they are looked up
-  separately. Same binding powers.
-- **Associativity is a three-valued tag**: `L`, `R`, `N`. `L` parses its right
-  side at `bp + 1`, `R` at `bp` (that is what makes it right-associative), and
-  `N` at `bp + 1` and then rejects a second operator at the same level.
-- **Prefix operators carry their own binding power** and are gated on the
-  caller's `min_bp`. This is the part that is not textbook — see below.
-
-## What must not change
-
-Everything in `conformance/10-limits.selt` pins the depth arithmetic, and it is
-exact:
-
-| Case | Pins |
-|---|---|
-| `lim.parse-depth` | `E_DEPTH at 1:101` for 100 nested parens ⇒ **exactly two depth increments per paren** (`parse_sequence` + `parse_primary`) |
-| `lim.prefix-depth-neg` | `E_DEPTH at 1:200` for a `-` chain |
-| `lim.prefix-depth-not` | `E_DEPTH at 1:797` for a `NOT` chain — `NOT ` is four columns wide, so the limit falls at a different column |
-| `lim.prefix-depth-does-not-shift-parens` | prefix counting costs a level only when a prefix operator is actually consumed |
-| `lim.double-semicolon` | `1;;2` is `E_SYNTAX at 1:3`, which falls out of the trailing-`;` rule |
-
-**The most likely way to get this wrong is to fold prefix operators into
-`parse_primary`**, which is where textbook precedence climbing puts them. That
-breaks `lim.parse-depth` and `lim.prefix-depth-does-not-shift-parens` at the same
-time, and it silently changes what `NOT a == b` parses as.
-
-`conformance/12-misuse.selt` pins node positions through ~140 `at line:col`
-expectations. `conformance/04-values.selt`'s `alias.` family pins the `grouped`
-flag through `(A) = 1`.
-
-## The five parity requirements
-
-Per host, as an acceptance checklist. Each one produces a *valid parse of the
-wrong tree* when it is wrong, so none of them is caught by a compiler.
-
-1. **`NOT` is a loose prefix operator; unary `-` is a tight one.** `NOT` binds at
-   7 — looser than comparison at 8, tighter than `AND` at 6 — and `-` binds at
-   15. `parse_prefix` accepts each only when the caller's `min_bp` reaches it,
-   and falls through to `parse_primary` when it does not. That fallthrough is
-   what makes `a == NOT b` and `-NOT x` `E_RESERVED`: `parse_primary` sees a bare
-   reserved word. Check `NOT a == b`, `a == NOT b`, `-NOT x`, `NOT NOT x`,
-   `a AND NOT b`, `NOT a AND b`, `1 * NOT TRUE`.
-2. **Comparison is non-associative**, and the `E_SYNTAX` is reported at the
-   *second* operator, not the first and not the expression.
-3. **`,` and `;` build N-ary `list`/`seq` nodes.** `dependencies()` walks
-   `items`, and `parse_call` flattens a top-level `list` into the argument
-   vector — a left-leaning binary tree breaks both, and breaks them quietly.
-4. **The `grouped` flag** marks a parenthesised node: it makes `F((1,2))` one
-   argument rather than two, and `(A) = 1` an `E_BAD_ASSIGN` while `A = 1` is
-   fine.
-5. **Node positions.** `bin` and `un` take the *operator* token's position,
-   `list` and `seq` take `items[0]`'s, `assign` takes the *target*'s, `index`
-   takes the `[`'s.
-
-## Rider: the index bracket must count a depth level
-
-Not part of the conversion, but delivered *with* it host by host, because it
-touches the same `parse_postfix` and would otherwise need a second pass over
-five files.
-
-An index is the one nesting door that recurses from **outside**
-`parse_primary`'s `enter`/`leave` — the `while (at_op('['))` loop sits in
-`parse_postfix`. So `a[a[…]]` charged one depth level per nesting where `(`,
-`f(` and the prefix operators charge two. The counter and the stack disagreed:
-
-| construct | host frames / level | levels charged | frames per charged level | frames when the guard fires |
-|---|---|---|---|---|
-| assign | 1 | 1 | 1.0 | 212 |
-| neg / not | 2 | 1 | 2.0 | 411 |
-| paren | 6 | 2 | 3.0 | 608 |
-| call | 7 | 2 | 3.5 | 708 |
-| **index, before** | **5** | **1** | **5.0** | **1008** |
-| index, after | 5 | 2 | 2.5 | 508 |
-
-(Frame counts are CPython's, measured with the guard lifted. The ratios are a
-property of the grammar, not of Python; Python is just the host with the
-tightest stack, so it is where the gap shows first.)
-
-At 5.0 frames per charged level, `a[` ×198 reached CPython's 1000-frame limit
-before the 200-level guard could fire: the Python host raised `RecursionError`
-through its public CLI while the other four returned a clean `E_UNDEF_VAR`. Pure
-index nesting is the worst case — every mix (`ABS(a[…])`, `(a[…])`, `a[1;…]`,
-`a[-…]`) spends part of the same 200-level budget on cheaper constructs and
-stays under 1000.
-
-The fix is one `enter`/`leave` around the bracket, so `[` costs two levels like
-`(` and `f(`:
-
-```js
-while (this.atOp('[')) {
-  const br = this.next();
-  this.enter(br);
-  try {
-    const idx = this.parseSequence();
-    this.expectOp(']');
-    node = { t: 'index', obj: node, idx, pos: br };
-  } finally {
-    this.leave();
-  }
-}
-```
-
-This is a **semantic change in every host**, not a Python repair: it moves the
-accept/reject boundary from ~198 nestings to 99 and the reported position from
-`1:399` to `1:201`. The deepest index nesting anywhere in `conformance/`,
-`sql/cases/`, `docs/`, `spec/` and `examples/` is 3 — and that one is JSON
-inside a SQL fixture, not SEL indexing; the fuzzer's deepest in 20 000 generated
-programs is 4. So nothing real is near the old boundary or the new one.
-
-### Why it lands host by host rather than all at once
-
-Until the last host has it, the hosts disagree above 99 nestings — C++ and Lisp
-accept to ~198 where JS, PHP and Python now stop at 99. That is tolerated
-deliberately and it is bounded: `conformance/` tops out at 3 levels and
-the generator at 4, so neither the suite nor the differential fuzz can see it.
-What it does mean is that **the pinning cases cannot go into `conformance/`
-yet** — that suite is normative for every host at once, with no per-host
-expectations, so a case pinning `1:201` would fail the hosts that have not had
-their turn.
-
-They are written and parked here instead, to be added verbatim to
-`conformance/10-limits.selt` in the same commit as the **last** host:
-
-```
-### name: lim.index-depth
---- note
-An index bracket costs a level of the same 200 the parentheses draw on, because
-the bracket loop recurses from outside the primary rule that would otherwise
-count it. Uncounted it charged one level for five stack frames, and `a[` ×198
-exhausted CPython's stack before the guard fired -- a host crash through the
-public CLI, while the other four hosts still returned a clean error.
-
-The error lands on the 100th bracket: 99 brackets and their sequences spend 198
-levels, the outer sequence one more, and the 100th bracket is the 201st.
---- source
-<a[ ×100, then 1, then ] ×100>
---- expect
-error E_DEPTH at 1:201
-===
-### name: lim.index-depth-just-under
---- note
-One shorter, and it is an ordinary program -- E_UNDEF_VAR, because `a` is not
-bound, which is the point: it got past the parser. Pinning both sides so a host
-that counts the bracket twice, or not at all, fails here rather than somewhere
-far away.
---- source
-<a[ ×99, then 1, then ] ×99>
---- expect
-error E_UNDEF_VAR at 1:1
-===
-```
-
-Per-host status:
-
-- **JS** — done, with the conversion.
-- **PHP** — done, with the conversion.
-- **Python** — done. It has no conversion coming — its parser was already
-  precedence climbing — so waiting for one would have left the only host that
-  actually crashed with nothing scheduled. It took the rider on its own. With it
-  the worst shape is `call` at 708 frames against CPython's 1000, a 29% margin,
-  and `a[` ×50 000 returns a clean `E_DEPTH` through the public CLI.
-- **C++** — done, on its own, ahead of the conversion. The four textually
-  identical local `Leave` RAII structs were factored into one class-scope type
-  in the same commit, and the bracket loop is its fifth site.
-- **Lisp** — done, on its own, ahead of the conversion. Being last, it also
-  landed the two cases in `conformance/10-limits.selt` and the sentence in
-  `spec/SPEC.md` §6.4.
 
 ## Per host
 
-### JS — done
+### C++
 
-Converted. The nine arrow thunks and both binary helpers are gone; `parseTerm`,
-`parsePrefix`, `parsePostfix` and `parsePrimary` are what is left, and the tables
-are `Map`s rather than plain objects so that a token spelled like a name on
-`Object.prototype` cannot answer for a real operator. `parseSequence`'s
-`enter`/`leave` was converged onto the protected form at the same time.
+`php/src/Sql/` is 6,381 lines and `python/sel/sql/` is 5,459, and C++ will land
+more than either. **Not a transcription, and this is the decision to make
+first.** The obvious shape for the generated dialect map is a JSON blob parsed at
+load, because the map is heterogeneous nested data and the runtime `define()`
+API takes application-supplied data of the same shape — which is also what
+`options`, the `--- register` case data and the binding specs are. That is ruled
+out: **this host is not taking a JSON reader.** The representation is an open
+question and it is the question to answer before any of the layer is written.
 
-The index-bracket rider above landed here too: `parsePostfix` counts the `[`.
+Whatever answers it, the container warning above is aimed squarely at it:
+`std::map` sorts its keys, and an aggregate's elements must unroll in the order
+they were assigned.
 
-The easiest, and the one whose 35 frames motivated the exercise. The nine arrow
-thunks and both binary helpers delete outright.
-
-One wrinkle: `pos` in this host *is* the token object (tokens carry
-`line`/`col`/`offset` inline), so table-driven `fail` calls keep passing tokens
-rather than a separate `Pos`.
-
-### PHP — done
-
-Converted. The nine `fn () => …` closures and both helpers are gone. `INFIX_WORDS`
-is a `private const`; `INFIX_OPS` is built once by a private static method
-instead, because PHP has no loop in a constant expression and the assignment and
-comparison operators are already named in `ASSIGN_OPS`/`COMPARE_OPS` — writing
-them out a second time would be two places to forget one. The index-bracket
-rider above landed here too: `parsePostfix` counts the `[`. The create-when-true
-`grouped` idiom and its `empty()` reads are untouched. `parseSequence`'s
-`enter`/`leave` was converged onto the protected form at the same time.
-
-Structurally identical to JS. The nine `fn () => …` closures and both helpers
-delete. The tables can stay `private const` arrays — constant arrays referencing
-other class constants are legal:
-
-```php
-private const INFIX_OPS = ['+' => [self::BP_ADD, 'L'], /* … */];
-```
-
-`in_array($t['value'], self::COMPARE_OPS, true)` becomes
-`isset(self::INFIX_OPS[$t['value']])`, which is a speedup as a side effect.
-
-**Preserve the `grouped` idiom verbatim.** PHP creates the key only when it is
-true (`Parser.php:345`), so every read is `empty($node['grouped'])`
-(`Parser.php:366`, `:425`). A rewrite that starts initialising it to `false`
-would be fine; a rewrite that keeps the create-when-true style but reads it with
-`$node['grouped']` would emit notices and misbehave.
-
-### C++ — done
-
-Converted. `NodePtr (Parser::*sub)()` and both binary helpers are gone, along
-with the eleven one-line precedence functions between `parse_list` and
-`parse_unary` — the single biggest deletion in the exercise. `parse_list`,
-`parse_term`, `parse_prefix`, `parse_postfix` and `parse_primary` are what is
-left. `parse_sequence`'s `enter`/`leave` converged onto the protected form at
-the same time, which was the last host still leaving it to fall through.
-
-Three things this host did differently, none of them optional:
-
-- **The two tables are built, not written out.** `assign_ops()`,
-  `compare_ops()` and `compare_words()` are function-local `static const
-  std::set`s in the existing house style, and `infix_entry`'s two `std::map`s
-  are initialised by an immediately-invoked lambda that loops over them. C++
-  *can* loop in a static initialiser where PHP cannot, so unlike `INFIX_OPS`
-  there the twelve comparison operators are named once. This matters beyond
-  tidiness: **`is_compare_op` is also the evaluator's question** — `sel.cpp`'s
-  binary dispatch asks it whether an operator is a numeric comparison — so
-  writing the list out again in the table would have been the second of three
-  places to forget one.
-- **Nodes are `shared_ptr<const Node>`.** `make()` returns a mutable
-  `std::shared_ptr<Node>` and the conversion to `NodePtr` happens on return;
-  a `parse_term` that held `NodePtr` locally could not set `s`/`l`/`r`.
-  `grouped` still needs its copy in `parse_primary` for the same reason.
-- **Node fields were not renamed.** `l`/`r` serve `bin`, `index` *and*
-  `assign`; `items` serves `seq`, `list` *and* call arguments. Python's
-  `target`/`value`/`obj`/`idx` names would have dragged `eval`, `check_target`
-  and `dependencies` into the same commit.
-
-`BP_SEQ` and `BP_LIST` are `[[maybe_unused]]`: they exist so the table reads as
-all sixteen levels of spec/SPEC.md §5, and `;` and `,` are N-ary loops that
-never consult them. Without the attribute `-Wall` is right to complain, and
-deleting them would leave two holes in a table whose whole claim is that it *is*
-the specification's §5.
-
-**This host's three deliverables**:
-
-1. **The index-bracket rider** — done, alone, ahead of the conversion.
-2. **The parser conversion** — done.
-3. **The SQL translator** — `php/src/Sql/` is 6,381 lines and
-   `python/sel/sql/` is 5,459. **Deferred, and not by transcription from the
-   Python.** The obvious C++ shape for the generated dialect map is a JSON blob
-   parsed at load, because the map is heterogeneous nested data and the runtime
-   `define()` API takes application-supplied data of the same shape. That is
-   ruled out: this host is not taking a JSON reader. The representation is an
-   open question, and it is the question to answer before any of the layer is
-   written — the container warning in
-   [A host's turn](#a-hosts-turn-three-deliverables) is aimed squarely at
-   whatever answers it, since `std::map` sorts its keys and an aggregate's
-   elements must unroll in the order they were assigned.
+Two things the C++ host has that the others do not, and which the port will meet
+early: `Node` is defined in `cpp/sel.cpp` rather than in a header, so a second
+translation unit cannot see it, and `Node::spec` names a type inside the
+anonymous namespace — so a shared AST header means `Spec`, `Args`, `Context` and
+`eval_node` all leaving it. That is a behaviour-neutral commit of its own, and it
+should be landed as one, before any of the layer exists.
 
 ### Lisp
 
-`#'parse-xor` and friends and both helpers delete.
+Transcribe from `python/sel/sql/`. A hash table has no iteration order, so an
+aggregate's elements want an alist; see the container warning above.
 
-- Build the table with `defparameter` and a hash table, following the existing
-  `+assign-ops+` style at `parser.lisp:21-23` despite the `+…+` naming —
-  `defconstant` on a hash table signals on reload.
-- **`:test #'equal` is mandatory.** Keys are strings; `eql` will silently never
-  match and every operator will look unknown.
-- `make-node` takes only `(kind pos)`, so the three `parse-term` branches need
-  local `bin-node`/`un-node` helpers or they will be several times wordier than
-  the Python original.
-- `parser.lisp:253` reads the lookahead without a bounds guard, relying on the
-  EOF sentinel, where the other four guard explicitly. Keep the sentinel
-  assumption or add the guard, but do it deliberately.
-**This host's three deliverables**, in order:
+`cl-ppcre:regex-replace-all` treats its replacement as a template where `\1` and
+`\&` are directives, which is the template-substitution trap in a different
+spelling — `search`/`replace` on subseqs, or `:simple-calls`, is the shape that
+works.
 
-1. **The index-bracket rider** — `with-depth` around the bracket loop is the
-   whole change. Land it before the conversion, not with it.
-2. **The parser conversion** — everything above.
-3. **The SQL translator** — transcribe from `python/sel/sql/`. A hash table has
-   no iteration order, so an aggregate's elements want an alist; see the container
-   warning in [A host's turn](#a-hosts-turn-three-deliverables). Whichever of the
-   two hosts goes last also moves the two parked conformance cases and adds the
-   `spec/SPEC.md` §6.4 sentence.
-
-### One inconsistency worth settling
-
-`parse_sequence`'s `enter`/`leave` was unprotected in JS, PHP and C++ and
-protected in Lisp (`with-depth`) and Python (`try/finally`). It is harmless
-either way, because a `fail` abandons the whole parse, but the asymmetry is the
-first thing a reviewer asks about. JS and PHP converged onto the protected form
-as part of their conversions; **C++ is the last one left**, and should converge
-when it is converted.
+---
 
 ## How to do one
 
 One host per release, so a regression is attributable to one commit.
 
-1. Convert the parser. Do not touch the lexer, the evaluator or the node shape.
-2. `tools/check.sh` — all 600 cases on every host, plus the API probes, the doc
-   examples and the fuzzer. The battery is what makes this safe: a parser
-   rewrite that keeps every pinned `E_SYNTAX`, `E_DEPTH`, `E_ARITY`,
-   `E_BAD_ASSIGN` and `E_RESERVED` position is a rewrite that did not change the
-   language.
-3. `for s in 1 2 3 4 5; do tools/fuzz.sh 20000 $s; done`. About a third of the
-   fuzz corpus is invalid on purpose, and it compares error positions, which is
-   exactly what a parser change puts at risk.
-4. If something diverges, add the minimal conformance case **before** fixing it.
+1. Write the emitters first and regenerate. **The other hosts' generated files
+   must come out byte-identical** — that is the check that you added a host
+   rather than changed shared data.
+2. `tools/check.sh`, which runs `sqlt` for every host that has one.
+3. `tools/stress.sh`, if you touched anything that walks a `Node` or a `Value`.
+4. `python3 tools/mutate-sql.py`, which is what says the new cases can fail.
+5. If something diverges, add the minimal case to `sql/cases/` **before** fixing
+   any host.
 
-When the last host is converted, update the correspondence table in
-`docs/EXTENDING.md` — it will finally be true at the function level and not just
-the file level — rewrite the "Adding an operator" checklist around the table, and
-delete this file.
+When the last host is finished, delete this file, and drop its line from
+`README.md` and the reference to it in `docs/EXTENDING.md`.
+

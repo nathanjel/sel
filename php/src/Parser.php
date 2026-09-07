@@ -1,6 +1,7 @@
 <?php
-// Precedence climbing, mirroring js/src/parser.mjs and python/sel/parser.py so
-// the three can be read side by side. See docs/PARSER-MIGRATION.md.
+// Precedence climbing, mirroring the other four hosts so all five can be read
+// side by side. See docs/EXTENDING.md, "Adding an operator", step 5, and
+// python/sel/parser.py, whose module docstring is the rationale.
 //
 // This file used to transcribe spec/grammar.md one function per production,
 // seventeen deep, with an `fn () => ...` closure at each of the nine binary
@@ -270,8 +271,8 @@ final class Parser
     {
         // The try/finally is new. It costs nothing — a failing parse abandons the
         // Parser either way — and the Lisp and Python hosts already protect this
-        // counter, so this is the asymmetry docs/PARSER-MIGRATION.md asks the
-        // transcribed hosts to converge on rather than a deviation.
+        // counter, so this is the shape the five hosts converged on rather than
+        // a deviation. All five protect it now.
         $start = $this->peek();
         $this->enter($start);
         $items = [];

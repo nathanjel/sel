@@ -1,4 +1,5 @@
-// Precedence climbing. See docs/PARSER-MIGRATION.md.
+// Precedence climbing. See docs/EXTENDING.md, "Adding an operator", step 5,
+// and python/sel/parser.py, whose module docstring is the rationale.
 //
 // This host used to transcribe spec/grammar.md one function per production —
 // parseSequence → parseList → parseAssignment → parseOr → … → parsePrimary,
@@ -125,8 +126,8 @@ class Parser {
   //
   // The try/finally is new here. It costs nothing — a failing parse abandons the
   // Parser either way — and the Lisp and Python hosts already protect this
-  // counter, so this is the asymmetry docs/PARSER-MIGRATION.md asks the
-  // transcribed hosts to converge on rather than a deviation.
+  // counter, so this is the shape the five hosts converged on rather than a
+  // deviation. All five protect it now.
   parseSequence() {
     const start = this.peek();
     this.enter(start);

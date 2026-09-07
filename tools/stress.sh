@@ -44,16 +44,10 @@
 #
 #   tools/stress.sh [scale]        scale 1 is the default and takes a few minutes
 #
-# THIS IS CURRENTLY RED, on one shape, tracked and not new. It is written to go
-# green as it lands rather than to be silenced:
-#
-#   nested-index      lisp reports E_DEPTH at 1:399 where the other four report
-#                     1:201, because lisp has not had the index-bracket rider.
-#                     docs/PARSER-MIGRATION.md tracks it; the two conformance
-#                     cases parked in that document land in the same commit.
-#
-# An allowlist was deliberately not added. A harness that knows which failures
-# are acceptable stops being able to tell you that one of them changed.
+# It is green, and it was not: it went red on lisp's missing index-bracket rider
+# and on php's recursive node teardown, and both are now fixed. An allowlist was
+# deliberately never added, which is why it could say so — a harness that knows
+# which failures are acceptable stops being able to tell you that one changed.
 #
 # Deliberately NOT part of tools/check.sh: at scale 1 this allocates gigabytes
 # and runs for minutes, which is not what a pre-commit battery should do. Run it

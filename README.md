@@ -642,7 +642,7 @@ land on the same set.
 spec/          SPEC.md, grammar.md, errors.md — normative
 conformance/   *.selt — normative; every implementation must pass
 docs/          LANGUAGE.md (rule authors), EXTENDING.md (contributors)
-               PARSER-MIGRATION.md (temporary; what C++ and Lisp still owe)
+               PARSER-MIGRATION.md (temporary; the SQL layer C++ and Lisp owe)
 python/        sel/ (package sel), bin/, tests/
 php/           src/ (namespace Sel\), bin/sel, bin/conformance
 js/            src/ (ESM), bin/sel.mjs, bin/conformance.mjs
