@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "The entry to add under \"funcs\" in sql/dialects/<dialect>.json. Shown here",
+    "as a standalone file so the documentation can quote it; in the tree it is a",
+    "key inside the dialect's existing funcs object.",
+    "",
+    "There is no ANSI spelling for an English ordinal suffix, so this is declared",
+    "per dialect rather than on a base -- which is exactly the case sql/MAP.md",
+    "describes for LEFT: 'no ANSI spelling; each server has its own'.",
+    "",
+    "ret is required: the translator infers kinds and will not guess. No caveat,",
+    "because CONCAT of a CASE over MOD is exact on both servers -- but that is a",
+    "claim the oracle has to settle, not a comment."
+  ],
+  "mariadb": {
+    "ORD_SUFFIX": {
+      "tpl": "CONCAT({0}, CASE WHEN MOD({0}, 100) BETWEEN 11 AND 13 THEN 'th' WHEN MOD({0}, 10) = 1 THEN 'st' WHEN MOD({0}, 10) = 2 THEN 'nd' WHEN MOD({0}, 10) = 3 THEN 'rd' ELSE 'th' END)",
+      "ret": "TEXT",
+      "arity": [1, 1]
+    }
+  },
+  "postgresql": {
+    "ORD_SUFFIX": {
+      "tpl": "(CAST({0} AS TEXT) || CASE WHEN MOD({0}, 100) BETWEEN 11 AND 13 THEN 'th' WHEN MOD({0}, 10) = 1 THEN 'st' WHEN MOD({0}, 10) = 2 THEN 'nd' WHEN MOD({0}, 10) = 3 THEN 'rd' ELSE 'th' END)",
+      "ret": "TEXT",
+      "arity": [1, 1]
+    }
+  }
+}

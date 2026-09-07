@@ -43,8 +43,17 @@ SQLTOOLS := sqlmap sqlfuzz sqlt sqlreplay
 # the C++ member of a set whose whole promise is that all five hosts print the
 # same thing, so they sit beside their four siblings rather than under bin/.
 # In the default target for the same reason `unit` is, below.
-EXAMPLES := plain
-EXAMPLE_BINS := $(addprefix $(BUILD)/example-,$(EXAMPLES))
+EXAMPLES := plain complex
+# The same, for an example that also uses the SEL->SQL layer and so needs
+# $(SQL_OBJS) on the link line. A second list rather than a longer $(EXAMPLES),
+# for the reason LINKED and INTERNAL are two lists: the plain example rule links
+# $(BUILD)/sel.o and nothing else, which is what keeps "an example needs only
+# sel.hpp and the evaluator" a checked claim instead of a comment. Folding sql
+# into that rule would link the SQL objects into plain and complex too and
+# quietly retire the check.
+SQL_EXAMPLES := sql dialect
+EXAMPLE_BINS := $(addprefix $(BUILD)/example-,$(EXAMPLES)) \
+                $(addprefix $(BUILD)/example-,$(SQL_EXAMPLES))
 
 # `unit` is in the default target and not only in `test`, because it was not:
 # `make` built everything else, tools/check.sh ran whatever build/unit happened
@@ -65,8 +74,16 @@ $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp sel.hpp sel_
 $(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-$(EXAMPLE_BINS): $(BUILD)/example-%: ../examples/%/cpp.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
+$(addprefix $(BUILD)/example-,$(EXAMPLES)): $(BUILD)/example-%: ../examples/%/cpp.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(BUILD)/sel.o
+
+# sel_sql.hpp rather than $(SQL_HDRS): translating needs the public header
+# alone, and listing the internal ones here would claim the examples reach past
+# it as a matter of course. One does -- dialect registers a flavour, and the
+# registry and the emitter are internal headers -- and it is still not missed,
+# because $(SQL_OBJS) depend on all of them and this rule depends on those.
+$(addprefix $(BUILD)/example-,$(SQL_EXAMPLES)): $(BUILD)/example-%: ../examples/%/cpp.cpp sel.hpp sel_sql.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS) $(BUILD)/sel.o
 
 $(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

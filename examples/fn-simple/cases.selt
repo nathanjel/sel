@@ -1,0 +1,23 @@
+% Conformance cases for ORD_SUFFIX. Written BEFORE the code, so they fail for
+% the right reason first. These go in the matching conformance/*.selt.
+%
+% EXAMPLE-BEGIN
+### name: txt.ord-suffix.basic
+--- source
+ORD_SUFFIX(1) & " " & ORD_SUFFIX(2) & " " & ORD_SUFFIX(3) & " " & ORD_SUFFIX(4)
+--- expect
+text "1st 2nd 3rd 4th"
+===
+### name: txt.ord-suffix.teens
+--- source
+ORD_SUFFIX(11) & " " & ORD_SUFFIX(12) & " " & ORD_SUFFIX(13)
+--- expect
+text "11th 12th 13th"
+===
+### name: txt.ord-suffix.rejects-fraction
+--- source
+ORD_SUFFIX(1.5)
+--- expect
+error E_NOT_INT
+===
+% EXAMPLE-END

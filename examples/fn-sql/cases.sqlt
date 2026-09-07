@@ -1,0 +1,34 @@
+% SQL conformance cases for the ORD_SUFFIX mapping. These go in the matching
+% sql/cases/*.sqlt and pin the string every host emits -- which is what makes
+% "all five hosts translate identically" a check rather than a hope.
+%
+% What they do NOT establish is that the database agrees with SEL about what the
+% answer means. Only sql/oracle/ does that, run against real servers by
+% tools/oracle-db.sh.
+%
+% EXAMPLE-BEGIN
+### name: funcs.ord-suffix.mariadb
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "table": "t", "type": "NUM"}}
+--- source
+ORD_SUFFIX(N)
+--- expect
+CONCAT(`t`.`n`, CASE WHEN MOD(`t`.`n`, 100) BETWEEN 11 AND 13 THEN 'th' WHEN MOD(`t`.`n`, 10) = 1 THEN 'st' WHEN MOD(`t`.`n`, 10) = 2 THEN 'nd' WHEN MOD(`t`.`n`, 10) = 3 THEN 'rd' ELSE 'th' END)
+===
+### name: funcs.ord-suffix.unmapped-is-refused
+--- note
+sqlite has no entry, so a rule using it is refused rather than emitted against a
+function the server does not have. This case is the one that would fail if a
+future edit mapped it carelessly on a base instead of per dialect.
+--- dialect
+sqlite
+--- bindings
+{"N": {"kind": "column", "column": "n", "table": "t", "type": "NUM"}}
+--- source
+ORD_SUFFIX(N)
+--- error
+E_SQL_UNSUPPORTED
+===
+% EXAMPLE-END

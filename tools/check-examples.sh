@@ -44,6 +44,18 @@ for cat in $CATEGORIES; do
     continue
   fi
 
+  # A reference category is per-host code that cannot be *run*: adding a function
+  # to SEL means editing each host's builtin table, so the files are fragments
+  # that belong inside a register() and compile only in place. They are checked
+  # by tools/check-snippets.sh instead, which asserts the documentation quotes
+  # them exactly. Announced rather than skipped quietly -- a category silently
+  # dropped from a run reads as a category that passed.
+  if [ -f "examples/$cat/REFERENCE" ]; then
+    printf 'examples: %-10s reference only, not runnable (%s)\n' \
+           "$cat" "$(head -1 "examples/$cat/REFERENCE")"
+    continue
+  fi
+
   # The reference is the first available host. Which one it is does not matter:
   # every other is diffed against it, so any disagreement is reported whichever
   # side is wrong.

@@ -1,0 +1,37 @@
+% Conformance cases for FIRST. Written BEFORE the code. These go in the
+% matching conformance/*.selt.
+%
+% EXAMPLE-BEGIN
+### name: agg.first.matches
+--- source
+FIRST((1, 8, 3, 9), _ > 5)
+--- expect
+num 8
+===
+### name: agg.first.no-match-is-empty-text
+--- source
+FIRST((1, 2), _ > 5)
+--- expect
+text ""
+===
+### name: agg.first.stops-at-the-first-hit
+--- note
+The body must not run for later elements — 1/0 would raise if it did.
+--- source
+FIRST((8, 1), IF(_ > 5, TRUE, 1/0 == 1))
+--- expect
+num 8
+===
+### name: agg.first.named-binder
+--- source
+FIRST((1, 8), X, X > 5)
+--- expect
+num 8
+===
+### name: agg.first.body-must-be-bool
+--- source
+FIRST((1, 8), _)
+--- expect
+error E_NOT_BOOL
+===
+% EXAMPLE-END

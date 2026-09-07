@@ -132,7 +132,9 @@ if(SEL_BUILD_TOOLS)
   # example nothing compiles is an example that rots -- and these are the C++
   # half of a set whose whole promise is that all five hosts print the same
   # thing. tools/check-examples.sh runs them and diffs that.
-  foreach(ex plain)
+  # sql and dialect link the SEL->SQL layer as well; no extra wiring here,
+  # because it is part of the one sel-lang library rather than a second target.
+  foreach(ex plain complex sql dialect)
     add_executable(sel-example-${ex} ../examples/${ex}/cpp.cpp)
     target_link_libraries(sel-example-${ex} PRIVATE sel-lang)
   endforeach()
