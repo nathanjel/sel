@@ -74,9 +74,9 @@ of lookup tables rather than sixteen functions. `python/sel/parser.py` was the
 pilot and its module docstring is the rationale; the other four were transcribed
 from it, one host at a time.
 
-What still differs between the hosts is only the SEL→SQL layer, which PHP, JS
-and Python have and C++ and Lisp do not. `docs/PARSER-MIGRATION.md` keeps its
-name and tracks what is left of that.
+Nothing differs between the hosts now. All five parse by precedence climbing,
+and all five have the SEL→SQL layer; `docs/SQL-TRANSLATION.md` is the design and
+`sql/cases/*.sqlt` grades every one of them against it.
 
 ---
 

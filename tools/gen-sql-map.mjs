@@ -947,7 +947,7 @@ export const RAW = ${JSON.stringify(raw, null, 2)};
 //
 // Lisp ships source, so the map IS a literal here -- a `defparameter` and
 // nothing else. What needs deciding is the shape, and the constraint is the one
-// docs/PARSER-MIGRATION.md warns about: a hash table has no iteration order,
+// the JS port learned and every host inherits: a hash table has no iteration order,
 // and an aggregate's elements must unroll in the order they were written. So
 // every ordered map is an ALIST, and only records are plists.
 //
@@ -1064,6 +1064,62 @@ would not, after which the hosts improvised differently.")
 `;
 }
 
+function emitReplayLisp(dialects, rules, raw) {
+  const SUF = '~replay';
+  const arm = (o) => '(list ' + Object.entries(o).map(([k, v]) =>
+    `(cons ${lispStr(k)} ${v === null ? 'nil' : lispStr(v)})`).join(' ') + ')';
+  const entrySpec = (e) => {
+    if (e === null) return 'nil';
+    if (typeof e === 'string') return lispStr(e);
+    const parts = [];
+    if (typeof e.tpl === 'string') parts.push(`:tpl ${lispStr(e.tpl)}`);
+    else if (e.tpl !== undefined && e.tpl !== null) parts.push(`:tpl ${arm(e.tpl)}`);
+    if (e.variants !== undefined) parts.push(`:variants ${arm(e.variants)}`);
+    if (e.ret !== undefined) parts.push(`:ret ${lispStr(e.ret)}`);
+    if (e.caveat !== undefined) parts.push(`:caveat ${lispStr(e.caveat)}`);
+    if (e.since !== undefined) parts.push(`:since ${lispStr(e.since)}`);
+    if (e.arity !== undefined) parts.push(`:arity (cons ${e.arity[0]} ${e.arity[1]})`);
+    return `(list ${parts.join(' ')})`;
+  };
+  const SECT = { ops: ':ops', funcs: ':funcs', skel: ':skel' };
+  const body = [];
+  for (const doc of raw) {
+    const name = doc.dialect + SUF;
+    const parent = (doc.extends === null || doc.extends === undefined)
+      ? 'nil' : lispStr(doc.extends + SUF);
+    const spec = [`:extends ${parent}`];
+    if (doc.version !== undefined) spec.push(`:version ${lispStr(doc.version)}`);
+    if (doc.target !== undefined) spec.push(`:target ${doc.target ? 't' : 'nil'}`);
+    // QUOTED: an alist written bare in an evaluated position is a function
+    // call, and SBCL says so.
+    spec.push(`:lexical '${lispLexical(doc.lexical ?? {}, 0).replace(/\n/g, ' ')}`);
+    body.push(`  (define-dialect ${lispStr(name)} (list ${spec.join(' ')}))`);
+    body.push('  (incf calls)');
+    for (const section of ['ops', 'funcs', 'skel']) {
+      for (const [key, entry] of Object.entries(doc[section] ?? {})) {
+        body.push(`  (define-entry ${lispStr(name)} ${SECT[section]} ${lispStr(key)} ${entrySpec(entry)})`);
+        body.push('  (incf calls)');
+      }
+    }
+  }
+  return `;;;; ${BANNER('gen-sql-map.mjs').join('\n;;;; ')}
+;;;;
+${REPLAY_NOTE.map((l) => ';;;; ' + l).join('\n')}
+;;;;
+;;;; Harness, not library: this lives in bin/ because it is test data. Every call
+;;;; below goes through the PUBLIC registration API, which is the whole point.
+
+(in-package #:sel-sqlreplay)
+
+(defun replay-register ()
+  "Registers every shipped dialect under a ~replay suffix and returns the number
+of registration calls it took."
+  (let ((calls 0))
+${body.join('\n')}
+    calls))
+`;
+}
+
 function emitReplayCpp(dialects, rules, raw) {
   const SUF = '~replay';
   const body = [];
@@ -1116,6 +1172,7 @@ const OUTPUTS = [
   ['js/src/sql/_map.mjs', emitJs],
   ['cpp/sel_sql_map_data.cpp', emitCpp],
   ['lisp/src/sql/map-data.lisp', emitLisp],
+  ['lisp/bin/map-replay.lisp', emitReplayLisp],
   ['php/bin/MapReplay.php', emitReplayPhp],
   ['python/bin/map_replay.py', emitReplayPython],
   ['js/bin/map-replay.mjs', emitReplayJs],

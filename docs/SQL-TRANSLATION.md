@@ -2556,8 +2556,19 @@ with C++: nothing asserted that a BIN slot is inlined rather than bound, and
 nothing asserted that escaping applies the longest rule first. Both were found
 by mutating the C++ layer and watching the mutation walk through all 381 cases.
 
-**Later:** the Lisp port. `docs/PARSER-MIGRATION.md` tracks it and points back
-here.
+**Lisp has landed too, and it was the last one.** All five hosts now translate,
+and all five are graded by the same three lanes: 384 `.sqlt` cases with their
+mirrors, the 2000×4 translator fuzz diffed across every host, and the map replay
+at 217 registration calls and 564 lookups.
+
+It needed no wrapper node type, where C++ did: a SEL node's child slots are
+untyped in Lisp, so the `clist` indexed assignment builds sits in one directly,
+exactly as Python's does. What it did need was a `lower-anchors` flag on
+`validate-pattern`. This host lowers `^` and `$` to `\A` and `\z` for cl-ppcre,
+whose `$` also matches before a trailing newline — and the Python host keeps
+that lowering in a separate pass for the stated reason that validate()'s output
+is shared with hosts whose engines have no `\A`. A translated pattern goes to a
+server, which is one of those.
 
 A note on how to build M2–M3 and M5–M6: those are the phases where fanning work
 out pays. Authoring four dialect documents, writing the case files per category,

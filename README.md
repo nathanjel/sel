@@ -652,7 +652,6 @@ spec/          SPEC.md, grammar.md, errors.md — normative
 conformance/   *.selt — normative; every implementation must pass
 docs/          LANGUAGE.md (rule authors), EXTENDING.md (contributors)
                SQL-TRANSLATION.md + SQL-TESTING.md (the SEL->SQL layer)
-               PARSER-MIGRATION.md (temporary; the SQL layer C++ and Lisp owe)
 sql/           MAP.md, errors.md, dialects/*.json, cases/*.sqlt, mutations.json
 python/        sel/ (package sel), bin/, tests/
 php/           src/ (namespace Sel\), bin/sel, bin/conformance
