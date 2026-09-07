@@ -63,6 +63,22 @@ class SelError : public std::exception {
   Pos pos_;
 };
 
+// --- limits -----------------------------------------------------------------
+
+// spec/SPEC.md §6.4's three caps, which are one number: the parser's nesting,
+// the evaluator's, and a value's. Each is a recursion over a structure the input
+// can grow without bound, and each finds this host's stack instead of an error
+// if it is not counted.
+//
+// Public because it is part of the language's contract rather than this
+// implementation's tuning -- every host caps at the same place, and a program
+// refused here is refused everywhere. The SEL->SQL translator is the caller that
+// made it public: it has a fourth use for the number, refusing to translate an
+// expression that nests deeper than SEL will evaluate rather than emitting SQL
+// for a rule that could never run. It reads this rather than repeating 200, so
+// the two cannot drift.
+inline constexpr int MAX_DEPTH = 200;
+
 // --- values -----------------------------------------------------------------
 
 enum class Kind { None, Text, Bin, Bool };

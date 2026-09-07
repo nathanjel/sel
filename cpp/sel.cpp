@@ -53,12 +53,12 @@ namespace {
   throw SelError(code, message, pos);
 }
 
-// spec/SPEC.md §6.4's three caps, which are one number. The parser's nesting,
-// the evaluator's, and a value's -- each is a recursion over a structure the
-// input can grow without bound, and each finds this host's stack instead of an
-// error if it is not counted. Declared here rather than beside the parser
-// because Value, five hundred lines above it, is now one of the three.
-constexpr int MAX_DEPTH = 200;
+// spec/SPEC.md §6.4's three caps live in sel.hpp now: the SEL->SQL translator is
+// a fourth caller and is a separate translation unit, and one number cannot be
+// in an anonymous namespace and shared at the same time. Nothing is declared
+// here, deliberately -- a second definition at this scope would be ambiguous
+// with sel::MAX_DEPTH rather than shadowing it, which is the compiler making the
+// same point.
 
 }  // namespace
 
