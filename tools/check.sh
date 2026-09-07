@@ -47,6 +47,14 @@ for impl in $IMPLS; do
   step "sql translation ($impl)" impl_sql "$impl"
 done
 
+# Before the cases, because it is cheaper and because it asks a more basic
+# question: can this host's own API build the map it ships? If it cannot, the
+# map is data rather than code, and a host with no JSON reader has nowhere to
+# put it. sql/MAP.md §4.5¼.
+for impl in $IMPLS; do
+  step "sql map replay ($impl)" impl_sqlreplay "$impl"
+done
+
 step "sql documented examples" ./tools/check-sql-docs.sh
 step "sql mutations" ./tools/mutate-sql.sh
 step "sql semantic oracle" ./tools/check-sql-oracle.sh

@@ -1,0 +1,79 @@
+#!/usr/bin/env php
+<?php
+// Rebuild the whole shipped map through the public registration API, then diff
+// what the translator can observe against the map beside it.
+//
+//   php php/bin/sqlreplay
+//
+// The counterpart of js/bin/sqlreplay.mjs and python/bin/sqlreplay; see the first
+// for why this check exists. sql/MAP.md §4.5¼ is the property it asserts.
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/Sql/bootstrap.php';
+// Generated beside this script, harness data rather than part of the library.
+require_once __DIR__ . '/MapReplay.php';
+
+use Sel\Sql\Map;
+use Sel\Sql\MapData;
+use Sel\Sql\MapReplay;
+
+const SUF = '~replay';
+
+$calls = 0;
+foreach (MapReplay::raw() as $doc) {
+    $parent = $doc['extends'] ?? null;
+    Map::defineDialect($doc['dialect'] . SUF, [
+        'extends' => $parent === null ? null : $parent . SUF,
+        'version' => $doc['version'] ?? null,
+        'target' => $doc['target'] ?? true,
+        'lexical' => $doc['lexical'] ?? [],
+    ]);
+    $calls++;
+    foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (($doc[$section] ?? []) as $key => $entry) {
+            Map::define($doc['dialect'] . SUF, $section, (string) $key, $entry);
+            $calls++;
+        }
+    }
+}
+
+/** @param mixed $a @param mixed $b */
+function same($a, $b): bool
+{
+    return json_encode($a) === json_encode($b);
+}
+
+$problems = [];
+$compared = 0;
+foreach (MapData::DIALECTS as $name => $flat) {
+    if (!is_array($flat) || !isset($flat['dialect'])) {
+        continue;
+    }
+    $compared++;
+    if (Map::version($name) !== Map::version($name . SUF)) {
+        $problems[] = "{$name}: version";
+    }
+    foreach (array_keys($flat['lexical'] ?? []) as $key) {
+        $compared++;
+        if (!same(Map::lexical($name, (string) $key), Map::lexical($name . SUF, (string) $key))) {
+            $problems[] = "{$name}.lexical.{$key}";
+        }
+    }
+    foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (array_keys($flat[$section] ?? []) as $key) {
+            $compared++;
+            if (!same(Map::entry($name, $section, (string) $key),
+                      Map::entry($name . SUF, $section, (string) $key))) {
+                $problems[] = "{$name}.{$section}.{$key}";
+            }
+        }
+    }
+}
+
+foreach ($problems as $p) {
+    echo "  DIFFERS {$p}\n";
+}
+printf("%d registration calls rebuilt the map, %d lookups compared, %d differences\n",
+    $calls, $compared, count($problems));
+exit($problems === [] ? 0 : 1);

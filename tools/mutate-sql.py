@@ -38,6 +38,10 @@ CHECKS = [
     # Object.hasOwn where they use plain membership -- are exactly the kind the
     # other two hosts cannot fail on, so nothing else here can measure them.
     ('sqlt (js)',         ['node', 'js/bin/sqlt.mjs']),
+    # Cheap, and the only check that asks whether the registration API can
+    # express the shipped map. Nothing else covers php/bin/sqlreplay or the
+    # defineDialect rules it exercises.
+    ('sql map replay',    ['php', 'php/bin/sqlreplay']),
     ('sqldoc',            ['php', 'php/bin/sqldoc']),
     ('oracle coverage',   ['php', 'php/bin/sqlo', 'coverage']),
     ('oracle expressions',['php', 'php/bin/sqlo', 'expressions']),

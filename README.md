@@ -666,7 +666,7 @@ passes the same suite; `tools/impls.sh` is where it registers itself, and
 tools/check.sh
 ```
 
-Ten layers, each catching what the others miss:
+Eleven layers, each catching what the others miss:
 
 - **Conformance** — the normative suite, run by every implementation.
 - **Unit tests** — for the layers underneath the suite, where a bug otherwise
@@ -689,6 +689,11 @@ Ten layers, each catching what the others miss:
   part of the promise as agreement on what it returned.
 - **Manifest versions** — every package manifest declares the same version, so a
   release cannot go out half-numbered.
+- **SEL→SQL map replay** — the shipped dialect map rebuilt through nothing but
+  each host's public registration API, and diffed against itself: 217 calls, 564
+  lookups, no differences. It asserts that anything the map contains an
+  application could have registered, which is what lets a host ship its map as
+  generated *code* rather than as a data file to deploy and parse.
 - **SEL→SQL translation** — the dialect map and the case table are generated, and
   both are checked for staleness; then `sql/cases/*.sqlt` runs through every host
   that has a translator, asserting the *exact* emitted string. Three hosts

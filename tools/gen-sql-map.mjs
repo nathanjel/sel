@@ -651,10 +651,102 @@ export const RULES = ${JSON.stringify(rules, null, 2)};
 
 // --- main ------------------------------------------------------------------
 
+// The dialect documents as they are WRITTEN -- chain not flattened -- in an
+// order where a parent always precedes its children, so they can be replayed
+// through defineDialect and define in one pass.
+//
+// This is harness data, not library data: it goes to each host's bin/ the way
+// the generated case table does, because no shipped code reads it. What reads it
+// is the replay check, which asserts the property sql/MAP.md §4.5¼ states -- that
+// anything the shipped map contains, an application could have registered -- and
+// that property is what lets a host emit its map as code rather than carry a
+// file to parse.
+function rawInOrder(docs) {
+  const out = [];
+  const done = new Set();
+  while (out.length < docs.size) {
+    const before = out.length;
+    for (const [name, doc] of docs) {
+      if (done.has(name)) continue;
+      const parent = doc.extends ?? null;
+      if (parent === null || done.has(parent)) { out.push(doc); done.add(name); }
+    }
+    // A cycle would otherwise spin here. validate() rejects one, but a generator
+    // that hangs is a worse way to find out than one that says so.
+    if (out.length === before) {
+      fail('sql/dialects', 'the extends chain has a cycle; cannot order the documents');
+      break;
+    }
+  }
+  return out;
+}
+
+const REPLAY_NOTE = [
+  'The dialect documents as written, parents first, for the replay check.',
+  '',
+  'Not library data and not shipped: this is the input the generator read, kept',
+  'in the harness so the check can register it through the public API and diff',
+  'the result against the flattened map beside it. sql/MAP.md §4.5¼ is the rule',
+  'it proves -- anything the shipped map contains, an application could have',
+  'registered -- and that is what lets a host emit its map as code rather than',
+  'ship a file to parse.',
+];
+
+function emitReplayPhp(dialects, rules, raw) {
+  const body = raw.map((d) => `        ${phpValue(d, 8)},`).join('\n');
+  return `<?php
+// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+//
+// ${REPLAY_NOTE.join('\n// ')}
+
+declare(strict_types=1);
+
+namespace Sel\\Sql;
+
+final class MapReplay
+{
+    /** @return list<array<string,mixed>> */
+    public static function raw(): array
+    {
+        return [
+${body}
+        ];
+    }
+}
+`;
+}
+
+function emitReplayPython(dialects, rules, raw) {
+  const q = '"'.repeat(3);
+  return `${q}${BANNER('gen-sql-map.mjs').join('\n')}
+
+${REPLAY_NOTE.join('\n')}
+${q}
+
+from __future__ import annotations
+
+from typing import Any
+
+RAW: list[dict[str, Any]] = ${pyValue(raw, 0)}
+`;
+}
+
+function emitReplayJs(dialects, rules, raw) {
+  return `// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+//
+// ${REPLAY_NOTE.join('\n// ')}
+
+export const RAW = ${JSON.stringify(raw, null, 2)};
+`;
+}
+
 const OUTPUTS = [
   ['php/src/Sql/MapData.php', emitPhp],
   ['python/sel/sql/_map.py', emitPython],
   ['js/src/sql/_map.mjs', emitJs],
+  ['php/bin/MapReplay.php', emitReplayPhp],
+  ['python/bin/map_replay.py', emitReplayPython],
+  ['js/bin/map-replay.mjs', emitReplayJs],
 ];
 
 const docs = load();
@@ -675,9 +767,10 @@ if (errors.length) {
 const check = process.argv.includes('--check');
 let stale = 0;
 const rules = buildRules(dialects);
+const raw = rawInOrder(docs);
 for (const [rel, emit] of OUTPUTS) {
   const path = resolve(ROOT, rel);
-  const text = emit(dialects, rules);
+  const text = emit(dialects, rules, raw);
   if (check) {
     let have = null;
     try { have = readFileSync(path, 'utf8'); } catch { /* absent counts as stale */ }

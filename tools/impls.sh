@@ -183,6 +183,25 @@ impl_sql() {
 # emit the same thing?" and needs nothing -- which matters, because without it
 # the SQL fuzz step did nothing at all on a machine with no DSN, and that is
 # every machine by default.
+# Rebuild the shipped map through the public registration API and diff it. The
+# property sql/MAP.md §4.5¼ states -- anything the shipped map contains, an
+# application could have registered -- is what lets a host emit its map as CODE
+# instead of carrying a data file to parse, and a host with no JSON reader has
+# no second option. This is the check that says the property still holds.
+impl_sqlreplay() {
+  local impl="$1"; shift
+  case "$impl" in
+    php)  php php/bin/sqlreplay "$@" ;;
+    js)   node js/bin/sqlreplay.mjs "$@" ;;
+    # The bundle does not import the SQL layer; see impl_sql.
+    js-bundle|js-bundle-min) return 0 ;;
+    cpp|lisp) return 0 ;;                       # no SQL layer yet
+    python) PYTHONPATH="$PWD/python" python3 python/bin/sqlreplay "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlreplay "$@" ;;
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
 impl_sqlfuzz() {
   local impl="$1"; shift
   case "$impl" in
