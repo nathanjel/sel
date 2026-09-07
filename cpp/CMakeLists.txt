@@ -128,6 +128,15 @@ if(SEL_BUILD_TOOLS)
     target_include_directories(sel-${whitebox} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   endforeach()
 
+  # The worked examples. Built here rather than left as loose files because an
+  # example nothing compiles is an example that rots -- and these are the C++
+  # half of a set whose whole promise is that all five hosts print the same
+  # thing. tools/check-examples.sh runs them and diffs that.
+  foreach(ex plain)
+    add_executable(sel-example-${ex} ../examples/${ex}/cpp.cpp)
+    target_link_libraries(sel-example-${ex} PRIVATE sel-lang)
+  endforeach()
+
   add_executable(sel-unit tests/unit.cpp)
   target_compile_features(sel-unit PRIVATE cxx_std_23)
   target_include_directories(sel-unit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

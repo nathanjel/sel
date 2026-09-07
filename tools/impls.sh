@@ -80,6 +80,45 @@ impl_batch() {
   esac
 }
 
+# One worked example, in one language. `cat` is a directory under examples/ and
+# every language file in it prints byte-identical output -- that is what
+# tools/check-examples.sh checks, and what makes the set documentation rather
+# than five programs that merely look alike.
+#
+# The bundle configurations are deliberately absent. examples/*/js.mjs imports
+# ../../js/src/sel.mjs with a plain static import, because that is what a reader
+# writes; aiming it at dist/ would need the dynamic-import dance examples/e2e.mjs
+# does, and an example that contorts itself to be testable has stopped being an
+# example. The bundles are held to the conformance suite instead, which is where
+# that question belongs. python-wheel IS here and costs nothing: examples/*/
+# python.py tries `import sel` before falling back to the source tree, so the
+# wheel run exercises the installed package against the documented example.
+impl_example() {
+  local impl="$1" cat="$2"; shift 2
+  case "$impl" in
+    js)     node "examples/$cat/js.mjs" "$@" ;;
+    php)    php $SEL_PHP_FLAGS "examples/$cat/php.php" "$@" ;;
+    cpp)    "cpp/build/example-$cat" "$@" ;;
+    lisp)   sbcl --noinform --disable-debugger --non-interactive \
+              --load lisp/bin/boot.lisp --load "examples/$cat/lisp.lisp" \
+              --eval '(sel-example:main)' --end-toplevel-options "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 "examples/$cat/python.py" "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" "examples/$cat/python.py" "$@" ;;
+    *)      echo "no worked example for implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
+# The subset of available_impls that examples/ is written for.
+example_impls() {
+  local out=""
+  for impl in $(available_impls); do
+    case "$impl" in
+      js|php|cpp|lisp|python|python-wheel) out="$out $impl" ;;
+    esac
+  done
+  echo "${out# }"
+}
+
 impl_e2e() {
   local impl="$1"; shift
   case "$impl" in

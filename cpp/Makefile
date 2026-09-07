@@ -38,11 +38,20 @@ SQL_HDRS := sel_sql.hpp sel_sql_emit.hpp sel_sql_map.hpp sel_sql_node.hpp \
 # Tools over that layer.
 SQLTOOLS := sqlmap sqlfuzz sqlt sqlreplay
 
+# The worked examples under ../examples/. They use the public interface only,
+# exactly like LINKED, but they live outside this directory on purpose: they are
+# the C++ member of a set whose whole promise is that all five hosts print the
+# same thing, so they sit beside their four siblings rather than under bin/.
+# In the default target for the same reason `unit` is, below.
+EXAMPLES := plain
+EXAMPLE_BINS := $(addprefix $(BUILD)/example-,$(EXAMPLES))
+
 # `unit` is in the default target and not only in `test`, because it was not:
 # `make` built everything else, tools/check.sh ran whatever build/unit happened
 # to be lying there, and once tests/unit.cpp stopped compiling against sel.cpp a
 # stale binary went on reporting 81 green checks for 27 commits.
-BINS := $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL) $(WHITEBOX) $(SQLTOOLS) unit)
+BINS := $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL) $(WHITEBOX) $(SQLTOOLS) unit) \
+        $(EXAMPLE_BINS)
 
 .PHONY: all test clean
 all: $(BINS)
@@ -55,6 +64,9 @@ $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp sel.hpp sel_
 
 $(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<
+
+$(EXAMPLE_BINS): $(BUILD)/example-%: ../examples/%/cpp.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(BUILD)/sel.o
 
 $(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
