@@ -1,10 +1,15 @@
-// SEL — the parse tree, shared between sel.cpp and any translation unit that
-// needs to walk it.
+// SEL — the parse tree, and the rest of the evaluator's surface that a second
+// translation unit needs.
 //
 // **Internal.** This is not what you include to USE SEL — that is sel.hpp, and
 // it stays sufficient on its own. This exists because the SEL→SQL translator
 // walks the tree the parser builds, and a tree defined inside one .cpp cannot be
 // walked from another. If you are embedding SEL, you want sel.hpp.
+//
+// It carries one thing that is not the tree, for the same reason: the regex
+// rewriter. The other hosts reach theirs as an internal module function, and
+// nothing here belongs in the public header, where it would give C++ an API
+// surface the other four do not have.
 //
 // The three names below that are not the tree itself — Spec, and the forward
 // declarations of Args and Context — are here because Node holds a `const Spec*`
@@ -64,6 +69,19 @@ struct Node {
 };
 
 using NodePtr = std::shared_ptr<const Node>;
+
+// Validates and rewrites a regex in one pass, returning source that means the
+// same thing to every engine. Throws SelError for a pattern outside the
+// portable subset of spec/SPEC.md §7.8.
+//
+// Every host runs this, so every host compiles the same pattern -- and the
+// SEL→SQL translator is the fifth caller: it puts a pattern through the
+// language's own rewriter before emitting it, so a translated `\d` means what
+// SEL means by it rather than what the server's engine happens to. MariaDB 11.8
+// answers 1 for '٣' REGEXP '^\d$' where SEL answers FALSE. A second copy in the
+// SQL layer would be a second thing to keep in step, and it would fail silently
+// when the two drifted.
+std::string validate_pattern(const std::string& pattern, Pos pos);
 
 // Teardown is iterative, and it has to be.
 //

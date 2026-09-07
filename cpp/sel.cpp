@@ -2973,8 +2973,13 @@ std::string validate_class(const CodePoints& p, std::size_t start, const std::st
   bad_regex("unterminated character class", pattern, start, pos);
 }
 
+}  // namespace
+
 // Validates and rewrites in one pass, returning source that means the same thing
-// to every engine. All four hosts run this, so all four compile the same pattern.
+// to every engine. Every host runs this, so every host compiles the same
+// pattern -- and the SEL→SQL translator is a fifth caller from another
+// translation unit, which is why it is declared in sel_ast.hpp and defined at
+// namespace scope rather than in the anonymous namespace above.
 std::string validate_pattern(const std::string& pattern, Pos pos) {
   const CodePoints p = decode_utf8(pattern, pos);
   const std::size_t n = p.size();
@@ -3040,6 +3045,8 @@ std::string validate_pattern(const std::string& pattern, Pos pos) {
   }
   return out;
 }
+
+namespace {
 
 using Regex = srell::u32regex;
 
