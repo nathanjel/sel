@@ -303,8 +303,15 @@ class Bindings {
   void check_aliases(Pos pos = {}) const;
 
  private:
-  // Ordered, so names() and the "bound names are ..." message are stable.
+  // Sorted, which is what names() and the "bound names are ..." message want:
+  // the Python host spells those `sorted(self._map)`.
   std::map<std::string, Binding, std::less<>> map_;
+  // The caller's own order, which is what check_aliases wants. Python's
+  // Bindings is a dict and iterates it insertion-ordered there; iterating the
+  // sorted map instead would name a different one of two colliding relations in
+  // the refusal. No case asserts that message, so this is closing a divergence
+  // before it is load-bearing rather than after.
+  std::vector<std::string> order_;
 };
 
 

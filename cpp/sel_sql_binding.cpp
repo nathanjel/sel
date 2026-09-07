@@ -214,7 +214,10 @@ Binding Binding::value(sel::Value v, std::optional<SqlKind> type) {
 
 Bindings::Bindings(std::vector<std::pair<std::string, Binding>> bindings) {
   for (auto& [name, b] : bindings) {
-    map_.insert_or_assign(ascii_upper(name), b);
+    const std::string key = ascii_upper(name);
+    // A duplicate name keeps its FIRST position and takes the LAST value, which
+    // is what assigning into a dict twice does.
+    if (map_.insert_or_assign(key, b).second) order_.push_back(key);
   }
 }
 
@@ -254,7 +257,8 @@ std::vector<std::string> Bindings::names() const {
 
 void Bindings::check_aliases(Pos pos) const {
   std::map<std::string, std::string> seen;
-  for (const auto& [name, b] : map_) {
+  for (const std::string& name : order_) {
+    const Binding& b = map_.find(name)->second;
     if (b.kind() != Binding::Kind::Relation) continue;
     const RelationSpec& r = b.as_relation();
     const std::string alias = r.alias ? *r.alias : r.from;
