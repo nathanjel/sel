@@ -686,3 +686,53 @@ condition
 --- expect
 EXISTS (SELECT 1 FROM `t` `r` WHERE TRUE AND ((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)
 ===
+### name: register.dialect.root-has-no-parent
+--- note
+A dialect with no parent is a real thing -- `ansi` is one -- and until now no
+application could declare one: defineDialect refused every spec whose `extends`
+was null, so the runtime API could build any dialect EXCEPT the one they all
+descend from. That made "an application can register a map entry" true and "an
+application can build the map" false, which matters because the second is what
+lets a host ship its map as generated CODE rather than as data to be parsed.
+
+Present-and-null, not absent: forgetting the key is a typo and must not quietly
+produce a root that inherits nothing.
+--- dialect
+scratch
+--- register
+[{"dialect": "scratch", "extends": null, "version": "1", "target": true,
+  "lexical": {"identQuote": "\"", "identEscape": "\"\"", "textQuote": "'", "textEscape": {"'": "''"},
+              "true": "TRUE", "false": "FALSE", "numericLiteral": "{0}", "placeholder": "?"}},
+ {"define": ["scratch", "ops", "+", {"tpl": "({0} + {1})", "ret": "NUM"}]}]
+--- source
+1 + 2
+--- expect
+(1 + 2)
+===
+### name: register.dialect.extends-must-be-stated
+--- note
+The other half: a spec with no `extends` key at all is a mistake, not a root.
+--- dialect
+mariadb
+--- register
+[{"dialect": "nameless", "version": "1"}]
+--- source
+1
+--- throws
+LogicException
+===
+### name: register.dialect.entries-are-not-declared-here
+--- note
+`ops`, `funcs` and `skel` are defined one entry at a time with define(). Passed
+to defineDialect they used to be accepted and silently dropped -- a registration
+that looks like it worked, which is the one failure mode this layer refuses to
+have.
+--- dialect
+mariadb
+--- register
+[{"dialect": "d2", "extends": "ansi", "ops": {"+": {"tpl": "X", "ret": "NUM"}}}]
+--- source
+1
+--- throws
+LogicException
+===

@@ -35,6 +35,9 @@ _extra: dict[str, dict[str, Any]] = {}
 # dialect -> section -> key -> entry | builder
 _overlay: dict[str, dict[str, dict[str, Any]]] = {}
 
+# Every key define_dialect() accepts. sql/MAP.md §3 is the normative list.
+DIALECT_KEYS = ('extends', 'version', 'target', 'lexical')
+
 
 # --- registration ------------------------------------------------------------
 
@@ -53,10 +56,28 @@ def define_dialect(name: str, spec: dict[str, Any]) -> None:
     if exists(name):
         raise RuntimeError(
             f'SQL dialect {name} is already defined; a name means one dialect')
-    extends = spec.get('extends')
-    if extends is None:
-        raise RuntimeError(f'SQL dialect {name} must extend another dialect')
-    if not exists(extends):
+
+    # The keys a dialect declaration carries, and nothing else. `ops`, `funcs`
+    # and `skel` are NOT among them -- they are defined one entry at a time with
+    # define() -- and passing them here used to be accepted and silently
+    # dropped, which is a registration that looks like it worked.
+    unknown = sorted(k for k in spec if k not in DIALECT_KEYS)
+    if unknown:
+        raise RuntimeError(
+            f'SQL dialect {name} declares ' + ', '.join(unknown) + ', which a '
+            'dialect declaration does not carry; ops, funcs and skel entries are '
+            'defined one at a time with define()')
+
+    # Present-and-null, not absent. A dialect with no parent is a real thing --
+    # `ansi` is one -- but forgetting the key is a typo, and the two must not
+    # look alike: without this, a missing `extends` would quietly produce a root
+    # that inherits nothing and answers every lookup with MISSING.
+    if 'extends' not in spec:
+        raise RuntimeError(
+            f'SQL dialect {name} must say what it extends; write extends: None '
+            'for a dialect with no parent, as ansi has')
+    extends = spec['extends']
+    if extends is not None and not exists(extends):
         raise RuntimeError(f'SQL dialect {name} extends {extends}, which does not exist')
 
     # Each default is applied when the key is absent OR explicitly null, because
@@ -65,7 +86,14 @@ def define_dialect(name: str, spec: dict[str, Any]) -> None:
         v = spec.get(key)
         return default if v is None else v
 
-    version = _or('version', _record(extends)['version'])
+    # A root inherits nothing, so it has to state its own version.
+    if extends is None:
+        version = spec.get('version')
+        if version is None:
+            raise RuntimeError(f'SQL dialect {name} extends nothing, so it must '
+                               'declare a version; there is none to inherit')
+    else:
+        version = _or('version', _record(extends)['version'])
     # Dotted-numeric, as sql/MAP.md §4.5 says and nothing cleverer. A live server
     # reports "11.8.8-MariaDB", which is the natural thing to pass and is not a
     # version this map can compare: PHP's intval read it as 11.8.8 by guessing

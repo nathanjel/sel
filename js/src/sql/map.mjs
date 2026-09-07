@@ -46,13 +46,34 @@ const has = (obj, key) => obj != null && Object.hasOwn(obj, key);
 //
 // Throws Error, not SqlError: a malformed registration is a mistake in the
 // application's startup, and `tryTranslate` must not swallow it.
+// Every key defineDialect() accepts. sql/MAP.md §3 is the normative list.
+const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
+
 export function defineDialect(name, spec) {
   if (exists(name)) {
     throw new Error(`SQL dialect ${name} is already defined; a name means one dialect`);
   }
-  const ext = spec.extends ?? null;
-  if (ext === null) throw new Error(`SQL dialect ${name} must extend another dialect`);
-  if (!exists(ext)) {
+  // The keys a dialect declaration carries, and nothing else. `ops`, `funcs` and
+  // `skel` are NOT among them -- they are defined one entry at a time with
+  // define() -- and passing them here used to be accepted and silently dropped,
+  // which is a registration that looks like it worked.
+  const unknown = Object.keys(spec).filter((k) => !DIALECT_KEYS.includes(k)).sort();
+  if (unknown.length) {
+    throw new Error(`SQL dialect ${name} declares ${unknown.join(', ')}, which a `
+      + 'dialect declaration does not carry; ops, funcs and skel entries are '
+      + 'defined one at a time with define()');
+  }
+
+  // `in`, not `?? null`: a dialect with no parent is a real thing -- `ansi` is
+  // one -- but forgetting the key is a typo, and the two must not look alike.
+  // Without this a missing `extends` would quietly produce a root that inherits
+  // nothing and answers every lookup with MISSING.
+  if (!('extends' in spec)) {
+    throw new Error(`SQL dialect ${name} must say what it extends; write `
+      + 'extends: null for a dialect with no parent, as ansi has');
+  }
+  const ext = spec.extends;
+  if (ext !== null && !exists(ext)) {
     throw new Error(`SQL dialect ${name} extends ${ext}, which does not exist`);
   }
 
@@ -60,7 +81,17 @@ export function defineDialect(name, spec) {
   // PHP's `?? …` is. `??` is that operator, so this is the same rule.
   const or = (key, dflt) => spec[key] ?? dflt;
 
-  const version = or('version', record(ext).version);
+  // A root inherits nothing, so it has to state its own version.
+  let version;
+  if (ext === null) {
+    if ((spec.version ?? null) === null) {
+      throw new Error(`SQL dialect ${name} extends nothing, so it must declare a `
+        + 'version; there is none to inherit');
+    }
+    version = spec.version;
+  } else {
+    version = or('version', record(ext).version);
+  }
   // Dotted-numeric, as sql/MAP.md §4.5 says and nothing cleverer. A live server
   // reports "11.8.8-MariaDB", which is the natural thing to pass and is not a
   // version this map can compare: PHP's intval read it as 11.8.8 by guessing and

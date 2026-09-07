@@ -658,6 +658,20 @@
       "file": "js/src/sql/binding.mjs",
       "from": "    out[asciiUpper(String(name))] = b.spec;",
       "to": "    out[String(name).toUpperCase()] = b.spec;"
+    },
+    {
+      "name": "root-dialect-refused-again",
+      "was": "A dialect with no parent must be declarable, or the runtime API can build every dialect except the one they all descend from -- and 'generated code is what an application could have written' stops being true. Restoring the old blanket refusal must fail register.dialect.root-has-no-parent.",
+      "file": "php/src/Sql/Map.php",
+      "from": "        if ($extends !== null && !self::exists($extends)) {",
+      "to": "        if ($extends === null || !self::exists($extends)) {"
+    },
+    {
+      "name": "dialect-spec-keys-unchecked",
+      "was": "ops, funcs and skel passed to defineDialect were accepted and silently dropped. Dropping the unknown-key check must fail register.dialect.entries-are-not-declared-here.",
+      "file": "php/src/Sql/Map.php",
+      "from": "        $unknown = array_diff(array_keys($spec), self::DIALECT_KEYS);",
+      "to": "        $unknown = [];"
     }
   ]
 }

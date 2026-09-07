@@ -37,20 +37,50 @@ final class Map
      *
      * @param array{extends?:string, version?:string, target?:bool, lexical?:array<string,mixed>} $spec
      */
+    /** Every key defineDialect() accepts. sql/MAP.md §3 is the normative list. */
+    public const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
+
     public static function defineDialect(string $name, array $spec): void
     {
         if (self::exists($name)) {
             throw new \LogicException(
                 "SQL dialect {$name} is already defined; a name means one dialect");
         }
-        $extends = $spec['extends'] ?? null;
-        if ($extends === null) {
-            throw new \LogicException("SQL dialect {$name} must extend another dialect");
+        // The keys a dialect declaration carries, and nothing else. `ops`, `funcs`
+        // and `skel` are NOT among them -- they are defined one entry at a time
+        // with define() -- and passing them here used to be accepted and silently
+        // dropped, which is a registration that looks like it worked.
+        $unknown = array_diff(array_keys($spec), self::DIALECT_KEYS);
+        if ($unknown) {
+            sort($unknown);
+            throw new \LogicException("SQL dialect {$name} declares "
+                . implode(', ', $unknown) . ', which a dialect declaration does not '
+                . 'carry; ops, funcs and skel entries are defined one at a time '
+                . 'with define()');
         }
-        if (!self::exists($extends)) {
+
+        // array_key_exists, not `?? null`: a dialect with no parent is a real
+        // thing -- `ansi` is one -- but forgetting the key is a typo, and the two
+        // must not look alike. Without this a missing `extends` would quietly
+        // produce a root that inherits nothing and answers every lookup MISSING.
+        if (!array_key_exists('extends', $spec)) {
+            throw new \LogicException("SQL dialect {$name} must say what it extends; "
+                . 'write extends: null for a dialect with no parent, as ansi has');
+        }
+        $extends = $spec['extends'];
+        if ($extends !== null && !self::exists($extends)) {
             throw new \LogicException("SQL dialect {$name} extends {$extends}, which does not exist");
         }
-        $version = $spec['version'] ?? self::record($extends)['version'];
+        // A root inherits nothing, so it has to state its own version.
+        if ($extends === null) {
+            if (($spec['version'] ?? null) === null) {
+                throw new \LogicException("SQL dialect {$name} extends nothing, so it "
+                    . 'must declare a version; there is none to inherit');
+            }
+            $version = $spec['version'];
+        } else {
+            $version = $spec['version'] ?? self::record($extends)['version'];
+        }
         // Dotted-numeric, as sql/MAP.md §4.5 says and nothing cleverer. A live
         // server reports "11.8.8-MariaDB", which is the natural thing to pass and
         // is not a version this map can compare: PHP's intval read it as 11.8.8

@@ -272,6 +272,30 @@ special code anywhere because it is only another link:
   "funcs": { "RMATCH": "MariaDB 10.1 has no REGEXP_REPLACE-based anchoring rewrite" } }
 ```
 
+### 4.5¼ A registered dialect can be a root, and carries only four keys
+
+`defineDialect` takes `extends`, `version`, `target` and `lexical`, and nothing
+else. `ops`, `funcs` and `skel` entries are defined one at a time with `define`,
+and passing them in the dialect spec is **refused** rather than ignored — it used
+to be accepted and silently dropped, which is a registration that looks like it
+worked.
+
+`extends` must be **present**, and may be `null` for a dialect with no parent, as
+`ansi` has. Present-and-null rather than absent, because forgetting the key is a
+typo and must not quietly produce a root that inherits nothing. A root has no
+version to inherit, so it must declare one.
+
+That a root is declarable is what makes this true:
+
+> **Anything the shipped map contains, an application could have registered.**
+
+Which is the property a host relies on when it ships its map as generated *code*
+rather than as data to be read: the generator emits a sequence of `defineDialect`
+and `define` calls, the runtime executes them at start-up, and no file is
+deployed alongside the application. 217 calls rebuild the whole shipped map —
+the chain preserved, so no dialect repeats what it inherits — and the result is
+indistinguishable from the shipped one, entry for entry.
+
 ### 4.5½ Registration is checked against this document, at run time
 
 Everything §4 and §5 require of a *shipped* entry, `Map::define` and
