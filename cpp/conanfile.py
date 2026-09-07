@@ -17,7 +17,7 @@ import os
 
 class SelConan(ConanFile):
     name = "sel-lang"
-    version = "0.3.0"
+    version = "0.4.0"
     license = "MIT"
     author = "Marcin Gałczyński"
     url = "https://github.com/nathanjel/sel"
