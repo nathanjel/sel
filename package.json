@@ -40,9 +40,11 @@
     "./js/src/builtins/*.mjs"
   ],
   "files": [
-    "dist/",
+    "dist/sel.mjs",
+    "dist/sel.min.mjs",
     "js/src/",
     "js/bin/",
+    "conformance/",
     "docs/",
     "spec/",
     "examples/order-validation.sel",
