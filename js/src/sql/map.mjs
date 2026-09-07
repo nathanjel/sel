@@ -218,33 +218,6 @@ export function entry(dialect, section, key) {
   return MISSING;
 }
 
-// Every key one section of a dialect resolves, overlay and generated table
-// together, with the entry each resolves to.
-//
-// The chain is walked leaf-first so a nearer definition wins, which is the same
-// precedence `entry()` applies one key at a time.
-export function entries(dialect, section) {
-  checkSection(section);
-  // Membership, never a truthiness or null test, and for the same reason
-  // `entry()` tests membership: a dialect withdraws an entry by defining it as
-  // null, and a null test reads that as "not set yet" and lets the base's live
-  // entry through. PHP shipped exactly that, with `??=` here against
-  // `array_key_exists` there — so entry() said a withdrawn entry was gone while
-  // entries() still listed it.
-  const out = new Map();
-  for (const d of chain(dialect)) {
-    const sec = overlay.get(d)?.get(section);
-    if (sec) for (const [k, v] of sec) if (!out.has(k)) out.set(k, v);
-  }
-  for (const d of chain(dialect)) {
-    const sec = has(DIALECTS, d) ? DIALECTS[d][section] : undefined;
-    if (sec) for (const k of Object.keys(sec)) if (!out.has(k)) out.set(k, sec[k]);
-  }
-  const sorted = {};
-  for (const k of [...out.keys()].sort()) sorted[k] = out.get(k);
-  return sorted;
-}
-
 const DOTTED = /^[0-9]+(\.[0-9]+)*$/;
 const TPL_KEY = /^(0|[1-9][0-9]{0,2})$/;
 const UNIFY = /^@unify:[0-9]+(,[0-9]+)*$/;

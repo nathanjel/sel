@@ -10,7 +10,16 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE = os.path.join(ROOT, 'sql', 'mutations.json')
-GENERATED = os.path.join('php', 'src', 'Sql', 'MapData.php')
+# All three generated maps, not one. A mutation to sql/dialects/*.json is scored
+# a no-op unless it changes what the hosts actually read -- and reading only
+# PHP's copy assumed the three emitters cannot differ, which is the assumption
+# the emitters exist to be checked against. Any one of them changing is enough
+# to prove the mutation landed.
+GENERATED = (
+    os.path.join('php', 'src', 'Sql', 'MapData.php'),
+    os.path.join('python', 'sel', 'sql', '_map.py'),
+    os.path.join('js', 'src', 'sql', '_map.mjs'),
+)
 
 # In order, cheapest first. The first one that fails is the one reported: it is
 # the answer to "what would have told you", and the cheapest such answer is the
@@ -107,7 +116,8 @@ def main(argv):
                 continue
 
             if m['file'].startswith('sql/dialects/'):
-                before = open(os.path.join(tree, GENERATED), encoding='utf-8').read()
+                before = [open(os.path.join(tree, g), encoding='utf-8').read()
+                          for g in GENERATED]
                 if run(['node', 'tools/gen-sql-map.mjs'], tree) != 0:
                     errors.append(f'{name}: the mutated map would not regenerate')
                     continue
@@ -118,7 +128,9 @@ def main(argv):
                 # target sql/dialects/*.json and nothing checked that any of
                 # them changed the map the checks actually read. Verified by
                 # adding a key the generator ignores and watching this fire.
-                if open(os.path.join(tree, GENERATED), encoding='utf-8').read() == before:
+                after = [open(os.path.join(tree, g), encoding='utf-8').read()
+                         for g in GENERATED]
+                if after == before:
                     errors.append(f'{name}: {m["file"]} changed but the generated map '
                                   'did not — the mutation is a no-op')
                     continue

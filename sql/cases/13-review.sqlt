@@ -664,3 +664,25 @@ condition
 --- expect
 ((`x`.`a` > 0) AND (`x`.`b` > 0))
 ===
+### name: review.relation.field-name-folds-ascii-only
+--- note
+A relation binding upper-cases its field names once, so every consumer looks one
+up the same way, and the fold must be ASCII-only. Python's str.upper() and JS's
+toUpperCase() both turn "ß" into "SS" -- a longer key that the read path, which
+folds with the ASCII rule, can then never find. PHP's strtoupper is ASCII-only
+and was the reference; the two ports each had to reach for a helper instead of
+the obvious method, and nothing exercised the difference until this case.
+
+Nothing about a field name has to be ASCII, which is the point: it is a key an
+application chose, not a SEL identifier.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "t", "alias": "r", "fields": {"straße": {"column": "s", "type": "TEXT"}}}}
+--- source
+ANY(R, X, X["straße"] $== "a")
+--- as
+condition
+--- expect
+EXISTS (SELECT 1 FROM `t` `r` WHERE TRUE AND ((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)
+===

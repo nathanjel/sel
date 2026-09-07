@@ -644,6 +644,20 @@
       "file": "js/src/sql/constants.mjs",
       "from": "  return node.t === 'var' && !node.grouped;",
       "to": "  return node.t === 'var';"
+    },
+    {
+      "name": "py-relation-field-folds-eszett",
+      "was": "M6 named `str.upper()` is not `strtoupper` as one of the three places the obvious Python spelling is a DIFFERENT function, and this is the site: a relation binding's field names are folded to build its lookup, and str.upper() turns \"ß\" into \"SS\" -- a longer key that no later lookup can find. PHP's strtoupper is ASCII-only, so the hosts would disagree about whether a field exists.",
+      "file": "python/sel/sql/binding.py",
+      "from": "        out[ascii_upper(str(name))] = b.spec",
+      "to": "        out[str(name).upper()] = b.spec"
+    },
+    {
+      "name": "js-relation-field-folds-eszett",
+      "was": "The JS half of py-relation-field-folds-eszett: toUpperCase folds \"ß\" to \"SS\" where asciiUpper does not.",
+      "file": "js/src/sql/binding.mjs",
+      "from": "    out[asciiUpper(String(name))] = b.spec;",
+      "to": "    out[String(name).toUpperCase()] = b.spec;"
     }
   ]
 }

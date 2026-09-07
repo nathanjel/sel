@@ -222,32 +222,6 @@ def entry(dialect: str, section: str, key: str) -> Any:
     return MISSING
 
 
-def entries(dialect: str, section: str) -> dict[str, Any]:
-    """Every key one section of a dialect resolves, overlay and generated table
-    together, with the entry each resolves to.
-
-    The chain is walked leaf-first so a nearer definition wins, which is the same
-    precedence ``entry()`` applies one key at a time.
-    """
-    _check_section(section)
-    # `k not in out`, never `out.get(k) is None`, and for the same reason
-    # ``entry()`` tests membership: a dialect withdraws an entry by defining it
-    # as None, and a truthiness or None test reads that as "not set yet" and lets
-    # the base's live entry through. PHP shipped exactly that, with `??=` here
-    # against `array_key_exists` there -- so entry() said a withdrawn entry was
-    # gone while entries() still listed it.
-    out: dict[str, Any] = {}
-    for d in chain(dialect):
-        for k, v in (_overlay.get(d, {}).get(section, {})).items():
-            if k not in out:
-                out[k] = v
-    for d in chain(dialect):
-        for k, v in (DIALECTS.get(d, {}).get(section, {})).items():
-            if k not in out:
-                out[k] = v
-    return {k: out[k] for k in sorted(out)}
-
-
 _DOTTED = re.compile(r'[0-9]+(\.[0-9]+)*')
 _TPL_KEY = re.compile(r'0|[1-9][0-9]{0,2}')
 _UNIFY = re.compile(r'@unify:[0-9]+(,[0-9]+)*')
