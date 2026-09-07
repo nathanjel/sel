@@ -26,12 +26,24 @@ the README.
 ## Before any release
 
 ```
+tools/check-generated.sh                          # artifacts freshly generated
 tools/check.sh                                    # ALL GREEN, full roster
 SEL_IMPLS="$SEL_IMPLS python-wheel" tools/check.sh # and through the built wheel
 tools/check-version.sh 0.3.0                      # every manifest agrees
 ```
 
-The first must print `ALL GREEN` with every implementation present — a partial
+The first is what makes the rest of this document possible. The SEL→SQL map is
+authored once, in `sql/dialects/*.json`, and rendered by `tools/gen-sql-map.mjs`
+into each host's own source language — `MapData.php`, `_map.py`, `_map.mjs`,
+`sel_sql_map_data.cpp`. Those renderings are committed and published, so a C++,
+PHP or Python user never installs Node to get a working library; the price is
+that a release cut from a tree where one of them is stale ships hosts that
+quietly disagree about the map. `check-generated.sh` refuses that, names the
+artifact, and prints the command to fix it. Unlike `check-sql-map.sh` it does
+not skip when Node is absent — it falls back to timestamps, because a release
+machine without Node is precisely where the mistake would otherwise pass.
+
+`tools/check.sh` must print `ALL GREEN` with every implementation present — a partial
 roster is refused rather than quietly passing, because every differential layer
 degrades to a no-op when there is nothing to compare against.
 

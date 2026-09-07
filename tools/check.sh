@@ -40,6 +40,11 @@ for impl in $IMPLS; do
   step "unit tests ($impl)" impl_unit "$impl"
 done
 
+# Before the two content checks below, and unlike them it does not skip when
+# Node is missing: a release ships these artifacts already generated so that no
+# downstream user needs Node, and the machine cutting the release is exactly
+# where a stale one would go unnoticed.
+step "generated artifacts" ./tools/check-generated.sh
 step "sql dialect map" ./tools/check-sql-map.sh
 step "sql case data" ./tools/check-sql-cases.sh
 
