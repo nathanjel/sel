@@ -2524,8 +2524,8 @@ js-bundle` returns 0 for that reason rather than skipping something.
 
 **Later:** C++ and Lisp ports. Each is a transcription of a design three hosts
 have already agreed on, which is the cheapest moment to do it. Both hosts owed
-a parser conversion and the index-bracket depth rider as well; those landed
-first, in 0.6.0 and 0.7.0, so this is all that is left of that list.
+a parser conversion and the index-bracket depth rider as well; both landed
+first, so this is all that is left of that list.
 `docs/PARSER-MIGRATION.md` tracks it and points back here.
 
 A note on how to build M2–M3 and M5–M6: those are the phases where fanning work

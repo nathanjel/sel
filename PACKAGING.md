@@ -267,10 +267,10 @@ Where each package manager stands:
 |---|---|---|
 | vcpkg | **yes**, `srell` at exactly `2026.05` | vendored by default; `system-srell` feature links vcpkg's |
 | Conan | no such package | vendored, no alternative |
-| plain CMake / copy-two-files | n/a | vendored |
+| plain CMake / copy the files | n/a | vendored |
 
 The vendored copy is the default everywhere, on purpose. It is what keeps "copy
-`sel.hpp`, `sel.cpp` and `third_party/srell/` and compile" true, it is the only
+`sel.hpp`, `sel_ast.hpp`, `sel.cpp` and `third_party/srell/` and compile" true, it is the only
 option for Conan, and it removes any chance of a resolver quietly selecting a
 different engine version — which would not be a build difference, it would be a
 *language* difference, since the regex engine decides what a rule matches.

@@ -72,7 +72,7 @@ function level as well as the file level: `parse_program` → `parse_sequence` �
 in every host, with the sixteen precedence levels of `spec/SPEC.md` §5 as a pair
 of lookup tables rather than sixteen functions. `python/sel/parser.py` was the
 pilot and its module docstring is the rationale; the other four were transcribed
-from it, one per release, between 0.3.0 and 0.7.0.
+from it, one host at a time.
 
 What still differs between the hosts is only the SEL→SQL layer, which PHP, JS
 and Python have and C++ and Lisp do not. `docs/PARSER-MIGRATION.md` keeps its
@@ -559,7 +559,7 @@ Getting this wrong makes `//` lex as two `/` tokens and the failure will look
 like a parser bug.
 
 **5. Every parser** — a row in a table, in all five, which is the whole point of
-the migration that finished in 0.7.0:
+the migration that finished:
 
 ```python
 INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }        # python
