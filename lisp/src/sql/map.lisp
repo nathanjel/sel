@@ -234,7 +234,15 @@ no parent, as ansi has" where))
 version; there is none to inherit" where))
                             (t (getf (dialect-record extends) :version))))
              (raw-target (plist-get spec :target))
-             (target (if (presentp raw-target) (and raw-target t) t))
+             (target (if (presentp raw-target)
+                         (progn
+                           ;; Refused rather than coerced: truthiness differs
+                           ;; between hosts and must not decide this.
+                           (unless (member raw-target '(t nil))
+                             (bad "~a has a target that is not a boolean; ~
+truthiness differs between hosts and must not decide this" where))
+                           raw-target)
+                         t))
              (lexical (let ((l (plist-get spec :lexical)))
                         (if (presentp l) l '()))))
         ;; Dotted-numeric, as sql/MAP.md §4.5 says. A live server reports

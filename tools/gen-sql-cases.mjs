@@ -104,7 +104,7 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 // A Call is emitted as `Binding::name(a, b)` in PHP and `Binding.name(a, b)` in
 // Python. Arguments are either literal values or nested Calls.
 const call = (name, args) => ({ __call: name, args });
-const raw = (php, py, js, cpp) => ({ __raw: true, php, py, js, cpp });
+const raw = (php, py, js, cpp, lisp) => ({ __raw: true, php, py, js, cpp, lisp });
 
 function bindingCall(b, where) {
   if (!isObj(b) || b.kind === undefined) {
@@ -172,19 +172,23 @@ function valueCall(v, where) {
   if (typeof v === 'number') {
     fail(where, `write ${v} as a string and declare "type": "NUM"; a JSON number `
               + 'does not survive every host');
-    return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()');
+    return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()',
+               '(sel:make-none)');
   }
   if (v === null || v === undefined) {
-    return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()');
+    return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()',
+               '(sel:make-none)');
   }
   if (typeof v === 'boolean') {
     // C++ spells it `boolean`, because `bool` is a keyword there.
     return raw(`Value::bool(${v})`, `Value.bool(${v ? 'True' : 'False'})`,
-               `Value.bool(${v})`, `Value::boolean(${v})`);
+               `Value.bool(${v})`, `Value::boolean(${v})`,
+               `(sel:make-bool ${v ? 't' : 'nil'})`);
   }
   if (typeof v === 'string') {
     return raw(`Value::text(${phpStr(v)})`, `Value.text(${pyStr(v)})`,
-               `Value.text(${jsStr(v)})`, `Value::text(${cppStr(v)})`);
+               `Value.text(${jsStr(v)})`, `Value::text(${cppStr(v)})`,
+               `(sel:make-text ${lispStr(v)})`);
   }
   if (isObj(v) && Object.keys(v).length === 1 && typeof v.bin === 'string') {
     // JSON has no byte string, so the corpus spells one as {"bin": "<hex>"}.
@@ -192,7 +196,8 @@ function valueCall(v, where) {
     return raw(`Value::bin(hex2bin(${phpStr(v.bin)}))`,
                `Value.bin(bytes.fromhex(${pyStr(v.bin)}))`,
                `Value.bin(binFromHex(${jsStr(v.bin)}))`,
-               `Value::bin(bin_from_hex(${cppStr(v.bin)}))`);
+               `Value::bin(bin_from_hex(${cppStr(v.bin)}))`,
+               `(sel:make-bin (bin-from-hex ${lispStr(v.bin)}))`);
   }
   // A list or a map of further values.
   const parts = Array.isArray(v)
@@ -206,7 +211,9 @@ function valueCall(v, where) {
     'valueTree([' + parts.map(([k, x]) =>
       (k === null ? '' : '[' + jsStr(k) + ', ') + emitJsArg(x) + (k === null ? '' : ']')).join(', ') + '])',
     'value_tree({' + parts.map(([k, x]) =>
-      '{' + (k === null ? 'std::nullopt' : cppStr(k)) + ', ' + cppBinding(x) + '}').join(', ') + '})');
+      '{' + (k === null ? 'std::nullopt' : cppStr(k)) + ', ' + cppBinding(x) + '}').join(', ') + '})',
+    '(value-tree (list ' + parts.map(([k, x]) =>
+      '(cons ' + (k === null ? 'nil' : lispStr(k)) + ' ' + lispArg(x) + ')').join(' ') + '))');
 }
 
 // --- emitters ---------------------------------------------------------------
@@ -394,6 +401,184 @@ if (errors.length) {
   for (const e of errors) process.stderr.write(`${e}\n`);
   process.stderr.write(`\n${errors.length} problem(s) in sql/cases\n`);
   process.exit(1);
+}
+
+// --- Common Lisp ------------------------------------------------------------
+//
+// Every case, as a plist, with the `bindings` and `register` blocks emitted as
+// CALLS rather than data -- the same rule the other four follow, so this runner
+// parses nothing either.
+//
+// Unlike C++, nothing here is unrepresentable. Lisp's constructors take whatever
+// they are handed and refuse it at run time, exactly as Python's and PHP's do,
+// so a case whose point is a malformed binding still runs as a case.
+
+// Function declarations, not consts: valueCall runs while the case files are
+// being parsed, which is before this section of the module is evaluated, and a
+// const would still be in its temporal dead zone.
+function lispStr(s) {
+  return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+function lispOpt(v) { return v === null || v === undefined ? 'nil' : lispStr(v); }
+
+const LISP_KIND = { NUM: ':num', TEXT: ':text', BOOL: ':bool', BIN: ':bin',
+                    UNKNOWN: ':unknown', LIST: ':list' };
+
+function lispKind(t) {
+  if (t === null || t === undefined) return 'nil';
+  // Not a kind at all: hand it through as a string and let the constructor
+  // refuse it, which is what the dynamic hosts do.
+  return LISP_KIND[t] ?? lispStr(t);
+}
+
+function lispArg(v) {
+  if (v === null || v === undefined) return 'nil';
+  if (v === true) return 't';
+  if (v === false) return 'nil';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string') return lispStr(v);
+  if (v.__raw) return v.lisp;
+  if (v.__call) {
+    switch (v.__call) {
+      case 'column': {
+        const [col, table, type] = v.args;
+        // lispArg, not lispOpt: a JSON array or object here is the POINT of
+        // several cases, and stringifying it would hand the constructor
+        // "[object Object]" instead of the shape it is meant to refuse.
+        return `(binding-column ${lispArg(col)} ${lispArg(table)} ${lispKind(type)})`;
+      }
+      case 'raw':
+        return `(binding-raw ${lispArg(v.args[0])} ${lispKind(v.args[1])})`;
+      case 'columns':
+        return `(binding-columns ${v.args.map(lispArg).join(' ')})`;
+      case 'value': {
+        const [val, type] = v.args;
+        return `(binding-value ${lispArg(val)} ${lispKind(type)})`;
+      }
+      case 'relation':
+      case 'relationQuery': {
+        const [from, alias, fields, scalar, corr] = v.args;
+        const ctor = v.__call === 'relation' ? 'binding-relation' : 'binding-relation-query';
+        const f = (fields && typeof fields === 'object' && !Array.isArray(fields)
+                   && !fields.__call && !fields.__raw)
+          ? '(list ' + Object.entries(fields)
+              .map(([k, b]) => `(cons ${lispStr(k)} ${lispArg(b)})`).join(' ') + ')'
+          : lispArg(fields);
+        return `(${ctor} ${lispArg(from)} ${lispArg(alias)} ${f} ${lispArg(scalar)} ${lispArg(corr)})`;
+      }
+    }
+  }
+  if (Array.isArray(v)) return '(list ' + v.map(lispArg).join(' ') + ')';
+  return '(list ' + Object.entries(v).map(([k, x]) =>
+    `(cons ${lispStr(k)} ${lispArg(x)})`).join(' ') + ')';
+}
+
+function lispEntrySpec(entry) {
+  if (entry === null) return 'nil';
+  if (typeof entry === 'string') return lispStr(entry);
+  if (Array.isArray(entry)) return '(list ' + entry.map(lispArg).join(' ') + ')';
+  const parts = [];
+  const armed = (o) => '(list ' + Object.entries(o).map(([k, v]) =>
+    v === null ? `(cons ${lispStr(k)} nil)` : `(cons ${lispStr(k)} ${lispStr(v)})`).join(' ') + ')';
+  for (const [k, v] of Object.entries(entry)) {
+    const kw = ':' + k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+    if ((k === 'tpl' || k === 'variants') && v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      parts.push(`${kw} ${armed(v)}`);
+    } else if (k === 'arity' && Array.isArray(v) && v.length === 2) {
+      parts.push(`${kw} (cons ${lispArg(v[0])} ${lispArg(v[1])})`);
+    } else {
+      parts.push(`${kw} ${lispArg(v)}`);
+    }
+  }
+  return '(list ' + parts.join(' ') + ')';
+}
+
+const LISP_SECTIONS = { ops: ':ops', funcs: ':funcs', skel: ':skel' };
+
+function lispRegister(ops) {
+  return ops.map((op) => {
+    if (op && typeof op === 'object' && 'define' in op) {
+      const a = op.define;
+      const [dialect, section, key, entry] = Array.isArray(a) ? a : [a, a, a, a];
+      // An unknown section is a case in its own right; keyword-ise it so the
+      // registry refuses it by name, as the other hosts do.
+      const sec = LISP_SECTIONS[section] ?? `:${String(section)}`;
+      return `      (define-entry ${lispArg(dialect)} ${sec} ${lispArg(key)} ${lispEntrySpec(entry)})`;
+    }
+    if (op && typeof op === 'object' && 'dialect' in op) {
+      const rest = [];
+      for (const [k, v] of Object.entries(op)) {
+        if (k === 'dialect') continue;
+        const kw = ':' + k;
+        if (k === 'lexical' && v !== null && typeof v === 'object') {
+          rest.push(`${kw} (list ` + Object.entries(v).map(([a, b]) =>
+            (b !== null && typeof b === 'object')
+              ? `(cons ${lispStr(a)} (list ` + Object.entries(b).map(([x, y]) =>
+                  `(cons ${lispStr(x)} ${lispStr(y)})`).join(' ') + '))'
+              : `(cons ${lispStr(a)} ${lispArg(b)})`).join(' ') + ')');
+        } else {
+          rest.push(`${kw} ${lispArg(v)}`);
+        }
+      }
+      return `      (define-dialect ${lispArg(op.dialect)} (list ${rest.join(' ')}))`;
+    }
+    return `      (error "a register op needs a dialect or a define")`;
+  }).join('\n');
+}
+
+function emitLispCases(cases) {
+  const body = cases.map((c) => {
+    const binds = Object.entries(c.bindingCalls)
+      .map(([n, x]) => `(cons ${lispStr(n)} ${lispArg(x)})`).join(' ');
+    const reg = (c.registerData === null || c.registerData === undefined)
+      ? 'nil'
+      : `(lambda ()\n${lispRegister(c.registerData)})`;
+    return `  (list
+   :name ${lispStr(c.name)}
+   :at ${lispStr(c.at)}
+   :dialect ${lispOpt(c.dialect)}
+   :source ${lispOpt(c.source)}
+   :expect ${lispOpt(c.expect)}
+   :error ${lispOpt(c.error)}
+   :throws ${lispOpt(c.throws)}
+   :params ${lispOpt(c.params)}
+   :as ${lispOpt(c.as)}
+   :mode ${lispOpt(c.mode)}
+   :strict ${c.optionsData && c.optionsData.strict ? 't' : 'nil'}
+   :register ${reg}
+   :bindings (lambda () (list ${binds})))`;
+  }).join('\n');
+
+  return `;;;; ${BANNER.join('\n;;;; ')}
+;;;;
+;;;; Harness, not library: this lives in bin/ because it is test data.
+;;;;
+;;;; The bindings and register blocks are CALLS, not data, so this runner
+;;;; parses nothing -- the same rule every other host follows. Unlike the C++
+;;;; table nothing here is unrepresentable: Lisp's constructors take what they
+;;;; are handed and refuse it at run time, so a case whose whole point is a
+;;;; malformed binding still runs as a case.
+
+(in-package #:sel-sqlt)
+
+(defun bin-from-hex (hex)
+  (let ((out (make-array (floor (length hex) 2) :element-type '(unsigned-byte 8))))
+    (loop for i from 0 below (length out)
+          do (setf (aref out i) (parse-integer hex :start (* 2 i) :end (+ 2 (* 2 i))
+                                                   :radix 16)))
+    out))
+
+(defun value-tree (items)
+  "A list of values, keyed as SEL keys them: an item with no key takes the next
+1-based position, and a keyed one takes its key."
+  (let ((v (sel:make-list-value '())) (i 0))
+    (dolist (cell items v)
+      (sel:value-set v (or (car cell) (princ-to-string (incf i))) (cdr cell)))))
+
+(defparameter +sql-cases+
+ (list
+${body}))
+`;
 }
 
 // --- C++ --------------------------------------------------------------------
@@ -587,7 +772,8 @@ function emitCpp(cases) {
 }
 
 const OUTPUTS = [['php/bin/CaseData.php', emitPhp], ['python/bin/case_data.py', emitPython],
-  ['js/bin/case-data.mjs', emitJs], ['cpp/bin/case_data.cpp', emitCpp]];
+  ['js/bin/case-data.mjs', emitJs], ['cpp/bin/case_data.cpp', emitCpp],
+  ['lisp/bin/case-data.lisp', emitLispCases]];
 const check = process.argv.includes('--check');
 let stale = 0;
 for (const [rel, emit] of OUTPUTS) {

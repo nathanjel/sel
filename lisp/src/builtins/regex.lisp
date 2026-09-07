@@ -155,7 +155,18 @@ to be written out, because cl-ppcre is the more permissive of the four."
 ;;; Validates and rewrites in one pass, returning source that means the same
 ;;; thing to every engine. All four hosts run this, so all four compile the same
 ;;; pattern — apart from the anchor lowering noted at the top of this file.
-(defun validate-pattern (pattern pos &optional (anchored-at-start t))
+(defun validate-pattern (pattern pos &optional (anchored-at-start t)
+                                       (lower-anchors t))
+  "Validates and rewrites in one pass, returning source that means the same
+thing to every engine.
+
+LOWER-ANCHORS is what the SEL->SQL layer turns off. cl-ppcre's `$` also matches
+before a trailing newline, exactly like PCRE and unlike ECMAScript, so this host
+lowers `^` and `$` to \\A and \\z for its own engine. The Python host does that
+in a separate pass for the stated reason that \"validate()'s output is shared
+with the hosts whose engines have no \\A\" -- and a translated pattern goes to a
+SERVER, which is one of those. Left on, `RMATCH(\"^a$\", s)` emitted
+`(?s)\\Aa\\z` into SQL where every other host emits `(?s)^a$`."
   (let ((p pattern)
         (out (make-string-output-stream))
         (i 0))
@@ -217,9 +228,12 @@ to be written out, because cl-ppcre is the more permissive of the four."
                    ;; character, so any branch requiring it dies, which is what
                    ;; "not at the start of the subject" means here.
                    ((char= c #\^)
-                    (write-string (if anchored-at-start "\\A" "[^\\s\\S]") out)
+                    (write-string (if lower-anchors
+                                      (if anchored-at-start "\\A" "[^\\s\\S]")
+                                      "^")
+                                  out)
                     (incf i))
-                   ((char= c #\$) (write-string "\\z" out) (incf i))
+                   ((char= c #\$) (write-string (if lower-anchors "\\z" "$") out) (incf i))
 
                    (t (write-char c out) (incf i))))))
     (get-output-stream-string out)))

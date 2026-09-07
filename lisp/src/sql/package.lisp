@@ -24,6 +24,11 @@
    #:fragment
    #:fragment-p
    #:fragment-kind
+   ;; The part list and its values, for a harness that checks every slot has a
+   ;; value and every value is emitted. C++ exposes parts() and params() for the
+   ;; same reason.
+   #:fragment-parts
+   #:fragment-params
    #:fragment-dialect
    #:fragment-caveats
    #:as-value
