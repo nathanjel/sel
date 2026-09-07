@@ -1,6 +1,13 @@
-;;;; Recursive descent, one function per precedence level, mirroring
-;;;; spec/grammar.md exactly so that the four implementations can be read side by
-;;;; side.
+;;;; Precedence climbing. The sixteen levels of spec/SPEC.md §5 are the table
+;;;; below rather than sixteen functions, so adding an operator is adding a row.
+;;;; python/sel/parser.py is the reference implementation of this shape and its
+;;;; module docstring is the rationale; docs/PARSER-MIGRATION.md records what
+;;;; every host had to get right, each item of which produces a valid parse of
+;;;; the WRONG TREE when it is wrong.
+;;;;
+;;;; `;` and `,` stay hand-written N-ary loops outside the table, because they
+;;;; build N-ary nodes rather than binary ones -- DEPENDENCIES walks `items`, and
+;;;; PARSE-CALL flattens a top-level list into the argument vector.
 
 (in-package #:sel)
 
@@ -17,17 +24,81 @@
   (items nil :type list)   ; seq/list items, call arguments
   (spec nil))              ; call
 
+;;; The operator families, named once for the PARSER. The precedence table below
+;;; is BUILT from these rather than repeating them, and EVAL-BINARY asks
+;;; +compare-ops+ whether an operator is a numeric comparison -- so the parser and
+;;; the evaluator cannot disagree about what a comparison is.
 (defparameter +assign-ops+ '("=" "+=" "-=" "*=" "/=" "%=" "&="))
 (defparameter +compare-ops+
   '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>="))
+(defparameter +compare-words+ '("EQL" "IN"))
 
-(defun assign-op-p (tok)
-  (and (eq (token-type tok) :op) (member (token-value tok) +assign-ops+ :test #'string=)))
-(defun compare-op-p (tok)
-  (and (eq (token-type tok) :op) (member (token-value tok) +compare-ops+ :test #'string=)))
-(defun compare-word-p (tok)
-  (and (eq (token-type tok) :ident)
-       (or (string= (token-value tok) "EQL") (string= (token-value tok) "IN"))))
+;;; spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
+;;; that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
+;;; +BP-SEQ+ and +BP-LIST+ are never read -- `;` and `,` are N-ary loops outside
+;;; the table -- and are here because a table missing two of §5's sixteen levels
+;;; stops being a reading of §5.
+(defconstant +bp-seq+ 1)       ; ;
+(defconstant +bp-list+ 2)      ; ,
+(defconstant +bp-assign+ 3)    ; = += -= *= /= %= &=   (right associative)
+(defconstant +bp-or+ 4)
+(defconstant +bp-xor+ 5)
+(defconstant +bp-and+ 6)
+(defconstant +bp-not+ 7)       ; prefix
+(defconstant +bp-compare+ 8)   ; non-associative
+(defconstant +bp-bor+ 9)
+(defconstant +bp-bxor+ 10)
+(defconstant +bp-band+ 11)
+(defconstant +bp-concat+ 12)   ; &
+(defconstant +bp-add+ 13)      ; + -
+(defconstant +bp-mul+ 14)      ; * / %
+(defconstant +bp-neg+ 15)      ; prefix
+
+;;; An infix operator's binding power and associativity, as (BP . ASSOC) where
+;;; ASSOC is #\L, #\R or #\N. #\L parses its right side at BP + 1, #\R at BP --
+;;; that is what makes it right-associative -- and #\N at BP + 1 and then rejects
+;;; a second operator at the same level.
+;;;
+;;; DEFPARAMETER rather than DEFCONSTANT, following the +assign-ops+ style above:
+;;; DEFCONSTANT on a fresh hash table signals on every reload.
+;;;
+;;; :test #'equal is mandatory. The keys are strings, and EQL never matches two
+;;; separately-read strings, so with the default test every operator would look
+;;; unknown and every program would be a syntax error at its first operator.
+(defparameter +infix-ops+
+  (let ((m (make-hash-table :test #'equal)))
+    (setf (gethash "&" m) (cons +bp-concat+ #\L)
+          (gethash "+" m) (cons +bp-add+ #\L)
+          (gethash "-" m) (cons +bp-add+ #\L)
+          (gethash "*" m) (cons +bp-mul+ #\L)
+          (gethash "/" m) (cons +bp-mul+ #\L)
+          (gethash "%" m) (cons +bp-mul+ #\L))
+    (dolist (op +assign-ops+) (setf (gethash op m) (cons +bp-assign+ #\R)))
+    (dolist (op +compare-ops+) (setf (gethash op m) (cons +bp-compare+ #\N)))
+    m))
+
+(defparameter +infix-words+
+  (let ((m (make-hash-table :test #'equal)))
+    (setf (gethash "OR" m) (cons +bp-or+ #\L)
+          (gethash "XOR" m) (cons +bp-xor+ #\L)
+          (gethash "AND" m) (cons +bp-and+ #\L)
+          (gethash "BOR" m) (cons +bp-bor+ #\L)
+          (gethash "BXOR" m) (cons +bp-bxor+ #\L)
+          (gethash "BAND" m) (cons +bp-band+ #\L))
+    (dolist (w +compare-words+) (setf (gethash w m) (cons +bp-compare+ #\N)))
+    m))
+
+;;; The two tables are one lookup. Every question about an operator -- what it
+;;; binds at, how it associates, and whether it may follow a comparison -- is
+;;; answered from here, so adding an operator really is adding a row. Two tables
+;;; and not one because word operators lex as identifiers and symbol operators as
+;;; ops, so they cannot share a key space; the binding powers are one scale. NIL
+;;; for a token that is not an infix operator, which is the same answer as "stop".
+(defun infix-entry (tok)
+  (case (token-type tok)
+    (:op (gethash (token-value tok) +infix-ops+))
+    (:ident (gethash (token-value tok) +infix-words+))
+    (t nil)))
 
 (defun describe-token (tok)
   (case (token-type tok)
@@ -54,9 +125,6 @@
 (defun p-at-op (p v)
   (let ((tok (p-peek p)))
     (and (eq (token-type tok) :op) (string= (token-value tok) v))))
-(defun p-at-word (p v)
-  (let ((tok (p-peek p)))
-    (and (eq (token-type tok) :ident) (string= (token-value tok) v))))
 (defun p-at-eof (p) (eq (token-type (p-peek p)) :eof))
 
 (defun p-expect-op (p v)
@@ -101,12 +169,12 @@
             (setf (node-items n) items)
             n)))))
 
-;;; list = assignment { "," assignment }
+;;; list = term { "," term }
 (defun parse-list (p)
-  (let ((items (list (parse-assignment p))))
+  (let ((items (list (parse-term p +bp-assign+))))
     (loop while (p-at-op p ",")
           do (p-next p)
-             (push (parse-assignment p) items))
+             (push (parse-term p +bp-assign+) items))
     (setf items (nreverse items))
     (if (= (length items) 1)
         (first items)
@@ -114,108 +182,103 @@
           (setf (node-items n) items)
           n))))
 
-;;; assignment = disjunction [ assign_op assignment ]   (right associative)
-(defun parse-assignment (p)
-  (let ((left (parse-or p)))
-    (if (assign-op-p (p-peek p))
-        (let ((op (p-next p)))
-          (check-target left op)
-          ;; Counted, for the reason given on parse-negation: this recursion
-          ;; passes through neither parse-sequence nor parse-primary, so
-          ;; uncounted a chain of assignments is bounded by nothing but the
-          ;; host's control stack.
-          (with-depth (p (token-pos op))
-            (let ((value (parse-assignment p))
-                  (n (make-node :assign (node-pos left))))
-              (setf (node-s n) (token-value op)
-                    (node-l n) left
-                    (node-r n) value)
-              n)))
-        left)))
+;;; MAKE-NODE takes only (kind pos), so without these two the three branches of
+;;; PARSE-TERM would be several times wordier than the same code in every other
+;;; host, and the shape they share would stop being visible.
+(defun bin-node (op-tok left right)
+  (let ((n (make-node :bin (token-pos op-tok))))
+    (setf (node-s n) (token-value op-tok) (node-l n) left (node-r n) right)
+    n))
 
-(defun parse-or (p) (parse-word-binary p "OR" #'parse-xor))
-(defun parse-xor (p) (parse-word-binary p "XOR" #'parse-and))
-(defun parse-and (p) (parse-word-binary p "AND" #'parse-not))
+(defun un-node (op-tok name operand)
+  (let ((n (make-node :un (token-pos op-tok))))
+    (setf (node-s n) name (node-l n) operand)
+    n))
 
-(defun parse-word-binary (p word sub)
-  (let ((left (funcall sub p)))
-    (loop while (p-at-word p word)
-          do (let* ((op (p-next p))
-                    (right (funcall sub p))
-                    (n (make-node :bin (token-pos op))))
-               (setf (node-s n) word (node-l n) left (node-r n) right)
-               (setf left n)))
-    left))
+;;; --- the precedence-climbing loop -----------------------------------------
 
-;;; negation = "NOT" negation | comparison
+(defun parse-term (p min-bp)
+  (let ((left (parse-prefix p min-bp)))
+    (loop
+      (let* ((tok (p-peek p))
+             (entry (infix-entry tok)))
+        (when (null entry) (return left))
+        (let ((bp (car entry))
+              (assoc (cdr entry)))
+          (when (< bp min-bp) (return left))
+          (p-next p)
+          (cond
+            ((char= assoc #\R)
+             ;; Assignment. The target is validated against the AST shape, not
+             ;; against a value, which is what makes `(A) = 1` a compile error.
+             ;; The right side is parsed at BP rather than BP + 1, which is what
+             ;; makes it right-associative.
+             (check-target left tok)
+             ;; Counted, for the same reason PARSE-PREFIX counts: the right side
+             ;; recurses through neither PARSE-SEQUENCE nor PARSE-PRIMARY, so
+             ;; uncounted a chain of assignments is bounded by nothing but this
+             ;; host's own control stack.
+             (with-depth (p (token-pos tok))
+               (let ((value (parse-term p bp))
+                     (n (make-node :assign (node-pos left))))
+                 (setf (node-s n) (token-value tok)
+                       (node-l n) left
+                       (node-r n) value)
+                 (setf left n))))
+
+            ((char= assoc #\N)
+             ;; Deliberately non-associative, and the E_SYNTAX is reported at the
+             ;; SECOND operator rather than at the first or at the expression.
+             (let* ((right (parse-term p (1+ bp)))
+                    (after (p-peek p))
+                    (after-entry (infix-entry after)))
+               (when (and after-entry (char= (cdr after-entry) #\N))
+                 (fail "E_SYNTAX"
+                       (format nil "comparison operators do not chain — parenthesise, as in (a ~a b) AND (b ~a c)"
+                               (token-value tok) (token-value after))
+                       (token-pos after)))
+               (setf left (bin-node tok left right))))
+
+            (t
+             (setf left (bin-node tok left (parse-term p (1+ bp)))))))))))
+
+;;; NOT and unary minus.
 ;;;
-;;; Counted. A prefix operator recurses into itself without passing through
-;;; parse-sequence or parse-primary, which are the only two places depth is
-;;; tracked — so an unbounded chain of them reached the host's own stack limit
-;;; instead of E_DEPTH, and in the C++ host that was a segfault from a rule that
-;;; is just `-` repeated. parse-unary below had the identical hazard. Entered
+;;; Each is accepted only where its own binding power reaches: NOT at 7 cannot
+;;; appear inside a comparison operand, which is parsed at 9, so `a == NOT b`
+;;; falls through to PARSE-PRIMARY -- which sees the bare identifier NOT and
+;;; raises E_RESERVED, the same error the transcribed parser gave, by a different
+;;; route. `-NOT x` is E_RESERVED for the same reason.
+;;;
+;;; This is the part that is not textbook. Folding prefix operators into
+;;; PARSE-PRIMARY, where precedence climbing usually puts them, would make
+;;; `NOT a == b` parse as `(NOT a) == b` and would break lim.parse-depth and
+;;; lim.prefix-depth-does-not-shift-parens at the same time.
+;;;
+;;; Counted, for the reason the two functions this replaced were counted: a
+;;; prefix operator recurses through neither PARSE-SEQUENCE nor PARSE-PRIMARY,
+;;; and uncounted it reached the host's own stack limit instead of E_DEPTH --
+;;; a segfault in the C++ host from a rule that is just `-` repeated. Entered
 ;;; only when a prefix operator is actually consumed, so every other
 ;;; expression's trip point is unchanged.
-(defun parse-not (p)
-  (if (p-at-word p "NOT")
-      (let* ((op (p-next p))
-             (n (make-node :un (token-pos op))))
-        (with-depth (p (token-pos op))
-          (setf (node-s n) "NOT" (node-l n) (parse-not p)))
-        n)
-      (parse-comparison p)))
+(defun parse-prefix (p min-bp)
+  (let ((tok (p-peek p)))
+    (cond
+      ((and (eq (token-type tok) :ident)
+            (string= (token-value tok) "NOT")
+            (<= min-bp +bp-not+))
+       (p-next p)
+       (with-depth (p (token-pos tok))
+         (un-node tok "NOT" (parse-term p +bp-not+))))
 
-;;; comparison = bit_or [ compare_op bit_or ]   — deliberately non-associative
-(defun parse-comparison (p)
-  (let ((left (parse-bit-or p))
-        (tok (p-peek p)))
-    (if (not (or (compare-op-p tok) (compare-word-p tok)))
-        left
-        (progn
-          (p-next p)
-          (let ((right (parse-bit-or p))
-                (after (p-peek p)))
-            (when (or (compare-op-p after) (compare-word-p after))
-              (fail "E_SYNTAX"
-                    (format nil "comparison operators do not chain — parenthesise, as in (a ~a b) AND (b ~a c)"
-                            (token-value tok) (token-value after))
-                    (token-pos after)))
-            (let ((n (make-node :bin (token-pos tok))))
-              (setf (node-s n) (token-value tok) (node-l n) left (node-r n) right)
-              n))))))
+      ((and (eq (token-type tok) :op)
+            (string= (token-value tok) "-")
+            (<= min-bp +bp-neg+))
+       (p-next p)
+       (with-depth (p (token-pos tok))
+         (un-node tok "NEG" (parse-term p +bp-neg+))))
 
-(defun parse-bit-or (p) (parse-word-binary p "BOR" #'parse-bit-xor))
-(defun parse-bit-xor (p) (parse-word-binary p "BXOR" #'parse-bit-and))
-(defun parse-bit-and (p) (parse-word-binary p "BAND" #'parse-concat))
-
-(defun parse-concat (p) (parse-op-binary p '("&") #'parse-additive))
-(defun parse-additive (p) (parse-op-binary p '("+" "-") #'parse-multiplicative))
-(defun parse-multiplicative (p) (parse-op-binary p '("*" "/" "%") #'parse-unary))
-
-(defun parse-op-binary (p ops sub)
-  (let ((left (funcall sub p)))
-    (loop
-      (let ((tok (p-peek p)))
-        (unless (and (eq (token-type tok) :op)
-                     (member (token-value tok) ops :test #'string=))
-          (return left))
-        (p-next p)
-        (let ((n (make-node :bin (token-pos tok))))
-          (setf (node-s n) (token-value tok)
-                (node-l n) left
-                (node-r n) (funcall sub p))
-          (setf left n))))))
-
-;;; unary = "-" unary | postfix
-;;; Counted, for the reason given on parse-not.
-(defun parse-unary (p)
-  (if (p-at-op p "-")
-      (let* ((op (p-next p))
-             (n (make-node :un (token-pos op))))
-        (with-depth (p (token-pos op))
-          (setf (node-s n) "NEG" (node-l n) (parse-unary p)))
-        n)
-      (parse-postfix p)))
+      (t (parse-postfix p)))))
 
 ;;; postfix = primary { "[" sequence "]" }
 ;;;
