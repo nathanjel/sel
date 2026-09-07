@@ -707,6 +707,48 @@
       "file": "cpp/sel_sql_translator.cpp",
       "from": "if (!arm && star) arm = star;",
       "to": "if (star && (!arm || !arm->value.present)) arm = star;"
+    },
+    {
+      "name": "lisp-assoc-defaults-to-eql",
+      "was": "ASSOC compares with EQL unless told otherwise, and EQL is false for two equal strings that are not the same object. Every string-keyed lookup in this host therefore needs :test #'equal, and the one that forgets it silently finds nothing -- a whole class only this host can have.",
+      "file": "lisp/src/sql/map.lisp",
+      "from": "(or (cdr (assoc name *extra* :test #'equal))",
+      "to": "(or (cdr (assoc name *extra*))"
+    },
+    {
+      "name": "lisp-regex-anchors-lowered-into-sql",
+      "was": "This host lowers ^ and $ to \\A and \\z for cl-ppcre, whose $ also matches before a trailing newline. The Python host keeps that in a separate pass because validate()'s output is shared with hosts whose engines have no \\A -- and a translated pattern goes to a server, which is one of those.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(sel::validate-pattern (sel::node-s pat) (snode-pos pat) t nil)",
+      "to": "(sel::validate-pattern (sel::node-s pat) (snode-pos pat))"
+    },
+    {
+      "name": "lisp-classify-falls-through-to-the-scalar-rule",
+      "was": "CLASSIFY's branches fall through to the scalar rule, so a branch that merely EVALUATES to a source builds one and throws it away. Without the RETURN-FROM, ALL((1,2,3), _ > 0) refuses and COUNT((1,2,3)) answers 0.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "    (:list (return-from classify",
+      "to": "    (:list (progn"
+    },
+    {
+      "name": "lisp-bin-slot-bound-as-a-parameter",
+      "was": "A BIN slot must be inlined, never bound: a driver sends bytes through the connection's text encoding, and on PostgreSQL 130 of the 256 single-byte values then failed. Only the params rendering can see this.",
+      "file": "lisp/src/sql/fragment.lisp",
+      "from": "(and k (member k '(:num :bool :bin)) t)",
+      "to": "(and k (member k '(:num :bool)) t)"
+    },
+    {
+      "name": "lisp-extends-absent-reads-as-nil",
+      "was": "GETF cannot tell a plist key that is absent from one whose value is NIL, and sql/MAP.md 2 needs both: a dialect with no parent is a real thing, and forgetting the key is a typo. Without the +ABSENT+ sentinel a missing :extends is read as an explicit NIL and quietly declares a root that inherits nothing.",
+      "file": "lisp/src/sql/map.lisp",
+      "from": "(defun plist-get (plist key) (getf plist key +absent+))",
+      "to": "(defun plist-get (plist key) (getf plist key))"
+    },
+    {
+      "name": "lisp-escapes-not-longest-first",
+      "was": "Escaping must apply the longest rule first, or a rule for a two-character sequence never fires and the shorter one rewrites its own output. COPY-LIST matters too: SORT is destructive in CL, and sorting the shipped alist in place would corrupt the map for every later call.",
+      "file": "lisp/src/sql/emit.lisp",
+      "from": "(stable-sort (copy-list escape) #'> :key (lambda (c) (length (car c))))",
+      "to": "(stable-sort (copy-list escape) #'< :key (lambda (c) (length (car c))))"
     }
   ]
 }
