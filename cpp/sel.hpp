@@ -1,7 +1,9 @@
 // SEL — Simple Expression Language, C++23 implementation.
 //
-// Drop `sel.hpp`, `sel.cpp` and `third_party/srell/` into a project and compile
-// sel.cpp. There is nothing else to fetch and nothing to build first.
+// Drop `sel.hpp`, `sel_ast.hpp`, `sel.cpp` and `third_party/srell/` into a
+// project and compile sel.cpp. There is nothing else to fetch and nothing to
+// build first. You include this file; `sel_ast.hpp` is internal and only has to
+// sit beside `sel.cpp`.
 //
 //     #include "sel.hpp"
 //
@@ -236,6 +238,13 @@ class Program {
   std::vector<std::string> dependencies() const;
 
   const std::string& source() const { return source_; }
+
+  // The parse tree. `Node` is opaque through this header — `sel_ast.hpp` is what
+  // defines it, and only code that walks the tree needs that. Public because the
+  // SEL→SQL translator is a separate translation unit and the tree is its input;
+  // every other host exposes the same thing (`program.ast` in Python and JS,
+  // `$program->ast` in PHP, `program-ast` in Lisp).
+  std::shared_ptr<const Node> ast() const { return ast_; }
 
  private:
   std::string source_;

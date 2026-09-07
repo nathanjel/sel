@@ -2,8 +2,9 @@
 #
 # Three ways to consume this, in increasing order of ceremony:
 #
-#   1. Copy sel.hpp, sel.cpp and third_party/srell/ into your project and
-#      compile sel.cpp. Nothing here is needed. This remains the primary story.
+#   1. Copy sel.hpp, sel_ast.hpp, sel.cpp and third_party/srell/ into your
+#      project and compile sel.cpp. Nothing here is needed, and you include only
+#      sel.hpp. This remains the primary story.
 #   2. add_subdirectory(path/to/sel/cpp) and link `sel-lang::sel-lang`.
 #   3. Install it (or take it from Conan or vcpkg) and find_package(sel-lang).
 #
@@ -20,7 +21,7 @@ include(CMakePackageConfigHelpers)
 
 # SRELL is vendored by default. It is available in vcpkg at exactly the pinned
 # release (2026.05) and not in Conan Center at all, so the copy is what makes the
-# package build the same way everywhere — and what keeps "copy two files and
+# package build the same way everywhere — and what keeps "copy the files and
 # compile" true. Turn this on to link a package manager's copy instead; it must
 # be the same release, and tools/check.sh is what tells you it is.
 option(SEL_USE_SYSTEM_SRELL "Use an external SRELL instead of the vendored one" OFF)
@@ -95,7 +96,8 @@ endforeach()
 option(SEL_BUILD_TOOLS "Build the SEL CLI and test harness" OFF)
 
 if(SEL_BUILD_TOOLS)
-  foreach(tool sel conformance batch e2e api)
+  # `ast` also includes sel_ast.hpp; the others use sel.hpp alone.
+  foreach(tool sel conformance batch e2e api ast)
     add_executable(sel-${tool} bin/${tool}.cpp)
     target_link_libraries(sel-${tool} PRIVATE sel-lang)
   endforeach()

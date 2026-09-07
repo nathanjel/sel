@@ -13,6 +13,7 @@
 // this project. See the traps list in docs/EXTENDING.md.
 
 #include "sel.hpp"
+#include "sel_ast.hpp"
 
 // SEL rejects \p{...} at compile time as non-portable, so SRELL's Unicode
 // property tables are unreachable from this language. Leaving them out cuts the
@@ -901,22 +902,7 @@ std::string quote_dump(std::string_view s) {
 // unknown name and a wrong argument count be compile-time errors.
 // ============================================================================
 
-class Args;
-struct Context;
 
-constexpr int VARIADIC = 1 << 20;
-
-struct Spec {
-  std::string name;
-  int min = 0;
-  int max = 0;
-  bool lazy = false;
-  bool binds = false;   // introduces an element binder; see dependencies()
-  // Optional extra arity rule, checked after min/max. Returns a message when the
-  // count is wrong and an empty string when it is fine.
-  std::string (*arity_error)(int) = nullptr;
-  Value (*fn)(Args&, Context&) = nullptr;
-};
 
 // A function-local static, so the table is built on first use rather than
 // depending on the order of static initialisers across the translation unit.
@@ -1302,78 +1288,6 @@ std::vector<Token> tokenize(const std::string& source) { return Lexer(source).to
 // build N-ary nodes rather than binary ones -- dependencies() walks `items`,
 // and parse_call flattens a top-level list into the argument vector.
 // ============================================================================
-
-enum class NT { Num, Text, Bool, Var, Index, Seq, List, Un, Bin, Assign, Call };
-
-struct Node {
-  NT t = NT::Num;
-  Pos pos;
-
-  std::string s;        // Num/Text: the literal. Var: the name. Un/Bin/Assign: the operator.
-  bool b = false;       // Bool: the value.
-  bool grouped = false; // came from ( ), so F((1,2)) passes one list not two arguments
-
-  std::shared_ptr<const Node> l, r;       // Bin: operands. Index: obj, idx. Assign: target, value.
-  std::vector<std::shared_ptr<const Node>> items;   // Seq/List/Call arguments
-  const Spec* spec = nullptr;             // Call
-
-  Node() = default;
-  // Kept explicitly: declaring a destructor makes the implicit copy deprecated,
-  // and parse_primary copies a node to set `grouped`.
-  Node(const Node&) = default;
-  Node& operator=(const Node&) = default;
-  ~Node();
-};
-
-using NodePtr = std::shared_ptr<const Node>;
-
-// Teardown is iterative, and it has to be.
-//
-// The compiler-generated destructor destroys `l`, which is usually the last
-// reference to that child, whose destructor destroys ITS `l` -- so freeing the
-// tree recursed once per level, about 64 bytes of stack each. A left-leaning
-// chain is as deep as the source is long: `1+1+1...` is one level per operator,
-// and parse_term builds it in a loop, so the parser's nesting counter (which
-// counts nesting, and a flat chain nests nothing) never sees it. At about
-// 131,000 operators -- 262KB of source -- this host segfaulted, and it did so
-// while UNWINDING the E_DEPTH the evaluator had correctly just raised, so the
-// process died with no output at all rather than printing the error. Chained
-// trailing brackets, `A[1][1][1]...`, build the same shape and did the same.
-//
-// So the chain is walked instead of recursed: take this node's children into a
-// worklist, and pop from it, taking a popped node's own children first WHEN we
-// are its last owner and it is therefore about to be destroyed. Its destructor
-// then finds nothing left to walk and the loop stays flat, whatever the depth.
-//
-// The `use_count() == 1` test is what makes this safe rather than merely
-// shallow: a node with another owner is only released here, never emptied.
-// parse_primary's `grouped` copy is exactly that case -- two nodes holding one
-// set of children -- and it is why the test cannot be skipped.
-inline Node::~Node() {
-  std::vector<std::shared_ptr<const Node>> pending;
-
-  // const_cast is safe here and only here: every node is created non-const by
-  // make_shared and only ever HELD as const, so the object itself is not const
-  // and mutating it is defined. Nothing else in this file may do this.
-  const auto steal = [&pending](const Node& node) {
-    Node& n = const_cast<Node&>(node);
-    if (n.l) pending.push_back(std::move(n.l));
-    if (n.r) pending.push_back(std::move(n.r));
-    for (auto& item : n.items) {
-      if (item) pending.push_back(std::move(item));
-    }
-    n.items.clear();
-  };
-
-  steal(*this);
-  while (!pending.empty()) {
-    const std::shared_ptr<const Node> held = std::move(pending.back());
-    pending.pop_back();
-    if (held.use_count() == 1) steal(*held);
-    // `held` is released here. Either it was the last reference, and the node is
-    // freed with its children already taken, or another owner keeps it alive.
-  }
-}
 
 namespace {
 
@@ -1814,6 +1728,16 @@ NodePtr parse(const std::string& source) {
 // that failed, carrying that node's position, and no layer rewrites it.
 // ============================================================================
 
+}  // namespace
+
+// Context, Args and eval_node are at sel:: scope rather than in the anonymous
+// namespace above, and not by preference: Spec's `fn` is a
+// `Value (*)(Args&, Context&)`, Node holds a `const Spec*`, and Node lives in
+// sel_ast.hpp so that a second translation unit can walk the tree. A type in an
+// anonymous namespace cannot be named across translation units, so naming Spec
+// in a header names these two as well. eval_node comes with them because its
+// declaration sits between them and has to be on the same side as its
+// definition.
 struct Context {
   Value* root;
   // Aggregate binders. The only scoping SEL has: one name for the duration of
@@ -1922,6 +1846,8 @@ class Args {
   Context& ctx_;
   std::vector<std::optional<Value>> vals_;
 };
+
+namespace {
 
 bool compare_result(const std::string& op, int c, Pos pos) {
   if (op == "==") return c == 0;
@@ -2251,6 +2177,8 @@ Value eval_dispatch(const Node& node, Context& ctx) {
   fail("E_SYNTAX", "cannot evaluate node", node.pos);
 }
 
+}  // namespace
+
 Value eval_node(const Node& node, Context& ctx) {
   if (++ctx.depth > MAX_DEPTH) {
     ctx.depth--;
@@ -2262,6 +2190,8 @@ Value eval_node(const Node& node, Context& ctx) {
   } pop{&ctx};
   return eval_dispatch(node, ctx);
 }
+
+namespace {
 
 // ============================================================================
 // --- builtins

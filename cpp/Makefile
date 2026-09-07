@@ -4,8 +4,9 @@
 #   make test     unit tests, then the conformance suite
 #   make asan     the same, with the address and leak sanitizers
 #
-# The drop-in is sel.hpp + sel.cpp + third_party/srell/. Everything under bin/
-# and tests/ is this repository's harness, not part of what you copy.
+# The drop-in is sel.hpp + sel.cpp + sel_ast.hpp + third_party/srell/. Everything
+# under bin/ and tests/ is this repository's harness, not part of what you copy.
+# sel_ast.hpp is internal -- you include sel.hpp -- but sel.cpp needs it beside it.
 
 CXX      ?= c++
 CXXFLAGS ?= -std=c++23 -O2 -Wall -Wextra -Wpedantic
@@ -14,6 +15,11 @@ BUILD    := build
 # Tools that use only the public interface, and link the library normally. This
 # is also the check that sel.hpp is sufficient on its own.
 LINKED := conformance batch e2e sel api
+# The same, except that they also include sel_ast.hpp to walk the parse tree.
+# Kept apart from LINKED so that list keeps meaning "sel.hpp alone is enough";
+# this one means "a second translation unit can see the tree", which is what
+# sel_ast.hpp exists for and what the SEL->SQL layer will need.
+INTERNAL := ast
 # Whitebox tools, which include the translation unit to reach the decimal core
 # and the other internals. They must not also link it.
 WHITEBOX := check-decimal
@@ -22,21 +28,21 @@ WHITEBOX := check-decimal
 # `make` built everything else, tools/check.sh ran whatever build/unit happened
 # to be lying there, and once tests/unit.cpp stopped compiling against sel.cpp a
 # stale binary went on reporting 81 green checks for 27 commits.
-BINS := $(addprefix $(BUILD)/,$(LINKED) $(WHITEBOX) unit)
+BINS := $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL) $(WHITEBOX) unit)
 
 .PHONY: all test clean
 all: $(BINS)
 
-$(BUILD)/sel.o: sel.cpp sel.hpp | $(BUILD)
+$(BUILD)/sel.o: sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ sel.cpp
 
-$(addprefix $(BUILD)/,$(LINKED)): $(BUILD)/%: bin/%.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
+$(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp sel.hpp sel_ast.hpp $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(BUILD)/sel.o
 
-$(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp sel.cpp sel.hpp | $(BUILD)
+$(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-$(BUILD)/unit: tests/unit.cpp sel.cpp sel.hpp | $(BUILD)
+$(BUILD)/unit: tests/unit.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 $(BUILD):

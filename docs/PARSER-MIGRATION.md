@@ -126,12 +126,11 @@ Whatever answers it, the container warning above is aimed squarely at it:
 `std::map` sorts its keys, and an aggregate's elements must unroll in the order
 they were assigned.
 
-Two things the C++ host has that the others do not, and which the port will meet
-early: `Node` is defined in `cpp/sel.cpp` rather than in a header, so a second
-translation unit cannot see it, and `Node::spec` names a type inside the
-anonymous namespace — so a shared AST header means `Spec`, `Args`, `Context` and
-`eval_node` all leaving it. That is a behaviour-neutral commit of its own, and it
-should be landed as one, before any of the layer exists.
+The AST-header problem this section used to name is **done**. `cpp/sel_ast.hpp`
+holds `NT`, `Node`, `NodePtr` and `Spec`; `Spec`, `Context`, `Args` and
+`eval_node` are at `sel::` scope; `Program::ast()` hands the tree out. A second
+translation unit can walk it, and `cpp/bin/ast.cpp` is one, so the header cannot
+quietly stop being includable.
 
 ### Lisp
 
