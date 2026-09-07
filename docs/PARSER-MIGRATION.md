@@ -1,4 +1,4 @@
-# The SEL→SQL layer C++ and Lisp still owe
+# The SEL→SQL layer Lisp still owes
 
 **This document has a finite life.** It is deleted in the commit that finishes
 the work it describes. If you are reading it after that, it should not exist.
@@ -11,7 +11,10 @@ design it is rather than as a migration in progress. The parked conformance
 cases went into `conformance/10-limits.selt` with Lisp's turn, and `spec/SPEC.md`
 §6.4 gained the sentence about what each nesting construct costs.
 
-What is left is one deliverable in two hosts.
+What is left is one deliverable in one host. **C++ has landed** — 383 `.sqlt`
+cases, the 2000×4 translator fuzz against js/php/python with 0 disagreements,
+the map replay with 0 differences, and five mutations of its own. What it
+decided is below, because most of it is Lisp's decision too.
 
 - [What is left](#what-is-left)
 - [What the JS port learned that generalises](#what-the-js-port-learned-that-generalises)
@@ -26,7 +29,9 @@ What is left is one deliverable in two hosts.
 normative; §14 records what each previous port cost and why. In outline, per
 host:
 - an emitter in `tools/gen-sql-map.mjs` and one in `tools/gen-sql-cases.mjs`,
-  each one function plus one line in that file's `OUTPUTS`. **The other hosts'
+  each one function plus one line in that file's `OUTPUTS`. C++ needed a third,
+  for the replay data, and put its shared rendering in `tools/cpp-emit.mjs`
+  rather than copying it into both generators. **The other hosts'
   generated files must regenerate byte-identical** — that is the check that you
   added a host rather than changed shared data.
 - the layer itself, transcribed from `python/sel/sql/` (the JS port used Python
@@ -40,6 +45,9 @@ host:
   harness needs the new runner before any mutation of the new layer means anything.
 - mutations in `sql/mutations.json` for whatever the host had to decide for
   itself. Every host so far has had at least one such decision.
+
+`sql/cases/12-aggregates.sqlt`'s `agg.clist.mixed-keys-keep-insertion-order`
+passes on C++, which used `std::vector` of pairs; an alist is the Lisp shape.
 
 **What the JS port learned that generalises.** Most of its host-shaped decisions
 were about JS objects and do not transfer. One does, and it is the one that
@@ -55,8 +63,8 @@ changes emitted bytes:
 `conformance/`'s sibling case `agg.clist.mixed-keys-keep-insertion-order` in
 `sql/cases/12-aggregates.sqlt` pins this for every host, and
 `js-clist-order-through-a-plain-object` in `sql/mutations.json` proves the case
-still catches it. Both were written because the JS port needed them; both are
-waiting for C++ and Lisp.
+still catches it. Both were written because the JS port needed them; C++ passes
+both, and Lisp is what is left.
 
 **What the JS review found that generalises.** The four-lens review of the JS
 layer confirmed six findings; one was a shipped defect and its lesson is not
@@ -113,26 +121,51 @@ cases still catch them.
 
 ## Per host
 
-### C++
+### What C++ settled, that Lisp does not have to settle again
 
-`php/src/Sql/` is 6,381 lines and `python/sel/sql/` is 5,459, and C++ will land
-more than either. **Not a transcription, and this is the decision to make
-first.** The obvious shape for the generated dialect map is a JSON blob parsed at
-load, because the map is heterogeneous nested data and the runtime `define()`
-API takes application-supplied data of the same shape — which is also what
-`options`, the `--- register` case data and the binding specs are. That is ruled
-out: **this host is not taking a JSON reader.** The representation is an open
-question and it is the question to answer before any of the layer is written.
+**The map is generated SOURCE, not data.** No host reads a file at run time.
+`tools/gen-sql-map.mjs` renders `sql/dialects/*.json` into each host's own
+language, and `tools/gen-sql-cases.mjs` does the same for the `--- bindings` and
+`--- register` blocks — as **typed constructor calls**, so the runner parses
+nothing either. For Lisp that is easy: it ships source anyway, so the emitted
+form is a `defparameter` and a sequence of `map:define` calls.
 
-Whatever answers it, the container warning above is aimed squarely at it:
-`std::map` sorts its keys, and an aggregate's elements must unroll in the order
-they were assigned.
+**A case that cannot be expressed is not skipped.** Twelve `.sqlt` cases pass a
+malformed binding on purpose — a JSON array where a name belongs, a section that
+is not one of the three. C++'s typed constructors cannot be handed one, so its
+runner reports them as refused by the type system and the total stays 383. If
+Lisp's constructors are equally strict, do the same; if they are not, it simply
+runs them.
 
-The AST-header problem this section used to name is **done**. `cpp/sel_ast.hpp`
-holds `NT`, `Node`, `NodePtr` and `Spec`; `Spec`, `Context`, `Args` and
-`eval_node` are at `sel::` scope; `Program::ast()` hands the tree out. A second
-translation unit can walk it, and `cpp/bin/ast.cpp` is one, so the header cannot
-quietly stop being includable.
+**`entry` is two-phase: the whole overlay chain, then the whole shipped chain.**
+The generated tables are pre-flattened, so consulting them per level lets a
+leaf's inherited entry shadow one registered against a base — and registering
+against `ansi` is documented to reach everything below it. The map replay cannot
+see this (it registers everything as overlay); `register.define.on-a-base-reaches-every-leaf`
+can.
+
+**Frame writes are assign, not insert-if-absent.** An aggregate binder literally
+named `_K` must lose to the later `_K` write, because that is what the evaluator
+does.
+
+**Stage 1's `clist` is shared, not copied.** `R[1] = 1; A = R; R[2] = 2;
+COUNT(A)` is 2 — `A` holds the same list `R` does, and copying on append answers
+1.
+
+**Keys are the parser's own characters.** It normalises leading zeros and
+nothing else, so `R[1.0]` and `R[1]` are two different keys and SEL agrees.
+Canonicalising collapses them.
+
+**Two rules of the shared corpus were unasserted until C++ mutated itself**, and
+both are now cases every host runs: a BIN slot must be *inlined* rather than
+bound (visible only in params mode with an empty params list), and escaping
+applies the *longest* rule first (visible only through a registered dialect,
+since no shipped one has a multi-character escape key).
+
+**Read the reference host with help.** The C++ port was written against a
+subsystem-by-subsystem map of `python/sel/sql/translator.py`, each section then
+re-checked against the source by a second reader. All seven sections came back
+with corrections, and one of them was a live bug in already-written code.
 
 ### Lisp
 
@@ -159,6 +192,6 @@ One host per release, so a regression is attributable to one commit.
 5. If something diverges, add the minimal case to `sql/cases/` **before** fixing
    any host.
 
-When the last host is finished, delete this file, and drop its line from
-`README.md` and the reference to it in `docs/EXTENDING.md`.
+When Lisp is finished — it is the last host — delete this file, and drop its
+line from `README.md` and the reference to it in `docs/EXTENDING.md`.
 
