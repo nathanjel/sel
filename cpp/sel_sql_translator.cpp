@@ -1013,14 +1013,23 @@ Fragment Translator::in_operator(const SNode& n) {
                    "with that one field.",
                rhs.pos());
       }
+      // The skeleton FIRST, before the needle is rendered. Python spells this
+      // as `_fill_named(self._skeleton(...), _slots(...))` and gets the order
+      // from left-to-right argument evaluation; C++ has to say it, because a
+      // statement that builds the slots first would render the needle -- and
+      // could refuse from inside it -- before discovering the dialect cannot
+      // express inRelation at all. A dialect that withdrew the skeleton would
+      // then answer E_SQL_UNBOUND for `UNBOUND IN REL` where every other host
+      // answers E_SQL_UNSUPPORTED. Same rule conditional() and
+      // join_aggregate() already follow.
+      const std::string skel = skeleton("inRelation", n.pos());
       // No require_comparable_kinds here, and text_operand is applied
       // unconditionally -- there is no two-BIN skip as in binary().
       SlotMap slots = merge_slots(
           relation_slots(rel),
           SlotMap{{"needle", {Slot{emit_.text_operand(node(n.l()))}}},
                   {"body", {Slot{emit_.text_operand(column_ref(*scalar))}}}});
-      return Fragment(fill_named(skeleton("inRelation", n.pos()), slots, n.pos()),
-                      SqlKind::Bool, dialect_);
+      return Fragment(fill_named(skel, slots, n.pos()), SqlKind::Bool, dialect_);
     }
   }
 

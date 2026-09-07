@@ -62,11 +62,16 @@ void check_numeric(const std::string& where, const sel::Value& v) {
   // path, where the lexer has already canonicalised, and wrong here, where the
   // application supplied the string and the evaluator was handed that same
   // string. "007" translated to 7 while SEL kept "007".
-  // looks_numeric() has already run, so this cannot be E_NOT_NUM. What it CAN
-  // be is E_RANGE, past §6.4's million-digit cap -- and that is the evaluator's
-  // answer about the value, which the other hosts let out as a SelError rather
-  // than folding into a binding refusal. Catching it here would hide it inside
-  // what try_translate() swallows.
+  // Unguarded, and it cannot throw. looks_numeric() has already run, and it
+  // answers FALSE rather than raising for a numeral past spec/SPEC.md §6.4's
+  // million-digit cap -- so a value that reaches here has already been parsed
+  // once without E_RANGE, and parsing is a function of the text. A huge numeral
+  // never gets this far: it fails the looks_numeric() test above and is refused
+  // as "is not a number", which is what all four hosts answer for it.
+  //
+  // An earlier comment here claimed this line deliberately let E_RANGE escape.
+  // It cannot, and the measurement that comment cited was of emit's numeric
+  // literal path reached by a direct call rather than of this one.
   const std::string text = v.as_text();
   const std::string canonical = sel::Value::num(text).as_text();
   if (canonical != text) {

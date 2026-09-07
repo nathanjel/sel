@@ -91,6 +91,29 @@ LEN("a")
 --- expect
 LEN('a' COLLATE utf8mb4_bin)
 ===
+### name: register.skel.withdrawn-refuses-before-the-operands
+--- note
+A skeleton the dialect cannot express is checked BEFORE the expression's own
+operands are rendered, so the answer names the dialect gap rather than
+whatever the first operand happens to be wrong about. Python and PHP get the
+order from left-to-right argument evaluation -- `_fill_named(_skeleton(...),
+_slots(...))` -- and a host that builds the slot map as its own statement
+first reverses it, answering E_SQL_UNBOUND here instead. No shipped dialect
+withdraws inRelation, so only a registration can ask.
+--- dialect
+norel
+--- register
+[{"dialect": "norel", "extends": "mariadb", "version": "10.5"},
+ {"define": ["norel", "skel", "inRelation", null]}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "t", "alias": "oi", "scalar": "sku",
+           "fields": {"sku": {"column": "sku", "table": "oi", "type": "TEXT"}},
+           "correlate": {"raw": "oi.o = o.id"}}}
+--- source
+UNBOUND IN ITEMS
+--- error
+E_SQL_UNSUPPORTED 1:9
+===
 ### name: register.since.gates-on-the-target-version
 --- note
 mariadb declares 10.5, so an entry needing 99.0 is refused. The version

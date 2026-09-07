@@ -27,7 +27,15 @@ export function cppStr(s) {
     if (b === 0x5c) out += '\\\\';
     else if (b === 0x22) out += '\\"';
     // Three-digit octal cannot run on into the character beside it, as \x can.
-    else if (b < 0x20 || b === 0x7f) out += '\\' + b.toString(8).padStart(3, '0');
+    // EVERY byte outside printable ASCII takes this form, not just the control
+    // ones: `String.fromCharCode(b)` on a byte >= 0x80 makes a JS char in
+    // latin1, and writeFileSync then re-encodes THAT as UTF-8, so `ż` (c5 bc)
+    // was written as c3 85 c2 bc. The generated case data carried the
+    // double-encoded string, and the cases still passed, because the source and
+    // the expectation were corrupted identically -- so C++ was quietly running
+    // `zaÅ¼Ã³ÅÄ` where the other three hosts ran `zażółć`. Octal keeps the file
+    // pure ASCII and byte-exact, and no encoding step can touch it.
+    else if (b < 0x20 || b >= 0x7f) out += '\\' + b.toString(8).padStart(3, '0');
     else out += String.fromCharCode(b);
   }
   out += '"';
