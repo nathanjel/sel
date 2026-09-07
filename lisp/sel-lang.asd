@@ -46,6 +46,26 @@
      (:file "sel"))))
   :in-order-to ((test-op (test-op "sel-lang/tests"))))
 
+;;; The SEL->SQL layer. A separate system, for the reason the JS host keeps its
+;;; translator behind a separate entry point: a program that only wants the
+;;; evaluator should not carry the dialect map. `(ql:quickload :sel-lang/sql)`
+;;; brings in both.
+(defsystem "sel-lang/sql"
+  :description "SEL -> SQL translation"
+  :author "Marcin Gałczyński"
+  :license "MIT"
+  :version "0.3.0"
+  :depends-on ("sel-lang")
+  :serial t
+  :components
+  ((:module "src/sql"
+    :serial t
+    :components
+    ((:file "package")
+     (:file "errors")
+     (:file "map-data")
+     (:file "map")))))
+
 (defsystem "sel-lang/tests"
   :description "Unit tests for the layers underneath the conformance suite"
   :author "Marcin Gałczyński"

@@ -943,6 +943,127 @@ export const RAW = ${JSON.stringify(raw, null, 2)};
 `;
 }
 
+// --- Common Lisp ------------------------------------------------------------
+//
+// Lisp ships source, so the map IS a literal here -- a `defparameter` and
+// nothing else. What needs deciding is the shape, and the constraint is the one
+// docs/PARSER-MIGRATION.md warns about: a hash table has no iteration order,
+// and an aggregate's elements must unroll in the order they were written. So
+// every ordered map is an ALIST, and only records are plists.
+//
+// An entry is `(key . rest)` where rest is a string (a refusal carrying its
+// reason), NIL (a refusal without one) or a plist (a template). That is the
+// same three-way Python spells `str | None | dict`, and CL tells present-with-
+// NIL from absent the way Python tells `None` from a missing key: ASSOC returns
+// the cons for the first and NIL for the second.
+//
+// Strings are escaped for `\` and `"` and otherwise written through unchanged.
+// Deliberately NOT round-tripped through a byte buffer: doing that in the C++
+// emitter turned every non-ASCII character into its double-encoded form, and
+// the generated file carried it silently.
+
+const lispStr = (s) => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+
+const lispBool = (b) => (b ? 't' : 'nil');
+
+// An ordered map of name -> string | null | alist-of-escapes.
+function lispLexical(lexical, indent) {
+  const pad = ' '.repeat(indent);
+  const rows = Object.entries(lexical).map(([k, v]) => {
+    if (v === null) return `${pad}(${lispStr(k)})`;
+    if (typeof v === 'object') {
+      const inner = Object.entries(v).map(([a, b]) => `(${lispStr(a)} . ${lispStr(b)})`);
+      return `${pad}(${lispStr(k)} ${inner.join(' ')})`;
+    }
+    return `${pad}(${lispStr(k)} . ${lispStr(v)})`;
+  });
+  return rows.length ? `(\n${rows.join('\n')})` : 'nil';
+}
+
+function lispEntry(key, e, indent) {
+  const pad = ' '.repeat(indent);
+  if (e === null) return `${pad}(${lispStr(key)})`;
+  if (typeof e === 'string') return `${pad}(${lispStr(key)} . ${lispStr(e)})`;
+  const parts = [];
+  if (typeof e.tpl === 'string') parts.push(`:tpl ${lispStr(e.tpl)}`);
+  else if (e.tpl !== undefined && e.tpl !== null) {
+    const arms = Object.entries(e.tpl).map(([k, v]) =>
+      v === null ? `(${lispStr(k)})` : `(${lispStr(k)} . ${lispStr(v)})`);
+    parts.push(`:tpl (${arms.join(' ')})`);
+  }
+  if (e.variants !== undefined) {
+    const arms = Object.entries(e.variants).map(([k, v]) =>
+      v === null ? `(${lispStr(k)})` : `(${lispStr(k)} . ${lispStr(v)})`);
+    parts.push(`:variants (${arms.join(' ')})`);
+  }
+  if (e.ret !== undefined) parts.push(`:ret ${lispStr(e.ret)}`);
+  if (e.caveat !== undefined) parts.push(`:caveat ${lispStr(e.caveat)}`);
+  if (e.since !== undefined) parts.push(`:since ${lispStr(e.since)}`);
+  if (e.arity !== undefined) parts.push(`:arity (${e.arity[0]} . ${e.arity[1]})`);
+  return `${pad}(${lispStr(key)} ${parts.join(' ')})`;
+}
+
+function lispSection(entries, indent) {
+  const rows = Object.entries(entries).map(([k, e]) => lispEntry(k, e, indent));
+  return rows.length ? `(\n${rows.join('\n')})` : 'nil';
+}
+
+function lispNames(xs) { return `(${xs.map(lispStr).join(' ')})`; }
+
+function emitLisp(dialects, rules) {
+  const body = Object.entries(dialects).map(([name, d]) => `  (${lispStr(name)}
+   :extends ${d.extends === null ? 'nil' : lispStr(d.extends)}
+   :version ${lispStr(d.version)}
+   :target ${lispBool(d.target)}
+   :lexical ${lispLexical(d.lexical, 5)}
+   :ops ${lispSection(d.ops, 5)}
+   :funcs ${lispSection(d.funcs, 5)}
+   :skel ${lispSection(d.skel, 5)})`).join('\n');
+
+  const arity = (obj) => '(' + Object.entries(obj).map(([k, [lo, hi]]) =>
+    `(${lispStr(k)} ${lo} . ${hi === null ? 'nil' : hi})`).join(' ') + ')';
+  const names = (obj) => '(' + Object.entries(obj).map(([k, xs]) =>
+    `(${lispStr(k)} ${xs.map(lispStr).join(' ')})`).join(' ') + ')';
+  const lexTypes = '(' + Object.entries(rules.lexicalTypes).map(([k, t]) =>
+    `(${lispStr(k)} . ${t === 'map' ? ':map' : ':string'})`).join(' ') + ')';
+
+  return `;;;; ${BANNER('gen-sql-map.mjs').join('\n;;;; ')}
+;;;;
+;;;; Every dialect, with its chain already flattened, so a lookup is one ASSOC
+;;;; and nothing else. Runtime registration is what re-introduces the chain, and
+;;;; it is the only thing that does.
+;;;;
+;;;; ORDERED MAPS ARE ALISTS, not hash tables: an aggregate's elements must
+;;;; unroll in the order they were written, and a hash table has no order at
+;;;; all. An entry is (key . rest), where rest is a string -- a refusal carrying
+;;;; its reason -- or NIL, a refusal without one, or a plist. ASSOC tells
+;;;; present-with-NIL from absent, which is the distinction sql/MAP.md §2 rests
+;;;; on.
+
+(in-package #:sel.sql)
+
+(defparameter +dialects+
+ '(
+${body})
+  "Every shipped dialect, flattened.")
+
+(defparameter +rules+
+ '(:caveats ${lispNames(rules.caveats)}
+   :ret-kinds ${lispNames(rules.retKinds)}
+   :template-keys ${lispNames(rules.templateKeys)}
+   :op-arity ${arity(rules.opArity)}
+   :func-arity ${arity(rules.funcArity)}
+   :variants ${names(rules.variants)}
+   :skel-slots ${names(rules.skelSlots)}
+   :lexical-types ${lexTypes})
+  "The map's own vocabulary, so DEFINE-ENTRY can enforce at registration time
+what tools/gen-sql-map.mjs enforces at generation time. Emitted rather than
+retyped in each host: every divergence a cross-host review found in runtime
+registration was an entry the generator would have rejected and the runtime
+would not, after which the hosts improvised differently.")
+`;
+}
+
 function emitReplayCpp(dialects, rules, raw) {
   const SUF = '~replay';
   const body = [];
@@ -994,6 +1115,7 @@ const OUTPUTS = [
   ['python/sel/sql/_map.py', emitPython],
   ['js/src/sql/_map.mjs', emitJs],
   ['cpp/sel_sql_map_data.cpp', emitCpp],
+  ['lisp/src/sql/map-data.lisp', emitLisp],
   ['php/bin/MapReplay.php', emitReplayPhp],
   ['python/bin/map_replay.py', emitReplayPython],
   ['js/bin/map-replay.mjs', emitReplayJs],
