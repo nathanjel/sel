@@ -15,6 +15,8 @@
 // message naming the file, the section and the key.
 
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { cppEntrySpec, cppDialectSpec, cppStr, SECTIONS as CPP_SECTIONS }
+  from './cpp-emit.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, basename } from 'node:path';
 
@@ -662,20 +664,6 @@ export const RULES = ${JSON.stringify(rules, null, 2)};
 // contract. Reordering or renaming a member there fails the static_asserts
 // beside the structs, which is the file a reader can act on.
 
-function cppStr(s) {
-  let out = '"';
-  for (const b of Buffer.from(s, 'utf8')) {
-    if (b === 0x5c) out += '\\\\';
-    else if (b === 0x22) out += '\\"';
-    // Three-digit octal, which -- unlike \x -- cannot run on into the
-    // character beside it. No template holds a control byte today; this is here
-    // so that one could not silently change its neighbour if one ever did.
-    else if (b < 0x20 || b === 0x7f) out += '\\' + b.toString(8).padStart(3, '0');
-    else out += String.fromCharCode(b);
-  }
-  return out + '"';
-}
-
 // Indexed, so two dialect names cannot sanitise to the same identifier.
 // `mysql-family` and a future `mysql_family` would both be `mysql_family`.
 const cppIdent = (name, i) => `d${i}_${name.replace(/[^A-Za-z0-9]/g, '_')}`;
@@ -955,6 +943,52 @@ export const RAW = ${JSON.stringify(raw, null, 2)};
 `;
 }
 
+function emitReplayCpp(dialects, rules, raw) {
+  const SUF = '~replay';
+  const body = [];
+  for (const doc of raw) {
+    // The document as WRITTEN, under a suffixed name so it cannot collide with
+    // the shipped one, and with its parent suffixed too so the chain is rebuilt
+    // rather than borrowed. `notes` is documentation and is skipped, as it is
+    // in every host's replay.
+    const spec = { ...doc, dialect: doc.dialect + SUF,
+                   extends: doc.extends === null || doc.extends === undefined
+                     ? null : doc.extends + SUF };
+    delete spec.ops; delete spec.funcs; delete spec.skel;
+    body.push(`  Map::define_dialect(${cppStr(doc.dialect + SUF)},`);
+    body.push(`                      ${cppDialectSpec(spec, ['notes'])});`);
+    body.push('  ++calls;');
+    for (const section of ['ops', 'funcs', 'skel']) {
+      for (const [key, entry] of Object.entries(doc[section] ?? {})) {
+        body.push(`  Map::define(${cppStr(doc.dialect + SUF)}, Section::${CPP_SECTIONS[section]},`);
+        body.push(`              ${cppStr(key)}, ${cppEntrySpec(entry)});`);
+        body.push('  ++calls;');
+      }
+    }
+  }
+  return `// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+//
+${REPLAY_NOTE.map((l) => '// ' + l).join('\n')}
+//
+// Harness, not library: this lives under bin/ because it is test data, and
+// nothing an application links carries it. Every call below goes through the
+// PUBLIC registration API, which is the whole point -- if the shipped table
+// holds something these constructors cannot say, this file does not compile.
+
+#include "map_replay.hpp"
+
+namespace sel::sqlt {
+
+int replay_register() {
+  int calls = 0;
+${body.join('\n')}
+  return calls;
+}
+
+}  // namespace sel::sqlt
+`;
+}
+
 const OUTPUTS = [
   ['php/src/Sql/MapData.php', emitPhp],
   ['python/sel/sql/_map.py', emitPython],
@@ -963,6 +997,7 @@ const OUTPUTS = [
   ['php/bin/MapReplay.php', emitReplayPhp],
   ['python/bin/map_replay.py', emitReplayPython],
   ['js/bin/map-replay.mjs', emitReplayJs],
+  ['cpp/bin/map_replay.cpp', emitReplayCpp],
 ];
 
 const docs = load();

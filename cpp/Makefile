@@ -36,7 +36,7 @@ SQL_OBJS := $(addprefix $(BUILD)/,$(SQL_SRCS:.cpp=.o))
 SQL_HDRS := sel_sql.hpp sel_sql_emit.hpp sel_sql_map.hpp sel_sql_node.hpp \
             sel_sql_stage1.hpp sel_sql_translator.hpp
 # Tools over that layer.
-SQLTOOLS := sqlmap sqlt
+SQLTOOLS := sqlmap sqlfuzz sqlt sqlreplay
 
 # `unit` is in the default target and not only in `test`, because it was not:
 # `make` built everything else, tools/check.sh ran whatever build/unit happened
@@ -59,7 +59,7 @@ $(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp sel.cpp sel.hpp sel_as
 $(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(BUILD)/sqlmap: bin/sqlmap.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+$(addprefix $(BUILD)/,sqlmap sqlfuzz): $(BUILD)/%: bin/%.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS) $(BUILD)/sel.o
 
 # The SQL suite, plus the case table tools/gen-sql-cases.mjs writes. That table
@@ -67,6 +67,12 @@ $(BUILD)/sqlmap: bin/sqlmap.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o |
 # runs the suite without Node.
 $(BUILD)/case_data.o: bin/case_data.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(BUILD)/map_replay.o: bin/map_replay.cpp bin/map_replay.hpp $(SQL_HDRS) sel.hpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(BUILD)/sqlreplay: bin/sqlreplay.cpp bin/map_replay.hpp $(SQL_HDRS) sel.hpp $(BUILD)/map_replay.o $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(BUILD)/map_replay.o $(SQL_OBJS) $(BUILD)/sel.o
 
 $(BUILD)/sqlt: bin/sqlt.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp $(BUILD)/case_data.o $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(BUILD)/case_data.o $(SQL_OBJS) $(BUILD)/sel.o

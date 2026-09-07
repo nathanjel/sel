@@ -196,7 +196,8 @@ impl_sqlreplay() {
     js)   node js/bin/sqlreplay.mjs "$@" ;;
     # The bundle does not import the SQL layer; see impl_sql.
     js-bundle|js-bundle-min) return 0 ;;
-    cpp|lisp) return 0 ;;                       # no SQL layer yet
+    cpp)  cpp/build/sqlreplay "$@" ;;
+    lisp) return 0 ;;                           # no SQL layer yet
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlreplay "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlreplay "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
@@ -210,7 +211,8 @@ impl_sqlfuzz() {
     js)   node js/bin/sqlfuzz.mjs "$@" ;;
     # The bundle does not import the SQL layer; see impl_sql.
     js-bundle|js-bundle-min) return 0 ;;
-    cpp|lisp) return 0 ;;                       # no SQL layer yet
+    cpp)  cpp/build/sqlfuzz "$@" ;;
+    lisp) return 0 ;;                           # no SQL layer yet
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlfuzz "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlfuzz "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;

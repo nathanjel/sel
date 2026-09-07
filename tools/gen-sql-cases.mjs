@@ -28,6 +28,9 @@
 //   node tools/gen-sql-cases.mjs --check    verify they are current
 
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { Unrepresentable, shapeOf, cppStr, cppName, cppEntrySpec, cppDialectSpec,
+         SECTIONS as CPP_SECTIONS }
+  from './cpp-emit.mjs';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -412,36 +415,8 @@ if (errors.length) {
 // the type system rather than skipping it. A case that is unrepresentable and
 // expects SUCCESS would be a real gap, and fails generation instead.
 
-class Unrepresentable extends Error {
-  constructor(why) { super(why); this.why = why; }
-}
-
-const shapeOf = (v) => Array.isArray(v) ? 'a list'
-  : v === null ? 'null'
-  : typeof v === 'object' ? 'a map'
-  : typeof v;
-
-function cppStr(s) {
-  const bytes = Buffer.from(String(s), 'utf8');
-  let out = '"';
-  for (const b of bytes) {
-    if (b === 0x5c) out += '\\\\';
-    else if (b === 0x22) out += '\\"';
-    // Three-digit octal cannot run on into the character beside it, as \x can.
-    else if (b < 0x20 || b === 0x7f) out += '\\' + b.toString(8).padStart(3, '0');
-    else out += String.fromCharCode(b);
-  }
-  out += '"';
-  // A NUL does not survive a `const char*`. `Binding::column("a\0b")` builds a
-  // std::string that stops at the NUL, so the name becomes "a" and the very
-  // check the case exists for -- a NUL no dialect can quote -- never fires. The
-  // length form keeps the bytes. Emitted only when needed, so every other
-  // literal stays readable and still converts to const char* where the SqlCase
-  // fields want one; if a NUL ever reached one of those, this would be a
-  // compile error rather than a silent truncation.
-  return bytes.includes(0) ? `std::string(${out}, ${bytes.length})` : out;
-}
-
+// Binding-specific, so not in cpp-emit.mjs: only a case's `--- bindings` block
+// names a kind, and only there can one be absent.
 function cppKind(t) {
   if (t === null || t === undefined) return 'SqlKind::Unknown';
   if (typeof t !== 'string') throw new Unrepresentable(`a binding type that is ${shapeOf(t)}`);
@@ -449,13 +424,6 @@ function cppKind(t) {
               UNKNOWN: 'Unknown', LIST: 'List' }[t];
   if (!k) throw new Unrepresentable(`the binding type ${JSON.stringify(t)}`);
   return `SqlKind::${k}`;
-}
-
-const cppOptStr = (v) => v === null || v === undefined ? 'std::nullopt' : cppStr(v);
-
-function cppName(v, what) {
-  if (typeof v !== 'string') throw new Unrepresentable(`${what} that is ${shapeOf(v)}`);
-  return cppStr(v);
 }
 
 function cppOptName(v, what) {
@@ -509,116 +477,6 @@ function cppBinding(v) {
 
 // --- register ---------------------------------------------------------------
 
-const CPP_SECTIONS = { ops: 'Ops', funcs: 'Funcs', skel: 'Skel' };
-
-function cppEntrySpec(entry, section) {
-  if (entry === null) return 'EntrySpec::withdraw()';
-  if (typeof entry === 'string') return `EntrySpec::withdraw(${cppStr(entry)})`;
-  if (typeof entry !== 'object' || Array.isArray(entry)) {
-    throw new Unrepresentable(`a map entry that is ${shapeOf(entry)}`);
-  }
-  if (entry.builder !== undefined) {
-    throw new Unrepresentable('a builder entry, which no case declares');
-  }
-
-  // A null arm is a WITHDRAWAL of that count, not a malformed one -- sql/MAP.md
-  // §2 -- so it is std::nullopt rather than unrepresentable.
-  const arms = (o) => Object.entries(o).map(([k, t]) => {
-    if (t === null) return `{${cppStr(k)}, std::nullopt}`;
-    if (typeof t !== 'string') throw new Unrepresentable(`a template arm that is ${shapeOf(t)}`);
-    return `{${cppStr(k)}, ${cppStr(t)}}`;
-  }).join(', ');
-
-  let base;
-  const hasRet = entry.ret !== undefined && entry.ret !== null;
-  if (entry.variants !== undefined) {
-    if (typeof entry.variants !== 'object' || Array.isArray(entry.variants)) {
-      throw new Unrepresentable(`variants that are ${shapeOf(entry.variants)}`);
-    }
-    if (!hasRet) throw new Unrepresentable('variants with no ret');
-    base = `EntrySpec::variants({${arms(entry.variants)}}, ${cppStr(entry.ret)})`;
-  } else if (typeof entry.tpl === 'string') {
-    // A template with no ret is spelled skeleton() -- which is right for a skel
-    // entry and, for ops or funcs, is exactly the registration the runtime
-    // refuses for having no kind. Same case, same refusal, one line later.
-    base = hasRet ? `EntrySpec::tpl(${cppStr(entry.tpl)}, ${cppStr(entry.ret)})`
-                  : `EntrySpec::skeleton(${cppStr(entry.tpl)})`;
-  } else if (entry.tpl !== null && typeof entry.tpl === 'object' && !Array.isArray(entry.tpl)) {
-    if (!hasRet) throw new Unrepresentable('an arity-keyed template with no ret');
-    base = `EntrySpec::by_count({${arms(entry.tpl)}}, ${cppStr(entry.ret)})`;
-  } else {
-    throw new Unrepresentable(`a tpl that is ${shapeOf(entry.tpl)}`);
-  }
-
-  let out = base;
-  if (entry.caveat !== undefined && entry.caveat !== null) {
-    out += `.caveat(${cppName(entry.caveat, 'a caveat')})`;
-  }
-  if (entry.since !== undefined && entry.since !== null) {
-    out += `.since(${cppName(entry.since, 'a since')})`;
-  }
-  if (entry.arity !== undefined && entry.arity !== null) {
-    const a = entry.arity;
-    if (!Array.isArray(a) || a.length !== 2 || !a.every((x) => Number.isInteger(x))) {
-      throw new Unrepresentable(`an arity that is ${shapeOf(a)} of non-integers`);
-    }
-    out += `.arity(${a[0]}, ${a[1]})`;
-  }
-  for (const k of Object.keys(entry)) {
-    if (!['tpl', 'variants', 'ret', 'caveat', 'since', 'arity', 'builder'].includes(k)) {
-      throw new Unrepresentable(`the entry field ${JSON.stringify(k)}`);
-    }
-  }
-  return out;
-}
-
-const DIALECT_KEYS = ['dialect', 'extends', 'version', 'target', 'lexical'];
-
-function cppDialectSpec(op) {
-  for (const k of Object.keys(op)) {
-    // ops/funcs/skel in a dialect declaration is a registration that looks like
-    // it worked; the dynamic hosts refuse it by name, and DialectSpec simply has
-    // nowhere to put it.
-    if (!DIALECT_KEYS.includes(k)) throw new Unrepresentable(`a dialect declaration carrying ${JSON.stringify(k)}`);
-  }
-  if (!('extends' in op)) {
-    throw new Unrepresentable('a dialect declaration with no extends');
-  }
-  let out;
-  if (op.extends === null) {
-    if (typeof op.version !== 'string') {
-      throw new Unrepresentable('a root dialect with no version');
-    }
-    out = `DialectSpec::root(${cppStr(op.version)})`;
-  } else {
-    out = `DialectSpec::extending(${cppName(op.extends, 'an extends')})`;
-    if (op.version !== undefined && op.version !== null) {
-      out += `.version(${cppName(op.version, 'a version')})`;
-    }
-  }
-  if (op.target !== undefined && op.target !== null) {
-    if (typeof op.target !== 'boolean') throw new Unrepresentable(`a target that is ${shapeOf(op.target)}`);
-    out += `.target(${op.target})`;
-  }
-  if (op.lexical !== undefined && op.lexical !== null) {
-    if (typeof op.lexical !== 'object' || Array.isArray(op.lexical)) {
-      throw new Unrepresentable(`a lexical that is ${shapeOf(op.lexical)}`);
-    }
-    for (const [k, v] of Object.entries(op.lexical)) {
-      if (v === null) out += `.lexical(${cppStr(k)}, std::nullopt)`;
-      else if (typeof v === 'string') out += `.lexical(${cppStr(k)}, ${cppStr(v)})`;
-      else if (typeof v === 'object' && !Array.isArray(v)) {
-        const e = Object.entries(v).map(([a, b]) => {
-          if (typeof b !== 'string') throw new Unrepresentable(`an escape that is ${shapeOf(b)}`);
-          return `{${cppStr(a)}, ${cppStr(b)}}`;
-        }).join(', ');
-        out += `.lexical_escapes(${cppStr(k)}, {${e}})`;
-      } else throw new Unrepresentable(`a lexical value that is ${shapeOf(v)}`);
-    }
-  }
-  return out;
-}
-
 function cppRegister(ops) {
   return ops.map((op) => {
     if (op === null || typeof op !== 'object') {
@@ -634,7 +492,7 @@ function cppRegister(ops) {
       // Section is an enum, so an unknown one has no spelling at all.
       if (!s) throw new Unrepresentable(`the map section ${JSON.stringify(section)}`);
       return `      Map::define(${cppName(dialect, 'a dialect')}, Section::${s}, `
-           + `${cppName(key, 'an entry key')}, ${cppEntrySpec(entry, section)});`;
+           + `${cppName(key, 'an entry key')}, ${cppEntrySpec(entry)});`;
     }
     if ('dialect' in op) {
       return `      Map::define_dialect(${cppName(op.dialect, 'a dialect name')}, `
