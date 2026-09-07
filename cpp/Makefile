@@ -32,7 +32,7 @@ WHITEBOX := check-decimal
 SQL_SRCS := sel_sql.cpp sel_sql_binding.cpp sel_sql_emit.cpp sel_sql_map.cpp \
             sel_sql_map_data.cpp
 SQL_OBJS := $(addprefix $(BUILD)/,$(SQL_SRCS:.cpp=.o))
-SQL_HDRS := sel_sql.hpp sel_sql_binding.hpp sel_sql_emit.hpp sel_sql_map.hpp
+SQL_HDRS := sel_sql.hpp sel_sql_emit.hpp sel_sql_map.hpp
 # Tools over that layer.
 SQLTOOLS := sqlmap
 

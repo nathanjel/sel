@@ -8,7 +8,7 @@
 // in the body it is the same refusal, with the same code, everywhere -- and
 // SqlError is the class an application catches.
 
-#include "sel_sql_binding.hpp"
+#include "sel_sql.hpp"
 
 #include <algorithm>
 

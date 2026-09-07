@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "../sel_sql_binding.hpp"
+#include "../sel_sql.hpp"
 #include "../sel_sql_map.hpp"
 
 namespace sel::sqlt {
