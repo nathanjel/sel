@@ -55,9 +55,17 @@ struct Maybe {
 
 // One arm of an arity-keyed or variant-keyed template body: the key is an
 // argument count, "*", or a variant name.
+//
+// The value is a Maybe because sql/MAP.md §2 makes a null arm a WITHDRAWAL of
+// that form: `{"1": null, "*": "LEAST({*})"}` refuses MIN(5) and still answers
+// MIN(5, 3), so the `*` fallback must not rescue the count the entry named. No
+// shipped dialect uses it -- this is the runtime registration path, pinned by
+// neutral.register.arity-null-withdraws and .arity-fallback-still-applies --
+// and reading the null as "absent" is how one host made the withdrawal
+// unwritable while the other emitted the text "None" into the SQL.
 struct Keyed {
   std::string_view key{};
-  std::string_view value{};
+  Maybe value{};
 };
 
 enum class BodyKind {
@@ -244,12 +252,15 @@ class EntrySpec {
   // `ret` is one of the kinds in Rules::ret_kinds, "@concat", or
   // "@unify:<n>[,<n>...]".
   static EntrySpec tpl(std::string tpl, std::string ret);
-  // Keyed by argument count, or by "*".
+  // Keyed by argument count, or by "*". A nullopt arm WITHDRAWS that count --
+  // see the note on Keyed -- rather than leaving it to the "*" fallback.
   static EntrySpec by_count(
-      std::vector<std::pair<std::string, std::string>> arms, std::string ret);
+      std::vector<std::pair<std::string, std::optional<std::string>>> arms,
+      std::string ret);
   // Keyed by variant name, for the families in Rules::variants.
   static EntrySpec variants(
-      std::vector<std::pair<std::string, std::string>> arms, std::string ret);
+      std::vector<std::pair<std::string, std::optional<std::string>>> arms,
+      std::string ret);
   // A `skel` entry: named slots, and no kind for the same reason Entry::ret is
   // absent on one.
   static EntrySpec skeleton(std::string tpl);
@@ -272,7 +283,7 @@ class EntrySpec {
   std::string reason_;
   BodyKind body_ = BodyKind::One;
   std::string one_;
-  std::vector<std::pair<std::string, std::string>> arms_;
+  std::vector<std::pair<std::string, std::optional<std::string>>> arms_;
   std::string ret_;
   std::string caveat_;
   std::string since_;

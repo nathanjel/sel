@@ -37,12 +37,16 @@ def dump_entries(dialect, section, entries):
         else:
             kind = 'template'
             arms = e.get('variants')
+            # `key!` is a withdrawn arm and `key=text` a present one; see the
+            # note in cpp/bin/sqlmap.cpp.
+            def arm(k, v):
+                return f'{esc(k)}!' if v is None else f'{esc(k)}={esc(v)}'
             if arms is not None:
                 body, payload = 'variants', ';'.join(
-                    f'{esc(k)}={esc(v)}' for k, v in arms.items())
+                    arm(k, v) for k, v in arms.items())
             elif isinstance(e.get('tpl'), dict):
                 body, payload = 'bycount', ';'.join(
-                    f'{esc(k)}={esc(v)}' for k, v in e['tpl'].items())
+                    arm(k, v) for k, v in e['tpl'].items())
             else:
                 body, payload = 'one', esc(e['tpl'])
             ret = absent(e.get('ret'))

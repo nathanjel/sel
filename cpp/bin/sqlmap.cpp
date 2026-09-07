@@ -56,7 +56,13 @@ void dump_entries(std::string_view dialect, std::string_view section,
           body = e.body == BodyKind::ByCount ? "bycount" : "variants";
           for (const Keyed& k : e.keyed) {
             if (!payload.empty()) payload += ";";
-            payload += esc(k.key) + "=" + esc(k.value);
+            // `key!` is a WITHDRAWN arm and `key=text` a present one. sql/MAP.md
+            // §2 makes those different answers, so a dump that rendered both as
+            // an empty string would be blind to the difference it exists to
+            // check. Neither character can occur in a key: they are argument
+            // counts, "*", or variant names.
+            payload += esc(k.key);
+            payload += k.value.present ? "=" + esc(k.value.text) : "!";
           }
         }
         break;

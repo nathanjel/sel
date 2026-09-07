@@ -101,7 +101,7 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 // A Call is emitted as `Binding::name(a, b)` in PHP and `Binding.name(a, b)` in
 // Python. Arguments are either literal values or nested Calls.
 const call = (name, args) => ({ __call: name, args });
-const raw = (php, py, js) => ({ __raw: true, php, py, js });
+const raw = (php, py, js, cpp) => ({ __raw: true, php, py, js, cpp });
 
 function bindingCall(b, where) {
   if (!isObj(b) || b.kind === undefined) {
@@ -169,23 +169,27 @@ function valueCall(v, where) {
   if (typeof v === 'number') {
     fail(where, `write ${v} as a string and declare "type": "NUM"; a JSON number `
               + 'does not survive every host');
-    return raw('Value::none()', 'Value.none()', 'Value.none()');
+    return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()');
   }
-  if (v === null || v === undefined) return raw('Value::none()', 'Value.none()', 'Value.none()');
+  if (v === null || v === undefined) {
+    return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()');
+  }
   if (typeof v === 'boolean') {
+    // C++ spells it `boolean`, because `bool` is a keyword there.
     return raw(`Value::bool(${v})`, `Value.bool(${v ? 'True' : 'False'})`,
-               `Value.bool(${v})`);
+               `Value.bool(${v})`, `Value::boolean(${v})`);
   }
   if (typeof v === 'string') {
     return raw(`Value::text(${phpStr(v)})`, `Value.text(${pyStr(v)})`,
-               `Value.text(${jsStr(v)})`);
+               `Value.text(${jsStr(v)})`, `Value::text(${cppStr(v)})`);
   }
   if (isObj(v) && Object.keys(v).length === 1 && typeof v.bin === 'string') {
     // JSON has no byte string, so the corpus spells one as {"bin": "<hex>"}.
     if (!/^([0-9a-fA-F]{2})*$/.test(v.bin)) fail(where, `the bin value ${v.bin} is not hex`);
     return raw(`Value::bin(hex2bin(${phpStr(v.bin)}))`,
                `Value.bin(bytes.fromhex(${pyStr(v.bin)}))`,
-               `Value.bin(binFromHex(${jsStr(v.bin)}))`);
+               `Value.bin(binFromHex(${jsStr(v.bin)}))`,
+               `Value::bin(bin_from_hex(${cppStr(v.bin)}))`);
   }
   // A list or a map of further values.
   const parts = Array.isArray(v)
@@ -197,7 +201,9 @@ function valueCall(v, where) {
     'value_tree([' + parts.map(([k, x]) =>
       (k === null ? '' : '(' + pyStr(k) + ', ') + emitPyArg(x) + (k === null ? '' : ')')).join(', ') + '])',
     'valueTree([' + parts.map(([k, x]) =>
-      (k === null ? '' : '[' + jsStr(k) + ', ') + emitJsArg(x) + (k === null ? '' : ']')).join(', ') + '])');
+      (k === null ? '' : '[' + jsStr(k) + ', ') + emitJsArg(x) + (k === null ? '' : ']')).join(', ') + '])',
+    'value_tree({' + parts.map(([k, x]) =>
+      '{' + (k === null ? 'std::nullopt' : cppStr(k)) + ', ' + cppBinding(x) + '}').join(', ') + '})');
 }
 
 // --- emitters ---------------------------------------------------------------
@@ -387,8 +393,334 @@ if (errors.length) {
   process.exit(1);
 }
 
+// --- C++ --------------------------------------------------------------------
+//
+// The three dynamic hosts get their language's own literal for `register` and
+// `options`, and destructure it in the runner. C++ has no map literal and, more
+// to the point, no runtime shapes: Section is an enum, a DialectSpec is made by
+// root() or extending(), an EntrySpec by a named constructor. So this emitter
+// renders those blocks as TYPED CALLS -- `Map::define(d, Section::Funcs, k,
+// EntrySpec::tpl(...))` -- which is the same rule the map itself follows, and
+// means the C++ runner parses nothing either.
+//
+// Some cases cannot be written that way, and that is the interesting part. A
+// case asserting that `{"kind": "column", "column": ["a", "b"]}` is refused
+// depends on a host whose constructor can RECEIVE an array; C++'s cannot be
+// handed one. The refusal moves from run time to compile time, which is a
+// stronger guarantee than the case asked for -- so the case is emitted as
+// `unrepresentable` with the reason, and the runner reports it as refused by
+// the type system rather than skipping it. A case that is unrepresentable and
+// expects SUCCESS would be a real gap, and fails generation instead.
+
+class Unrepresentable extends Error {
+  constructor(why) { super(why); this.why = why; }
+}
+
+const shapeOf = (v) => Array.isArray(v) ? 'a list'
+  : v === null ? 'null'
+  : typeof v === 'object' ? 'a map'
+  : typeof v;
+
+function cppStr(s) {
+  let out = '"';
+  for (const b of Buffer.from(String(s), 'utf8')) {
+    if (b === 0x5c) out += '\\\\';
+    else if (b === 0x22) out += '\\"';
+    // Three-digit octal cannot run on into the character beside it, as \x can.
+    else if (b < 0x20 || b === 0x7f) out += '\\' + b.toString(8).padStart(3, '0');
+    else out += String.fromCharCode(b);
+  }
+  return out + '"';
+}
+
+function cppKind(t) {
+  if (t === null || t === undefined) return 'SqlKind::Unknown';
+  if (typeof t !== 'string') throw new Unrepresentable(`a binding type that is ${shapeOf(t)}`);
+  const k = { NUM: 'Num', TEXT: 'Text', BOOL: 'Bool', BIN: 'Bin',
+              UNKNOWN: 'Unknown', LIST: 'List' }[t];
+  if (!k) throw new Unrepresentable(`the binding type ${JSON.stringify(t)}`);
+  return `SqlKind::${k}`;
+}
+
+const cppOptStr = (v) => v === null || v === undefined ? 'std::nullopt' : cppStr(v);
+
+function cppName(v, what) {
+  if (typeof v !== 'string') throw new Unrepresentable(`${what} that is ${shapeOf(v)}`);
+  return cppStr(v);
+}
+
+function cppOptName(v, what) {
+  if (v === null || v === undefined) return 'std::nullopt';
+  return cppName(v, what);
+}
+
+// A binding call tree -> a typed constructor call.
+function cppBinding(v) {
+  if (v === null || v === undefined || typeof v === 'string') {
+    throw new Unrepresentable(`a binding that is ${shapeOf(v)}`);
+  }
+  if (v.__raw) return v.cpp;
+  if (!v.__call) throw new Unrepresentable(`a binding shape that is ${shapeOf(v)}`);
+
+  switch (v.__call) {
+    case 'column': {
+      const [col, table, type] = v.args;
+      return `Binding::column(${cppName(col, 'a column name')}, `
+           + `${cppOptName(table, 'a table name')}, ${cppKind(type)})`;
+    }
+    case 'raw': {
+      const [sql, type] = v.args;
+      return `Binding::raw(${cppName(sql, 'a raw column')}, ${cppKind(type)})`;
+    }
+    case 'columns':
+      return `Binding::columns({${v.args.map(cppBinding).join(', ')}})`;
+    case 'relation':
+    case 'relationQuery': {
+      const [from, alias, fields, scalar, corr] = v.args;
+      const ctor = v.__call === 'relation' ? 'relation' : 'relation_query';
+      if (fields === null || fields === undefined || Array.isArray(fields)
+          || typeof fields !== 'object' || fields.__call || fields.__raw) {
+        throw new Unrepresentable(`relation fields that are ${shapeOf(fields)}`);
+      }
+      const f = Object.entries(fields)
+        .map(([k, b]) => `{${cppStr(k)}, ${cppBinding(b)}}`).join(', ');
+      return `Binding::${ctor}(${cppName(from, 'a relation source')}, `
+           + `${cppOptName(alias, 'a relation alias')}, {${f}}, `
+           + `${cppOptName(scalar, 'a relation scalar')}, `
+           + `${cppOptName(corr, 'a relation correlate')})`;
+    }
+    case 'value': {
+      const [val, type] = v.args;
+      const t = type === null || type === undefined ? 'std::nullopt' : cppKind(type);
+      return `Binding::value(${cppBinding(val)}, ${t})`;
+    }
+  }
+  throw new Unrepresentable(`the binding constructor ${v.__call}`);
+}
+
+// --- register ---------------------------------------------------------------
+
+const CPP_SECTIONS = { ops: 'Ops', funcs: 'Funcs', skel: 'Skel' };
+
+function cppEntrySpec(entry, section) {
+  if (entry === null) return 'EntrySpec::withdraw()';
+  if (typeof entry === 'string') return `EntrySpec::withdraw(${cppStr(entry)})`;
+  if (typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Unrepresentable(`a map entry that is ${shapeOf(entry)}`);
+  }
+  if (entry.builder !== undefined) {
+    throw new Unrepresentable('a builder entry, which no case declares');
+  }
+
+  // A null arm is a WITHDRAWAL of that count, not a malformed one -- sql/MAP.md
+  // §2 -- so it is std::nullopt rather than unrepresentable.
+  const arms = (o) => Object.entries(o).map(([k, t]) => {
+    if (t === null) return `{${cppStr(k)}, std::nullopt}`;
+    if (typeof t !== 'string') throw new Unrepresentable(`a template arm that is ${shapeOf(t)}`);
+    return `{${cppStr(k)}, ${cppStr(t)}}`;
+  }).join(', ');
+
+  let base;
+  const hasRet = entry.ret !== undefined && entry.ret !== null;
+  if (entry.variants !== undefined) {
+    if (typeof entry.variants !== 'object' || Array.isArray(entry.variants)) {
+      throw new Unrepresentable(`variants that are ${shapeOf(entry.variants)}`);
+    }
+    if (!hasRet) throw new Unrepresentable('variants with no ret');
+    base = `EntrySpec::variants({${arms(entry.variants)}}, ${cppStr(entry.ret)})`;
+  } else if (typeof entry.tpl === 'string') {
+    // A template with no ret is spelled skeleton() -- which is right for a skel
+    // entry and, for ops or funcs, is exactly the registration the runtime
+    // refuses for having no kind. Same case, same refusal, one line later.
+    base = hasRet ? `EntrySpec::tpl(${cppStr(entry.tpl)}, ${cppStr(entry.ret)})`
+                  : `EntrySpec::skeleton(${cppStr(entry.tpl)})`;
+  } else if (entry.tpl !== null && typeof entry.tpl === 'object' && !Array.isArray(entry.tpl)) {
+    if (!hasRet) throw new Unrepresentable('an arity-keyed template with no ret');
+    base = `EntrySpec::by_count({${arms(entry.tpl)}}, ${cppStr(entry.ret)})`;
+  } else {
+    throw new Unrepresentable(`a tpl that is ${shapeOf(entry.tpl)}`);
+  }
+
+  let out = base;
+  if (entry.caveat !== undefined && entry.caveat !== null) {
+    out += `.caveat(${cppName(entry.caveat, 'a caveat')})`;
+  }
+  if (entry.since !== undefined && entry.since !== null) {
+    out += `.since(${cppName(entry.since, 'a since')})`;
+  }
+  if (entry.arity !== undefined && entry.arity !== null) {
+    const a = entry.arity;
+    if (!Array.isArray(a) || a.length !== 2 || !a.every((x) => Number.isInteger(x))) {
+      throw new Unrepresentable(`an arity that is ${shapeOf(a)} of non-integers`);
+    }
+    out += `.arity(${a[0]}, ${a[1]})`;
+  }
+  for (const k of Object.keys(entry)) {
+    if (!['tpl', 'variants', 'ret', 'caveat', 'since', 'arity', 'builder'].includes(k)) {
+      throw new Unrepresentable(`the entry field ${JSON.stringify(k)}`);
+    }
+  }
+  return out;
+}
+
+const DIALECT_KEYS = ['dialect', 'extends', 'version', 'target', 'lexical'];
+
+function cppDialectSpec(op) {
+  for (const k of Object.keys(op)) {
+    // ops/funcs/skel in a dialect declaration is a registration that looks like
+    // it worked; the dynamic hosts refuse it by name, and DialectSpec simply has
+    // nowhere to put it.
+    if (!DIALECT_KEYS.includes(k)) throw new Unrepresentable(`a dialect declaration carrying ${JSON.stringify(k)}`);
+  }
+  if (!('extends' in op)) {
+    throw new Unrepresentable('a dialect declaration with no extends');
+  }
+  let out;
+  if (op.extends === null) {
+    if (typeof op.version !== 'string') {
+      throw new Unrepresentable('a root dialect with no version');
+    }
+    out = `DialectSpec::root(${cppStr(op.version)})`;
+  } else {
+    out = `DialectSpec::extending(${cppName(op.extends, 'an extends')})`;
+    if (op.version !== undefined && op.version !== null) {
+      out += `.version(${cppName(op.version, 'a version')})`;
+    }
+  }
+  if (op.target !== undefined && op.target !== null) {
+    if (typeof op.target !== 'boolean') throw new Unrepresentable(`a target that is ${shapeOf(op.target)}`);
+    out += `.target(${op.target})`;
+  }
+  if (op.lexical !== undefined && op.lexical !== null) {
+    if (typeof op.lexical !== 'object' || Array.isArray(op.lexical)) {
+      throw new Unrepresentable(`a lexical that is ${shapeOf(op.lexical)}`);
+    }
+    for (const [k, v] of Object.entries(op.lexical)) {
+      if (v === null) out += `.lexical(${cppStr(k)}, std::nullopt)`;
+      else if (typeof v === 'string') out += `.lexical(${cppStr(k)}, ${cppStr(v)})`;
+      else if (typeof v === 'object' && !Array.isArray(v)) {
+        const e = Object.entries(v).map(([a, b]) => {
+          if (typeof b !== 'string') throw new Unrepresentable(`an escape that is ${shapeOf(b)}`);
+          return `{${cppStr(a)}, ${cppStr(b)}}`;
+        }).join(', ');
+        out += `.lexical_escapes(${cppStr(k)}, {${e}})`;
+      } else throw new Unrepresentable(`a lexical value that is ${shapeOf(v)}`);
+    }
+  }
+  return out;
+}
+
+function cppRegister(ops) {
+  return ops.map((op) => {
+    if (op === null || typeof op !== 'object') {
+      throw new Unrepresentable(`a register op that is ${shapeOf(op)}`);
+    }
+    if ('define' in op) {
+      const a = op.define;
+      if (!Array.isArray(a) || a.length !== 4) {
+        throw new Unrepresentable(`a define that is ${shapeOf(a)}`);
+      }
+      const [dialect, section, key, entry] = a;
+      const s = CPP_SECTIONS[section];
+      // Section is an enum, so an unknown one has no spelling at all.
+      if (!s) throw new Unrepresentable(`the map section ${JSON.stringify(section)}`);
+      return `      Map::define(${cppName(dialect, 'a dialect')}, Section::${s}, `
+           + `${cppName(key, 'an entry key')}, ${cppEntrySpec(entry, section)});`;
+    }
+    if ('dialect' in op) {
+      return `      Map::define_dialect(${cppName(op.dialect, 'a dialect name')}, `
+           + `${cppDialectSpec(op)});`;
+    }
+    throw new Unrepresentable('a register op with neither define nor dialect');
+  }).join('\n');
+}
+
+// --- the emitter ------------------------------------------------------------
+
+function emitCpp(cases) {
+  const bodies = [];
+  const rows = [];
+
+  cases.forEach((c, i) => {
+    let unrep = null;
+    let binds = '';
+    let reg = '';
+    try {
+      binds = Object.entries(c.bindingCalls)
+        .map(([n, x]) => `      {${cppStr(n)}, ${cppBinding(x)}},`).join('\n');
+    } catch (e) {
+      if (!(e instanceof Unrepresentable)) throw e;
+      unrep = e.why;
+    }
+    if (unrep === null && c.registerData !== null && c.registerData !== undefined) {
+      try {
+        reg = cppRegister(c.registerData);
+      } catch (e) {
+        if (!(e instanceof Unrepresentable)) throw e;
+        unrep = e.why;
+      }
+    }
+
+    // A case this host cannot express must be one the others REFUSE. If it
+    // expected a translation, the type system has removed coverage rather than
+    // strengthened it, and that is a gap rather than a stronger guarantee.
+    if (unrep !== null && !c.error && !c.throws) {
+      throw new Error(
+        `${c.at}: case ${c.name} cannot be written with the C++ constructors `
+        + `(${unrep}) and does not assert a refusal, so C++ would lose the coverage `
+        + 'rather than move it to compile time. fail() is not used here: the error '
+        + 'list is checked before the emitters run, so a fail() from an emitter is '
+        + 'recorded and never read.');
+    }
+
+    const fn = `c${i}`;
+    if (unrep === null) {
+      bodies.push(`static std::vector<std::pair<std::string, Binding>> ${fn}_bind() {\n`
+                + `  return {\n${binds}\n  };\n}`);
+      if (reg) bodies.push(`static void ${fn}_reg() {\n${reg}\n}`);
+    }
+
+    const f = [
+      `.name = ${cppStr(c.name)}`,
+      `.at = ${cppStr(c.at)}`,
+      `.dialect = ${cppStr(c.dialect ?? '')}`,
+      `.source = ${cppStr(c.source ?? '')}`,
+      `.expect = ${c.expect === null || c.expect === undefined ? 'nullptr' : cppStr(c.expect)}`,
+      `.error = ${c.error === null || c.error === undefined ? 'nullptr' : cppStr(c.error)}`,
+      `.throws = ${c.throws === null || c.throws === undefined ? 'nullptr' : cppStr(c.throws)}`,
+      `.params = ${c.params === null || c.params === undefined ? 'nullptr' : cppStr(c.params)}`,
+      `.as_ = ${c.as === null || c.as === undefined ? 'nullptr' : cppStr(c.as)}`,
+      `.mode = ${c.mode === null || c.mode === undefined ? 'nullptr' : cppStr(c.mode)}`,
+      `.strict = ${!!(c.optionsData && c.optionsData.strict)}`,
+      `.unrepresentable = ${unrep === null ? 'nullptr' : cppStr(unrep)}`,
+      `.register_fn = ${unrep === null && reg ? `${fn}_reg` : 'nullptr'}`,
+      `.bindings_fn = ${unrep === null ? `${fn}_bind` : 'nullptr'}`,
+    ];
+    rows.push(`    {${f.join(',\n     ')}},`);
+  });
+
+  return `// ${BANNER.join('\n// ')}\n`
+    + `//\n`
+    + `// Bindings and registrations are emitted as TYPED CALLS, not as data: C++\n`
+    + `// has no map literal, and more to the point no runtime shapes -- Section is\n`
+    + `// an enum and an EntrySpec is made by a named constructor. So this runner\n`
+    + `// parses nothing, exactly as the other three do not.\n`
+    + `//\n`
+    + `// A case whose binding or registration cannot be SPELLED with those\n`
+    + `// constructors carries \`unrepresentable\` instead of the two functions. It\n`
+    + `// is not skipped: the case asserts that the shape is refused, and here it is\n`
+    + `// refused by the compiler, which is the same answer one stage earlier.\n\n`
+    + `#include "case_data.hpp"\n\n`
+    + `namespace sel::sqlt {\n\n`
+    + `using sel::Value;\n\n`
+    + `${bodies.join('\n\n')}\n\n`
+    + `static const SqlCase CASES[] = {\n${rows.join('\n')}\n};\n\n`
+    + `std::span<const SqlCase> sql_cases() { return CASES; }\n\n`
+    + `}  // namespace sel::sqlt\n`;
+}
+
 const OUTPUTS = [['php/bin/CaseData.php', emitPhp], ['python/bin/case_data.py', emitPython],
-  ['js/bin/case-data.mjs', emitJs]];
+  ['js/bin/case-data.mjs', emitJs], ['cpp/bin/case_data.cpp', emitCpp]];
 const check = process.argv.includes('--check');
 let stale = 0;
 for (const [rel, emit] of OUTPUTS) {

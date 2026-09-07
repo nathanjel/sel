@@ -39,55 +39,55 @@ constexpr Lexical d0_ansi_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
 };
 constexpr Keyed d0_ansi_ops6[] = {
-    {.key = "text", .value = "({0} || {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} || {1})"}},
 };
 constexpr Keyed d0_ansi_ops11[] = {
-    {.key = "num", .value = "({0} = {1})"},
-    {.key = "coerce", .value = "({numericCast:0} = {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
 constexpr Keyed d0_ansi_ops12[] = {
-    {.key = "num", .value = "({0} <> {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <> {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
 constexpr Keyed d0_ansi_ops13[] = {
-    {.key = "num", .value = "({0} < {1})"},
-    {.key = "coerce", .value = "({numericCast:0} < {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
 constexpr Keyed d0_ansi_ops14[] = {
-    {.key = "num", .value = "({0} <= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
 constexpr Keyed d0_ansi_ops15[] = {
-    {.key = "num", .value = "({0} > {1})"},
-    {.key = "coerce", .value = "({numericCast:0} > {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
 constexpr Keyed d0_ansi_ops16[] = {
-    {.key = "num", .value = "({0} >= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} >= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
 constexpr Keyed d0_ansi_ops17[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d0_ansi_ops18[] = {
-    {.key = "text", .value = "({0} <> {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d0_ansi_ops19[] = {
-    {.key = "text", .value = "({0} < {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d0_ansi_ops20[] = {
-    {.key = "text", .value = "({0} <= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d0_ansi_ops21[] = {
-    {.key = "text", .value = "({0} > {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d0_ansi_ops22[] = {
-    {.key = "text", .value = "({0} >= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
 };
 constexpr Keyed d0_ansi_ops23[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d0_ansi_ops24[] = {
-    {.key = "scalar", .value = "({0} = {1})"},
+    {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d0_ansi_ops[] = {
     {.key = "+", .kind = EntryKind::Template, .one = "({0} + {1})", .ret = "NUM"},
@@ -120,8 +120,8 @@ constexpr Entry d0_ansi_ops[] = {
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
 };
 constexpr Keyed d0_ansi_funcs1[] = {
-    {.key = "2", .value = "SUBSTRING({0} FROM {1})"},
-    {.key = "3", .value = "SUBSTRING({0} FROM {1} FOR {2})"},
+    {.key = "2", .value = {.present = true, .text = "SUBSTRING({0} FROM {1})"}},
+    {.key = "3", .value = {.present = true, .text = "SUBSTRING({0} FROM {1} FOR {2})"}},
 };
 constexpr Entry d0_ansi_funcs[] = {
     {.key = "LEN", .kind = EntryKind::Template, .one = "CHAR_LENGTH({0})", .ret = "NUM"},
@@ -201,56 +201,56 @@ constexpr Lexical d1_mariadb_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
 };
 constexpr Keyed d1_mariadb_ops6[] = {
-    {.key = "text", .value = "CONCAT({0}, {1})"},
-    {.key = "bin", .value = "CONCAT({0}, {1})"},
+    {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
+    {.key = "bin", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
 };
 constexpr Keyed d1_mariadb_ops11[] = {
-    {.key = "num", .value = "({0} = {1})"},
-    {.key = "coerce", .value = "({numericCast:0} = {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
 constexpr Keyed d1_mariadb_ops12[] = {
-    {.key = "num", .value = "({0} <> {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <> {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
 constexpr Keyed d1_mariadb_ops13[] = {
-    {.key = "num", .value = "({0} < {1})"},
-    {.key = "coerce", .value = "({numericCast:0} < {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
 constexpr Keyed d1_mariadb_ops14[] = {
-    {.key = "num", .value = "({0} <= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
 constexpr Keyed d1_mariadb_ops15[] = {
-    {.key = "num", .value = "({0} > {1})"},
-    {.key = "coerce", .value = "({numericCast:0} > {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
 constexpr Keyed d1_mariadb_ops16[] = {
-    {.key = "num", .value = "({0} >= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} >= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
 constexpr Keyed d1_mariadb_ops17[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d1_mariadb_ops18[] = {
-    {.key = "text", .value = "({0} <> {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d1_mariadb_ops19[] = {
-    {.key = "text", .value = "({0} < {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d1_mariadb_ops20[] = {
-    {.key = "text", .value = "({0} <= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d1_mariadb_ops21[] = {
-    {.key = "text", .value = "({0} > {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d1_mariadb_ops22[] = {
-    {.key = "text", .value = "({0} >= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
 };
 constexpr Keyed d1_mariadb_ops23[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d1_mariadb_ops24[] = {
-    {.key = "scalar", .value = "({0} = {1})"},
+    {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d1_mariadb_ops[] = {
     {.key = "+", .kind = EntryKind::Template, .one = "({0} + {1})", .ret = "NUM"},
@@ -283,20 +283,20 @@ constexpr Entry d1_mariadb_ops[] = {
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
 };
 constexpr Keyed d1_mariadb_funcs1[] = {
-    {.key = "2", .value = "SUBSTRING({0}, {1})"},
-    {.key = "3", .value = "SUBSTRING({0}, {1}, {2})"},
+    {.key = "2", .value = {.present = true, .text = "SUBSTRING({0}, {1})"}},
+    {.key = "3", .value = {.present = true, .text = "SUBSTRING({0}, {1}, {2})"}},
 };
 constexpr Keyed d1_mariadb_funcs13[] = {
-    {.key = "2", .value = "INSTR({1}, {0})"},
-    {.key = "3", .value = "LOCATE({0}, {1}, {2})"},
+    {.key = "2", .value = {.present = true, .text = "INSTR({1}, {0})"}},
+    {.key = "3", .value = {.present = true, .text = "LOCATE({0}, {1}, {2})"}},
 };
 constexpr Keyed d1_mariadb_funcs25[] = {
-    {.key = "1", .value = "{0}"},
-    {.key = "*", .value = "LEAST({*})"},
+    {.key = "1", .value = {.present = true, .text = "{0}"}},
+    {.key = "*", .value = {.present = true, .text = "LEAST({*})"}},
 };
 constexpr Keyed d1_mariadb_funcs26[] = {
-    {.key = "1", .value = "{0}"},
-    {.key = "*", .value = "GREATEST({*})"},
+    {.key = "1", .value = {.present = true, .text = "{0}"}},
+    {.key = "*", .value = {.present = true, .text = "GREATEST({*})"}},
 };
 constexpr Entry d1_mariadb_funcs[] = {
     {.key = "LEN", .kind = EntryKind::Template, .one = "CHAR_LENGTH({0})", .ret = "NUM"},
@@ -376,56 +376,56 @@ constexpr Lexical d2_mysql_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
 };
 constexpr Keyed d2_mysql_ops6[] = {
-    {.key = "text", .value = "CONCAT({0}, {1})"},
-    {.key = "bin", .value = "CONCAT({0}, {1})"},
+    {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
+    {.key = "bin", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
 };
 constexpr Keyed d2_mysql_ops11[] = {
-    {.key = "num", .value = "({0} = {1})"},
-    {.key = "coerce", .value = "({numericCast:0} = {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
 constexpr Keyed d2_mysql_ops12[] = {
-    {.key = "num", .value = "({0} <> {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <> {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
 constexpr Keyed d2_mysql_ops13[] = {
-    {.key = "num", .value = "({0} < {1})"},
-    {.key = "coerce", .value = "({numericCast:0} < {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
 constexpr Keyed d2_mysql_ops14[] = {
-    {.key = "num", .value = "({0} <= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
 constexpr Keyed d2_mysql_ops15[] = {
-    {.key = "num", .value = "({0} > {1})"},
-    {.key = "coerce", .value = "({numericCast:0} > {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
 constexpr Keyed d2_mysql_ops16[] = {
-    {.key = "num", .value = "({0} >= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} >= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
 constexpr Keyed d2_mysql_ops17[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d2_mysql_ops18[] = {
-    {.key = "text", .value = "({0} <> {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d2_mysql_ops19[] = {
-    {.key = "text", .value = "({0} < {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d2_mysql_ops20[] = {
-    {.key = "text", .value = "({0} <= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d2_mysql_ops21[] = {
-    {.key = "text", .value = "({0} > {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d2_mysql_ops22[] = {
-    {.key = "text", .value = "({0} >= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
 };
 constexpr Keyed d2_mysql_ops23[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d2_mysql_ops24[] = {
-    {.key = "scalar", .value = "({0} = {1})"},
+    {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d2_mysql_ops[] = {
     {.key = "+", .kind = EntryKind::Template, .one = "({0} + {1})", .ret = "NUM"},
@@ -458,20 +458,20 @@ constexpr Entry d2_mysql_ops[] = {
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
 };
 constexpr Keyed d2_mysql_funcs1[] = {
-    {.key = "2", .value = "SUBSTRING({0}, {1})"},
-    {.key = "3", .value = "SUBSTRING({0}, {1}, {2})"},
+    {.key = "2", .value = {.present = true, .text = "SUBSTRING({0}, {1})"}},
+    {.key = "3", .value = {.present = true, .text = "SUBSTRING({0}, {1}, {2})"}},
 };
 constexpr Keyed d2_mysql_funcs13[] = {
-    {.key = "2", .value = "INSTR({1}, {0})"},
-    {.key = "3", .value = "LOCATE({0}, {1}, {2})"},
+    {.key = "2", .value = {.present = true, .text = "INSTR({1}, {0})"}},
+    {.key = "3", .value = {.present = true, .text = "LOCATE({0}, {1}, {2})"}},
 };
 constexpr Keyed d2_mysql_funcs25[] = {
-    {.key = "1", .value = "{0}"},
-    {.key = "*", .value = "LEAST({*})"},
+    {.key = "1", .value = {.present = true, .text = "{0}"}},
+    {.key = "*", .value = {.present = true, .text = "LEAST({*})"}},
 };
 constexpr Keyed d2_mysql_funcs26[] = {
-    {.key = "1", .value = "{0}"},
-    {.key = "*", .value = "GREATEST({*})"},
+    {.key = "1", .value = {.present = true, .text = "{0}"}},
+    {.key = "*", .value = {.present = true, .text = "GREATEST({*})"}},
 };
 constexpr Entry d2_mysql_funcs[] = {
     {.key = "LEN", .kind = EntryKind::Template, .one = "CHAR_LENGTH({0})", .ret = "NUM"},
@@ -551,56 +551,56 @@ constexpr Lexical d3_mysql_family_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
 };
 constexpr Keyed d3_mysql_family_ops6[] = {
-    {.key = "text", .value = "CONCAT({0}, {1})"},
-    {.key = "bin", .value = "CONCAT({0}, {1})"},
+    {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
+    {.key = "bin", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops11[] = {
-    {.key = "num", .value = "({0} = {1})"},
-    {.key = "coerce", .value = "({numericCast:0} = {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
 constexpr Keyed d3_mysql_family_ops12[] = {
-    {.key = "num", .value = "({0} <> {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <> {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
 constexpr Keyed d3_mysql_family_ops13[] = {
-    {.key = "num", .value = "({0} < {1})"},
-    {.key = "coerce", .value = "({numericCast:0} < {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
 constexpr Keyed d3_mysql_family_ops14[] = {
-    {.key = "num", .value = "({0} <= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
 constexpr Keyed d3_mysql_family_ops15[] = {
-    {.key = "num", .value = "({0} > {1})"},
-    {.key = "coerce", .value = "({numericCast:0} > {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
 constexpr Keyed d3_mysql_family_ops16[] = {
-    {.key = "num", .value = "({0} >= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} >= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
 constexpr Keyed d3_mysql_family_ops17[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops18[] = {
-    {.key = "text", .value = "({0} <> {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops19[] = {
-    {.key = "text", .value = "({0} < {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops20[] = {
-    {.key = "text", .value = "({0} <= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops21[] = {
-    {.key = "text", .value = "({0} > {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops22[] = {
-    {.key = "text", .value = "({0} >= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops23[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops24[] = {
-    {.key = "scalar", .value = "({0} = {1})"},
+    {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d3_mysql_family_ops[] = {
     {.key = "+", .kind = EntryKind::Template, .one = "({0} + {1})", .ret = "NUM"},
@@ -633,20 +633,20 @@ constexpr Entry d3_mysql_family_ops[] = {
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
 };
 constexpr Keyed d3_mysql_family_funcs1[] = {
-    {.key = "2", .value = "SUBSTRING({0}, {1})"},
-    {.key = "3", .value = "SUBSTRING({0}, {1}, {2})"},
+    {.key = "2", .value = {.present = true, .text = "SUBSTRING({0}, {1})"}},
+    {.key = "3", .value = {.present = true, .text = "SUBSTRING({0}, {1}, {2})"}},
 };
 constexpr Keyed d3_mysql_family_funcs13[] = {
-    {.key = "2", .value = "INSTR({1}, {0})"},
-    {.key = "3", .value = "LOCATE({0}, {1}, {2})"},
+    {.key = "2", .value = {.present = true, .text = "INSTR({1}, {0})"}},
+    {.key = "3", .value = {.present = true, .text = "LOCATE({0}, {1}, {2})"}},
 };
 constexpr Keyed d3_mysql_family_funcs25[] = {
-    {.key = "1", .value = "{0}"},
-    {.key = "*", .value = "LEAST({*})"},
+    {.key = "1", .value = {.present = true, .text = "{0}"}},
+    {.key = "*", .value = {.present = true, .text = "LEAST({*})"}},
 };
 constexpr Keyed d3_mysql_family_funcs26[] = {
-    {.key = "1", .value = "{0}"},
-    {.key = "*", .value = "GREATEST({*})"},
+    {.key = "1", .value = {.present = true, .text = "{0}"}},
+    {.key = "*", .value = {.present = true, .text = "GREATEST({*})"}},
 };
 constexpr Entry d3_mysql_family_funcs[] = {
     {.key = "LEN", .kind = EntryKind::Template, .one = "CHAR_LENGTH({0})", .ret = "NUM"},
@@ -725,56 +725,56 @@ constexpr Lexical d4_postgresql_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS TEXT)"},
 };
 constexpr Keyed d4_postgresql_ops6[] = {
-    {.key = "text", .value = "({textCast:0} || {textCast:1})"},
-    {.key = "bin", .value = "({0} || {1})"},
+    {.key = "text", .value = {.present = true, .text = "({textCast:0} || {textCast:1})"}},
+    {.key = "bin", .value = {.present = true, .text = "({0} || {1})"}},
 };
 constexpr Keyed d4_postgresql_ops11[] = {
-    {.key = "num", .value = "({0} = {1})"},
-    {.key = "coerce", .value = "({numericCast:0} = {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
 constexpr Keyed d4_postgresql_ops12[] = {
-    {.key = "num", .value = "({0} <> {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <> {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
 constexpr Keyed d4_postgresql_ops13[] = {
-    {.key = "num", .value = "({0} < {1})"},
-    {.key = "coerce", .value = "({numericCast:0} < {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
 constexpr Keyed d4_postgresql_ops14[] = {
-    {.key = "num", .value = "({0} <= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} <= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
 constexpr Keyed d4_postgresql_ops15[] = {
-    {.key = "num", .value = "({0} > {1})"},
-    {.key = "coerce", .value = "({numericCast:0} > {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
 constexpr Keyed d4_postgresql_ops16[] = {
-    {.key = "num", .value = "({0} >= {1})"},
-    {.key = "coerce", .value = "({numericCast:0} >= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
 constexpr Keyed d4_postgresql_ops17[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d4_postgresql_ops18[] = {
-    {.key = "text", .value = "({0} <> {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d4_postgresql_ops19[] = {
-    {.key = "text", .value = "({0} < {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d4_postgresql_ops20[] = {
-    {.key = "text", .value = "({0} <= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d4_postgresql_ops21[] = {
-    {.key = "text", .value = "({0} > {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d4_postgresql_ops22[] = {
-    {.key = "text", .value = "({0} >= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
 };
 constexpr Keyed d4_postgresql_ops23[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d4_postgresql_ops24[] = {
-    {.key = "scalar", .value = "({0} = {1})"},
+    {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d4_postgresql_ops[] = {
     {.key = "+", .kind = EntryKind::Template, .one = "({numericCast:0} + {numericCast:1})", .ret = "NUM"},
@@ -807,8 +807,8 @@ constexpr Entry d4_postgresql_ops[] = {
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
 };
 constexpr Keyed d4_postgresql_funcs1[] = {
-    {.key = "2", .value = "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER))"},
-    {.key = "3", .value = "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER) FOR CAST({2} AS INTEGER))"},
+    {.key = "2", .value = {.present = true, .text = "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER))"}},
+    {.key = "3", .value = {.present = true, .text = "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER) FOR CAST({2} AS INTEGER))"}},
 };
 constexpr Entry d4_postgresql_funcs[] = {
     {.key = "LEN", .kind = EntryKind::Template, .one = "length({textCast:0})", .ret = "NUM"},
@@ -887,56 +887,56 @@ constexpr Lexical d5_sqlite_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS TEXT)"},
 };
 constexpr Keyed d5_sqlite_ops6[] = {
-    {.key = "text", .value = "({0} || {1})"},
-    {.key = "bin", .value = "({0} || {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} || {1})"}},
+    {.key = "bin", .value = {.present = true, .text = "({0} || {1})"}},
 };
 constexpr Keyed d5_sqlite_ops11[] = {
-    {.key = "num", .value = "({numericCast:0} = {numericCast:1})"},
-    {.key = "coerce", .value = "({numericCast:0} = {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
 constexpr Keyed d5_sqlite_ops12[] = {
-    {.key = "num", .value = "({numericCast:0} <> {numericCast:1})"},
-    {.key = "coerce", .value = "({numericCast:0} <> {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
 constexpr Keyed d5_sqlite_ops13[] = {
-    {.key = "num", .value = "({numericCast:0} < {numericCast:1})"},
-    {.key = "coerce", .value = "({numericCast:0} < {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
 constexpr Keyed d5_sqlite_ops14[] = {
-    {.key = "num", .value = "({numericCast:0} <= {numericCast:1})"},
-    {.key = "coerce", .value = "({numericCast:0} <= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
 constexpr Keyed d5_sqlite_ops15[] = {
-    {.key = "num", .value = "({numericCast:0} > {numericCast:1})"},
-    {.key = "coerce", .value = "({numericCast:0} > {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
 constexpr Keyed d5_sqlite_ops16[] = {
-    {.key = "num", .value = "({numericCast:0} >= {numericCast:1})"},
-    {.key = "coerce", .value = "({numericCast:0} >= {numericCast:1})"},
+    {.key = "num", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
+    {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
 constexpr Keyed d5_sqlite_ops17[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d5_sqlite_ops18[] = {
-    {.key = "text", .value = "({0} <> {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d5_sqlite_ops19[] = {
-    {.key = "text", .value = "({0} < {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d5_sqlite_ops20[] = {
-    {.key = "text", .value = "({0} <= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d5_sqlite_ops21[] = {
-    {.key = "text", .value = "({0} > {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d5_sqlite_ops22[] = {
-    {.key = "text", .value = "({0} >= {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
 };
 constexpr Keyed d5_sqlite_ops23[] = {
-    {.key = "text", .value = "({0} = {1})"},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d5_sqlite_ops24[] = {
-    {.key = "scalar", .value = "({0} = {1})"},
+    {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d5_sqlite_ops[] = {
     {.key = "+", .kind = EntryKind::Template, .one = "({0} + {1})", .ret = "NUM", .caveat = "decimal-float"},
@@ -969,8 +969,8 @@ constexpr Entry d5_sqlite_ops[] = {
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQLite has no XOR operator at all, over integers or blobs"}},
 };
 constexpr Keyed d5_sqlite_funcs1[] = {
-    {.key = "2", .value = "substr({0}, {1})"},
-    {.key = "3", .value = "substr({0}, {1}, {2})"},
+    {.key = "2", .value = {.present = true, .text = "substr({0}, {1})"}},
+    {.key = "3", .value = {.present = true, .text = "substr({0}, {1}, {2})"}},
 };
 constexpr Entry d5_sqlite_funcs[] = {
     {.key = "LEN", .kind = EntryKind::Template, .one = "length({0})", .ret = "NUM"},

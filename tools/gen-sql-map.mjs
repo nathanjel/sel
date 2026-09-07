@@ -698,7 +698,11 @@ function cppEntry(key, e, prefix, section, index, out) {
     const arms = Object.entries(e.variants ?? e.tpl);
     out.push(`constexpr Keyed ${arr}[] = {`);
     for (const [k, v] of arms) {
-      out.push(`    {.key = ${cppStr(k)}, .value = ${cppStr(v)}},`);
+      // A null arm withdraws that count; sql/MAP.md §2. No shipped dialect
+      // does it, but the emitted form has to be able to say it.
+      out.push(v === null
+        ? `    {.key = ${cppStr(k)}, .value = {}},`
+        : `    {.key = ${cppStr(k)}, .value = {.present = true, .text = ${cppStr(v)}}},`);
     }
     out.push('};');
     f.push(`.body = BodyKind::${body}`, `.keyed = ${arr}`);

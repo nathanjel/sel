@@ -297,8 +297,9 @@ EntrySpec EntrySpec::tpl(std::string tpl, std::string ret) {
   return s;
 }
 
-EntrySpec EntrySpec::by_count(std::vector<std::pair<std::string, std::string>> arms,
-                              std::string ret) {
+EntrySpec EntrySpec::by_count(
+    std::vector<std::pair<std::string, std::optional<std::string>>> arms,
+    std::string ret) {
   EntrySpec s;
   s.kind_ = EntryKind::Template;
   s.body_ = BodyKind::ByCount;
@@ -307,8 +308,9 @@ EntrySpec EntrySpec::by_count(std::vector<std::pair<std::string, std::string>> a
   return s;
 }
 
-EntrySpec EntrySpec::variants(std::vector<std::pair<std::string, std::string>> arms,
-                              std::string ret) {
+EntrySpec EntrySpec::variants(
+    std::vector<std::pair<std::string, std::optional<std::string>>> arms,
+    std::string ret) {
   EntrySpec s;
   s.kind_ = EntryKind::Template;
   s.body_ = BodyKind::Variants;
@@ -527,11 +529,13 @@ void Map::define(const std::string& dialect, Section section,
   owned->arm_values.reserve(spec.arms_.size());
   for (const auto& [arm_key, arm_value] : spec.arms_) {
     owned->arm_keys.push_back(arm_key);
-    owned->arm_values.push_back(arm_value);
+    owned->arm_values.push_back(arm_value ? *arm_value : std::string{});
   }
   owned->keyed.reserve(spec.arms_.size());
   for (std::size_t i = 0; i < spec.arms_.size(); ++i) {
-    owned->keyed.push_back(Keyed{owned->arm_keys[i], owned->arm_values[i]});
+    owned->keyed.push_back(
+        Keyed{owned->arm_keys[i],
+              Maybe{spec.arms_[i].second.has_value(), owned->arm_values[i]}});
   }
 
   Entry& v = owned->view;
