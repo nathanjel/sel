@@ -2599,6 +2599,60 @@ static std::vector<std::pair<std::string, Binding>> c411_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c412_bind() {
+  return {
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c413_bind() {
+  return {
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c414_bind() {
+  return {
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c415_bind() {
+  return {
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c416_bind() {
+  return {
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c417_bind() {
+  return {
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c418_bind() {
+  return {
+      {"ITEMS", Binding::relation("oi", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Text)}}, std::nullopt, "`oi`.`o`=`o`.`id`")},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c419_bind() {
+  return {
+      {"ITEMS", Binding::relation("oi", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Unknown)}}, std::nullopt, "`oi`.`o`=`o`.`id`")},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c420_bind() {
+  return {
+      {"ITEMS", Binding::relation("oi", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Unknown)}}, std::nullopt, "`oi`.`o`=`o`.`id`")},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -8368,6 +8422,132 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c411_bind},
+    {.name = "notaddressed.abs-over-a-text-column-is-not-guarded",
+     .at = "19-kind-warrant.sqlt:196",
+     .dialect = "mariadb",
+     .source = "ABS(T)",
+     .expect = "ABS(`t`)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c412_bind},
+    {.name = "notaddressed.round-over-a-text-column-is-not-guarded",
+     .at = "19-kind-warrant.sqlt:215",
+     .dialect = "mariadb",
+     .source = "ROUND(T, 2)",
+     .expect = "ROUND(`t`, 2)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c413_bind},
+    {.name = "notaddressed.max-over-a-text-column-is-not-guarded",
+     .at = "19-kind-warrant.sqlt:225",
+     .dialect = "mariadb",
+     .source = "MAX(T, 1)",
+     .expect = "GREATEST(`t`, 1)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c414_bind},
+    {.name = "notaddressed.floor-over-a-text-column-is-not-guarded",
+     .at = "19-kind-warrant.sqlt:238",
+     .dialect = "mariadb",
+     .source = "FLOOR(T)",
+     .expect = "FLOOR(`t`)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c415_bind},
+    {.name = "notaddressed.power-over-a-text-column-is-not-guarded",
+     .at = "19-kind-warrant.sqlt:248",
+     .dialect = "mariadb",
+     .source = "POWER(T, 2)",
+     .expect = "POWER(`t`, 2)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c416_bind},
+    {.name = "notaddressed.a-text-column-as-a-length-is-not-guarded",
+     .at = "19-kind-warrant.sqlt:258",
+     .dialect = "mariadb",
+     .source = "LEFT(\"abc\", T)",
+     .expect = "LEFT('abc', `t`)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c417_bind},
+    {.name = "notaddressed.an-aggregate-body-declared-text-is-refused",
+     .at = "19-kind-warrant.sqlt:271",
+     .dialect = "mariadb",
+     .source = "SUM(ITEMS, _[\"QTY\"])",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c418_bind},
+    {.name = "notaddressed.an-undeclared-aggregate-body-is-not-guarded",
+     .at = "19-kind-warrant.sqlt:285",
+     .dialect = "mariadb",
+     .source = "SUM(ITEMS, _[\"QTY\"])",
+     .expect = "(SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c419_bind},
+    {.name = "notaddressed.times-one-reaches-the-guard",
+     .at = "19-kind-warrant.sqlt:295",
+     .dialect = "mariadb",
+     .source = "SUM(ITEMS, _[\"QTY\"] * 1)",
+     .expect = "(SELECT COALESCE(SUM((CASE WHEN (`oi`.`qty` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END * 1)), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c420_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

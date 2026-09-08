@@ -117,7 +117,16 @@ function extract_blocks(string $file): array
 
 $files = array_slice($argv, 1);
 if ($files === []) {
-    $files = [__DIR__ . '/../../docs/SQL-TRANSLATION.md'];
+    // Both documents that quote emitted SQL. SQL-KINDS.md was outside this list
+    // for its whole first life, and drifted the same way SQL-TRANSLATION.md §7
+    // did: it described `asCondition` wrapping an UNKNOWN fragment in IS TRUE,
+    // in the present tense, under a table saying that cell was closed. A
+    // document about what is BROKEN is the most drift-prone kind there is,
+    // because it goes stale the moment somebody fixes the thing.
+    $files = [
+        __DIR__ . '/../../docs/SQL-TRANSLATION.md',
+        __DIR__ . '/../../docs/SQL-KINDS.md',
+    ];
 }
 
 $cases = load_cases();

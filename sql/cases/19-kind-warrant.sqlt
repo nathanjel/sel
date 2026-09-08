@@ -193,3 +193,116 @@ mariadb
 ANY(ITEMS, _["QTY"] == 25)
 --- expect
 EXISTS (SELECT 1 FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id` AND ((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END = 25)) IS TRUE)
+### name: notaddressed.abs-over-a-text-column-is-not-guarded
+--- note
+docs/SQL-KINDS.md §4.1a, pinned rather than only described. These cases assert
+what is BROKEN: a function argument read as a number gets no guard, because
+binary() and unary() are where the guards go and a call argument reaches
+neither. Nothing anywhere records which argument of which function is numeric.
+
+They are here so that a partial fix is visible. Closing §4.1a should turn these
+red, and a red case with this note is the reminder to update the document that
+quotes it.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+ABS(T)
+--- expect
+ABS(`t`)
+===
+### name: notaddressed.round-over-a-text-column-is-not-guarded
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+ROUND(T, 2)
+--- expect
+ROUND(`t`, 2)
+===
+### name: notaddressed.max-over-a-text-column-is-not-guarded
+--- note
+Two arguments, one of them a plain number, and still nothing asks whether the
+other is one.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+MAX(T, 1)
+--- expect
+GREATEST(`t`, 1)
+===
+### name: notaddressed.floor-over-a-text-column-is-not-guarded
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+FLOOR(T)
+--- expect
+FLOOR(`t`)
+===
+### name: notaddressed.power-over-a-text-column-is-not-guarded
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+POWER(T, 2)
+--- expect
+POWER(`t`, 2)
+===
+### name: notaddressed.a-text-column-as-a-length-is-not-guarded
+--- note
+And the argument that is numeric while the others are not: LEFT reads its second
+as a count.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+LEFT("abc", T)
+--- expect
+LEFT('abc', `t`)
+===
+### name: notaddressed.an-aggregate-body-declared-text-is-refused
+--- note
+The bare aggregate body wears the same hat. A DECLARED text field is refused by
+the aggregate's own kind check -- requireNum -- so only UNKNOWN passes, exactly
+as in the bool cell before the operator work closed it.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "TEXT"}}, "correlate": "`oi`.`o`=`o`.`id`"}}
+--- source
+SUM(ITEMS, _["QTY"])
+--- error
+E_SQL_SHAPE
+===
+### name: notaddressed.an-undeclared-aggregate-body-is-not-guarded
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty"}}, "correlate": "`oi`.`o`=`o`.`id`"}}
+--- source
+SUM(ITEMS, _["QTY"])
+--- expect
+(SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
+===
+### name: notaddressed.times-one-reaches-the-guard
+--- note
+The workaround §4.1a offers, and the reason it is worth writing down: `* 1` is
+value-preserving in SEL, scale included, and it puts the operand through
+binary(), which is where guardNumeric lives.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty"}}, "correlate": "`oi`.`o`=`o`.`id`"}}
+--- source
+SUM(ITEMS, _["QTY"] * 1)
+--- expect
+(SELECT COALESCE(SUM((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END * 1)), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
+===

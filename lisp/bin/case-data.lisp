@@ -5852,4 +5852,130 @@
    :mode nil
    :strict nil
    :register nil
-   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :text))) nil "`oi`.`o`=`o`.`id`")))))))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :text))) nil "`oi`.`o`=`o`.`id`")))))
+  (list
+   :name "notaddressed.abs-over-a-text-column-is-not-guarded"
+   :at "19-kind-warrant.sqlt:196"
+   :dialect "mariadb"
+   :source "ABS(T)"
+   :expect "ABS(`t`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "notaddressed.round-over-a-text-column-is-not-guarded"
+   :at "19-kind-warrant.sqlt:215"
+   :dialect "mariadb"
+   :source "ROUND(T, 2)"
+   :expect "ROUND(`t`, 2)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "notaddressed.max-over-a-text-column-is-not-guarded"
+   :at "19-kind-warrant.sqlt:225"
+   :dialect "mariadb"
+   :source "MAX(T, 1)"
+   :expect "GREATEST(`t`, 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "notaddressed.floor-over-a-text-column-is-not-guarded"
+   :at "19-kind-warrant.sqlt:238"
+   :dialect "mariadb"
+   :source "FLOOR(T)"
+   :expect "FLOOR(`t`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "notaddressed.power-over-a-text-column-is-not-guarded"
+   :at "19-kind-warrant.sqlt:248"
+   :dialect "mariadb"
+   :source "POWER(T, 2)"
+   :expect "POWER(`t`, 2)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "notaddressed.a-text-column-as-a-length-is-not-guarded"
+   :at "19-kind-warrant.sqlt:258"
+   :dialect "mariadb"
+   :source "LEFT(\"abc\", T)"
+   :expect "LEFT('abc', `t`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "notaddressed.an-aggregate-body-declared-text-is-refused"
+   :at "19-kind-warrant.sqlt:271"
+   :dialect "mariadb"
+   :source "SUM(ITEMS, _[\"QTY\"])"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :text))) nil "`oi`.`o`=`o`.`id`")))))
+  (list
+   :name "notaddressed.an-undeclared-aggregate-body-is-not-guarded"
+   :at "19-kind-warrant.sqlt:285"
+   :dialect "mariadb"
+   :source "SUM(ITEMS, _[\"QTY\"])"
+   :expect "(SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))
+  (list
+   :name "notaddressed.times-one-reaches-the-guard"
+   :at "19-kind-warrant.sqlt:295"
+   :dialect "mariadb"
+   :source "SUM(ITEMS, _[\"QTY\"] * 1)"
+   :expect "(SELECT COALESCE(SUM((CASE WHEN (`oi`.`qty` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END * 1)), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))))

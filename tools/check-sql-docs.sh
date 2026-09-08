@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Checks that docs/SQL-TRANSLATION.md's worked examples are quotations of cases
-# that actually run.
+# Checks that the worked examples in docs/SQL-TRANSLATION.md and
+# docs/SQL-KINDS.md are quotations of cases that actually run.
 #
 # §7 drifted from the code for a whole milestone: §13.1 claimed a flat four-way
 # AND for an expression §7.1 renders nested, with the example sitting in both

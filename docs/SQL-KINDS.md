@@ -96,23 +96,54 @@ of them. PostgreSQL is compliant by erroring; the other three are not.
 Every function that reads an argument as a number has the same hole, and it is
 the widest of the three:
 
+`T` is a column declared `TEXT`, and SEL answers `E_NOT_NUM` for every one of
+these. Quoted from cases, so closing §4.1a turns them red — which is the point,
+since a document describing what is broken goes stale the moment it is fixed:
+
+```sel-case notaddressed.abs-over-a-text-column-is-not-guarded
+ABS(T)
+    ABS(`t`)
 ```
-  ABS(T)          SEL=E_NOT_NUM   SQL=ABS(`t`)
-  ROUND(T, 2)     SEL=E_NOT_NUM   SQL=ROUND(`t`, 2)
-  MAX(T, 1)       SEL=E_NOT_NUM   SQL=GREATEST(`t`, 1)
-  FLOOR(T)        SEL=E_NOT_NUM   SQL=FLOOR(`t`)
-  POWER(T, 2)     SEL=E_NOT_NUM   SQL=POWER(`t`, 2)
-  LEFT("abc", T)  SEL=E_NOT_NUM   SQL=LEFT('abc', `t`)
+
+```sel-case notaddressed.round-over-a-text-column-is-not-guarded
+ROUND(T, 2)
+    ROUND(`t`, 2)
+```
+
+```sel-case notaddressed.max-over-a-text-column-is-not-guarded
+MAX(T, 1)
+    GREATEST(`t`, 1)
+```
+
+```sel-case notaddressed.floor-over-a-text-column-is-not-guarded
+FLOOR(T)
+    FLOOR(`t`)
+```
+
+```sel-case notaddressed.power-over-a-text-column-is-not-guarded
+POWER(T, 2)
+    POWER(`t`, 2)
+```
+
+```sel-case notaddressed.a-text-column-as-a-length-is-not-guarded
+LEFT("abc", T)
+    LEFT('abc', `t`)
 ```
 
 Identical for TEXT and UNKNOWN. MariaDB answers `ABS('abc')` = 0, so
 `ABS(T) == 0` matches every row.
 
-A **bare aggregate body** is the same thing wearing a different hat:
+A **bare aggregate body** is the same thing wearing a different hat. The same
+program twice: first with `QTY` declared `TEXT`, then with it undeclared.
 
+```sel-case notaddressed.an-aggregate-body-declared-text-is-refused
+SUM(ITEMS, _["QTY"])
+    E_SQL_SHAPE
 ```
-SUM(ITEMS, _["QTY"])       QTY declared TEXT  -> refused
-SUM(ITEMS, _["QTY"])       QTY undeclared     -> SUM(`oi`.`qty`), unguarded
+
+```sel-case notaddressed.an-undeclared-aggregate-body-is-not-guarded
+SUM(ITEMS, _["QTY"])
+    (SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
 ```
 
 SEL raises E_NOT_NUM for a non-numeric element and MariaDB sums numeric
@@ -130,10 +161,9 @@ argument of which function is read as a number**.
 **The workaround, for anyone who needs it today.** Put the operand in an
 arithmetic expression and the operand guard fires on it:
 
-```
-SUM(ITEMS, _["QTY"])       unguarded
-SUM(ITEMS, _["QTY"] * 1)   guarded
-SUM(ITEMS, _["QTY"] + 0)   guarded
+```sel-case notaddressed.times-one-reaches-the-guard
+SUM(ITEMS, _["QTY"] * 1)
+    (SELECT COALESCE(SUM((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END * 1)), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
 ```
 
 `* 1` and `+ 0` are value-preserving in SEL, scale included -- `"5.00"` stays
