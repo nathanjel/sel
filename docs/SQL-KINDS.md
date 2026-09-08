@@ -64,6 +64,7 @@ Every context by declared kind. **Bold** = the warrant is broken today.
 | `&` | emit | emit | emit | refuse | emit |
 | `AND` `OR` `XOR` `NOT`, `IF` cond | refuse | refuse | **emit bare** | emit | refuse |
 | `EQL` | coerce, sound | coerce, sound | coerce, sound | refuse | refuse |
+| **numeric function argument** | emit | **emit bare** | **emit bare** | refuse | refuse |
 
 Text coercion is sound because SEL numbers **are** text (spec §4), so `$==` over
 a NUM column genuinely agrees. There is nothing to guard there.
@@ -81,6 +82,29 @@ a NUM column genuinely agrees. There is nothing to guard there.
 `T == 0` over a TEXT column of non-numeric data becomes `0 = 0` and matches
 every row. `T == 25` matches every `25/…` value. SEL raises `E_NOT_NUM` for all
 of them. PostgreSQL is compliant by erroring; the other three are not.
+
+### 4.1a The function-argument row is a family, not a cell
+
+Every function that reads an argument as a number has the same hole, and it is
+the widest of the three:
+
+```
+  ABS(T)          SEL=E_NOT_NUM   SQL=ABS(`t`)
+  ROUND(T, 2)     SEL=E_NOT_NUM   SQL=ROUND(`t`, 2)
+  MAX(T, 1)       SEL=E_NOT_NUM   SQL=GREATEST(`t`, 1)
+  FLOOR(T)        SEL=E_NOT_NUM   SQL=FLOOR(`t`)
+  POWER(T, 2)     SEL=E_NOT_NUM   SQL=POWER(`t`, 2)
+  LEFT("abc", T)  SEL=E_NOT_NUM   SQL=LEFT('abc', `t`)
+```
+
+Identical for TEXT and UNKNOWN. MariaDB answers `ABS('abc')` = 0, so
+`ABS(T) == 0` matches every row.
+
+It is missed by the operator work because it arrives on a different path:
+`binary()` and `unary()` are where the numeric guards go, and a call reaches
+`requireArgumentKind`, which knows only the two hand-written allow-lists
+`BIN_ARGUMENT_OK` and `BOOL_ARGUMENT_OK`. Nothing anywhere records **which
+argument of which function is read as a number**.
 
 ### 4.2 Why the bool cell breaks it, and worse
 
@@ -110,6 +134,7 @@ Note the `IS TRUE` wrap is applied only to a bare variable rendered
 | uncertain in numeric, testable | wrap: `CASE WHEN <ISNUM> THEN <cast> ELSE NULL END` |
 | uncertain in numeric, untestable | refuse |
 | uncertain in bool | refuse |
+| uncertain in a numeric function argument | wrap, as above — but see below |
 | constant in numeric position | must **be** a number — built, see §8 |
 | NULL, anywhere | nothing to do; NULL propagates and the warrant is kept |
 
@@ -117,6 +142,18 @@ Note the `IS TRUE` wrap is applied only to a bare variable rendered
 boolean".** In MySQL-family a boolean *is* `TINYINT`, so the column may hold
 `2`; testing `IN (0, 1)` would also admit a NUM column holding 0 or 1, which SEL
 refuses. PostgreSQL has a real boolean type and enforces it itself, by erroring.
+
+**The function-argument row needs data that does not exist.** Closing it means
+knowing that `ABS` reads argument 0 as a number and `LEFT` reads argument 1 that
+way, and nothing records it: the dialect entries carry only `tpl`, `ret` and
+`caveat`. That table is a property of **SEL**, not of a dialect -- `ABS` takes a
+number on every server -- so it belongs in one shared, generated table rather
+than in 42 entries per dialect. It would also subsume `BIN_ARGUMENT_OK` and
+`BOOL_ARGUMENT_OK`, which are the same kind of information hand-written in five
+copies today.
+
+It would *not* close `LEFT(T, -1)`: `-1` is a number and passes a kind test.
+That is a value constraint, and it stays the recorded residual of §6.
 
 **Untestable means SQLite and ANSI**, which have no `ISNUM` and cannot get one.
 The map already says so in its own words:
@@ -194,6 +231,9 @@ than the silent one: not declaring gets you the guarded path, and declaring
   safer. `sqlite.num.comparison-always-coerces` reverses.
 - **An undeclared column can no longer be used as a condition.**
   `refuse.unknown-kind-may-be-a-condition` reverses. `type: 'BOOL'` restores it.
+- The function-argument row is a second, larger piece of work with its own new
+  data. It can ship after the operator rows; until it does, the warrant holds
+  for operators and not for calls, and that has to be said rather than implied.
 - Roughly eighteen lines across five case files get updated expected SQL. They
   are not deleted: the coercion stays and gains a guard.
 
