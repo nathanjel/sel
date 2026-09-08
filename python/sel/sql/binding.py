@@ -52,9 +52,16 @@ class Binding:
     def column(column: Any, table: Any = None, type: Any = 'UNKNOWN') -> 'Binding':  # noqa: A002
         """One column, optionally qualified by a table, optionally typed.
 
-        ``type`` is what the kind guards read. Leaving it UNKNOWN is honest and
-        costs the guards: an UNKNOWN operand passes every check, because the
-        binding did not say and nothing here can either.
+        ``type`` is what the kind guards read, and leaving it UNKNOWN costs a
+        different thing in each position rather than nothing anywhere. Where a
+        BOOL is required -- AND/OR/XOR, NOT, an IF condition, a fragment used as
+        a condition -- an UNKNOWN operand is refused, because no dialect can be
+        asked whether a column is boolean. As an arithmetic or comparison operand
+        it is wrapped in the dialect's numeric guard, so a value SEL would refuse
+        becomes NULL instead of a number the server invented; a declared NUM is
+        what skips that wrapper and keeps the index. It still passes bare in the
+        two places docs/SQL-KINDS.md §4 marks broken: a function argument read as
+        a number, and a bare aggregate body.
         """
         _check_name('column', column)
         if table is not None:

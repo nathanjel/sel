@@ -202,9 +202,10 @@ struct ColumnSpec {
   std::string raw;               // when is_raw
   std::string column;            // when !is_raw
   std::string table;             // when !is_raw; empty means unqualified
-  // What the kind guards read. Leaving it UNKNOWN is honest and costs the
-  // guards: an UNKNOWN operand passes every check, because the binding did not
-  // say and nothing here can either.
+  // What the kind guards read. Leaving it UNKNOWN is honest and costs: nothing
+  // here can vouch for the column, so where the server can be asked the
+  // question instead -- is this a number? -- the operand is wrapped, and where
+  // it cannot -- is this a boolean? -- the expression is refused.
   SqlKind type = SqlKind::Unknown;
 };
 

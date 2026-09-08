@@ -41,9 +41,13 @@ export class Binding {
 
   // One column, optionally qualified by a table, optionally typed.
   //
-  // `type` is what the kind guards read. Leaving it UNKNOWN is honest and costs
-  // the guards: an UNKNOWN operand passes every check, because the binding did
-  // not say and nothing here can either.
+  // `type` is what the kind guards read. Leaving it UNKNOWN is honest and no
+  // longer free: an undeclared operand passes the guards that name a kind as
+  // impossible — a numeric position then wraps it rather than trusting it, or
+  // refuses where the dialect cannot ask — but it is refused wherever a BOOL is
+  // required, because nothing in SQL can ask a column whether it is one. A column
+  // that a condition or a boolean operator will read has to say BOOL here; see
+  // Translator.requireBool and Fragment.asCondition.
   static column(column, table = null, type = 'UNKNOWN') {
     checkName('column', column);
     if (table !== null && table !== undefined) checkName('table', table);

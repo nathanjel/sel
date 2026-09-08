@@ -358,9 +358,19 @@ truthiness, so neither does its translation" where (kind-name (fragment-kind f))
   f)
 
 (defun require-num (f pos where)
-  ;; Stricter than REQUIRE-NOT-BOOL: TEXT refuses here and passes there. SUM's
-  ;; body must be statically numeric; an arithmetic operand need only not be
-  ;; BOOL or BIN.
+  ;; Stricter than REQUIRE-NOT-BOOL on TEXT, which refuses here and passes
+  ;; there, and looser than REQUIRE-BOOL on :UNKNOWN, which refuses there and
+  ;; passes here: this guard names the kinds that cannot be added up -- TEXT,
+  ;; BOOL, BIN, LIST -- and a column the binding did not declare is not one of
+  ;; them.
+  ;;
+  ;; What passes then goes on UNWRAPPED. GUARD-NUMERIC is applied in BINARY and
+  ;; UNARY, never to an aggregate body, so `(SUM ITEMS _["QTY"])` over an
+  ;; undeclared field emits SUM(`qty`) and MariaDB sums the numeric prefixes of
+  ;; values SEL answers E_NOT_NUM for. That is the "bare aggregate body" row of
+  ;; docs/SQL-KINDS.md section 4, recorded there with the function arguments it
+  ;; belongs with; section 4.1a gives `_["QTY"] * 1` as the workaround, which is
+  ;; value-preserving in SEL and does reach BINARY.
   (unless (member (fragment-kind f) '(:num :unknown))
     (refuse "E_SQL_SHAPE"
             (format nil "~a adds its body up, so it needs a number here and this ~
@@ -370,8 +380,9 @@ is ~a" where (kind-name (fragment-kind f)))
 
 (defun require-not-bool (f pos where)
   "Misnamed in every host, and kept: it refuses BOOL *and* BIN. NUM, TEXT,
-UNKNOWN and LIST pass -- UNKNOWN because the binding did not say, so nothing
-here can either."
+UNKNOWN and LIST pass -- UNKNOWN because this guard is about the kinds that make
+a number IMPOSSIBLE, and an undeclared column is not one of them. What happens
+to an UNKNOWN operand afterwards is GUARD-NUMERIC's business, not this one's."
   (when (member (fragment-kind f) '(:bool :bin))
     (refuse "E_SQL_SHAPE"
             (format nil "~a reads its operands as numbers, and ~a is not one; ~
@@ -564,7 +575,13 @@ those differ per aggregate."
         (setf x (require-bool x (snode-pos (sel::node-l n)) "NOT"))
         (progn
           (require-not-bool x (snode-pos (sel::node-l n)) op)
-          (require-numeric-constant tr (sel::node-l n))
+          ;; No REQUIRE-NUMERIC-CONSTANT here, unlike TRANSLATE-BINARY. A unary
+          ;; node whose operand is constant IS constant, so WALK-NODE's own
+          ;; whole-node VALIDATE-CONSTANT has already refused it -- `-"x" + T` is
+          ;; E_SQL_INVALID with or without a call here, which makes one
+          ;; unwritable-as-a-case and therefore not a check. The guard below is a
+          ;; different matter: it fires on a NON-constant operand, which is
+          ;; exactly what VALIDATE-CONSTANT cannot see.
           (setf x (guard-numeric tr x (sel::node-l n)))))
     ;; No variant: a unary entry must be a plain template.
     (apply-entry tr :ops op (list x) (snode-pos n))))

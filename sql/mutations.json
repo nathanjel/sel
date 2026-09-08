@@ -994,6 +994,76 @@
       "file": "lisp/src/sql/translator.lisp",
       "from": "  (unless (eq (fragment-kind f) :bool)",
       "to": "  (unless (member (fragment-kind f) '(:bool :unknown))"
+    },
+    {
+      "name": "php-warrant-a-unary-operand-is-not-guarded",
+      "was": "unary()'s guard removed. Every other case reaches the guard through binary(), so deleting this left the whole suite green until warrant.numeric.unary-minus-is-guarded existed -- `-T > 0` over a text column went back to negating whatever the server made of the text.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $x = $this->guardNumeric($x, $n['x']);",
+      "to": "            $x = $x;"
+    },
+    {
+      "name": "php-warrant-an-unknown-fragment-is-a-condition-again",
+      "was": "asCondition accepting UNKNOWN again. It used to wrap it in isTrue, which folds NULL to false but not a number -- `1 IS TRUE` is TRUE on MariaDB where SEL raises E_NOT_BOOL. Emitting it bare is the same defect without even the wrap.",
+      "file": "php/src/Sql/Fragment.php",
+      "from": "        if ($this->kind === 'BOOL') {\n            return $this->join($mode);\n        }",
+      "to": "        if ($this->kind === 'BOOL' || $this->kind === 'UNKNOWN') {\n            return $this->join($mode);\n        }"
+    },
+    {
+      "name": "js-warrant-a-unary-operand-is-not-guarded",
+      "was": "unary()'s guard removed. Every other case reaches the guard through binary(), so deleting this left the whole suite green until warrant.numeric.unary-minus-is-guarded existed -- `-T > 0` over a text column went back to negating whatever the server made of the text.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "      x = this.guardNumeric(x, n.x);",
+      "to": "      x = x;"
+    },
+    {
+      "name": "js-warrant-an-unknown-fragment-is-a-condition-again",
+      "was": "asCondition accepting UNKNOWN again. It used to wrap it in isTrue, which folds NULL to false but not a number -- `1 IS TRUE` is TRUE on MariaDB where SEL raises E_NOT_BOOL. Emitting it bare is the same defect without even the wrap.",
+      "file": "js/src/sql/fragment.mjs",
+      "from": "    if (this.kind === 'BOOL') return this.#join(mode);",
+      "to": "    if (this.kind === 'BOOL' || this.kind === 'UNKNOWN') return this.#join(mode);"
+    },
+    {
+      "name": "python-warrant-a-unary-operand-is-not-guarded",
+      "was": "unary()'s guard removed. Every other case reaches the guard through binary(), so deleting this left the whole suite green until warrant.numeric.unary-minus-is-guarded existed -- `-T > 0` over a text column went back to negating whatever the server made of the text.",
+      "file": "python/sel/sql/translator.py",
+      "from": "            x = self._guard_numeric(x, n.x)",
+      "to": "            x = x"
+    },
+    {
+      "name": "python-warrant-an-unknown-fragment-is-a-condition-again",
+      "was": "asCondition accepting UNKNOWN again. It used to wrap it in isTrue, which folds NULL to false but not a number -- `1 IS TRUE` is TRUE on MariaDB where SEL raises E_NOT_BOOL. Emitting it bare is the same defect without even the wrap.",
+      "file": "python/sel/sql/fragment.py",
+      "from": "        if self.kind == 'BOOL':\n            return self._join(mode)",
+      "to": "        if self.kind in ('BOOL', 'UNKNOWN'):\n            return self._join(mode)"
+    },
+    {
+      "name": "lisp-warrant-a-unary-operand-is-not-guarded",
+      "was": "unary()'s guard removed. Every other case reaches the guard through binary(), so deleting this left the whole suite green until warrant.numeric.unary-minus-is-guarded existed.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "          (setf x (guard-numeric tr x (sel::node-l n)))))",
+      "to": "          (setf x x)))"
+    },
+    {
+      "name": "lisp-warrant-an-unknown-fragment-is-a-condition-again",
+      "was": "AS-CONDITION accepting :unknown again. It used to wrap it in isTrue, which folds NULL to false but not a number -- `1 IS TRUE` is TRUE on MariaDB where SEL raises E_NOT_BOOL.",
+      "file": "lisp/src/sql/fragment.lisp",
+      "from": "    (:bool (frag-join f mode))",
+      "to": "    ((:bool :unknown) (frag-join f mode))"
+    },
+    {
+      "name": "cpp-warrant-a-unary-operand-is-not-guarded",
+      "was": "unary()'s guard removed. Every other case reaches the guard through binary(), so deleting this left the whole suite green until warrant.numeric.unary-minus-is-guarded existed.",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "    x = guard_numeric(x, *n.l());",
+      "to": "    x = x;"
+    },
+    {
+      "name": "cpp-warrant-an-unknown-fragment-is-a-condition-again",
+      "was": "as_condition accepting Unknown again. It used to wrap it in isTrue, which folds NULL to false but not a number -- `1 IS TRUE` is TRUE on MariaDB where SEL raises E_NOT_BOOL.",
+      "file": "cpp/sel_sql.cpp",
+      "from": "  if (kind_ == SqlKind::Bool) return join(mode);",
+      "to": "  if (kind_ == SqlKind::Bool || kind_ == SqlKind::Unknown) return join(mode);"
     }
   ]
 }

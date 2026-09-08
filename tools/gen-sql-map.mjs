@@ -482,14 +482,26 @@ function validate(flat) {
   // rather than trusted to.
   if (lexical.numericGuard !== undefined) {
     const isnum = flat.funcs.ISNUM;
-    const pattern = (t) => (typeof t === 'string' ? (t.match(/'([^']*)'/) ?? [])[1] : undefined);
-    const want = pattern(isnum && isnum.tpl);
-    const got = pattern(lexical.numericGuard);
-    if (want === undefined) {
+    // Every quoted run, not the first one. Comparing only the first was
+    // defeated by a decoy: give both templates an identical earlier literal --
+    // a collation clause, a flag -- and two genuinely different numeral tests
+    // compared equal. Requiring ISNUM's every quoted run to appear in the guard
+    // has no such hole, because a decoy shared by both is then simply one more
+    // run that must appear in both.
+    const runs = (t) => (typeof t === 'string' ? [...t.matchAll(/'([^']*)'/g)].map((m) => m[1]) : []);
+    const want = runs(isnum && isnum.tpl);
+    const got = new Set(runs(lexical.numericGuard));
+    if (!isnum || typeof isnum.tpl !== 'string') {
       fail(dialect, 'declares lexical.numericGuard but maps no funcs.ISNUM to agree with');
-    } else if (want !== got) {
-      fail(dialect, `lexical.numericGuard tests ${got} and funcs.ISNUM tests ${want}; `
-                    + 'they ask the same question and must carry the same pattern');
+    } else if (want.length === 0) {
+      fail(`${dialect}.funcs.ISNUM`, 'carries no quoted pattern for numericGuard to agree with');
+    } else {
+      const missing = want.filter((w) => !got.has(w));
+      if (missing.length) {
+        fail(dialect, `lexical.numericGuard does not carry ${missing.map((m) => `'${m}'`).join(', ')}, `
+                      + 'which funcs.ISNUM tests; they ask the same question and the guard must '
+                      + 'carry what ISNUM tests');
+      }
     }
   }
 

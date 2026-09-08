@@ -574,9 +574,12 @@ const Fragment& Translator::require_bool(const Fragment& f, Pos pos,
 
 const Fragment& Translator::require_num(const Fragment& f, Pos pos,
                                         const std::string& where) {
-  // Stricter than require_not_bool: TEXT refuses here and passes there. SUM's
-  // body must be statically numeric; an arithmetic operand need only not be
-  // BOOL or BIN.
+  // Stricter than require_not_bool: TEXT refuses here and passes there. A SUM
+  // body is NUM or UNKNOWN, and nothing else; an arithmetic operand need only
+  // not be BOOL or BIN. UNKNOWN passes for require_not_bool's reason and not
+  // require_bool's: an undeclared column is not one of the kinds that cannot be
+  // summed. It then goes on UNWRAPPED -- guard_numeric reaches the operands of
+  // arithmetic and numeric comparison, never an aggregate body.
   if (f.kind() == SqlKind::Num || f.kind() == SqlKind::Unknown) return f;
   refuse("E_SQL_SHAPE",
          where + " adds its body up, so it needs a number here and this is " +
@@ -587,8 +590,10 @@ const Fragment& Translator::require_num(const Fragment& f, Pos pos,
 void Translator::require_not_bool(const Fragment& f, Pos pos,
                                   const std::string& where) {
   // Misnamed in every host, and kept: it refuses BOOL *and* BIN. NUM, TEXT,
-  // UNKNOWN and LIST pass -- UNKNOWN because the binding did not say, so
-  // nothing here can either.
+  // UNKNOWN and LIST pass -- UNKNOWN because this guard is about the kinds that
+  // make a number *impossible*, and an undeclared column is not one of them.
+  // What happens to an UNKNOWN operand afterwards is guard_numeric's business,
+  // not this one's.
   if (f.kind() != SqlKind::Bool && f.kind() != SqlKind::Bin) return;
   refuse("E_SQL_SHAPE",
          where + " reads its operands as numbers, and " +
@@ -780,7 +785,13 @@ Fragment Translator::unary(const SNode& n) {
     x = require_bool(x, n.l()->pos(), "NOT");
   } else {
     require_not_bool(x, n.l()->pos(), n.s());
-    require_numeric_constant(*n.l());
+    // No require_numeric_constant here, unlike binary(). A unary node whose
+    // operand is constant IS constant, so node()'s own whole-node validate()
+    // refuses it regardless, on the way back out of this dispatch -- `-"x" + T`
+    // is E_SQL_INVALID with or without a call here, which makes one
+    // unwritable-as-a-case and therefore not a check. The guard below is a
+    // different matter: it fires on a NON-constant operand, which is exactly
+    // what node() cannot see.
     x = guard_numeric(x, *n.l());
   }
   const Fragment one[] = {x};

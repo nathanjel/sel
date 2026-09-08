@@ -332,7 +332,13 @@ final class Translator
             $x = $this->requireBool($x, $n['x']['pos'], 'NOT');
         } else {
             $this->requireNotBool($x, $n['x']['pos'], $n['op']);
-            $this->requireNumericConstant($n['x']);
+            // No requireNumericConstant here, unlike binary(). A unary node
+            // whose operand is constant IS constant, so node()'s own whole-node
+            // check has already refused it -- `-"x" + T` is E_SQL_INVALID with
+            // or without a call here, which makes one unwritable-as-a-case and
+            // therefore not a check. The guard below is a different matter: it
+            // fires on a NON-constant operand, which is exactly what node()
+            // cannot see.
             $x = $this->guardNumeric($x, $n['x']);
         }
         return $this->apply('ops', $n['op'], [$x], $n['pos']);
@@ -1727,11 +1733,13 @@ final class Translator
     /**
      * Wrap an operand the numeric context cannot be sure of.
      *
-     * A constant is skipped, because requireNumericConstant has just proved it
-     * IS a number -- guarding it would ask the server a question already
-     * answered here, and would cost a bound value a second parameter for the
-     * repeated slot. What is left is what could not be settled at translation
-     * time: columns, raw, relation fields.
+     * A constant is skipped, because by the time it gets here something has
+     * already proved it IS a number: requireNumericConstant on the binary path,
+     * and node()'s own whole-node validate on the unary one, where a constant
+     * operand makes the whole node constant. Guarding it would ask the server a
+     * question already answered here, and would cost a bound value a second
+     * parameter for the repeated slot. What is left is what could not be
+     * settled at translation time: columns, raw, relation fields.
      *
      * @param array<string,mixed> $n
      */
@@ -1829,9 +1837,22 @@ final class Translator
     }
 
     /**
-     * SUM's counterpart to requireBool. UNKNOWN passes for the same reason it
-     * does there: an undeclared column may well be numeric, and the database is
-     * the one that knows.
+     * SUM's counterpart to requireBool. A declared TEXT body is refused here --
+     * SUM adds its body up and text is not a number.
+     *
+     * UNKNOWN passes, and passes UNGUARDED, which is the one place in the layer
+     * where that is still true and not yet defensible. It used to be justified
+     * the way requireBool's UNKNOWN was, "the database is the one that knows",
+     * and requireBool stopped believing that. The difference is only that
+     * nothing has been built here yet: a bare aggregate body reaches neither
+     * binary() nor unary(), so guardNumeric never sees it, and
+     * `SUM(ITEMS, _["QTY"])` over an undeclared field emits SUM(`qty`) while
+     * SEL raises E_NOT_NUM for a non-numeric element.
+     *
+     * That is the "bare aggregate body" row of docs/SQL-KINDS.md §4, recorded
+     * there with the function arguments it belongs with. `_["QTY"] * 1` is the
+     * workaround: it is value-preserving in SEL and puts the operand through
+     * binary(), where the guard does see it.
      *
      * @param array{line:int,col:int,offset:int} $pos
      */

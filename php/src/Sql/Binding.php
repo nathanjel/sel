@@ -43,9 +43,16 @@ final class Binding
     /**
      * One column, optionally qualified by a table, optionally typed.
      *
-     * `type` is what the kind guards read. Leaving it UNKNOWN is honest and
-     * costs the guards: an UNKNOWN operand passes every check, because the
-     * binding did not say and nothing here can either.
+     * `type` is what the kind guards read, and leaving it UNKNOWN is honest --
+     * but it no longer means the operand passes everything. Where a BOOL is
+     * required an UNKNOWN operand is now refused, because no dialect can ask
+     * whether a value is a boolean; in an arithmetic or comparison operand it
+     * is wrapped so a value SEL would refuse becomes NULL, at the cost of the
+     * column's index. Declaring NUM is what buys the plain comparison back, and
+     * it is the only thing that does.
+     *
+     * Bare in exactly two places, both recorded in docs/SQL-KINDS.md §4: a
+     * numeric function argument, and a bare aggregate body.
      */
     public static function column($column, $table = null,
                                   $type = 'UNKNOWN'): self

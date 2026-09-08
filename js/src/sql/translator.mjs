@@ -308,7 +308,12 @@ export class Translator {
       x = this.requireBool(x, n.x.pos, 'NOT');
     } else {
       this.requireNotBool(x, n.x.pos, n.op);
-      this.requireNumericConstant(n.x);
+      // No requireNumericConstant here, unlike binary(). A unary node whose
+      // operand is constant IS constant, so node()'s own whole-node check has
+      // already refused it — `-"x" + T` is E_SQL_INVALID with or without a call
+      // here, which makes one unwritable-as-a-case and therefore not a check.
+      // The guard below is a different matter: it fires on a NON-constant
+      // operand, which is exactly what node() cannot see.
       x = this.guardNumeric(x, n.x);
     }
     return this.apply('ops', n.op, [x], n.pos);
@@ -1227,9 +1232,9 @@ export class Translator {
 
   // A number was expected and a boolean cannot become one.
   //
-  // UNKNOWN passes, as everywhere: the binding did not say, so nothing here can
-  // either. Only a *declared* BOOL is refused, which is the same line the
-  // byte-comparison guard draws.
+  // UNKNOWN passes here: this guard is about kinds that make a number
+  // *impossible*, and an undeclared column is not one of them. What happens to
+  // an UNKNOWN operand afterwards is guardNumeric's business, not this one's.
   requireNotBool(f, pos, where) {
     // spec §4: "BOOL and BIN are never numbers". The guard implemented the first
     // half of that sentence for a milestone: `BLOB + 1` translated, and MariaDB
@@ -1292,9 +1297,13 @@ export class Translator {
       + 'neither does its translation', pos);
   }
 
-  // SUM's counterpart to requireBool. UNKNOWN passes for the same reason it does
-  // there: an undeclared column may well be numeric, and the database is the one
-  // that knows.
+  // SUM's counterpart to requireBool, and it parts company with it on UNKNOWN.
+  // There an undeclared column is refused, because no dialect can be asked "is
+  // this a boolean" and SQL's own truthiness answers for values SEL refuses.
+  // Here the guard names the kinds that cannot be added up — TEXT, BOOL, BIN,
+  // LIST — and a column the binding did not declare is not one of them, so it
+  // passes, and no numeric guard follows it: guardNumeric is applied to the
+  // operands of arithmetic and numeric comparison, not to aggregate bodies.
   requireNum(f, pos, where) {
     if (f.kind === 'NUM' || f.kind === 'UNKNOWN') return f;
     refuse('E_SQL_SHAPE',

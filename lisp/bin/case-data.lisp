@@ -5784,8 +5784,50 @@
    :register nil
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
   (list
-   :name "warrant.bool.an-undeclared-column-is-not-a-boolean"
+   :name "warrant.numeric.unary-minus-is-guarded"
    :at "19-kind-warrant.sqlt:124"
+   :dialect "mariadb"
+   :source "-T > 0"
+   :expect "((-CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END) > 0)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "warrant.bool.not-over-an-undeclared-column"
+   :at "19-kind-warrant.sqlt:138"
+   :dialect "mariadb"
+   :source "NOT U"
+   :expect nil
+   :error "E_SQL_SHAPE 1:5"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
+  (list
+   :name "warrant.bool.an-aggregate-condition-is-not-a-boolean"
+   :at "19-kind-warrant.sqlt:152"
+   :dialect "mariadb"
+   :source "ANY(V, U)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:8"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :unknown) (binding-column "b" nil :unknown))) (cons "U" (binding-column "u" nil :unknown)))))
+  (list
+   :name "warrant.bool.an-undeclared-column-is-not-a-boolean"
+   :at "19-kind-warrant.sqlt:166"
    :dialect "mariadb"
    :source "U AND TRUE"
    :expect nil
@@ -5799,7 +5841,7 @@
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
   (list
    :name "warrant.numeric.the-guard-reaches-into-a-relation-body"
-   :at "19-kind-warrant.sqlt:140"
+   :at "19-kind-warrant.sqlt:182"
    :dialect "mariadb"
    :source "ANY(ITEMS, _[\"QTY\"] == 25)"
    :expect "EXISTS (SELECT 1 FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id` AND ((CASE WHEN (`oi`.`qty` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END = 25)) IS TRUE)"

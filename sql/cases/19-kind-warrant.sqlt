@@ -121,6 +121,48 @@ U == 25
 --- error
 E_SQL_UNSUPPORTED
 ===
+### name: warrant.numeric.unary-minus-is-guarded
+--- note
+The unary path, which had no case at all: every other case here reaches the
+guard through binary(), so deleting unary()'s call left the whole suite green.
+A guard that nothing would miss is not a guard.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+-T > 0
+--- expect
+((-CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END) > 0)
+===
+### name: warrant.bool.not-over-an-undeclared-column
+--- note
+requireBool has three call sites and only the AND/OR/XOR one was exercised.
+This is NOT, which reads its operand as a boolean for the same reason and had
+nothing watching it.
+--- dialect
+mariadb
+--- bindings
+{"U": {"kind": "column", "column": "u"}}
+--- source
+NOT U
+--- error
+E_SQL_SHAPE 1:5
+===
+### name: warrant.bool.an-aggregate-condition-is-not-a-boolean
+--- note
+And the third site: an aggregate's body is a condition, so an undeclared column
+used as one is refused there too. ANY rather than FILTER because both take the
+same path and ANY reads more plainly as a condition.
+--- dialect
+mariadb
+--- bindings
+{"V": {"kind": "columns", "items": [{"column": "a"}, {"column": "b"}]}, "U": {"kind": "column", "column": "u"}}
+--- source
+ANY(V, U)
+--- error
+E_SQL_SHAPE 1:8
+===
 ### name: warrant.bool.an-undeclared-column-is-not-a-boolean
 --- note
 The other half of the warrant. MariaDB answers `1 AND TRUE` as TRUE, so an

@@ -132,6 +132,13 @@ def main(argv):
             shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(
                 '.git', 'node_modules', 'build', 'dist', '.venv*', '__pycache__'))
 
+            # Each mutation gets its OWN tree at its own path, which is what
+            # keeps the Lisp lane honest as well as the C++ one: ASDF keys its
+            # fasl cache by absolute source path, so a fresh path recompiles.
+            # Mutating in place instead would be a coin toss -- CL's
+            # file-write-date has one-second resolution and ASDF treats a fasl
+            # whose second matches the source as current, so a restore landing
+            # inside the same second leaves the previous compile in play.
             path = os.path.join(tree, m['file'])
             text = open(path, encoding='utf-8').read()
             n = text.count(m['from'])

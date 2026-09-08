@@ -79,9 +79,13 @@ canonical, so pass it as text or drop the leading zeros" where text)))))
 (defun binding-column (column &optional table (type :unknown))
   "One column, optionally qualified by a table, optionally typed.
 
-TYPE is what the kind guards read. Leaving it :UNKNOWN is honest and costs the
-guards: an UNKNOWN operand passes every check, because the binding did not say
-and nothing here can either."
+TYPE is what the kind guards read, and leaving it :UNKNOWN is honest rather than
+free. An UNKNOWN operand still passes the guards that only rule kinds out --
+REQUIRE-NOT-BOOL, REQUIRE-NOT-BOOL-OPERAND, REQUIRE-NUM and EQL-CLASS -- and
+GUARD-NUMERIC wraps it where a number is read. It is REFUSED wherever a BOOL is
+required: REQUIRE-BOOL and AS-CONDITION take a declared :BOOL and nothing else,
+because no dialect can be asked whether a column is boolean. A column used as a
+condition has to say so here."
   (check-name "column" column)
   (when table (check-name "table" table))
   (check-binding-type type)

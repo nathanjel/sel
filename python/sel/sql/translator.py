@@ -313,7 +313,13 @@ class Translator:
             x = self._require_bool(x, n.x.pos, 'NOT')
         else:
             self._require_not_bool(x, n.x.pos, n.op)
-            self._require_numeric_constant(n.x)
+            # No _require_numeric_constant here, unlike _binary(). A unary node
+            # whose operand is constant IS constant, so _node()'s own whole-node
+            # check has already refused it -- `-"x" + T` is E_SQL_INVALID with or
+            # without a call here, which makes one unwritable-as-a-case and
+            # therefore not a check. The guard below is a different matter: it
+            # fires on a NON-constant operand, which is exactly what _node()
+            # cannot see.
             x = self._guard_numeric(x, n.x)
         return self._apply('ops', n.op, [x], n.pos)
 
@@ -1209,9 +1215,10 @@ class Translator:
     def _require_not_bool(self, f: Fragment, pos: Pos, where: str) -> None:
         """A number was expected and a boolean cannot become one.
 
-        UNKNOWN passes, as everywhere: the binding did not say, so nothing here
-        can either. Only a *declared* BOOL is refused, which is the same line the
-        byte-comparison guard draws.
+        UNKNOWN passes here: this guard is about kinds that make a number
+        *impossible*, and an undeclared column is not one of them. What happens
+        to an UNKNOWN operand afterwards is _guard_numeric's business, not this
+        one's.
         """
         # spec §4: "BOOL and BIN are never numbers". The guard implemented the
         # first half of that sentence for a milestone: `BLOB + 1` translated, and
@@ -1253,9 +1260,16 @@ class Translator:
                'truthiness, so neither does its translation', pos)
 
     def _require_num(self, f: Fragment, pos: Pos, where: str) -> Fragment:
-        """SUM's counterpart to _require_bool. UNKNOWN passes for the same reason
-        it does there: an undeclared column may well be numeric, and the database
-        is the one that knows.
+        """SUM's counterpart to _require_bool, and no longer its mirror:
+        _require_bool refuses UNKNOWN and this one still passes it.
+
+        A body the binding declared TEXT is refused; an undeclared body is summed
+        bare. It reaches neither _binary nor _unary, which is where the numeric
+        guards go, so _guard_numeric never sees it and MariaDB sums numeric
+        prefixes of values SEL answers E_NOT_NUM for. That is the "bare aggregate
+        body" cell docs/SQL-KINDS.md §4 still marks broken -- §4.1a records why
+        (nothing yet says which argument of which function is read as a number)
+        and gives `_["QTY"] * 1` as the workaround that does get the guard.
         """
         if f.kind in ('NUM', 'UNKNOWN'):
             return f
