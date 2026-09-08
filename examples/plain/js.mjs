@@ -48,7 +48,12 @@ console.log('   0.10+0.20 =>', evaluate('0.10 + 0.20').asText());
 
 console.log('4. reading results');
 const v = evaluate('SPLIT("a,b,c", ",")');
-console.log('   size   =>', v.size());
+// String(), because console.log formats a raw number through util.inspect and
+// colourises it when colour is on -- under FORCE_COLOR this line printed
+// `size   => \x1b[33m3\x1b[39m` and disagreed with the other four hosts. The
+// output of these files is a cross-host contract, so nothing here may be left
+// to the host's idea of how to render a value.
+console.log('   size   =>', String(v.size()));
 console.log('   keys   =>', v.keys().join(','));
 console.log('   [2]    =>', v.get('2').asText());
 console.log('   scalar =>', v.asText());            // scalar context: first child

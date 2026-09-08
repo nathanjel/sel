@@ -91,6 +91,38 @@ LEN("a")
 --- expect
 LEN('a' COLLATE utf8mb4_bin)
 ===
+### name: register.lexical.the-charset-follows-the-collation
+--- note
+Reported from the field: the shipped mysql-family assumes a utf8mb4 connection,
+and on a utf8mb3 one every `$` comparison is MariaDB error 1253,
+ER_COLLATION_CHARSET_MISMATCH. The documented cure is to derive a dialect and
+override `textCollate` -- MAP.md says an application "should be able to override
+that one key and have all thirteen follow".
+
+It did not hold for FROM_UTF8, whose template spelled `USING utf8mb4` out
+instead of naming a lexical key. On a plain deployment the outer textCast hid
+it, by re-casting the result to the connection charset before the collation
+applied. Take that cast away -- which ansi.json's own textCast note recommends
+for a deployment whose columns already carry a binary collation -- and two
+documented recommendations compose into 1253, for this one function.
+
+Measured on MariaDB 11.8 over a utf8mb3 connection: with textCast set to {0},
+`FROM_UTF8(B) $== T` was 1253 before textCharset existed and answers 1 after.
+This is the same defect postgresql.json's `to-utf8-uses-the-lexical` note
+records for binaryCast: there is exactly one spelling of a thing in a dialect,
+and an entry that repeats it inline is the one that gets left behind.
+--- dialect
+cms
+--- register
+[{"dialect": "cms", "extends": "mariadb", "version": "11.8",
+  "lexical": {"textCollate": " COLLATE utf8mb3_bin", "textCharset": "utf8mb3"}}]
+--- bindings
+{"B": {"kind": "column", "column": "b", "table": "o", "type": "BIN"}}
+--- source
+FROM_UTF8(B)
+--- expect
+CONVERT(`o`.`b` USING utf8mb3)
+===
 ### name: register.skel.withdrawn-refuses-before-the-operands
 --- note
 A skeleton the dialect cannot express is checked BEFORE the expression's own

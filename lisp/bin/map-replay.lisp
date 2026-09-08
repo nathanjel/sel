@@ -20,7 +20,7 @@
   "Registers every shipped dialect under a ~replay suffix and returns the number
 of registration calls it took."
   (let ((calls 0))
-  (define-dialect "ansi~replay" (list :extends nil :version "1999" :target nil :lexical '( ("identQuote" . "\"") ("identEscape" . "\"\"") ("textQuote" . "'") ("textEscape" ("'" . "''")) ("true" . "TRUE") ("false" . "FALSE") ("binaryLiteral" . "X'{hex}'") ("numericLiteral" . "{0}") ("textCollate" . "") ("numericCast" . "CAST({0} AS DECIMAL(38,10))") ("binaryCast" . "CAST({0} AS BINARY)") ("isTrue" . "({0}) IS TRUE") ("isNotTrue" . "({0}) IS NOT TRUE") ("placeholder" . "?") ("textCast" . "CAST({0} AS CHAR)"))))
+  (define-dialect "ansi~replay" (list :extends nil :version "1999" :target nil :lexical '( ("identQuote" . "\"") ("identEscape" . "\"\"") ("textQuote" . "'") ("textEscape" ("'" . "''")) ("true" . "TRUE") ("false" . "FALSE") ("binaryLiteral" . "X'{hex}'") ("numericLiteral" . "{0}") ("textCollate" . "") ("textCharset") ("numericCast" . "CAST({0} AS DECIMAL(38,10))") ("binaryCast" . "CAST({0} AS BINARY)") ("isTrue" . "({0}) IS TRUE") ("isNotTrue" . "({0}) IS NOT TRUE") ("placeholder" . "?") ("textCast" . "CAST({0} AS CHAR)"))))
   (incf calls)
   (define-entry "ansi~replay" :ops "+" (list :tpl "({0} + {1})" :ret "NUM"))
   (incf calls)
@@ -178,7 +178,7 @@ of registration calls it took."
   (incf calls)
   (define-entry "ansi~replay" :skel "join" "LISTAGG is SQL:2016 and is spelled differently by every server that has it")
   (incf calls)
-  (define-dialect "mysql-family~replay" (list :extends "ansi~replay" :version "0" :target nil :lexical '( ("identQuote" . "`") ("identEscape" . "``") ("textQuote" . "'") ("textEscape" ("'" . "''") ("\\" . "\\\\")) ("textCollate" . " COLLATE utf8mb4_bin") ("numericCast" . "CAST({0} AS DECIMAL(65,10))") ("textCast" . "CAST({0} AS CHAR)"))))
+  (define-dialect "mysql-family~replay" (list :extends "ansi~replay" :version "0" :target nil :lexical '( ("identQuote" . "`") ("identEscape" . "``") ("textQuote" . "'") ("textEscape" ("'" . "''") ("\\" . "\\\\")) ("textCollate" . " COLLATE utf8mb4_bin") ("textCharset" . "utf8mb4") ("numericCast" . "CAST({0} AS DECIMAL(65,10))") ("textCast" . "CAST({0} AS CHAR)"))))
   (incf calls)
   (define-entry "mysql-family~replay" :ops "*" (list :tpl "({0} * {1})" :ret "NUM" :caveat "scale-limit"))
   (incf calls)
@@ -230,7 +230,7 @@ of registration calls it took."
   (incf calls)
   (define-entry "mysql-family~replay" :funcs "TO_UTF8" (list :tpl "CAST({0} AS BINARY)" :ret "BIN"))
   (incf calls)
-  (define-entry "mysql-family~replay" :funcs "FROM_UTF8" (list :tpl "CONVERT({binaryCast:0} USING utf8mb4)" :ret "TEXT"))
+  (define-entry "mysql-family~replay" :funcs "FROM_UTF8" (list :tpl "CONVERT({binaryCast:0} USING {textCharset})" :ret "TEXT"))
   (incf calls)
   (define-entry "mysql-family~replay" :funcs "TO_HEX" (list :tpl "LOWER(HEX({binaryCast:0}))" :ret "TEXT"))
   (incf calls)

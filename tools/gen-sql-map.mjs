@@ -65,8 +65,8 @@ const opArity = (key) => OP_ARITY[key] ?? 2;
 
 const LEXICAL_KEYS = [
   'identQuote', 'identEscape', 'textQuote', 'textEscape', 'true', 'false',
-  'binaryLiteral', 'numericLiteral', 'textCollate', 'textCast', 'numericCast',
-  'binaryCast', 'isTrue', 'isNotTrue', 'placeholder',
+  'binaryLiteral', 'numericLiteral', 'textCollate', 'textCharset', 'textCast',
+  'numericCast', 'binaryCast', 'isTrue', 'isNotTrue', 'placeholder',
 ];
 // Substitutable in a template. textEscape is an object and binaryLiteral is
 // filled by the renderer, so neither is spliceable.
@@ -112,6 +112,7 @@ const LEXICAL_TYPES = {
   identQuote: 'string', identEscape: 'string', textQuote: 'string',
   textEscape: 'map', true: 'string', false: 'string',
   binaryLiteral: 'string', numericLiteral: 'string', textCollate: 'string',
+  textCharset: 'string',
   textCast: 'string', numericCast: 'string', binaryCast: 'string',
   isTrue: 'string', isNotTrue: 'string', placeholder: 'string',
 };

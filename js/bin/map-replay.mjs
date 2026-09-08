@@ -28,6 +28,7 @@ export const RAW = [
       "binaryLiteral": "X'{hex}'",
       "numericLiteral": "{0}",
       "textCollate": "",
+      "textCharset": null,
       "numericCast": "CAST({0} AS DECIMAL(38,10))",
       "binaryCast": "CAST({0} AS BINARY)",
       "isTrue": "({0}) IS TRUE",
@@ -313,6 +314,7 @@ export const RAW = [
         "\\": "\\\\"
       },
       "textCollate": " COLLATE utf8mb4_bin",
+      "textCharset": "utf8mb4",
       "numericCast": "CAST({0} AS DECIMAL(65,10))",
       "textCast": "CAST({0} AS CHAR)"
     },
@@ -433,7 +435,7 @@ export const RAW = [
         "ret": "BIN"
       },
       "FROM_UTF8": {
-        "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
+        "tpl": "CONVERT({binaryCast:0} USING {textCharset})",
         "ret": "TEXT"
       },
       "TO_HEX": {
@@ -491,6 +493,7 @@ export const RAW = [
       "CHAR": "The inverse of CODE and refused for the inverse reason. Verified against MariaDB 11.8: SELECT CHAR(233 USING utf8mb4) is NULL. Code points below 128 would work, but an entry that is right for ASCII and silently wrong above it is the worst of the three options.",
       "sql_mode": "This document assumes the default sql_mode, specifically that NO_BACKSLASH_ESCAPES is off. Two things depend on it: textEscape doubles backslashes inside string literals, and the TRIM family's regex escapes reach the engine as \\t, \\r and \\n only because the literal parser consumes one backslash of each pair. A deployment running NO_BACKSLASH_ESCAPES needs a derived dialect overriding both. ENCODE_BASE64 deliberately uses CHAR(10) and CHAR(13) instead, since REPLACE is not a regex and had nothing to gain from the assumption.",
       "regex-flags": "The pattern reaches here already rewritten by the translator: expanded through Sel\\Builtins\\Regex::portableSource, and prefixed with the inline modifier (?s), or (?si) when SEL's i flag was given. So the flag is not an argument this template sees — which is the point. It was arity-keyed and selected by argument count for a while, and that gave every three-argument call the case-insensitive form, including RMATCH(p, s, \"\") where SEL is case-sensitive. Folding the modifier into the pattern puts the decision where the flag is already being validated.",
+      "connection_charset": "This document assumes a utf8mb4 CONNECTION, which is what textCollate's utf8mb4_bin and textCharset's utf8mb4 both name. textCast emits CAST({0} AS CHAR), and a bare CHAR is in the connection's charset -- so a collation from any other charset is MariaDB error 1253, ER_COLLATION_CHARSET_MISMATCH, on every $ comparison. Verified on 11.8: the shipped map over a utf8mb3 connection answers 1253 for \"A\" $== \"a\", and a derived dialect setting textCollate to utf8mb3_bin answers 0. So textCollate must agree with the CONNECTION, not with the column. textCharset is the same decision spelled for FROM_UTF8, and is invisible until textCast is set to {0} -- until then the outer cast converts FROM_UTF8's result to the connection charset before the collation applies. They are overridden together because they are one choice; keeping them apart is exactly how the field report happened.",
       "regex-collation": "MariaDB's REGEXP is case-insensitive by default, because it follows the operand's collation and utf8mb4_general_ci is what most columns carry. SEL's regex is case-sensitive unless the i flag is given. Verified on 11.8: SELECT 'ABC' REGEXP 'abc' is 1, and SELECT 'ABC' COLLATE utf8mb4_bin REGEXP 'abc' is 0. Forcing the binary collation is what makes the two agree, and it leaves code-point matching intact — 'zazolc-with-diacritics' COLLATE utf8mb4_bin REGEXP '^.{6}$' is still 1.",
       "regex-dotall": "SEL specifies dotall permanently on: . means any code point, newline included. MariaDB's . does not match a newline by default. The (?s) prefix turns it on. SEL rejects inline modifiers in a user's pattern, which is a rule about what a rule author may write and not about what the translator may emit.",
       "regex-caveat": "What the caveat still covers, after the collation and dotall fixes: MariaDB's $ also matches immediately before a trailing newline, where SEL's anchors to the end of the subject and nothing else. Verified on 11.8: SELECT 'abc\\n' REGEXP '^abc$' is 1 where SEL says FALSE. \\z fixes it, but only by rewriting the pattern, which is possible only when the pattern is a literal — so it is a caveat rather than a template.",

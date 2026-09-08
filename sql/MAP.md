@@ -108,6 +108,7 @@ key. Every key below must resolve for a `target` dialect; the generator checks.
 | `true` / `false` | string | the BOOL literals |
 | `binaryLiteral` | string or null | template for a BIN literal, `{hex}` filled with lower-case hex; `null` refuses BIN literals |
 | `textCollate` | string | appended to each operand of the `$` comparison family |
+| `textCharset` | string or null | the charset name a dialect spells when it converts bytes to text; `null` where the dialect names none |
 | `numericCast` | string | template wrapping `{0}` for numeric coercion |
 | `isTrue` / `isNotTrue` | string | templates folding SQL's third truth value into two |
 | `placeholder` | string | `params`-mode placeholder; `{n}` is the 1-based ordinal, absent for positional `?` |
@@ -196,6 +197,50 @@ thirteen comparison entries; an application on a server with a different binary
 collation should be able to override that one key and have all thirteen follow.
 With the templates pre-expanded the key is gone by then, and the application
 would have to re-register every entry that mentioned it.
+
+### Deploying on a connection charset the dialect does not assume
+
+The shipped `mariadb` and `mysql` dialects assume a **utf8mb4 connection**.
+On any other, every `$` comparison is MariaDB error **1253**,
+`ER_COLLATION_CHARSET_MISMATCH` — reported from the field on utf8mb3.
+
+The cause is not the column. `textCast` emits `CAST({0} AS CHAR)`, and a bare
+`CHAR` is in the *connection's* charset; a collation has to belong to the
+charset it is applied to. So **`textCollate` must agree with the connection**,
+whatever the columns are.
+
+Derive a dialect and override two keys:
+
+```php
+Map::defineDialect('cms-mariadb', [
+    'extends' => 'mariadb',
+    'lexical' => [
+        'textCollate' => ' COLLATE utf8mb3_bin',
+        'textCharset' => 'utf8mb3',
+    ],
+]);
+```
+
+`version` and `target` are inherited from the dialect being extended, so two
+keys is the whole registration. Measured on MariaDB 11.8, `"A" $== "a"`:
+
+| | utf8mb4 connection | utf8mb3 connection |
+|---|---|---|
+| shipped `mariadb` | answers | **1253** |
+| the two keys above | **1253** | answers |
+
+The override is therefore per deployment, not a portability improvement: a
+dialect fixed for utf8mb3 is broken on utf8mb4, and vice versa.
+
+`textCharset` is invisible until `textCast` is also set to `{0}` — the note on
+that key recommends it where columns already carry a binary collation — because
+until then the outer cast converts `FROM_UTF8`'s result to the connection
+charset before the collation applies. Override both anyway: they are one
+decision, and splitting them is how the field report happened.
+
+Do **not** reach for `textCollate: ""`. It is legal, it silences 1253, and it
+silently restores the case- and accent-insensitive comparison the key exists to
+prevent — `"A" $== "a"` becomes true in the database and stays false in SEL.
 
 The generator rejects a template referring to an argument the entry's arity
 cannot supply, and a `{key}` naming a `lexical` entry that does not resolve.

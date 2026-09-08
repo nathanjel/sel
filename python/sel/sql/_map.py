@@ -29,6 +29,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "X'{hex}'",
             "numericLiteral": "{0}",
             "textCollate": "",
+            "textCharset": None,
             "numericCast": "CAST({0} AS DECIMAL(38,10))",
             "binaryCast": "CAST({0} AS BINARY)",
             "isTrue": "({0}) IS TRUE",
@@ -308,6 +309,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "X'{hex}'",
             "numericLiteral": "{0}",
             "textCollate": " COLLATE utf8mb4_bin",
+            "textCharset": "utf8mb4",
             "numericCast": "CAST({0} AS DECIMAL(65,10))",
             "binaryCast": "CAST({0} AS BINARY)",
             "isTrue": "({0}) IS TRUE",
@@ -590,7 +592,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "BIN",
             },
             "FROM_UTF8": {
-                "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
+                "tpl": "CONVERT({binaryCast:0} USING {textCharset})",
                 "ret": "TEXT",
             },
             "TO_HEX": {
@@ -675,6 +677,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "X'{hex}'",
             "numericLiteral": "{0}",
             "textCollate": " COLLATE utf8mb4_bin",
+            "textCharset": "utf8mb4",
             "numericCast": "CAST({0} AS DECIMAL(65,10))",
             "binaryCast": "CAST({0} AS BINARY)",
             "isTrue": "({0}) IS TRUE",
@@ -957,7 +960,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "BIN",
             },
             "FROM_UTF8": {
-                "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
+                "tpl": "CONVERT({binaryCast:0} USING {textCharset})",
                 "ret": "TEXT",
             },
             "TO_HEX": {
@@ -1041,6 +1044,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "X'{hex}'",
             "numericLiteral": "{0}",
             "textCollate": " COLLATE utf8mb4_bin",
+            "textCharset": "utf8mb4",
             "numericCast": "CAST({0} AS DECIMAL(65,10))",
             "binaryCast": "CAST({0} AS BINARY)",
             "isTrue": "({0}) IS TRUE",
@@ -1323,7 +1327,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "BIN",
             },
             "FROM_UTF8": {
-                "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
+                "tpl": "CONVERT({binaryCast:0} USING {textCharset})",
                 "ret": "TEXT",
             },
             "TO_HEX": {
@@ -1406,6 +1410,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "'\\x{hex}'::bytea",
             "numericLiteral": "{0}",
             "textCollate": " COLLATE \"C\"",
+            "textCharset": None,
             "numericCast": "CAST({0} AS NUMERIC)",
             "binaryCast": "convert_to(CAST({0} AS TEXT), 'UTF8')",
             "isTrue": "(({0}) IS TRUE)",
@@ -1763,6 +1768,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "binaryLiteral": "x'{hex}'",
             "numericLiteral": "'{0}'",
             "textCollate": "",
+            "textCharset": None,
             "numericCast": "CAST({0} AS NUMERIC)",
             "binaryCast": "CAST({0} AS BLOB)",
             "isTrue": "(({0}) IS TRUE)",
@@ -2209,6 +2215,7 @@ RULES: dict[str, Any] = {
         "binaryLiteral": "string",
         "numericLiteral": "string",
         "textCollate": "string",
+        "textCharset": "string",
         "textCast": "string",
         "numericCast": "string",
         "binaryCast": "string",
@@ -2216,5 +2223,5 @@ RULES: dict[str, Any] = {
         "isNotTrue": "string",
         "placeholder": "string",
     },
-    "templateKeys": ["identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder"],
+    "templateKeys": ["identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCharset", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder"],
 }

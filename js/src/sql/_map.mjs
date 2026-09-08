@@ -24,6 +24,7 @@ export const DIALECTS = {
       "binaryLiteral": "X'{hex}'",
       "numericLiteral": "{0}",
       "textCollate": "",
+      "textCharset": null,
       "numericCast": "CAST({0} AS DECIMAL(38,10))",
       "binaryCast": "CAST({0} AS BINARY)",
       "isTrue": "({0}) IS TRUE",
@@ -303,6 +304,7 @@ export const DIALECTS = {
       "binaryLiteral": "X'{hex}'",
       "numericLiteral": "{0}",
       "textCollate": " COLLATE utf8mb4_bin",
+      "textCharset": "utf8mb4",
       "numericCast": "CAST({0} AS DECIMAL(65,10))",
       "binaryCast": "CAST({0} AS BINARY)",
       "isTrue": "({0}) IS TRUE",
@@ -585,7 +587,7 @@ export const DIALECTS = {
         "ret": "BIN"
       },
       "FROM_UTF8": {
-        "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
+        "tpl": "CONVERT({binaryCast:0} USING {textCharset})",
         "ret": "TEXT"
       },
       "TO_HEX": {
@@ -676,6 +678,7 @@ export const DIALECTS = {
       "binaryLiteral": "X'{hex}'",
       "numericLiteral": "{0}",
       "textCollate": " COLLATE utf8mb4_bin",
+      "textCharset": "utf8mb4",
       "numericCast": "CAST({0} AS DECIMAL(65,10))",
       "binaryCast": "CAST({0} AS BINARY)",
       "isTrue": "({0}) IS TRUE",
@@ -958,7 +961,7 @@ export const DIALECTS = {
         "ret": "BIN"
       },
       "FROM_UTF8": {
-        "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
+        "tpl": "CONVERT({binaryCast:0} USING {textCharset})",
         "ret": "TEXT"
       },
       "TO_HEX": {
@@ -1048,6 +1051,7 @@ export const DIALECTS = {
       "binaryLiteral": "X'{hex}'",
       "numericLiteral": "{0}",
       "textCollate": " COLLATE utf8mb4_bin",
+      "textCharset": "utf8mb4",
       "numericCast": "CAST({0} AS DECIMAL(65,10))",
       "binaryCast": "CAST({0} AS BINARY)",
       "isTrue": "({0}) IS TRUE",
@@ -1330,7 +1334,7 @@ export const DIALECTS = {
         "ret": "BIN"
       },
       "FROM_UTF8": {
-        "tpl": "CONVERT({binaryCast:0} USING utf8mb4)",
+        "tpl": "CONVERT({binaryCast:0} USING {textCharset})",
         "ret": "TEXT"
       },
       "TO_HEX": {
@@ -1419,6 +1423,7 @@ export const DIALECTS = {
       "binaryLiteral": "'\\x{hex}'::bytea",
       "numericLiteral": "{0}",
       "textCollate": " COLLATE \"C\"",
+      "textCharset": null,
       "numericCast": "CAST({0} AS NUMERIC)",
       "binaryCast": "convert_to(CAST({0} AS TEXT), 'UTF8')",
       "isTrue": "(({0}) IS TRUE)",
@@ -1785,6 +1790,7 @@ export const DIALECTS = {
       "binaryLiteral": "x'{hex}'",
       "numericLiteral": "'{0}'",
       "textCollate": "",
+      "textCharset": null,
       "numericCast": "CAST({0} AS NUMERIC)",
       "binaryCast": "CAST({0} AS BLOB)",
       "isTrue": "(({0}) IS TRUE)",
@@ -2537,6 +2543,7 @@ export const RULES = {
     "binaryLiteral": "string",
     "numericLiteral": "string",
     "textCollate": "string",
+    "textCharset": "string",
     "textCast": "string",
     "numericCast": "string",
     "binaryCast": "string",
@@ -2552,6 +2559,7 @@ export const RULES = {
     "false",
     "numericLiteral",
     "textCollate",
+    "textCharset",
     "textCast",
     "numericCast",
     "binaryCast",

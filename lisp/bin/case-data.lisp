@@ -2074,8 +2074,23 @@
       (define-entry "mariadb" :funcs "LEN" (list :tpl "LEN({0}{textCollate})" :ret "NUM")))
    :bindings (lambda () (list )))
   (list
-   :name "register.skel.withdrawn-refuses-before-the-operands"
+   :name "register.lexical.the-charset-follows-the-collation"
    :at "11-registration.sqlt:94"
+   :dialect "cms"
+   :source "FROM_UTF8(B)"
+   :expect "CONVERT(`o`.`b` USING utf8mb3)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "cms" (list :extends "mariadb" :version "11.8" :lexical (list (cons "textCollate" " COLLATE utf8mb3_bin") (cons "textCharset" "utf8mb3")))))
+   :bindings (lambda () (list (cons "B" (binding-column "b" "o" :bin)))))
+  (list
+   :name "register.skel.withdrawn-refuses-before-the-operands"
+   :at "11-registration.sqlt:126"
    :dialect "norel"
    :source "UNBOUND IN ITEMS"
    :expect nil
@@ -2091,7 +2106,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "t" "oi" (list (cons "sku" (binding-column "sku" "oi" :text))) "sku" "oi.o = o.id")))))
   (list
    :name "register.since.gates-on-the-target-version"
-   :at "11-registration.sqlt:117"
+   :at "11-registration.sqlt:149"
    :dialect "mariadb"
    :source "UPPER(\"a\")"
    :expect nil
@@ -2106,7 +2121,7 @@
    :bindings (lambda () (list )))
   (list
    :name "register.dialect.a-newer-version-passes-the-same-gate"
-   :at "11-registration.sqlt:130"
+   :at "11-registration.sqlt:162"
    :dialect "mariadb-11.8"
    :source "UPPER(\"a\")"
    :expect "NEW_UPPER('a')"
@@ -2122,7 +2137,7 @@
    :bindings (lambda () (list )))
   (list
    :name "register.dialect.inherits-everything-else"
-   :at "11-registration.sqlt:144"
+   :at "11-registration.sqlt:176"
    :dialect "mariadb-11.8"
    :source "\"A\" $== \"a\""
    :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
@@ -2137,7 +2152,7 @@
    :bindings (lambda () (list )))
   (list
    :name "register.dialect.may-override-a-lexical-key"
-   :at "11-registration.sqlt:154"
+   :at "11-registration.sqlt:186"
    :dialect "mariadb-nocollate"
    :source "\"A\" $== \"a\""
    :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a' AS CHAR) COLLATE utf8mb4_0900_bin)"
@@ -2152,7 +2167,7 @@
    :bindings (lambda () (list )))
   (list
    :name "register.dialect.unknown-parent-is-a-programming-error"
-   :at "11-registration.sqlt:165"
+   :at "11-registration.sqlt:197"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -2167,7 +2182,7 @@
    :bindings (lambda () (list )))
   (list
    :name "register.define.unknown-section-is-a-programming-error"
-   :at "11-registration.sqlt:181"
+   :at "11-registration.sqlt:213"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
