@@ -2733,22 +2733,14 @@ static std::vector<std::pair<std::string, Binding>> c433_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c434_bind() {
   return {
-
+      {"T", Binding::raw("nv.value", SqlKind::Unknown)},
   };
-}
-
-static void c434_reg() {
-      Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
 }
 
 static std::vector<std::pair<std::string, Binding>> c435_bind() {
   return {
-
+      {"T", Binding::raw("nv.value", SqlKind::Num)},
   };
-}
-
-static void c435_reg() {
-      Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
 }
 
 static std::vector<std::pair<std::string, Binding>> c436_bind() {
@@ -2803,7 +2795,7 @@ static void c440_reg() {
 
 static std::vector<std::pair<std::string, Binding>> c441_bind() {
   return {
-      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
+
   };
 }
 
@@ -2823,11 +2815,31 @@ static void c442_reg() {
 
 static std::vector<std::pair<std::string, Binding>> c443_bind() {
   return {
-      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
   };
 }
 
 static void c443_reg() {
+      Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
+}
+
+static std::vector<std::pair<std::string, Binding>> c444_bind() {
+  return {
+
+  };
+}
+
+static void c444_reg() {
+      Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
+}
+
+static std::vector<std::pair<std::string, Binding>> c445_bind() {
+  return {
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static void c445_reg() {
       Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
 }
 
@@ -8908,6 +8920,34 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c433_bind},
+    {.name = "warrant.raw.the-guard-evaluates-it-twice",
+     .at = "19-kind-warrant.sqlt:309",
+     .dialect = "mariadb",
+     .source = "T == 25",
+     .expect = "(CASE WHEN (nv.value REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(nv.value AS DECIMAL(65,10)) ELSE NULL END = 25)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c434_bind},
+    {.name = "warrant.raw.declaring-the-type-skips-the-guard",
+     .at = "19-kind-warrant.sqlt:337",
+     .dialect = "mariadb",
+     .source = "T == 25",
+     .expect = "(nv.value = 25)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c435_bind},
     {.name = "ansi.trim.strips-only-what-the-standard-strips",
      .at = "20-ansi-fallback.sqlt:34",
      .dialect = "ansi-probe",
@@ -8920,8 +8960,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c434_reg,
-     .bindings_fn = c434_bind},
+     .register_fn = c436_reg,
+     .bindings_fn = c436_bind},
     {.name = "ansi.ltrim.leading-only",
      .at = "20-ansi-fallback.sqlt:50",
      .dialect = "ansi-probe",
@@ -8934,8 +8974,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c435_reg,
-     .bindings_fn = c435_bind},
+     .register_fn = c437_reg,
+     .bindings_fn = c437_bind},
     {.name = "ansi.rtrim.trailing-only",
      .at = "20-ansi-fallback.sqlt:60",
      .dialect = "ansi-probe",
@@ -8948,8 +8988,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c436_reg,
-     .bindings_fn = c436_bind},
+     .register_fn = c438_reg,
+     .bindings_fn = c438_bind},
     {.name = "ansi.substr.two-arguments",
      .at = "20-ansi-fallback.sqlt:70",
      .dialect = "ansi-probe",
@@ -8962,8 +9002,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c437_reg,
-     .bindings_fn = c437_bind},
+     .register_fn = c439_reg,
+     .bindings_fn = c439_bind},
     {.name = "ansi.substr.three-arguments",
      .at = "20-ansi-fallback.sqlt:84",
      .dialect = "ansi-probe",
@@ -8976,8 +9016,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c438_reg,
-     .bindings_fn = c438_bind},
+     .register_fn = c440_reg,
+     .bindings_fn = c440_bind},
     {.name = "ansi.multiply",
      .at = "20-ansi-fallback.sqlt:94",
      .dialect = "ansi-probe",
@@ -8990,8 +9030,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c439_reg,
-     .bindings_fn = c439_bind},
+     .register_fn = c441_reg,
+     .bindings_fn = c441_bind},
     {.name = "ansi.concat.double-pipe",
      .at = "20-ansi-fallback.sqlt:108",
      .dialect = "ansi-probe",
@@ -9004,8 +9044,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c440_reg,
-     .bindings_fn = c440_bind},
+     .register_fn = c442_reg,
+     .bindings_fn = c442_bind},
     {.name = "ansi.identifiers-are-double-quoted",
      .at = "20-ansi-fallback.sqlt:123",
      .dialect = "ansi-probe",
@@ -9018,8 +9058,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c441_reg,
-     .bindings_fn = c441_bind},
+     .register_fn = c443_reg,
+     .bindings_fn = c443_bind},
     {.name = "ansi.no-regex-so-no-mapping",
      .at = "20-ansi-fallback.sqlt:140",
      .dialect = "ansi-probe",
@@ -9032,8 +9072,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c442_reg,
-     .bindings_fn = c442_bind},
+     .register_fn = c444_reg,
+     .bindings_fn = c444_bind},
     {.name = "ansi.inherits-isnum-and-still-cannot-guard",
      .at = "20-ansi-fallback.sqlt:156",
      .dialect = "ansi-probe",
@@ -9046,8 +9086,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c443_reg,
-     .bindings_fn = c443_bind},
+     .register_fn = c445_reg,
+     .bindings_fn = c445_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

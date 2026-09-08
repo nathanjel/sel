@@ -255,6 +255,46 @@ meet it.
 2. **`raw` bindings.** Arbitrary SQL, unchecked by design — `Binding::raw`
    validates only that it is non-empty. Somebody who writes raw SQL into a rule
    has said they will answer for it.
+
+   **And the guard evaluates it twice.** `numericGuard` names its operand once
+   to test it and once to cast it (§7), so a raw operand is written into the SQL
+   twice and the database evaluates it twice per row:
+
+   ```
+   raw('(SELECT v FROM eav e WHERE e.id = o.id AND e.k = 1)') == 25
+
+   (CASE WHEN ((SELECT v FROM eav e WHERE e.id = o.id AND e.k = 1) REGEXP '…')
+         THEN CAST((SELECT v FROM eav e WHERE e.id = o.id AND e.k = 1) AS DECIMAL(65,10))
+         ELSE NULL END = 25)
+   ```
+
+   For a deterministic expression that is cost. For one that is not — `RAND()`,
+   a sequence, a UDF that touches anything — the `WHEN` and the `THEN` can see
+   **different values**, and the guard then tests one and casts the other. Its
+   promise holds only while the two are the same value, so a non-deterministic
+   raw is outside the warrant in the strong sense, not merely unchecked.
+
+   Two ways out, and the second is usually the better one:
+
+   - **Declare the type.** `Binding::raw('nv.value', 'NUM')` emits
+     `(nv.value = 25)` — exclusion 1's bargain, applied to raw.
+   - **Give the expression a name and bind the name.** A raw binding usually
+     exists because the value needed an expression rather than a column. Name it
+     in the query and the guard duplicates a name, which costs nothing:
+
+     ```sql
+     SELECT o.id FROM (SELECT o.*, e.v AS code FROM orders o JOIN eav e …) o
+     WHERE <the translated rule, binding CODE to the column `code`>
+     ```
+
+     It has to be a **derived table or a CTE**, not a bare `SELECT … AS code`
+     with the rule in that query's own `WHERE`: a select-list alias is not in
+     scope there. Measured — MariaDB 11.8 and MySQL 8.4 answer `1054 Unknown
+     column`, PostgreSQL 17 answers `42703`, and only SQLite allows it. A CTE
+     works on all four.
+
+   Both are pinned: `warrant.raw.the-guard-evaluates-it-twice` and
+   `warrant.raw.declaring-the-type-skips-the-guard`.
 3. **Caveats.** A different class: both sides succeed and disagree
    (`unicode-case`, `division-scale`). Governed by `strict`, which turns a
    caveated entry into `E_SQL_UNSUPPORTED`. Orthogonal to this warrant, and
@@ -295,6 +335,11 @@ early return in `numericOperand` is what stops a guard wrapping its own output
 at the next level of nesting. Remove it and the emitted SQL doubles per term:
 measured at exactly x2.00, so twenty terms is 104MB and the two-hundred-term
 depth case in the corpus never finishes.
+
+The operand class where the doubling is *visible* is `raw`: a column reference
+is a name, and duplicating a name costs an index scan, but raw is arbitrary SQL
+and duplicating it means evaluating it twice. §6 exclusion 2 has the
+consequence and the two ways out.
 
 This is not hypothetical. It was written as a mutation -- invert the early
 return, prove the fast path is load-bearing -- and the mutation exhausted the

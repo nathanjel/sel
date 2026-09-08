@@ -306,3 +306,51 @@ SUM(ITEMS, _["QTY"] * 1)
 --- expect
 (SELECT COALESCE(SUM((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END * 1)), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
 ===
+### name: warrant.raw.the-guard-evaluates-it-twice
+--- note
+`numericGuard` names its operand twice -- once to test it, once to cast it --
+so filling it duplicates whatever the operand is. For a column that is an index
+cost and nothing more: a column reference is a name, and the server reads the
+same stored value both times.
+
+A raw binding is not a name. It is arbitrary SQL the application wrote, and it
+is duplicated verbatim, so the database evaluates it twice per row. Where that
+expression is deterministic this is only cost. Where it is not -- RAND(), a
+sequence, a UDF that touches anything -- the WHEN and the THEN can see
+different values, and the guard then tests one value and casts another. Its
+whole promise is "if this value is not a number, yield NULL", and that holds
+only while the two are the same value.
+
+docs/SQL-KINDS.md §6 exclusion 2 already puts raw outside the warrant. This
+case is here because the exclusion excuses the CONTENT of the raw SQL and says
+nothing about the layer duplicating it, and because until now nothing anywhere
+recorded that it does.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "raw": "nv.value", "type": "UNKNOWN"}}
+--- source
+T == 25
+--- expect
+(CASE WHEN (nv.value REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(nv.value AS DECIMAL(65,10)) ELSE NULL END = 25)
+===
+### name: warrant.raw.declaring-the-type-skips-the-guard
+--- note
+The way out, and the same bargain a column gets: declaring the kind is what
+buys the unguarded path. A raw binding declared NUM is a promise the caller
+makes about their own SQL -- exclusion 1 -- and the operand is then emitted
+once.
+
+The other way out is to stop making it raw. A raw binding usually exists
+because the value needed an expression rather than a column; give that
+expression a name in a derived table or a CTE and bind the name, and the guard
+duplicates a name instead of the expression. See §6 exclusion 2.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "raw": "nv.value", "type": "NUM"}}
+--- source
+T == 25
+--- expect
+(nv.value = 25)
+===

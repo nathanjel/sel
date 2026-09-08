@@ -6162,6 +6162,34 @@
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))
   (list
+   :name "warrant.raw.the-guard-evaluates-it-twice"
+   :at "19-kind-warrant.sqlt:309"
+   :dialect "mariadb"
+   :source "T == 25"
+   :expect "(CASE WHEN (nv.value REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(nv.value AS DECIMAL(65,10)) ELSE NULL END = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-raw "nv.value" :unknown)))))
+  (list
+   :name "warrant.raw.declaring-the-type-skips-the-guard"
+   :at "19-kind-warrant.sqlt:337"
+   :dialect "mariadb"
+   :source "T == 25"
+   :expect "(nv.value = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-raw "nv.value" :num)))))
+  (list
    :name "ansi.trim.strips-only-what-the-standard-strips"
    :at "20-ansi-fallback.sqlt:34"
    :dialect "ansi-probe"
