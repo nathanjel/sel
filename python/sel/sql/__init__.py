@@ -7,7 +7,7 @@ same data every host consumes.
 
 The contract this host is graded against is ``sql/cases/*.sqlt``, run by
 ``python/bin/sqlt``: the cases assert an exact string, so PHP and Python agreeing
-on all 339 is a measurement rather than an intention.
+on all cases is a measurement rather than an intention.
 """
 
 from __future__ import annotations

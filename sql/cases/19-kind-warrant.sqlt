@@ -193,16 +193,10 @@ mariadb
 ANY(ITEMS, _["QTY"] == 25)
 --- expect
 EXISTS (SELECT 1 FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id` AND ((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END = 25)) IS TRUE)
-### name: notaddressed.abs-over-a-text-column-is-not-guarded
+### name: warrant.numeric.abs-over-a-text-column
 --- note
-docs/SQL-KINDS.md §4.1a, pinned rather than only described. These cases assert
-what is BROKEN: a function argument read as a number gets no guard, because
-binary() and unary() are where the guards go and a call argument reaches
-neither. Nothing anywhere records which argument of which function is numeric.
-
-They are here so that a partial fix is visible. Closing §4.1a should turn these
-red, and a red case with this note is the reminder to update the document that
-quotes it.
+docs/SQL-KINDS.md §4.1a. Every function that reads an argument as a number
+guards an argument that is not known to be NUM.
 --- dialect
 mariadb
 --- bindings
@@ -210,9 +204,22 @@ mariadb
 --- source
 ABS(T)
 --- expect
-ABS(`t`)
+ABS(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)
 ===
-### name: notaddressed.round-over-a-text-column-is-not-guarded
+### name: warrant.numeric.sqlite-refuses-abs-over-a-text-column
+--- note
+On a dialect with no numericGuard, an undeclared/TEXT argument in a numeric
+position is refused rather than passed to SQL unguarded.
+--- dialect
+sqlite
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+ABS(T)
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: warrant.numeric.round-over-a-text-column
 --- dialect
 mariadb
 --- bindings
@@ -220,12 +227,11 @@ mariadb
 --- source
 ROUND(T, 2)
 --- expect
-ROUND(`t`, 2)
+ROUND(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 2)
 ===
-### name: notaddressed.max-over-a-text-column-is-not-guarded
+### name: warrant.numeric.max-over-a-text-column
 --- note
-Two arguments, one of them a plain number, and still nothing asks whether the
-other is one.
+Two arguments, one of them a plain number, and the other is guarded.
 --- dialect
 mariadb
 --- bindings
@@ -233,9 +239,9 @@ mariadb
 --- source
 MAX(T, 1)
 --- expect
-GREATEST(`t`, 1)
+GREATEST(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 1)
 ===
-### name: notaddressed.floor-over-a-text-column-is-not-guarded
+### name: warrant.numeric.floor-over-a-text-column
 --- dialect
 mariadb
 --- bindings
@@ -243,9 +249,9 @@ mariadb
 --- source
 FLOOR(T)
 --- expect
-FLOOR(`t`)
+FLOOR(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)
 ===
-### name: notaddressed.power-over-a-text-column-is-not-guarded
+### name: warrant.numeric.power-over-a-text-column
 --- dialect
 mariadb
 --- bindings
@@ -253,9 +259,9 @@ mariadb
 --- source
 POWER(T, 2)
 --- expect
-POWER(`t`, 2)
+POWER(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 2)
 ===
-### name: notaddressed.a-text-column-as-a-length-is-not-guarded
+### name: warrant.numeric.a-text-column-as-a-length
 --- note
 And the argument that is numeric while the others are not: LEFT reads its second
 as a count.
@@ -266,7 +272,7 @@ mariadb
 --- source
 LEFT("abc", T)
 --- expect
-LEFT('abc', `t`)
+LEFT('abc', CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)
 ===
 ### name: notaddressed.an-aggregate-body-declared-text-is-refused
 --- note

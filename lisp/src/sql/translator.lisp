@@ -832,6 +832,17 @@ than reading a boolean as text or as 1" name)
 raises here rather than reinterpreting bytes as characters" name)
             pos)))
 
+(defun numeric-argument-p (name i)
+  (cond
+    ((or (equal name "MIN") (equal name "MAX")) t)
+    ((= i 0)
+     (member name '("ABS" "SIGN" "CEIL" "FLOOR" "TRUNC" "ROUND" "POWER" "CHAR") :test #'equal))
+    ((= i 1)
+     (member name '("ROUND" "POWER" "LEFT" "RIGHT" "SUBSTR" "REPEAT" "PADL" "PADR") :test #'equal))
+    ((= i 2)
+     (member name '("SUBSTR" "FIND") :test #'equal))
+    (t nil)))
+
 (defun rewrite-regex (n)
   (let* ((name (sel::node-s n))
          (at (regex-at name)))
@@ -926,6 +937,7 @@ value a SQL expression can be" (snode-pos n)))
     ;; parameter slot.
     (let* ((rewritten (rewrite-regex n))
            (args (loop for arg in (sel::node-items rewritten)
+                       for i from 0
                        ;; Left to right, and the order is load-bearing: slot
                        ;; numbers are allocated in render order.
                        for f = (walk-node tr arg)
@@ -935,6 +947,9 @@ value a SQL expression can be" (snode-pos n)))
 SQL expression is a scalar" name)
                                     (snode-pos arg)))
                           (require-argument-kind name f (snode-pos arg))
+                          (when (numeric-argument-p name i)
+                            (require-numeric-constant tr arg)
+                            (setf f (guard-numeric tr f arg)))
                        collect f)))
       ;; No variant is ever passed for funcs. SEL's own arity was enforced at
       ;; parse time, so APPLY-ENTRY defends only the dialect's narrowing.

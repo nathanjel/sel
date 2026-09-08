@@ -153,15 +153,15 @@
       "ret": "TEXT"
     },
     "TRIM": {
-      "tpl": "trim({0}, ' \t\r\n')",
+      "tpl": "trim({0}, ' ' || char(9) || char(13) || char(10))",
       "ret": "TEXT"
     },
     "LTRIM": {
-      "tpl": "ltrim({0}, ' \t\r\n')",
+      "tpl": "ltrim({0}, ' ' || char(9) || char(13) || char(10))",
       "ret": "TEXT"
     },
     "RTRIM": {
-      "tpl": "rtrim({0}, ' \t\r\n')",
+      "tpl": "rtrim({0}, ' ' || char(9) || char(13) || char(10))",
       "ret": "TEXT"
     },
     "BACKWARDS": "SQLite has no reverse(); reversing text needs a recursive CTE, which is a statement rather than an expression",

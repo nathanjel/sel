@@ -65,6 +65,25 @@ const YIELDS_LIST = ['BTL', 'INDEXES', 'RGROUPS', 'SPLIT'];
 const BIN_ARGUMENT_OK = ['BLEN', 'CRC32', 'ENCODE_BASE64', 'FROM_UTF8', 'ISNUM',
   'TO_HEX', 'TO_UTF8'];
 const BOOL_ARGUMENT_OK = ['ISNUM'];
+const NUMERIC_ARGUMENT_AT = {
+  ABS: [0],
+  SIGN: [0],
+  CEIL: [0],
+  FLOOR: [0],
+  TRUNC: [0],
+  ROUND: [0, 1],
+  POWER: [0, 1],
+  MIN: true,
+  MAX: true,
+  LEFT: [1],
+  RIGHT: [1],
+  SUBSTR: [1, 2],
+  FIND: [2],
+  REPEAT: [1],
+  PADL: [1],
+  PADR: [1],
+  CHAR: [0],
+};
 
 // The runtime kind classes EQL and IN compare, which are not the static kinds. A
 // SEL number IS a text value (spec §4), so `1 EQL "1"` is TRUE and NUM and TEXT
@@ -515,13 +534,19 @@ export class Translator {
     n = this.rewriteRegex(n);
 
     const args = [];
-    for (const arg of n.args) {
-      const f = this.node(arg);
+    for (let i = 0; i < n.args.length; i++) {
+      const arg = n.args[i];
+      let f = this.node(arg);
       if (f.kind === 'LIST') {
         refuse('E_SQL_SHAPE',
           `argument to ${name} is a list, and a SQL expression is a scalar`, arg.pos);
       }
       this.requireArgumentKind(name, f, arg.pos);
+      const at = NUMERIC_ARGUMENT_AT[name];
+      if (at === true || (Array.isArray(at) && at.includes(i))) {
+        this.requireNumericConstant(arg);
+        f = this.guardNumeric(f, arg);
+      }
       args.push(f);
     }
     return this.apply('funcs', name, args, n.pos);

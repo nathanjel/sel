@@ -33,7 +33,7 @@
      ("textCollate" . " COLLATE UCS_BASIC")
      ("textCharset")
      ("numericCast" . "CAST({0} AS NUMERIC)")
-     ("binaryCast" . "CAST({0} AS BINARY)")
+     ("binaryCast" . "CAST({0} AS BLOB)")
      ("isTrue" . "({0}) IS TRUE")
      ("isNotTrue" . "({0}) IS NOT TRUE")
      ("placeholder" . "?")
@@ -586,12 +586,9 @@
      ("SUBSTR" :tpl (("2" . "substr({0}, {1})") ("3" . "substr({0}, {1}, {2})")) :ret "TEXT")
      ("UPPER" :tpl "upper({0})" :ret "TEXT")
      ("LOWER" :tpl "lower({0})" :ret "TEXT")
-     ("TRIM" :tpl "trim({0}, ' 	
-')" :ret "TEXT")
-     ("LTRIM" :tpl "ltrim({0}, ' 	
-')" :ret "TEXT")
-     ("RTRIM" :tpl "rtrim({0}, ' 	
-')" :ret "TEXT")
+     ("TRIM" :tpl "trim({0}, ' ' || char(9) || char(13) || char(10))" :ret "TEXT")
+     ("LTRIM" :tpl "ltrim({0}, ' ' || char(9) || char(13) || char(10))" :ret "TEXT")
+     ("RTRIM" :tpl "rtrim({0}, ' ' || char(9) || char(13) || char(10))" :ret "TEXT")
      ("ABS" :tpl "abs({0})" :ret "NUM" :caveat "decimal-float")
      ("CEIL" :tpl "ceil({0})" :ret "NUM" :caveat "decimal-float")
      ("FLOOR" :tpl "floor({0})" :ret "NUM" :caveat "decimal-float")

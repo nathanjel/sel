@@ -3857,7 +3857,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.num.literals-are-text"
-   :at "14-sqlite.sqlt:12"
+   :at "14-sqlite.sqlt:11"
    :dialect "sqlite"
    :source "2.50 + 2.50"
    :expect "('2.50' + '2.50')"
@@ -3871,7 +3871,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.num.byte-comparison-sees-the-scale"
-   :at "14-sqlite.sqlt:25"
+   :at "14-sqlite.sqlt:24"
    :dialect "sqlite"
    :source "\"2.50\" $== \"2.5\""
    :expect "(CAST('2.50' AS TEXT) = CAST('2.5' AS TEXT))"
@@ -3885,7 +3885,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.num.comparison-always-coerces"
-   :at "14-sqlite.sqlt:33"
+   :at "14-sqlite.sqlt:32"
    :dialect "sqlite"
    :source "2.50 == 2.5"
    :expect "(CAST('2.50' AS NUMERIC) = CAST('2.5' AS NUMERIC))"
@@ -3899,7 +3899,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.num.division-is-forced-real"
-   :at "14-sqlite.sqlt:44"
+   :at "14-sqlite.sqlt:43"
    :dialect "sqlite"
    :source "10 / 4"
    :expect "('10' * 1.0 / '4')"
@@ -3913,7 +3913,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.text.no-collation-needed"
-   :at "14-sqlite.sqlt:56"
+   :at "14-sqlite.sqlt:55"
    :dialect "sqlite"
    :source "\"A\" $== \"a\""
    :expect "(CAST('A' AS TEXT) = CAST('a' AS TEXT))"
@@ -3927,7 +3927,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.text.concat-is-an-operator"
-   :at "14-sqlite.sqlt:68"
+   :at "14-sqlite.sqlt:67"
    :dialect "sqlite"
    :source "\"a\" & \"b\""
    :expect "('a' || 'b')"
@@ -3941,7 +3941,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.text.upper-needs-no-caveat"
-   :at "14-sqlite.sqlt:76"
+   :at "14-sqlite.sqlt:75"
    :dialect "sqlite"
    :source "UPPER(\"zażółć\")"
    :expect "upper('zażółć')"
@@ -3955,7 +3955,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.text.right-of-zero"
-   :at "14-sqlite.sqlt:88"
+   :at "14-sqlite.sqlt:87"
    :dialect "sqlite"
    :source "RIGHT(\"a\", 0)"
    :expect "substr('a', -'0', '0')"
@@ -3969,7 +3969,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.text.code-point-in"
-   :at "14-sqlite.sqlt:100"
+   :at "14-sqlite.sqlt:99"
    :dialect "sqlite"
    :source "CODE(\"é\")"
    :expect "unicode('é')"
@@ -3983,7 +3983,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.text.code-point-out"
-   :at "14-sqlite.sqlt:112"
+   :at "14-sqlite.sqlt:111"
    :dialect "sqlite"
    :source "CHAR(233)"
    :expect "char('233')"
@@ -3996,8 +3996,50 @@
    :register nil
    :bindings (lambda () (list )))
   (list
+   :name "sqlite.text.trim"
+   :at "14-sqlite.sqlt:119"
+   :dialect "sqlite"
+   :source "TRIM(\"  x  \")"
+   :expect "trim('  x  ', ' ' || char(9) || char(13) || char(10))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "sqlite.text.ltrim"
+   :at "14-sqlite.sqlt:127"
+   :dialect "sqlite"
+   :source "LTRIM(\"  x  \")"
+   :expect "ltrim('  x  ', ' ' || char(9) || char(13) || char(10))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "sqlite.text.rtrim"
+   :at "14-sqlite.sqlt:135"
+   :dialect "sqlite"
+   :source "RTRIM(\"  x  \")"
+   :expect "rtrim('  x  ', ' ' || char(9) || char(13) || char(10))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
    :name "sqlite.func.min-takes-one-argument"
-   :at "14-sqlite.sqlt:120"
+   :at "14-sqlite.sqlt:143"
    :dialect "sqlite"
    :source "MIN(1)"
    :expect "min('1')"
@@ -4011,7 +4053,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.func.find-has-no-start-position"
-   :at "14-sqlite.sqlt:130"
+   :at "14-sqlite.sqlt:153"
    :dialect "sqlite"
    :source "FIND(\"a\", \"banana\", 3)"
    :expect nil
@@ -4025,7 +4067,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.refuse.no-regexp"
-   :at "14-sqlite.sqlt:142"
+   :at "14-sqlite.sqlt:165"
    :dialect "sqlite"
    :source "RMATCH('^a', \"ab\")"
    :expect nil
@@ -4039,7 +4081,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.refuse.no-lpad"
-   :at "14-sqlite.sqlt:150"
+   :at "14-sqlite.sqlt:173"
    :dialect "sqlite"
    :source "PADL(\"7\", 3, \"0\")"
    :expect nil
@@ -4053,7 +4095,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.strict.refuses-arithmetic"
-   :at "14-sqlite.sqlt:158"
+   :at "14-sqlite.sqlt:181"
    :dialect "sqlite"
    :source "2.50 + 2.50"
    :expect nil
@@ -4067,7 +4109,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.strict.allows-text"
-   :at "14-sqlite.sqlt:172"
+   :at "14-sqlite.sqlt:195"
    :dialect "sqlite"
    :source "UPPER(\"abc\") $== \"ABC\""
    :expect "(CAST(upper('abc') AS TEXT) = CAST('ABC' AS TEXT))"
@@ -4081,7 +4123,7 @@
    :bindings (lambda () (list )))
   (list
    :name "sqlite.bin.from-hex-is-refused"
-   :at "14-sqlite.sqlt:186"
+   :at "14-sqlite.sqlt:209"
    :dialect "sqlite"
    :source "FROM_HEX(\"4869\")"
    :expect nil
@@ -4321,7 +4363,7 @@
    :bindings (lambda () (list )))
   (list
    :name "pg.text.rtrim"
-   :at "15-postgresql.sqlt:248"
+   :at "15-postgresql.sqlt:247"
    :dialect "postgresql"
    :source "RTRIM(\"a \")"
    :expect "rtrim(CAST('a ' AS TEXT), E' \\t\\r\\n')"
@@ -4335,7 +4377,7 @@
    :bindings (lambda () (list )))
   (list
    :name "pg.bin.from-hex"
-   :at "15-postgresql.sqlt:256"
+   :at "15-postgresql.sqlt:255"
    :dialect "postgresql"
    :source "FROM_HEX(\"4869\")"
    :expect "decode('4869', 'hex')"
@@ -6036,11 +6078,11 @@
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :text))) nil "`oi`.`o`=`o`.`id`")))))
   (list
-   :name "notaddressed.abs-over-a-text-column-is-not-guarded"
+   :name "warrant.numeric.abs-over-a-text-column"
    :at "19-kind-warrant.sqlt:196"
    :dialect "mariadb"
    :source "ABS(T)"
-   :expect "ABS(`t`)"
+   :expect "ABS(CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)"
    :error nil
    :throws nil
    :params nil
@@ -6050,11 +6092,25 @@
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
-   :name "notaddressed.round-over-a-text-column-is-not-guarded"
-   :at "19-kind-warrant.sqlt:215"
+   :name "warrant.numeric.sqlite-refuses-abs-over-a-text-column"
+   :at "19-kind-warrant.sqlt:209"
+   :dialect "sqlite"
+   :source "ABS(T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "warrant.numeric.round-over-a-text-column"
+   :at "19-kind-warrant.sqlt:222"
    :dialect "mariadb"
    :source "ROUND(T, 2)"
-   :expect "ROUND(`t`, 2)"
+   :expect "ROUND(CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 2)"
    :error nil
    :throws nil
    :params nil
@@ -6064,11 +6120,11 @@
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
-   :name "notaddressed.max-over-a-text-column-is-not-guarded"
-   :at "19-kind-warrant.sqlt:225"
+   :name "warrant.numeric.max-over-a-text-column"
+   :at "19-kind-warrant.sqlt:232"
    :dialect "mariadb"
    :source "MAX(T, 1)"
-   :expect "GREATEST(`t`, 1)"
+   :expect "GREATEST(CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 1)"
    :error nil
    :throws nil
    :params nil
@@ -6078,11 +6134,11 @@
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
-   :name "notaddressed.floor-over-a-text-column-is-not-guarded"
-   :at "19-kind-warrant.sqlt:238"
+   :name "warrant.numeric.floor-over-a-text-column"
+   :at "19-kind-warrant.sqlt:244"
    :dialect "mariadb"
    :source "FLOOR(T)"
-   :expect "FLOOR(`t`)"
+   :expect "FLOOR(CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)"
    :error nil
    :throws nil
    :params nil
@@ -6092,11 +6148,11 @@
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
-   :name "notaddressed.power-over-a-text-column-is-not-guarded"
-   :at "19-kind-warrant.sqlt:248"
+   :name "warrant.numeric.power-over-a-text-column"
+   :at "19-kind-warrant.sqlt:254"
    :dialect "mariadb"
    :source "POWER(T, 2)"
-   :expect "POWER(`t`, 2)"
+   :expect "POWER(CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 2)"
    :error nil
    :throws nil
    :params nil
@@ -6106,11 +6162,11 @@
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
-   :name "notaddressed.a-text-column-as-a-length-is-not-guarded"
-   :at "19-kind-warrant.sqlt:258"
+   :name "warrant.numeric.a-text-column-as-a-length"
+   :at "19-kind-warrant.sqlt:264"
    :dialect "mariadb"
    :source "LEFT(\"abc\", T)"
-   :expect "LEFT('abc', `t`)"
+   :expect "LEFT('abc', CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)"
    :error nil
    :throws nil
    :params nil
@@ -6121,7 +6177,7 @@
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
    :name "notaddressed.an-aggregate-body-declared-text-is-refused"
-   :at "19-kind-warrant.sqlt:271"
+   :at "19-kind-warrant.sqlt:277"
    :dialect "mariadb"
    :source "SUM(ITEMS, _[\"QTY\"])"
    :expect nil
@@ -6135,7 +6191,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :text))) nil "`oi`.`o`=`o`.`id`")))))
   (list
    :name "notaddressed.an-undeclared-aggregate-body-is-not-guarded"
-   :at "19-kind-warrant.sqlt:285"
+   :at "19-kind-warrant.sqlt:291"
    :dialect "mariadb"
    :source "SUM(ITEMS, _[\"QTY\"])"
    :expect "(SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)"
@@ -6149,7 +6205,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))
   (list
    :name "notaddressed.times-one-reaches-the-guard"
-   :at "19-kind-warrant.sqlt:295"
+   :at "19-kind-warrant.sqlt:301"
    :dialect "mariadb"
    :source "SUM(ITEMS, _[\"QTY\"] * 1)"
    :expect "(SELECT COALESCE(SUM((CASE WHEN (`oi`.`qty` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END * 1)), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)"
@@ -6163,7 +6219,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))
   (list
    :name "warrant.raw.the-guard-evaluates-it-twice"
-   :at "19-kind-warrant.sqlt:309"
+   :at "19-kind-warrant.sqlt:315"
    :dialect "mariadb"
    :source "T == 25"
    :expect "(CASE WHEN (nv.value REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(nv.value AS DECIMAL(65,10)) ELSE NULL END = 25)"
@@ -6177,7 +6233,7 @@
    :bindings (lambda () (list (cons "T" (binding-raw "nv.value" :unknown)))))
   (list
    :name "warrant.raw.declaring-the-type-skips-the-guard"
-   :at "19-kind-warrant.sqlt:337"
+   :at "19-kind-warrant.sqlt:343"
    :dialect "mariadb"
    :source "T == 25"
    :expect "(nv.value = 25)"

@@ -36,7 +36,7 @@ final class MapData
                 'textCollate' => ' COLLATE UCS_BASIC',
                 'textCharset' => null,
                 'numericCast' => 'CAST({0} AS NUMERIC)',
-                'binaryCast' => 'CAST({0} AS BINARY)',
+                'binaryCast' => 'CAST({0} AS BLOB)',
                 'isTrue' => '({0}) IS TRUE',
                 'isNotTrue' => '({0}) IS NOT TRUE',
                 'placeholder' => '?',
@@ -1960,18 +1960,15 @@ final class MapData
                     'ret' => 'TEXT',
                 ],
                 'TRIM' => [
-                    'tpl' => 'trim({0}, \' 	
-\')',
+                    'tpl' => 'trim({0}, \' \' || char(9) || char(13) || char(10))',
                     'ret' => 'TEXT',
                 ],
                 'LTRIM' => [
-                    'tpl' => 'ltrim({0}, \' 	
-\')',
+                    'tpl' => 'ltrim({0}, \' \' || char(9) || char(13) || char(10))',
                     'ret' => 'TEXT',
                 ],
                 'RTRIM' => [
-                    'tpl' => 'rtrim({0}, \' 	
-\')',
+                    'tpl' => 'rtrim({0}, \' \' || char(9) || char(13) || char(10))',
                     'ret' => 'TEXT',
                 ],
                 'ABS' => [

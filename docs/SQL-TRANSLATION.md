@@ -1,6 +1,6 @@
 # SEL → SQL translation
 
-**Status: M1–M5 are built and reviewed — MariaDB, MySQL, PostgreSQL and SQLite, each verified against a running server, then put through a five-lane contract review that reproduced twenty-four violations the suite had reported clean (see §14 and §11.5). M6 is built too: **PHP and Python emit the same SQL for all 339 cases**, which is what makes "the map is data" a measurement.** This document is the
+**Status: M1–M5 are built and reviewed — MariaDB, MySQL, PostgreSQL and SQLite, each verified against a running server, then put through a five-lane contract review that reproduced twenty-four violations the suite had reported clean (see §14 and §11.5). M6 is built too: **PHP and Python emit the same SQL for all cases**, which is what makes "the map is data" a measurement.** This document is the
 design for the SQL layer. It is written in the same register as `spec/SPEC.md` — where it and a
 future implementation disagree, resolve it here first — but it is *not* part of
 the language spec. Nothing here changes how a SEL program evaluates. It
@@ -2200,7 +2200,7 @@ Python emit different SQL for the same input, the suite says so, and no database
 is needed to find out.
 
 **Two runners read them now** — `php/bin/sqlt` and `python/bin/sqlt` — and both
-report `339 passed, 0 failed`. Each host parses the file format itself, because a
+report `xxx passed, 0 failed`. Each host parses the file format itself, because a
 parser shared across five languages is not a thing that exists, so
 `tools/check-sql-cases.sh` diffs what each one *loaded*: the `at` and the name of
 every case, in file order, byte for byte. Comparing the counts would not do —

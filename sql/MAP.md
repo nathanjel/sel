@@ -179,8 +179,10 @@ key. Every key below must resolve for a `target` dialect; the generator checks.
 | `binaryLiteral` | string or null | template for a BIN literal, `{hex}` filled with lower-case hex; `null` refuses BIN literals |
 | `textCollate` | string | appended to each operand of the `$` comparison family |
 | `textCharset` | string or null | the charset name a dialect spells when it converts bytes to text; `null` where the dialect names none |
+| `textCast` | string | template wrapping `{0}` to cast an operand to text |
 | `numericCast` | string | template wrapping `{0}` for numeric coercion |
 | `numericGuard` | string, **optional** | template wrapping `{0}`, yielding the number or NULL; the only key a target may leave undeclared |
+| `binaryCast` | string | template wrapping `{0}` to cast a text or num operand to bytes |
 | `isTrue` / `isNotTrue` | string | templates folding SQL's third truth value into two |
 | `placeholder` | string | `params`-mode placeholder; `{n}` is the 1-based ordinal, absent for positional `?` |
 

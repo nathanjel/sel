@@ -26,7 +26,7 @@ export const DIALECTS = {
       "textCollate": " COLLATE UCS_BASIC",
       "textCharset": null,
       "numericCast": "CAST({0} AS NUMERIC)",
-      "binaryCast": "CAST({0} AS BINARY)",
+      "binaryCast": "CAST({0} AS BLOB)",
       "isTrue": "({0}) IS TRUE",
       "isNotTrue": "({0}) IS NOT TRUE",
       "placeholder": "?",
@@ -1977,15 +1977,15 @@ export const DIALECTS = {
         "ret": "TEXT"
       },
       "TRIM": {
-        "tpl": "trim({0}, ' \t\r\n')",
+        "tpl": "trim({0}, ' ' || char(9) || char(13) || char(10))",
         "ret": "TEXT"
       },
       "LTRIM": {
-        "tpl": "ltrim({0}, ' \t\r\n')",
+        "tpl": "ltrim({0}, ' ' || char(9) || char(13) || char(10))",
         "ret": "TEXT"
       },
       "RTRIM": {
-        "tpl": "rtrim({0}, ' \t\r\n')",
+        "tpl": "rtrim({0}, ' ' || char(9) || char(13) || char(10))",
         "ret": "TEXT"
       },
       "ABS": {

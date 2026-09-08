@@ -1,6 +1,6 @@
 ;;;; SEL — Simple Expression Language, Common Lisp implementation.
 ;;;;
-;;;;   (ql:quickload :sel)
+;;;;   (ql:quickload :sel-lang)
 ;;;;   (sel:evaluate "1 + 2")
 ;;;;
 ;;;; The language is specified in spec/SPEC.md, which is normative: where this
@@ -16,7 +16,7 @@
   :description "SEL — a small expression language that evaluates identically on every host"
   :author "Marcin Gałczyński"
   :license "MIT"
-  :version "0.6.0"
+  :version "0.6.1"
   :homepage "https://github.com/nathanjel/sel"
   :source-control (:git "https://github.com/nathanjel/sel.git")
   :depends-on ("cl-ppcre")

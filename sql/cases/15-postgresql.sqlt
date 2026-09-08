@@ -235,9 +235,8 @@ t"a", t"b"
 --- note
 The same four characters as the MySQL family, spelled with PostgreSQL's own
 ltrim-with-a-character-set and an E'' string so the escapes are escapes. Note
-what this is NOT: sqlite's spelling of the same entry puts the four characters
-in the literal RAW, tab and CR and LF included, which is legal SQLite and is
-why sqlite's trim family cannot be pinned in a byte-exact line-based corpus.
+how this compares to SQLite, which concatenates ' ' || char(9) || char(13) || char(10)
+to stay on a single line.
 --- dialect
 postgresql
 --- source

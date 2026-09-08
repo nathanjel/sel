@@ -1232,6 +1232,24 @@ std::optional<int> regex_at(std::string_view name) {
   return std::nullopt;
 }
 
+bool is_numeric_argument(std::string_view name, size_t i) {
+  if (name == "MIN" || name == "MAX") return true;
+  if (i == 0) {
+    return name == "ABS" || name == "SIGN" || name == "CEIL" ||
+           name == "FLOOR" || name == "TRUNC" || name == "ROUND" ||
+           name == "POWER" || name == "CHAR";
+  }
+  if (i == 1) {
+    return name == "ROUND" || name == "POWER" || name == "LEFT" ||
+           name == "RIGHT" || name == "SUBSTR" || name == "REPEAT" ||
+           name == "PADL" || name == "PADR";
+  }
+  if (i == 2) {
+    return name == "SUBSTR" || name == "FIND";
+  }
+  return false;
+}
+
 }  // namespace
 
 void Translator::require_argument_kind(const std::string& name, const Fragment& f,
@@ -1371,7 +1389,8 @@ Fragment Translator::call(const SNodePtr& n) {
   std::vector<Fragment> args;
   // Left to right, and the order is load-bearing: slot numbers are allocated in
   // render order.
-  for (const SNodePtr& arg : rewritten->kids()) {
+  for (size_t i = 0; i < rewritten->kids().size(); ++i) {
+    const SNodePtr& arg = rewritten->kids()[i];
     Fragment f = node(arg);
     if (f.kind() == SqlKind::List) {
       refuse("E_SQL_SHAPE",
@@ -1379,6 +1398,10 @@ Fragment Translator::call(const SNodePtr& n) {
              arg->pos());
     }
     require_argument_kind(name, f, arg->pos());
+    if (is_numeric_argument(name, i)) {
+      require_numeric_constant(*arg);
+      f = guard_numeric(f, *arg);
+    }
     args.push_back(std::move(f));
   }
   // No variant is ever passed for funcs. SEL's own arity was enforced at parse

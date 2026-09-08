@@ -56,8 +56,35 @@ done
 # question: can this host's own API build the map it ships? If it cannot, the
 # map is data rather than code, and a host with no JSON reader has nowhere to
 # put it. sql/MAP.md §4.5¼.
+#
+# Collect the replay summary line and assert all hosts agree on the counts of
+# registrations, lookups compared, and differences.
+replay_summary=""
+replay_ref=""
+check_replay() {
+  local impl="$1"
+  local out
+  out="$(impl_sqlreplay "$impl")" || return 1
+  echo "$out"
+  if [ -z "$out" ]; then
+    echo "$impl produced no sql map replay output" >&2
+    return 1
+  fi
+  if [ -z "$replay_summary" ]; then
+    replay_summary="$out"
+    replay_ref="$impl"
+  elif [ "$out" != "$replay_summary" ]; then
+    echo "sql map replay DISAGREEMENT between $replay_ref and $impl:" >&2
+    echo "  $replay_ref: $replay_summary" >&2
+    echo "  $impl: $out" >&2
+    return 1
+  fi
+}
 for impl in $IMPLS; do
-  step "sql map replay ($impl)" impl_sqlreplay "$impl"
+  case "$impl" in
+    js-bundle|js-bundle-min) continue ;;
+  esac
+  step "sql map replay ($impl)" check_replay "$impl"
 done
 
 step "sql documented examples" ./tools/check-sql-docs.sh

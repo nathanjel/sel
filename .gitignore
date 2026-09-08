@@ -69,6 +69,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.sublime-workspace
+.claude/
 
 # --- Rescue and patch debris
 # An abandoned edit once left a zero-byte js/src/eval.mjs.orig behind, and
@@ -99,3 +100,4 @@ python/.venv-wheel/
 # the Python artefacts are kept in their own subdirectory (see PACKAGING.md).
 dist/python/
 .pytest_cache/
+**/.venv*/

@@ -74,6 +74,34 @@ BIN_ARGUMENT_OK = ('BLEN', 'CRC32', 'ENCODE_BASE64', 'FROM_UTF8', 'ISNUM',
                    'TO_HEX', 'TO_UTF8')
 BOOL_ARGUMENT_OK = ('ISNUM',)
 
+NUMERIC_ARGUMENT_AT: dict[str, tuple[int, ...] | bool] = {
+    'ABS': (0,),
+    'SIGN': (0,),
+    'CEIL': (0,),
+    'FLOOR': (0,),
+    'TRUNC': (0,),
+    'ROUND': (0, 1),
+    'POWER': (0, 1),
+    'MIN': True,
+    'MAX': True,
+    'LEFT': (1,),
+    'RIGHT': (1,),
+    'SUBSTR': (1, 2),
+    'FIND': (2,),
+    'REPEAT': (1,),
+    'PADL': (1,),
+    'PADR': (1,),
+    'CHAR': (0,),
+}
+
+
+def _is_numeric_argument(name: str, i: int) -> bool:
+    at = NUMERIC_ARGUMENT_AT.get(name)
+    if at is True:
+        return True
+    return isinstance(at, tuple) and i in at
+
+
 # The runtime kind classes EQL and IN compare, which are not the static kinds.
 # A SEL number IS a text value (spec §4), so `1 EQL "1"` is TRUE and NUM and
 # TEXT are one class here. BOOL and BIN are each their own: `0 EQL FALSE` is
@@ -515,13 +543,16 @@ class Translator:
         n = self._rewrite_regex(n)
 
         args = []
-        for arg in n.args:
+        for i, arg in enumerate(n.args):
             f = self._node(arg)
             if f.kind == 'LIST':
                 refuse('E_SQL_SHAPE',
                        f'argument to {name} is a list, and a SQL expression is a '
                        'scalar', arg.pos)
             self._require_argument_kind(name, f, arg.pos)
+            if _is_numeric_argument(name, i):
+                self._require_numeric_constant(arg)
+                f = self._guard_numeric(f, arg)
             args.append(f)
         return self._apply('funcs', name, args, n.pos)
 

@@ -40,7 +40,7 @@ final class MapReplay
                 'textCollate' => ' COLLATE UCS_BASIC',
                 'textCharset' => null,
                 'numericCast' => 'CAST({0} AS NUMERIC)',
-                'binaryCast' => 'CAST({0} AS BINARY)',
+                'binaryCast' => 'CAST({0} AS BLOB)',
                 'isTrue' => '({0}) IS TRUE',
                 'isNotTrue' => '({0}) IS NOT TRUE',
                 'placeholder' => '?',
@@ -327,6 +327,7 @@ final class MapReplay
                 'textCharset' => 'utf8mb4',
                 'numericCast' => 'CAST({0} AS DECIMAL(65,10))',
                 'numericGuard' => 'CASE WHEN ({0} REGEXP \'\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z\') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END',
+                'binaryCast' => 'CAST({0} AS BINARY)',
                 'textCast' => 'CAST({0} AS CHAR)',
             ],
             'ops' => [
@@ -951,18 +952,15 @@ final class MapReplay
                     'ret' => 'TEXT',
                 ],
                 'TRIM' => [
-                    'tpl' => 'trim({0}, \' 	
-\')',
+                    'tpl' => 'trim({0}, \' \' || char(9) || char(13) || char(10))',
                     'ret' => 'TEXT',
                 ],
                 'LTRIM' => [
-                    'tpl' => 'ltrim({0}, \' 	
-\')',
+                    'tpl' => 'ltrim({0}, \' \' || char(9) || char(13) || char(10))',
                     'ret' => 'TEXT',
                 ],
                 'RTRIM' => [
-                    'tpl' => 'rtrim({0}, \' 	
-\')',
+                    'tpl' => 'rtrim({0}, \' \' || char(9) || char(13) || char(10))',
                     'ret' => 'TEXT',
                 ],
                 'BACKWARDS' => 'SQLite has no reverse(); reversing text needs a recursive CTE, which is a statement rather than an expression',

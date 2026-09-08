@@ -5,9 +5,8 @@
 % two documents, two very different renderings, no host code involved in the
 % difference.
 %
-% The TRIM family is deliberately absent here and covered by sql/oracle instead:
-% its template embeds a literal tab and newline, which a case file can hold but
-% cannot show.
+% The TRIM family uses ' ' || char(9) || char(13) || char(10) so the four-character
+% strip stays on a single line and requires no embedded raw control characters.
 
 ### name: sqlite.num.literals-are-text
 --- note
@@ -116,6 +115,30 @@ sqlite
 CHAR(233)
 --- expect
 char('233')
+===
+### name: sqlite.text.trim
+--- dialect
+sqlite
+--- source
+TRIM("  x  ")
+--- expect
+trim('  x  ', ' ' || char(9) || char(13) || char(10))
+===
+### name: sqlite.text.ltrim
+--- dialect
+sqlite
+--- source
+LTRIM("  x  ")
+--- expect
+ltrim('  x  ', ' ' || char(9) || char(13) || char(10))
+===
+### name: sqlite.text.rtrim
+--- dialect
+sqlite
+--- source
+RTRIM("  x  ")
+--- expect
+rtrim('  x  ', ' ' || char(9) || char(13) || char(10))
 ===
 ### name: sqlite.func.min-takes-one-argument
 --- note

@@ -32,7 +32,7 @@
     ]
   },
   "scripts": {
-    "test": "php php/bin/conformance",
+    "test": "php php/bin/conformance && php php/bin/sqlt",
     "check": "tools/check.sh"
   },
   "config": {
@@ -40,7 +40,7 @@
   },
   "extra": {
     "branch-alias": {
-      "dev-main": "0.1.x-dev"
+      "dev-main": "0.6.x-dev"
     }
   }
 }

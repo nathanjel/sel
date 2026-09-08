@@ -581,7 +581,7 @@ final class Translator
         $n = $this->rewriteRegex($n);
 
         $args = [];
-        foreach ($n['args'] as $arg) {
+        foreach ($n['args'] as $i => $arg) {
             $f = $this->node($arg);
             if ($f->kind === 'LIST') {
                 refuse('E_SQL_SHAPE',
@@ -589,6 +589,10 @@ final class Translator
                     $arg['pos']);
             }
             $this->requireArgumentKind($name, $f, $arg['pos']);
+            if (self::isNumericArgument($name, $i)) {
+                $this->requireNumericConstant($arg);
+                $f = $this->guardNumeric($f, $arg);
+            }
             $args[] = $f;
         }
         return $this->apply('funcs', $name, $args, $n['pos']);
@@ -647,6 +651,34 @@ final class Translator
                                      'FROM_UTF8' => 0, 'ISNUM' => 0, 'TO_HEX' => 0,
                                      'TO_UTF8' => 0];
     private const BOOL_ARGUMENT_OK = ['ISNUM' => 0];
+    private const NUMERIC_ARGUMENT_AT = [
+        'ABS' => [0],
+        'SIGN' => [0],
+        'CEIL' => [0],
+        'FLOOR' => [0],
+        'TRUNC' => [0],
+        'ROUND' => [0, 1],
+        'POWER' => [0, 1],
+        'MIN' => true,
+        'MAX' => true,
+        'LEFT' => [1],
+        'RIGHT' => [1],
+        'SUBSTR' => [1, 2],
+        'FIND' => [2],
+        'REPEAT' => [1],
+        'PADL' => [1],
+        'PADR' => [1],
+        'CHAR' => [0],
+    ];
+
+    private static function isNumericArgument(string $name, int $i): bool
+    {
+        $at = self::NUMERIC_ARGUMENT_AT[$name] ?? null;
+        if ($at === true) {
+            return true;
+        }
+        return is_array($at) && in_array($i, $at, true);
+    }
 
     /**
      * Refuse an argument whose kind SEL would refuse.

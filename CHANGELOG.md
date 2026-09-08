@@ -10,6 +10,50 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.6.1 — 2026-09-09
+
+A release closing §4.1a of the kind warrant, shipping TypeScript typings,
+and standardizing dialect representations.
+
+  - **Function arguments read as numbers receive `numericGuard` (§4.1a).**
+    Previously, numeric guards were applied in `binary()` and `unary()` while
+    function calls reached neither. An undeclared or TEXT column passed to a
+    numeric function argument (such as `ABS(T)`, `ROUND(T, 2)`, or `LEFT("abc", T)`)
+    reached the database unguarded. On SQLite, MariaDB, and MySQL, passing
+    non-numeric text returned 0 rather than raising `E_NOT_NUM`, so `ABS(T) == 0`
+    evaluated to TRUE for every row.
+    Numeric argument positions are now tracked across all built-in functions.
+    Arguments in numeric positions not known to be NUM are wrapped in
+    `numericGuard` on MariaDB, MySQL, and PostgreSQL; on dialects without a
+    numeric guard (SQLite, ANSI), translation safely refuses with
+    `E_SQL_UNSUPPORTED`.
+
+  - **Standardized ANSI `binaryCast`.**
+    ISO/IEC 9075-2 specifies `BLOB` rather than MySQL's `BINARY`. `ansi.json`
+    now specifies `CAST({0} AS BLOB)` for `binaryCast`, and `mysql-family.json`
+    explicitly defines `CAST({0} AS BINARY)`.
+
+  - **SQLite TRIM family emits single-line SQL.**
+    SQLite's `TRIM`, `LTRIM`, and `RTRIM` templates now concatenate character
+    codes via `' ' || char(9) || char(13) || char(10)` rather than embedding
+    raw tab, CR, and newline literals inside JSON string templates, preventing
+    multi-line query emissions while preserving exact whitespace stripping.
+
+  - **Cross-host Map Replay comparison.**
+    `tools/check.sh` now asserts that all five hosts produce byte-identical
+    summary output (rebuilding registrations and lookups compared) during
+    sql map replay.
+
+  - **TypeScript definitions shipped.**
+    `js/src/sel.d.ts`, `js/src/sql.d.ts`, and `js/src/sql/index.d.ts` are now
+    provided and declared via `"types": "./js/src/sel.d.ts"` in `package.json`.
+
+  - **Python integration example.**
+    `examples/integration-python.py` added to mirror the JS and PHP worked
+    integration examples with byte-identical output.
+
+conformance 631 · sql cases 454 · mutations 161
+
 ## 0.6.0 — 2026-09-09
 
 **If you registered your own dialect with `extends: 'ansi'` and overrode

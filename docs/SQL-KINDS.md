@@ -96,47 +96,46 @@ of them. PostgreSQL is compliant by erroring; the other three are not.
 
 ### 4.1a Not a cell: everything that is a numeric position but not an operand
 
-Every function that reads an argument as a number has the same hole, and it is
-the widest of the three:
+Every function that reads an argument as a number tracks its numeric argument
+positions, and an argument not known to be NUM passes through `numericGuard`:
 
 `T` is a column declared `TEXT`, and SEL answers `E_NOT_NUM` for every one of
-these. Quoted from cases, so closing §4.1a turns them red — which is the point,
-since a document describing what is broken goes stale the moment it is fixed:
+these. Quoted from cases:
 
-```sel-case notaddressed.abs-over-a-text-column-is-not-guarded
+```sel-case warrant.numeric.abs-over-a-text-column
 ABS(T)
-    ABS(`t`)
+    ABS(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)
 ```
 
-```sel-case notaddressed.round-over-a-text-column-is-not-guarded
+```sel-case warrant.numeric.round-over-a-text-column
 ROUND(T, 2)
-    ROUND(`t`, 2)
+    ROUND(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 2)
 ```
 
-```sel-case notaddressed.max-over-a-text-column-is-not-guarded
+```sel-case warrant.numeric.max-over-a-text-column
 MAX(T, 1)
-    GREATEST(`t`, 1)
+    GREATEST(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 1)
 ```
 
-```sel-case notaddressed.floor-over-a-text-column-is-not-guarded
+```sel-case warrant.numeric.floor-over-a-text-column
 FLOOR(T)
-    FLOOR(`t`)
+    FLOOR(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)
 ```
 
-```sel-case notaddressed.power-over-a-text-column-is-not-guarded
+```sel-case warrant.numeric.power-over-a-text-column
 POWER(T, 2)
-    POWER(`t`, 2)
+    POWER(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END, 2)
 ```
 
-```sel-case notaddressed.a-text-column-as-a-length-is-not-guarded
+```sel-case warrant.numeric.a-text-column-as-a-length
 LEFT("abc", T)
-    LEFT('abc', `t`)
+    LEFT('abc', CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)
 ```
 
-Identical for TEXT and UNKNOWN. MariaDB answers `ABS('abc')` = 0, so
-`ABS(T) == 0` matches every row.
+Identical for TEXT and UNKNOWN. On dialects that cannot ask whether a value is a
+number (SQLite, ANSI), the translation is refused rather than emitting unguarded SQL.
 
-A **bare aggregate body** is the same thing wearing a different hat. The same
+A **bare aggregate body** is the remaining hole wearing a similar hat. The same
 program twice: first with `QTY` declared `TEXT`, then with it undeclared.
 
 ```sel-case notaddressed.an-aggregate-body-declared-text-is-refused
@@ -154,14 +153,7 @@ prefixes, so an undeclared field matches rows SEL refuses. A declared TEXT field
 is refused by the aggregate's own kind check -- it is only UNKNOWN that passes,
 exactly as in the bool cell before §8 closed it.
 
-All of it is missed by the operator work for one reason: these arrive on a
-different path. `binary()` and `unary()` are where the numeric guards go, and
-neither a call argument nor a bare aggregate body goes through either. A call
-reaches `requireArgumentKind`, which knows only the two hand-written allow-lists
-`BIN_ARGUMENT_OK` and `BOOL_ARGUMENT_OK`. Nothing anywhere records **which
-argument of which function is read as a number**.
-
-**The workaround, for anyone who needs it today.** Put the operand in an
+**The workaround for bare aggregate bodies.** Put the operand in an
 arithmetic expression and the operand guard fires on it:
 
 ```sel-case notaddressed.times-one-reaches-the-guard

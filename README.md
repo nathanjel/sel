@@ -302,9 +302,10 @@ is what the `=>` marks mean throughout this document.
 ## Integration patterns
 
 Runnable versions of everything below are in
-[`examples/integration-php.php`](examples/integration-php.php) and
-[`examples/integration-js.mjs`](examples/integration-js.mjs) — both print
-identical output.
+[`examples/integration-php.php`](examples/integration-php.php),
+[`examples/integration-js.mjs`](examples/integration-js.mjs) and
+[`examples/integration-python.py`](examples/integration-python.py) — all three
+print identical output.
 
 ### Compile once, run per request
 

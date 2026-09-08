@@ -16,7 +16,7 @@
 # so consumers need nothing on their include path but sel.hpp itself.
 
 cmake_minimum_required(VERSION 3.20)
-project(sel-lang VERSION 0.6.0 LANGUAGES CXX
+project(sel-lang VERSION 0.6.1 LANGUAGES CXX
         DESCRIPTION "A small expression language that evaluates identically on every host"
         HOMEPAGE_URL "https://github.com/nathanjel/sel")
 
@@ -59,7 +59,7 @@ endif()
 set_target_properties(sel-lang PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
-  PUBLIC_HEADER "sel.hpp;sel_sql.hpp")
+  PUBLIC_HEADER "sel.hpp;sel_sql.hpp;sel_sql_map.hpp;sel_sql_emit.hpp")
 
 # The build tree needs this directory so sel.cpp can reach third_party/srell/.
 # Consumers get only the installed include directory.
