@@ -77,6 +77,11 @@ holding 1 matched a row SEL refuses.
 Wrapping cannot fix it, because no dialect can ask "is this a boolean" -- in the
 MySQL family a boolean IS a TINYINT, so testing IN (0, 1) would also admit a NUM
 column SEL refuses. Declare the binding BOOL. See docs/SQL-KINDS.md.
+
+0:0 rather than a real position, and pinned so: asCondition is called on a
+finished Fragment, which carries a kind and no node, so this refusal has no
+source to point at. The LIST refusal beside it is the same. Every refusal the
+translator itself raises does carry one.
 --- dialect
 mariadb
 --- as
@@ -86,7 +91,7 @@ condition
 --- source
 F
 --- error
-E_SQL_SHAPE
+E_SQL_SHAPE 0:0
 ===
 ### name: refuse.relation-binding-used-as-a-value
 --- dialect

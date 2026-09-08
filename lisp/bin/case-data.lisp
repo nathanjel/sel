@@ -1567,7 +1567,7 @@
    :dialect "mariadb"
    :source "F"
    :expect nil
-   :error "E_SQL_SHAPE"
+   :error "E_SQL_SHAPE 0:0"
    :throws nil
    :params nil
    :as "condition"
@@ -1577,7 +1577,7 @@
    :bindings (lambda () (list (cons "F" (binding-column "flag" nil :unknown)))))
   (list
    :name "refuse.relation-binding-used-as-a-value"
-   :at "09-refusals.sqlt:91"
+   :at "09-refusals.sqlt:96"
    :dialect "mariadb"
    :source "ITEMS > 1"
    :expect nil
@@ -1591,7 +1591,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "refuse.columns-binding-used-as-a-value"
-   :at "09-refusals.sqlt:101"
+   :at "09-refusals.sqlt:106"
    :dialect "mariadb"
    :source "V > 1"
    :expect nil
@@ -1605,7 +1605,7 @@
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :num) (binding-column "b" nil :num))))))
   (list
    :name "refuse.indexing-a-relation-binding"
-   :at "09-refusals.sqlt:111"
+   :at "09-refusals.sqlt:116"
    :dialect "mariadb"
    :source "ITEMS[\"price\"] > 1"
    :expect nil
@@ -1619,7 +1619,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "refuse.alias-collision"
-   :at "09-refusals.sqlt:121"
+   :at "09-refusals.sqlt:126"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -1633,7 +1633,7 @@
    :bindings (lambda () (list (cons "A" (binding-relation "x" "t" (list ) nil nil)) (cons "B" (binding-relation "y" "t" (list ) nil nil)))))
   (list
    :name "refuse.indexing-a-plain-column"
-   :at "09-refusals.sqlt:131"
+   :at "09-refusals.sqlt:136"
    :dialect "mariadb"
    :source "T[1]"
    :expect nil
@@ -1647,7 +1647,7 @@
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
    :name "refuse.in-over-a-multi-field-relation"
-   :at "09-refusals.sqlt:140"
+   :at "09-refusals.sqlt:145"
    :dialect "mariadb"
    :source "SKU IN ITEMS"
    :expect nil
@@ -5775,7 +5775,7 @@
    :dialect "sqlite"
    :source "U == 25"
    :expect nil
-   :error "E_SQL_UNSUPPORTED"
+   :error "E_SQL_UNSUPPORTED 1:1"
    :throws nil
    :params nil
    :as nil
@@ -5831,7 +5831,7 @@
    :dialect "mariadb"
    :source "U AND TRUE"
    :expect nil
-   :error "E_SQL_SHAPE"
+   :error "E_SQL_SHAPE 1:1"
    :throws nil
    :params nil
    :as nil

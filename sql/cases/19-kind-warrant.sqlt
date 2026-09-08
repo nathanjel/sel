@@ -119,7 +119,7 @@ sqlite
 --- source
 U == 25
 --- error
-E_SQL_UNSUPPORTED
+E_SQL_UNSUPPORTED 1:1
 ===
 ### name: warrant.numeric.unary-minus-is-guarded
 --- note
@@ -177,7 +177,7 @@ mariadb
 --- source
 U AND TRUE
 --- error
-E_SQL_SHAPE
+E_SQL_SHAPE 1:1
 ===
 ### name: warrant.numeric.the-guard-reaches-into-a-relation-body
 --- note

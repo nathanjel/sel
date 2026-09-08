@@ -14,7 +14,14 @@
     "the driver fails if a rule selects every order or none, because a rule that",
     "does agrees for no reason.",
     "",
-    "`correlate.raw` is raw SQL by design -- it is the one place a host says something the map cannot know -- and raw SQL does not travel between dialects. So it is written per dialect here, and the driver picks. Backticks are MySQL-family and SQLite; PostgreSQL wants double quotes."
+    "`correlate.raw` is raw SQL by design -- it is the one place a host says something the map cannot know -- and raw SQL does not travel between dialects. So it is written per dialect here, and the driver picks. Backticks are MySQL-family and SQLite; PostgreSQL wants double quotes.",
+    "",
+    "A rule may also state that a dialect REFUSES it (`refuse`, per dialect),",
+    "which rows over a text column SEL itself refuses (`raises`), and -- only for",
+    "docs/SQL-KINDS.md section 6's exclusion 4 -- an answer the database is",
+    "allowed to give that SEL does not (`database`, with `excluded` saying why).",
+    "Refused rows are absent from what SEL selects, so the ordinary comparison is",
+    "the warrant: SQL must not report a match for a row SEL would not answer for."
   ],
   "fixture": {
     "mariadb": "fixture-mysql-family.sql",
@@ -79,6 +86,11 @@
           "table": "oi",
           "column": "sku",
           "type": "TEXT"
+        },
+        "VALUE": {
+          "table": "oi",
+          "column": "value",
+          "type": "TEXT"
         }
       }
     },
@@ -102,22 +114,36 @@
           "type": "TEXT"
         }
       }
+    },
+    "CODE": {
+      "kind": "column",
+      "table": "o",
+      "column": "code",
+      "type": "TEXT"
+    },
+    "CODE_U": {
+      "kind": "column",
+      "table": "o",
+      "column": "code"
     }
   },
   "context": {
-    "query": "SELECT id, credit_limit FROM o ORDER BY id",
+    "query": "SELECT id, credit_limit, code, code AS code_u FROM o ORDER BY id",
     "key": "id",
     "columns": {
-      "credit_limit": "CREDIT_LIMIT"
+      "credit_limit": "CREDIT_LIMIT",
+      "code": "CODE",
+      "code_u": "CODE_U"
     },
     "children": {
       "ITEMS": {
-        "query": "SELECT order_id, qty, price, sku FROM order_items ORDER BY order_id, sku",
+        "query": "SELECT order_id, qty, price, sku, value FROM order_items ORDER BY order_id, sku",
         "parent": "order_id",
         "columns": {
           "qty": "QTY",
           "price": "PRICE",
-          "sku": "SKU"
+          "sku": "SKU",
+          "value": "VALUE"
         }
       },
       "SKUS": {
@@ -180,7 +206,10 @@
         2,
         3,
         4
-      ]
+      ],
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      }
     },
     {
       "name": "filtered lines all cheap",
@@ -224,6 +253,101 @@
     {
       "name": "a NULL matched positively still answers",
       "sel": "ANY(ITEMS, I, I[\"SKU\"] IN NOTES)"
+    },
+    {
+      "name": "a text column compared as a number",
+      "why": "The report this came from, reduced: a VARCHAR column of EAV values compared numerically. MariaDB reads '25/298' as 25 and 'x' and '' as 0, so before the guard this selected orders 1, 2, 3 and 4 -- three of them rows SEL refuses. sqlite cannot ask whether a value is a number -- no REGEXP, and CAST answers 0 for 'abc' rather than saying so -- so it has no numericGuard and the rule is refused rather than emitted unguarded. docs/SQL-KINDS.md section 5.",
+      "sel": "CODE == 25",
+      "expect": [
+        1
+      ],
+      "raises": [
+        2,
+        3,
+        4
+      ],
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      }
+    },
+    {
+      "name": "an undeclared column compared as a number",
+      "why": "The same column with no declared type, which is what an application gets when it does not say. UNKNOWN takes the guard for the same reason TEXT does, and this is the only place that path is measured against a server.",
+      "sel": "CODE_U == 25",
+      "expect": [
+        1
+      ],
+      "raises": [
+        2,
+        3,
+        4
+      ],
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      }
+    },
+    {
+      "name": "arithmetic over a text column",
+      "why": "Comparison is not the only numeric context. `* 1` is also the workaround docs/SQL-KINDS.md section 4.1a offers for the function-argument family, so this is the rule that says the workaround actually works on a server.",
+      "sel": "CODE * 1 == 25",
+      "expect": [
+        1
+      ],
+      "raises": [
+        2,
+        3,
+        4
+      ],
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      }
+    },
+    {
+      "name": "the guard inside a correlated subquery",
+      "why": "ALL needs no exclusion: it refuses on any bad element whatever the order, and NOT EXISTS (... IS NOT TRUE) turns the guard's NULL into FALSE. Orders 1 and 2 hold a non-numeric value and SEL refuses both; order 4 answers FALSE on a numeric 0 without reaching anything bad.",
+      "sel": "ALL(ITEMS, _[\"VALUE\"] > 0)",
+      "expect": [
+        3,
+        5
+      ],
+      "raises": [
+        1,
+        2
+      ],
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      }
+    },
+    {
+      "name": "ANY over a relation with one bad element",
+      "why": "docs/SQL-KINDS.md section 6, exclusion 4, made runnable. SEL's ANY short-circuits, so it reaches AB-1000's 'x' first and refuses order 1; SQL's EXISTS has no order and answers TRUE on CD-2000's 9. SEL has no single answer to be faithful to -- the other ordering answers TRUE -- so the warrant holds only in its weakened form. The guard changes nothing here either way, and order 2, whose only element is bad, is excluded by both sides.",
+      "sel": "ANY(ITEMS, _[\"VALUE\"] > 3)",
+      "expect": [
+        4
+      ],
+      "raises": [
+        1,
+        2
+      ],
+      "database": [
+        1,
+        4
+      ],
+      "excluded": "SQL-KINDS.md section 6 exclusion 4: ANY short-circuits and a relation has no order",
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      }
+    },
+    {
+      "name": "an undeclared column used as a boolean",
+      "why": "The other half of the warrant, and the half with no guard: no dialect can ask whether a value is a boolean, because in the MySQL family a boolean IS a TINYINT. Every dialect refuses, so no server is reached -- which is the point.",
+      "sel": "NOT CODE_U",
+      "refuse": {
+        "mariadb": "E_SQL_SHAPE",
+        "mysql": "E_SQL_SHAPE",
+        "postgresql": "E_SQL_SHAPE",
+        "sqlite": "E_SQL_SHAPE"
+      }
     }
   ]
 }

@@ -549,18 +549,42 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
     $bad = [];
     $ok = 0;
     $refused = 0;
+    $raisedRules = 0;
     foreach ($spec['rules'] as $rule) {
+        // A rule this dialect cannot express is an outcome, not a failure --
+        // sqlite has no REGEXP, so the SKU-format rule is not a rule it can be
+        // asked, and saying so is the whole point of refusal. But it has to be
+        // an outcome the corpus NAMED. Counting refusals silently made this
+        // whole oracle unfailable: a translator that refused every rule scored
+        // "0 agree, 0 differ, 13 refused" and returned green, which is
+        // docs/history/SQL-TESTING.md's Class G in the one lane meant to be
+        // beyond it. `refuse` is per dialect because refusal is: the same rule
+        // translates on mariadb and cannot on sqlite, and that difference is
+        // the thing worth asserting.
+        $mustRefuse = $rule['refuse'][$dialect] ?? null;
         try {
             $program = Sel::compile($rule['sel']);
             $frag = Sql::translate($program, $dialect, $bindings);
         } catch (SqlError $e) {
-            // A rule this dialect cannot express is an outcome, not a failure.
-            // sqlite has no REGEXP, so the SKU-format rule simply is not a rule
-            // it can be asked -- and saying so is the whole point of refusal.
+            if ($mustRefuse === null) {
+                $bad[] = [$rule['name'], '', "refused {$e->code} and nothing said it would; "
+                    . 'if that is right, say so: "refuse": {"' . $dialect . '": "' . $e->code . '"}'];
+                continue;
+            }
+            if ($e->code !== $mustRefuse) {
+                $bad[] = [$rule['name'], '',
+                    "refused {$e->code} where the corpus expects {$mustRefuse}"];
+                continue;
+            }
             $refused++;
             if ($verbose) {
-                printf("  refused  %-28s %s\n", $rule['name'], $e->code);
+                printf("  refused  %-38s %s\n", $rule['name'], $e->code);
             }
+            continue;
+        }
+        if ($mustRefuse !== null) {
+            $bad[] = [$rule['name'], '',
+                "translated, where the corpus expects {$mustRefuse} on {$dialect}"];
             continue;
         }
         try {
@@ -571,11 +595,36 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
             continue;
         }
 
+        // A row SEL REFUSES is the whole subject of docs/SQL-KINDS.md, and until
+        // this loop caught SelError there was no way to write one down: an
+        // E_NOT_NUM here aborted the run with an uncaught exception, so every
+        // rule in the corpus had to be one SEL could answer for every row. That
+        // is why all 13 declared their bindings and compared numbers only over
+        // NUM columns -- the fixture could not express the question the warrant
+        // is about.
+        //
+        // Refused rows are simply absent from $sel, so the ordinary $db === $sel
+        // comparison below IS the warrant: SQL must not report a match for a row
+        // SEL would not answer for.
         $sel = [];
+        $raised = [];
         foreach ($ctx as $id => $row) {
-            if ($program->run($row)->asBool()) {
-                $sel[] = $id;
+            try {
+                if ($program->run($row)->asBool()) {
+                    $sel[] = $id;
+                }
+            } catch (SelError $e) {
+                $raised[] = $id;
             }
+        }
+        if ($raised !== ($rule['raises'] ?? [])) {
+            $bad[] = [$rule['name'], $sql, 'SEL refuses [' . implode(',', $raised)
+                . '] but rows.json says it refuses [' . implode(',', $rule['raises'] ?? [])
+                . ']; the fixture and the corpus have drifted apart'];
+            continue;
+        }
+        if ($raised !== []) {
+            $raisedRules++;
         }
 
         // The rule has to be able to disagree before its agreeing means
@@ -594,22 +643,42 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
                 . ']; the fixture and the corpus have drifted apart'];
             continue;
         }
-        if ($db !== $sel) {
+
+        // §6's exclusion 4, and the only thing in this file allowed to differ.
+        // `ANY` short-circuits, so SEL's answer over a relation depends on
+        // element order and a relation has no order; SQL's EXISTS skips the bad
+        // row and answers TRUE. A rule that claims the exclusion has to say
+        // which rows it claims it for and why, because otherwise the exclusion
+        // is a hole any future divergence can hide in.
+        $want = $sel;
+        if (isset($rule['database'])) {
+            if (!isset($rule['excluded'])) {
+                $bad[] = [$rule['name'], $sql,
+                    '"database" states an answer that differs from SEL, which only '
+                    . 'docs/SQL-KINDS.md §6 permits -- name the exclusion in "excluded"'];
+                continue;
+            }
+            $want = $rule['database'];
+        }
+        if ($db !== $want) {
             $bad[] = [$rule['name'], $sql,
-                'SQL=[' . implode(',', $db) . ']  SEL=[' . implode(',', $sel) . ']'];
+                'SQL=[' . implode(',', $db) . ']  SEL=[' . implode(',', $sel) . ']'
+                . ($raised === [] ? '' : '  (SEL refuses [' . implode(',', $raised) . '])')];
             continue;
         }
         $ok++;
         if ($verbose) {
-            printf("  ok       %-28s [%s]\n", $rule['name'], implode(',', $sel));
+            printf("  ok       %-38s [%s]%s\n", $rule['name'], implode(',', $sel),
+                $raised === [] ? '' : '  refuses [' . implode(',', $raised) . ']');
         }
     }
 
     foreach ($bad as [$name, $sql, $why]) {
         printf("DIFFER  %s\n        %s\n        %s\n", $name, $sql, $why);
     }
-    printf("{$label}rows: %d rules agree, %d differ, %d refused, over %d orders\n",
-        $ok, count($bad), $refused, $total);
+    printf("{$label}rows: %d rules agree, %d differ, %d refused, over %d orders"
+        . " (%d of them over rows SEL itself refuses)\n",
+        $ok, count($bad), $refused, $total, $raisedRules);
 
     return ['failed' => count($bad)];
 }
