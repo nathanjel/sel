@@ -64,8 +64,10 @@ class SqlError : public std::exception {
 // --- kinds ------------------------------------------------------------------
 
 // The static kind a fragment produces. UNKNOWN is honest rather than absent: a
-// column whose binding did not declare a type passes every kind guard, because
-// the binding did not say and nothing here can either.
+// column whose binding did not declare a type is one nothing here can vouch for.
+// Where the server can be asked the question instead -- is this a number? -- the
+// operand is wrapped and translation continues; where it cannot -- is this a
+// boolean? -- the expression is refused.
 enum class SqlKind { Num, Text, Bool, Bin, Unknown, List };
 
 std::string_view kind_name(SqlKind k);
@@ -105,11 +107,11 @@ class Fragment {
   // which is not a SQL value at all.
   std::string as_value(Mode mode = Mode::Inline) const;
 
-  // Usable as a condition. BOOL as it stands; UNKNOWN wrapped in the dialect's
-  // IS TRUE test, since a column of unknown type may be NULL and SEL has no
-  // third truth value to give back. A NUM or TEXT fragment is refused rather
-  // than accepted: silently allowing `WHERE o.total` is how a database turns a
-  // validation rule into the truthiness test SEL spent its design avoiding.
+  // Usable as a condition. BOOL and nothing else: every other kind is refused,
+  // UNKNOWN included, because no dialect can ask whether a value is a boolean
+  // and answering anyway matched rows SEL refuses. Silently allowing `WHERE
+  // o.total` is how a database turns a validation rule into the truthiness test
+  // SEL spent its design avoiding.
   std::string as_condition(Mode mode = Mode::Inline) const;
 
   // The bound values for Params mode, in PLACEHOLDER order -- derived from the

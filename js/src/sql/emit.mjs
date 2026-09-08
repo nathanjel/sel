@@ -8,7 +8,7 @@ import * as map from './map.mjs';
 import { refuse } from './errors.mjs';
 // fragment.mjs imports this module back. ESM resolves the cycle because neither
 // side touches the other's binding while the modules are still evaluating —
-// Fragment is referenced only inside textOperand(), which runs long afterwards.
+// Fragment is referenced only inside method bodies, which run long afterwards.
 // Python needs a function-local import here for the same reason; ESM does not.
 import { Fragment } from './fragment.mjs';
 
@@ -175,6 +175,35 @@ export class Emit {
   dialect() { return this._dialect; }
 
   lex(key) { return map.lexical(this._dialect, key); }
+
+  // An operand a numeric context will read as a number, made safe to read.
+  //
+  // SEL raises E_NOT_NUM for text that is not a number, and the server does not:
+  // CAST('x' AS DECIMAL) is 0 on MariaDB, MySQL and SQLite, so a rule comparing
+  // against 0 matched every row of a text column. Wrapping the operand so a
+  // non-number becomes NULL keeps the warrant — NULL is not selected, which is
+  // what SEL failing has to look like from SQL.
+  //
+  // Not applied to a NUM operand: the binding said it is a number, and that
+  // declaration is where the promise transfers. It is also the only way to keep
+  // the index, since the guard is a function of the column.
+  //
+  // The pattern is SEL's own numeral grammar and lives in the map beside
+  // funcs.ISNUM, which asks the same question; tools/gen-sql-map.mjs requires the
+  // two to agree. A dialect that cannot ask it — sqlite has no REGEXP, ansi has
+  // no regex — declares no numericGuard, and this refuses rather than emitting
+  // something that answers when SEL would not.
+  numericOperand(f, pos = null) {
+    if (f.kind === 'NUM') return f;
+    const guard = this.lex('numericGuard');
+    if (typeof guard !== 'string') {
+      refuse('E_SQL_UNSUPPORTED',
+        `dialect ${this._dialect} has no way to ask whether a value is a number, `
+        + 'so an operand it has not been told is one cannot be read as one here; '
+        + 'declare the binding NUM if the column really is numeric', pos);
+    }
+    return new Fragment(this.fill(guard, [f], pos), 'NUM', this._dialect);
+  }
 
   // An operand of a byte comparison: cast to a character type, then given the
   // dialect's binary collation.

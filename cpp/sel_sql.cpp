@@ -116,17 +116,13 @@ std::string Fragment::as_value(Mode mode) const {
 
 std::string Fragment::as_condition(Mode mode) const {
   if (kind_ == SqlKind::Bool) return join(mode);
-  if (kind_ == SqlKind::Unknown) {
-    const std::string_view tpl = lex_text(dialect_, "isTrue");
-    const std::string body = join(mode);
-    std::string out;
-    std::size_t i = 0;
-    while (i < tpl.size()) {
-      if (tpl.compare(i, 3, "{0}") == 0) { out += body; i += 3; }
-      else out += tpl[i++];
-    }
-    return out;
-  }
+  // UNKNOWN was wrapped in isTrue here rather than trusted, which folds NULL to
+  // false but not a number: `1 IS TRUE` is TRUE on MariaDB, and SEL raises
+  // E_NOT_BOOL for a number in a condition. Wrapping cannot fix that, so an
+  // undeclared column is no longer a condition; declare the binding BOOL. Which
+  // leaves nothing in this layer reading isTrue, and it stays in the map anyway:
+  // it is published vocabulary, and the aggregate skeletons spell the same test
+  // on a body already known to be BOOL.
   refuse("E_SQL_SHAPE",
          "a condition must be BOOL, and this expression is " +
              std::string(kind_name(kind_)) +

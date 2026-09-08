@@ -204,6 +204,21 @@ std::string Emit::column(const std::string& table, const std::string& col) const
   return ident(table) + "." + ident(col);
 }
 
+Fragment Emit::numeric_operand(const Fragment& f, Pos pos) const {
+  if (f.kind() == SqlKind::Num) return f;
+  const Lexical* guard = lex("numericGuard");
+  if (!guard || guard->kind != LexKind::Text) {
+    refuse("E_SQL_UNSUPPORTED",
+           "dialect " + dialect_ +
+               " has no way to ask whether a value is a number, so an operand "
+               "it has not been told is one cannot be read as one here; declare "
+               "the binding NUM if the column really is numeric",
+           pos);
+  }
+  const Fragment one[] = {f};
+  return Fragment(fill(guard->text, one, pos), SqlKind::Num, dialect_);
+}
+
 Fragment Emit::text_operand(const Fragment& f) const {
   const Lexical* cast = lex("textCast");
   const Lexical* collate = lex("textCollate");

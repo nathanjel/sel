@@ -1,0 +1,153 @@
+% The kind warrant, pinned. docs/SQL-KINDS.md is the statement of it.
+%
+%   SQL never reports a match for a row SEL would have refused.
+%
+% SEL raises E_NOT_NUM for text that is not a number, and the server does not:
+% CAST('x' AS DECIMAL) is 0 on MariaDB, MySQL and SQLite, so `T == 0` over a text
+% column matched every row and `T == 25` matched every "25/..." value. Reported
+% from the field against a MariaDB EAV schema.
+%
+% An operand nobody has vouched for is therefore wrapped, so a value SEL would
+% refuse becomes NULL -- which is not selected, which is what SEL failing has to
+% look like from SQL. Declaring the binding NUM buys the plain comparison back,
+% and it is the only thing that does: that declaration is where the promise
+% transfers from this layer to the application.
+%
+% What this file does NOT cover is the same defect in a function argument:
+% ABS(T), ROUND(T, 2) and MAX(T, 1) all still emit bare over a text column.
+% Closing that needs a table of which argument of which function is read as a
+% number, and nothing records it today. See docs/SQL-KINDS.md 4.1a.
+
+### name: warrant.numeric.a-text-column-is-guarded
+--- note
+The reported shape. Was `(CAST(`t` AS DECIMAL(65,10)) = 25)`, which MariaDB
+answers TRUE for the stored value "25/298".
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T == 25
+--- expect
+(CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END = 25)
+===
+### name: warrant.numeric.either-side-is-guarded
+--- note
+Neither side of a numeric operator is privileged, and every other case here puts
+the column on the left. Without this one a guard applied to the left operand
+only would pass the whole file.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+25 == T
+--- expect
+(25 = CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)
+===
+### name: warrant.numeric.an-undeclared-column-is-guarded
+--- note
+UNKNOWN is the default binding type, and under this warrant it is the safe
+default rather than the silent one: not declaring gets the guard, and declaring
+NUM is what opts out of it.
+--- dialect
+mariadb
+--- bindings
+{"U": {"kind": "column", "column": "u"}}
+--- source
+U == 25
+--- expect
+(CASE WHEN (`u` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`u` AS DECIMAL(65,10)) ELSE NULL END = 25)
+===
+### name: warrant.numeric.a-declared-num-is-not-guarded
+--- note
+The other side, and the incentive. A binding that says NUM is vouched for, so
+the comparison is plain and the column keeps its index -- the guard is a
+function of the column and would lose it.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+N == 25
+--- expect
+(`n` = 25)
+===
+### name: warrant.numeric.a-constant-is-not-guarded
+--- note
+A constant is settled at translation time by the const.numeric.* family -- it
+either IS a number or the expression is refused -- so guarding it would ask the
+server a question already answered here, and would cost a bound value a second
+parameter for the repeated slot.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+N == "5"
+--- expect
+(CAST(`n` AS DECIMAL(65,10)) = CAST('5' AS DECIMAL(65,10)))
+===
+### name: warrant.numeric.postgresql-asks-through-a-text-cast
+--- note
+The same question in the dialect's own spelling, and the one entry that fills a
+lexical from inside another: `~` needs text, so the operand is cast before it is
+tested. The pattern is SEL's numeral grammar, and tools/gen-sql-map.mjs requires
+it to match funcs.ISNUM, which sql/oracle/ checks against a real server.
+--- dialect
+postgresql
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T == 25
+--- expect
+(CASE WHEN (CAST("t" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("t" AS NUMERIC) ELSE NULL END = 25)
+===
+### name: warrant.numeric.sqlite-cannot-ask-and-refuses
+--- note
+SQLite has no REGEXP and ANSI has no regex, so neither can ask whether a value is
+a SEL number -- which is why funcs.ISNUM is unmapped on both, in the map's own
+words. A dialect that cannot ask declares no numericGuard, and the absence is the
+refusal: better no SQL than SQL that answers where SEL would not.
+
+This is the one place the warrant takes functionality away rather than making it
+safer. Declaring the binding NUM translates it again.
+--- dialect
+sqlite
+--- bindings
+{"U": {"kind": "column", "column": "u"}}
+--- source
+U == 25
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: warrant.bool.an-undeclared-column-is-not-a-boolean
+--- note
+The other half of the warrant. MariaDB answers `1 AND TRUE` as TRUE, so an
+undeclared column holding 1 matched a row SEL refuses with E_NOT_BOOL, and
+PostgreSQL raises 42804 instead. A refusal and not a guard, because no dialect
+can ask "is this a boolean": in the MySQL family a boolean IS a TINYINT, so
+testing IN (0, 1) would also admit a NUM column that SEL refuses.
+--- dialect
+mariadb
+--- bindings
+{"U": {"kind": "column", "column": "u"}}
+--- source
+U AND TRUE
+--- error
+E_SQL_SHAPE
+===
+### name: warrant.numeric.the-guard-reaches-into-a-relation-body
+--- note
+The shape the report actually came from: an EAV table, one row per value, read
+through an aggregate. The guard applies to the field inside the correlated
+subquery, so a row whose value is not a number contributes NULL, is not TRUE,
+and does not make the EXISTS match.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "TEXT"}}, "correlate": "`oi`.`o`=`o`.`id`"}}
+--- source
+ANY(ITEMS, _["QTY"] == 25)
+--- expect
+EXISTS (SELECT 1 FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id` AND ((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END = 25)) IS TRUE)

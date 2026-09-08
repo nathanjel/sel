@@ -260,7 +260,7 @@ int replay_register() {
               "join", EntrySpec::withdraw("LISTAGG is SQL:2016 and is spelled differently by every server that has it"));
   ++calls;
   Map::define_dialect("mysql-family~replay",
-                      DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_bin").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("textCast", "CAST({0} AS CHAR)"));
+                      DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_bin").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("numericGuard", "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END").lexical("textCast", "CAST({0} AS CHAR)"));
   ++calls;
   Map::define("mysql-family~replay", Section::Ops,
               "*", EntrySpec::tpl("({0} * {1})", "NUM").caveat("scale-limit"));
@@ -371,7 +371,7 @@ int replay_register() {
                       DialectSpec::extending("mysql-family~replay").version("8.4").target(true));
   ++calls;
   Map::define_dialect("postgresql~replay",
-                      DialectSpec::extending("ansi~replay").version("15").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "'\\x{hex}'::bytea").lexical("numericLiteral", "{0}").lexical("textCollate", " COLLATE \"C\"").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("binaryCast", "convert_to(CAST({0} AS TEXT), 'UTF8')").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?"));
+                      DialectSpec::extending("ansi~replay").version("15").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "'\\x{hex}'::bytea").lexical("numericLiteral", "{0}").lexical("textCollate", " COLLATE \"C\"").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("numericGuard", "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END").lexical("binaryCast", "convert_to(CAST({0} AS TEXT), 'UTF8')").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?"));
   ++calls;
   Map::define("postgresql~replay", Section::Ops,
               "+", EntrySpec::tpl("({numericCast:0} + {numericCast:1})", "NUM"));

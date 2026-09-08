@@ -78,7 +78,12 @@ mariadb
 ### name: op.compare.coerce-variant-when-a-side-is-not
 --- note
 SEL's == compares numerically after aligning scale, so "5.00" == "5" is TRUE.
-A bare = between two text columns compares text and would say FALSE.
+A bare = between two text columns compares text and would say FALSE. So the
+comparison stays numeric -- what changed is that the operand is guarded first.
+
+CAST alone answered 0 for 'abc', and 'abc' == 0 then matched. The guard makes a
+value that is not a SEL number NULL instead, which is not selected, which is
+what SEL raising E_NOT_NUM has to look like from SQL. See docs/SQL-KINDS.md.
 --- dialect
 mariadb
 --- bindings
@@ -86,7 +91,7 @@ mariadb
 --- source
 A == 5
 --- expect
-(CAST(`a` AS DECIMAL(65,10)) = CAST(5 AS DECIMAL(65,10)))
+(CASE WHEN (`a` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END = 5)
 ===
 ### name: op.compare.coerce-variant-for-unknown-columns
 --- dialect
@@ -96,7 +101,7 @@ mariadb
 --- source
 A >= 10
 --- expect
-(CAST(`a` AS DECIMAL(65,10)) >= CAST(10 AS DECIMAL(65,10)))
+(CASE WHEN (`a` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END >= 10)
 ===
 ### name: op.compare.text-family-forces-a-binary-collation
 --- note

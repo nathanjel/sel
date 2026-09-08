@@ -308,7 +308,8 @@ export const DIALECTS = {
       "isTrue": "({0}) IS TRUE",
       "isNotTrue": "({0}) IS NOT TRUE",
       "placeholder": "?",
-      "textCast": "CAST({0} AS CHAR)"
+      "textCast": "CAST({0} AS CHAR)",
+      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
     },
     "ops": {
       "+": {
@@ -681,7 +682,8 @@ export const DIALECTS = {
       "isTrue": "({0}) IS TRUE",
       "isNotTrue": "({0}) IS NOT TRUE",
       "placeholder": "?",
-      "textCast": "CAST({0} AS CHAR)"
+      "textCast": "CAST({0} AS CHAR)",
+      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
     },
     "ops": {
       "+": {
@@ -1053,7 +1055,8 @@ export const DIALECTS = {
       "isTrue": "({0}) IS TRUE",
       "isNotTrue": "({0}) IS NOT TRUE",
       "placeholder": "?",
-      "textCast": "CAST({0} AS CHAR)"
+      "textCast": "CAST({0} AS CHAR)",
+      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
     },
     "ops": {
       "+": {
@@ -1424,7 +1427,8 @@ export const DIALECTS = {
       "isTrue": "(({0}) IS TRUE)",
       "isNotTrue": "(({0}) IS NOT TRUE)",
       "placeholder": "?",
-      "textCast": "CAST({0} AS TEXT)"
+      "textCast": "CAST({0} AS TEXT)",
+      "numericGuard": "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"
     },
     "ops": {
       "+": {
@@ -2542,7 +2546,8 @@ export const RULES = {
     "binaryCast": "string",
     "isTrue": "string",
     "isNotTrue": "string",
-    "placeholder": "string"
+    "placeholder": "string",
+    "numericGuard": "string"
   },
   "templateKeys": [
     "identQuote",
@@ -2557,6 +2562,7 @@ export const RULES = {
     "binaryCast",
     "isTrue",
     "isNotTrue",
-    "placeholder"
+    "placeholder",
+    "numericGuard"
   ]
 };

@@ -333,6 +333,7 @@ final class Translator
         } else {
             $this->requireNotBool($x, $n['x']['pos'], $n['op']);
             $this->requireNumericConstant($n['x']);
+            $x = $this->guardNumeric($x, $n['x']);
         }
         return $this->apply('ops', $n['op'], [$x], $n['pos']);
     }
@@ -369,6 +370,11 @@ final class Translator
             // stays that way.
             $this->requireNumericConstant($n['l']);
             $this->requireNumericConstant($n['r']);
+            // And an operand nobody has vouched for is wrapped so that a value
+            // SEL would refuse becomes NULL rather than a number the server
+            // invented. A NUM operand passes through untouched.
+            $l = $this->guardNumeric($l, $n['l']);
+            $r = $this->guardNumeric($r, $n['r']);
         }
         // The `$` family and `&`, not EQL and IN: those two are structural and
         // `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
@@ -1719,25 +1725,28 @@ final class Translator
     }
 
     /**
-     * SEL has no truthiness, and the point of translating is not to acquire
-     * some. UNKNOWN passes, because a column of undeclared type may well be
-     * boolean and the database is the one that knows.
+     * Wrap an operand the numeric context cannot be sure of.
      *
-     * @param array{line:int,col:int,offset:int} $pos
+     * A constant is skipped, because requireNumericConstant has just proved it
+     * IS a number -- guarding it would ask the server a question already
+     * answered here, and would cost a bound value a second parameter for the
+     * repeated slot. What is left is what could not be settled at translation
+     * time: columns, raw, relation fields.
+     *
+     * @param array<string,mixed> $n
      */
-    /**
-     * A number was expected and a boolean cannot become one.
-     *
-     * UNKNOWN passes, as everywhere: the binding did not say, so nothing here
-     * can either. Only a *declared* BOOL is refused, which is the same line the
-     * byte-comparison guard draws.
-     *
-     * @param array{line:int,col:int,offset:int} $pos
-     */
+    private function guardNumeric(Fragment $f, array $n): Fragment
+    {
+        if (Constants::isConstant($n, $this->constNames)) {
+            return $f;
+        }
+        return $this->emit->numericOperand($f, $n['pos']);
+    }
+
     /**
      * An operand in a numeric position whose value is knowable here.
      *
-     * The kind guards above ask what the binding *declared*; this asks what the
+     * The kind guards ask what the binding *declared*; this asks what the
      * constant *is*, which is a different and stronger question wherever the
      * answer is written down. See Constants::requireNumeric for why refusing
      * loses nothing, and for why it is never keyed on a declared kind.
@@ -1751,6 +1760,16 @@ final class Translator
         }
     }
 
+    /**
+     * A number was expected and a boolean cannot become one.
+     *
+     * UNKNOWN passes here: this guard is about kinds that make a number
+     * *impossible*, and an undeclared column is not one of them. What happens
+     * to an UNKNOWN operand afterwards is guardNumeric's business, not this
+     * one's.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
     private function requireNotBool(Fragment $f, array $pos, string $where): void
     {
         // spec §4: "BOOL and BIN are never numbers". The guard implemented the
@@ -1784,9 +1803,24 @@ final class Translator
             . 'SEL answers E_NOT_TEXT here rather than spelling it 1 or true', $pos);
     }
 
+    /**
+     * SEL has no truthiness, and the point of translating is not to acquire
+     * some. A declared BOOL, and nothing else.
+     *
+     * UNKNOWN used to pass, on the reasoning that an undeclared column may well
+     * be boolean and the database is the one that knows. Measured, it does not:
+     * MariaDB answers `1 AND TRUE` as TRUE, so an undeclared column holding 1
+     * matched a row SEL refuses with E_NOT_BOOL, and PostgreSQL raises 42804
+     * instead. Nor can it be wrapped, because no dialect can ask "is this a
+     * boolean" -- in the MySQL family a boolean IS a TINYINT, so testing
+     * IN (0, 1) would also admit a NUM column SEL refuses. Refusing is the only
+     * answer that keeps the warrant; see docs/SQL-KINDS.md.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
     private function requireBool(Fragment $f, array $pos, string $where): Fragment
     {
-        if ($f->kind === 'BOOL' || $f->kind === 'UNKNOWN') {
+        if ($f->kind === 'BOOL') {
             return $f;
         }
         refuse('E_SQL_SHAPE',

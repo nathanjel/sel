@@ -309,6 +309,7 @@ export class Translator {
     } else {
       this.requireNotBool(x, n.x.pos, n.op);
       this.requireNumericConstant(n.x);
+      x = this.guardNumeric(x, n.x);
     }
     return this.apply('ops', n.op, [x], n.pos);
   }
@@ -337,6 +338,11 @@ export class Translator {
       // BOOL guard, not before: `TRUE + 1` is E_SQL_SHAPE and stays that way.
       this.requireNumericConstant(n.l);
       this.requireNumericConstant(n.r);
+      // And an operand nobody has vouched for is wrapped so that a value SEL
+      // would refuse becomes NULL rather than a number the server invented. A
+      // NUM operand passes through untouched.
+      l = this.guardNumeric(l, n.l);
+      r = this.guardNumeric(r, n.r);
     }
     // The `$` family and `&`, not EQL and IN: those two are structural and
     // `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
@@ -1247,6 +1253,18 @@ export class Translator {
       + 'answers E_NOT_TEXT here rather than spelling it 1 or true', pos);
   }
 
+  // Wrap an operand the numeric context cannot be sure of.
+  //
+  // A constant is skipped, because requireNumericConstant has just proved it IS
+  // a number — guarding it would ask the server a question already answered
+  // here, and would cost a bound value a second parameter for the repeated slot.
+  // What is left is what could not be settled at translation time: columns, raw,
+  // relation fields.
+  guardNumeric(f, n) {
+    if (constants.isConstant(n, this.constNames)) return f;
+    return this.emit.numericOperand(f, n.pos);
+  }
+
   // An operand in a numeric position whose value is knowable here.
   //
   // The guards above ask what the binding *declared*; this asks what the constant
@@ -1260,7 +1278,15 @@ export class Translator {
   }
 
   requireBool(f, pos, where) {
-    if (f.kind === 'BOOL' || f.kind === 'UNKNOWN') return f;
+    // UNKNOWN used to pass, on the reasoning that an undeclared column may well
+    // be boolean and the database is the one that knows. Measured, the database
+    // does not know: MariaDB answers `1 AND TRUE` as TRUE, so an undeclared
+    // column holding 1 matched a row SEL refuses with E_NOT_BOOL, and PostgreSQL
+    // raises 42804 instead. No dialect can ask "is this a boolean" — in the MySQL
+    // family a boolean IS a TINYINT, so testing IN (0, 1) would also admit a NUM
+    // column SEL refuses — so there is nothing to wrap it in, and refusing is the
+    // only answer that keeps the warrant.
+    if (f.kind === 'BOOL') return f;
     refuse('E_SQL_SHAPE',
       `${where} needs a BOOL here and this is ${f.kind}; SEL has no truthiness, so `
       + 'neither does its translation', pos);

@@ -199,6 +199,7 @@ constexpr Lexical d1_mariadb_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "({0}) IS NOT TRUE"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
+    {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
 constexpr Keyed d1_mariadb_ops6[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
@@ -374,6 +375,7 @@ constexpr Lexical d2_mysql_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "({0}) IS NOT TRUE"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
+    {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
 constexpr Keyed d2_mysql_ops6[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
@@ -549,6 +551,7 @@ constexpr Lexical d3_mysql_family_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "({0}) IS NOT TRUE"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
+    {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
 constexpr Keyed d3_mysql_family_ops6[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
@@ -723,6 +726,7 @@ constexpr Lexical d4_postgresql_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "(({0}) IS NOT TRUE)"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS TEXT)"},
+    {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"},
 };
 constexpr Keyed d4_postgresql_ops6[] = {
     {.key = "text", .value = {.present = true, .text = "({textCast:0} || {textCast:1})"}},
@@ -1091,7 +1095,7 @@ constexpr Dialect DIALECTS[] = {
 
 constexpr std::string_view CAVEATS[] = {"concat-null", "decimal-float", "division-scale", "input-laxity", "length-units", "modulo-integer", "numeric-scale", "power-float", "regex-engine", "rounding-mode", "scale-limit", "text-collation", "trim-charset", "unicode-case"};
 constexpr std::string_view RET_KINDS[] = {"BIN", "BOOL", "NUM", "TEXT", "UNKNOWN"};
-constexpr std::string_view TEMPLATE_KEYS[] = {"identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder"};
+constexpr std::string_view TEMPLATE_KEYS[] = {"identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder", "numericGuard"};
 constexpr Arity OP_ARITY[] = {
     {.key = "!=", .min = 2, .max = 2},
     {.key = "$!=", .min = 2, .max = 2},
@@ -1232,6 +1236,7 @@ constexpr LexType LEX_TYPES[] = {
     {.key = "isTrue", .escapes = false},
     {.key = "isNotTrue", .escapes = false},
     {.key = "placeholder", .escapes = false},
+    {.key = "numericGuard", .escapes = false},
 };
 
 constexpr Rules RULES = {

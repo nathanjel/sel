@@ -2,7 +2,6 @@
 // kind it produces.
 
 import * as emit from './emit.mjs';
-import * as map from './map.mjs';
 import { refuse } from './errors.mjs';
 
 export const KINDS = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST'];
@@ -38,21 +37,19 @@ export class Fragment {
     return this.#join(mode);
   }
 
-  // Usable as a condition.
-  //
-  // BOOL as it stands; UNKNOWN wrapped in the dialect's IS TRUE test, since a
-  // column of unknown type may be NULL and SEL has no third truth value to give
-  // back.
+  // Usable as a condition. BOOL as it stands, and nothing else.
   //
   // A NUM or TEXT fragment is refused rather than accepted. Silently allowing
   // `WHERE o.total` is how a database turns a validation rule into the
   // truthiness test SEL spent its whole design avoiding.
   asCondition(mode = 'inline') {
     if (this.kind === 'BOOL') return this.#join(mode);
-    if (this.kind === 'UNKNOWN') {
-      const tpl = map.lexical(this.dialect, 'isTrue');
-      return emit.fillSlot(tpl, '{0}', this.#join(mode));
-    }
+    // UNKNOWN was wrapped in isTrue here rather than trusted, which folds NULL
+    // to false but not a number: `1 IS TRUE` is TRUE on MariaDB, and SEL raises
+    // E_NOT_BOOL for a number in a condition. Wrapping cannot fix that, so an
+    // undeclared column is no longer a condition; declare the binding BOOL.
+    // isTrue stays in the map — the aggregate skeletons use it on a body that is
+    // already known to be BOOL.
     refuse('E_SQL_SHAPE',
       `a condition must be BOOL, and this expression is ${this.kind}; `
       + 'SQL has no truthiness and neither does SEL');

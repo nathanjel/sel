@@ -314,6 +314,7 @@ class Translator:
         else:
             self._require_not_bool(x, n.x.pos, n.op)
             self._require_numeric_constant(n.x)
+            x = self._guard_numeric(x, n.x)
         return self._apply('ops', n.op, [x], n.pos)
 
     def _binary(self, n: Node) -> Fragment:
@@ -341,6 +342,11 @@ class Translator:
             # stays that way.
             self._require_numeric_constant(n.l)
             self._require_numeric_constant(n.r)
+            # And an operand nobody has vouched for is wrapped so that a value
+            # SEL would refuse becomes NULL rather than a number the server
+            # invented. A NUM operand passes through untouched.
+            l = self._guard_numeric(l, n.l)
+            r = self._guard_numeric(r, n.r)
         # The `$` family and `&`, not EQL and IN: those two are structural and
         # `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
         if op == '&' or (op[0] == '$' and op != '$'):
@@ -1175,6 +1181,19 @@ class Translator:
 
     # --- kind guards ---------------------------------------------------------
 
+    def _guard_numeric(self, f: Fragment, n: Node) -> Fragment:
+        """Wrap an operand the numeric context cannot be sure of.
+
+        A constant is skipped, because ``_require_numeric_constant`` has just
+        proved it IS a number -- guarding it would ask the server a question
+        already answered here, and would cost a bound value a second parameter
+        for the repeated slot. What is left is what could not be settled at
+        translation time: columns, raw, relation fields.
+        """
+        if _constants.is_constant(n, self.const_names):
+            return f
+        return self.emit.numeric_operand(f, n.pos)
+
     def _require_numeric_constant(self, n: Node) -> None:
         """An operand in a numeric position whose value is knowable here.
 
@@ -1218,7 +1237,16 @@ class Translator:
                'SEL answers E_NOT_TEXT here rather than spelling it 1 or true', pos)
 
     def _require_bool(self, f: Fragment, pos: Pos, where: str) -> Fragment:
-        if f.kind in ('BOOL', 'UNKNOWN'):
+        # UNKNOWN used to pass, on the reasoning that an undeclared column may
+        # well be boolean and the database is the one that knows. Measured, the
+        # database does not know: MariaDB answers `1 AND TRUE` as TRUE, so an
+        # undeclared column holding 1 matched a row SEL refuses with E_NOT_BOOL,
+        # and PostgreSQL raises 42804 instead. No dialect can ask "is this a
+        # boolean" -- in the MySQL family a boolean IS a TINYINT, so testing
+        # IN (0, 1) would also admit a NUM column SEL refuses -- so there is
+        # nothing to wrap it in, and refusing is the only answer that keeps the
+        # warrant.
+        if f.kind == 'BOOL':
             return f
         refuse('E_SQL_SHAPE',
                f'{where} needs a BOOL here and this is {f.kind}; SEL has no '

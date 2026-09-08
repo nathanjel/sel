@@ -68,8 +68,15 @@ E_SQL_SHAPE 1:1
 ===
 ### name: refuse.unknown-kind-may-be-a-condition
 --- note
-The other side of the same rule: an undeclared column may well be boolean, and
-the database is the one that knows. It is wrapped rather than trusted.
+This used to translate, wrapped in the dialect's isTrue rather than trusted, on
+the reasoning that an undeclared column may well be boolean and the database is
+the one that knows. Measured, it does not know: `1 IS TRUE` is TRUE on MariaDB,
+and SEL raises E_NOT_BOOL for a number in a condition, so an undeclared column
+holding 1 matched a row SEL refuses.
+
+Wrapping cannot fix it, because no dialect can ask "is this a boolean" -- in the
+MySQL family a boolean IS a TINYINT, so testing IN (0, 1) would also admit a NUM
+column SEL refuses. Declare the binding BOOL. See docs/SQL-KINDS.md.
 --- dialect
 mariadb
 --- as
@@ -78,8 +85,8 @@ condition
 {"F": {"kind": "column", "column": "flag"}}
 --- source
 F
---- expect
-(`flag`) IS TRUE
+--- error
+E_SQL_SHAPE
 ===
 ### name: refuse.relation-binding-used-as-a-value
 --- dialect

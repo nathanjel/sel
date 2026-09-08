@@ -175,6 +175,51 @@ final class Emit
     }
 
     /**
+     * An operand a numeric context will read as a number, made safe to read.
+     *
+     * SEL raises E_NOT_NUM for text that is not a number, and the server does
+     * not: CAST('x' AS DECIMAL) is 0 on MariaDB, MySQL and SQLite, so a rule
+     * comparing against 0 matched every row of a text column. Wrapping the
+     * operand so a non-number becomes NULL keeps the warrant -- NULL is not
+     * selected, which is what SEL failing has to look like from SQL.
+     *
+     * Not applied to a NUM operand: the binding said it is a number, and that
+     * declaration is where the promise transfers. It is also the only way to
+     * keep the index, since the guard is a function of the column.
+     *
+     * That early return is load-bearing beyond speed. The template names {0}
+     * TWICE -- once to test the value, once to cast it -- so filling it doubles
+     * its operand, and the guard hands back a NUM. Without the early return a
+     * guard would wrap its own output at the next level of nesting and the
+     * emitted SQL would double per term: measured at exactly x2.00, so twenty
+     * terms is 104MB and the corpus's own two-hundred-term depth case does not
+     * finish. Nothing may make this reachable from a guarded fragment.
+     *
+     * The pattern is SEL's own numeral grammar and lives in the map beside
+     * funcs.ISNUM, which asks the same question; tools/gen-sql-map.mjs requires
+     * the two to agree. A dialect that cannot ask it -- sqlite has no REGEXP,
+     * ansi has no regex -- declares no numericGuard, and this refuses rather
+     * than emitting something that answers when SEL would not.
+     *
+     * @param array{line:int,col:int,offset:int}|null $pos
+     */
+    public function numericOperand(Fragment $f, ?array $pos = null): Fragment
+    {
+        if ($f->kind === 'NUM') {
+            return $f;
+        }
+        $guard = $this->lex('numericGuard');
+        if (!is_string($guard)) {
+            refuse('E_SQL_UNSUPPORTED',
+                "dialect {$this->dialect} has no way to ask whether a value is a "
+                . 'number, so an operand it has not been told is one cannot be read '
+                . 'as one here; declare the binding NUM if the column really is '
+                . 'numeric', $pos);
+        }
+        return new Fragment($this->fill($guard, [$f], $pos), 'NUM', $this->dialect);
+    }
+
+    /**
      * An operand of a byte comparison: cast to a character type, then given the
      * dialect's binary collation.
      *

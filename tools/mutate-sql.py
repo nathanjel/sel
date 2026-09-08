@@ -110,7 +110,12 @@ def main(argv):
             return 2
 
     caught, holes, errors, skipped = 0, [], [], 0
-    work = tempfile.mkdtemp(prefix='mutate-sql.')
+    # Under TMPDIR when the environment sets one, because the default is /tmp and
+    # /tmp is a tmpfs on a lot of Linux installs -- which makes every copy below
+    # resident memory rather than disk. One tree is only a few megabytes, so this
+    # is tidiness rather than a crisis, but a check that quietly grows the
+    # machine's memory with the size of its own corpus is the wrong shape.
+    work = tempfile.mkdtemp(prefix='mutate-sql.', dir=os.environ.get('TMPDIR') or None)
     try:
         for m in table['mutations']:
             name = m['name']
@@ -133,6 +138,7 @@ def main(argv):
             if n != 1:
                 errors.append(f'{name}: pattern occurs {n} times in {m["file"]}, '
                               'expected exactly 1 — the mutation is stale')
+                shutil.rmtree(tree, ignore_errors=True)
                 continue
             open(path, 'w', encoding='utf-8').write(text.replace(m['from'], m['to'], 1))
 
@@ -141,6 +147,7 @@ def main(argv):
             # mode and the reason it exists.
             if open(path, encoding='utf-8').read() == text:
                 errors.append(f'{name}: {m["file"]} is unchanged after mutation')
+                shutil.rmtree(tree, ignore_errors=True)
                 continue
 
             if m['file'].startswith('sql/dialects/'):
@@ -170,6 +177,12 @@ def main(argv):
                 if run(cmd, tree) != 0:
                     by = label
                     break
+
+            # Freed here rather than in the finally below: every tree used to
+            # stay alive for the whole run, so the space held grew with the
+            # corpus for no reason -- nothing reads a tree once its mutation has
+            # been graded.
+            shutil.rmtree(tree, ignore_errors=True)
 
             if by:
                 print(f'caught  {name:<34} by {by}')

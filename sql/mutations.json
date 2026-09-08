@@ -866,8 +866,8 @@
       "name": "lisp-numeric-constant-checked-on-one-operand-only",
       "was": "The Lisp half of the one-sided check: `T == \"x\"` emitted while `\"x\" == T` refused.",
       "file": "lisp/src/sql/translator.lisp",
-      "from": "        (require-numeric-constant tr (sel::node-l n))\n        (require-numeric-constant tr (sel::node-r n)))",
-      "to": "        (require-numeric-constant tr (sel::node-l n)))"
+      "from": "        (require-numeric-constant tr (sel::node-l n))\n        (require-numeric-constant tr (sel::node-r n))",
+      "to": "        (require-numeric-constant tr (sel::node-l n))"
     },
     {
       "name": "cpp-numeric-constant-is-evaluated-but-not-required-numeric",
@@ -882,6 +882,111 @@
       "file": "cpp/sel_sql_translator.cpp",
       "from": "    require_numeric_constant(*n.l());\n    require_numeric_constant(*n.r());",
       "to": "    require_numeric_constant(*n.l());"
+    },
+    {
+      "name": "php-warrant-guard-skipped-on-the-right-operand",
+      "was": "Only the left operand was guarded, so `T == 25` was safe and `25 == T` was not. Neither side of a numeric operator is privileged.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $l = $this->guardNumeric($l, $n['l']);\n            $r = $this->guardNumeric($r, $n['r']);",
+      "to": "            $l = $this->guardNumeric($l, $n['l']);"
+    },
+    {
+      "name": "php-warrant-the-guard-is-never-applied",
+      "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
+      "file": "php/src/Sql/Emit.php",
+      "from": "if ($f->kind === 'NUM') {",
+      "to": "if ($f->kind !== 'LIST') {"
+    },
+    {
+      "name": "php-warrant-unknown-is-a-boolean-again",
+      "was": "UNKNOWN accepted as a boolean again. MariaDB answers `1 AND TRUE` as TRUE, so an undeclared column holding 1 matches a row SEL refuses with E_NOT_BOOL.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($f->kind === 'BOOL') {",
+      "to": "        if ($f->kind === 'BOOL' || $f->kind === 'UNKNOWN') {"
+    },
+    {
+      "name": "js-warrant-guard-skipped-on-the-right-operand",
+      "was": "Only the left operand was guarded, so `T == 25` was safe and `25 == T` was not. Neither side of a numeric operator is privileged.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "      l = this.guardNumeric(l, n.l);\n      r = this.guardNumeric(r, n.r);",
+      "to": "      l = this.guardNumeric(l, n.l);"
+    },
+    {
+      "name": "js-warrant-the-guard-is-never-applied",
+      "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
+      "file": "js/src/sql/emit.mjs",
+      "from": "    if (f.kind === 'NUM') return f;",
+      "to": "    if (f.kind !== 'LIST') return f;"
+    },
+    {
+      "name": "js-warrant-unknown-is-a-boolean-again",
+      "was": "UNKNOWN accepted as a boolean again. MariaDB answers `1 AND TRUE` as TRUE, so an undeclared column holding 1 matches a row SEL refuses with E_NOT_BOOL.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "    if (f.kind === 'BOOL') return f;",
+      "to": "    if (f.kind === 'BOOL' || f.kind === 'UNKNOWN') return f;"
+    },
+    {
+      "name": "python-warrant-guard-skipped-on-the-right-operand",
+      "was": "Only the left operand was guarded, so `T == 25` was safe and `25 == T` was not. Neither side of a numeric operator is privileged.",
+      "file": "python/sel/sql/translator.py",
+      "from": "            l = self._guard_numeric(l, n.l)\n            r = self._guard_numeric(r, n.r)",
+      "to": "            l = self._guard_numeric(l, n.l)"
+    },
+    {
+      "name": "python-warrant-the-guard-is-never-applied",
+      "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
+      "file": "python/sel/sql/emit.py",
+      "from": "        if f.kind == 'NUM':",
+      "to": "        if f.kind != 'LIST':"
+    },
+    {
+      "name": "python-warrant-unknown-is-a-boolean-again",
+      "was": "UNKNOWN accepted as a boolean again. MariaDB answers `1 AND TRUE` as TRUE, so an undeclared column holding 1 matches a row SEL refuses with E_NOT_BOOL.",
+      "file": "python/sel/sql/translator.py",
+      "from": "        if f.kind == 'BOOL':\n",
+      "to": "        if f.kind in ('BOOL', 'UNKNOWN'):\n"
+    },
+    {
+      "name": "cpp-warrant-guard-skipped-on-the-right-operand",
+      "was": "Only the left operand was guarded, so `T == 25` was safe and `25 == T` was not. Neither side of a numeric operator is privileged.",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "    l = guard_numeric(l, *n.l());\n    r = guard_numeric(r, *n.r());",
+      "to": "    l = guard_numeric(l, *n.l());"
+    },
+    {
+      "name": "cpp-warrant-the-guard-is-never-applied",
+      "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
+      "file": "cpp/sel_sql_emit.cpp",
+      "from": "  if (f.kind() == SqlKind::Num) return f;",
+      "to": "  if (f.kind() != SqlKind::List) return f;"
+    },
+    {
+      "name": "cpp-warrant-unknown-is-a-boolean-again",
+      "was": "UNKNOWN accepted as a boolean again. MariaDB answers `1 AND TRUE` as TRUE, so an undeclared column holding 1 matches a row SEL refuses with E_NOT_BOOL.",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "  if (f.kind() == SqlKind::Bool) return f;",
+      "to": "  if (f.kind() == SqlKind::Bool || f.kind() == SqlKind::Unknown) return f;"
+    },
+    {
+      "name": "lisp-warrant-guard-skipped-on-the-right-operand",
+      "was": "Only the left operand was guarded, so `T == 25` was safe and `25 == T` was not. Neither side of a numeric operator is privileged.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "        (setf l (guard-numeric tr l (sel::node-l n))\n              r (guard-numeric tr r (sel::node-r n))))",
+      "to": "        (setf l (guard-numeric tr l (sel::node-l n))))"
+    },
+    {
+      "name": "lisp-warrant-the-guard-is-never-applied",
+      "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
+      "file": "lisp/src/sql/emit.lisp",
+      "from": "  (if (eq (fragment-kind f) :num)",
+      "to": "  (if (not (eq (fragment-kind f) :list))"
+    },
+    {
+      "name": "lisp-warrant-unknown-is-a-boolean-again",
+      "was": "UNKNOWN accepted as a boolean again. MariaDB answers `1 AND TRUE` as TRUE, so an undeclared column holding 1 matches a row SEL refuses with E_NOT_BOOL.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "  (unless (eq (fragment-kind f) :bool)",
+      "to": "  (unless (member (fragment-kind f) '(:bool :unknown))"
     }
   ]
 }

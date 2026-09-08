@@ -129,6 +129,9 @@ class Translator {
   // constant *is*, which is a different and stronger question wherever the
   // answer is written down.
   void require_numeric_constant(const SNode& n);
+  // Transforms rather than checks: the operand comes back wrapped, so every
+  // caller has to assign the result.
+  Fragment guard_numeric(const Fragment& f, const SNode& n);
 
   Fragment from_binder(const Binder& b, const SNode& n);
   Fragment index_binder(const Binder& b, const std::string& name,

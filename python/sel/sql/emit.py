@@ -158,6 +158,37 @@ class Emit:
     def lex(self, key: str):
         return _map.lexical(self._dialect, key)
 
+    def numeric_operand(self, f, pos: Pos | None = None):
+        """An operand a numeric context will read as a number, made safe to read.
+
+        SEL raises E_NOT_NUM for text that is not a number, and the server does
+        not: ``CAST('x' AS DECIMAL)`` is 0 on MariaDB, MySQL and SQLite, so a rule
+        comparing against 0 matched every row of a text column. Wrapping the
+        operand so a non-number becomes NULL keeps the warrant -- NULL is not
+        selected, which is what SEL failing has to look like from SQL.
+
+        Not applied to a NUM operand: the binding said it is a number, and that
+        declaration is where the promise transfers. It is also the only way to
+        keep the index, since the guard is a function of the column.
+
+        The pattern is SEL's own numeral grammar and lives in the map beside
+        ``funcs.ISNUM``, which asks the same question; tools/gen-sql-map.mjs
+        requires the two to agree. A dialect that cannot ask it -- sqlite has no
+        REGEXP, ansi has no regex -- declares no ``numericGuard``, and this
+        refuses rather than emitting something that answers when SEL would not.
+        """
+        from .fragment import Fragment
+        if f.kind == 'NUM':
+            return f
+        guard = self.lex('numericGuard')
+        if not isinstance(guard, str):
+            refuse('E_SQL_UNSUPPORTED',
+                   f'dialect {self._dialect} has no way to ask whether a value is a '
+                   'number, so an operand it has not been told is one cannot be read '
+                   'as one here; declare the binding NUM if the column really is '
+                   'numeric', pos)
+        return Fragment(self.fill(guard, [f], pos), 'NUM', self._dialect)
+
     def text_operand(self, f):
         """An operand of a byte comparison: cast to a character type, then given
         the dialect's binary collation.

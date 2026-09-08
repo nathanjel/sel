@@ -164,6 +164,38 @@ column a\"b from ending the identifier early."
 
 ;;; --- templates ------------------------------------------------------------
 
+(defun emit-numeric-operand (dialect f &optional pos)
+  "An operand a numeric context will read as a number, made safe to read.
+
+SEL raises E_NOT_NUM for text that is not a number, and the server does not:
+CAST('x' AS DECIMAL) is 0 on MariaDB, MySQL and SQLite, so a rule comparing
+against 0 matched every row of a text column. Wrapping the operand so a
+non-number becomes NULL keeps the warrant -- NULL is not selected, which is what
+SEL failing has to look like from SQL.
+
+Not applied to a NUM operand: the binding said it is a number, and that
+declaration is where the promise transfers. It is also the only way to keep the
+index, since the guard is a function of the column.
+
+The pattern is SEL's own numeral grammar and lives in the map beside funcs.ISNUM,
+which asks the same question; tools/gen-sql-map.mjs requires the two to agree. A
+dialect that cannot ask it -- sqlite has no REGEXP, ansi has no regex -- declares
+no numericGuard, and this refuses rather than emitting something that answers
+when SEL would not."
+  (if (eq (fragment-kind f) :num)
+      f
+      ;; DIALECT-LEXICAL rather than LEX-TEXT, whose message names the missing
+      ;; key. The key is not what an author can act on here; declaring the
+      ;; binding NUM is, and that is the sentence this refusal has to say.
+      (let ((guard (dialect-lexical dialect "numericGuard")))
+        (unless (stringp guard)
+          (refuse "E_SQL_UNSUPPORTED"
+                  (format nil "dialect ~a has no way to ask whether a value is a ~
+number, so an operand it has not been told is one cannot be read as one here; ~
+declare the binding NUM if the column really is numeric" dialect)
+                  pos))
+        (%fragment (emit-fill dialect guard (list f) pos) :num dialect))))
+
 (defun emit-text-operand (dialect f)
   "An operand of a byte comparison: cast to a character type, then given the
 dialect's binary collation.

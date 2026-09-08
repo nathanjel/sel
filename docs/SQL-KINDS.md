@@ -3,8 +3,10 @@
 What the SEL→SQL layer promises about expressions SEL itself will not evaluate,
 and what it has to do to keep that promise.
 
-Status: **specification.** One half is built (see §8); the other two cells are
-not. Everything measured here was measured — the server behaviour against the
+Status: **built for operators, not for function arguments.** The numeric and
+bool operator cells are done (§8); the function-argument family of §4.1a is not,
+and until it is the warrant holds for operators and not for calls. Everything
+measured here was measured — the server behaviour against the
 pinned images behind `tools/oracle-db.sh`, the translator behaviour against the
 tree at the commit this document was written on.
 
@@ -194,7 +196,7 @@ meet it.
    answer TRUE.* `ALL` needs no exception — it raises on any bad element, and
    `NOT EXISTS (… IS NOT TRUE)` turns a NULL body into FALSE.
 
-## 7. What has to change
+## 7. What changed
 
 ### Map — one key
 
@@ -206,6 +208,22 @@ Its pattern must be SEL's own numeral grammar. `funcs.ISNUM` already carries it
 per dialect and is already checked against four servers by
 `sql/oracle/expressions.selo`, so the generator should assert the two agree
 rather than let a second copy drift.
+
+### One property of the guard that must not be lost
+
+`numericGuard` names `{0}` twice -- once to test the value, once to cast it --
+so filling it **doubles its operand**, and it hands back a `NUM`. The `NUM`
+early return in `numericOperand` is what stops a guard wrapping its own output
+at the next level of nesting. Remove it and the emitted SQL doubles per term:
+measured at exactly x2.00, so twenty terms is 104MB and the two-hundred-term
+depth case in the corpus never finishes.
+
+This is not hypothetical. It was written as a mutation -- invert the early
+return, prove the fast path is load-bearing -- and the mutation exhausted the
+machine instead of failing, which is not a check but an outage. The mutation is
+now "the guard is never applied", which is bounded; the fast path is pinned by
+`warrant.numeric.a-declared-num-is-not-guarded` and by this note, and NOT by a
+mutation, because the natural mutation for it is pathological.
 
 ### Translator and Emit — two seams, five hosts
 
@@ -237,7 +255,33 @@ than the silent one: not declaring gets you the guarded path, and declaring
 - Roughly eighteen lines across five case files get updated expected SQL. They
   are not deleted: the coercion stays and gains a guard.
 
-## 8. What is already built
+## 8. What is built
+
+Two commits on `sql-typing`.
+
+**The constant half.** A constant in a numeric position must be a number, asked
+**per operand** rather than per whole expression -- so `(T + 1) + "x"` refuses as
+`T + (1 + "x")` always did. Whether a defect is caught may not depend on where
+the author put brackets.
+
+**The operand half.** An operand nobody has vouched for is wrapped by
+`numericGuard`, so a value SEL would refuse becomes NULL; a dialect that cannot
+ask refuses; and an undeclared column is no longer a condition. Proved against
+the pinned servers on the reporter's own data shapes -- rows `25`, `25/298`,
+`abc`, `''`, `0`:
+
+```
+mariadb     T == 25  matched: ["25"]     was also "25/298"
+mariadb     T == 0   matched: ["0"]      was also "abc" and ""
+postgresql  T == 25  matched: ["25"]     was a 22P02 error
+```
+
+Five hosts, 408 cases, 139 mutations. `sql/cases/19-kind-warrant.sqlt` pins the
+rules; `tools/gen-sql-map.mjs` requires `numericGuard` and `funcs.ISNUM` to carry
+the same pattern, because two copies of a numeral grammar is the drift the map's
+one-place rule exists to prevent.
+
+### Earlier
 
 Commit `6ed4e60` on `sql-typing`. A constant in a numeric position must be a
 number, asked **per operand** rather than per whole expression — so

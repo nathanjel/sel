@@ -13,6 +13,7 @@
     },
     "textCollate": " COLLATE utf8mb4_bin",
     "numericCast": "CAST({0} AS DECIMAL(65,10))",
+    "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
     "textCast": "CAST({0} AS CHAR)"
   },
   "ops": {

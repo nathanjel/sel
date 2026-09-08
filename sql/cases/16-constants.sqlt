@@ -569,7 +569,7 @@ mariadb
 --- error
 E_SQL_INVALID 1:2
 ===
-### name: const.numeric.a-text-column-still-coerces
+### name: const.numeric.a-text-column-still-compares-numerically
 --- note
 The other half, and the reason this check is about the constant's *value* and
 never about a declared kind. SEL's `==` compares numerically, so "5.00" == "5"
@@ -584,7 +584,7 @@ mariadb
 --- source
 A == 5
 --- expect
-(CAST(`a` AS DECIMAL(65,10)) = CAST(5 AS DECIMAL(65,10)))
+(CASE WHEN (`a` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END = 5)
 ===
 ### name: const.numeric.a-numeric-text-literal-is-fine
 --- note

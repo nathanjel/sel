@@ -376,7 +376,7 @@
    :at "02-operators.sqlt:78"
    :dialect "mariadb"
    :source "A == 5"
-   :expect "(CAST(`a` AS DECIMAL(65,10)) = CAST(5 AS DECIMAL(65,10)))"
+   :expect "(CASE WHEN (`a` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END = 5)"
    :error nil
    :throws nil
    :params nil
@@ -387,10 +387,10 @@
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :text)))))
   (list
    :name "op.compare.coerce-variant-for-unknown-columns"
-   :at "02-operators.sqlt:91"
+   :at "02-operators.sqlt:96"
    :dialect "mariadb"
    :source "A >= 10"
-   :expect "(CAST(`a` AS DECIMAL(65,10)) >= CAST(10 AS DECIMAL(65,10)))"
+   :expect "(CASE WHEN (`a` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END >= 10)"
    :error nil
    :throws nil
    :params nil
@@ -401,7 +401,7 @@
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :unknown)))))
   (list
    :name "op.compare.text-family-forces-a-binary-collation"
-   :at "02-operators.sqlt:101"
+   :at "02-operators.sqlt:106"
    :dialect "mariadb"
    :source "\"A\" $== \"a\""
    :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
@@ -415,7 +415,7 @@
    :bindings (lambda () (list )))
   (list
    :name "op.compare.text-family-ordering"
-   :at "02-operators.sqlt:112"
+   :at "02-operators.sqlt:117"
    :dialect "mariadb"
    :source "\"a\" $< \"b\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin < CAST('b' AS CHAR) COLLATE utf8mb4_bin)"
@@ -429,7 +429,7 @@
    :bindings (lambda () (list )))
   (list
    :name "op.eql.scalars-are-a-text-compare"
-   :at "02-operators.sqlt:120"
+   :at "02-operators.sqlt:125"
    :dialect "mariadb"
    :source "\"a\" EQL \"a\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
@@ -443,7 +443,7 @@
    :bindings (lambda () (list )))
   (list
    :name "op.in.literal-list"
-   :at "02-operators.sqlt:128"
+   :at "02-operators.sqlt:133"
    :dialect "mariadb"
    :source "S IN (\"open\", \"held\")"
    :expect "((CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))"
@@ -457,7 +457,7 @@
    :bindings (lambda () (list (cons "S" (binding-column "state" nil :text)))))
   (list
    :name "op.in.scalar-right-hand-side"
-   :at "02-operators.sqlt:144"
+   :at "02-operators.sqlt:149"
    :dialect "mariadb"
    :source "\"a\" IN \"a\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
@@ -471,7 +471,7 @@
    :bindings (lambda () (list )))
   (list
    :name "op.bitwise.refused-with-a-reason"
-   :at "02-operators.sqlt:154"
+   :at "02-operators.sqlt:159"
    :dialect "mariadb"
    :source "TO_UTF8(\"a\") BAND TO_UTF8(\"b\")"
    :expect nil
@@ -1566,8 +1566,8 @@
    :at "09-refusals.sqlt:69"
    :dialect "mariadb"
    :source "F"
-   :expect "(`flag`) IS TRUE"
-   :error nil
+   :expect nil
+   :error "E_SQL_SHAPE"
    :throws nil
    :params nil
    :as "condition"
@@ -1577,7 +1577,7 @@
    :bindings (lambda () (list (cons "F" (binding-column "flag" nil :unknown)))))
   (list
    :name "refuse.relation-binding-used-as-a-value"
-   :at "09-refusals.sqlt:84"
+   :at "09-refusals.sqlt:91"
    :dialect "mariadb"
    :source "ITEMS > 1"
    :expect nil
@@ -1591,7 +1591,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "refuse.columns-binding-used-as-a-value"
-   :at "09-refusals.sqlt:94"
+   :at "09-refusals.sqlt:101"
    :dialect "mariadb"
    :source "V > 1"
    :expect nil
@@ -1605,7 +1605,7 @@
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :num) (binding-column "b" nil :num))))))
   (list
    :name "refuse.indexing-a-relation-binding"
-   :at "09-refusals.sqlt:104"
+   :at "09-refusals.sqlt:111"
    :dialect "mariadb"
    :source "ITEMS[\"price\"] > 1"
    :expect nil
@@ -1619,7 +1619,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "refuse.alias-collision"
-   :at "09-refusals.sqlt:114"
+   :at "09-refusals.sqlt:121"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -1633,7 +1633,7 @@
    :bindings (lambda () (list (cons "A" (binding-relation "x" "t" (list ) nil nil)) (cons "B" (binding-relation "y" "t" (list ) nil nil)))))
   (list
    :name "refuse.indexing-a-plain-column"
-   :at "09-refusals.sqlt:124"
+   :at "09-refusals.sqlt:131"
    :dialect "mariadb"
    :source "T[1]"
    :expect nil
@@ -1647,7 +1647,7 @@
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
    :name "refuse.in-over-a-multi-field-relation"
-   :at "09-refusals.sqlt:133"
+   :at "09-refusals.sqlt:140"
    :dialect "mariadb"
    :source "SKU IN ITEMS"
    :expect nil
@@ -3320,7 +3320,7 @@
    :at "13-review.sqlt:322"
    :dialect "mariadb"
    :source "C + 1"
-   :expect "(`c` + 1)"
+   :expect "(CASE WHEN (`c` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`c` AS DECIMAL(65,10)) ELSE NULL END + 1)"
    :error nil
    :throws nil
    :params nil
@@ -3543,34 +3543,33 @@
    :name "review.slot.dollar-pattern-in-an-identifier"
    :at "13-review.sqlt:524"
    :dialect "postgresql"
-   :source "COL"
-   :expect "((\"active$' -- oops\") IS TRUE)"
+   :source "COL == 1"
+   :expect "(CASE WHEN (CAST(\"active$' -- oops\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"active$' -- oops\" AS NUMERIC) ELSE NULL END = 1)"
    :error nil
    :throws nil
    :params nil
-   :as "condition"
+   :as nil
    :mode nil
    :strict nil
    :register nil
    :bindings (lambda () (list (cons "COL" (binding-column "active$' -- oops" nil :unknown)))))
   (list
    :name "review.slot.repeated-in-a-skeleton"
-   :at "13-review.sqlt:547"
-   :dialect "twice"
-   :source "COL"
-   :expect "(\"c\" IS TRUE AND \"c\" IS NOT NULL)"
+   :at "13-review.sqlt:549"
+   :dialect "mariadb"
+   :source "COL == 1"
+   :expect "(CASE WHEN (`c` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`c` AS DECIMAL(65,10)) ELSE NULL END = 1)"
    :error nil
    :throws nil
    :params nil
-   :as "condition"
+   :as nil
    :mode nil
    :strict nil
-   :register (lambda ()
-      (define-dialect "twice" (list :extends "postgresql" :lexical (list (cons "isTrue" "({0} IS TRUE AND {0} IS NOT NULL)")))))
+   :register nil
    :bindings (lambda () (list (cons "COL" (binding-column "c" nil :unknown)))))
   (list
    :name "review.slot.repeated-in-a-numeric-wrap"
-   :at "13-review.sqlt:567"
+   :at "13-review.sqlt:569"
    :dialect "wrapped"
    :source "1"
    :expect "(1 || '' || 1)"
@@ -3585,7 +3584,7 @@
    :bindings (lambda () (list )))
   (list
    :name "review.lexical.expands-into-itself"
-   :at "13-review.sqlt:580"
+   :at "13-review.sqlt:582"
    :dialect "selfref"
    :source "A $== \"x\""
    :expect nil
@@ -3600,7 +3599,7 @@
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :unknown)))))
   (list
    :name "review.unify.refusal-carries-a-position"
-   :at "13-review.sqlt:601"
+   :at "13-review.sqlt:603"
    :dialect "mariadb"
    :source "IF(TRUE, TRUE, \"A-1\")"
    :expect nil
@@ -3614,7 +3613,7 @@
    :bindings (lambda () (list )))
   (list
    :name "review.lexical.empty-quote-is-refused"
-   :at "13-review.sqlt:614"
+   :at "13-review.sqlt:616"
    :dialect "mariadb"
    :source "1"
    :expect nil
@@ -3629,7 +3628,7 @@
    :bindings (lambda () (list )))
   (list
    :name "review.binder.parenthesised-is-refused"
-   :at "13-review.sqlt:630"
+   :at "13-review.sqlt:632"
    :dialect "mariadb"
    :source "ALL(V, (C), C > 0)"
    :expect nil
@@ -3643,7 +3642,7 @@
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num) (binding-column "b" "x" :num))))))
   (list
    :name "review.binder.bare-name-still-works"
-   :at "13-review.sqlt:652"
+   :at "13-review.sqlt:654"
    :dialect "mariadb"
    :source "ALL(V, C, C > 0)"
    :expect "((`x`.`a` > 0) AND (`x`.`b` > 0))"
@@ -3657,7 +3656,7 @@
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num) (binding-column "b" "x" :num))))))
   (list
    :name "review.relation.field-name-folds-ascii-only"
-   :at "13-review.sqlt:667"
+   :at "13-review.sqlt:669"
    :dialect "mariadb"
    :source "ANY(R, X, X[\"straße\"] $== \"a\")"
    :expect "EXISTS (SELECT 1 FROM `t` `r` WHERE TRUE AND ((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)"
@@ -3671,7 +3670,7 @@
    :bindings (lambda () (list (cons "R" (binding-relation "t" "r" (list (cons "straße" (binding-column "s" nil :text))) nil nil)))))
   (list
    :name "register.dialect.root-has-no-parent"
-   :at "13-review.sqlt:689"
+   :at "13-review.sqlt:691"
    :dialect "scratch"
    :source "1 + 2"
    :expect "(1 + 2)"
@@ -3687,7 +3686,7 @@
    :bindings (lambda () (list )))
   (list
    :name "register.dialect.extends-must-be-stated"
-   :at "13-review.sqlt:712"
+   :at "13-review.sqlt:714"
    :dialect "mariadb"
    :source "1"
    :expect nil
@@ -3702,7 +3701,7 @@
    :bindings (lambda () (list )))
   (list
    :name "register.dialect.entries-are-not-declared-here"
-   :at "13-review.sqlt:724"
+   :at "13-review.sqlt:726"
    :dialect "mariadb"
    :source "1"
    :expect nil
@@ -4838,11 +4837,11 @@
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
-   :name "const.numeric.a-text-column-still-coerces"
+   :name "const.numeric.a-text-column-still-compares-numerically"
    :at "16-constants.sqlt:572"
    :dialect "mariadb"
    :source "A == 5"
-   :expect "(CAST(`a` AS DECIMAL(65,10)) = CAST(5 AS DECIMAL(65,10)))"
+   :expect "(CASE WHEN (`a` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END = 5)"
    :error nil
    :throws nil
    :params nil
@@ -5670,4 +5669,130 @@
    :strict nil
    :register (lambda ()
       (define-dialect "pg-numbered" (list :extends "postgresql" :version "15" :target t :lexical (list (cons "placeholder" "${n}")))))
-   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))))
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "warrant.numeric.a-text-column-is-guarded"
+   :at "19-kind-warrant.sqlt:21"
+   :dialect "mariadb"
+   :source "T == 25"
+   :expect "(CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "warrant.numeric.either-side-is-guarded"
+   :at "19-kind-warrant.sqlt:34"
+   :dialect "mariadb"
+   :source "25 == T"
+   :expect "(25 = CASE WHEN (`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "warrant.numeric.an-undeclared-column-is-guarded"
+   :at "19-kind-warrant.sqlt:48"
+   :dialect "mariadb"
+   :source "U == 25"
+   :expect "(CASE WHEN (`u` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`u` AS DECIMAL(65,10)) ELSE NULL END = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
+  (list
+   :name "warrant.numeric.a-declared-num-is-not-guarded"
+   :at "19-kind-warrant.sqlt:62"
+   :dialect "mariadb"
+   :source "N == 25"
+   :expect "(`n` = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
+  (list
+   :name "warrant.numeric.a-constant-is-not-guarded"
+   :at "19-kind-warrant.sqlt:76"
+   :dialect "mariadb"
+   :source "N == \"5\""
+   :expect "(CAST(`n` AS DECIMAL(65,10)) = CAST('5' AS DECIMAL(65,10)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
+  (list
+   :name "warrant.numeric.postgresql-asks-through-a-text-cast"
+   :at "19-kind-warrant.sqlt:91"
+   :dialect "postgresql"
+   :source "T == 25"
+   :expect "(CASE WHEN (CAST(\"t\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"t\" AS NUMERIC) ELSE NULL END = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "warrant.numeric.sqlite-cannot-ask-and-refuses"
+   :at "19-kind-warrant.sqlt:106"
+   :dialect "sqlite"
+   :source "U == 25"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
+  (list
+   :name "warrant.bool.an-undeclared-column-is-not-a-boolean"
+   :at "19-kind-warrant.sqlt:124"
+   :dialect "mariadb"
+   :source "U AND TRUE"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
+  (list
+   :name "warrant.numeric.the-guard-reaches-into-a-relation-body"
+   :at "19-kind-warrant.sqlt:140"
+   :dialect "mariadb"
+   :source "ANY(ITEMS, _[\"QTY\"] == 25)"
+   :expect "EXISTS (SELECT 1 FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id` AND ((CASE WHEN (`oi`.`qty` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END = 25)) IS TRUE)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :text))) nil "`oi`.`o`=`o`.`id`")))))))

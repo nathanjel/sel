@@ -317,6 +317,7 @@ RAW: list[dict[str, Any]] = [{
         },
         "textCollate": " COLLATE utf8mb4_bin",
         "numericCast": "CAST({0} AS DECIMAL(65,10))",
+        "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
         "textCast": "CAST({0} AS CHAR)",
     },
     "ops": {
@@ -531,6 +532,7 @@ RAW: list[dict[str, Any]] = [{
         "textCollate": " COLLATE \"C\"",
         "textCast": "CAST({0} AS TEXT)",
         "numericCast": "CAST({0} AS NUMERIC)",
+        "numericGuard": "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END",
         "binaryCast": "convert_to(CAST({0} AS TEXT), 'UTF8')",
         "isTrue": "(({0}) IS TRUE)",
         "isNotTrue": "(({0}) IS NOT TRUE)",

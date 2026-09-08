@@ -8,7 +8,6 @@ from typing import Any
 
 from ..value import Value
 from . import emit as _emit
-from . import map as _map
 from .errors import refuse
 
 KINDS = ('NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST')
@@ -51,11 +50,7 @@ class Fragment:
         return self._join(mode)
 
     def as_condition(self, mode: str = 'inline') -> str:
-        """Usable as a condition.
-
-        BOOL as it stands; UNKNOWN wrapped in the dialect's IS TRUE test, since a
-        column of unknown type may be NULL and SEL has no third truth value to
-        give back.
+        """Usable as a condition. BOOL as it stands, and nothing else.
 
         A NUM or TEXT fragment is refused rather than accepted. Silently allowing
         ``WHERE o.total`` is how a database turns a validation rule into the
@@ -63,9 +58,12 @@ class Fragment:
         """
         if self.kind == 'BOOL':
             return self._join(mode)
-        if self.kind == 'UNKNOWN':
-            tpl = _map.lexical(self.dialect, 'isTrue')
-            return tpl.replace('{0}', self._join(mode))
+        # UNKNOWN was wrapped in isTrue here rather than trusted, which folds
+        # NULL to false but not a number: `1 IS TRUE` is TRUE on MariaDB, and SEL
+        # raises E_NOT_BOOL for a number in a condition. Wrapping cannot fix
+        # that, so an undeclared column is no longer a condition; declare the
+        # binding BOOL. isTrue stays in the map -- the aggregate skeletons use it
+        # on a body that is already known to be BOOL.
         refuse('E_SQL_SHAPE',
                f'a condition must be BOOL, and this expression is {self.kind}; '
                'SQL has no truthiness and neither does SEL')

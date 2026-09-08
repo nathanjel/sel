@@ -342,9 +342,15 @@ sides cast to the same characters" op (kind-name other))
                 pos)))))
 
 (defun require-bool (f pos where)
-  ;; :UNKNOWN is not wrapped here: AS-CONDITION wraps an UNKNOWN top-level
-  ;; result in the dialect's isTrue template instead.
-  (unless (member (fragment-kind f) '(:bool :unknown))
+  ;; :UNKNOWN used to pass, on the reasoning that an undeclared column may well
+  ;; be boolean and the database is the one that knows. Measured, the database
+  ;; does not know: MariaDB answers `1 AND TRUE` as TRUE, so an undeclared
+  ;; column holding 1 matched a row SEL refuses with E_NOT_BOOL, and PostgreSQL
+  ;; raises 42804 instead. No dialect can ask "is this a boolean" -- in the
+  ;; MySQL family a boolean IS a TINYINT, so testing IN (0, 1) would also admit
+  ;; a NUM column SEL refuses -- so there is nothing to wrap it in, and refusing
+  ;; is the only answer that keeps the warrant.
+  (unless (eq (fragment-kind f) :bool)
     (refuse "E_SQL_SHAPE"
             (format nil "~a needs a BOOL here and this is ~a; SEL has no ~
 truthiness, so neither does its translation" where (kind-name (fragment-kind f)))
@@ -373,6 +379,17 @@ SEL answers E_NOT_NUM here rather than coercing it" where
                     (if (eq (fragment-kind f) :bool) "a BOOL" "a BIN"))
             pos))
   (values))
+
+(defun guard-numeric (tr f n)
+  "Wrap an operand the numeric context cannot be sure of.
+
+A constant is skipped, because REQUIRE-NUMERIC-CONSTANT has just proved it IS a
+number -- guarding it would ask the server a question already answered here, and
+would cost a bound value a second parameter for the repeated slot. What is left
+is what could not be settled at translation time: columns, raw, relation fields."
+  (if (is-constant n (translator-const-names tr))
+      f
+      (emit-numeric-operand (translator-dialect tr) f (snode-pos n))))
 
 (defun require-numeric-constant (tr n)
   "An operand in a numeric position whose value is knowable here.
@@ -547,7 +564,8 @@ those differ per aggregate."
         (setf x (require-bool x (snode-pos (sel::node-l n)) "NOT"))
         (progn
           (require-not-bool x (snode-pos (sel::node-l n)) op)
-          (require-numeric-constant tr (sel::node-l n))))
+          (require-numeric-constant tr (sel::node-l n))
+          (setf x (guard-numeric tr x (sel::node-l n)))))
     ;; No variant: a unary entry must be a plain template.
     (apply-entry tr :ops op (list x) (snode-pos n))))
 
@@ -569,7 +587,12 @@ those differ per aggregate."
         ;; the BOOL guard, not before: `TRUE + 1` is E_SQL_SHAPE and stays that
         ;; way.
         (require-numeric-constant tr (sel::node-l n))
-        (require-numeric-constant tr (sel::node-r n)))
+        (require-numeric-constant tr (sel::node-r n))
+        ;; And an operand nobody has vouched for is wrapped so that a value SEL
+        ;; would refuse becomes NULL rather than a number the server invented. A
+        ;; NUM operand passes through untouched.
+        (setf l (guard-numeric tr l (sel::node-l n))
+              r (guard-numeric tr r (sel::node-r n))))
       ;; BAND/BOR/BXOR get NO kind guard: they are refused by the map entry.
       (when (or (equal op "&") (and (> (length op) 1) (char= (char op 0) #\$)))
         (require-not-bool-operand l lpos op)

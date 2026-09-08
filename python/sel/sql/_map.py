@@ -314,6 +314,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
             "textCast": "CAST({0} AS CHAR)",
+            "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
         },
         "ops": {
             "+": {
@@ -681,6 +682,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
             "textCast": "CAST({0} AS CHAR)",
+            "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
         },
         "ops": {
             "+": {
@@ -1047,6 +1049,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "isNotTrue": "({0}) IS NOT TRUE",
             "placeholder": "?",
             "textCast": "CAST({0} AS CHAR)",
+            "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
         },
         "ops": {
             "+": {
@@ -1412,6 +1415,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "isNotTrue": "(({0}) IS NOT TRUE)",
             "placeholder": "?",
             "textCast": "CAST({0} AS TEXT)",
+            "numericGuard": "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END",
         },
         "ops": {
             "+": {
@@ -2215,6 +2219,7 @@ RULES: dict[str, Any] = {
         "isTrue": "string",
         "isNotTrue": "string",
         "placeholder": "string",
+        "numericGuard": "string",
     },
-    "templateKeys": ["identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder"],
+    "templateKeys": ["identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder", "numericGuard"],
 }

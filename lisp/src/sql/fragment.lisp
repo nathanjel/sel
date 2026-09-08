@@ -6,7 +6,7 @@
 ;;; EMIT.LISP is loaded after this file, because EMIT-TEXT-OPERAND needs the
 ;;; FRAGMENT struct at compile time while these need only its functions at run
 ;;; time. Declared so the forward reference is stated rather than warned about.
-(declaim (ftype function emit-literal emit-placeholder lex-text replace-all))
+(declaim (ftype function emit-literal emit-placeholder))
 
 (defparameter +kinds+ '(:num :text :bool :bin :unknown :list))
 
@@ -92,15 +92,17 @@ which is not a SQL value at all."
 (defun as-condition (f &optional (mode :inline))
   "Usable as a condition.
 
-BOOL as it stands; UNKNOWN wrapped in the dialect's IS TRUE test, since a column
-of unknown type may be NULL and SEL has no third truth value to give back. A NUM
-or TEXT fragment is refused rather than accepted: silently allowing
-`WHERE o.total` is how a database turns a validation rule into the truthiness
-test SEL spent its whole design avoiding."
+BOOL and nothing else. A NUM or TEXT fragment is refused rather than accepted:
+silently allowing `WHERE o.total` is how a database turns a validation rule into
+the truthiness test SEL spent its whole design avoiding."
   (case (fragment-kind f)
     (:bool (frag-join f mode))
-    (:unknown (replace-all (lex-text (fragment-dialect f) "isTrue") "{0}"
-                           (frag-join f mode)))
+    ;; UNKNOWN was wrapped in isTrue here rather than trusted, which folds NULL
+    ;; to false but not a number: `1 IS TRUE` is TRUE on MariaDB, and SEL raises
+    ;; E_NOT_BOOL for a number in a condition. Wrapping cannot fix that, so an
+    ;; undeclared column is no longer a condition; declare the binding BOOL.
+    ;; isTrue stays in the map -- the aggregate skeletons use it on a body that
+    ;; is already known to be BOOL.
     (t (refuse "E_SQL_SHAPE"
                (format nil "a condition must be BOOL, and this expression is ~a; ~
 SQL has no truthiness and neither does SEL" (kind-name (fragment-kind f)))))))

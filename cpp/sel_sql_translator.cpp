@@ -556,9 +556,15 @@ SqlKind ret_kind(const Entry& entry, std::span<const Fragment> args, Pos pos) {
 
 const Fragment& Translator::require_bool(const Fragment& f, Pos pos,
                                          const std::string& where) {
-  // UNKNOWN is not wrapped here: Fragment::as_condition wraps an UNKNOWN
-  // top-level result in the dialect's isTrue template instead.
-  if (f.kind() == SqlKind::Bool || f.kind() == SqlKind::Unknown) return f;
+  // UNKNOWN used to pass, on the reasoning that an undeclared column may well
+  // be boolean and the database is the one that knows. Measured, the database
+  // does not know: MariaDB answers `1 AND TRUE` as TRUE, so an undeclared column
+  // holding 1 matched a row SEL refuses with E_NOT_BOOL, and PostgreSQL raises
+  // 42804 instead. No dialect can ask "is this a boolean" -- in the MySQL family
+  // a boolean IS a TINYINT, so testing IN (0, 1) would also admit a NUM column
+  // SEL refuses -- so there is nothing to wrap it in, and refusing is the only
+  // answer that keeps the warrant.
+  if (f.kind() == SqlKind::Bool) return f;
   refuse("E_SQL_SHAPE",
          where + " needs a BOOL here and this is " +
              std::string(kind_name(f.kind())) +
@@ -609,6 +615,18 @@ void Translator::require_not_bool_operand(const Fragment& f, Pos pos,
 // for why it is never keyed on a declared kind.
 void Translator::require_numeric_constant(const SNode& n) {
   if (is_constant(n, const_names_)) require_numeric(n, const_root_);
+}
+
+// Wrap an operand the numeric context cannot be sure of.
+//
+// A constant is skipped, because require_numeric_constant has just proved it IS
+// a number -- guarding it would ask the server a question already answered here,
+// and would cost a bound value a second parameter for the repeated slot. What is
+// left is what could not be settled at translation time: columns, raw, relation
+// fields.
+Fragment Translator::guard_numeric(const Fragment& f, const SNode& n) {
+  if (is_constant(n, const_names_)) return f;
+  return emit_.numeric_operand(f, n.pos());
 }
 
 // --- the map application path ------------------------------------------------
@@ -763,6 +781,7 @@ Fragment Translator::unary(const SNode& n) {
   } else {
     require_not_bool(x, n.l()->pos(), n.s());
     require_numeric_constant(*n.l());
+    x = guard_numeric(x, *n.l());
   }
   const Fragment one[] = {x};
   // No variant: a unary entry must be a plain template, and a dialect that gave
@@ -789,6 +808,12 @@ Fragment Translator::binary(const SNode& n) {
     // BOOL guard, not before: `TRUE + 1` is E_SQL_SHAPE and stays that way.
     require_numeric_constant(*n.l());
     require_numeric_constant(*n.r());
+    // And an operand nobody has vouched for is wrapped so that a value SEL
+    // would refuse becomes NULL rather than a number the server invented. A NUM
+    // operand passes through untouched -- and both operands being NUM by this
+    // point is what selects the `num` variant below.
+    l = guard_numeric(l, *n.l());
+    r = guard_numeric(r, *n.r());
   }
   // BAND/BOR/BXOR get NO kind guard: they are refused by the map entry itself.
   if (op == "&" || (op.size() > 1 && op[0] == '$')) {

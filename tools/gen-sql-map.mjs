@@ -66,8 +66,20 @@ const opArity = (key) => OP_ARITY[key] ?? 2;
 const LEXICAL_KEYS = [
   'identQuote', 'identEscape', 'textQuote', 'textEscape', 'true', 'false',
   'binaryLiteral', 'numericLiteral', 'textCollate', 'textCast', 'numericCast',
-  'binaryCast', 'isTrue', 'isNotTrue', 'placeholder',
+  'binaryCast', 'isTrue', 'isNotTrue', 'placeholder', 'numericGuard',
 ];
+// Keys a target may leave undeclared, where the absence is itself the answer.
+//
+// Every other lexical must resolve on every target, because a dialect that
+// cannot quote an identifier is not a dialect. numericGuard is different: it
+// asks "is this text a SEL number", and two of the four servers have no way to
+// ask -- sqlite has no REGEXP and ansi has no regex at all, which is exactly
+// why funcs.ISNUM is unmapped on both with a written reason. Requiring it here
+// would force a wrong answer into the map; leaving it out is the map saying
+// "not here", the same convention an unmapped function uses, and the translator
+// refuses rather than guessing.
+const OPTIONAL_LEXICAL = new Set(['numericGuard']);
+
 // Substitutable in a template. textEscape is an object and binaryLiteral is
 // filled by the renderer, so neither is spliceable.
 const LEXICAL_TEMPLATE_KEYS = LEXICAL_KEYS.filter(
@@ -114,6 +126,7 @@ const LEXICAL_TYPES = {
   binaryLiteral: 'string', numericLiteral: 'string', textCollate: 'string',
   textCast: 'string', numericCast: 'string', binaryCast: 'string',
   isTrue: 'string', isNotTrue: 'string', placeholder: 'string',
+  numericGuard: 'string',
 };
 
 /**
@@ -455,7 +468,26 @@ function validate(flat) {
 
   if (flat.target) {
     for (const k of LEXICAL_KEYS) {
+      if (OPTIONAL_LEXICAL.has(k)) continue;
       if (lexical[k] === undefined) fail(dialect, `target dialect does not resolve lexical.${k}`);
+    }
+  }
+
+  // numericGuard and funcs.ISNUM ask the same question -- "is this text a SEL
+  // number" -- so they carry the same pattern, and the map's own rule is that
+  // one place defines a thing. Two copies of a numeral grammar is exactly the
+  // drift that rule exists to prevent, so they are required to agree here
+  // rather than trusted to.
+  if (lexical.numericGuard !== undefined) {
+    const isnum = flat.funcs.ISNUM;
+    const pattern = (t) => (typeof t === 'string' ? (t.match(/'([^']*)'/) ?? [])[1] : undefined);
+    const want = pattern(isnum && isnum.tpl);
+    const got = pattern(lexical.numericGuard);
+    if (want === undefined) {
+      fail(dialect, 'declares lexical.numericGuard but maps no funcs.ISNUM to agree with');
+    } else if (want !== got) {
+      fail(dialect, `lexical.numericGuard tests ${got} and funcs.ISNUM tests ${want}; `
+                    + 'they ask the same question and must carry the same pattern');
     }
   }
 
