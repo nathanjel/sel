@@ -299,8 +299,8 @@
       "name": "caveated-entry-answers-anything",
       "was": "A caveat does not narrow what an entry may answer; it suspends the oracle's verdict for it. ansi's LOWER already carries unicode-case, so every disagreement it produces is reported as inexact-by-declaration and passes -- and no .sqlt case names LOWER on any dialect. The entry can therefore return the wrong function's answer. This is Class A with the check switched off by a field that was added for an honest reason.",
       "file": "sql/dialects/ansi.json",
-      "from": "    \"LOWER\": {\n      \"tpl\": \"LOWER({0})\",",
-      "to": "    \"LOWER\": {\n      \"tpl\": \"UPPER({0})\","
+      "from": "    \"LOWER\": {\n      \"tpl\": \"LOWER({textCast:0})\",",
+      "to": "    \"LOWER\": {\n      \"tpl\": \"UPPER({textCast:0})\","
     },
     {
       "name": "exactness-invented",
@@ -355,8 +355,8 @@
       "name": "exactness-invented-where-nothing-is-strict",
       "was": "exactness-invented, moved one entry over. That one was caught, by the single case in the suite that puts $== under strict -- sqlite.strict.allows-text. Six strict cases exist in 273, between them pinning the exactness of four entries; every other entry can be declared inexact for free. LEN is one, and after this the oracle can no longer fail on it.",
       "file": "sql/dialects/ansi.json",
-      "from": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\",\n      \"ret\": \"NUM\"\n    },",
-      "to": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\",\n      \"ret\": \"NUM\",\n      \"caveat\": \"length-units\"\n    },"
+      "from": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({textCast:0})\",\n      \"ret\": \"NUM\"\n    },",
+      "to": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({textCast:0})\",\n      \"ret\": \"NUM\",\n      \"caveat\": \"length-units\"\n    },"
     },
     {
       "name": "value-binding-is-not-constant",
@@ -1134,6 +1134,13 @@
       "file": "cpp/sel_sql_map.cpp",
       "from": "  if (section == Section::Funcs && k == \"ISNUM\") reg().guard_checked.clear();",
       "to": "  if (section == Section::Funcs && k == \"ISNUM~never\") reg().guard_checked.clear();"
+    },
+    {
+      "name": "ansi-len-drops-its-cast",
+      "was": "ansi back to the bare template it carried for years. SEL numbers ARE text, so LEN's operand may be a number, and a conformant server has no char_length(numeric) -- but MySQL coerces, so no shipped target ever noticed. No .sqlt case pins ansi's LEN either. This is the mutation that says the ansi-probe oracle lane earns its place: it is the only check in the tree that can see it.",
+      "file": "sql/dialects/ansi.json",
+      "from": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({textCast:0})\",",
+      "to": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\","
     }
   ]
 }
