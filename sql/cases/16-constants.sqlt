@@ -478,3 +478,55 @@ A = 2 + 3; A * 2
 --- expect
 ((2 + 3) * 2)
 ===
+### name: const.numeric.text-literal-beside-a-column
+--- note
+Reported from the field, on MariaDB: `TYPEPATH == "led-account"` translated and
+matched every row. The file above asks SEL about an expression whose arguments
+are all written down; this one has a column, so it was never asked -- and the
+answer did not need the column. `==` reads both operands as numbers and
+"led-account" is not one, so SEL answers E_NOT_NUM whatever the column holds.
+
+Measured on the pinned servers: CAST('x' AS DECIMAL) is 0 on MariaDB, MySQL and
+SQLite, so the predicate became 0 = 0 and matched every row, silently, carrying
+only warning 1292; and error 22P02 on PostgreSQL. Three wrong answers and one
+crash, all reported as a successful translation.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "table": "o", "type": "TEXT"}}
+--- source
+T == "x"
+--- error
+E_SQL_INVALID 1:6
+===
+### name: const.numeric.the-shape-that-hid-it
+--- note
+The same literal, one level out. The check ran on the smallest enclosing
+bin/un/call node, and only when that node had no non-constant leaf -- so
+`N + (1 + "x")` refused and `(N + 1) + "x"` did not. The same expression,
+re-associated. A guard whose answer depends on where the parentheses went is
+not a guard.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "column": "n", "table": "o", "type": "NUM"}}
+--- source
+(N + 1) + "x"
+--- error
+E_SQL_INVALID 1:11
+===
+### name: const.numeric.a-number-written-as-text-still-translates
+--- note
+The guard must not over-fire. SEL's numbers ARE text (spec §4), so "5" is a
+number and this is an ordinary comparison that must still push down. The test is
+the numeral grammar -- the evaluator's own Dec::parse -- and never "does it look
+numeric".
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "table": "o", "type": "TEXT"}}
+--- source
+T == "5"
+--- expect
+(CAST(`o`.`t` AS DECIMAL(65,10)) = CAST('5' AS DECIMAL(65,10)))
+===

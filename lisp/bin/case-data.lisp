@@ -4754,6 +4754,48 @@
    :register nil
    :bindings (lambda () (list )))
   (list
+   :name "const.numeric.text-literal-beside-a-column"
+   :at "16-constants.sqlt:481"
+   :dialect "mariadb"
+   :source "T == \"x\""
+   :expect nil
+   :error "E_SQL_INVALID 1:6"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" "o" :text)))))
+  (list
+   :name "const.numeric.the-shape-that-hid-it"
+   :at "16-constants.sqlt:502"
+   :dialect "mariadb"
+   :source "(N + 1) + \"x\""
+   :expect nil
+   :error "E_SQL_INVALID 1:11"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "o" :num)))))
+  (list
+   :name "const.numeric.a-number-written-as-text-still-translates"
+   :at "16-constants.sqlt:518"
+   :dialect "mariadb"
+   :source "T == \"5\""
+   :expect "(CAST(`o`.`t` AS DECIMAL(65,10)) = CAST('5' AS DECIMAL(65,10)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" "o" :text)))))
+  (list
    :name "pin.mariadb.decode-base64"
    :at "17-caveat-pins.sqlt:15"
    :dialect "mariadb"
