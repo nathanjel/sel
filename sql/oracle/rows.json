@@ -21,7 +21,14 @@
     "docs/SQL-KINDS.md section 6's exclusion 4 -- an answer the database is",
     "allowed to give that SEL does not (`database`, with `excluded` saying why).",
     "Refused rows are absent from what SEL selects, so the ordinary comparison is",
-    "the warrant: SQL must not report a match for a row SEL would not answer for."
+    "the warrant: SQL must not report a match for a row SEL would not answer for.",
+    "",
+    "`ansi-probe` appears beside the four servers in every per-dialect `raw`. It is",
+    "not a server: php/bin/sqlo registers it to reach the ansi entries no target",
+    "resolves, and it needs a correlation here only so the relation skeletons are",
+    "counted as covered under it. The spelling is PostgreSQL's, which is the",
+    "standard's -- double-quoted identifiers -- and there is no fixture for it, so",
+    "run_rows skips it and only coverage reads this."
   ],
   "fixture": {
     "mariadb": "fixture-mysql-family.sql",
@@ -46,7 +53,8 @@
           "mariadb": "`sk`.`order_id` = `o`.`id`",
           "mysql": "`sk`.`order_id` = `o`.`id`",
           "sqlite": "`sk`.`order_id` = `o`.`id`",
-          "postgresql": "\"sk\".\"order_id\" = \"o\".\"id\""
+          "postgresql": "\"sk\".\"order_id\" = \"o\".\"id\"",
+          "ansi-probe": "\"sk\".\"order_id\" = \"o\".\"id\""
         }
       },
       "scalar": "SKU",
@@ -67,7 +75,8 @@
           "mariadb": "`oi`.`order_id` = `o`.`id`",
           "mysql": "`oi`.`order_id` = `o`.`id`",
           "sqlite": "`oi`.`order_id` = `o`.`id`",
-          "postgresql": "\"oi\".\"order_id\" = \"o\".\"id\""
+          "postgresql": "\"oi\".\"order_id\" = \"o\".\"id\"",
+          "ansi-probe": "\"oi\".\"order_id\" = \"o\".\"id\""
         }
       },
       "scalar": "SKU",
@@ -103,7 +112,8 @@
           "mariadb": "`nt`.`order_id` = `o`.`id`",
           "mysql": "`nt`.`order_id` = `o`.`id`",
           "sqlite": "`nt`.`order_id` = `o`.`id`",
-          "postgresql": "\"nt\".\"order_id\" = \"o\".\"id\""
+          "postgresql": "\"nt\".\"order_id\" = \"o\".\"id\"",
+          "ansi-probe": "\"nt\".\"order_id\" = \"o\".\"id\""
         }
       },
       "scalar": "NOTE",

@@ -30,17 +30,17 @@ constexpr Lexical d0_ansi_lexical[] = {
     {.key = "false", .kind = LexKind::Text, .text = "FALSE"},
     {.key = "binaryLiteral", .kind = LexKind::Text, .text = "X'{hex}'"},
     {.key = "numericLiteral", .kind = LexKind::Text, .text = "{0}"},
-    {.key = "textCollate", .kind = LexKind::Text, .text = ""},
+    {.key = "textCollate", .kind = LexKind::Text, .text = " COLLATE UCS_BASIC"},
     {.key = "textCharset", .kind = LexKind::Withdrawn},
-    {.key = "numericCast", .kind = LexKind::Text, .text = "CAST({0} AS DECIMAL(38,10))"},
+    {.key = "numericCast", .kind = LexKind::Text, .text = "CAST({0} AS NUMERIC)"},
     {.key = "binaryCast", .kind = LexKind::Text, .text = "CAST({0} AS BINARY)"},
     {.key = "isTrue", .kind = LexKind::Text, .text = "({0}) IS TRUE"},
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "({0}) IS NOT TRUE"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
-    {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
+    {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHARACTER VARYING)"},
 };
 constexpr Keyed d0_ansi_ops6[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} || {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({textCast:0} || {textCast:1})"}},
 };
 constexpr Keyed d0_ansi_ops11[] = {
     {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
@@ -91,12 +91,12 @@ constexpr Keyed d0_ansi_ops24[] = {
     {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d0_ansi_ops[] = {
-    {.key = "+", .kind = EntryKind::Template, .one = "({0} + {1})", .ret = "NUM"},
-    {.key = "-", .kind = EntryKind::Template, .one = "({0} - {1})", .ret = "NUM"},
-    {.key = "*", .kind = EntryKind::Template, .one = "({0} * {1})", .ret = "NUM"},
-    {.key = "/", .kind = EntryKind::Template, .one = "({0} / {1})", .ret = "NUM", .caveat = "division-scale"},
-    {.key = "%", .kind = EntryKind::Template, .one = "MOD({0}, {1})", .ret = "NUM"},
-    {.key = "NEG", .kind = EntryKind::Template, .one = "(-{0})", .ret = "NUM"},
+    {.key = "+", .kind = EntryKind::Template, .one = "({numericCast:0} + {numericCast:1})", .ret = "NUM"},
+    {.key = "-", .kind = EntryKind::Template, .one = "({numericCast:0} - {numericCast:1})", .ret = "NUM"},
+    {.key = "*", .kind = EntryKind::Template, .one = "({numericCast:0} * {numericCast:1})", .ret = "NUM"},
+    {.key = "/", .kind = EntryKind::Template, .one = "({numericCast:0} / {numericCast:1})", .ret = "NUM", .caveat = "division-scale"},
+    {.key = "%", .kind = EntryKind::Template, .one = "MOD({numericCast:0}, {numericCast:1})", .ret = "NUM"},
+    {.key = "NEG", .kind = EntryKind::Template, .one = "(-{numericCast:0})", .ret = "NUM"},
     {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops6, .ret = "@concat", .caveat = "concat-null"},
     {.key = "AND", .kind = EntryKind::Template, .one = "({0} AND {1})", .ret = "BOOL"},
     {.key = "OR", .kind = EntryKind::Template, .one = "({0} OR {1})", .ret = "BOOL"},
@@ -121,17 +121,17 @@ constexpr Entry d0_ansi_ops[] = {
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
 };
 constexpr Keyed d0_ansi_funcs1[] = {
-    {.key = "2", .value = {.present = true, .text = "SUBSTRING({0} FROM {1})"}},
-    {.key = "3", .value = {.present = true, .text = "SUBSTRING({0} FROM {1} FOR {2})"}},
+    {.key = "2", .value = {.present = true, .text = "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER))"}},
+    {.key = "3", .value = {.present = true, .text = "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER) FOR CAST({2} AS INTEGER))"}},
 };
 constexpr Entry d0_ansi_funcs[] = {
-    {.key = "LEN", .kind = EntryKind::Template, .one = "CHAR_LENGTH({0})", .ret = "NUM"},
+    {.key = "LEN", .kind = EntryKind::Template, .one = "CHAR_LENGTH({textCast:0})", .ret = "NUM"},
     {.key = "SUBSTR", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d0_ansi_funcs1, .ret = "TEXT"},
-    {.key = "UPPER", .kind = EntryKind::Template, .one = "UPPER({0})", .ret = "TEXT", .caveat = "unicode-case"},
-    {.key = "LOWER", .kind = EntryKind::Template, .one = "LOWER({0})", .ret = "TEXT", .caveat = "unicode-case"},
-    {.key = "TRIM", .kind = EntryKind::Template, .one = "TRIM(BOTH FROM {0})", .ret = "TEXT", .caveat = "trim-charset"},
-    {.key = "LTRIM", .kind = EntryKind::Template, .one = "TRIM(LEADING FROM {0})", .ret = "TEXT", .caveat = "trim-charset"},
-    {.key = "RTRIM", .kind = EntryKind::Template, .one = "TRIM(TRAILING FROM {0})", .ret = "TEXT", .caveat = "trim-charset"},
+    {.key = "UPPER", .kind = EntryKind::Template, .one = "UPPER({textCast:0})", .ret = "TEXT", .caveat = "unicode-case"},
+    {.key = "LOWER", .kind = EntryKind::Template, .one = "LOWER({textCast:0})", .ret = "TEXT", .caveat = "unicode-case"},
+    {.key = "TRIM", .kind = EntryKind::Template, .one = "TRIM(BOTH FROM {textCast:0})", .ret = "TEXT", .caveat = "trim-charset"},
+    {.key = "LTRIM", .kind = EntryKind::Template, .one = "TRIM(LEADING FROM {textCast:0})", .ret = "TEXT", .caveat = "trim-charset"},
+    {.key = "RTRIM", .kind = EntryKind::Template, .one = "TRIM(TRAILING FROM {textCast:0})", .ret = "TEXT", .caveat = "trim-charset"},
     {.key = "ABS", .kind = EntryKind::Template, .one = "ABS({0})", .ret = "NUM"},
     {.key = "CEIL", .kind = EntryKind::Template, .one = "CEIL({0})", .ret = "NUM"},
     {.key = "FLOOR", .kind = EntryKind::Template, .one = "FLOOR({0})", .ret = "NUM"},

@@ -45,7 +45,7 @@ ansi-probe
 --- source
 TRIM(" a ")
 --- expect
-TRIM(BOTH FROM ' a ')
+TRIM(BOTH FROM CAST(' a ' AS CHARACTER VARYING))
 ===
 ### name: ansi.ltrim.leading-only
 --- dialect
@@ -55,7 +55,7 @@ ansi-probe
 --- source
 LTRIM(" a")
 --- expect
-TRIM(LEADING FROM ' a')
+TRIM(LEADING FROM CAST(' a' AS CHARACTER VARYING))
 ===
 ### name: ansi.rtrim.trailing-only
 --- dialect
@@ -65,13 +65,19 @@ ansi-probe
 --- source
 RTRIM("a ")
 --- expect
-TRIM(TRAILING FROM 'a ')
+TRIM(TRAILING FROM CAST('a ' AS CHARACTER VARYING))
 ===
 ### name: ansi.substr.two-arguments
 --- note
 The only uncaveated ansi function template, and it is by-count: two arguments
 take FROM alone, three add FOR. Both arms are pinned, because a by-count entry
 whose arms disagree is a defect no single case can see.
+
+The casts are not decoration. SEL numbers ARE text, so SUBSTR's subject may be a
+number and its positions may be text; MySQL coerces both silently and a
+conformant server does not -- `SUBSTRING('abc' FROM 1.0)` is
+`function substring(unknown, numeric) does not exist` on PostgreSQL 17. Standard
+SQL is strongly typed, so the standard spelling says so.
 --- dialect
 ansi-probe
 --- register
@@ -79,7 +85,7 @@ ansi-probe
 --- source
 SUBSTR("abcd", 2)
 --- expect
-SUBSTRING('abcd' FROM 2)
+SUBSTRING(CAST('abcd' AS CHARACTER VARYING) FROM CAST(2 AS INTEGER))
 ===
 ### name: ansi.substr.three-arguments
 --- dialect
@@ -89,13 +95,24 @@ ansi-probe
 --- source
 SUBSTR("abcd", 2, 2)
 --- expect
-SUBSTRING('abcd' FROM 2 FOR 2)
+SUBSTRING(CAST('abcd' AS CHARACTER VARYING) FROM CAST(2 AS INTEGER) FOR CAST(2 AS INTEGER))
 ===
 ### name: ansi.multiply
 --- note
-Arithmetic is the one operator family the standard spells the same way
-everywhere, which is why ansi is allowed to own it and every target inherits
-the shape rather than the entry.
+The casts are the standard being strongly typed. SEL numbers are text, so both
+operands may arrive as text literals, and `'10' / '4'` is
+`operator is not unique: unknown / unknown` on PostgreSQL 17 -- ambiguous
+rather than wrong, which is worse, because one untyped operand resolves and two
+do not. MariaDB coerces either way and keeps the bare spelling in
+mysql-family.json, where a reader meets both.
+
+`NUMERIC` carries no precision on purpose. Standard SQL leaves it
+implementation-defined, and SEL's numbers have no fixed width, so any
+`DECIMAL(p,s)` here is a ceiling somebody eventually meets: ansi said
+`DECIMAL(38,10)` until the oracle ran a 38-digit literal through it and
+PostgreSQL answered `22003 numeric field overflow`, and a scale of 10 had been
+quietly truncating anything smaller. PostgreSQL and SQLite already spell it
+this way; MariaDB needs its own ceiling and states `DECIMAL(65,10)`.
 --- dialect
 ansi-probe
 --- register
@@ -103,7 +120,7 @@ ansi-probe
 --- source
 2 * 3
 --- expect
-(2 * 3)
+(CAST(2 AS NUMERIC) * CAST(3 AS NUMERIC))
 ===
 ### name: ansi.concat.double-pipe
 --- note
@@ -118,7 +135,7 @@ ansi-probe
 --- source
 "a" & "b"
 --- expect
-('a' || 'b')
+(CAST('a' AS CHARACTER VARYING) || CAST('b' AS CHARACTER VARYING))
 ===
 ### name: ansi.identifiers-are-double-quoted
 --- note

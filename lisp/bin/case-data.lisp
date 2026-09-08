@@ -6194,7 +6194,7 @@
    :at "20-ansi-fallback.sqlt:34"
    :dialect "ansi-probe"
    :source "TRIM(\" a \")"
-   :expect "TRIM(BOTH FROM ' a ')"
+   :expect "TRIM(BOTH FROM CAST(' a ' AS CHARACTER VARYING))"
    :error nil
    :throws nil
    :params nil
@@ -6209,7 +6209,7 @@
    :at "20-ansi-fallback.sqlt:50"
    :dialect "ansi-probe"
    :source "LTRIM(\" a\")"
-   :expect "TRIM(LEADING FROM ' a')"
+   :expect "TRIM(LEADING FROM CAST(' a' AS CHARACTER VARYING))"
    :error nil
    :throws nil
    :params nil
@@ -6224,7 +6224,7 @@
    :at "20-ansi-fallback.sqlt:60"
    :dialect "ansi-probe"
    :source "RTRIM(\"a \")"
-   :expect "TRIM(TRAILING FROM 'a ')"
+   :expect "TRIM(TRAILING FROM CAST('a ' AS CHARACTER VARYING))"
    :error nil
    :throws nil
    :params nil
@@ -6239,7 +6239,7 @@
    :at "20-ansi-fallback.sqlt:70"
    :dialect "ansi-probe"
    :source "SUBSTR(\"abcd\", 2)"
-   :expect "SUBSTRING('abcd' FROM 2)"
+   :expect "SUBSTRING(CAST('abcd' AS CHARACTER VARYING) FROM CAST(2 AS INTEGER))"
    :error nil
    :throws nil
    :params nil
@@ -6251,10 +6251,10 @@
    :bindings (lambda () (list )))
   (list
    :name "ansi.substr.three-arguments"
-   :at "20-ansi-fallback.sqlt:84"
+   :at "20-ansi-fallback.sqlt:90"
    :dialect "ansi-probe"
    :source "SUBSTR(\"abcd\", 2, 2)"
-   :expect "SUBSTRING('abcd' FROM 2 FOR 2)"
+   :expect "SUBSTRING(CAST('abcd' AS CHARACTER VARYING) FROM CAST(2 AS INTEGER) FOR CAST(2 AS INTEGER))"
    :error nil
    :throws nil
    :params nil
@@ -6266,10 +6266,10 @@
    :bindings (lambda () (list )))
   (list
    :name "ansi.multiply"
-   :at "20-ansi-fallback.sqlt:94"
+   :at "20-ansi-fallback.sqlt:100"
    :dialect "ansi-probe"
    :source "2 * 3"
-   :expect "(2 * 3)"
+   :expect "(CAST(2 AS NUMERIC) * CAST(3 AS NUMERIC))"
    :error nil
    :throws nil
    :params nil
@@ -6281,10 +6281,10 @@
    :bindings (lambda () (list )))
   (list
    :name "ansi.concat.double-pipe"
-   :at "20-ansi-fallback.sqlt:108"
+   :at "20-ansi-fallback.sqlt:125"
    :dialect "ansi-probe"
    :source "\"a\" & \"b\""
-   :expect "('a' || 'b')"
+   :expect "(CAST('a' AS CHARACTER VARYING) || CAST('b' AS CHARACTER VARYING))"
    :error nil
    :throws nil
    :params nil
@@ -6296,7 +6296,7 @@
    :bindings (lambda () (list )))
   (list
    :name "ansi.identifiers-are-double-quoted"
-   :at "20-ansi-fallback.sqlt:123"
+   :at "20-ansi-fallback.sqlt:140"
    :dialect "ansi-probe"
    :source "N == 25"
    :expect "(\"n\" = 25)"
@@ -6311,7 +6311,7 @@
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "ansi.no-regex-so-no-mapping"
-   :at "20-ansi-fallback.sqlt:140"
+   :at "20-ansi-fallback.sqlt:157"
    :dialect "ansi-probe"
    :source "RMATCH(\"^a\", \"abc\")"
    :expect nil
@@ -6326,7 +6326,7 @@
    :bindings (lambda () (list )))
   (list
    :name "ansi.inherits-isnum-and-still-cannot-guard"
-   :at "20-ansi-fallback.sqlt:156"
+   :at "20-ansi-fallback.sqlt:173"
    :dialect "ansi-probe"
    :source "T == 25"
    :expect nil

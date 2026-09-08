@@ -691,3 +691,34 @@ S & "!"
 LEN(S)
 
 ### bindings: {}
+
+% --- a number in a text position, and text in a numeric one -------------------
+%
+% SEL numbers ARE text (spec §4), so every one of these is ordinary SEL and each
+% one hands a template an operand of the "wrong" SQL type. MySQL coerces
+% silently, which is why the ansi templates these inherit from looked correct
+% for years; a conformant server does not, and `ansi-probe` is where that shows.
+
+### entry: mixed:numbers-are-text
+LEN(2.50)
+UPPER(2.50)
+LOWER(2.50)
+TRIM(2.50)
+SUBSTR(12345, 2, 2)
+2.50 & "x"
+LEN(1 + 1)
+
+### entry: mixed:text-is-numbers
+ABS("-5")
+CEIL("2.5")
+FLOOR("2.5")
+POWER("2", "3")
+"5" + 1
+"10" / "4"
+
+### entry: mixed:arithmetic-over-two-text-operands
+"5" + "1"
+"5" - "1"
+"5" * "2"
+"5" % "2"
+-"5"

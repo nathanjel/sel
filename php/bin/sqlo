@@ -992,6 +992,15 @@ function run_coverage(string $dialect, bool $verbose, string $label = ''): array
         if (str_starts_with($g['entry'], 'mixed')) {
             continue;
         }
+        // Not on a probe. This asks whether the corpus labels itself honestly,
+        // which is a question about the corpus and not about a dialect, and the
+        // four shipped targets already answer it. A probe refuses whole
+        // families -- ansi has no TO_UTF8, so ENCODE_BASE64(TO_UTF8("hi"))
+        // stops before it reaches ENCODE_BASE64 -- and reporting that as a
+        // mislabelled group would be reporting a map fact as a corpus defect.
+        if (isset(PROBES[$dialect])) {
+            continue;
+        }
         if (!isset($g['reached'][$g['entry']])) {
             $problems[] = "{$at}: group `### entry: {$g['entry']}` never reaches it";
         }
@@ -1084,6 +1093,35 @@ foreach (array_slice($argv, 1) as $arg) {
     }
 }
 
+// --- the ansi probe ----------------------------------------------------------
+//
+// `ansi` is `target: false` -- nobody runs an ANSI server, because ANSI is a
+// standard rather than a product -- and every shipped target overrides most of
+// what it declares. Six ansi entries are therefore resolved by no target, and
+// this oracle, which walks targets, had never evaluated one of them.
+//
+// They are not dead: `defineDialect(name, ['extends' => 'ansi'])` is the
+// documented way to add a server and resolves exactly these. sql/cases/
+// 20-ansi-fallback.sqlt pins the STRINGS they emit. This pins what they MEAN.
+//
+// Registered here and nowhere else, so Sql::dialects() in every other tool
+// still answers with the four shipped targets. Within this process the probe is
+// a target like any other, which is the point: run_coverage and caveat_symmetry
+// then reach it without knowing it is special.
+//
+// PostgreSQL is the connection, and it is chosen because it is the CONFORMANT
+// one. SQLite would accept nearly anything -- its type affinity swallows
+// `CAST(x AS CHAR)` without complaint -- so using it would be choosing the
+// server that hides the answer. MariaDB reads `||` as logical OR, which is the
+// operator ansi spells `&` with. A standard spelling has to be judged by a
+// server that implements the standard.
+const PROBES = ['ansi-probe' => ['extends' => 'ansi', 'dsn' => 'POSTGRESQL']];
+
+foreach (PROBES as $name => $spec) {
+    Map::defineDialect($name, ['extends' => $spec['extends'], 'version' => '1',
+                               'target' => true]);
+}
+
 // Every target, not one with a flag. A dialect nobody runs the oracle against is
 // a dialect whose map is a set of claims, and the point of adding a second one
 // was to find out whether the checks generalise -- so they have to run over
@@ -1118,7 +1156,10 @@ foreach ($targets as $dialect) {
         continue;
     }
 
-    $env = 'SEL_SQL_' . strtoupper(str_replace('-', '_', $dialect));
+    // A probe borrows another dialect's connection: it names no server of its
+    // own, which is the whole reason it exists.
+    $env = 'SEL_SQL_' . (PROBES[$dialect]['dsn']
+        ?? strtoupper(str_replace('-', '_', $dialect)));
     $dsn = getenv($env . '_DSN');
     if ($dsn === false || $dsn === '') {
         echo "{$label}{$env}_DSN is not set, the database oracles are skipped\n";

@@ -23,28 +23,28 @@ namespace sel::sqlt {
 int replay_register() {
   int calls = 0;
   Map::define_dialect("ansi~replay",
-                      DialectSpec::root("1999").target(false).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "X'{hex}'").lexical("numericLiteral", "{0}").lexical("textCollate", "").lexical("textCharset", std::nullopt).lexical("numericCast", "CAST({0} AS DECIMAL(38,10))").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("isTrue", "({0}) IS TRUE").lexical("isNotTrue", "({0}) IS NOT TRUE").lexical("placeholder", "?").lexical("textCast", "CAST({0} AS CHAR)"));
+                      DialectSpec::root("1999").target(false).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "X'{hex}'").lexical("numericLiteral", "{0}").lexical("textCollate", " COLLATE UCS_BASIC").lexical("textCharset", std::nullopt).lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("isTrue", "({0}) IS TRUE").lexical("isNotTrue", "({0}) IS NOT TRUE").lexical("placeholder", "?").lexical("textCast", "CAST({0} AS CHARACTER VARYING)"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
-              "+", EntrySpec::tpl("({0} + {1})", "NUM"));
+              "+", EntrySpec::tpl("({numericCast:0} + {numericCast:1})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
-              "-", EntrySpec::tpl("({0} - {1})", "NUM"));
+              "-", EntrySpec::tpl("({numericCast:0} - {numericCast:1})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
-              "*", EntrySpec::tpl("({0} * {1})", "NUM"));
+              "*", EntrySpec::tpl("({numericCast:0} * {numericCast:1})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
-              "/", EntrySpec::tpl("({0} / {1})", "NUM").caveat("division-scale"));
+              "/", EntrySpec::tpl("({numericCast:0} / {numericCast:1})", "NUM").caveat("division-scale"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
-              "%", EntrySpec::tpl("MOD({0}, {1})", "NUM"));
+              "%", EntrySpec::tpl("MOD({numericCast:0}, {numericCast:1})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
-              "NEG", EntrySpec::tpl("(-{0})", "NUM"));
+              "NEG", EntrySpec::tpl("(-{numericCast:0})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
-              "&", EntrySpec::variants({{"text", "({0} || {1})"}}, "@concat").caveat("concat-null"));
+              "&", EntrySpec::variants({{"text", "({textCast:0} || {textCast:1})"}}, "@concat").caveat("concat-null"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
               "AND", EntrySpec::tpl("({0} AND {1})", "BOOL"));
@@ -110,25 +110,25 @@ int replay_register() {
               "BXOR", EntrySpec::withdraw("SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
-              "LEN", EntrySpec::tpl("CHAR_LENGTH({0})", "NUM"));
+              "LEN", EntrySpec::tpl("CHAR_LENGTH({textCast:0})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
-              "SUBSTR", EntrySpec::by_count({{"2", "SUBSTRING({0} FROM {1})"}, {"3", "SUBSTRING({0} FROM {1} FOR {2})"}}, "TEXT"));
+              "SUBSTR", EntrySpec::by_count({{"2", "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER))"}, {"3", "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER) FOR CAST({2} AS INTEGER))"}}, "TEXT"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
-              "UPPER", EntrySpec::tpl("UPPER({0})", "TEXT").caveat("unicode-case"));
+              "UPPER", EntrySpec::tpl("UPPER({textCast:0})", "TEXT").caveat("unicode-case"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
-              "LOWER", EntrySpec::tpl("LOWER({0})", "TEXT").caveat("unicode-case"));
+              "LOWER", EntrySpec::tpl("LOWER({textCast:0})", "TEXT").caveat("unicode-case"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
-              "TRIM", EntrySpec::tpl("TRIM(BOTH FROM {0})", "TEXT").caveat("trim-charset"));
+              "TRIM", EntrySpec::tpl("TRIM(BOTH FROM {textCast:0})", "TEXT").caveat("trim-charset"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
-              "LTRIM", EntrySpec::tpl("TRIM(LEADING FROM {0})", "TEXT").caveat("trim-charset"));
+              "LTRIM", EntrySpec::tpl("TRIM(LEADING FROM {textCast:0})", "TEXT").caveat("trim-charset"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
-              "RTRIM", EntrySpec::tpl("TRIM(TRAILING FROM {0})", "TEXT").caveat("trim-charset"));
+              "RTRIM", EntrySpec::tpl("TRIM(TRAILING FROM {textCast:0})", "TEXT").caveat("trim-charset"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
               "ABS", EntrySpec::tpl("ABS({0})", "NUM"));
@@ -271,6 +271,21 @@ int replay_register() {
   Map::define("mysql-family~replay", Section::Ops,
               "XOR", EntrySpec::tpl("({0} XOR {1})", "BOOL"));
   ++calls;
+  Map::define("mysql-family~replay", Section::Ops,
+              "+", EntrySpec::tpl("({0} + {1})", "NUM"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Ops,
+              "-", EntrySpec::tpl("({0} - {1})", "NUM"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Ops,
+              "/", EntrySpec::tpl("({0} / {1})", "NUM").caveat("division-scale"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Ops,
+              "%", EntrySpec::tpl("MOD({0}, {1})", "NUM"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Ops,
+              "NEG", EntrySpec::tpl("(-{0})", "NUM"));
+  ++calls;
   Map::define("mysql-family~replay", Section::Funcs,
               "LEFT", EntrySpec::tpl("LEFT({0}, {1})", "TEXT"));
   ++calls;
@@ -363,6 +378,15 @@ int replay_register() {
   ++calls;
   Map::define("mysql-family~replay", Section::Funcs,
               "RREPLACE", EntrySpec::withdraw("SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Funcs,
+              "LEN", EntrySpec::tpl("CHAR_LENGTH({0})", "NUM"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Funcs,
+              "UPPER", EntrySpec::tpl("UPPER({0})", "TEXT").caveat("unicode-case"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Funcs,
+              "LOWER", EntrySpec::tpl("LOWER({0})", "TEXT").caveat("unicode-case"));
   ++calls;
   Map::define("mysql-family~replay", Section::Skel,
               "join", EntrySpec::withdraw("GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"));

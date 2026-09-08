@@ -34,6 +34,27 @@
     "XOR": {
       "tpl": "({0} XOR {1})",
       "ret": "BOOL"
+    },
+    "+": {
+      "tpl": "({0} + {1})",
+      "ret": "NUM"
+    },
+    "-": {
+      "tpl": "({0} - {1})",
+      "ret": "NUM"
+    },
+    "/": {
+      "tpl": "({0} / {1})",
+      "ret": "NUM",
+      "caveat": "division-scale"
+    },
+    "%": {
+      "tpl": "MOD({0}, {1})",
+      "ret": "NUM"
+    },
+    "NEG": {
+      "tpl": "(-{0})",
+      "ret": "NUM"
     }
   },
   "funcs": {
@@ -176,7 +197,21 @@
       "ret": "BOOL",
       "caveat": "regex-engine"
     },
-    "RREPLACE": "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express"
+    "RREPLACE": "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express",
+    "LEN": {
+      "tpl": "CHAR_LENGTH({0})",
+      "ret": "NUM"
+    },
+    "UPPER": {
+      "tpl": "UPPER({0})",
+      "ret": "TEXT",
+      "caveat": "unicode-case"
+    },
+    "LOWER": {
+      "tpl": "LOWER({0})",
+      "ret": "TEXT",
+      "caveat": "unicode-case"
+    }
   },
   "skel": {
     "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"

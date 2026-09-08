@@ -31,44 +31,44 @@ RAW: list[dict[str, Any]] = [{
         "false": "FALSE",
         "binaryLiteral": "X'{hex}'",
         "numericLiteral": "{0}",
-        "textCollate": "",
+        "textCollate": " COLLATE UCS_BASIC",
         "textCharset": None,
-        "numericCast": "CAST({0} AS DECIMAL(38,10))",
+        "numericCast": "CAST({0} AS NUMERIC)",
         "binaryCast": "CAST({0} AS BINARY)",
         "isTrue": "({0}) IS TRUE",
         "isNotTrue": "({0}) IS NOT TRUE",
         "placeholder": "?",
-        "textCast": "CAST({0} AS CHAR)",
+        "textCast": "CAST({0} AS CHARACTER VARYING)",
     },
     "ops": {
         "+": {
-            "tpl": "({0} + {1})",
+            "tpl": "({numericCast:0} + {numericCast:1})",
             "ret": "NUM",
         },
         "-": {
-            "tpl": "({0} - {1})",
+            "tpl": "({numericCast:0} - {numericCast:1})",
             "ret": "NUM",
         },
         "*": {
-            "tpl": "({0} * {1})",
+            "tpl": "({numericCast:0} * {numericCast:1})",
             "ret": "NUM",
         },
         "/": {
-            "tpl": "({0} / {1})",
+            "tpl": "({numericCast:0} / {numericCast:1})",
             "ret": "NUM",
             "caveat": "division-scale",
         },
         "%": {
-            "tpl": "MOD({0}, {1})",
+            "tpl": "MOD({numericCast:0}, {numericCast:1})",
             "ret": "NUM",
         },
         "NEG": {
-            "tpl": "(-{0})",
+            "tpl": "(-{numericCast:0})",
             "ret": "NUM",
         },
         "&": {
             "variants": {
-                "text": "({0} || {1})",
+                "text": "({textCast:0} || {textCast:1})",
             },
             "ret": "@concat",
             "caveat": "concat-null",
@@ -185,38 +185,38 @@ RAW: list[dict[str, Any]] = [{
     },
     "funcs": {
         "LEN": {
-            "tpl": "CHAR_LENGTH({0})",
+            "tpl": "CHAR_LENGTH({textCast:0})",
             "ret": "NUM",
         },
         "SUBSTR": {
             "tpl": {
-                "2": "SUBSTRING({0} FROM {1})",
-                "3": "SUBSTRING({0} FROM {1} FOR {2})",
+                "2": "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER))",
+                "3": "SUBSTRING({textCast:0} FROM CAST({1} AS INTEGER) FOR CAST({2} AS INTEGER))",
             },
             "ret": "TEXT",
         },
         "UPPER": {
-            "tpl": "UPPER({0})",
+            "tpl": "UPPER({textCast:0})",
             "ret": "TEXT",
             "caveat": "unicode-case",
         },
         "LOWER": {
-            "tpl": "LOWER({0})",
+            "tpl": "LOWER({textCast:0})",
             "ret": "TEXT",
             "caveat": "unicode-case",
         },
         "TRIM": {
-            "tpl": "TRIM(BOTH FROM {0})",
+            "tpl": "TRIM(BOTH FROM {textCast:0})",
             "ret": "TEXT",
             "caveat": "trim-charset",
         },
         "LTRIM": {
-            "tpl": "TRIM(LEADING FROM {0})",
+            "tpl": "TRIM(LEADING FROM {textCast:0})",
             "ret": "TEXT",
             "caveat": "trim-charset",
         },
         "RTRIM": {
-            "tpl": "TRIM(TRAILING FROM {0})",
+            "tpl": "TRIM(TRAILING FROM {textCast:0})",
             "ret": "TEXT",
             "caveat": "trim-charset",
         },
@@ -339,6 +339,27 @@ RAW: list[dict[str, Any]] = [{
         "XOR": {
             "tpl": "({0} XOR {1})",
             "ret": "BOOL",
+        },
+        "+": {
+            "tpl": "({0} + {1})",
+            "ret": "NUM",
+        },
+        "-": {
+            "tpl": "({0} - {1})",
+            "ret": "NUM",
+        },
+        "/": {
+            "tpl": "({0} / {1})",
+            "ret": "NUM",
+            "caveat": "division-scale",
+        },
+        "%": {
+            "tpl": "MOD({0}, {1})",
+            "ret": "NUM",
+        },
+        "NEG": {
+            "tpl": "(-{0})",
+            "ret": "NUM",
         },
     },
     "funcs": {
@@ -476,6 +497,20 @@ RAW: list[dict[str, Any]] = [{
             "caveat": "regex-engine",
         },
         "RREPLACE": "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express",
+        "LEN": {
+            "tpl": "CHAR_LENGTH({0})",
+            "ret": "NUM",
+        },
+        "UPPER": {
+            "tpl": "UPPER({0})",
+            "ret": "TEXT",
+            "caveat": "unicode-case",
+        },
+        "LOWER": {
+            "tpl": "LOWER({0})",
+            "ret": "TEXT",
+            "caveat": "unicode-case",
+        },
     },
     "skel": {
         "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",

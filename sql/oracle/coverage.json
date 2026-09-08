@@ -25,7 +25,14 @@
     "disagree with SEL; the oracle now requires that somewhere it DOES, or that this file",
     "says why it cannot. Inventing a caveat used to be free -- it silenced every check on",
     "that entry and changed no output character -- and dropping a real one was invisible",
-    "wherever the comparator normalised the difference away."
+    "wherever the comparator normalised the difference away.",
+    "",
+    "`ansi-probe` is not a server. php/bin/sqlo registers it -- extends ansi, nothing",
+    "overridden -- so that the six ansi entries no shipped target resolves are",
+    "evaluated by one. It borrows PostgreSQL's connection because PostgreSQL is the",
+    "conformant engine of the four: SQLite's type affinity accepts almost any cast,",
+    "and MariaDB reads || as logical OR. Its supported set is smaller than any real",
+    "target's because ansi refuses most of what it declares."
   ],
   "exclude": {},
   "supported": {
@@ -296,6 +303,51 @@
       "skel.count",
       "skel.inRelation",
       "skel.sum"
+    ],
+    "ansi-probe": [
+      "funcs.ABS",
+      "funcs.CEIL",
+      "funcs.FLOOR",
+      "funcs.LEN",
+      "funcs.LOWER",
+      "funcs.LTRIM",
+      "funcs.POWER",
+      "funcs.RTRIM",
+      "funcs.SUBSTR",
+      "funcs.TRIM",
+      "funcs.UPPER",
+      "ops.!=",
+      "ops.$!=",
+      "ops.$<",
+      "ops.$<=",
+      "ops.$==",
+      "ops.$>",
+      "ops.$>=",
+      "ops.%",
+      "ops.&",
+      "ops.*",
+      "ops.+",
+      "ops.-",
+      "ops./",
+      "ops.<",
+      "ops.<=",
+      "ops.==",
+      "ops.>",
+      "ops.>=",
+      "ops.AND",
+      "ops.EQL",
+      "ops.IN",
+      "ops.NEG",
+      "ops.NOT",
+      "ops.OR",
+      "ops.XOR",
+      "skel.all",
+      "skel.any",
+      "skel.case",
+      "skel.caseBranch",
+      "skel.count",
+      "skel.inRelation",
+      "skel.sum"
     ]
   },
   "caveats_unwitnessable": {
@@ -312,6 +364,9 @@
       "input-laxity": "Unwitnessable for the same reason, one level up: it says the server accepts input SEL rejects. Where SEL rejects, SEL has no answer, so no expression can differ under it. DECODE_BASE64(\"aGVsbG8\") -- unpadded -- is E_BAD_ARG in SEL and a value on the server, and since M5 the constant check refuses to translate it at all.",
       "regex-engine": "Declared and not crossed. PostgreSQL's ARE anchors $ at end-of-string, so the trailing-newline expression that crosses this caveat on the MySQL family agrees here; and every other probe of the stated residue agreed too -- lazy quantifiers (a+?b), bounded repeats (a{2}), non-capturing groups ((?:ab)+) and alternation. Kept rather than removed because PCRE and POSIX ARE are different engine families and the subset SEL guarantees is the intersection of PCRE and ECMAScript, which is not what this server implements. Nobody has found the expression that separates them; that is a weaker statement than `they agree` and is the honest one."
     },
-    "sqlite": {}
+    "sqlite": {},
+    "ansi-probe": {
+      "concat-null": "Unwitnessable by construction, exactly as it is on every other dialect: it says concatenation yields NULL when an operand is NULL, and SEL has no null, so the operand is a NONE and the expression is E_NO_SCALAR in SEL. There is no expression that puts SEL and the server on opposite sides of it. The reasoning is the map's, not this dialect's, and is spelled out under mariadb above."
+    }
   }
 }

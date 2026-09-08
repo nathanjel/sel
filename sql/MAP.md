@@ -49,6 +49,76 @@ and at most eight deep, and every document must reach `ansi`.
 (§4.5), and always the *target's* version — a base's version is never consulted,
 which is why a version-gated entry belongs in the leaf that has the version.
 
+### 1.1 `ansi` says what the standard says, and nothing else
+
+`ansi` is the root, so it is what a dialect inherits when it overrides nothing,
+and `defineDialect(name, ['extends' => 'ansi'])` is the documented way to add a
+server this map has never heard of. That makes it a **claim about standard SQL**
+rather than a convenient place to put shared defaults, and the two are not the
+same thing.
+
+They had drifted apart. Every shipped target overrides most of what `ansi`
+declares, so nothing ever ran its version of an entry, and what accumulated
+there was the MySQL spelling — the reference dialect's — sitting at the root
+where a reader would take it for the portable one. Measured against
+PostgreSQL 17:
+
+| `ansi` said | on a conformant server | now |
+|---|---|---|
+| `CAST({0} AS CHAR)` | `CHAR` is `CHAR(1)`; `'abcdef'` became `'a'`, so `"5.00" $== "5"` was **true** | `CAST({0} AS CHARACTER VARYING)` |
+| `CAST({0} AS DECIMAL(38,10))` | 38 digits overflow at `22003`, and a scale of 10 truncated silently | `CAST({0} AS NUMERIC)` |
+| `""` (no collation) | linguistic ordering, so `"B" $< "a"` was false where SEL says true | `" COLLATE UCS_BASIC"` |
+| `({0} + {1})`, `CHAR_LENGTH({0})`, `({0} \|\| {1})` | SEL numbers **are** text, so operands arrive untyped: `char_length(numeric)` and `integer \|\| integer` do not exist, and `'10' / '4'` is *ambiguous* | operands wrapped in `{textCast:N}` or `{numericCast:N}` |
+
+The through-line is that **standard SQL is strongly typed and MySQL is not.**
+SEL's numbers are text (spec §4), so a template is routinely handed an operand
+of the "wrong" SQL type; MySQL coerces silently and a conformant server refuses.
+Bare templates therefore looked correct for as long as only MySQL inherited
+them.
+
+MySQL's spelling did not change — it moved. `mysql-family.json` now states
+`UPPER`, `LOWER`, `+`, `-`, `/`, `%`, `NEG` and `LEN` itself instead of
+inheriting them, so the emitted SQL for `mariadb` and `mysql` is byte-identical
+to before and the deviation is written down where a reader meets both. That is
+the rule this section is really about: **a dialect that differs from the
+standard says so in its own file.**
+
+`NUMERIC` and `CHARACTER VARYING` carry no precision or length on purpose.
+Standard SQL leaves both implementation-defined, and SEL's values have no fixed
+width, so any number written here is a ceiling somebody eventually meets —
+which is exactly how the `DECIMAL(38,10)` above was found.
+
+None of this changed a shipped target's output: every one of these entries was
+either already overridden or was moved to `mysql-family` in the same commit.
+What changed is what a *new* dialect inherits.
+
+### 1.2 How that is checked, with no ANSI server to check against
+
+Nobody ships an ANSI server — it is a standard, not a product — so `ansi` is
+`target: false` and the semantic oracle, which walks targets, had never
+evaluated a single one of its entries. Two lanes cover it now:
+
+- **Strings**, with no server: `sql/cases/20-ansi-fallback.sqlt` registers a
+  probe dialect extending `ansi` and pins what it emits.
+- **Semantics**, borrowing a connection: `php/bin/sqlo` registers the same probe
+  and runs the whole closed corpus through it against **PostgreSQL**, chosen
+  because it is the conformant one of the four. SQLite's type affinity accepts
+  nearly any cast and MariaDB reads `||` as logical OR, so either would be
+  choosing the server that hides the answer. The probe is registered inside
+  `sqlo` and nowhere else, so `Sql::dialects()` still answers with the four real
+  targets everywhere.
+
+What that establishes is "ansi's entries agree with SEL on the one conformant
+engine available", not "ansi is portable". A green run is evidence for Oracle or
+SQL Server, not proof.
+
+It also made `trim-charset` a measurement. The caveat says `TRIM(BOTH FROM x)`
+strips only the pad character where SEL strips space, tab, CR and LF; every
+shipped target overrides the entry, so the caveat had never once fired, and
+`caveat_pins` could not ask for it because that gate walks targets too. The
+corpus already contained `TRIM("\t\r\n x \n")`, so the probe witnessed it on
+its first run without a single corpus line being added.
+
 ---
 
 ## 2. Entries
