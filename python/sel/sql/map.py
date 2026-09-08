@@ -25,6 +25,9 @@ from .errors import refuse
 
 SECTIONS = ('ops', 'funcs', 'skel')
 
+#: Every quoted run in a template, for the numericGuard/ISNUM agreement check.
+_RUN = re.compile(r"'([^']*)'")
+
 #: Sentinel for "no dialect in the chain mentioned this key".
 MISSING = '\0missing'
 
@@ -34,6 +37,11 @@ _extra: dict[str, dict[str, Any]] = {}
 # Runtime entries, consulted before the generated table:
 # dialect -> section -> key -> entry | builder
 _overlay: dict[str, dict[str, dict[str, Any]]] = {}
+
+# Dialects whose numericGuard has been checked against their ISNUM. The answer
+# cannot change once both are registered, and the shipped dialects pass
+# trivially.
+_guard_checked: set[str] = set()
 
 # Every key define_dialect() accepts. sql/MAP.md §3 is the normative list.
 DIALECT_KEYS = ('extends', 'version', 'target', 'lexical')
@@ -157,6 +165,7 @@ def reset() -> None:
     """Forget every runtime registration. For tests; nothing else should need it."""
     _extra.clear()
     _overlay.clear()
+    _guard_checked.clear()
 
 
 # --- lookup ------------------------------------------------------------------
@@ -205,6 +214,66 @@ def chain(dialect: str) -> list[str]:
 
 def version(dialect: str) -> str:
     return str(_record(dialect)['version'])
+
+
+def _quoted_runs(tpl: str) -> list[str]:
+    """Every quoted run, not the first: two genuinely different numeral tests that
+    happen to share an earlier literal -- a flag, a collation clause -- compare
+    equal if only the first is read. The generator learned this from a decoy that
+    defeated it.
+    """
+    return _RUN.findall(tpl)
+
+
+def check_numeric_guard(dialect: str) -> None:
+    """sql/MAP.md section 7 rule 10, asked at the moment the guard is used.
+
+    The generator checks it when the map is built, and for six months that was
+    the whole of it: an application registering its own dialect could declare a
+    ``numericGuard`` that disagreed with its ``ISNUM``, or one that tested
+    nothing, and nothing refused it. MAP.md said so and filed it beside a binding
+    declared NUM over a column that is not -- the caller's promise.
+
+    It does not belong there. A wrong ``NUM`` declaration is a claim the caller
+    makes about their own data; a wrong ``numericGuard`` is a claim about SEL's
+    numeral grammar, which the caller has no way to check and every other lexical
+    key fails loudly about. This one fails silently: it emits SQL that answers
+    where SEL would not, which is the one outcome docs/SQL-KINDS.md exists to
+    rule out. The first external user of this layer registered a derived dialect
+    on their first day, overriding one lexical key. It was ``textCollate``; it
+    could have been this.
+
+    Checked here rather than in ``define_dialect`` because registration has no
+    end: ``funcs.ISNUM`` is defined one entry at a time with ``define()``, so at
+    the moment a dialect is declared its ISNUM may not exist yet. By the time a
+    guard is being USED, everything either side of the rule is registered.
+    """
+    if dialect in _guard_checked:
+        return
+    _guard_checked.add(dialect)
+    guard = lexical(dialect, 'numericGuard')
+    if not isinstance(guard, str):
+        return
+    isnum = entry(dialect, 'funcs', 'ISNUM')
+    tpl = isnum.get('tpl') if isinstance(isnum, dict) else None
+    if not isinstance(tpl, str):
+        raise ValueError(
+            f'SQL dialect {dialect} declares a numericGuard but maps no funcs.ISNUM '
+            'with a template for it to agree with; the two ask the same question '
+            'and sql/MAP.md section 7 rule 10 is that one place defines a thing')
+    want = _quoted_runs(tpl)
+    if not want:
+        raise ValueError(
+            f'SQL dialect {dialect} maps a funcs.ISNUM that carries no quoted '
+            'pattern, so its numericGuard has nothing to agree with')
+    got = set(_quoted_runs(guard))
+    missing = [w for w in want if w not in got]
+    if missing:
+        raise ValueError(
+            f'SQL dialect {dialect} declares a numericGuard that does not carry '
+            + ', '.join(f"'{m}'" for m in missing)
+            + ', which its funcs.ISNUM tests; they ask the same question, and a '
+            'guard that asks a different one answers for rows SEL refuses')
 
 
 def lexical(dialect: str, key: str) -> Any:

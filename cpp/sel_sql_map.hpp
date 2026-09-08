@@ -359,6 +359,20 @@ class Map {
                              const std::string& key,
                              std::shared_ptr<const Builder> fn);
 
+  // sql/MAP.md section 7 rule 10, asked at the moment the guard is used rather than only
+  // when the map is generated. An application registering its own dialect could
+  // declare a numericGuard that disagreed with its ISNUM, or one that tested
+  // nothing, and nothing refused it -- and unlike every other lexical key, where
+  // a wrong value fails loudly at template expansion, that one fails silently:
+  // it emits SQL that answers where SEL would not. Throws std::runtime_error,
+  // like every other malformed registration.
+  //
+  // Not in define_dialect because registration has no end: funcs.ISNUM is
+  // defined one entry at a time, so at the moment a dialect is declared its
+  // ISNUM may not exist yet. By the time a guard is being USED, everything
+  // either side of the rule is registered.
+  static void check_numeric_guard(const std::string& dialect);
+
   // Forget every runtime registration. For tests; nothing else should need it.
   static void reset();
 

@@ -161,6 +161,11 @@ struct Registry {
   // dialect -> section -> key -> entry
   std::map<std::string, std::array<std::map<std::string, OwnedEntry*, std::less<>>, 3>,
            std::less<>> overlay;
+
+  // Dialects whose numericGuard has been checked against their ISNUM. The answer
+  // cannot change once both are registered, and the shipped dialects pass
+  // trivially.
+  std::set<std::string, std::less<>> guard_checked;
 };
 
 // A function-local static: no static constructor, and no dependence on the
@@ -564,12 +569,75 @@ void Map::define_builder(const std::string& dialect, Section section,
   define(dialect, section, key, EntrySpec::builder(std::move(fn)));
 }
 
+namespace {
+
+// Every single-quoted run in `tpl`, in order.
+//
+// Every run, not the first: two genuinely different numeral tests that happen to
+// share an earlier literal -- a flag, a collation clause -- compare equal if only
+// the first is read. The generator learned this from a decoy that defeated it.
+// An unterminated quote opens no run, which is what the other hosts' '([^']*)'
+// answers.
+std::vector<std::string_view> quoted_runs(std::string_view tpl) {
+  std::vector<std::string_view> out;
+  std::size_t i = 0;
+  while (true) {
+    const std::size_t open = tpl.find('\'', i);
+    if (open == std::string_view::npos) break;
+    const std::size_t close = tpl.find('\'', open + 1);
+    if (close == std::string_view::npos) break;
+    out.push_back(tpl.substr(open + 1, close - open - 1));
+    i = close + 1;
+  }
+  return out;
+}
+
+}  // namespace
+
+void Map::check_numeric_guard(const std::string& dialect) {
+  Registry& r = reg();
+  if (r.guard_checked.find(dialect) != r.guard_checked.end()) return;
+  r.guard_checked.insert(dialect);
+
+  const Lexical* guard = lexical(dialect, "numericGuard");
+  if (!guard || guard->kind != LexKind::Text) return;
+
+  const Entry* isnum = entry(dialect, Section::Funcs, "ISNUM");
+  if (!isnum || isnum->kind != EntryKind::Template || isnum->body != BodyKind::One
+      || isnum->one.empty()) {
+    bad("SQL dialect " + dialect + " declares a numericGuard but maps no funcs.ISNUM "
+        "with a template for it to agree with; the two ask the same question and "
+        "sql/MAP.md section 7 rule 10 is that one place defines a thing");
+  }
+  const std::vector<std::string_view> want = quoted_runs(isnum->one);
+  if (want.empty()) {
+    bad("SQL dialect " + dialect + " maps a funcs.ISNUM that carries no quoted "
+        "pattern, so its numericGuard has nothing to agree with");
+  }
+  const std::vector<std::string_view> got = quoted_runs(guard->text);
+  std::string missing;
+  for (const std::string_view w : want) {
+    if (std::find(got.begin(), got.end(), w) == got.end()) {
+      if (!missing.empty()) missing += ", ";
+      missing += "'";
+      missing += w;
+      missing += "'";
+    }
+  }
+  if (!missing.empty()) {
+    bad("SQL dialect " + dialect + " declares a numericGuard that does not carry "
+        + missing + ", which its funcs.ISNUM tests; they ask the same question, and "
+        "a guard that asks a different one answers for rows SEL refuses");
+  }
+}
+
 void Map::reset() {
   Registry& r = reg();
   r.overlay.clear();
   r.extra.clear();
   r.entry_arena.clear();
   r.dialect_arena.clear();
+  r.guard_checked.clear();
 }
 
 // --- lookup ------------------------------------------------------------------

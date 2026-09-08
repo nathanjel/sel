@@ -195,6 +195,7 @@ export class Emit {
   // something that answers when SEL would not.
   numericOperand(f, pos = null) {
     if (f.kind === 'NUM') return f;
+    map.checkNumericGuard(this._dialect);
     const guard = this.lex('numericGuard');
     if (typeof guard !== 'string') {
       refuse('E_SQL_UNSUPPORTED',

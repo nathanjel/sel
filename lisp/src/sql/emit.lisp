@@ -187,14 +187,16 @@ when SEL would not."
       ;; DIALECT-LEXICAL rather than LEX-TEXT, whose message names the missing
       ;; key. The key is not what an author can act on here; declaring the
       ;; binding NUM is, and that is the sentence this refusal has to say.
-      (let ((guard (dialect-lexical dialect "numericGuard")))
-        (unless (stringp guard)
-          (refuse "E_SQL_UNSUPPORTED"
-                  (format nil "dialect ~a has no way to ask whether a value is a ~
+      (progn
+        (check-numeric-guard dialect)
+        (let ((guard (dialect-lexical dialect "numericGuard")))
+          (unless (stringp guard)
+            (refuse "E_SQL_UNSUPPORTED"
+                    (format nil "dialect ~a has no way to ask whether a value is a ~
 number, so an operand it has not been told is one cannot be read as one here; ~
 declare the binding NUM if the column really is numeric" dialect)
-                  pos))
-        (%fragment (emit-fill dialect guard (list f) pos) :num dialect))))
+                    pos))
+          (%fragment (emit-fill dialect guard (list f) pos) :num dialect)))))
 
 (defun emit-text-operand (dialect f)
   "An operand of a byte comparison: cast to a character type, then given the

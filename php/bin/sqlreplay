@@ -14,7 +14,10 @@ require_once __DIR__ . '/../src/Sql/bootstrap.php';
 // Generated beside this script, harness data rather than part of the library.
 require_once __DIR__ . '/MapReplay.php';
 
+use Sel\Sel;
+use Sel\Sql\Binding;
 use Sel\Sql\Map;
+use Sel\Sql\Sql;
 use Sel\Sql\MapData;
 use Sel\Sql\MapReplay;
 
@@ -71,9 +74,44 @@ foreach (MapData::DIALECTS as $name => $flat) {
     }
 }
 
+// Rule 10 of sql/MAP.md §7, at run time. Registering a derived dialect is the
+// documented way to adapt the map to a server -- the first external user of this
+// layer did it on their first day -- and `numericGuard` is the one lexical key
+// where a wrong override fails SILENTLY: every other one blows up at template
+// expansion, and this one emits SQL that answers where SEL refuses. The
+// generator has enforced the rule since the guard existed; nothing enforced it
+// for a dialect the generator never sees.
+//
+// End to end rather than by calling the check directly, because the check being
+// right is worth nothing if the emit path does not reach it.
+$guardName = 'mariadb' . SUF . '~guard';
+Map::defineDialect($guardName, [
+    'extends' => 'mariadb' . SUF,
+    // Integers only: it accepts '2.5' where ISNUM's pattern does, and SEL's
+    // numerals include a fraction. A guard that asks a narrower question lets
+    // through what it should have caught.
+    'lexical' => ['numericGuard' =>
+        'CASE WHEN ({0} REGEXP \'\\\\A-?[0-9]+\\\\z\') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END'],
+]);
+$refused = null;
+try {
+    Sql::translate(Sel::compile('T == 25'), $guardName,
+        ['T' => Binding::column('t', null, 'TEXT')]);
+} catch (\LogicException $e) {
+    $refused = $e->getMessage();
+} catch (\Throwable $e) {
+    $problems[] = 'numericGuard disagreeing with ISNUM raised '
+        . get_class($e) . ' rather than a registration error: ' . $e->getMessage();
+}
+if ($refused === null) {
+    $problems[] = 'a numericGuard that disagrees with its funcs.ISNUM was accepted; '
+        . 'sql/MAP.md §7 rule 10 holds at generation time and not at run time';
+}
+
 foreach ($problems as $p) {
     echo "  DIFFERS {$p}\n";
 }
-printf("%d registration calls rebuilt the map, %d lookups compared, %d differences\n",
+printf("%d registration calls rebuilt the map, %d lookups compared, %d differences"
+    . " (and a disagreeing numericGuard is refused)\n",
     $calls, $compared, count($problems));
 exit($problems === [] ? 0 : 1);

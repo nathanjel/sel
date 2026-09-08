@@ -1064,6 +1064,41 @@
       "file": "cpp/sel_sql.cpp",
       "from": "  if (kind_ == SqlKind::Bool) return join(mode);",
       "to": "  if (kind_ == SqlKind::Bool || kind_ == SqlKind::Unknown) return join(mode);"
+    },
+    {
+      "name": "php-guard-registration-is-not-checked",
+      "was": "sql/MAP.md rule 10 unenforced at run time again: an application's own dialect may declare a numericGuard that disagrees with its ISNUM, which emits SQL that answers for rows SEL refuses. Only sqlreplay's registration probe sees this -- no .sqlt case can, because every shipped dialect passes the rule.",
+      "file": "php/src/Sql/Emit.php",
+      "from": "        Map::checkNumericGuard($this->dialect);",
+      "to": "        // Map::checkNumericGuard($this->dialect);"
+    },
+    {
+      "name": "js-guard-registration-is-not-checked",
+      "was": "sql/MAP.md rule 10 unenforced at run time again: an application's own dialect may declare a numericGuard that disagrees with its ISNUM, which emits SQL that answers for rows SEL refuses. Only sqlreplay's registration probe sees this -- no .sqlt case can, because every shipped dialect passes the rule.",
+      "file": "js/src/sql/emit.mjs",
+      "from": "    map.checkNumericGuard(this._dialect);",
+      "to": "    // map.checkNumericGuard(this._dialect);"
+    },
+    {
+      "name": "python-guard-registration-is-not-checked",
+      "was": "sql/MAP.md rule 10 unenforced at run time again: an application's own dialect may declare a numericGuard that disagrees with its ISNUM, which emits SQL that answers for rows SEL refuses. Only sqlreplay's registration probe sees this -- no .sqlt case can, because every shipped dialect passes the rule.",
+      "file": "python/sel/sql/emit.py",
+      "from": "        _map.check_numeric_guard(self._dialect)",
+      "to": "        pass  # _map.check_numeric_guard(self._dialect)"
+    },
+    {
+      "name": "lisp-guard-registration-is-not-checked",
+      "was": "sql/MAP.md rule 10 unenforced at run time again: an application's own dialect may declare a numericGuard that disagrees with its ISNUM, which emits SQL that answers for rows SEL refuses. Only sqlreplay's registration probe sees this -- no .sqlt case can, because every shipped dialect passes the rule.",
+      "file": "lisp/src/sql/emit.lisp",
+      "from": "        (check-numeric-guard dialect)",
+      "to": "        (progn) ; (check-numeric-guard dialect)"
+    },
+    {
+      "name": "cpp-guard-registration-is-not-checked",
+      "was": "sql/MAP.md rule 10 unenforced at run time again: an application's own dialect may declare a numericGuard that disagrees with its ISNUM, which emits SQL that answers for rows SEL refuses. Only sqlreplay's registration probe sees this -- no .sqlt case can, because every shipped dialect passes the rule.",
+      "file": "cpp/sel_sql_emit.cpp",
+      "from": "  Map::check_numeric_guard(dialect_);",
+      "to": "  // Map::check_numeric_guard(dialect_);"
     }
   ]
 }

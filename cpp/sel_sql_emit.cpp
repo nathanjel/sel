@@ -206,6 +206,7 @@ std::string Emit::column(const std::string& table, const std::string& col) const
 
 Fragment Emit::numeric_operand(const Fragment& f, Pos pos) const {
   if (f.kind() == SqlKind::Num) return f;
+  Map::check_numeric_guard(dialect_);
   const Lexical* guard = lex("numericGuard");
   if (!guard || guard->kind != LexKind::Text) {
     refuse("E_SQL_UNSUPPORTED",

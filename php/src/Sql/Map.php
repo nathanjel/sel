@@ -26,6 +26,15 @@ final class Map
      */
     private static array $overlay = [];
 
+    /**
+     * Dialects whose numericGuard has been checked against their ISNUM. Keyed by
+     * name, because the answer cannot change once both are registered and the
+     * shipped dialects pass trivially.
+     *
+     * @var array<string,true>
+     */
+    private static array $guardChecked = [];
+
     // --- registration -------------------------------------------------------
 
     /**
@@ -157,6 +166,7 @@ final class Map
     {
         self::$extra = [];
         self::$overlay = [];
+        self::$guardChecked = [];
     }
 
     // --- lookup -------------------------------------------------------------
@@ -248,6 +258,73 @@ final class Map
             }
         }
         return null;
+    }
+
+    /**
+     * sql/MAP.md §7 rule 10, asked at the moment the guard is used.
+     *
+     * The generator checks it when the map is built, and for six months that was
+     * the whole of it: an application registering its own dialect could declare a
+     * `numericGuard` that disagreed with its `ISNUM`, or one that tested nothing,
+     * and nothing refused it. MAP.md said so and filed it beside a binding
+     * declared NUM over a column that is not -- the caller's promise.
+     *
+     * It does not belong there. A wrong `NUM` declaration is a claim the caller
+     * makes about their own data; a wrong `numericGuard` is a claim about SEL's
+     * numeral grammar, which the caller has no way to check and every other
+     * lexical key fails loudly about. This one fails silently: it emits SQL that
+     * answers where SEL would not, which is the one outcome docs/SQL-KINDS.md
+     * exists to rule out. The first external user of this layer registered a
+     * derived dialect on their first day, overriding one lexical key. It was
+     * `textCollate`; it could have been this.
+     *
+     * Checked here rather than in defineDialect because registration has no end:
+     * `funcs.ISNUM` is defined one entry at a time with define(), so at the
+     * moment a dialect is declared its ISNUM may not exist yet. By the time a
+     * guard is being USED, everything either side of the rule is registered.
+     */
+    public static function checkNumericGuard(string $dialect): void
+    {
+        if (isset(self::$guardChecked[$dialect])) {
+            return;
+        }
+        self::$guardChecked[$dialect] = true;
+        $guard = self::lexical($dialect, 'numericGuard');
+        if (!is_string($guard)) {
+            return;
+        }
+        $isnum = self::entry($dialect, 'funcs', 'ISNUM');
+        $tpl = is_array($isnum) ? ($isnum['tpl'] ?? null) : null;
+        if (!is_string($tpl)) {
+            throw new \LogicException("SQL dialect {$dialect} declares a numericGuard "
+                . 'but maps no funcs.ISNUM with a template for it to agree with; the two '
+                . 'ask the same question and sql/MAP.md §7 rule 10 is that one place '
+                . 'defines a thing');
+        }
+        // Every quoted run, not the first: two genuinely different numeral tests
+        // that happen to share an earlier literal -- a flag, a collation clause --
+        // compare equal if only the first is read. The generator learned this from
+        // a decoy that defeated it.
+        $want = self::quotedRuns($tpl);
+        if ($want === []) {
+            throw new \LogicException("SQL dialect {$dialect} maps a funcs.ISNUM that "
+                . 'carries no quoted pattern, so its numericGuard has nothing to agree with');
+        }
+        $missing = array_values(array_diff($want, self::quotedRuns($guard)));
+        if ($missing !== []) {
+            throw new \LogicException("SQL dialect {$dialect} declares a numericGuard that "
+                . 'does not carry ' . implode(', ', array_map(
+                    static fn ($m) => "'{$m}'", $missing))
+                . ", which its funcs.ISNUM tests; they ask the same question, and a guard "
+                . 'that asks a different one answers for rows SEL refuses');
+        }
+    }
+
+    /** @return list<string> */
+    private static function quotedRuns(string $tpl): array
+    {
+        preg_match_all("/'([^']*)'/", $tpl, $m);
+        return $m[1];
     }
 
     /**

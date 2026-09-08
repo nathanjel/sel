@@ -16,6 +16,11 @@
 (defvar *extra* '())
 (defvar *overlay* '())        ; ((dialect . ((section . ((key . entry) ...)) ...)) ...)
 
+;; Dialects whose numericGuard has been checked against their ISNUM. The answer
+;; cannot change once both are registered, and the shipped dialects pass
+;; trivially.
+(defvar *guard-checked* '())
+
 ;;; Every key DEFINE-DIALECT accepts. sql/MAP.md §3 is the normative list.
 (defparameter +dialect-keys+ '(:extends :version :target :lexical))
 
@@ -25,7 +30,7 @@
 
 (defun map-reset ()
   "Forget every runtime registration. For tests; nothing else should need it."
-  (setf *extra* '() *overlay* '())
+  (setf *extra* '() *overlay* '() *guard-checked* '())
   (values))
 
 ;;; --- lookup ---------------------------------------------------------------
@@ -92,6 +97,68 @@ differs is that a withdrawal stops here."
     (let* ((rec (dialect-record d))
            (cell (assoc key (getf rec :lexical) :test #'equal)))
       (when cell (return (cdr cell))))))
+
+(defun quoted-runs (tpl)
+  "Every single-quoted run in TPL, in order.
+
+Every run, not the first: two genuinely different numeral tests that happen to
+share an earlier literal -- a flag, a collation clause -- compare equal if only
+the first is read. The generator learned this from a decoy that defeated it.
+
+Written as a split rather than a regex so this file needs no scanner, and the
+final segment is dropped when the quote count is odd: an unterminated quote
+opens no run, which is what the other hosts' '([^']*)' answers."
+  (let ((parts '()) (start 0) (n 0))
+    (loop for i = (position #\' tpl :start start)
+          while i do (push (subseq tpl start i) parts) (setf start (1+ i)) (incf n))
+    (push (subseq tpl start) parts)
+    (let ((segs (coerce (nreverse parts) 'vector)) (out '()))
+      (loop for i from 1 below (length segs) by 2
+            when (< i n) do (push (aref segs i) out))
+      (nreverse out))))
+
+(defun check-numeric-guard (dialect)
+  "sql/MAP.md §7 rule 10, asked at the moment the guard is used.
+
+The generator checks it when the map is built, and for six months that was the
+whole of it: an application registering its own dialect could declare a
+numericGuard that disagreed with its ISNUM, or one that tested nothing, and
+nothing refused it. MAP.md said so and filed it beside a binding declared NUM
+over a column that is not -- the caller's promise.
+
+It does not belong there. A wrong NUM declaration is a claim the caller makes
+about their own data; a wrong numericGuard is a claim about SEL's numeral
+grammar, which the caller has no way to check and every other lexical key fails
+loudly about. This one fails silently: it emits SQL that answers where SEL would
+not, which is the one outcome docs/SQL-KINDS.md exists to rule out. The first
+external user of this layer registered a derived dialect on their first day,
+overriding one lexical key. It was textCollate; it could have been this.
+
+Checked here rather than in DEFINE-DIALECT because registration has no end:
+funcs.ISNUM is defined one entry at a time with DEFINE-ENTRY, so at the moment a
+dialect is declared its ISNUM may not exist yet. By the time a guard is being
+USED, everything either side of the rule is registered."
+  (unless (member dialect *guard-checked* :test #'equal)
+    (push dialect *guard-checked*)
+    (let ((guard (dialect-lexical dialect "numericGuard")))
+      (when (stringp guard)
+        (let* ((isnum (dialect-entry dialect :funcs "ISNUM"))
+               (tpl (and (listp isnum) (plist-get isnum :tpl))))
+          (unless (stringp tpl)
+            (bad "SQL dialect ~a declares a numericGuard but maps no funcs.ISNUM ~
+with a template for it to agree with; the two ask the same question and ~
+sql/MAP.md §7 rule 10 is that one place defines a thing" dialect))
+          (let ((want (quoted-runs tpl)))
+            (unless want
+              (bad "SQL dialect ~a maps a funcs.ISNUM that carries no quoted ~
+pattern, so its numericGuard has nothing to agree with" dialect))
+            (let* ((got (quoted-runs guard))
+                   (missing (remove-if (lambda (w) (member w got :test #'equal)) want)))
+              (when missing
+                (bad "SQL dialect ~a declares a numericGuard that does not carry ~
+~{'~a'~^, ~}, which its funcs.ISNUM tests; they ask the same question, and a ~
+guard that asks a different one answers for rows SEL refuses"
+                     dialect missing)))))))))
 
 (defun dialect-entry (name section key)
   "One entry, as (VALUES entry foundp).

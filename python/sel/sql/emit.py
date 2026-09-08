@@ -180,6 +180,7 @@ class Emit:
         from .fragment import Fragment
         if f.kind == 'NUM':
             return f
+        _map.check_numeric_guard(self._dialect)
         guard = self.lex('numericGuard')
         if not isinstance(guard, str):
             refuse('E_SQL_UNSUPPORTED',

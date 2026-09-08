@@ -21,6 +21,8 @@
 import { RAW } from './map-replay.mjs';
 import { DIALECTS } from '../src/sql/_map.mjs';
 import * as map from '../src/sql/map.mjs';
+import { compile } from '../src/sel.mjs';
+import { Binding, Sql } from '../src/sql/index.mjs';
 
 // A suffix, because the shipped names are already defined and a name means one
 // dialect. The suffix is not a legal dialect name anywhere else, which is the
@@ -69,7 +71,41 @@ for (const [name, flat] of Object.entries(DIALECTS)) {
   }
 }
 
+// Rule 10 of sql/MAP.md, at run time. Registering a derived dialect is the
+// documented way to adapt the map to a server -- the first external user of this
+// layer did it on their first day -- and numericGuard is the one lexical key where
+// a wrong override fails SILENTLY: every other one blows up at template expansion,
+// and this one emits SQL that answers where SEL refuses. The generator has
+// enforced the rule since the guard existed; nothing enforced it for a dialect the
+// generator never sees.
+//
+// End to end rather than by calling the check directly, because the check being
+// right is worth nothing if the emit path does not reach it. The bad guard accepts
+// integers only, so it lets through the '2.5' that ISNUM's pattern catches: a
+// guard that asks a narrower question passes what it should have stopped.
+const guardName = `mariadb${SUF}~guard`;
+map.defineDialect(guardName, {
+  extends: `mariadb${SUF}`,
+  lexical: { numericGuard: "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END" },
+});
+let refused = false;
+try {
+  Sql.translate(compile('T == 25'), guardName, { T: Binding.column('t', null, 'TEXT') });
+} catch (e) {
+  if (e && e.code) {
+    problems.push(`numericGuard disagreeing with ISNUM raised ${e.code} rather than `
+      + 'a registration error');
+  } else {
+    refused = true;
+  }
+}
+if (!refused) {
+  problems.push('a numericGuard that disagrees with its funcs.ISNUM was accepted; '
+    + 'sql/MAP.md rule 10 holds at generation time and not at run time');
+}
+
 for (const p of problems) process.stdout.write(`  DIFFERS ${p}\n`);
 process.stdout.write(`${calls} registration calls rebuilt the map, `
-  + `${compared} lookups compared, ${problems.length} differences\n`);
+  + `${compared} lookups compared, ${problems.length} differences`
+  + ' (and a disagreeing numericGuard is refused)\n');
 process.exit(problems.length === 0 ? 0 : 1);

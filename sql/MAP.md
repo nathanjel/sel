@@ -548,14 +548,31 @@ defend against a malformed map:
     rule is that one place defines a thing; two copies of a numeral grammar is
     the drift that rule exists to prevent.
 
-**What §7 does not cover: runtime registration.** Rule 10 is checked when the
-map is generated, and `Map::defineDialect` does not repeat it — an application
-may register a `numericGuard` that disagrees with `ISNUM`, or one that is not a
-numeral test at all, and nothing refuses it. That is the same standing as a
-binding declared `NUM` over a column that is not: the caller's promise, not the
-layer's. It is worth knowing because unlike every other lexical key, where a
-wrong value fails loudly at template expansion, a wrong `numericGuard` fails
-silently — it emits SQL that answers where SEL would not.
+**Rule 10 at run time.** It is checked when the map is generated, and a
+generated map is not the only map: registering a derived dialect is the
+documented way to adapt this one to a server, and the generator never sees the
+result. So it is checked again, in every host, the first time a dialect's guard
+is used — `Map::checkNumericGuard`, called from the one place `numericGuard` is
+read. A guard that does not carry what its `ISNUM` tests raises the same
+registration error a malformed `define()` does.
+
+Not in `defineDialect`, because registration has no end: `funcs.ISNUM` is
+defined one entry at a time, so at the moment a dialect is declared its `ISNUM`
+may not exist yet. By the time a guard is being *used*, both sides are
+registered.
+
+This one key is checked and the others are not, and the asymmetry is the point.
+Every other lexical value fails loudly when it is wrong — a template that cannot
+expand raises at expansion. A wrong `numericGuard` fails silently: it emits SQL
+that answers where SEL would not, which is the single outcome
+[docs/SQL-KINDS.md](../docs/SQL-KINDS.md) exists to rule out. It is not the same
+standing as a binding declared `NUM` over a column that is not. That is a claim
+the caller makes about their own data; this is a claim about SEL's numeral
+grammar, which the caller has no way to check.
+
+Each host's `sqlreplay` registers a dialect whose guard accepts integers only —
+narrower than `ISNUM`, so it passes the `2.5` it should stop — and requires the
+translation to be refused.
 
 The generator flattens each chain and emits one fully resolved table per
 dialect, so a host does no chain walking at all — a lookup is a hash access and

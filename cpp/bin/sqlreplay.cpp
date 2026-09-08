@@ -15,9 +15,12 @@
 // really are two implementations of one thing.
 
 #include <cstdio>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "../sel.hpp"
+#include "../sel_sql.hpp"
 #include "../sel_sql_map.hpp"
 #include "map_replay.hpp"
 
@@ -103,9 +106,48 @@ int main() {
     }
   }
 
+  // Rule 10 of sql/MAP.md, at run time. Registering a derived dialect is the
+  // documented way to adapt the map to a server -- the first external user of
+  // this layer did it on their first day -- and numericGuard is the one lexical
+  // key where a wrong override fails SILENTLY: every other one blows up at
+  // template expansion, and this one emits SQL that answers where SEL refuses.
+  // The generator has enforced the rule since the guard existed; nothing
+  // enforced it for a dialect the generator never sees.
+  //
+  // End to end rather than by calling the check directly, because the check
+  // being right is worth nothing if the emit path does not reach it. The bad
+  // guard accepts integers only, so it lets through the '2.5' that ISNUM's
+  // pattern catches: a guard that asks a narrower question passes what it
+  // should have stopped.
+  {
+    const std::string guard_name = "mariadb" + std::string(SUF) + "~guard";
+    Map::define_dialect(
+        guard_name,
+        DialectSpec::extending("mariadb" + std::string(SUF))
+            .lexical("numericGuard",
+                     "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+\\\\z') THEN "
+                     "CAST({0} AS DECIMAL(65,10)) ELSE NULL END"));
+    bool refused = false;
+    try {
+      Sql::translate(sel::compile("T == 25"), guard_name,
+                     Bindings({{"T", Binding::column("t", std::nullopt,
+                                                     SqlKind::Text)}}));
+    } catch (const SqlError& e) {
+      problems.push_back(std::string("numericGuard disagreeing with ISNUM raised ") +
+                         e.code() + " rather than a registration error");
+    } catch (const std::runtime_error&) {
+      refused = true;
+    }
+    if (!refused) {
+      problems.emplace_back(
+          "a numericGuard that disagrees with its funcs.ISNUM was accepted; "
+          "sql/MAP.md rule 10 holds at generation time and not at run time");
+    }
+  }
+
   for (const std::string& p : problems) std::printf("  DIFFERS %s\n", p.c_str());
   std::printf("%d registration calls rebuilt the map, %d lookups compared, "
-              "%zu differences\n",
+              "%zu differences (and a disagreeing numericGuard is refused)\n",
               calls, compared, problems.size());
   return problems.empty() ? 0 : 1;
 }

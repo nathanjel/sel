@@ -59,6 +59,17 @@ CHECKS = [
     # express the shipped map. Nothing else covers php/bin/sqlreplay or the
     # defineDialect rules it exercises.
     ('sql map replay',    ['php', 'php/bin/sqlreplay']),
+    # And the other three dynamic hosts' replays, for the reason the sqlt
+    # runners above are all here: one host's registration API is not the others.
+    # Until these were listed, PHP was the only host whose defineDialect and
+    # define() were mutation-tested at all -- a mutation to js/src/sql/map.mjs's
+    # registration path survived every check and was reported `skipped`, which
+    # reads like "needs a database" and meant "nothing here looks". The C++
+    # replay is not here: it needs the build, which is the expensive check at
+    # the bottom, and a C++-local registration mutation reaches it there.
+    ('sql map replay (js)',     ['node', 'js/bin/sqlreplay.mjs']),
+    ('sql map replay (python)', ['python3', 'python/bin/sqlreplay']),
+    ('sql map replay (lisp)',   ['lisp/bin/sqlreplay']),
     ('sqldoc',            ['php', 'php/bin/sqldoc']),
     ('oracle coverage',   ['php', 'php/bin/sqlo', 'coverage']),
     ('oracle expressions',['php', 'php/bin/sqlo', 'expressions']),
@@ -69,6 +80,10 @@ CHECKS = [
     # not copied -- or it would grade the unmutated binary, which is this tool's
     # signature failure mode.
     ('sqlt (cpp)',        ['sh', '-c', 'make -s -C cpp build/sqlt && cpp/build/sqlt']),
+    # Same build, so the marginal cost is one link, and it is the only thing
+    # that watches the C++ registration path.
+    ('sql map replay (cpp)',
+     ['sh', '-c', 'make -s -C cpp build/sqlreplay && cpp/build/sqlreplay']),
     ('oracle rows',       ['php', 'php/bin/sqlo', 'rows']),
 ]
 NEEDS_DB = {'oracle coverage', 'oracle expressions', 'oracle rows'}

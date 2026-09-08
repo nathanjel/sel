@@ -208,6 +208,7 @@ final class Emit
         if ($f->kind === 'NUM') {
             return $f;
         }
+        Map::checkNumericGuard($this->dialect);
         $guard = $this->lex('numericGuard');
         if (!is_string($guard)) {
             refuse('E_SQL_UNSUPPORTED',
