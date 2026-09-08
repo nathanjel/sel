@@ -6338,4 +6338,64 @@
    :strict nil
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
-   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))))
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "ansi.upper.carries-unicode-case"
+   :at "20-ansi-fallback.sqlt:194"
+   :dialect "ansi-probe"
+   :source "UPPER(\"abc\")"
+   :expect "UPPER(CAST('abc' AS CHARACTER VARYING))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.lower.carries-unicode-case"
+   :at "20-ansi-fallback.sqlt:215"
+   :dialect "ansi-probe"
+   :source "LOWER(\"ABC\")"
+   :expect "LOWER(CAST('ABC' AS CHARACTER VARYING))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.divide.carries-division-scale"
+   :at "20-ansi-fallback.sqlt:225"
+   :dialect "ansi-probe"
+   :source "10 / 4"
+   :expect "(CAST(10 AS NUMERIC) / CAST(4 AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.power.carries-power-float"
+   :at "20-ansi-fallback.sqlt:242"
+   :dialect "ansi-probe"
+   :source "POWER(2, 10)"
+   :expect "POWER(2, 10)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))))

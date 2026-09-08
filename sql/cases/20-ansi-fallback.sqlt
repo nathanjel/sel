@@ -191,3 +191,65 @@ T == 25
 --- error
 E_SQL_UNSUPPORTED 1:1
 ===
+### name: ansi.upper.carries-unicode-case
+--- note
+ansi's UPPER and LOWER carry `unicode-case`, which tells the oracle not to fail
+on them -- so once mysql-family took its own copies of these two, the string
+they emit became the only thing left holding them. That is not a theory: the
+mutation `caveated-entry-answers-anything` turns this LOWER into an UPPER, was
+caught for years because MariaDB inherited it, and survived the first run after
+the split. It is caught again by the two cases here.
+
+The general form is 17-caveat-pins.sqlt's rule -- one pin per caveated entry per
+target -- which php/bin/sqlt now applies to the probe as well, so the next
+caveated ansi entry is demanded rather than remembered.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+UPPER("abc")
+--- expect
+UPPER(CAST('abc' AS CHARACTER VARYING))
+===
+### name: ansi.lower.carries-unicode-case
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+LOWER("ABC")
+--- expect
+LOWER(CAST('ABC' AS CHARACTER VARYING))
+===
+### name: ansi.divide.carries-division-scale
+--- note
+The other two caveated ansi entries, found by the gate the moment it could see
+this dialect rather than by anybody noticing. `division-scale` says the server
+picks the scale of a quotient and SEL does not; `power-float` says POWER may
+answer in binary floating point. Both suspend the oracle's verdict, so both
+need the string pinned, and neither had one because no target resolves ansi's
+copy.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+10 / 4
+--- expect
+(CAST(10 AS NUMERIC) / CAST(4 AS NUMERIC))
+===
+### name: ansi.power.carries-power-float
+--- note
+POWER keeps a bare template: its operands are numeric in SEL and in SQL alike,
+and the oracle finds no disagreement over the corpus, so there is nothing here
+for a cast to fix. If that changes the ansi-probe lane says so.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+POWER(2, 10)
+--- expect
+POWER(2, 10)
+===

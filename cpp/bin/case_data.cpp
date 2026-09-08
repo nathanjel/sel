@@ -2843,6 +2843,46 @@ static void c445_reg() {
       Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
 }
 
+static std::vector<std::pair<std::string, Binding>> c446_bind() {
+  return {
+
+  };
+}
+
+static void c446_reg() {
+      Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
+}
+
+static std::vector<std::pair<std::string, Binding>> c447_bind() {
+  return {
+
+  };
+}
+
+static void c447_reg() {
+      Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
+}
+
+static std::vector<std::pair<std::string, Binding>> c448_bind() {
+  return {
+
+  };
+}
+
+static void c448_reg() {
+      Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
+}
+
+static std::vector<std::pair<std::string, Binding>> c449_bind() {
+  return {
+
+  };
+}
+
+static void c449_reg() {
+      Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -9088,6 +9128,62 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = c445_reg,
      .bindings_fn = c445_bind},
+    {.name = "ansi.upper.carries-unicode-case",
+     .at = "20-ansi-fallback.sqlt:194",
+     .dialect = "ansi-probe",
+     .source = "UPPER(\"abc\")",
+     .expect = "UPPER(CAST('abc' AS CHARACTER VARYING))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = c446_reg,
+     .bindings_fn = c446_bind},
+    {.name = "ansi.lower.carries-unicode-case",
+     .at = "20-ansi-fallback.sqlt:215",
+     .dialect = "ansi-probe",
+     .source = "LOWER(\"ABC\")",
+     .expect = "LOWER(CAST('ABC' AS CHARACTER VARYING))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = c447_reg,
+     .bindings_fn = c447_bind},
+    {.name = "ansi.divide.carries-division-scale",
+     .at = "20-ansi-fallback.sqlt:225",
+     .dialect = "ansi-probe",
+     .source = "10 / 4",
+     .expect = "(CAST(10 AS NUMERIC) / CAST(4 AS NUMERIC))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = c448_reg,
+     .bindings_fn = c448_bind},
+    {.name = "ansi.power.carries-power-float",
+     .at = "20-ansi-fallback.sqlt:242",
+     .dialect = "ansi-probe",
+     .source = "POWER(2, 10)",
+     .expect = "POWER(2, 10)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = c449_reg,
+     .bindings_fn = c449_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

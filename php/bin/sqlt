@@ -386,6 +386,17 @@ foreach ($failures as $f) {
 // Map::reset() so the parity check reads the shipped map rather than whatever
 // the last registration case left behind.
 Map::reset();
+// And then one dialect back, on purpose. `ansi` is target: false, so
+// Sql::dialects() never names it and caveat_pins -- which walks targets -- could
+// not ask for a pin on any entry ansi owns. That was harmless while every
+// caveated ansi entry was also inherited by a real target and pinned through it.
+// It stopped being harmless when mysql-family took its own UPPER and LOWER:
+// ansi's copies became reachable only by a dialect nothing here knew about, and
+// `unicode-case` then excused every disagreement the oracle could see. The
+// mutation that flips ansi's LOWER to UPPER survived, having been caught for
+// years. Registering the same probe sql/cases/20-ansi-fallback.sqlt uses puts
+// ansi's caveated entries back under the gate.
+Map::defineDialect('ansi-probe', ['extends' => 'ansi', 'version' => '1', 'target' => true]);
 foreach (caveat_pins($GLOBALS['pinned'] ?? []) as $p) {
     echo "UNPINNED {$p}\n";
     $suiteErrors++;
