@@ -110,6 +110,7 @@ key. Every key below must resolve for a `target` dialect; the generator checks.
 | `textCollate` | string | appended to each operand of the `$` comparison family |
 | `textCharset` | string or null | the charset name a dialect spells when it converts bytes to text; `null` where the dialect names none |
 | `numericCast` | string | template wrapping `{0}` for numeric coercion |
+| `numericGuard` | string, **optional** | template wrapping `{0}`, yielding the number or NULL; the only key a target may leave undeclared |
 | `isTrue` / `isNotTrue` | string | templates folding SQL's third truth value into two |
 | `placeholder` | string | `params`-mode placeholder; `{n}` is the 1-based ordinal, absent for positional `?` |
 
@@ -123,6 +124,21 @@ Three of these are load-bearing rather than cosmetic:
 - **`textCollate` is what makes `$==` honest.** SEL's `$` family compares bytes;
   MySQL's and MariaDB's default collation is case- and accent-insensitive, so a
   bare `=` would make `"A" $== "a"` true in the database and false in SEL.
+- **`numericGuard` is what makes `==` honest about data it was not promised.**
+  `numericCast` alone answers 0 for `'x'` on three of the four servers, so a
+  comparison against 0 matched every row of a text column. The guard tests the
+  value first and yields NULL when it is not a SEL number, and NULL is not
+  selected. It wraps only an operand the binding did **not** declare `NUM`: a
+  declared NUM is vouched for, emits no cast and keeps its index.
+
+  It is the one lexical key a `target` may leave undeclared, and the absence is
+  the answer rather than an oversight: `sqlite` has no `REGEXP` and `ansi` has
+  no regex, which is already why `funcs.ISNUM` is unmapped on both. A dialect
+  that cannot ask the question refuses the translation instead of guessing.
+
+  Its pattern is SEL's own numeral grammar, and it is the same pattern
+  `funcs.ISNUM` carries for that dialect — see §7.10.
+
 - **`numericCast` is what makes `==` honest.** SEL's `==` compares numerically
   after aligning scale, so `"5.00" == "5"` is `TRUE`; SQL's `=` between two text
   columns compares text. §4.3 says exactly when the cast is applied.
@@ -511,7 +527,10 @@ defend against a malformed map:
 
 1. `dialect` equals the file's basename; `extends` names a document that exists;
    the chain is acyclic, at most eight deep, and reaches `ansi`.
-2. Every `target` dialect resolves every `lexical` key in §3.
+2. Every `target` dialect resolves every `lexical` key in §3, except
+   `numericGuard`, which is optional because two of the four targets cannot
+   express it. Nothing else may be optional: a dialect that cannot quote an
+   identifier is not a dialect.
 3. Every entry is an object, a string, or `null`; every object has exactly one of
    `tpl`/`variants` and a valid `ret`.
 4. Every `{n}` in a template is within the entry's effective arity, and that
@@ -524,6 +543,19 @@ defend against a malformed map:
 8. Every `variants` object uses only the names its operator family defines.
 9. Every `skel` key is one of §5's, and every named placeholder in a skeleton is
    one that key defines — a `{frm}` for `{from}` is an error, not literal text.
+10. Where a dialect declares `numericGuard`, it carries the same numeral pattern
+    as that dialect's `funcs.ISNUM`. They ask the same question, and this map's
+    rule is that one place defines a thing; two copies of a numeral grammar is
+    the drift that rule exists to prevent.
+
+**What §7 does not cover: runtime registration.** Rule 10 is checked when the
+map is generated, and `Map::defineDialect` does not repeat it — an application
+may register a `numericGuard` that disagrees with `ISNUM`, or one that is not a
+numeral test at all, and nothing refuses it. That is the same standing as a
+binding declared `NUM` over a column that is not: the caller's promise, not the
+layer's. It is worth knowing because unlike every other lexical key, where a
+wrong value fails loudly at template expansion, a wrong `numericGuard` fails
+silently — it emits SQL that answers where SEL would not.
 
 The generator flattens each chain and emits one fully resolved table per
 dialect, so a host does no chain walking at all — a lookup is a hash access and

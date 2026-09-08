@@ -1592,28 +1592,36 @@ A small, monotone pass that labels every node `NUM`, `TEXT`, `BOOL`, `BIN`,
 Rules: literals give their own kind; a `var` gives its binding's declared `type`;
 an `index` into a `columns`/`relation` binding gives the field's `type`;
 everything else gives its map entry's `ret`. `UNKNOWN` is not an error — it means
-"ask the database", which for an untyped binding is the honest answer. `UNKNOWN`
-where `BOOL` is required is allowed; `UNKNOWN` in a numeric comparison selects
-the `coerce` variant.
+the binding did not say.
 
-**`isTrue` wraps at `asCondition` and nowhere else.** That is worth stating
-plainly, because the obvious reading of the paragraph above is that every
-`UNKNOWN` in a boolean position gets folded, and it does not. `Fragment::asCondition`
-wraps an `UNKNOWN` *whole fragment* in the dialect's `IS TRUE`, and the `all`,
+It used to mean "ask the database", which for an untyped binding was called the
+honest answer: `UNKNOWN` where `BOOL` was required was allowed, and `UNKNOWN` in
+a numeric comparison selected the `coerce` variant. Measured, the database does
+not know — `1 AND TRUE` is TRUE on MariaDB and `CAST('x' AS DECIMAL)` is 0 — so
+both of those matched rows SEL refuses. Neither holds now: an `UNKNOWN` operand
+in a numeric position is wrapped so a non-number becomes NULL, and in a boolean
+position it is refused. See [SQL-KINDS.md](SQL-KINDS.md), which is the statement
+of that rule.
+
+**`isTrue` is no longer read by the layer at all.** It stays in the map because
+it is published vocabulary and a registration may still name it, but the `all`,
 `any` and `inRelation` skeletons carry `IS TRUE` / `IS NOT TRUE` in their own
-templates. An `UNKNOWN` operand *inside* the tree is emitted bare: `A AND B`
-over two untyped columns renders `` (`a` AND `b`) ``, and `IF(A, 1, 2)` renders
-`CASE WHEN `a` THEN …`, with the server's own three-valued logic deciding what
-a NULL does.
+templates, and `Fragment::asCondition` stopped wrapping.
 
-Wrapping every interior operand instead was considered and rejected. It would
-not buy correctness — a NULL column in SEL is a `NONE`, and `NONE AND TRUE` is
-`E_NO_SCALAR`, an *error*, not `FALSE` — so folding NULL to false at every
-interior node would replace one wrong answer with a different wrong answer while
-making every rendered condition unreadable. This is a refusal-class divergence,
-and §11.2 is where it is recorded rather than papered over. Fold at the boundary
-where a WHERE clause forces a two-valued answer anyway; be honest about the
-inside.
+This paragraph used to say the opposite, and used to defend it. `asCondition`
+wrapped an `UNKNOWN` fragment in `IS TRUE`, an `UNKNOWN` operand inside the tree
+was emitted bare, and wrapping every interior operand was "considered and
+rejected" on the grounds that folding NULL to false replaces one wrong answer
+with another. The reasoning was sound about NULL and wrong about everything
+else: `IS TRUE` folds a NULL to false, but it does not fold a *number*, and
+`1 IS TRUE` is TRUE on MariaDB where SEL raises `E_NOT_BOOL`. So the wrap did not
+make an undeclared column safe to use as a condition; it only made it look
+handled.
+
+There is nothing to wrap it in, either — no dialect can ask "is this a boolean",
+because in the MySQL family a boolean *is* a `TINYINT` and testing `IN (0, 1)`
+would admit a NUM column SEL refuses. An undeclared column in a boolean position
+is now refused. Declare the binding `BOOL`.
 
 ---
 

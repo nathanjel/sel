@@ -54,19 +54,25 @@ X $== "a"   → E_NO_SCALAR      X & "a"  → E_NO_SCALAR
 So NULL is inside the warrant, not beside it, and SQL's own NULL propagation
 keeps it for free.
 
-## 4. The current picture, measured
+## 4. The picture, measured
+
+Bold is a cell where the warrant is **still** broken. The three operator cells
+that used to be bold are not any more -- §8 is what closed them -- and the two
+that remain are the function-argument family, which is one row here and is
+really a whole surface.
 
 Every context by declared kind. **Bold** = the warrant is broken today.
 
 | context | NUM | TEXT | UNKNOWN | BOOL | BIN |
 |---|---|---|---|---|---|
-| `==` `!=` `<` `<=` `>` `>=` | emit, no cast | **coerce** | **coerce** | refuse | refuse |
-| `+` `-` `*` `/` `%` | emit | **emit, no cast at all** | **emit, no cast at all** | refuse | refuse |
+| `==` `!=` `<` `<=` `>` `>=` | emit, no cast | guarded | guarded | refuse | refuse |
+| `+` `-` `*` `/` `%` | emit | guarded | guarded | refuse | refuse |
 | `$==` family | coerce, sound | coerce, sound | coerce, sound | refuse | refuse |
 | `&` | emit | emit | emit | refuse | emit |
-| `AND` `OR` `XOR` `NOT`, `IF` cond | refuse | refuse | **emit bare** | emit | refuse |
+| `AND` `OR` `XOR` `NOT`, `IF` cond | refuse | refuse | refuse | emit | refuse |
 | `EQL` | coerce, sound | coerce, sound | coerce, sound | refuse | refuse |
-| **numeric function argument** | emit | **emit bare** | **emit bare** | refuse | refuse |
+| numeric function argument | emit | **emit bare** | **emit bare** | refuse | refuse |
+| a bare aggregate body | emit | refuse | **emit bare** | refuse | refuse |
 
 Text coercion is sound because SEL numbers **are** text (spec §4), so `$==` over
 a NUM column genuinely agrees. There is nothing to guard there.
@@ -85,7 +91,7 @@ a NUM column genuinely agrees. There is nothing to guard there.
 every row. `T == 25` matches every `25/…` value. SEL raises `E_NOT_NUM` for all
 of them. PostgreSQL is compliant by erroring; the other three are not.
 
-### 4.1a The function-argument row is a family, not a cell
+### 4.1a Not a cell: everything that is a numeric position but not an operand
 
 Every function that reads an argument as a number has the same hole, and it is
 the widest of the three:
@@ -102,11 +108,39 @@ the widest of the three:
 Identical for TEXT and UNKNOWN. MariaDB answers `ABS('abc')` = 0, so
 `ABS(T) == 0` matches every row.
 
-It is missed by the operator work because it arrives on a different path:
-`binary()` and `unary()` are where the numeric guards go, and a call reaches
-`requireArgumentKind`, which knows only the two hand-written allow-lists
+A **bare aggregate body** is the same thing wearing a different hat:
+
+```
+SUM(ITEMS, _["QTY"])       QTY declared TEXT  -> refused
+SUM(ITEMS, _["QTY"])       QTY undeclared     -> SUM(`oi`.`qty`), unguarded
+```
+
+SEL raises E_NOT_NUM for a non-numeric element and MariaDB sums numeric
+prefixes, so an undeclared field matches rows SEL refuses. A declared TEXT field
+is refused by the aggregate's own kind check -- it is only UNKNOWN that passes,
+exactly as in the bool cell before §8 closed it.
+
+All of it is missed by the operator work for one reason: these arrive on a
+different path. `binary()` and `unary()` are where the numeric guards go, and
+neither a call argument nor a bare aggregate body goes through either. A call
+reaches `requireArgumentKind`, which knows only the two hand-written allow-lists
 `BIN_ARGUMENT_OK` and `BOOL_ARGUMENT_OK`. Nothing anywhere records **which
 argument of which function is read as a number**.
+
+**The workaround, for anyone who needs it today.** Put the operand in an
+arithmetic expression and the operand guard fires on it:
+
+```
+SUM(ITEMS, _["QTY"])       unguarded
+SUM(ITEMS, _["QTY"] * 1)   guarded
+SUM(ITEMS, _["QTY"] + 0)   guarded
+```
+
+`* 1` and `+ 0` are value-preserving in SEL, scale included -- `"5.00"` stays
+`5.00` and `"0.1"` stays `0.1`, measured -- so the rule means the same thing and
+gains the guard. It is a workaround and reads as one; it is written down because
+the alternative is that somebody who needs the guarantee today has no way to
+get it.
 
 ### 4.2 Why the bool cell breaks it, and worse
 
@@ -155,7 +189,10 @@ than in 42 entries per dialect. It would also subsume `BIN_ARGUMENT_OK` and
 copies today.
 
 It would *not* close `LEFT(T, -1)`: `-1` is a number and passes a kind test.
-That is a value constraint, and it stays the recorded residual of §6.
+That is a value constraint rather than a kind, and it stays recorded as the
+case `const.residual.argument-constraint-beside-a-column`. It is not one of §6's
+exclusions: those are shapes the warrant deliberately does not cover, and this
+is a shape it should cover and does not yet.
 
 **Untestable means SQLite and ANSI**, which have no `ISNUM` and cannot get one.
 The map already says so in its own words:
@@ -246,7 +283,12 @@ than the silent one: not declaring gets you the guarded path, and declaring
   short of declaring `NUM`.
 - **SQLite and ANSI stop translating numeric comparison over uncertain
   operands.** The one place this takes functionality away rather than making it
-  safer. `sqlite.num.comparison-always-coerces` reverses.
+  safer. Pinned as `warrant.numeric.sqlite-cannot-ask-and-refuses`.
+
+  An earlier draft of this section, and the commit message that went with it,
+  said `sqlite.num.comparison-always-coerces` reverses. It does not: that case
+  is `2.50 == 2.5`, two literals, and a constant is settled at translation time
+  and never guarded. It was never touched.
 - **An undeclared column can no longer be used as a condition.**
   `refuse.unknown-kind-may-be-a-condition` reverses. `type: 'BOOL'` restores it.
 - The function-argument row is a second, larger piece of work with its own new
@@ -276,7 +318,7 @@ mariadb     T == 0   matched: ["0"]      was also "abc" and ""
 postgresql  T == 25  matched: ["25"]     was a 22P02 error
 ```
 
-Five hosts, 408 cases, 139 mutations. `sql/cases/19-kind-warrant.sqlt` pins the
+Five hosts, 409 cases, 139 mutations. `sql/cases/19-kind-warrant.sqlt` pins the
 rules; `tools/gen-sql-map.mjs` requires `numericGuard` and `funcs.ISNUM` to carry
 the same pattern, because two copies of a numeral grammar is the drift the map's
 one-place rule exists to prevent.
@@ -294,8 +336,9 @@ every row on a MariaDB EAV schema.
 
 ## 9. The case matrix
 
-Six contexts × five declared kinds, plus a NULL row per context, plus the four
-exclusions. That is the corpus this warrant should be generated from, and it is
+Eight contexts × five declared kinds, plus a NULL row per context, plus the
+four exclusions -- the §4 matrix has gained the function-argument row and the
+aggregate-body row since this was first written, and neither is closed. That is the corpus this warrant should be generated from, and it is
 the corpus that would have caught the original report on the day the layer
 shipped — the existing suite missed it because `sql/oracle/expressions.selo` and
 `sqlfuzz` are both closed (no bindings at all) and `sql/oracle/rows.json`, the
