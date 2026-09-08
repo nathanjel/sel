@@ -1736,7 +1736,7 @@ final class Fragment
     /** @var list<string> */
     public array $caveats;    // which inexactnesses were accepted
 
-    /** Usable as a condition: BOOL as-is, UNKNOWN wrapped in the IS TRUE test. */
+    /** Usable as a condition. A declared BOOL, and nothing else. */
     public function asCondition(string $mode = 'inline'): string;
 
     /** Usable in a select list, GROUP BY, ORDER BY, HAVING. Any kind but LIST. */
@@ -1751,7 +1751,8 @@ final class Fragment
 possible and what a human debugging a rule wants to see. An application issuing
 the query should pass `params` and hand `bindings()` to the driver.
 
-`asCondition()` on a `NUM` or `TEXT` fragment is `E_SQL_SHAPE`. That is the one
+`asCondition()` on a `NUM`, `TEXT` or `UNKNOWN` fragment is `E_SQL_SHAPE` —
+UNKNOWN since the kind warrant, §8 above. That is the one
 place the layer is opinionated about where a fragment may go, and it is worth
 being opinionated: silently accepting `WHERE o.total` is how MySQL turns a
 validation rule into a truthiness test SEL spent its whole design avoiding.

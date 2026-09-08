@@ -154,13 +154,21 @@ SEL raises `E_NOT_BOOL` for a NUM in boolean position. On MariaDB an undeclared
 column holding `1` **matches**. That is a false positive, not merely a wrong
 kind, which makes this cell worse than the numeric one.
 
-Note the `IS TRUE` wrap is applied only to a bare variable rendered
-`asCondition`; inside `AND`/`OR` there is no wrap at all:
+This is also the cell where the old emission looked most like a guard and was
+not one. A bare variable rendered `asCondition` was wrapped in the dialect's
+`IS TRUE`; the same variable inside `AND`/`OR` was not wrapped at all:
 
 ```
-(undeclared) F            asCondition  →  (`flag`) IS TRUE
-(undeclared) F AND TRUE   asCondition  →  (`flag` AND TRUE)
+(undeclared) F            asCondition  →  (`flag`) IS TRUE      -- until §8
+(undeclared) F AND TRUE   asCondition  →  (`flag` AND TRUE)     -- until §8
 ```
+
+`IS TRUE` folds a NULL to false but not a number, so the first line never made
+an undeclared column safe to use as a condition; it made it look handled. Both
+are refused now, and both refusals are pinned:
+`refuse.unknown-kind-may-be-a-condition` in `sql/cases/09-refusals.sqlt` and
+`warrant.bool.an-undeclared-column-is-not-a-boolean` in
+`sql/cases/19-kind-warrant.sqlt`.
 
 ## 5. The rules
 
