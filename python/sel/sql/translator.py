@@ -313,6 +313,7 @@ class Translator:
             x = self._require_bool(x, n.x.pos, 'NOT')
         else:
             self._require_not_bool(x, n.x.pos, n.op)
+            self._require_numeric_constant(n.x)
         return self._apply('ops', n.op, [x], n.pos)
 
     def _binary(self, n: Node) -> Fragment:
@@ -335,6 +336,11 @@ class Translator:
         if op in ('+', '-', '*', '/', '%') or op in _NUMERIC_OPS:
             self._require_not_bool(l, n.l.pos, op)
             self._require_not_bool(r, n.r.pos, op)
+            # And an operand whose value is written down has to BE a number.
+            # After the BOOL guard, not before: `TRUE + 1` is E_SQL_SHAPE and
+            # stays that way.
+            self._require_numeric_constant(n.l)
+            self._require_numeric_constant(n.r)
         # The `$` family and `&`, not EQL and IN: those two are structural and
         # `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
         if op == '&' or (op[0] == '$' and op != '$'):
@@ -1168,6 +1174,18 @@ class Translator:
         return None
 
     # --- kind guards ---------------------------------------------------------
+
+    def _require_numeric_constant(self, n: Node) -> None:
+        """An operand in a numeric position whose value is knowable here.
+
+        The kind guards it sits beside ask what the binding *declared*; this
+        asks what the constant *is*, which is a different and stronger question
+        wherever the answer is written down. See ``constants.require_numeric``
+        for why refusing loses nothing, and for why it is never keyed on a
+        declared kind.
+        """
+        if _constants.is_constant(n, self.const_names):
+            _constants.require_numeric(n, self.const_ctx)
 
     def _require_not_bool(self, f: Fragment, pos: Pos, where: str) -> None:
         """A number was expected and a boolean cannot become one.

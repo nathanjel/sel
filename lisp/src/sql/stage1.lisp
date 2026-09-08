@@ -126,25 +126,60 @@ Called AFTER the node has been translated, so every refusal the translator
 already had keeps its own message: `TRUE + 1` is both an expression SEL rejects
 and a BOOL where a number is required, and the second is the sentence an author
 can act on. This check adds refusals where translation used to SUCCEED and
-changes none that already existed.
-
-The position reported is SEL's own -- the innermost node that failed, not the
-outermost one this was called with -- because that is the character the author
-has to change."
+changes none that already existed."
   (handler-case
       ;; SEL:RUN on a program built from this node IS what the Python host
       ;; reaches Context and eval-node for. No evaluator internals are needed.
       (sel:run (sel::%make-program "" n) root)
-    (sel:sel-error (e)
-      (refuse "E_SQL_INVALID"
-              (format nil "SEL rejects this expression (~a: ~a), so there is ~
-nothing to translate; a database would answer something rather than fail"
-                      (sel:sel-error-code e) (sel:sel-error-message e))
-              (if (plusp (sel:sel-error-line e))
-                  (sel::make-pos (sel:sel-error-line e) (sel:sel-error-col e)
-                                 (sel:sel-error-offset e))
-                  (snode-pos n)))))
+    (sel:sel-error (e) (refuse-as-sel e n)))
   (values))
+
+(defun validate-numeric-constant (n root)
+  "The same question asked of one OPERAND rather than a whole expression.
+
+VALIDATE-CONSTANT above only fires where the entire node is knowable, and that
+turned out to be the wrong shape: `T + (1 + \"x\")` refused while
+`(T + 1) + \"x\"` -- the same expression, differently parenthesised --
+translated, because one column anywhere in the node switched the check off.
+Whether a defect is caught may not depend on where the author put brackets.
+
+A constant in a numeric position is knowable on its own, and what it settles
+does not depend on the rest: `\"x\"` is not a number, so SEL raises E_NOT_NUM
+whatever the column holds. Refusing therefore loses nothing -- there is no value
+of the other operand that SEL would have answered.
+
+The test is the constant's VALUE and never a declared kind. A TEXT column
+holding numerals is a legitimate schema and `A == 5` must keep translating,
+because SEL's == compares numerically and a bare `=` between two text columns
+would answer FALSE where SEL answers TRUE. That is pinned as
+op.compare.coerce-variant-when-a-side-is-not, and again as
+const.numeric.a-text-column-still-coerces so this check cannot grow into it.
+
+SEL::AS-DEC is the coercion the evaluator itself applies to an arithmetic
+operand, and it is what decides here whether a constant IS a number: a second
+parser written for this check would be a second definition of a numeric
+operand, and the two would drift."
+  (handler-case
+      ;; Inside the handler, not after it: the refusal being ported is AS-DEC's
+      ;; E_NOT_NUM, and the evaluation before it usually succeeds.
+      (sel::as-dec (sel:run (sel::%make-program "" n) root) (snode-pos n))
+    (sel:sel-error (e) (refuse-as-sel e n)))
+  (values))
+
+(defun refuse-as-sel (e n)
+  "SEL's own refusal, reported as the translator's.
+
+The position is SEL's own -- the innermost node that failed, not the outermost
+one this was entered at -- because that is the character the author has to
+change."
+  (refuse "E_SQL_INVALID"
+          (format nil "SEL rejects this expression (~a: ~a), so there is ~
+nothing to translate; a database would answer something rather than fail"
+                  (sel:sel-error-code e) (sel:sel-error-message e))
+          (if (plusp (sel:sel-error-line e))
+              (sel::make-pos (sel:sel-error-line e) (sel:sel-error-col e)
+                             (sel:sel-error-offset e))
+              (snode-pos n))))
 
 ;;; --- normalise ------------------------------------------------------------
 

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..errors import SelError
+from ..errors import Pos, SelError
 from ..eval import Context, eval_node
 from ..parser import Node
 from ..value import Value
@@ -159,9 +159,45 @@ def validate(n: Node, ctx: Context | None = None) -> None:
     try:
         eval_node(n, ctx if ctx is not None else Context())
     except SelError as e:
-        from ..errors import Pos
-        pos = Pos(e.line, e.col, e.offset) if e.line > 0 else n.pos
-        refuse('E_SQL_INVALID',
-               f'SEL rejects this expression ({e.code}: {e.message}), so there is '
-               'nothing to translate; a database would answer something rather '
-               'than fail', pos)
+        _refuse_as_sel(e, n)
+
+
+def require_numeric(n: Node, ctx: Context | None = None) -> None:
+    """The same question asked of one *operand* rather than a whole expression.
+
+    ``validate`` above only fires where the entire node is knowable, and that
+    turned out to be the wrong shape: ``T + (1 + "x")`` refused while
+    ``(T + 1) + "x"`` -- the same expression, differently parenthesised --
+    translated, because one column anywhere in the node switched the check off.
+    Whether a defect is caught may not depend on where the author put brackets.
+
+    A constant in a numeric position is knowable on its own, and what it settles
+    does not depend on the rest: ``"x"`` is not a number, so SEL raises E_NOT_NUM
+    whatever the column holds. Refusing therefore loses nothing -- there is no
+    value of the other operand that SEL would have answered.
+
+    The test is the constant's VALUE and never a declared kind. A TEXT column
+    holding numerals is a legitimate schema and ``A == 5`` must keep translating,
+    because SEL's ``==`` compares numerically and a bare ``=`` between two text
+    columns would answer FALSE where SEL answers TRUE. That is pinned as
+    op.compare.coerce-variant-when-a-side-is-not, and again as
+    const.numeric.a-text-column-still-coerces so this check cannot grow into it.
+    """
+    try:
+        eval_node(n, ctx if ctx is not None else Context()).as_decimal(n.pos)
+    except SelError as e:
+        _refuse_as_sel(e, n)
+
+
+def _refuse_as_sel(e: SelError, n: Node) -> None:
+    """SEL's own refusal, reported as the translator's.
+
+    The position is SEL's own -- the innermost node that failed, not the
+    outermost one this was entered at -- because that is the character the author
+    has to change.
+    """
+    pos = Pos(e.line, e.col, e.offset) if e.line > 0 else n.pos
+    refuse('E_SQL_INVALID',
+           f'SEL rejects this expression ({e.code}: {e.message}), so there is '
+           'nothing to translate; a database would answer something rather '
+           'than fail', pos)

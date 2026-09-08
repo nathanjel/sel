@@ -374,6 +374,19 @@ SEL answers E_NOT_NUM here rather than coercing it" where
             pos))
   (values))
 
+(defun require-numeric-constant (tr n)
+  "An operand in a numeric position whose value is knowable here.
+
+Takes a NODE, unlike the guards around it, which take the fragment that node
+translated to. That is the whole point: the kind guards ask what the binding
+DECLARED, this asks what the constant IS, and the second is a different and
+stronger question wherever the answer is written down. See
+VALIDATE-NUMERIC-CONSTANT for why refusing loses nothing, and for why it is
+never keyed on a declared kind."
+  (when (is-constant n (translator-const-names tr))
+    (validate-numeric-constant n (translator-const-root tr)))
+  (values))
+
 (defun require-not-bool-operand (f pos where)
   "Distinct from REQUIRE-NOT-BOOL by exactly one kind: BIN passes here.
 Deliberately NOT applied to EQL or IN, which are structural -- `TRUE EQL TRUE`
@@ -532,7 +545,9 @@ those differ per aggregate."
         (op (sel::node-s n)))
     (if (equal op "NOT")
         (setf x (require-bool x (snode-pos (sel::node-l n)) "NOT"))
-        (require-not-bool x (snode-pos (sel::node-l n)) op))
+        (progn
+          (require-not-bool x (snode-pos (sel::node-l n)) op)
+          (require-numeric-constant tr (sel::node-l n))))
     ;; No variant: a unary entry must be a plain template.
     (apply-entry tr :ops op (list x) (snode-pos n))))
 
@@ -549,7 +564,12 @@ those differ per aggregate."
       (when (or (member op +arithmetic-ops+ :test #'equal)
                 (member op +numeric-ops+ :test #'equal))
         (require-not-bool l lpos op)
-        (require-not-bool r rpos op))
+        (require-not-bool r rpos op)
+        ;; And an operand whose value is written down has to BE a number. After
+        ;; the BOOL guard, not before: `TRUE + 1` is E_SQL_SHAPE and stays that
+        ;; way.
+        (require-numeric-constant tr (sel::node-l n))
+        (require-numeric-constant tr (sel::node-r n)))
       ;; BAND/BOR/BXOR get NO kind guard: they are refused by the map entry.
       (when (or (equal op "&") (and (> (length op) 1) (char= (char op 0) #\$)))
         (require-not-bool-operand l lpos op)

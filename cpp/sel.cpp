@@ -2191,6 +2191,14 @@ Value eval_node(const Node& node, Context& ctx) {
   return eval_dispatch(node, ctx);
 }
 
+// The operators' own numeric coercion, exported for the SEL→SQL translator.
+// as_dec above is what `+` and the comparisons call, so a value this accepts is
+// exactly a value SEL would go on to compute with, and the code, message and
+// position of a refusal are the evaluator's rather than a paraphrase. Declared
+// in sel_ast.hpp and defined at namespace scope rather than in the anonymous
+// namespace above, because that caller is a second translation unit.
+void require_number(const Value& v, Pos pos) { as_dec(v, pos); }
+
 namespace {
 
 // ============================================================================

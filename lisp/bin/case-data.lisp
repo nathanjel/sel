@@ -4754,6 +4754,132 @@
    :register nil
    :bindings (lambda () (list )))
   (list
+   :name "const.numeric.text-literal-beside-a-column"
+   :at "16-constants.sqlt:481"
+   :dialect "mariadb"
+   :source "T == \"x\""
+   :expect nil
+   :error "E_SQL_INVALID 1:6"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
+  (list
+   :name "const.numeric.text-literal-in-arithmetic"
+   :at "16-constants.sqlt:501"
+   :dialect "mariadb"
+   :source "T + \"x\""
+   :expect nil
+   :error "E_SQL_INVALID 1:5"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
+  (list
+   :name "const.numeric.reassociation-does-not-hide-it"
+   :at "16-constants.sqlt:513"
+   :dialect "mariadb"
+   :source "(T + 1) + \"x\""
+   :expect nil
+   :error "E_SQL_INVALID 1:11"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
+  (list
+   :name "const.numeric.constant-subtree-beside-a-column"
+   :at "16-constants.sqlt:528"
+   :dialect "mariadb"
+   :source "T == (\"a\" & \"b\")"
+   :expect nil
+   :error "E_SQL_INVALID 1:11"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
+  (list
+   :name "const.numeric.value-binding-beside-a-column"
+   :at "16-constants.sqlt:542"
+   :dialect "mariadb"
+   :source "T + S"
+   :expect nil
+   :error "E_SQL_INVALID 1:5"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)) (cons "S" (binding-value (sel:make-text "abc") nil)))))
+  (list
+   :name "const.numeric.unary-minus"
+   :at "16-constants.sqlt:557"
+   :dialect "mariadb"
+   :source "-\"x\" + T"
+   :expect nil
+   :error "E_SQL_INVALID 1:2"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
+  (list
+   :name "const.numeric.a-text-column-still-coerces"
+   :at "16-constants.sqlt:572"
+   :dialect "mariadb"
+   :source "A == 5"
+   :expect "(CAST(`a` AS DECIMAL(65,10)) = CAST(5 AS DECIMAL(65,10)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "a" nil :text)))))
+  (list
+   :name "const.numeric.a-numeric-text-literal-is-fine"
+   :at "16-constants.sqlt:589"
+   :dialect "mariadb"
+   :source "T == \"5\""
+   :expect "(CAST(`t` AS DECIMAL(65,10)) = CAST('5' AS DECIMAL(65,10)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
+  (list
+   :name "const.residual.argument-constraint-beside-a-column"
+   :at "16-constants.sqlt:602"
+   :dialect "mariadb"
+   :source "LEFT(T, -1)"
+   :expect "LEFT(`t`, (-1))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
    :name "pin.mariadb.decode-base64"
    :at "17-caveat-pins.sqlt:15"
    :dialect "mariadb"

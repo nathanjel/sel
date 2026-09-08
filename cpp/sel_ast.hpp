@@ -6,10 +6,11 @@
 // walks the tree the parser builds, and a tree defined inside one .cpp cannot be
 // walked from another. If you are embedding SEL, you want sel.hpp.
 //
-// It carries one thing that is not the tree, for the same reason: the regex
-// rewriter. The other hosts reach theirs as an internal module function, and
-// nothing here belongs in the public header, where it would give C++ an API
-// surface the other four do not have.
+// It carries two things that are not the tree, for the same reason: the regex
+// rewriter and the numeric coercion. The other hosts reach theirs as an
+// internal module function or a public Value method, and neither belongs in
+// the public header here, where they would give C++ an API surface the other
+// four do not have.
 //
 // The three names below that are not the tree itself — Spec, and the forward
 // declarations of Args and Context — are here because Node holds a `const Spec*`
@@ -82,6 +83,21 @@ using NodePtr = std::shared_ptr<const Node>;
 // SQL layer would be a second thing to keep in step, and it would fail silently
 // when the two drifted.
 std::string validate_pattern(const std::string& pattern, Pos pos);
+
+// Read a value in numeric context, and raise what SEL raises when it is not a
+// number: E_NOT_NUM for a non-TEXT scalar or a text that is not a numeral,
+// E_RANGE for a well-formed numeral too big to hold.
+//
+// The other four hosts spell this `Value::asDecimal(pos)` and it is public
+// there. Here the result cannot be: the decimal type lives in sel.cpp and does
+// not leave it. So what crosses is the CHECK rather than the number — which is
+// all the one caller outside the evaluator wants. The SEL→SQL translator asks
+// whether a constant sitting in a numeric operand position is a number at all,
+// and the answer has to be the language's own: a second numeral grammar in the
+// SQL layer would be a second thing to keep in step, and it would drift
+// silently. Declared here and defined at namespace scope for the same reason
+// validate_pattern is.
+void require_number(const Value& v, Pos pos);
 
 // Teardown is iterative, and it has to be.
 //

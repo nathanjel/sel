@@ -2004,13 +2004,30 @@ Four properties of the check, each of which is a decision:
   bounded by the same limits, but it is no longer true that translation is
   cheap regardless of what is being translated.
 
-**What it cannot do is check a value it does not have, and the residual is
-exactly one thing: a column.** `LEFT(col, -1)` is as wrong as `LEFT("abc", -1)`
-and translates, because a column's value is not knowable here and will not be
-until the query runs. Everything else that once looked unknowable has been
-folded in — literals from the start, then host-supplied `value` bindings, then
-assignments over both. Argument validation happens where SEL's does, at the
-value, and this now reaches every value that exists at translation time.
+**What it cannot do is check a value it does not have.** `LEFT("abc", N)` where
+`N` is a column translates, because a column's value is not knowable here and
+will not be until the query runs. Everything else that once looked unknowable
+has been folded in — literals from the start, then host-supplied `value`
+bindings, then assignments over both.
+
+That used to be stated as "the residual is exactly one thing: a column", and it
+was not true, in two different ways.
+
+The first is fixed. The check ran only where the *whole* node was constant, so
+one column anywhere in a node switched it off for every constant inside it:
+`T + (1 + "x")` refused and `(T + 1) + "x"` — the same expression, differently
+parenthesised — translated, and `CAST('x' AS DECIMAL)` is `0` on MariaDB, MySQL
+and SQLite. A constant in a numeric operand position is now asked on its own,
+wherever it sits, because what it settles does not depend on the rest: `"x"` is
+not a number whatever the column holds. Pinned as the `const.numeric.*` family.
+
+The second is not fixed, and is a real divergence rather than an unknowable
+one. `LEFT(col, -1)` raises `E_RANGE` in SEL for *every* value of `col` — the
+offending argument is the `-1`, which is written down — and it still translates.
+Closing it needs SEL's own per-builtin argument checks, not the numeric-operand
+test above, because `-1` *is* a number and only `LEFT` knows it may not be
+negative. Pinned as `const.residual.argument-constraint-beside-a-column` so it
+is a recorded gap rather than an oversight.
 
 `-N` where `N` is a column is not a constant either, however much it looks like
 `-1`: the test is about leaves, not about shape. Both that and `LEFT(col, -1)`

@@ -478,3 +478,149 @@ A = 2 + 3; A * 2
 --- expect
 ((2 + 3) * 2)
 ===
+### name: const.numeric.text-literal-beside-a-column
+--- note
+The rest of this file is closed expressions, where the whole node is knowable.
+This half is what the check missed for as long as it existed: a constant sitting
+in a numeric position *beside* something that is not constant.
+
+`"x"` is not a number, so SEL raises E_NOT_NUM here whatever `T` holds — the
+answer does not depend on the column at all. It translated anyway, and
+CAST('x' AS DECIMAL) is 0 on MariaDB, MySQL and SQLite, so the predicate became
+`0 = 0` and matched every row; PostgreSQL raised 22P02 at plan time. Reported
+from the field against a MariaDB EAV schema.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T == "x"
+--- error
+E_SQL_INVALID 1:6
+===
+### name: const.numeric.text-literal-in-arithmetic
+--- note
+The same for arithmetic, where MariaDB emitted `t + 'x'` with no cast at all.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T + "x"
+--- error
+E_SQL_INVALID 1:5
+===
+### name: const.numeric.reassociation-does-not-hide-it
+--- note
+The case that says the check is per node rather than per expression. The old
+rule asked "is this whole node constant", so `T + (1 + "x")` refused and
+`(T + 1) + "x"` — the same expression, differently parenthesised — translated.
+Whether a defect is caught may not depend on where the author put brackets.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+(T + 1) + "x"
+--- error
+E_SQL_INVALID 1:11
+===
+### name: const.numeric.constant-subtree-beside-a-column
+--- note
+Not just a literal: any subtree with no non-constant leaf is knowable, and its
+value is what has to be a number. The position blames the `&`, which is the
+innermost node SEL itself blames.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T == ("a" & "b")
+--- error
+E_SQL_INVALID 1:11
+===
+### name: const.numeric.value-binding-beside-a-column
+--- note
+A `value` binding is a constant the translator has — spec §5.4 calls it "a
+constant supplied at translation time" — so it is knowable for exactly the same
+reason a literal is. `S + 1` already refused because that node is wholly
+constant; adding a column beside it used to be enough to turn the check off.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}, "S": {"kind": "value", "value": "abc"}}
+--- source
+T + S
+--- error
+E_SQL_INVALID 1:5
+===
+### name: const.numeric.unary-minus
+--- note
+Unary `-` reads its operand as a number too. This one already refused, because
+`-"x"` is itself a wholly-constant node and the old rule caught it there; it is
+pinned so that the per-operand check cannot regress what the per-node check
+already covered.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+-"x" + T
+--- error
+E_SQL_INVALID 1:2
+===
+### name: const.numeric.a-text-column-still-coerces
+--- note
+The other half, and the reason this check is about the constant's *value* and
+never about a declared kind. SEL's `==` compares numerically, so "5.00" == "5"
+is TRUE and a bare `=` between two text columns would say FALSE. A TEXT column
+holding numerals is a legitimate schema and must keep translating; refusing on
+the declared kind would break it. Pinned as op.compare.coerce-variant-when-a-
+side-is-not, and pinned again here so this check cannot grow into that one.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "a", "type": "TEXT"}}
+--- source
+A == 5
+--- expect
+(CAST(`a` AS DECIMAL(65,10)) = CAST(5 AS DECIMAL(65,10)))
+===
+### name: const.numeric.a-numeric-text-literal-is-fine
+--- note
+And a constant that *is* a number is not the target: SEL evaluates this, so the
+translator must too.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "NUM"}}
+--- source
+T == "5"
+--- expect
+(CAST(`t` AS DECIMAL(65,10)) = CAST('5' AS DECIMAL(65,10)))
+===
+### name: const.residual.argument-constraint-beside-a-column
+--- note
+A KNOWN DIVERGENCE, pinned so it is recorded rather than forgotten.
+
+SEL raises E_RANGE here for every value of T -- the offending argument is the
+-1, which is written down, and only LEFT knows its length may not be negative.
+So this is not the unknowable residual that const.column.cannot-be-checked
+pins; it is knowable, and it still translates.
+
+The const.numeric.* family closed the operand half of this: a constant in a
+numeric position is checked wherever it sits. It cannot close this half,
+because -1 IS a number and passes that test. Closing it needs SEL's own
+per-builtin argument validation reached from the translator, which is a
+different mechanism and not yet built.
+
+When it is built, this case will fail. Change it to an error then, deliberately.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+LEFT(T, -1)
+--- expect
+LEFT(`t`, (-1))
+===

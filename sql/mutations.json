@@ -812,6 +812,76 @@
       "file": "lisp/src/sql/translator.lisp",
       "from": "(return-from apply-entry (funcall builder d args pos))",
       "to": "(return-from apply-entry (funcall builder tr args pos))"
+    },
+    {
+      "name": "php-numeric-constant-is-evaluated-but-not-required-numeric",
+      "was": "requireNumeric evaluated the constant and threw the value away, which is what validate() already did. The whole point is the coercion: without asDecimal, `T == \"x\"` evaluates \"x\" happily and emits CAST('x' AS DECIMAL), which MariaDB reads as 0.",
+      "file": "php/src/Sql/Constants.php",
+      "from": "            Evaluator::evalNode($n, $ctx ?? new Context())->asDecimal($n['pos']);",
+      "to": "            Evaluator::evalNode($n, $ctx ?? new Context());"
+    },
+    {
+      "name": "php-numeric-constant-checked-on-one-operand-only",
+      "was": "Only the left operand was checked, so `T == \"x\"` emitted while `\"x\" == T` refused. SEL reads both operands of a numeric operator as numbers and neither side is privileged.",
+      "file": "php/src/Sql/Translator.php",
+      "from": "            $this->requireNumericConstant($n['l']);\n            $this->requireNumericConstant($n['r']);",
+      "to": "            $this->requireNumericConstant($n['l']);"
+    },
+    {
+      "name": "js-numeric-constant-is-evaluated-but-not-required-numeric",
+      "was": "Without the coercion requireNumeric is just validate: the constant evaluates happily and CAST('x' AS DECIMAL) goes out, which MariaDB reads as 0.",
+      "file": "js/src/sql/constants.mjs",
+      "from": "    evalNode(n, ctx ?? new Context()).asDecimal(n.pos);",
+      "to": "    evalNode(n, ctx ?? new Context());"
+    },
+    {
+      "name": "js-numeric-constant-checked-on-one-operand-only",
+      "was": "Only the left operand was checked, so `T == \"x\"` emitted while `\"x\" == T` refused. Neither side of a numeric operator is privileged.",
+      "file": "js/src/sql/translator.mjs",
+      "from": "      this.requireNumericConstant(n.l);\n      this.requireNumericConstant(n.r);",
+      "to": "      this.requireNumericConstant(n.l);"
+    },
+    {
+      "name": "python-numeric-constant-is-evaluated-but-not-required-numeric",
+      "was": "The Python half of the same defect: evaluate the constant, then forget to require that it is a number.",
+      "file": "python/sel/sql/constants.py",
+      "from": "        eval_node(n, ctx if ctx is not None else Context()).as_decimal(n.pos)",
+      "to": "        eval_node(n, ctx if ctx is not None else Context())"
+    },
+    {
+      "name": "python-numeric-constant-checked-on-one-operand-only",
+      "was": "The Python half of the one-sided check.",
+      "file": "python/sel/sql/translator.py",
+      "from": "            self._require_numeric_constant(n.l)\n            self._require_numeric_constant(n.r)",
+      "to": "            self._require_numeric_constant(n.l)"
+    },
+    {
+      "name": "lisp-numeric-constant-is-evaluated-but-not-required-numeric",
+      "was": "Drop the coercion and VALIDATE-NUMERIC-CONSTANT becomes VALIDATE-CONSTANT: the constant evaluates fine, and CAST('x' AS DECIMAL) goes out to a server that reads it as 0.",
+      "file": "lisp/src/sql/stage1.lisp",
+      "from": "      (sel::as-dec (sel:run (sel::%make-program \"\" n) root) (snode-pos n))",
+      "to": "      (sel:run (sel::%make-program \"\" n) root)"
+    },
+    {
+      "name": "lisp-numeric-constant-checked-on-one-operand-only",
+      "was": "The Lisp half of the one-sided check: `T == \"x\"` emitted while `\"x\" == T` refused.",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "        (require-numeric-constant tr (sel::node-l n))\n        (require-numeric-constant tr (sel::node-r n)))",
+      "to": "        (require-numeric-constant tr (sel::node-l n)))"
+    },
+    {
+      "name": "cpp-numeric-constant-is-evaluated-but-not-required-numeric",
+      "was": "Drop require_number and the coercion is gone: the constant evaluates, the value is discarded, and CAST('x' AS DECIMAL) goes out to a server that reads it as 0.",
+      "file": "cpp/sel_sql_stage1.cpp",
+      "from": "    require_number(Program(\"\", node).run(root), n.pos());",
+      "to": "    Program(\"\", node).run(root);"
+    },
+    {
+      "name": "cpp-numeric-constant-checked-on-one-operand-only",
+      "was": "The C++ half of the one-sided check: `T == \"x\"` emitted while `\"x\" == T` refused.",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "    require_numeric_constant(*n.l());\n    require_numeric_constant(*n.r());",
+      "to": "    require_numeric_constant(*n.l());"
     }
   ]
 }

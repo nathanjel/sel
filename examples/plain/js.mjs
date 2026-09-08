@@ -48,7 +48,12 @@ console.log('   0.10+0.20 =>', evaluate('0.10 + 0.20').asText());
 
 console.log('4. reading results');
 const v = evaluate('SPLIT("a,b,c", ",")');
-console.log('   size   =>', v.size());
+// Interpolated rather than passed as a second argument: console.log runs a
+// non-string through util.inspect, which colours a number when the stream
+// allows it -- so with FORCE_COLOR set this line printed an escape sequence
+// around the 3 and stopped matching its four siblings. Strings are printed
+// verbatim, which is why no other line here needed it.
+console.log(`   size   => ${v.size()}`);
 console.log('   keys   =>', v.keys().join(','));
 console.log('   [2]    =>', v.get('2').asText());
 console.log('   scalar =>', v.asText());            // scalar context: first child

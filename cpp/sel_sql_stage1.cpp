@@ -259,6 +259,19 @@ bool constant_call(const SNode& n, const std::set<std::string>& bound) {
   return true;
 }
 
+// SEL's own refusal, reported as the translator's.
+//
+// The position is SEL's own -- the innermost node that failed, not the
+// outermost one this was entered at -- because that is the character the author
+// has to change.
+[[noreturn]] void refuse_as_sel(const SelError& e, const SNode& n) {
+  refuse("E_SQL_INVALID",
+         "SEL rejects this expression (" + e.code() + ": " + e.message() +
+             "), so there is nothing to translate; a database would answer "
+             "something rather than fail",
+         e.line() > 0 ? e.pos() : n.pos());
+}
+
 }  // namespace
 
 // --- the interface -----------------------------------------------------------
@@ -309,12 +322,21 @@ void validate(const SNode& n, sel::Value& root) {
     // exactly what the Python host calls. No evaluator internals are needed.
     Program("", node).run(root);
   } catch (const SelError& e) {
-    const Pos pos = e.line() > 0 ? e.pos() : n.pos();
-    refuse("E_SQL_INVALID",
-           "SEL rejects this expression (" + e.code() + ": " + e.message() +
-               "), so there is nothing to translate; a database would answer "
-               "something rather than fail",
-           pos);
+    refuse_as_sel(e, n);
+  }
+}
+
+void require_numeric(const SNode& n, sel::Value& root) {
+  const NodePtr node = n.to_node();
+  if (!node) return;   // contains a clist; there is nothing to ask
+  try {
+    // The one place the SQL layer reaches past the public header, and it reaches
+    // for the coercion the operators themselves use rather than a copy of it:
+    // the other hosts write `evalNode(n, ctx)->asDecimal(n.pos)` and this is
+    // that line. sel_ast.hpp says why the C++ spelling is a free function.
+    require_number(Program("", node).run(root), n.pos());
+  } catch (const SelError& e) {
+    refuse_as_sel(e, n);
   }
 }
 

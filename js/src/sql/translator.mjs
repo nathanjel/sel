@@ -304,8 +304,12 @@ export class Translator {
 
   unary(n) {
     let x = this.node(n.x);
-    if (n.op === 'NOT') x = this.requireBool(x, n.x.pos, 'NOT');
-    else this.requireNotBool(x, n.x.pos, n.op);
+    if (n.op === 'NOT') {
+      x = this.requireBool(x, n.x.pos, 'NOT');
+    } else {
+      this.requireNotBool(x, n.x.pos, n.op);
+      this.requireNumericConstant(n.x);
+    }
     return this.apply('ops', n.op, [x], n.pos);
   }
 
@@ -329,6 +333,10 @@ export class Translator {
     if (['+', '-', '*', '/', '%'].includes(op) || NUMERIC_OPS.includes(op)) {
       this.requireNotBool(l, n.l.pos, op);
       this.requireNotBool(r, n.r.pos, op);
+      // And an operand whose value is written down has to BE a number. After the
+      // BOOL guard, not before: `TRUE + 1` is E_SQL_SHAPE and stays that way.
+      this.requireNumericConstant(n.l);
+      this.requireNumericConstant(n.r);
     }
     // The `$` family and `&`, not EQL and IN: those two are structural and
     // `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
@@ -1237,6 +1245,18 @@ export class Translator {
     refuse('E_SQL_SHAPE',
       `${where} reads its operands as text or bytes, and a BOOL is neither; SEL `
       + 'answers E_NOT_TEXT here rather than spelling it 1 or true', pos);
+  }
+
+  // An operand in a numeric position whose value is knowable here.
+  //
+  // The guards above ask what the binding *declared*; this asks what the constant
+  // *is*, which is a different and stronger question wherever the answer is
+  // written down. See constants.requireNumeric for why refusing loses nothing,
+  // and for why it is never keyed on a declared kind.
+  requireNumericConstant(n) {
+    if (constants.isConstant(n, this.constNames)) {
+      constants.requireNumeric(n, this.constCtx);
+    }
   }
 
   requireBool(f, pos, where) {

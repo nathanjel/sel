@@ -332,6 +332,7 @@ final class Translator
             $x = $this->requireBool($x, $n['x']['pos'], 'NOT');
         } else {
             $this->requireNotBool($x, $n['x']['pos'], $n['op']);
+            $this->requireNumericConstant($n['x']);
         }
         return $this->apply('ops', $n['op'], [$x], $n['pos']);
     }
@@ -363,6 +364,11 @@ final class Translator
                            '==', '!=', '<', '<=', '>', '>='], true)) {
             $this->requireNotBool($l, $n['l']['pos'], $op);
             $this->requireNotBool($r, $n['r']['pos'], $op);
+            // And an operand whose value is written down has to BE a number.
+            // After the BOOL guard, not before: `TRUE + 1` is E_SQL_SHAPE and
+            // stays that way.
+            $this->requireNumericConstant($n['l']);
+            $this->requireNumericConstant($n['r']);
         }
         // The `$` family and `&`, not EQL and IN: those two are structural and
         // `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
@@ -1728,6 +1734,23 @@ final class Translator
      *
      * @param array{line:int,col:int,offset:int} $pos
      */
+    /**
+     * An operand in a numeric position whose value is knowable here.
+     *
+     * The kind guards above ask what the binding *declared*; this asks what the
+     * constant *is*, which is a different and stronger question wherever the
+     * answer is written down. See Constants::requireNumeric for why refusing
+     * loses nothing, and for why it is never keyed on a declared kind.
+     *
+     * @param array<string,mixed> $n
+     */
+    private function requireNumericConstant(array $n): void
+    {
+        if (Constants::isConstant($n, $this->constNames)) {
+            Constants::requireNumeric($n, $this->constCtx);
+        }
+    }
+
     private function requireNotBool(Fragment $f, array $pos, string $where): void
     {
         // spec §4: "BOOL and BIN are never numbers". The guard implemented the

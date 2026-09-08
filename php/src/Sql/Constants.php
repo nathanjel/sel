@@ -220,13 +220,61 @@ final class Constants
         try {
             Evaluator::evalNode($n, $ctx ?? new Context());
         } catch (SelError $e) {
-            refuse('E_SQL_INVALID',
-                "SEL rejects this expression ({$e->code}: {$e->getMessage()}), so "
-                . 'there is nothing to translate; a database would answer '
-                . 'something rather than fail',
-                $e->line > 0
-                    ? ['line' => $e->line, 'col' => $e->col, 'offset' => $e->offset]
-                    : $n['pos']);
+            self::refuseAsSel($e, $n);
         }
+    }
+
+    /**
+     * The same question asked of one *operand* rather than a whole expression.
+     *
+     * validate() above only fires where the entire node is knowable, and that
+     * turned out to be the wrong shape: `T + (1 + "x")` refused while
+     * `(T + 1) + "x"` -- the same expression, differently parenthesised --
+     * translated, because one column anywhere in the node switched the check
+     * off. Whether a defect is caught may not depend on where the author put
+     * brackets.
+     *
+     * A constant in a numeric position is knowable on its own, and what it
+     * settles does not depend on the rest: `"x"` is not a number, so SEL raises
+     * E_NOT_NUM whatever the column holds. Refusing therefore loses nothing --
+     * there is no value of the other operand that SEL would have answered.
+     *
+     * The test is the constant's VALUE and never a declared kind. A TEXT column
+     * holding numerals is a legitimate schema and `A == 5` must keep
+     * translating, because SEL's == compares numerically and a bare `=` between
+     * two text columns would answer FALSE where SEL answers TRUE. That is
+     * pinned as op.compare.coerce-variant-when-a-side-is-not, and again as
+     * const.numeric.a-text-column-still-coerces so this check cannot grow into
+     * it.
+     *
+     * @param array<string,mixed> $n
+     */
+    public static function requireNumeric(array $n, ?Context $ctx = null): void
+    {
+        try {
+            Evaluator::evalNode($n, $ctx ?? new Context())->asDecimal($n['pos']);
+        } catch (SelError $e) {
+            self::refuseAsSel($e, $n);
+        }
+    }
+
+    /**
+     * SEL's own refusal, reported as the translator's.
+     *
+     * The position is SEL's own -- the innermost node that failed, not the
+     * outermost one this was entered at -- because that is the character the
+     * author has to change.
+     *
+     * @param array<string,mixed> $n
+     */
+    private static function refuseAsSel(SelError $e, array $n): void
+    {
+        refuse('E_SQL_INVALID',
+            "SEL rejects this expression ({$e->code}: {$e->getMessage()}), so "
+            . 'there is nothing to translate; a database would answer '
+            . 'something rather than fail',
+            $e->line > 0
+                ? ['line' => $e->line, 'col' => $e->col, 'offset' => $e->offset]
+                : $n['pos']);
     }
 }

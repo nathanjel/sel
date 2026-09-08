@@ -603,6 +603,14 @@ void Translator::require_not_bool_operand(const Fragment& f, Pos pos,
          pos);
 }
 
+// An operand in a numeric position whose value is knowable here.
+//
+// See require_numeric in sel_sql_stage1.hpp for why refusing loses nothing, and
+// for why it is never keyed on a declared kind.
+void Translator::require_numeric_constant(const SNode& n) {
+  if (is_constant(n, const_names_)) require_numeric(n, const_root_);
+}
+
 // --- the map application path ------------------------------------------------
 
 std::optional<std::string> Translator::variant_for(const std::string& op,
@@ -750,8 +758,12 @@ Fragment Translator::fold_pairwise(const std::string& op,
 
 Fragment Translator::unary(const SNode& n) {
   Fragment x = node(n.l());
-  if (n.s() == "NOT") x = require_bool(x, n.l()->pos(), "NOT");
-  else require_not_bool(x, n.l()->pos(), n.s());
+  if (n.s() == "NOT") {
+    x = require_bool(x, n.l()->pos(), "NOT");
+  } else {
+    require_not_bool(x, n.l()->pos(), n.s());
+    require_numeric_constant(*n.l());
+  }
   const Fragment one[] = {x};
   // No variant: a unary entry must be a plain template, and a dialect that gave
   // NOT or NEG a variants map would be refused by template_of.
@@ -773,6 +785,10 @@ Fragment Translator::binary(const SNode& n) {
   if (contains(ARITHMETIC_OPS, op) || contains(NUMERIC_OPS, op)) {
     require_not_bool(l, n.l()->pos(), op);
     require_not_bool(r, n.r()->pos(), op);
+    // And an operand whose value is written down has to BE a number. After the
+    // BOOL guard, not before: `TRUE + 1` is E_SQL_SHAPE and stays that way.
+    require_numeric_constant(*n.l());
+    require_numeric_constant(*n.r());
   }
   // BAND/BOR/BXOR get NO kind guard: they are refused by the map entry itself.
   if (op == "&" || (op.size() > 1 && op[0] == '$')) {

@@ -124,6 +124,11 @@ class Translator {
   // Void: the callers do not rebind.
   void require_not_bool(const Fragment& f, Pos pos, const std::string& where);
   void require_not_bool_operand(const Fragment& f, Pos pos, const std::string& where);
+  // Takes the NODE and not the Fragment, which is the whole point of it: the
+  // guards above ask what the binding *declared*, and this asks what the
+  // constant *is*, which is a different and stronger question wherever the
+  // answer is written down.
+  void require_numeric_constant(const SNode& n);
 
   Fragment from_binder(const Binder& b, const SNode& n);
   Fragment index_binder(const Binder& b, const std::string& name,
