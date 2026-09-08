@@ -160,3 +160,29 @@ SKU IN ITEMS
 --- error
 E_SQL_SHAPE
 ===
+### name: refuse.list-yielding-function.btl
+--- note
+BTL, LTB and RGROUPS are the three functions that traffic in lists, and a SQL
+expression is a scalar. All three are refused on every dialect and none was
+pinned, which left the map's own reason strings as the only record that they
+are refused deliberately rather than forgotten.
+
+LTB is the odd one and has no case: it TAKES a list, so reaching its refusal
+needs a list to hand it, and a list literal is refused first with E_SQL_SHAPE
+at the literal. Its refusal is unreachable through source, which is worth
+knowing and not worth faking.
+--- dialect
+mariadb
+--- source
+BTL("ab")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: refuse.list-yielding-function.rgroups
+--- dialect
+mariadb
+--- source
+RGROUPS("(a)", "a")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===

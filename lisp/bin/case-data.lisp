@@ -246,6 +246,62 @@
    :register nil
    :bindings (lambda () (list )))
   (list
+   :name "lex.text.non-bmp-literal-is-passed-through"
+   :at "01-lexical.sqlt:149"
+   :dialect "mariadb"
+   :source "\"😀\" $== \"x\""
+   :expect "(CAST('😀' AS CHAR) COLLATE utf8mb4_bin = CAST('x' AS CHAR) COLLATE utf8mb4_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "lex.text.non-bmp-literal-postgresql"
+   :at "01-lexical.sqlt:169"
+   :dialect "postgresql"
+   :source "\"😀\" $== \"x\""
+   :expect "(CAST('😀' AS TEXT) COLLATE \"C\" = CAST('x' AS TEXT) COLLATE \"C\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "lex.text.non-bmp-literal-sqlite"
+   :at "01-lexical.sqlt:177"
+   :dialect "sqlite"
+   :source "\"😀\" $== \"x\""
+   :expect "(CAST('😀' AS TEXT) = CAST('x' AS TEXT))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "lex.text.non-bmp-length-is-one-character"
+   :at "01-lexical.sqlt:185"
+   :dialect "mariadb"
+   :source "LEN(\"😀\") == 1"
+   :expect "(CHAR_LENGTH('😀') = 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
    :name "op.arith.add"
    :at "02-operators.sqlt:3"
    :dialect "mariadb"
@@ -868,6 +924,48 @@
    :source "RMATCH('\\p{L}', \"x\")"
    :expect nil
    :error "E_SQL_UNSUPPORTED"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.text.ltrim-strips-sel-s-four-characters"
+   :at "03-functions.sqlt:279"
+   :dialect "mariadb"
+   :source "LTRIM(\" a\")"
+   :expect "REGEXP_REPLACE(' a', '^[ \\\\t\\\\r\\\\n]+', '')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.text.rtrim-strips-sel-s-four-characters"
+   :at "03-functions.sqlt:293"
+   :dialect "mariadb"
+   :source "RTRIM(\"a \")"
+   :expect "REGEXP_REPLACE('a ', '[ \\\\t\\\\r\\\\n]+$', '')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.bin.from-hex"
+   :at "03-functions.sqlt:301"
+   :dialect "mariadb"
+   :source "FROM_HEX(\"4869\")"
+   :expect "UNHEX('4869')"
+   :error nil
    :throws nil
    :params nil
    :as nil
@@ -1659,6 +1757,34 @@
    :strict nil
    :register nil
    :bindings (lambda () (list (cons "SKU" (binding-column "sku" "o" :text)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")))))
+  (list
+   :name "refuse.list-yielding-function.btl"
+   :at "09-refusals.sqlt:163"
+   :dialect "mariadb"
+   :source "BTL(\"ab\")"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "refuse.list-yielding-function.rgroups"
+   :at "09-refusals.sqlt:181"
+   :dialect "mariadb"
+   :source "RGROUPS(\"(a)\", \"a\")"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
   (list
    :name "bind.column.typed"
    :at "10-bindings.sqlt:3"
@@ -3954,6 +4080,20 @@
    :register nil
    :bindings (lambda () (list )))
   (list
+   :name "sqlite.bin.from-hex-is-refused"
+   :at "14-sqlite.sqlt:186"
+   :dialect "sqlite"
+   :source "FROM_HEX(\"4869\")"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
    :name "pg.num.operands-are-cast"
    :at "15-postgresql.sqlt:5"
    :dialect "postgresql"
@@ -4165,6 +4305,48 @@
    :register (lambda ()
       (define-dialect "pg-numbered" (list :extends "postgresql" :version "15" :target t :lexical (list (cons "placeholder" "${n}")))))
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
+  (list
+   :name "pg.text.ltrim"
+   :at "15-postgresql.sqlt:234"
+   :dialect "postgresql"
+   :source "LTRIM(\" a\")"
+   :expect "ltrim(CAST(' a' AS TEXT), E' \\t\\r\\n')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "pg.text.rtrim"
+   :at "15-postgresql.sqlt:248"
+   :dialect "postgresql"
+   :source "RTRIM(\"a \")"
+   :expect "rtrim(CAST('a ' AS TEXT), E' \\t\\r\\n')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "pg.bin.from-hex"
+   :at "15-postgresql.sqlt:256"
+   :dialect "postgresql"
+   :source "FROM_HEX(\"4869\")"
+   :expect "decode('4869', 'hex')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list )))
   (list
    :name "const.range.left-negative-length"
    :at "16-constants.sqlt:22"
@@ -5978,4 +6160,154 @@
    :mode nil
    :strict nil
    :register nil
-   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))
+  (list
+   :name "ansi.trim.strips-only-what-the-standard-strips"
+   :at "20-ansi-fallback.sqlt:34"
+   :dialect "ansi-probe"
+   :source "TRIM(\" a \")"
+   :expect "TRIM(BOTH FROM ' a ')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.ltrim.leading-only"
+   :at "20-ansi-fallback.sqlt:50"
+   :dialect "ansi-probe"
+   :source "LTRIM(\" a\")"
+   :expect "TRIM(LEADING FROM ' a')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.rtrim.trailing-only"
+   :at "20-ansi-fallback.sqlt:60"
+   :dialect "ansi-probe"
+   :source "RTRIM(\"a \")"
+   :expect "TRIM(TRAILING FROM 'a ')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.substr.two-arguments"
+   :at "20-ansi-fallback.sqlt:70"
+   :dialect "ansi-probe"
+   :source "SUBSTR(\"abcd\", 2)"
+   :expect "SUBSTRING('abcd' FROM 2)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.substr.three-arguments"
+   :at "20-ansi-fallback.sqlt:84"
+   :dialect "ansi-probe"
+   :source "SUBSTR(\"abcd\", 2, 2)"
+   :expect "SUBSTRING('abcd' FROM 2 FOR 2)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.multiply"
+   :at "20-ansi-fallback.sqlt:94"
+   :dialect "ansi-probe"
+   :source "2 * 3"
+   :expect "(2 * 3)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.concat.double-pipe"
+   :at "20-ansi-fallback.sqlt:108"
+   :dialect "ansi-probe"
+   :source "\"a\" & \"b\""
+   :expect "('a' || 'b')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.identifiers-are-double-quoted"
+   :at "20-ansi-fallback.sqlt:123"
+   :dialect "ansi-probe"
+   :source "N == 25"
+   :expect "(\"n\" = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
+  (list
+   :name "ansi.no-regex-so-no-mapping"
+   :at "20-ansi-fallback.sqlt:140"
+   :dialect "ansi-probe"
+   :source "RMATCH(\"^a\", \"abc\")"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list )))
+  (list
+   :name "ansi.inherits-isnum-and-still-cannot-guard"
+   :at "20-ansi-fallback.sqlt:156"
+   :dialect "ansi-probe"
+   :source "T == 25"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))))

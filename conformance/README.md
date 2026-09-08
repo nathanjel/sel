@@ -27,6 +27,26 @@ text "Zaż"
 A line is a **marker** if it starts with `### `, starts with `--- `, or is exactly
 `===`. Everything else is content, taken verbatim.
 
+**A section's content is its lines joined with `\n`, with leading and trailing
+runs of space, tab, CR and LF removed — those four characters and no others.**
+That sentence is normative for the five readers, and it is fussier than it
+looks. Each host has a trim function to hand and no two of them strip the same
+set: JavaScript's `String.prototype.trim()` removes ECMA-262's WhiteSpace, which
+includes U+FEFF and every Unicode `Zs`; Python's `str.strip()` removes Unicode
+whitespace but not U+FEFF; PHP's `trim()` adds NUL and a vertical tab; C++ and
+Common Lisp were already spelling out the four.
+
+Reaching for the native one is therefore a way to run a *different program* in
+one host than in another, invisibly. `lex.space.bom-is-not-whitespace` is the
+case that found it: four hosts raised `E_SYNTAX` at the byte-order mark and
+JavaScript answered `TRUE`, because its reader had deleted the BOM before the
+lexer ever saw it. The lexers had agreed all along. The same trap is why
+`tools/README.md` is normative about the corpus format's trailing newline.
+
+The four are SEL's own whitespace, which is the only set that can be right here:
+a reader that strips something the language does not is asserting that two
+different programs are the same one.
+
 | Marker | Meaning |
 |---|---|
 | `### name: <id>` | starts a case; `<id>` must be unique across the whole suite |

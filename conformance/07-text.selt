@@ -257,3 +257,40 @@ FIND("a", "banana", -1)
 --- expect
 error E_RANGE at 1:21
 ===
+### name: text.upper.dotless-i-is-left-alone
+--- note
+UPPER and LOWER are ASCII-only by specification, and the Turkish dotless i is
+where every host's native case function disagrees with that. Python's
+str.upper() maps U+0131 to ASCII I; Common Lisp's char-upcase does the same;
+PHP's strtoupper does not, and mb_strtoupper does. Two hosts carry an
+ascii_upper of their own PRECISELY because of this character, and the comment
+in python/sel/sql/bindings.py says so -- but no case named it, so the
+discipline was documented and unasserted.
+
+If a host ever reaches for its language's own case function, this is the case
+that fails. Eszett is the same class and already pinned; this is the other
+half.
+--- source
+UPPER("ı")
+--- expect
+text "ı"
+===
+### name: text.lower.dotted-capital-i-is-left-alone
+--- note
+The other direction. U+0130 lower-cases to "i" plus a combining dot above
+under full Unicode rules, which is one character becoming two -- a length
+change out of a case fold, which is the thing ASCII-only exists to avoid.
+--- source
+LOWER("İ")
+--- expect
+text "İ"
+===
+### name: text.upper.ascii-i-still-folds
+--- note
+The control for the two above: ASCII-only means ASCII still folds. Without
+this, a host that simply returned its argument would pass both of them.
+--- source
+UPPER("i")
+--- expect
+text "I"
+===

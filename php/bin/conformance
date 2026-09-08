@@ -19,6 +19,9 @@ use Sel\Value;
 const SUITE = __DIR__ . '/../../conformance';
 
 /** @return list<array<string,mixed>> */
+// SEL's four whitespace characters. See conformance/README.md.
+const WS = " \t\r\n";
+
 function parse_selt(string $text, string $file): array
 {
     $cases = [];
@@ -44,7 +47,7 @@ function parse_selt(string $text, string $file): array
             if ($cur < 0) {
                 throw new RuntimeException("{$at}: section outside a case");
             }
-            $section = trim(substr($line, 4));
+            $section = trim(substr($line, 4), WS);
             if (in_array($section, ['setup', 'source', 'expect'], true)) {
                 $cases[$cur][$section] = [];
             } elseif ($section !== 'note') {
@@ -65,9 +68,12 @@ function parse_selt(string $text, string $file): array
         if ($c['expect'] === null) {
             throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- expect");
         }
-        $c['setup'] = $c['setup'] === null ? null : trim(implode("\n", $c['setup']));
-        $c['source'] = trim(implode("\n", $c['source']));
-        $c['expect'] = trim(implode("\n", $c['expect']));
+        // WS, not trim(): PHP's default set adds NUL and a vertical tab, which
+        // the other four readers do not strip. Narrower than it needs to be
+        // today and the same width as everybody else, which is the point.
+        $c['setup'] = $c['setup'] === null ? null : trim(implode("\n", $c['setup']), WS);
+        $c['source'] = trim(implode("\n", $c['source']), WS);
+        $c['expect'] = trim(implode("\n", $c['expect']), WS);
     }
     return $cases;
 }

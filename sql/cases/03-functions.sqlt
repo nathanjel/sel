@@ -276,3 +276,38 @@ RMATCH('\p{L}', "x")
 --- error
 E_SQL_UNSUPPORTED
 ===
+### name: func.text.ltrim-strips-sel-s-four-characters
+--- note
+TRIM had a case and its two siblings did not, on any dialect, although all
+three are mapped everywhere and all three are the same decision: SEL strips
+space, tab, CR and LF, so the template has to name those four and not defer to
+whatever the server calls whitespace. MariaDB's own LTRIM strips spaces only,
+which is why this is a REGEXP_REPLACE and not a call to it.
+--- dialect
+mariadb
+--- source
+LTRIM(" a")
+--- expect
+REGEXP_REPLACE(' a', '^[ \\t\\r\\n]+', '')
+===
+### name: func.text.rtrim-strips-sel-s-four-characters
+--- dialect
+mariadb
+--- source
+RTRIM("a ")
+--- expect
+REGEXP_REPLACE('a ', '[ \\t\\r\\n]+$', '')
+===
+### name: func.bin.from-hex
+--- note
+Mapped on the MySQL family and PostgreSQL, refused on sqlite, and pinned
+nowhere -- a partial refusal, which is the shape where a dialect drifts without
+anything noticing. The other two arms are in 14-sqlite.sqlt and
+15-postgresql.sqlt.
+--- dialect
+mariadb
+--- source
+FROM_HEX("4869")
+--- expect
+UNHEX('4869')
+===

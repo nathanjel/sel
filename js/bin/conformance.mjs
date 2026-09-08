@@ -20,7 +20,17 @@ const SUITE = resolve(HERE, '../../conformance');
 
 // --- .selt parsing ----------------------------------------------------------
 
-export function parseSelt(text, file) {
+export // SEL's four whitespace characters and nothing else. `String.prototype.trim()`
+// strips ECMA-262's WhiteSpace set, which includes U+FEFF and every Unicode Zs
+// -- so a case whose source began with a byte-order mark had it silently
+// deleted HERE, and this host alone answered TRUE where the other four raised
+// E_SYNTAX. The lexers agreed all along; the reader did not. See
+// conformance/README.md on why the set is normative.
+function trimWs(t) {
+  return t.replace(/^[ \t\r\n]+/, '').replace(/[ \t\r\n]+$/, '');
+}
+
+function parseSelt(text, file) {
   const cases = [];
   let cur = null;
   let section = null;
@@ -39,7 +49,7 @@ export function parseSelt(text, file) {
     if (line === '===') { cur = null; section = null; return; }
     if (line.startsWith('--- ')) {
       if (!cur) throw new Error(`${at}: section outside a case`);
-      section = line.slice(4).trim();
+      section = trimWs(line.slice(4));
       if (['setup', 'source', 'expect'].includes(section)) cur[section] = [];
       else if (section !== 'note') throw new Error(`${at}: unknown section ${section}`);
       return;
@@ -54,9 +64,9 @@ export function parseSelt(text, file) {
     if (c.expect === null) throw new Error(`${c.at}: case ${c.name} has no --- expect`);
     return {
       ...c,
-      setup: c.setup === null ? null : c.setup.join('\n').trim(),
-      source: c.source.join('\n').trim(),
-      expect: c.expect.join('\n').trim(),
+      setup: c.setup === null ? null : trimWs(c.setup.join('\n')),
+      source: trimWs(c.source.join('\n')),
+      expect: trimWs(c.expect.join('\n')),
     };
   });
 }

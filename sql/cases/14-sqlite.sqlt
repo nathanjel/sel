@@ -183,3 +183,16 @@ UPPER("abc") $== "ABC"
 --- expect
 (CAST(upper('abc') AS TEXT) = CAST('ABC' AS TEXT))
 ===
+### name: sqlite.bin.from-hex-is-refused
+--- note
+sqlite has no hex-to-blob function -- the MySQL family has UNHEX and PostgreSQL
+has decode(x, 'hex') -- so the entry is a refusal here and a template there.
+The refusal is the third arm of func.bin.from-hex; a partial refusal with only
+its translating arms pinned is a dialect that can drift into translating.
+--- dialect
+sqlite
+--- source
+FROM_HEX("4869")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===

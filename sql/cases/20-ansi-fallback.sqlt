@@ -1,0 +1,176 @@
+% What a dialect inherits from `ansi` when it overrides nothing.
+%
+% `ansi` is `target: false` -- you cannot translate to it, and the refusal says
+% so. Every shipped target either IS mysql-family, postgresql or sqlite or
+% descends through one, and each of those overrides most of what ansi declares.
+% Six ansi entries are therefore shadowed by every target, which meant no case,
+% no fuzz lane and no oracle had ever evaluated them.
+%
+% They are not dead. `Map::defineDialect(name, ['extends' => 'ansi'])` is the
+% documented way to add a server, and it resolves exactly these. A user reaching
+% for it -- as the first external user of this layer did on their first day,
+% though they extended mariadb -- gets the portable spelling, unexercised.
+%
+% Two mechanisms could have caught this and neither can:
+%
+%   - `caveat_pins` in php/bin/sqlt requires a string pin for every caveated
+%     entry, but it walks `Sql::dialects()`, which is the shipped TARGETS. Four
+%     of the six carry caveats -- trim-charset on the TRIM family, concat-null
+%     on `&` -- and none was ever demanded.
+%   - The semantic oracle needs a DSN per dialect, and there is no ANSI server:
+%     ANSI is a standard, not something anyone ships. See the README note below
+%     on what that leaves unverified.
+%
+% So these are STRING pins and only string pins. They say "this is the SQL a
+% bare ansi descendant emits", which is the half that can be checked without a
+% server, and it is the half that was missing entirely. What they do NOT say is
+% that the SQL means what SEL means -- for the four caveated entries the map
+% already declares it does not.
+%
+% The registration is repeated per case because the runner calls Map::reset()
+% before each one. A registration case is exempt from the mirror, so nothing
+% here is re-run under another dialect.
+
+### name: ansi.trim.strips-only-what-the-standard-strips
+--- note
+The caveat this file exists for. SEL's TRIM strips space, tab, CR and LF;
+`TRIM(BOTH FROM x)` strips the pad character, which is a space. Every shipped
+target overrides this with something that names the four characters -- a
+REGEXP_REPLACE on the MySQL family, btrim with an explicit set on PostgreSQL --
+so `trim-charset` has never fired anywhere. It fires here.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+TRIM(" a ")
+--- expect
+TRIM(BOTH FROM ' a ')
+===
+### name: ansi.ltrim.leading-only
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+LTRIM(" a")
+--- expect
+TRIM(LEADING FROM ' a')
+===
+### name: ansi.rtrim.trailing-only
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+RTRIM("a ")
+--- expect
+TRIM(TRAILING FROM 'a ')
+===
+### name: ansi.substr.two-arguments
+--- note
+The only uncaveated ansi function template, and it is by-count: two arguments
+take FROM alone, three add FOR. Both arms are pinned, because a by-count entry
+whose arms disagree is a defect no single case can see.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+SUBSTR("abcd", 2)
+--- expect
+SUBSTRING('abcd' FROM 2)
+===
+### name: ansi.substr.three-arguments
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+SUBSTR("abcd", 2, 2)
+--- expect
+SUBSTRING('abcd' FROM 2 FOR 2)
+===
+### name: ansi.multiply
+--- note
+Arithmetic is the one operator family the standard spells the same way
+everywhere, which is why ansi is allowed to own it and every target inherits
+the shape rather than the entry.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+2 * 3
+--- expect
+(2 * 3)
+===
+### name: ansi.concat.double-pipe
+--- note
+`||` is the standard concatenation operator and carries `concat-null`: in
+standard SQL a NULL operand makes the whole result NULL, where SEL's `&` over a
+NONE raises E_NO_SCALAR rather than yielding one. The MySQL family overrides
+this with CONCAT for its own reasons; nothing has ever emitted this spelling.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+"a" & "b"
+--- expect
+('a' || 'b')
+===
+### name: ansi.identifiers-are-double-quoted
+--- note
+Not an inherited entry but the lexical vocabulary underneath them, which is
+what makes the six above readable on a standard server and unreadable on
+MySQL without ANSI_QUOTES. Worth one case: the pins above would all still pass
+if identQuote drifted, since none of them names a column.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"N": {"kind": "column", "column": "n", "type": "NUM"}}
+--- source
+N == 25
+--- expect
+("n" = 25)
+===
+### name: ansi.no-regex-so-no-mapping
+--- note
+Twenty-six of ansi's entries are refusals rather than templates -- a reason
+string, not SQL -- and they are unreachable for the same reason the six above
+were. They are pinned by code and not by message: spec/errors.md says codes are
+contract and messages are not, so twenty-six message pins would be pinning
+something the layer does not promise. This one stands for the shape.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- source
+RMATCH("^a", "abc")
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: ansi.inherits-isnum-and-still-cannot-guard
+--- note
+The kind warrant, met by a dialect nobody wrote for. ansi refuses ISNUM -- no
+regex, and no failure-tolerant cast -- so it declares no numericGuard either,
+and an operand nobody vouched for cannot be read as a number. Extending ansi
+bare therefore gets sqlite's treatment and not the MySQL family's, which is the
+right answer and was nowhere written down.
+
+Declaring the binding NUM translates it again; see the identifier case above,
+which does exactly that.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"T": {"kind": "column", "column": "t", "type": "TEXT"}}
+--- source
+T == 25
+--- error
+E_SQL_UNSUPPORTED 1:1
+===

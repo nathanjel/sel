@@ -156,3 +156,69 @@ pattern matched as a prefix accepts a trailing newline in Python and PCRE.
 --- expect
 error E_ESCAPE
 ===
+### name: lex.space.bom-is-not-whitespace
+--- note
+A byte-order mark is not whitespace in SEL and is not skipped, so a source
+file saved by an editor that writes one does not parse. That is a decision --
+silently skipping it would make two byte-different files the same program --
+and until now it was only a decision, asserted nowhere. The POSITION is the
+assertion: 1:1 says the BOM was seen and refused, where a host that stripped
+it transparently would answer TRUE and pass any test that only checked that.
+--- source
+﻿1 == 1
+--- expect
+error E_SYNTAX at 1:1
+===
+### name: lex.space.crlf-between-tokens
+--- note
+CR is whitespace, so a file with Windows line endings is the same program as
+one without. Five hosts agree; nothing said so.
+--- source
+1 ==
+1
+--- expect
+bool TRUE
+===
+### name: lex.space.lone-cr
+--- note
+And a bare CR, which is not a line ending on any system still in use but is
+what a truncated CRLF leaves behind.
+--- source
+1 ==1
+--- expect
+bool TRUE
+===
+### name: lex.space.unicode-spaces-are-not-whitespace
+--- note
+NBSP is the one a user actually produces, by copying an expression out of a
+web page or a word processor. It looks exactly like a space and is not one.
+Refusing it is right -- guessing which of Unicode Zs to accept is how a
+grammar stops being a grammar -- but the error has to be the one that says
+where, so a reader can see the character they cannot see.
+--- source
+1 == 1
+--- expect
+error E_SYNTAX at 1:5
+===
+### name: lex.space.next-line-is-not-whitespace
+--- source
+1 ==1
+--- expect
+error E_SYNTAX at 1:5
+===
+### name: lex.space.vertical-tab-is-not-whitespace
+--- note
+VT and FF are whitespace to C, to most regex engines, and to several host
+languages. SEL takes space, tab, CR and LF and nothing else, so a host that
+reached for its own isspace() would diverge here and only here.
+--- source
+1 ==1
+--- expect
+error E_SYNTAX at 1:5
+===
+### name: lex.space.form-feed-is-not-whitespace
+--- source
+1 ==1
+--- expect
+error E_SYNTAX at 1:5
+===

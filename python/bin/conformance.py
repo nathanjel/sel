@@ -32,6 +32,19 @@ _ERR = re.compile(r'^(\S+)(?:\s+at\s+(\d+):(\d+))?$')
 
 # --- .selt parsing ----------------------------------------------------------
 
+def _trim_ws(t: str) -> str:
+    """SEL's four whitespace characters and nothing else.
+
+    ``str.strip()`` removes every Unicode whitespace character, which is a wider
+    set than the other readers use -- NBSP and the line separators among them --
+    so a case whose source began with one would be a different program in this
+    host than in C++ or Lisp. The same class of bug as JS's ``trim()`` deleting a
+    byte-order mark, which is what found this. conformance/README.md is
+    normative for the set.
+    """
+    return t.strip(' \t\r\n')
+
+
 def parse_selt(text, file):
     cases = []
     cur = None
@@ -57,7 +70,7 @@ def parse_selt(text, file):
         if line.startswith('--- '):
             if cur is None:
                 raise RuntimeError(f'{at}: section outside a case')
-            section = line[4:].strip()
+            section = _trim_ws(line[4:])
             if section in ('setup', 'source', 'expect'):
                 cur[section] = []
             elif section != 'note':
@@ -75,9 +88,9 @@ def parse_selt(text, file):
             raise RuntimeError(f'{c["at"]}: case {c["name"]} has no --- source')
         if c['expect'] is None:
             raise RuntimeError(f'{c["at"]}: case {c["name"]} has no --- expect')
-        c['setup'] = None if c['setup'] is None else '\n'.join(c['setup']).strip()
-        c['source'] = '\n'.join(c['source']).strip()
-        c['expect'] = '\n'.join(c['expect']).strip()
+        c['setup'] = None if c['setup'] is None else _trim_ws('\n'.join(c['setup']))
+        c['source'] = _trim_ws('\n'.join(c['source']))
+        c['expect'] = _trim_ws('\n'.join(c['expect']))
         out.append(c)
     return out
 

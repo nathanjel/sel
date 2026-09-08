@@ -231,3 +231,33 @@ CASE WHEN (1 = 1) THEN (CAST("t" AS TEXT) || CAST($1 AS TEXT)) ELSE $2 END
 --- params
 t"a", t"b"
 ===
+### name: pg.text.ltrim
+--- note
+The same four characters as the MySQL family, spelled with PostgreSQL's own
+ltrim-with-a-character-set and an E'' string so the escapes are escapes. Note
+what this is NOT: sqlite's spelling of the same entry puts the four characters
+in the literal RAW, tab and CR and LF included, which is legal SQLite and is
+why sqlite's trim family cannot be pinned in a byte-exact line-based corpus.
+--- dialect
+postgresql
+--- source
+LTRIM(" a")
+--- expect
+ltrim(CAST(' a' AS TEXT), E' \t\r\n')
+===
+### name: pg.text.rtrim
+--- dialect
+postgresql
+--- source
+RTRIM("a ")
+--- expect
+rtrim(CAST('a ' AS TEXT), E' \t\r\n')
+===
+### name: pg.bin.from-hex
+--- dialect
+postgresql
+--- source
+FROM_HEX("4869")
+--- expect
+decode('4869', 'hex')
+===
