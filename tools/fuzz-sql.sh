@@ -57,6 +57,13 @@ if [ "$(echo "$SQL_HOSTS" | wc -w)" -lt 2 ]; then
 else
   for dialect in mariadb mysql postgresql sqlite; do
     ref=""
+    # Counted, not asserted. This line used to end with a literal "0
+    # disagreements", which it printed immediately after printing a diff --
+    # a summary that contradicted the six lines above it. `status` was set
+    # correctly, so the lane still failed and nothing was hidden from a reader
+    # who read the whole output; a reader who read only the summary was told
+    # the opposite of what happened, which is worse than saying nothing.
+    disagreed=0
     for impl in $SQL_HOSTS; do
       impl_sqlfuzz "$impl" "$WORK/corpus.selc" "$dialect" > "$WORK/$impl.$dialect.txt" 2>&1 || {
         echo "$impl: sqlfuzz failed for $dialect" >&2; status=1; continue; }
@@ -64,13 +71,14 @@ else
       if ! diff -q "$WORK/$ref.$dialect.txt" "$WORK/$impl.$dialect.txt" >/dev/null; then
         echo "$dialect: $impl disagrees with $ref:" >&2
         diff "$WORK/$ref.$dialect.txt" "$WORK/$impl.$dialect.txt" | head -20 >&2
+        disagreed=$((disagreed + 1))
         status=1
       fi
     done
     n="$(wc -l < "$WORK/$ref.$dialect.txt")"
     emitted="$(grep -cv '^[!-]' "$WORK/$ref.$dialect.txt" || true)"
     echo "$dialect: $n programs through$SQL_HOSTS — $emitted translated, \
-$((n - emitted)) refused or not compiled, 0 disagreements"
+$((n - emitted)) refused or not compiled, $disagreed disagreements"
   done
 fi
 

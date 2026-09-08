@@ -320,7 +320,29 @@ impl_available() {
     js-bundle-min) [ -f dist/sel.min.mjs ] \
       && [ -z "$(find js/src -newer dist/sel.min.mjs -print -quit 2>/dev/null)" ] ;;
     php)  command -v php  >/dev/null 2>&1 ;;
-    cpp)  [ -x cpp/build/conformance ] ;;
+    # Present *and* no older than every source it is built from, the same guard
+    # js-bundle and python-wheel have, and it was the one host without it. A
+    # release was very nearly measured against a cpp/build left over from an
+    # earlier branch: it passed 631 conformance cases, and disagreed with the
+    # other four hosts only in the SQL fuzz, which reads like a translator bug
+    # in C++ and is nothing of the kind. `cmake --build cpp/build` does not
+    # build these -- CMake builds the installable library and the Makefile
+    # builds the harness -- so a plausible-looking build command leaves them
+    # untouched, which is exactly how it happened.
+    #
+    # The property is "make has run since the last source edit", so the
+    # comparison is against the NEWEST executable in build/. Against the oldest
+    # it would be wrong in the other direction and was, briefly: a change to
+    # sel_sql_translator.cpp relinks sqlfuzz and leaves conformance alone,
+    # because conformance links sel.o and nothing else -- so `make` correctly
+    # leaves binaries older than a source they do not depend on, and demanding
+    # otherwise calls a current build stale.
+    cpp)
+      [ -x cpp/build/conformance ] || return 1
+      cpp_newest="$(find cpp/build -maxdepth 1 -type f -executable -printf '%T@ %p\n' \
+        2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+      [ -n "$cpp_newest" ] && [ -z "$(find cpp -path cpp/build -prune -o \
+        \( -name '*.cpp' -o -name '*.hpp' \) -newer "$cpp_newest" -print -quit 2>/dev/null)" ] ;;
     lisp) command -v sbcl >/dev/null 2>&1 && [ -x lisp/bin/conformance ] ;;
     python) command -v python3 >/dev/null 2>&1 ;;
     # Present *and* newer than every source file it was built from, the same

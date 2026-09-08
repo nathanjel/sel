@@ -58,16 +58,31 @@ packages = ["python/sel"]
 [tool.hatch.build.targets.sdist]
 # What npm's `files` ships, in Python spelling: the package, the normative
 # documents, and enough of the harness to see what "identically" is measured by.
+#
+# Every pattern is anchored with a leading slash, because these are gitignore
+# syntax and an unanchored `python/` matches that directory at ANY depth. It
+# matched `python/.venv-wheel/` — the throwaway virtualenv PACKAGING.md tells
+# you to build to verify the wheel — and, in a checkout with a git worktree
+# under `.claude/worktrees/`, a second whole copy of the repository. The build
+# failed loudly on an absolute symlink inside the venv rather than shipping it,
+# which is the only reason this was ever noticed.
 include = [
-    "python/",
-    "docs/",
-    "spec/",
-    "conformance/",
-    "examples/order-validation.sel",
-    "examples/e2e.py",
-    "examples/host-python.py",
-    "LICENSE",
-    "README.md",
-    "PACKAGING.md",
-    "pyproject.toml",
+    "/python/",
+    "/docs/",
+    "/spec/",
+    "/conformance/",
+    "/examples/order-validation.sel",
+    "/examples/e2e.py",
+    "/examples/host-python.py",
+    "/LICENSE",
+    "/README.md",
+    "/PACKAGING.md",
+    "/pyproject.toml",
+]
+
+# The venv above is inside `/python/` and would come with it. `__pycache__` is
+# the same story: it is written by every run of the source implementation.
+exclude = [
+    "/python/.venv-wheel/",
+    "**/__pycache__/",
 ]
