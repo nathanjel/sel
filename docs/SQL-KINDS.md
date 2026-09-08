@@ -340,7 +340,8 @@ than the silent one: not declaring gets you the guarded path, and declaring
 
 ## 8. What is built
 
-Two commits on `sql-typing`.
+On `sql-typing`, released as 0.5.0. Two commits built the guard itself; the rest
+close what reviewing it found.
 
 **The constant half.** A constant in a numeric position must be a number, asked
 **per operand** rather than per whole expression -- so `(T + 1) + "x"` refuses as
