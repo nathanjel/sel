@@ -232,6 +232,57 @@ keys is the whole registration. Measured on MariaDB 11.8, `"A" $== "a"`:
 The override is therefore per deployment, not a portability improvement: a
 dialect fixed for utf8mb3 is broken on utf8mb4, and vice versa.
 
+#### Deriving it from the connection instead
+
+Which is a good reason not to write the charset down at all. `defineDialect` is
+ordinary run-time API, so an application can ask the connection it actually got
+and register the matching dialect at start-up:
+
+```php
+/**
+ * Register a dialect matching the charset this connection actually uses, and
+ * return its name. Call once at start-up, before the first translate().
+ */
+function dialect_for(PDO $pdo, string $base = 'mariadb', string $name = 'app'): string
+{
+    $charset = (string) $pdo->query('SELECT @@character_set_connection')->fetchColumn();
+    // Every charset MariaDB 11.8 ships has a <charset>_bin collation except
+    // `binary`, whose binary collation is spelled `binary`.
+    $collation = $charset === 'binary' ? 'binary' : "{$charset}_bin";
+
+    Map::defineDialect($name, [
+        'extends' => $base,
+        'lexical' => [
+            'textCollate' => " COLLATE {$collation}",
+            'textCharset' => $charset,
+        ],
+    ]);
+    return $name;
+}
+```
+
+Run against MariaDB 11.8 on both, the same code registers
+`utf8mb4_bin` and `utf8mb3_bin` respectively and `"A" $== "a"` answers on each —
+the two cells the static form gets wrong become right, and the deployment stops
+being able to drift away from its own configuration.
+
+Four things it is worth knowing before using it:
+
+- **Registration is process-global and happens once.** It must run before the
+  first `translate()`. Under PHP-FPM that is per request, so either accept one
+  extra round trip or pass the charset the application already put in its own
+  DSN. Asking the server is the safer of the two: the connection can end up on a
+  charset nobody asked for, which is the whole failure being avoided.
+- **MySQL family only.** `@@character_set_connection` does not exist on
+  PostgreSQL or SQLite, so branch on `$base` if the helper is ever shared.
+- **`Map::reset()` drops every registration**, not just this one.
+- **Redefinition is last writer wins** (§4.2, deliberately), so two subsystems
+  registering the same name will disagree in silence.
+
+Unlike the worked programs under `examples/`, this block is illustrative: no
+lane executes it. It was run against the pinned MariaDB on both charsets before
+being written down, which is not the same as staying true.
+
 `textCharset` is invisible until `textCast` is also set to `{0}` — the note on
 that key recommends it where columns already carry a binary collation — because
 until then the outer cast converts `FROM_UTF8`'s result to the connection
