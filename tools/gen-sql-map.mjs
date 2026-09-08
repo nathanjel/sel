@@ -1199,17 +1199,32 @@ const check = process.argv.includes('--check');
 let stale = 0;
 const rules = buildRules(dialects);
 const raw = rawInOrder(docs);
+// An artifact whose content has not changed is not written, so its timestamp
+// does not move. Rewriting all ten unconditionally made every no-op run look
+// like work to anything downstream that compares mtimes -- in particular the JS
+// bundle guard, which then reported `MISSING: js-bundle js-bundle-min` after a
+// regeneration that changed nothing. That cost two battery runs during 0.4.1
+// and would cost one on every release. `make` and every file watcher take the
+// same view: writing is what you do when the answer differs.
+let unchanged = 0;
 for (const [rel, emit] of OUTPUTS) {
   const path = resolve(ROOT, rel);
   const text = emit(dialects, rules, raw);
+  let have = null;
+  try { have = readFileSync(path, 'utf8'); } catch { /* absent counts as stale */ }
   if (check) {
-    let have = null;
-    try { have = readFileSync(path, 'utf8'); } catch { /* absent counts as stale */ }
     if (have !== text) { process.stderr.write(`stale: ${rel}\n`); stale++; }
+  } else if (have === text) {
+    unchanged++;
   } else {
     writeFileSync(path, text);
     process.stdout.write(`wrote ${rel}\n`);
   }
+}
+// Said out loud, because a run that prints nothing at all reads as a run that
+// failed to do anything.
+if (!check && unchanged) {
+  process.stdout.write(`${unchanged} artifact(s) already current\n`);
 }
 
 if (check) {

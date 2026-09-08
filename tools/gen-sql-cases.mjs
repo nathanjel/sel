@@ -782,17 +782,25 @@ const OUTPUTS = [['php/bin/CaseData.php', emitPhp], ['python/bin/case_data.py', 
   ['lisp/bin/case-data.lisp', emitLispCases]];
 const check = process.argv.includes('--check');
 let stale = 0;
+// Unchanged content is not rewritten, so a no-op run leaves every timestamp
+// alone. See the same loop in tools/gen-sql-map.mjs for what moving them cost.
+let unchanged = 0;
 for (const [rel, emit] of OUTPUTS) {
   const path = resolve(ROOT, rel);
   const text = emit(cases);
+  let have = null;
+  try { have = readFileSync(path, 'utf8'); } catch { /* absent counts as stale */ }
   if (check) {
-    let have = null;
-    try { have = readFileSync(path, 'utf8'); } catch { /* absent counts as stale */ }
     if (have !== text) { process.stderr.write(`stale: ${rel}\n`); stale++; }
+  } else if (have === text) {
+    unchanged++;
   } else {
     writeFileSync(path, text);
     process.stdout.write(`wrote ${rel}\n`);
   }
+}
+if (!check && unchanged) {
+  process.stdout.write(`${unchanged} artifact(s) already current\n`);
 }
 if (check) {
   if (stale) { process.stderr.write('\nrun: node tools/gen-sql-cases.mjs\n'); process.exit(1); }
