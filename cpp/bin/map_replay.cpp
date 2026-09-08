@@ -23,7 +23,7 @@ namespace sel::sqlt {
 int replay_register() {
   int calls = 0;
   Map::define_dialect("ansi~replay",
-                      DialectSpec::root("1999").target(false).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "X'{hex}'").lexical("numericLiteral", "{0}").lexical("textCollate", "").lexical("numericCast", "CAST({0} AS DECIMAL(38,10))").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("isTrue", "({0}) IS TRUE").lexical("isNotTrue", "({0}) IS NOT TRUE").lexical("placeholder", "?").lexical("textCast", "CAST({0} AS CHAR)"));
+                      DialectSpec::root("1999").target(false).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "X'{hex}'").lexical("numericLiteral", "{0}").lexical("textCollate", "").lexical("textCharset", std::nullopt).lexical("numericCast", "CAST({0} AS DECIMAL(38,10))").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("isTrue", "({0}) IS TRUE").lexical("isNotTrue", "({0}) IS NOT TRUE").lexical("placeholder", "?").lexical("textCast", "CAST({0} AS CHAR)"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
               "+", EntrySpec::tpl("({0} + {1})", "NUM"));
@@ -260,7 +260,7 @@ int replay_register() {
               "join", EntrySpec::withdraw("LISTAGG is SQL:2016 and is spelled differently by every server that has it"));
   ++calls;
   Map::define_dialect("mysql-family~replay",
-                      DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_bin").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("numericGuard", "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END").lexical("textCast", "CAST({0} AS CHAR)"));
+                      DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_bin").lexical("textCharset", "utf8mb4").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("numericGuard", "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END").lexical("textCast", "CAST({0} AS CHAR)"));
   ++calls;
   Map::define("mysql-family~replay", Section::Ops,
               "*", EntrySpec::tpl("({0} * {1})", "NUM").caveat("scale-limit"));
@@ -338,7 +338,7 @@ int replay_register() {
               "TO_UTF8", EntrySpec::tpl("CAST({0} AS BINARY)", "BIN"));
   ++calls;
   Map::define("mysql-family~replay", Section::Funcs,
-              "FROM_UTF8", EntrySpec::tpl("CONVERT({binaryCast:0} USING utf8mb4)", "TEXT"));
+              "FROM_UTF8", EntrySpec::tpl("CONVERT({binaryCast:0} USING {textCharset})", "TEXT"));
   ++calls;
   Map::define("mysql-family~replay", Section::Funcs,
               "TO_HEX", EntrySpec::tpl("LOWER(HEX({binaryCast:0}))", "TEXT"));

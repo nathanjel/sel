@@ -899,23 +899,23 @@ static void c144_reg() {
 
 static std::vector<std::pair<std::string, Binding>> c145_bind() {
   return {
-      {"ITEMS", Binding::relation("t", "oi", {{"sku", Binding::column("sku", "oi", SqlKind::Text)}}, "sku", "oi.o = o.id")},
+      {"B", Binding::column("b", "o", SqlKind::Bin)},
   };
 }
 
 static void c145_reg() {
-      Map::define_dialect("norel", DialectSpec::extending("mariadb").version("10.5"));
-      Map::define("norel", Section::Skel, "inRelation", EntrySpec::withdraw());
+      Map::define_dialect("cms", DialectSpec::extending("mariadb").version("11.8").lexical("textCollate", " COLLATE utf8mb3_bin").lexical("textCharset", "utf8mb3"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c146_bind() {
   return {
-
+      {"ITEMS", Binding::relation("t", "oi", {{"sku", Binding::column("sku", "oi", SqlKind::Text)}}, "sku", "oi.o = o.id")},
   };
 }
 
 static void c146_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("NEW_UPPER({0})", "TEXT").since("99.0"));
+      Map::define_dialect("norel", DialectSpec::extending("mariadb").version("10.5"));
+      Map::define("norel", Section::Skel, "inRelation", EntrySpec::withdraw());
 }
 
 static std::vector<std::pair<std::string, Binding>> c147_bind() {
@@ -925,8 +925,7 @@ static std::vector<std::pair<std::string, Binding>> c147_bind() {
 }
 
 static void c147_reg() {
-      Map::define_dialect("mariadb-11.8", DialectSpec::extending("mariadb").version("11.8"));
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("NEW_UPPER({0})", "TEXT").since("11.0"));
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("NEW_UPPER({0})", "TEXT").since("99.0"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c148_bind() {
@@ -937,6 +936,7 @@ static std::vector<std::pair<std::string, Binding>> c148_bind() {
 
 static void c148_reg() {
       Map::define_dialect("mariadb-11.8", DialectSpec::extending("mariadb").version("11.8"));
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("NEW_UPPER({0})", "TEXT").since("11.0"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c149_bind() {
@@ -946,7 +946,7 @@ static std::vector<std::pair<std::string, Binding>> c149_bind() {
 }
 
 static void c149_reg() {
-      Map::define_dialect("mariadb-nocollate", DialectSpec::extending("mariadb").version("10.5").lexical("textCollate", " COLLATE utf8mb4_0900_bin"));
+      Map::define_dialect("mariadb-11.8", DialectSpec::extending("mariadb").version("11.8"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c150_bind() {
@@ -956,13 +956,17 @@ static std::vector<std::pair<std::string, Binding>> c150_bind() {
 }
 
 static void c150_reg() {
-      Map::define_dialect("wishful", DialectSpec::extending("nosuchdialect").version("1.0"));
+      Map::define_dialect("mariadb-nocollate", DialectSpec::extending("mariadb").version("10.5").lexical("textCollate", " COLLATE utf8mb4_0900_bin"));
 }
 
-static std::vector<std::pair<std::string, Binding>> c152_bind() {
+static std::vector<std::pair<std::string, Binding>> c151_bind() {
   return {
 
   };
+}
+
+static void c151_reg() {
+      Map::define_dialect("wishful", DialectSpec::extending("nosuchdialect").version("1.0"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c153_bind() {
@@ -1021,87 +1025,87 @@ static std::vector<std::pair<std::string, Binding>> c161_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c162_bind() {
   return {
-      {"TOTAL", Binding::column("total", "o", SqlKind::Num)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c163_bind() {
   return {
-      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Num), Binding::column("b", "x", SqlKind::Num), Binding::column("c", "x", SqlKind::Num)})},
+      {"TOTAL", Binding::column("total", "o", SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c164_bind() {
   return {
-      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Num), Binding::column("b", "x", SqlKind::Num)})},
+      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Num), Binding::column("b", "x", SqlKind::Num), Binding::column("c", "x", SqlKind::Num)})},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c165_bind() {
   return {
-      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Num)})},
+      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Num), Binding::column("b", "x", SqlKind::Num)})},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c166_bind() {
   return {
-      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Unknown), Binding::column("b", "x", SqlKind::Unknown)})},
+      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Num)})},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c167_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}, {"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, "SKU", "`oi`.`order_id` = `o`.`id`")},
+      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Unknown), Binding::column("b", "x", SqlKind::Unknown)})},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c168_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, "`oi`.`order_id` = `o`.`id`")},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}, {"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, "SKU", "`oi`.`order_id` = `o`.`id`")},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c169_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}, {"PRICE", Binding::column("price", "oi", SqlKind::Num)}}, std::nullopt, "`oi`.`order_id` = `o`.`id`")},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, "`oi`.`order_id` = `o`.`id`")},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c170_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, "`oi`.`order_id` = `o`.`id`")},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}, {"PRICE", Binding::column("price", "oi", SqlKind::Num)}}, std::nullopt, "`oi`.`order_id` = `o`.`id`")},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c171_bind() {
   return {
-      {"ALL_ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, "`oi`.`order_id` = `o`.`id`")},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c172_bind() {
   return {
-      {"V", Binding::relation_query("(SELECT a, b FROM x)", "v", {{"A", Binding::column("a", "v", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ALL_ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c173_bind() {
+  return {
+      {"V", Binding::relation_query("(SELECT a, b FROM x)", "v", {{"A", Binding::column("a", "v", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c174_bind() {
   return {
       {"SKU", Binding::column("sku", "o", SqlKind::Text)},
       {"ITEMS", Binding::relation("order_items", "oi", {{"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, "SKU", "`oi`.`order_id` = `o`.`id`")},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c174_bind() {
+static std::vector<std::pair<std::string, Binding>> c175_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
       {"LINES", Binding::relation("lines", "l", {{"QTY", Binding::column("qty", "l", SqlKind::Num)}}, std::nullopt, "`l`.`order_id` = `o`.`id`")},
-  };
-}
-
-static std::vector<std::pair<std::string, Binding>> c175_bind() {
-  return {
-
   };
 }
 
@@ -1113,13 +1117,13 @@ static std::vector<std::pair<std::string, Binding>> c176_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c177_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, "`oi`.`order_id` = `o`.`id`")},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c178_bind() {
   return {
-
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, "`oi`.`order_id` = `o`.`id`")},
   };
 }
 
@@ -1131,13 +1135,13 @@ static std::vector<std::pair<std::string, Binding>> c179_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c180_bind() {
   return {
-      {"L", Binding::value(value_tree({{"1", Value::text("a")}, {"2", Value::text("b")}}), std::nullopt)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c181_bind() {
   return {
-      {"E", Binding::value(value_tree({}), std::nullopt)},
+      {"L", Binding::value(value_tree({{"1", Value::text("a")}, {"2", Value::text("b")}}), std::nullopt)},
   };
 }
 
@@ -1155,13 +1159,13 @@ static std::vector<std::pair<std::string, Binding>> c183_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c184_bind() {
   return {
-
+      {"E", Binding::value(value_tree({}), std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c185_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+
   };
 }
 
@@ -1173,31 +1177,31 @@ static std::vector<std::pair<std::string, Binding>> c186_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c187_bind() {
   return {
-
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c188_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c189_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c190_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c191_bind() {
   return {
-
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -1215,20 +1219,19 @@ static std::vector<std::pair<std::string, Binding>> c193_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c194_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, "SKU", std::nullopt)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c195_bind() {
   return {
-
+      {"ITEMS", Binding::relation("order_items", "oi", {{"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, "SKU", std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c196_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}, {"PRICE", Binding::column("price", "oi", SqlKind::Num)}, {"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, "SKU", "`oi`.`order_id` = `o`.`id`")},
-      {"CREDIT_LIMIT", Binding::column("credit_limit", "o", SqlKind::Num)},
+
   };
 }
 
@@ -1248,38 +1251,39 @@ static std::vector<std::pair<std::string, Binding>> c198_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c199_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}, {"SKU", Binding::column("sku", std::nullopt, SqlKind::Text)}}, "SKU", std::nullopt)},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}, {"PRICE", Binding::column("price", "oi", SqlKind::Num)}, {"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, "SKU", "`oi`.`order_id` = `o`.`id`")},
+      {"CREDIT_LIMIT", Binding::column("credit_limit", "o", SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c200_bind() {
   return {
-      {"SKUS", Binding::relation("order_items", "s2", {{"SKU", Binding::column("sku", "s2", SqlKind::Text)}}, "SKU", std::nullopt)},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}, {"SKU", Binding::column("sku", std::nullopt, SqlKind::Text)}}, "SKU", std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c201_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}, {"SKU", Binding::column("sku", std::nullopt, SqlKind::Text)}}, "SKU", std::nullopt)},
+      {"SKUS", Binding::relation("order_items", "s2", {{"SKU", Binding::column("sku", "s2", SqlKind::Text)}}, "SKU", std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c202_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}, {"SKU", Binding::column("sku", std::nullopt, SqlKind::Text)}}, "SKU", std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c203_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, std::nullopt, std::nullopt)},
-      {"SKUS", Binding::relation("skus", "s2", {{"SKU", Binding::column("sku", "s2", SqlKind::Text)}}, "SKU", std::nullopt)},
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c204_bind() {
   return {
-
+      {"ITEMS", Binding::relation("order_items", "oi", {{"SKU", Binding::column("sku", "oi", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"SKUS", Binding::relation("skus", "s2", {{"SKU", Binding::column("sku", "s2", SqlKind::Text)}}, "SKU", std::nullopt)},
   };
 }
 
@@ -1291,57 +1295,57 @@ static std::vector<std::pair<std::string, Binding>> c205_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c206_bind() {
   return {
-      {"NOTES", Binding::relation("order_items", "nt", {{"NOTE", Binding::column("note", "nt", SqlKind::Text)}}, "NOTE", std::nullopt)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c207_bind() {
   return {
-
+      {"NOTES", Binding::relation("order_items", "nt", {{"NOTE", Binding::column("note", "nt", SqlKind::Text)}}, "NOTE", std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c208_bind() {
   return {
-      {"C", Binding::column("c", std::nullopt, SqlKind::Text)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c209_bind() {
   return {
-
+      {"C", Binding::column("c", std::nullopt, SqlKind::Text)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c210_bind() {
   return {
-      {"ITEMS", Binding::relation("t", "oi", {{"qty", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c211_bind() {
+  return {
+      {"ITEMS", Binding::relation("t", "oi", {{"qty", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c212_bind() {
   return {
       {"C", Binding::column("c", std::nullopt, SqlKind::Num)},
       {"V", Binding::value(Value::text("1 OR 1=1 -- "), SqlKind::Num)},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c212_bind() {
+static std::vector<std::pair<std::string, Binding>> c213_bind() {
   return {
       {"L", Binding::value(value_tree({{"1", Value::text("1")}, {"2", Value::text("2) OR (1=1")}}), SqlKind::Num)},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c213_bind() {
+static std::vector<std::pair<std::string, Binding>> c214_bind() {
   return {
       {"C", Binding::column("c", std::nullopt, SqlKind::Num)},
       {"V", Binding::value(Value::text("100"), SqlKind::Num)},
-  };
-}
-
-static std::vector<std::pair<std::string, Binding>> c214_bind() {
-  return {
-      {"C", Binding::column("c", std::nullopt, SqlKind::Text)},
   };
 }
 
@@ -1365,38 +1369,38 @@ static std::vector<std::pair<std::string, Binding>> c217_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c218_bind() {
   return {
+      {"C", Binding::column("c", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c219_bind() {
+  return {
       {"R", Binding::relation("t", "r", {{"S", Binding::column("s", "r", SqlKind::Text)}}, "S", std::nullopt)},
   };
 }
 
-static void c218_reg() {
+static void c219_reg() {
       Map::define("mariadb", Section::Skel, "join", EntrySpec::skeleton("(SELECT GROUP_CONCAT({body} ORDER BY {body} SEPARATOR {sep}) FROM {from} WHERE {corr})"));
 }
 
-static std::vector<std::pair<std::string, Binding>> c219_bind() {
+static std::vector<std::pair<std::string, Binding>> c220_bind() {
   return {
       {"A", Binding::relation_query("(SELECT 1)", std::nullopt, {}, std::nullopt, std::nullopt)},
       {"B", Binding::relation_query("(SELECT 2)", std::nullopt, {}, std::nullopt, std::nullopt)},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c220_bind() {
+static std::vector<std::pair<std::string, Binding>> c221_bind() {
   return {
       {"A", Binding::relation_query("(SELECT 1)", std::nullopt, {}, std::nullopt, std::nullopt)},
       {"B", Binding::relation_query("(SELECT 1)", std::nullopt, {}, std::nullopt, std::nullopt)},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c221_bind() {
+static std::vector<std::pair<std::string, Binding>> c222_bind() {
   return {
       {"S", Binding::column("s", std::nullopt, SqlKind::Text)},
       {"ALLOWED", Binding::value(value_tree({{"1", Value::text("open")}, {"2", Value::text("held")}}), std::nullopt)},
-  };
-}
-
-static std::vector<std::pair<std::string, Binding>> c222_bind() {
-  return {
-
   };
 }
 
@@ -1408,13 +1412,13 @@ static std::vector<std::pair<std::string, Binding>> c223_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c224_bind() {
   return {
-      {"C", Binding::column("c", std::nullopt, SqlKind::Unknown)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c225_bind() {
   return {
-
+      {"C", Binding::column("c", std::nullopt, SqlKind::Unknown)},
   };
 }
 
@@ -1426,13 +1430,13 @@ static std::vector<std::pair<std::string, Binding>> c226_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c227_bind() {
   return {
-      {"C", Binding::column("c", std::nullopt, SqlKind::Unknown)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c228_bind() {
   return {
-
+      {"C", Binding::column("c", std::nullopt, SqlKind::Unknown)},
   };
 }
 
@@ -1462,13 +1466,13 @@ static std::vector<std::pair<std::string, Binding>> c232_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c233_bind() {
   return {
-      {"C", Binding::column("c", std::nullopt, SqlKind::Unknown)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c234_bind() {
   return {
-
+      {"C", Binding::column("c", std::nullopt, SqlKind::Unknown)},
   };
 }
 
@@ -1492,7 +1496,7 @@ static std::vector<std::pair<std::string, Binding>> c237_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c238_bind() {
   return {
-      {"B", Binding::column("b", std::nullopt, SqlKind::Bin)},
+
   };
 }
 
@@ -1504,27 +1508,27 @@ static std::vector<std::pair<std::string, Binding>> c239_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c240_bind() {
   return {
-      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
-      {"N", Binding::column("n", std::nullopt, SqlKind::Text)},
+      {"B", Binding::column("b", std::nullopt, SqlKind::Bin)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c241_bind() {
   return {
-      {"B", Binding::column("b", std::nullopt, SqlKind::Bin)},
+      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
       {"N", Binding::column("n", std::nullopt, SqlKind::Text)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c242_bind() {
   return {
-      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
+      {"B", Binding::column("b", std::nullopt, SqlKind::Bin)},
+      {"N", Binding::column("n", std::nullopt, SqlKind::Text)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c243_bind() {
   return {
-      {"B", Binding::column("b", std::nullopt, SqlKind::Bin)},
+      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
   };
 }
 
@@ -1536,19 +1540,19 @@ static std::vector<std::pair<std::string, Binding>> c244_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c245_bind() {
   return {
-      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
+      {"B", Binding::column("b", std::nullopt, SqlKind::Bin)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c246_bind() {
   return {
-      {"U", Binding::column("u", std::nullopt, SqlKind::Unknown)},
+      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c247_bind() {
   return {
-
+      {"U", Binding::column("u", std::nullopt, SqlKind::Unknown)},
   };
 }
 
@@ -1560,40 +1564,40 @@ static std::vector<std::pair<std::string, Binding>> c248_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c249_bind() {
   return {
-      {"COL", Binding::column("active$' -- oops", std::nullopt, SqlKind::Unknown)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c250_bind() {
   return {
-      {"COL", Binding::column("c", std::nullopt, SqlKind::Unknown)},
+      {"COL", Binding::column("active$' -- oops", std::nullopt, SqlKind::Unknown)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c251_bind() {
   return {
+      {"COL", Binding::column("c", std::nullopt, SqlKind::Unknown)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c252_bind() {
+  return {
 
   };
 }
 
-static void c251_reg() {
+static void c252_reg() {
       Map::define_dialect("wrapped", DialectSpec::extending("sqlite").lexical("numericLiteral", "({0} || '' || {0})"));
 }
 
-static std::vector<std::pair<std::string, Binding>> c252_bind() {
+static std::vector<std::pair<std::string, Binding>> c253_bind() {
   return {
       {"A", Binding::column("a", std::nullopt, SqlKind::Unknown)},
   };
 }
 
-static void c252_reg() {
+static void c253_reg() {
       Map::define_dialect("selfref", DialectSpec::extending("mariadb").lexical("textCast", "X({textCast:0})"));
-}
-
-static std::vector<std::pair<std::string, Binding>> c253_bind() {
-  return {
-
-  };
 }
 
 static std::vector<std::pair<std::string, Binding>> c254_bind() {
@@ -1602,14 +1606,14 @@ static std::vector<std::pair<std::string, Binding>> c254_bind() {
   };
 }
 
-static void c254_reg() {
-      Map::define_dialect("noquote", DialectSpec::extending("ansi").lexical("identQuote", ""));
-}
-
 static std::vector<std::pair<std::string, Binding>> c255_bind() {
   return {
-      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Num), Binding::column("b", "x", SqlKind::Num)})},
+
   };
+}
+
+static void c255_reg() {
+      Map::define_dialect("noquote", DialectSpec::extending("ansi").lexical("identQuote", ""));
 }
 
 static std::vector<std::pair<std::string, Binding>> c256_bind() {
@@ -1620,25 +1624,25 @@ static std::vector<std::pair<std::string, Binding>> c256_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c257_bind() {
   return {
-      {"R", Binding::relation("t", "r", {{"stra\303\237e", Binding::column("s", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"V", Binding::columns({Binding::column("a", "x", SqlKind::Num), Binding::column("b", "x", SqlKind::Num)})},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c258_bind() {
   return {
-
+      {"R", Binding::relation("t", "r", {{"stra\303\237e", Binding::column("s", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
-static void c258_reg() {
-      Map::define_dialect("scratch", DialectSpec::root("1").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("numericLiteral", "{0}").lexical("placeholder", "?"));
-      Map::define("scratch", Section::Ops, "+", EntrySpec::tpl("({0} + {1})", "NUM"));
-}
-
-static std::vector<std::pair<std::string, Binding>> c261_bind() {
+static std::vector<std::pair<std::string, Binding>> c259_bind() {
   return {
 
   };
+}
+
+static void c259_reg() {
+      Map::define_dialect("scratch", DialectSpec::root("1").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("numericLiteral", "{0}").lexical("placeholder", "?"));
+      Map::define("scratch", Section::Ops, "+", EntrySpec::tpl("({0} + {1})", "NUM"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c262_bind() {
@@ -1799,7 +1803,7 @@ static std::vector<std::pair<std::string, Binding>> c287_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c288_bind() {
   return {
-      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+
   };
 }
 
@@ -1809,30 +1813,30 @@ static std::vector<std::pair<std::string, Binding>> c289_bind() {
   };
 }
 
-static void c289_reg() {
-      Map::define_dialect("pg-numbered", DialectSpec::extending("postgresql").version("15").target(true).lexical("placeholder", "${n}"));
-}
-
 static std::vector<std::pair<std::string, Binding>> c290_bind() {
-  return {
-
-  };
-}
-
-static std::vector<std::pair<std::string, Binding>> c291_bind() {
   return {
       {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
   };
 }
 
-static void c291_reg() {
+static void c290_reg() {
       Map::define_dialect("pg-numbered", DialectSpec::extending("postgresql").version("15").target(true).lexical("placeholder", "${n}"));
+}
+
+static std::vector<std::pair<std::string, Binding>> c291_bind() {
+  return {
+
+  };
 }
 
 static std::vector<std::pair<std::string, Binding>> c292_bind() {
   return {
-
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
   };
+}
+
+static void c292_reg() {
+      Map::define_dialect("pg-numbered", DialectSpec::extending("postgresql").version("15").target(true).lexical("placeholder", "${n}"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c293_bind() {
@@ -1993,7 +1997,7 @@ static std::vector<std::pair<std::string, Binding>> c318_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c319_bind() {
   return {
-      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
+
   };
 }
 
@@ -2005,7 +2009,7 @@ static std::vector<std::pair<std::string, Binding>> c320_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c321_bind() {
   return {
-
+      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
   };
 }
 
@@ -2029,43 +2033,43 @@ static std::vector<std::pair<std::string, Binding>> c324_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c325_bind() {
   return {
-      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c326_bind() {
   return {
-
+      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c327_bind() {
   return {
-      {"X", Binding::value(Value::text("-1"), SqlKind::Num)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c328_bind() {
   return {
-      {"Z", Binding::value(Value::text("0"), SqlKind::Num)},
+      {"X", Binding::value(Value::text("-1"), SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c329_bind() {
   return {
-      {"S", Binding::value(Value::text("abc"), std::nullopt)},
+      {"Z", Binding::value(Value::text("0"), SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c330_bind() {
   return {
-      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
+      {"S", Binding::value(Value::text("abc"), std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c331_bind() {
   return {
-
+      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
   };
 }
 
@@ -2089,7 +2093,7 @@ static std::vector<std::pair<std::string, Binding>> c334_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c335_bind() {
   return {
-      {"T", Binding::column("t", std::nullopt, SqlKind::Num)},
+
   };
 }
 
@@ -2114,37 +2118,37 @@ static std::vector<std::pair<std::string, Binding>> c338_bind() {
 static std::vector<std::pair<std::string, Binding>> c339_bind() {
   return {
       {"T", Binding::column("t", std::nullopt, SqlKind::Num)},
-      {"S", Binding::value(Value::text("abc"), std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c340_bind() {
   return {
       {"T", Binding::column("t", std::nullopt, SqlKind::Num)},
+      {"S", Binding::value(Value::text("abc"), std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c341_bind() {
   return {
-      {"A", Binding::column("a", std::nullopt, SqlKind::Text)},
+      {"T", Binding::column("t", std::nullopt, SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c342_bind() {
   return {
-      {"T", Binding::column("t", std::nullopt, SqlKind::Num)},
+      {"A", Binding::column("a", std::nullopt, SqlKind::Text)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c343_bind() {
   return {
-      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+      {"T", Binding::column("t", std::nullopt, SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c344_bind() {
   return {
-
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
   };
 }
 
@@ -2270,13 +2274,13 @@ static std::vector<std::pair<std::string, Binding>> c364_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c365_bind() {
   return {
-      {"COLS", Binding::columns({Binding::column("c1", std::nullopt, SqlKind::Unknown), Binding::column("c2", std::nullopt, SqlKind::Unknown), Binding::column("c3", std::nullopt, SqlKind::Unknown), Binding::column("c4", std::nullopt, SqlKind::Unknown), Binding::column("c5", std::nullopt, SqlKind::Unknown), Binding::column("c6", std::nullopt, SqlKind::Unknown), Binding::column("c7", std::nullopt, SqlKind::Unknown), Binding::column("c8", std::nullopt, SqlKind::Unknown), Binding::column("c9", std::nullopt, SqlKind::Unknown), Binding::column("c10", std::nullopt, SqlKind::Unknown), Binding::column("c11", std::nullopt, SqlKind::Unknown), Binding::column("c12", std::nullopt, SqlKind::Unknown), Binding::column("c13", std::nullopt, SqlKind::Unknown)})},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c366_bind() {
   return {
-      {"V", Binding::columns({Binding::column("a", std::nullopt, SqlKind::Unknown), Binding::column("b", std::nullopt, SqlKind::Unknown)})},
+      {"COLS", Binding::columns({Binding::column("c1", std::nullopt, SqlKind::Unknown), Binding::column("c2", std::nullopt, SqlKind::Unknown), Binding::column("c3", std::nullopt, SqlKind::Unknown), Binding::column("c4", std::nullopt, SqlKind::Unknown), Binding::column("c5", std::nullopt, SqlKind::Unknown), Binding::column("c6", std::nullopt, SqlKind::Unknown), Binding::column("c7", std::nullopt, SqlKind::Unknown), Binding::column("c8", std::nullopt, SqlKind::Unknown), Binding::column("c9", std::nullopt, SqlKind::Unknown), Binding::column("c10", std::nullopt, SqlKind::Unknown), Binding::column("c11", std::nullopt, SqlKind::Unknown), Binding::column("c12", std::nullopt, SqlKind::Unknown), Binding::column("c13", std::nullopt, SqlKind::Unknown)})},
   };
 }
 
@@ -2294,24 +2298,20 @@ static std::vector<std::pair<std::string, Binding>> c368_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c369_bind() {
   return {
-
+      {"V", Binding::columns({Binding::column("a", std::nullopt, SqlKind::Unknown), Binding::column("b", std::nullopt, SqlKind::Unknown)})},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c370_bind() {
   return {
-      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c371_bind() {
   return {
-
+      {"ITEMS", Binding::relation("order_items", "oi", {{"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
-}
-
-static void c371_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({01})", "TEXT"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c372_bind() {
@@ -2321,7 +2321,7 @@ static std::vector<std::pair<std::string, Binding>> c372_bind() {
 }
 
 static void c372_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({0\012})", "TEXT"));
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({01})", "TEXT"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c373_bind() {
@@ -2331,13 +2331,17 @@ static std::vector<std::pair<std::string, Binding>> c373_bind() {
 }
 
 static void c373_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({0})", "TEXT"));
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({0\012})", "TEXT"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c374_bind() {
   return {
-      {"A", Binding::column("a", std::nullopt, SqlKind::Num)},
+
   };
+}
+
+static void c374_reg() {
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({0})", "TEXT"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c375_bind() {
@@ -2348,7 +2352,7 @@ static std::vector<std::pair<std::string, Binding>> c375_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c376_bind() {
   return {
-
+      {"A", Binding::column("a", std::nullopt, SqlKind::Num)},
   };
 }
 
@@ -2364,18 +2368,14 @@ static std::vector<std::pair<std::string, Binding>> c378_bind() {
   };
 }
 
-static void c378_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::skeleton("U({0})"));
-}
-
-static std::vector<std::pair<std::string, Binding>> c381_bind() {
+static std::vector<std::pair<std::string, Binding>> c379_bind() {
   return {
 
   };
 }
 
-static void c381_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({0})", "TEXT").since("abc"));
+static void c379_reg() {
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::skeleton("U({0})"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c382_bind() {
@@ -2385,7 +2385,7 @@ static std::vector<std::pair<std::string, Binding>> c382_bind() {
 }
 
 static void c382_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({0})", "TEXT").caveat("made-up"));
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({0})", "TEXT").since("abc"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c383_bind() {
@@ -2395,7 +2395,7 @@ static std::vector<std::pair<std::string, Binding>> c383_bind() {
 }
 
 static void c383_reg() {
-      Map::define("mariadb", Section::Ops, "and", EntrySpec::tpl("({0} AND {1})", "BOOL"));
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("U({0})", "TEXT").caveat("made-up"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c384_bind() {
@@ -2405,7 +2405,7 @@ static std::vector<std::pair<std::string, Binding>> c384_bind() {
 }
 
 static void c384_reg() {
-      Map::define("mariadb", Section::Funcs, "COUNT", EntrySpec::tpl("X({0})", "NUM"));
+      Map::define("mariadb", Section::Ops, "and", EntrySpec::tpl("({0} AND {1})", "BOOL"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c385_bind() {
@@ -2415,7 +2415,7 @@ static std::vector<std::pair<std::string, Binding>> c385_bind() {
 }
 
 static void c385_reg() {
-      Map::define("mariadb", Section::Skel, "case", EntrySpec::skeleton("CASE {branchez} ELSE {else} END"));
+      Map::define("mariadb", Section::Funcs, "COUNT", EntrySpec::tpl("X({0})", "NUM"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c386_bind() {
@@ -2425,17 +2425,17 @@ static std::vector<std::pair<std::string, Binding>> c386_bind() {
 }
 
 static void c386_reg() {
-      Map::define_dialect("mariadb", DialectSpec::extending("mysql"));
+      Map::define("mariadb", Section::Skel, "case", EntrySpec::skeleton("CASE {branchez} ELSE {else} END"));
 }
 
-static std::vector<std::pair<std::string, Binding>> c388_bind() {
+static std::vector<std::pair<std::string, Binding>> c387_bind() {
   return {
 
   };
 }
 
-static void c388_reg() {
-      Map::define_dialect("d2", DialectSpec::extending("mariadb").version("11.8.8-MariaDB"));
+static void c387_reg() {
+      Map::define_dialect("mariadb", DialectSpec::extending("mysql"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c389_bind() {
@@ -2445,17 +2445,17 @@ static std::vector<std::pair<std::string, Binding>> c389_bind() {
 }
 
 static void c389_reg() {
-      Map::define_dialect("d3", DialectSpec::extending("mariadb").lexical("textEscape", "x"));
+      Map::define_dialect("d2", DialectSpec::extending("mariadb").version("11.8.8-MariaDB"));
 }
 
-static std::vector<std::pair<std::string, Binding>> c391_bind() {
+static std::vector<std::pair<std::string, Binding>> c390_bind() {
   return {
 
   };
 }
 
-static void c391_reg() {
-      Map::define_dialect("d5", DialectSpec::extending("mariadb").lexical("identQuot", "`"));
+static void c390_reg() {
+      Map::define_dialect("d3", DialectSpec::extending("mariadb").lexical("textEscape", "x"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c392_bind() {
@@ -2465,7 +2465,7 @@ static std::vector<std::pair<std::string, Binding>> c392_bind() {
 }
 
 static void c392_reg() {
-      Map::define("mariadb", Section::Funcs, "MIN", EntrySpec::by_count({{"1", std::nullopt}, {"*", "LEAST({*})"}}, "NUM"));
+      Map::define_dialect("d5", DialectSpec::extending("mariadb").lexical("identQuot", "`"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c393_bind() {
@@ -2480,8 +2480,12 @@ static void c393_reg() {
 
 static std::vector<std::pair<std::string, Binding>> c394_bind() {
   return {
-      {"COLS", Binding::columns({Binding::column("c1", std::nullopt, SqlKind::Unknown), Binding::column("c2", std::nullopt, SqlKind::Unknown), Binding::column("c3", std::nullopt, SqlKind::Unknown), Binding::column("c4", std::nullopt, SqlKind::Unknown), Binding::column("c5", std::nullopt, SqlKind::Unknown), Binding::column("c6", std::nullopt, SqlKind::Unknown), Binding::column("c7", std::nullopt, SqlKind::Unknown), Binding::column("c8", std::nullopt, SqlKind::Unknown), Binding::column("c9", std::nullopt, SqlKind::Unknown), Binding::column("c10", std::nullopt, SqlKind::Unknown), Binding::column("c11", std::nullopt, SqlKind::Unknown), Binding::column("c12", std::nullopt, SqlKind::Unknown)})},
+
   };
+}
+
+static void c394_reg() {
+      Map::define("mariadb", Section::Funcs, "MIN", EntrySpec::by_count({{"1", std::nullopt}, {"*", "LEAST({*})"}}, "NUM"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c395_bind() {
@@ -2492,7 +2496,7 @@ static std::vector<std::pair<std::string, Binding>> c395_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c396_bind() {
   return {
-
+      {"COLS", Binding::columns({Binding::column("c1", std::nullopt, SqlKind::Unknown), Binding::column("c2", std::nullopt, SqlKind::Unknown), Binding::column("c3", std::nullopt, SqlKind::Unknown), Binding::column("c4", std::nullopt, SqlKind::Unknown), Binding::column("c5", std::nullopt, SqlKind::Unknown), Binding::column("c6", std::nullopt, SqlKind::Unknown), Binding::column("c7", std::nullopt, SqlKind::Unknown), Binding::column("c8", std::nullopt, SqlKind::Unknown), Binding::column("c9", std::nullopt, SqlKind::Unknown), Binding::column("c10", std::nullopt, SqlKind::Unknown), Binding::column("c11", std::nullopt, SqlKind::Unknown), Binding::column("c12", std::nullopt, SqlKind::Unknown)})},
   };
 }
 
@@ -2502,24 +2506,24 @@ static std::vector<std::pair<std::string, Binding>> c397_bind() {
   };
 }
 
-static void c397_reg() {
-      Map::define("mariadb", Section::Funcs, "MIN", EntrySpec::by_count({{"10", "TEN({*})"}, {"*", "LEAST({*})"}}, "NUM"));
-}
-
 static std::vector<std::pair<std::string, Binding>> c398_bind() {
   return {
-      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+
   };
 }
 
 static void c398_reg() {
-      Map::define_dialect("pg-numbered", DialectSpec::extending("postgresql").version("15").target(true).lexical("placeholder", "${n}"));
+      Map::define("mariadb", Section::Funcs, "MIN", EntrySpec::by_count({{"10", "TEN({*})"}, {"*", "LEAST({*})"}}, "NUM"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c399_bind() {
   return {
       {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
   };
+}
+
+static void c399_reg() {
+      Map::define_dialect("pg-numbered", DialectSpec::extending("postgresql").version("15").target(true).lexical("placeholder", "${n}"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c400_bind() {
@@ -2530,13 +2534,13 @@ static std::vector<std::pair<std::string, Binding>> c400_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c401_bind() {
   return {
-      {"U", Binding::column("u", std::nullopt, SqlKind::Unknown)},
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c402_bind() {
   return {
-      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
+      {"U", Binding::column("u", std::nullopt, SqlKind::Unknown)},
   };
 }
 
@@ -2548,13 +2552,13 @@ static std::vector<std::pair<std::string, Binding>> c403_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c404_bind() {
   return {
-      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
+      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c405_bind() {
   return {
-      {"U", Binding::column("u", std::nullopt, SqlKind::Unknown)},
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text)},
   };
 }
 
@@ -2565,6 +2569,12 @@ static std::vector<std::pair<std::string, Binding>> c406_bind() {
 }
 
 static std::vector<std::pair<std::string, Binding>> c407_bind() {
+  return {
+      {"U", Binding::column("u", std::nullopt, SqlKind::Unknown)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c408_bind() {
   return {
       {"ITEMS", Binding::relation("oi", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Text)}}, std::nullopt, "`oi`.`o`=`o`.`id`")},
   };
@@ -4601,8 +4611,22 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = c144_reg,
      .bindings_fn = c144_bind},
-    {.name = "register.skel.withdrawn-refuses-before-the-operands",
+    {.name = "register.lexical.the-charset-follows-the-collation",
      .at = "11-registration.sqlt:94",
+     .dialect = "cms",
+     .source = "FROM_UTF8(B)",
+     .expect = "CONVERT(`o`.`b` USING utf8mb3)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = c145_reg,
+     .bindings_fn = c145_bind},
+    {.name = "register.skel.withdrawn-refuses-before-the-operands",
+     .at = "11-registration.sqlt:126",
      .dialect = "norel",
      .source = "UNBOUND IN ITEMS",
      .expect = nullptr,
@@ -4613,10 +4637,10 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c145_reg,
-     .bindings_fn = c145_bind},
+     .register_fn = c146_reg,
+     .bindings_fn = c146_bind},
     {.name = "register.since.gates-on-the-target-version",
-     .at = "11-registration.sqlt:117",
+     .at = "11-registration.sqlt:149",
      .dialect = "mariadb",
      .source = "UPPER(\"a\")",
      .expect = nullptr,
@@ -4627,10 +4651,10 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c146_reg,
-     .bindings_fn = c146_bind},
+     .register_fn = c147_reg,
+     .bindings_fn = c147_bind},
     {.name = "register.dialect.a-newer-version-passes-the-same-gate",
-     .at = "11-registration.sqlt:130",
+     .at = "11-registration.sqlt:162",
      .dialect = "mariadb-11.8",
      .source = "UPPER(\"a\")",
      .expect = "NEW_UPPER('a')",
@@ -4641,10 +4665,10 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c147_reg,
-     .bindings_fn = c147_bind},
+     .register_fn = c148_reg,
+     .bindings_fn = c148_bind},
     {.name = "register.dialect.inherits-everything-else",
-     .at = "11-registration.sqlt:144",
+     .at = "11-registration.sqlt:176",
      .dialect = "mariadb-11.8",
      .source = "\"A\" $== \"a\"",
      .expect = "(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)",
@@ -4655,10 +4679,10 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c148_reg,
-     .bindings_fn = c148_bind},
+     .register_fn = c149_reg,
+     .bindings_fn = c149_bind},
     {.name = "register.dialect.may-override-a-lexical-key",
-     .at = "11-registration.sqlt:154",
+     .at = "11-registration.sqlt:186",
      .dialect = "mariadb-nocollate",
      .source = "\"A\" $== \"a\"",
      .expect = "(CAST('A' AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a' AS CHAR) COLLATE utf8mb4_0900_bin)",
@@ -4669,10 +4693,10 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c149_reg,
-     .bindings_fn = c149_bind},
+     .register_fn = c150_reg,
+     .bindings_fn = c150_bind},
     {.name = "register.dialect.unknown-parent-is-a-programming-error",
-     .at = "11-registration.sqlt:165",
+     .at = "11-registration.sqlt:197",
      .dialect = "mariadb",
      .source = "1 + 1",
      .expect = nullptr,
@@ -4683,10 +4707,10 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c150_reg,
-     .bindings_fn = c150_bind},
+     .register_fn = c151_reg,
+     .bindings_fn = c151_bind},
     {.name = "register.define.unknown-section-is-a-programming-error",
-     .at = "11-registration.sqlt:181",
+     .at = "11-registration.sqlt:213",
      .dialect = "mariadb",
      .source = "1 + 1",
      .expect = nullptr,
@@ -4712,7 +4736,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c152_bind},
+     .bindings_fn = c153_bind},
     {.name = "agg.static.any",
      .at = "12-aggregates.sqlt:12",
      .dialect = "mariadb",
@@ -4726,7 +4750,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c153_bind},
+     .bindings_fn = c154_bind},
     {.name = "agg.static.sum",
      .at = "12-aggregates.sqlt:20",
      .dialect = "mariadb",
@@ -4740,7 +4764,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c154_bind},
+     .bindings_fn = c155_bind},
     {.name = "agg.static.one-element-needs-no-fold",
      .at = "12-aggregates.sqlt:28",
      .dialect = "mariadb",
@@ -4754,7 +4778,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c155_bind},
+     .bindings_fn = c156_bind},
     {.name = "agg.static.named-binder",
      .at = "12-aggregates.sqlt:36",
      .dialect = "mariadb",
@@ -4768,7 +4792,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c156_bind},
+     .bindings_fn = c157_bind},
     {.name = "agg.static.key-binding",
      .at = "12-aggregates.sqlt:44",
      .dialect = "mariadb",
@@ -4782,7 +4806,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c157_bind},
+     .bindings_fn = c158_bind},
     {.name = "agg.static.join",
      .at = "12-aggregates.sqlt:55",
      .dialect = "mariadb",
@@ -4796,7 +4820,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c158_bind},
+     .bindings_fn = c159_bind},
     {.name = "agg.static.count-folds-to-a-literal",
      .at = "12-aggregates.sqlt:67",
      .dialect = "mariadb",
@@ -4810,7 +4834,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c159_bind},
+     .bindings_fn = c160_bind},
     {.name = "agg.nested.static",
      .at = "12-aggregates.sqlt:75",
      .dialect = "mariadb",
@@ -4824,7 +4848,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c160_bind},
+     .bindings_fn = c161_bind},
     {.name = "agg.clist.mixed-keys-keep-insertion-order",
      .at = "12-aggregates.sqlt:86",
      .dialect = "mariadb",
@@ -4838,7 +4862,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c161_bind},
+     .bindings_fn = c162_bind},
     {.name = "agg.scalar.is-a-one-element-list",
      .at = "12-aggregates.sqlt:106",
      .dialect = "mariadb",
@@ -4852,7 +4876,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c162_bind},
+     .bindings_fn = c163_bind},
     {.name = "agg.columns.unroll",
      .at = "12-aggregates.sqlt:119",
      .dialect = "mariadb",
@@ -4866,7 +4890,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c163_bind},
+     .bindings_fn = c164_bind},
     {.name = "agg.columns.two-level-spelling",
      .at = "12-aggregates.sqlt:129",
      .dialect = "mariadb",
@@ -4880,7 +4904,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c164_bind},
+     .bindings_fn = c165_bind},
     {.name = "agg.columns.key-is-the-ordinal",
      .at = "12-aggregates.sqlt:143",
      .dialect = "mariadb",
@@ -4894,7 +4918,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c165_bind},
+     .bindings_fn = c166_bind},
     {.name = "agg.columns.count-folds-to-a-literal",
      .at = "12-aggregates.sqlt:153",
      .dialect = "mariadb",
@@ -4908,7 +4932,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c166_bind},
+     .bindings_fn = c167_bind},
     {.name = "agg.relation.all",
      .at = "12-aggregates.sqlt:163",
      .dialect = "mariadb",
@@ -4922,7 +4946,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c167_bind},
+     .bindings_fn = c168_bind},
     {.name = "agg.relation.any",
      .at = "12-aggregates.sqlt:177",
      .dialect = "mariadb",
@@ -4936,7 +4960,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c168_bind},
+     .bindings_fn = c169_bind},
     {.name = "agg.relation.sum",
      .at = "12-aggregates.sqlt:187",
      .dialect = "mariadb",
@@ -4950,7 +4974,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c169_bind},
+     .bindings_fn = c170_bind},
     {.name = "agg.relation.count",
      .at = "12-aggregates.sqlt:197",
      .dialect = "mariadb",
@@ -4964,7 +4988,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c170_bind},
+     .bindings_fn = c171_bind},
     {.name = "agg.relation.uncorrelated",
      .at = "12-aggregates.sqlt:207",
      .dialect = "mariadb",
@@ -4978,7 +5002,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c171_bind},
+     .bindings_fn = c172_bind},
     {.name = "agg.relation.from-may-carry-a-query",
      .at = "12-aggregates.sqlt:220",
      .dialect = "mariadb",
@@ -4992,7 +5016,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c172_bind},
+     .bindings_fn = c173_bind},
     {.name = "agg.relation.in",
      .at = "12-aggregates.sqlt:230",
      .dialect = "mariadb",
@@ -5006,7 +5030,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c173_bind},
+     .bindings_fn = c174_bind},
     {.name = "agg.relation.nested",
      .at = "12-aggregates.sqlt:240",
      .dialect = "mariadb",
@@ -5020,7 +5044,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c174_bind},
+     .bindings_fn = c175_bind},
     {.name = "agg.filter.absorbed-into-all",
      .at = "12-aggregates.sqlt:250",
      .dialect = "mariadb",
@@ -5034,7 +5058,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c175_bind},
+     .bindings_fn = c176_bind},
     {.name = "agg.filter.absorbed-into-any",
      .at = "12-aggregates.sqlt:258",
      .dialect = "mariadb",
@@ -5048,7 +5072,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c176_bind},
+     .bindings_fn = c177_bind},
     {.name = "agg.filter.absorbed-into-count",
      .at = "12-aggregates.sqlt:266",
      .dialect = "mariadb",
@@ -5062,7 +5086,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c177_bind},
+     .bindings_fn = c178_bind},
     {.name = "agg.filter.different-binder-names",
      .at = "12-aggregates.sqlt:276",
      .dialect = "mariadb",
@@ -5076,7 +5100,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c178_bind},
+     .bindings_fn = c179_bind},
     {.name = "agg.filter.nested-filters-conjoin",
      .at = "12-aggregates.sqlt:288",
      .dialect = "mariadb",
@@ -5090,7 +5114,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c179_bind},
+     .bindings_fn = c180_bind},
     {.name = "agg.value.binding-as-a-list",
      .at = "12-aggregates.sqlt:296",
      .dialect = "mariadb",
@@ -5104,7 +5128,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c180_bind},
+     .bindings_fn = c181_bind},
     {.name = "agg.empty.all-is-true",
      .at = "12-aggregates.sqlt:306",
      .dialect = "mariadb",
@@ -5118,7 +5142,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c181_bind},
+     .bindings_fn = c182_bind},
     {.name = "agg.empty.any-is-false",
      .at = "12-aggregates.sqlt:319",
      .dialect = "mariadb",
@@ -5132,7 +5156,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c182_bind},
+     .bindings_fn = c183_bind},
     {.name = "agg.empty.sum-is-zero",
      .at = "12-aggregates.sqlt:329",
      .dialect = "mariadb",
@@ -5146,7 +5170,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c183_bind},
+     .bindings_fn = c184_bind},
     {.name = "agg.has.static-is-decided-at-translation-time",
      .at = "12-aggregates.sqlt:339",
      .dialect = "mariadb",
@@ -5160,7 +5184,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c184_bind},
+     .bindings_fn = c185_bind},
     {.name = "agg.has.relation-is-refused",
      .at = "12-aggregates.sqlt:347",
      .dialect = "mariadb",
@@ -5174,7 +5198,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c185_bind},
+     .bindings_fn = c186_bind},
     {.name = "agg.has.relation-field-name-is-refused-too",
      .at = "12-aggregates.sqlt:368",
      .dialect = "mariadb",
@@ -5188,7 +5212,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c186_bind},
+     .bindings_fn = c187_bind},
     {.name = "agg.has.a-list-still-answers",
      .at = "12-aggregates.sqlt:378",
      .dialect = "mariadb",
@@ -5202,7 +5226,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c187_bind},
+     .bindings_fn = c188_bind},
     {.name = "agg.refuse.k-on-a-relation",
      .at = "12-aggregates.sqlt:389",
      .dialect = "mariadb",
@@ -5216,7 +5240,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c188_bind},
+     .bindings_fn = c189_bind},
     {.name = "agg.refuse.relation-indexed-by-position",
      .at = "12-aggregates.sqlt:402",
      .dialect = "mariadb",
@@ -5230,7 +5254,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c189_bind},
+     .bindings_fn = c190_bind},
     {.name = "agg.refuse.bare-row-without-a-scalar",
      .at = "12-aggregates.sqlt:412",
      .dialect = "mariadb",
@@ -5244,7 +5268,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c190_bind},
+     .bindings_fn = c191_bind},
     {.name = "agg.refuse.non-bool-body",
      .at = "12-aggregates.sqlt:422",
      .dialect = "mariadb",
@@ -5258,7 +5282,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c191_bind},
+     .bindings_fn = c192_bind},
     {.name = "agg.refuse.non-num-body-for-sum",
      .at = "12-aggregates.sqlt:430",
      .dialect = "mariadb",
@@ -5272,7 +5296,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c192_bind},
+     .bindings_fn = c193_bind},
     {.name = "agg.refuse.map-in-a-value-position",
      .at = "12-aggregates.sqlt:438",
      .dialect = "mariadb",
@@ -5286,7 +5310,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c193_bind},
+     .bindings_fn = c194_bind},
     {.name = "agg.refuse.join-over-a-relation",
      .at = "12-aggregates.sqlt:446",
      .dialect = "mariadb",
@@ -5300,7 +5324,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c194_bind},
+     .bindings_fn = c195_bind},
     {.name = "agg.refuse.binder-must-be-a-name",
      .at = "12-aggregates.sqlt:459",
      .dialect = "mariadb",
@@ -5314,7 +5338,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c195_bind},
+     .bindings_fn = c196_bind},
     {.name = "agg.contract.over-credit-limit",
      .at = "12-aggregates.sqlt:466",
      .dialect = "mariadb",
@@ -5328,7 +5352,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c196_bind},
+     .bindings_fn = c197_bind},
     {.name = "agg.contract.all-skus-well-formed",
      .at = "12-aggregates.sqlt:479",
      .dialect = "mariadb",
@@ -5342,7 +5366,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c197_bind},
+     .bindings_fn = c198_bind},
     {.name = "agg.filter.absorbed-into-count-bare",
      .at = "12-aggregates.sqlt:493",
      .dialect = "mariadb",
@@ -5356,7 +5380,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c198_bind},
+     .bindings_fn = c199_bind},
     {.name = "agg.relation.bare-binder-over-a-multi-field-row",
      .at = "12-aggregates.sqlt:506",
      .dialect = "mariadb",
@@ -5370,7 +5394,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c199_bind},
+     .bindings_fn = c200_bind},
     {.name = "agg.relation.bare-binder-over-a-one-field-row",
      .at = "12-aggregates.sqlt:523",
      .dialect = "mariadb",
@@ -5384,7 +5408,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c200_bind},
+     .bindings_fn = c201_bind},
     {.name = "agg.relation.row-is-not-a-scalar-source",
      .at = "12-aggregates.sqlt:536",
      .dialect = "mariadb",
@@ -5398,7 +5422,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c201_bind},
+     .bindings_fn = c202_bind},
     {.name = "agg.relation.nested-in-itself",
      .at = "12-aggregates.sqlt:550",
      .dialect = "mariadb",
@@ -5412,7 +5436,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c202_bind},
+     .bindings_fn = c203_bind},
     {.name = "agg.relation.two-relations-nest-fine",
      .at = "12-aggregates.sqlt:567",
      .dialect = "mariadb",
@@ -5426,7 +5450,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c203_bind},
+     .bindings_fn = c204_bind},
     {.name = "agg.count.list-yielding-call-is-not-a-scalar",
      .at = "12-aggregates.sqlt:579",
      .dialect = "mariadb",
@@ -5440,7 +5464,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c204_bind},
+     .bindings_fn = c205_bind},
     {.name = "agg.has.list-yielding-call-is-not-a-scalar",
      .at = "12-aggregates.sqlt:592",
      .dialect = "sqlite",
@@ -5454,7 +5478,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c205_bind},
+     .bindings_fn = c206_bind},
     {.name = "agg.relation.in-folds-null-to-false",
      .at = "12-aggregates.sqlt:600",
      .dialect = "mariadb",
@@ -5468,7 +5492,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c206_bind},
+     .bindings_fn = c207_bind},
     {.name = "review.count.scalar-has-no-children",
      .at = "13-review.sqlt:5",
      .dialect = "mariadb",
@@ -5482,7 +5506,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c207_bind},
+     .bindings_fn = c208_bind},
     {.name = "review.count.scalar-column-has-no-children",
      .at = "13-review.sqlt:18",
      .dialect = "mariadb",
@@ -5496,7 +5520,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c208_bind},
+     .bindings_fn = c209_bind},
     {.name = "review.has.scalar-has-no-keys",
      .at = "13-review.sqlt:28",
      .dialect = "mariadb",
@@ -5510,7 +5534,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c209_bind},
+     .bindings_fn = c210_bind},
     {.name = "review.relation.fields-are-case-insensitive",
      .at = "13-review.sqlt:38",
      .dialect = "mariadb",
@@ -5524,7 +5548,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c210_bind},
+     .bindings_fn = c211_bind},
     {.name = "review.value.num-binding-must-be-a-number",
      .at = "13-review.sqlt:53",
      .dialect = "mariadb",
@@ -5538,7 +5562,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c211_bind},
+     .bindings_fn = c212_bind},
     {.name = "review.value.num-binding-checks-children-too",
      .at = "13-review.sqlt:68",
      .dialect = "mariadb",
@@ -5552,7 +5576,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c212_bind},
+     .bindings_fn = c213_bind},
     {.name = "review.value.legitimate-num-binding-still-works",
      .at = "13-review.sqlt:78",
      .dialect = "mariadb",
@@ -5566,7 +5590,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c213_bind},
+     .bindings_fn = c214_bind},
     {.name = "review.regex.empty-flags-are-not-the-i-flag",
      .at = "13-review.sqlt:88",
      .dialect = "mariadb",
@@ -5580,7 +5604,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c214_bind},
+     .bindings_fn = c215_bind},
     {.name = "review.regex.i-flag-selects-the-other-template",
      .at = "13-review.sqlt:102",
      .dialect = "mariadb",
@@ -5594,7 +5618,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c215_bind},
+     .bindings_fn = c216_bind},
     {.name = "review.regex.unknown-flag-is-refused",
      .at = "13-review.sqlt:112",
      .dialect = "mariadb",
@@ -5608,7 +5632,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c216_bind},
+     .bindings_fn = c217_bind},
     {.name = "review.regex.i-flag-needs-an-ascii-pattern",
      .at = "13-review.sqlt:124",
      .dialect = "mariadb",
@@ -5622,7 +5646,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c217_bind},
+     .bindings_fn = c218_bind},
     {.name = "review.register.a-skeleton-is-reachable",
      .at = "13-review.sqlt:138",
      .dialect = "mariadb",
@@ -5635,8 +5659,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c218_reg,
-     .bindings_fn = c218_bind},
+     .register_fn = c219_reg,
+     .bindings_fn = c219_bind},
     {.name = "review.bindings.raw-from-without-an-alias",
      .at = "13-review.sqlt:155",
      .dialect = "mariadb",
@@ -5650,7 +5674,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c219_bind},
+     .bindings_fn = c220_bind},
     {.name = "review.bindings.raw-from-alias-collision-still-caught",
      .at = "13-review.sqlt:168",
      .dialect = "mariadb",
@@ -5664,7 +5688,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c220_bind},
+     .bindings_fn = c221_bind},
     {.name = "review.in.value-binding-holding-a-list",
      .at = "13-review.sqlt:178",
      .dialect = "mariadb",
@@ -5678,7 +5702,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c221_bind},
+     .bindings_fn = c222_bind},
     {.name = "review.params.reordering-template-binds-in-output-order",
      .at = "13-review.sqlt:191",
      .dialect = "mariadb",
@@ -5692,7 +5716,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c222_bind},
+     .bindings_fn = c223_bind},
     {.name = "kinds.branches-must-agree",
      .at = "13-review.sqlt:207",
      .dialect = "mariadb",
@@ -5706,7 +5730,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c223_bind},
+     .bindings_fn = c224_bind},
     {.name = "kinds.unknown-still-unifies-with-anything",
      .at = "13-review.sqlt:220",
      .dialect = "mariadb",
@@ -5720,7 +5744,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c224_bind},
+     .bindings_fn = c225_bind},
     {.name = "kinds.bool-is-not-byte-comparable-with-a-number",
      .at = "13-review.sqlt:234",
      .dialect = "mariadb",
@@ -5734,7 +5758,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c225_bind},
+     .bindings_fn = c226_bind},
     {.name = "kinds.two-bools-compare-fine",
      .at = "13-review.sqlt:246",
      .dialect = "mariadb",
@@ -5748,7 +5772,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c226_bind},
+     .bindings_fn = c227_bind},
     {.name = "kinds.an-unknown-operand-is-the-accepted-limit",
      .at = "13-review.sqlt:257",
      .dialect = "mariadb",
@@ -5762,7 +5786,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c227_bind},
+     .bindings_fn = c228_bind},
     {.name = "kinds.bool-is-not-byte-comparable-directly",
      .at = "13-review.sqlt:270",
      .dialect = "mariadb",
@@ -5776,7 +5800,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c228_bind},
+     .bindings_fn = c229_bind},
     {.name = "kinds.bool-is-not-byte-comparable-with-text",
      .at = "13-review.sqlt:282",
      .dialect = "mariadb",
@@ -5790,7 +5814,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c229_bind},
+     .bindings_fn = c230_bind},
     {.name = "kinds.a-bool-is-not-a-number",
      .at = "13-review.sqlt:290",
      .dialect = "mariadb",
@@ -5804,7 +5828,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c230_bind},
+     .bindings_fn = c231_bind},
     {.name = "kinds.a-bool-is-not-an-addend",
      .at = "13-review.sqlt:304",
      .dialect = "mariadb",
@@ -5818,7 +5842,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c231_bind},
+     .bindings_fn = c232_bind},
     {.name = "kinds.a-bool-cannot-be-negated",
      .at = "13-review.sqlt:312",
      .dialect = "mariadb",
@@ -5832,7 +5856,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c232_bind},
+     .bindings_fn = c233_bind},
     {.name = "kinds.an-unknown-column-still-adds",
      .at = "13-review.sqlt:322",
      .dialect = "mariadb",
@@ -5846,7 +5870,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c233_bind},
+     .bindings_fn = c234_bind},
     {.name = "kinds.bin-is-not-text-comparable-under-eql",
      .at = "13-review.sqlt:335",
      .dialect = "mariadb",
@@ -5860,7 +5884,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c234_bind},
+     .bindings_fn = c235_bind},
     {.name = "kinds.bin-is-not-text-comparable-under-in",
      .at = "13-review.sqlt:349",
      .dialect = "mariadb",
@@ -5874,7 +5898,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c235_bind},
+     .bindings_fn = c236_bind},
     {.name = "kinds.two-bins-compare-as-bytes",
      .at = "13-review.sqlt:357",
      .dialect = "mariadb",
@@ -5888,7 +5912,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c236_bind},
+     .bindings_fn = c237_bind},
     {.name = "kinds.a-number-is-a-text-value",
      .at = "13-review.sqlt:372",
      .dialect = "mariadb",
@@ -5902,7 +5926,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c237_bind},
+     .bindings_fn = c238_bind},
     {.name = "kinds.a-bin-is-not-an-addend",
      .at = "13-review.sqlt:384",
      .dialect = "mariadb",
@@ -5916,7 +5940,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c238_bind},
+     .bindings_fn = c239_bind},
     {.name = "kinds.a-bin-cannot-be-negated",
      .at = "13-review.sqlt:398",
      .dialect = "mariadb",
@@ -5930,7 +5954,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c239_bind},
+     .bindings_fn = c240_bind},
     {.name = "kinds.a-bool-is-not-concatenable",
      .at = "13-review.sqlt:408",
      .dialect = "mariadb",
@@ -5944,7 +5968,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c240_bind},
+     .bindings_fn = c241_bind},
     {.name = "kinds.a-bin-is-concatenable",
      .at = "13-review.sqlt:422",
      .dialect = "mariadb",
@@ -5958,7 +5982,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c241_bind},
+     .bindings_fn = c242_bind},
     {.name = "kinds.a-bool-is-not-a-function-argument",
      .at = "13-review.sqlt:435",
      .dialect = "mariadb",
@@ -5972,7 +5996,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c242_bind},
+     .bindings_fn = c243_bind},
     {.name = "kinds.a-bin-is-not-a-text-function-argument",
      .at = "13-review.sqlt:450",
      .dialect = "mariadb",
@@ -5986,7 +6010,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c243_bind},
+     .bindings_fn = c244_bind},
     {.name = "kinds.a-bin-is-a-byte-function-argument",
      .at = "13-review.sqlt:463",
      .dialect = "mariadb",
@@ -6000,7 +6024,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c244_bind},
+     .bindings_fn = c245_bind},
     {.name = "kinds.isnum-takes-anything",
      .at = "13-review.sqlt:478",
      .dialect = "mariadb",
@@ -6014,7 +6038,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c245_bind},
+     .bindings_fn = c246_bind},
     {.name = "kinds.an-unknown-argument-is-still-the-accepted-limit",
      .at = "13-review.sqlt:491",
      .dialect = "mariadb",
@@ -6028,7 +6052,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c246_bind},
+     .bindings_fn = c247_bind},
     {.name = "kinds.bin-against-text-in-a-byte-comparison",
      .at = "13-review.sqlt:501",
      .dialect = "postgresql",
@@ -6042,7 +6066,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c247_bind},
+     .bindings_fn = c248_bind},
     {.name = "kinds.bin-against-bin-in-a-byte-comparison",
      .at = "13-review.sqlt:516",
      .dialect = "postgresql",
@@ -6056,7 +6080,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c248_bind},
+     .bindings_fn = c249_bind},
     {.name = "review.slot.dollar-pattern-in-an-identifier",
      .at = "13-review.sqlt:524",
      .dialect = "postgresql",
@@ -6070,7 +6094,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c249_bind},
+     .bindings_fn = c250_bind},
     {.name = "review.slot.repeated-in-a-skeleton",
      .at = "13-review.sqlt:549",
      .dialect = "mariadb",
@@ -6084,7 +6108,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c250_bind},
+     .bindings_fn = c251_bind},
     {.name = "review.slot.repeated-in-a-numeric-wrap",
      .at = "13-review.sqlt:569",
      .dialect = "wrapped",
@@ -6097,8 +6121,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c251_reg,
-     .bindings_fn = c251_bind},
+     .register_fn = c252_reg,
+     .bindings_fn = c252_bind},
     {.name = "review.lexical.expands-into-itself",
      .at = "13-review.sqlt:582",
      .dialect = "selfref",
@@ -6111,8 +6135,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c252_reg,
-     .bindings_fn = c252_bind},
+     .register_fn = c253_reg,
+     .bindings_fn = c253_bind},
     {.name = "review.unify.refusal-carries-a-position",
      .at = "13-review.sqlt:603",
      .dialect = "mariadb",
@@ -6126,7 +6150,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c253_bind},
+     .bindings_fn = c254_bind},
     {.name = "review.lexical.empty-quote-is-refused",
      .at = "13-review.sqlt:616",
      .dialect = "mariadb",
@@ -6139,8 +6163,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c254_reg,
-     .bindings_fn = c254_bind},
+     .register_fn = c255_reg,
+     .bindings_fn = c255_bind},
     {.name = "review.binder.parenthesised-is-refused",
      .at = "13-review.sqlt:632",
      .dialect = "mariadb",
@@ -6154,7 +6178,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c255_bind},
+     .bindings_fn = c256_bind},
     {.name = "review.binder.bare-name-still-works",
      .at = "13-review.sqlt:654",
      .dialect = "mariadb",
@@ -6168,7 +6192,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c256_bind},
+     .bindings_fn = c257_bind},
     {.name = "review.relation.field-name-folds-ascii-only",
      .at = "13-review.sqlt:669",
      .dialect = "mariadb",
@@ -6182,7 +6206,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c257_bind},
+     .bindings_fn = c258_bind},
     {.name = "register.dialect.root-has-no-parent",
      .at = "13-review.sqlt:691",
      .dialect = "scratch",
@@ -6195,8 +6219,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c258_reg,
-     .bindings_fn = c258_bind},
+     .register_fn = c259_reg,
+     .bindings_fn = c259_bind},
     {.name = "register.dialect.extends-must-be-stated",
      .at = "13-review.sqlt:714",
      .dialect = "mariadb",
@@ -6238,7 +6262,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c261_bind},
+     .bindings_fn = c262_bind},
     {.name = "sqlite.num.byte-comparison-sees-the-scale",
      .at = "14-sqlite.sqlt:25",
      .dialect = "sqlite",
@@ -6252,7 +6276,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c262_bind},
+     .bindings_fn = c263_bind},
     {.name = "sqlite.num.comparison-always-coerces",
      .at = "14-sqlite.sqlt:33",
      .dialect = "sqlite",
@@ -6266,7 +6290,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c263_bind},
+     .bindings_fn = c264_bind},
     {.name = "sqlite.num.division-is-forced-real",
      .at = "14-sqlite.sqlt:44",
      .dialect = "sqlite",
@@ -6280,7 +6304,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c264_bind},
+     .bindings_fn = c265_bind},
     {.name = "sqlite.text.no-collation-needed",
      .at = "14-sqlite.sqlt:56",
      .dialect = "sqlite",
@@ -6294,7 +6318,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c265_bind},
+     .bindings_fn = c266_bind},
     {.name = "sqlite.text.concat-is-an-operator",
      .at = "14-sqlite.sqlt:68",
      .dialect = "sqlite",
@@ -6308,7 +6332,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c266_bind},
+     .bindings_fn = c267_bind},
     {.name = "sqlite.text.upper-needs-no-caveat",
      .at = "14-sqlite.sqlt:76",
      .dialect = "sqlite",
@@ -6322,7 +6346,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c267_bind},
+     .bindings_fn = c268_bind},
     {.name = "sqlite.text.right-of-zero",
      .at = "14-sqlite.sqlt:88",
      .dialect = "sqlite",
@@ -6336,7 +6360,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c268_bind},
+     .bindings_fn = c269_bind},
     {.name = "sqlite.text.code-point-in",
      .at = "14-sqlite.sqlt:100",
      .dialect = "sqlite",
@@ -6350,7 +6374,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c269_bind},
+     .bindings_fn = c270_bind},
     {.name = "sqlite.text.code-point-out",
      .at = "14-sqlite.sqlt:112",
      .dialect = "sqlite",
@@ -6364,7 +6388,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c270_bind},
+     .bindings_fn = c271_bind},
     {.name = "sqlite.func.min-takes-one-argument",
      .at = "14-sqlite.sqlt:120",
      .dialect = "sqlite",
@@ -6378,7 +6402,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c271_bind},
+     .bindings_fn = c272_bind},
     {.name = "sqlite.func.find-has-no-start-position",
      .at = "14-sqlite.sqlt:130",
      .dialect = "sqlite",
@@ -6392,7 +6416,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c272_bind},
+     .bindings_fn = c273_bind},
     {.name = "sqlite.refuse.no-regexp",
      .at = "14-sqlite.sqlt:142",
      .dialect = "sqlite",
@@ -6406,7 +6430,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c273_bind},
+     .bindings_fn = c274_bind},
     {.name = "sqlite.refuse.no-lpad",
      .at = "14-sqlite.sqlt:150",
      .dialect = "sqlite",
@@ -6420,7 +6444,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c274_bind},
+     .bindings_fn = c275_bind},
     {.name = "sqlite.strict.refuses-arithmetic",
      .at = "14-sqlite.sqlt:158",
      .dialect = "sqlite",
@@ -6434,7 +6458,7 @@ static const SqlCase CASES[] = {
      .strict = true,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c275_bind},
+     .bindings_fn = c276_bind},
     {.name = "sqlite.strict.allows-text",
      .at = "14-sqlite.sqlt:172",
      .dialect = "sqlite",
@@ -6448,7 +6472,7 @@ static const SqlCase CASES[] = {
      .strict = true,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c276_bind},
+     .bindings_fn = c277_bind},
     {.name = "pg.num.operands-are-cast",
      .at = "15-postgresql.sqlt:5",
      .dialect = "postgresql",
@@ -6462,7 +6486,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c277_bind},
+     .bindings_fn = c278_bind},
     {.name = "pg.num.division-is-numeric",
      .at = "15-postgresql.sqlt:20",
      .dialect = "postgresql",
@@ -6476,7 +6500,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c278_bind},
+     .bindings_fn = c279_bind},
     {.name = "pg.num.modulo-is-exact",
      .at = "15-postgresql.sqlt:33",
      .dialect = "postgresql",
@@ -6490,7 +6514,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c279_bind},
+     .bindings_fn = c280_bind},
     {.name = "pg.num.round-needs-no-caveat",
      .at = "15-postgresql.sqlt:43",
      .dialect = "postgresql",
@@ -6504,7 +6528,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c280_bind},
+     .bindings_fn = c281_bind},
     {.name = "pg.num.integer-overloads-are-pinned",
      .at = "15-postgresql.sqlt:55",
      .dialect = "postgresql",
@@ -6518,7 +6542,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c281_bind},
+     .bindings_fn = c282_bind},
     {.name = "pg.text.operands-are-cast",
      .at = "15-postgresql.sqlt:69",
      .dialect = "postgresql",
@@ -6532,7 +6556,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c282_bind},
+     .bindings_fn = c283_bind},
     {.name = "pg.text.backwards-is-supported",
      .at = "15-postgresql.sqlt:80",
      .dialect = "postgresql",
@@ -6546,7 +6570,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c283_bind},
+     .bindings_fn = c284_bind},
     {.name = "pg.text.collation-is-for-ordering",
      .at = "15-postgresql.sqlt:90",
      .dialect = "postgresql",
@@ -6560,7 +6584,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c284_bind},
+     .bindings_fn = c285_bind},
     {.name = "pg.bin.text-goes-to-bytes-through-convert-to",
      .at = "15-postgresql.sqlt:103",
      .dialect = "postgresql",
@@ -6574,7 +6598,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c285_bind},
+     .bindings_fn = c286_bind},
     {.name = "pg.refuse.find-with-a-start-position",
      .at = "15-postgresql.sqlt:129",
      .dialect = "postgresql",
@@ -6588,7 +6612,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c286_bind},
+     .bindings_fn = c287_bind},
     {.name = "pg.refuse.no-crc32",
      .at = "15-postgresql.sqlt:143",
      .dialect = "postgresql",
@@ -6602,7 +6626,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c287_bind},
+     .bindings_fn = c288_bind},
     {.name = "pg.params.question-mark-by-default",
      .at = "15-postgresql.sqlt:151",
      .dialect = "postgresql",
@@ -6616,7 +6640,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c288_bind},
+     .bindings_fn = c289_bind},
     {.name = "pg.params.numbered-for-a-libpq-host",
      .at = "15-postgresql.sqlt:173",
      .dialect = "pg-numbered",
@@ -6629,8 +6653,8 @@ static const SqlCase CASES[] = {
      .mode = "params",
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c289_reg,
-     .bindings_fn = c289_bind},
+     .register_fn = c290_reg,
+     .bindings_fn = c290_bind},
     {.name = "pg.bin.a-bin-operand-is-not-converted-again",
      .at = "15-postgresql.sqlt:195",
      .dialect = "postgresql",
@@ -6644,7 +6668,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c290_bind},
+     .bindings_fn = c291_bind},
     {.name = "pg.params.an-inlined-literal-does-not-consume-an-ordinal",
      .at = "15-postgresql.sqlt:208",
      .dialect = "pg-numbered",
@@ -6657,8 +6681,8 @@ static const SqlCase CASES[] = {
      .mode = "params",
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c291_reg,
-     .bindings_fn = c291_bind},
+     .register_fn = c292_reg,
+     .bindings_fn = c292_bind},
     {.name = "const.range.left-negative-length",
      .at = "16-constants.sqlt:22",
      .dialect = "mariadb",
@@ -6672,7 +6696,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c292_bind},
+     .bindings_fn = c293_bind},
     {.name = "const.range.left-negative-length-postgresql",
      .at = "16-constants.sqlt:32",
      .dialect = "postgresql",
@@ -6686,7 +6710,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c293_bind},
+     .bindings_fn = c294_bind},
     {.name = "const.range.right-negative-length",
      .at = "16-constants.sqlt:44",
      .dialect = "mariadb",
@@ -6700,7 +6724,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c294_bind},
+     .bindings_fn = c295_bind},
     {.name = "const.range.substr-zero-position",
      .at = "16-constants.sqlt:52",
      .dialect = "sqlite",
@@ -6714,7 +6738,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c295_bind},
+     .bindings_fn = c296_bind},
     {.name = "const.range.substr-negative-position",
      .at = "16-constants.sqlt:63",
      .dialect = "mariadb",
@@ -6728,7 +6752,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c296_bind},
+     .bindings_fn = c297_bind},
     {.name = "const.range.substr-negative-length",
      .at = "16-constants.sqlt:71",
      .dialect = "postgresql",
@@ -6742,7 +6766,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c297_bind},
+     .bindings_fn = c298_bind},
     {.name = "const.range.padl-negative-width",
      .at = "16-constants.sqlt:82",
      .dialect = "mariadb",
@@ -6756,7 +6780,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c298_bind},
+     .bindings_fn = c299_bind},
     {.name = "const.range.repeat-negative-count",
      .at = "16-constants.sqlt:90",
      .dialect = "mariadb",
@@ -6770,7 +6794,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c299_bind},
+     .bindings_fn = c300_bind},
     {.name = "const.range.find-zero-start",
      .at = "16-constants.sqlt:98",
      .dialect = "mariadb",
@@ -6784,7 +6808,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c300_bind},
+     .bindings_fn = c301_bind},
     {.name = "const.range.round-negative-places",
      .at = "16-constants.sqlt:106",
      .dialect = "sqlite",
@@ -6798,7 +6822,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c301_bind},
+     .bindings_fn = c302_bind},
     {.name = "const.range.char-negative-code-point",
      .at = "16-constants.sqlt:116",
      .dialect = "sqlite",
@@ -6812,7 +6836,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c302_bind},
+     .bindings_fn = c303_bind},
     {.name = "const.range.code-of-empty-string",
      .at = "16-constants.sqlt:124",
      .dialect = "postgresql",
@@ -6826,7 +6850,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c303_bind},
+     .bindings_fn = c304_bind},
     {.name = "const.range.power-negative-exponent",
      .at = "16-constants.sqlt:132",
      .dialect = "mariadb",
@@ -6840,7 +6864,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c304_bind},
+     .bindings_fn = c305_bind},
     {.name = "const.notint.left-fractional-length",
      .at = "16-constants.sqlt:143",
      .dialect = "mariadb",
@@ -6854,7 +6878,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c305_bind},
+     .bindings_fn = c306_bind},
     {.name = "const.notint.substr-fractional-position",
      .at = "16-constants.sqlt:154",
      .dialect = "sqlite",
@@ -6868,7 +6892,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c306_bind},
+     .bindings_fn = c307_bind},
     {.name = "const.notint.repeat-fractional-count",
      .at = "16-constants.sqlt:162",
      .dialect = "mariadb",
@@ -6882,7 +6906,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c307_bind},
+     .bindings_fn = c308_bind},
     {.name = "const.notint.round-fractional-places",
      .at = "16-constants.sqlt:170",
      .dialect = "mariadb",
@@ -6896,7 +6920,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c308_bind},
+     .bindings_fn = c309_bind},
     {.name = "const.notint.padl-fractional-width",
      .at = "16-constants.sqlt:178",
      .dialect = "mariadb",
@@ -6910,7 +6934,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c309_bind},
+     .bindings_fn = c310_bind},
     {.name = "const.notnum.left-length-with-leading-space",
      .at = "16-constants.sqlt:186",
      .dialect = "mariadb",
@@ -6924,7 +6948,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c310_bind},
+     .bindings_fn = c311_bind},
     {.name = "const.badarg.padl-empty-fill",
      .at = "16-constants.sqlt:198",
      .dialect = "postgresql",
@@ -6938,7 +6962,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c311_bind},
+     .bindings_fn = c312_bind},
     {.name = "const.divzero.divide",
      .at = "16-constants.sqlt:209",
      .dialect = "mariadb",
@@ -6952,7 +6976,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c312_bind},
+     .bindings_fn = c313_bind},
     {.name = "const.divzero.modulo",
      .at = "16-constants.sqlt:221",
      .dialect = "sqlite",
@@ -6966,7 +6990,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c313_bind},
+     .bindings_fn = c314_bind},
     {.name = "const.divzero.decimal-divisor",
      .at = "16-constants.sqlt:229",
      .dialect = "postgresql",
@@ -6980,7 +7004,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c314_bind},
+     .bindings_fn = c315_bind},
     {.name = "const.computed.argument-is-folded-first",
      .at = "16-constants.sqlt:240",
      .dialect = "mariadb",
@@ -6994,7 +7018,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c315_bind},
+     .bindings_fn = c316_bind},
     {.name = "const.aggregate.body-over-a-literal-list",
      .at = "16-constants.sqlt:252",
      .dialect = "mariadb",
@@ -7008,7 +7032,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c316_bind},
+     .bindings_fn = c317_bind},
     {.name = "const.valid.still-translates",
      .at = "16-constants.sqlt:263",
      .dialect = "mariadb",
@@ -7022,7 +7046,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c317_bind},
+     .bindings_fn = c318_bind},
     {.name = "const.valid.zero-length-is-not-out-of-range",
      .at = "16-constants.sqlt:274",
      .dialect = "mariadb",
@@ -7036,7 +7060,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c318_bind},
+     .bindings_fn = c319_bind},
     {.name = "const.column.cannot-be-checked",
      .at = "16-constants.sqlt:284",
      .dialect = "mariadb",
@@ -7050,7 +7074,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c319_bind},
+     .bindings_fn = c320_bind},
     {.name = "const.column.negation-of-a-column-is-not-constant",
      .at = "16-constants.sqlt:299",
      .dialect = "mariadb",
@@ -7064,7 +7088,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c320_bind},
+     .bindings_fn = c321_bind},
     {.name = "const.abort.keeps-its-own-refusal",
      .at = "16-constants.sqlt:312",
      .dialect = "mariadb",
@@ -7078,7 +7102,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c321_bind},
+     .bindings_fn = c322_bind},
     {.name = "const.regex.keeps-its-own-refusal",
      .at = "16-constants.sqlt:325",
      .dialect = "mariadb",
@@ -7092,7 +7116,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c322_bind},
+     .bindings_fn = c323_bind},
     {.name = "const.lazy.dead-branch-is-still-checked",
      .at = "16-constants.sqlt:336",
      .dialect = "mariadb",
@@ -7106,7 +7130,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c323_bind},
+     .bindings_fn = c324_bind},
     {.name = "const.lazy.unselected-if-arm-is-still-checked",
      .at = "16-constants.sqlt:352",
      .dialect = "postgresql",
@@ -7120,7 +7144,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c324_bind},
+     .bindings_fn = c325_bind},
     {.name = "const.lazy.unselected-arm-beside-a-column",
      .at = "16-constants.sqlt:362",
      .dialect = "mariadb",
@@ -7134,7 +7158,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c325_bind},
+     .bindings_fn = c326_bind},
     {.name = "const.scale.integer-valued-decimal-is-an-integer",
      .at = "16-constants.sqlt:376",
      .dialect = "postgresql",
@@ -7148,7 +7172,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c326_bind},
+     .bindings_fn = c327_bind},
     {.name = "const.binding.value-is-a-constant-the-translator-has",
      .at = "16-constants.sqlt:389",
      .dialect = "mariadb",
@@ -7162,7 +7186,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c327_bind},
+     .bindings_fn = c328_bind},
     {.name = "const.binding.value-zero-divisor",
      .at = "16-constants.sqlt:406",
      .dialect = "postgresql",
@@ -7176,7 +7200,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c328_bind},
+     .bindings_fn = c329_bind},
     {.name = "const.binding.value-that-is-not-a-number",
      .at = "16-constants.sqlt:416",
      .dialect = "mariadb",
@@ -7190,7 +7214,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c329_bind},
+     .bindings_fn = c330_bind},
     {.name = "const.binding.a-column-is-still-not-constant",
      .at = "16-constants.sqlt:428",
      .dialect = "mariadb",
@@ -7204,7 +7228,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c330_bind},
+     .bindings_fn = c331_bind},
     {.name = "const.assign.value-is-validated-where-it-is-recorded",
      .at = "16-constants.sqlt:441",
      .dialect = "mariadb",
@@ -7218,7 +7242,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c331_bind},
+     .bindings_fn = c332_bind},
     {.name = "const.assign.unread-definition-is-still-checked",
      .at = "16-constants.sqlt:453",
      .dialect = "sqlite",
@@ -7232,7 +7256,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c332_bind},
+     .bindings_fn = c333_bind},
     {.name = "const.assign.indexed-value-is-checked",
      .at = "16-constants.sqlt:461",
      .dialect = "mariadb",
@@ -7246,7 +7270,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c333_bind},
+     .bindings_fn = c334_bind},
     {.name = "const.assign.a-valid-assignment-still-inlines",
      .at = "16-constants.sqlt:473",
      .dialect = "mariadb",
@@ -7260,7 +7284,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c334_bind},
+     .bindings_fn = c335_bind},
     {.name = "const.numeric.text-literal-beside-a-column",
      .at = "16-constants.sqlt:481",
      .dialect = "mariadb",
@@ -7274,7 +7298,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c335_bind},
+     .bindings_fn = c336_bind},
     {.name = "const.numeric.text-literal-in-arithmetic",
      .at = "16-constants.sqlt:501",
      .dialect = "mariadb",
@@ -7288,7 +7312,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c336_bind},
+     .bindings_fn = c337_bind},
     {.name = "const.numeric.reassociation-does-not-hide-it",
      .at = "16-constants.sqlt:513",
      .dialect = "mariadb",
@@ -7302,7 +7326,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c337_bind},
+     .bindings_fn = c338_bind},
     {.name = "const.numeric.constant-subtree-beside-a-column",
      .at = "16-constants.sqlt:528",
      .dialect = "mariadb",
@@ -7316,7 +7340,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c338_bind},
+     .bindings_fn = c339_bind},
     {.name = "const.numeric.value-binding-beside-a-column",
      .at = "16-constants.sqlt:542",
      .dialect = "mariadb",
@@ -7330,7 +7354,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c339_bind},
+     .bindings_fn = c340_bind},
     {.name = "const.numeric.unary-minus",
      .at = "16-constants.sqlt:557",
      .dialect = "mariadb",
@@ -7344,7 +7368,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c340_bind},
+     .bindings_fn = c341_bind},
     {.name = "const.numeric.a-text-column-still-compares-numerically",
      .at = "16-constants.sqlt:572",
      .dialect = "mariadb",
@@ -7358,7 +7382,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c341_bind},
+     .bindings_fn = c342_bind},
     {.name = "const.numeric.a-numeric-text-literal-is-fine",
      .at = "16-constants.sqlt:589",
      .dialect = "mariadb",
@@ -7372,7 +7396,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c342_bind},
+     .bindings_fn = c343_bind},
     {.name = "const.residual.argument-constraint-beside-a-column",
      .at = "16-constants.sqlt:602",
      .dialect = "mariadb",
@@ -7386,7 +7410,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c343_bind},
+     .bindings_fn = c344_bind},
     {.name = "pin.mariadb.decode-base64",
      .at = "17-caveat-pins.sqlt:15",
      .dialect = "mariadb",
@@ -7400,7 +7424,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c344_bind},
+     .bindings_fn = c345_bind},
     {.name = "pin.mariadb.lower",
      .at = "17-caveat-pins.sqlt:23",
      .dialect = "mariadb",
@@ -7414,7 +7438,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c345_bind},
+     .bindings_fn = c346_bind},
     {.name = "pin.mariadb.max",
      .at = "17-caveat-pins.sqlt:31",
      .dialect = "mariadb",
@@ -7428,7 +7452,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c346_bind},
+     .bindings_fn = c347_bind},
     {.name = "pin.postgresql.decode-base64",
      .at = "17-caveat-pins.sqlt:39",
      .dialect = "postgresql",
@@ -7442,7 +7466,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c347_bind},
+     .bindings_fn = c348_bind},
     {.name = "pin.postgresql.lower",
      .at = "17-caveat-pins.sqlt:47",
      .dialect = "postgresql",
@@ -7456,7 +7480,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c348_bind},
+     .bindings_fn = c349_bind},
     {.name = "pin.postgresql.power",
      .at = "17-caveat-pins.sqlt:55",
      .dialect = "postgresql",
@@ -7470,7 +7494,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c349_bind},
+     .bindings_fn = c350_bind},
     {.name = "pin.postgresql.rfind",
      .at = "17-caveat-pins.sqlt:63",
      .dialect = "postgresql",
@@ -7484,7 +7508,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c350_bind},
+     .bindings_fn = c351_bind},
     {.name = "pin.postgresql.rmatch",
      .at = "17-caveat-pins.sqlt:71",
      .dialect = "postgresql",
@@ -7498,7 +7522,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c351_bind},
+     .bindings_fn = c352_bind},
     {.name = "pin.sqlite.abs",
      .at = "17-caveat-pins.sqlt:79",
      .dialect = "sqlite",
@@ -7512,7 +7536,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c352_bind},
+     .bindings_fn = c353_bind},
     {.name = "pin.sqlite.ceil",
      .at = "17-caveat-pins.sqlt:87",
      .dialect = "sqlite",
@@ -7526,7 +7550,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c353_bind},
+     .bindings_fn = c354_bind},
     {.name = "pin.sqlite.floor",
      .at = "17-caveat-pins.sqlt:95",
      .dialect = "sqlite",
@@ -7540,7 +7564,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c354_bind},
+     .bindings_fn = c355_bind},
     {.name = "pin.sqlite.max",
      .at = "17-caveat-pins.sqlt:103",
      .dialect = "sqlite",
@@ -7554,7 +7578,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c355_bind},
+     .bindings_fn = c356_bind},
     {.name = "pin.sqlite.power",
      .at = "17-caveat-pins.sqlt:111",
      .dialect = "sqlite",
@@ -7568,7 +7592,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c356_bind},
+     .bindings_fn = c357_bind},
     {.name = "pin.sqlite.trunc",
      .at = "17-caveat-pins.sqlt:119",
      .dialect = "sqlite",
@@ -7582,7 +7606,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c357_bind},
+     .bindings_fn = c358_bind},
     {.name = "pin.sqlite.!=",
      .at = "17-caveat-pins.sqlt:127",
      .dialect = "sqlite",
@@ -7596,7 +7620,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c358_bind},
+     .bindings_fn = c359_bind},
     {.name = "pin.sqlite.*",
      .at = "17-caveat-pins.sqlt:135",
      .dialect = "sqlite",
@@ -7610,7 +7634,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c359_bind},
+     .bindings_fn = c360_bind},
     {.name = "pin.sqlite.-",
      .at = "17-caveat-pins.sqlt:143",
      .dialect = "sqlite",
@@ -7624,7 +7648,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c360_bind},
+     .bindings_fn = c361_bind},
     {.name = "pin.sqlite.<",
      .at = "17-caveat-pins.sqlt:151",
      .dialect = "sqlite",
@@ -7638,7 +7662,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c361_bind},
+     .bindings_fn = c362_bind},
     {.name = "pin.sqlite.<=",
      .at = "17-caveat-pins.sqlt:159",
      .dialect = "sqlite",
@@ -7652,7 +7676,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c362_bind},
+     .bindings_fn = c363_bind},
     {.name = "pin.sqlite.>",
      .at = "17-caveat-pins.sqlt:167",
      .dialect = "sqlite",
@@ -7666,7 +7690,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c363_bind},
+     .bindings_fn = c364_bind},
     {.name = "pin.sqlite.>=",
      .at = "17-caveat-pins.sqlt:175",
      .dialect = "sqlite",
@@ -7680,7 +7704,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c364_bind},
+     .bindings_fn = c365_bind},
     {.name = "neutral.key.unicode-digits-are-not-a-position",
      .at = "18-host-neutrality.sqlt:14",
      .dialect = "mariadb",
@@ -7694,7 +7718,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c365_bind},
+     .bindings_fn = c366_bind},
     {.name = "neutral.key.leading-zero-is-not-a-position",
      .at = "18-host-neutrality.sqlt:40",
      .dialect = "mariadb",
@@ -7708,7 +7732,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c366_bind},
+     .bindings_fn = c367_bind},
     {.name = "neutral.key.trailing-newline-is-not-a-position",
      .at = "18-host-neutrality.sqlt:54",
      .dialect = "mariadb",
@@ -7722,7 +7746,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c367_bind},
+     .bindings_fn = c368_bind},
     {.name = "neutral.key.canonical-position-still-resolves",
      .at = "18-host-neutrality.sqlt:69",
      .dialect = "mariadb",
@@ -7736,7 +7760,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c368_bind},
+     .bindings_fn = c369_bind},
     {.name = "neutral.key.leading-zero-over-a-static-list",
      .at = "18-host-neutrality.sqlt:81",
      .dialect = "mariadb",
@@ -7750,7 +7774,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c369_bind},
+     .bindings_fn = c370_bind},
     {.name = "neutral.key.leading-zero-is-not-a-relation-position",
      .at = "18-host-neutrality.sqlt:92",
      .dialect = "mariadb",
@@ -7764,7 +7788,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c370_bind},
+     .bindings_fn = c371_bind},
     {.name = "neutral.slot.leading-zero-is-not-a-slot",
      .at = "18-host-neutrality.sqlt:107",
      .dialect = "mariadb",
@@ -7777,8 +7801,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c371_reg,
-     .bindings_fn = c371_bind},
+     .register_fn = c372_reg,
+     .bindings_fn = c372_bind},
     {.name = "neutral.slot.trailing-newline-is-not-a-slot",
      .at = "18-host-neutrality.sqlt:121",
      .dialect = "mariadb",
@@ -7791,8 +7815,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c372_reg,
-     .bindings_fn = c372_bind},
+     .register_fn = c373_reg,
+     .bindings_fn = c373_bind},
     {.name = "neutral.slot.canonical-slot-still-fills",
      .at = "18-host-neutrality.sqlt:134",
      .dialect = "mariadb",
@@ -7805,8 +7829,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c373_reg,
-     .bindings_fn = c373_bind},
+     .register_fn = c374_reg,
+     .bindings_fn = c374_bind},
     {.name = "neutral.depth.at-the-limit-still-translates",
      .at = "18-host-neutrality.sqlt:146",
      .dialect = "mariadb",
@@ -7820,7 +7844,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c374_bind},
+     .bindings_fn = c375_bind},
     {.name = "neutral.depth.one-past-the-limit-is-refused",
      .at = "18-host-neutrality.sqlt:162",
      .dialect = "mariadb",
@@ -7834,7 +7858,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c375_bind},
+     .bindings_fn = c376_bind},
     {.name = "neutral.depth.stage-one-is-bounded-too",
      .at = "18-host-neutrality.sqlt:178",
      .dialect = "mariadb",
@@ -7848,7 +7872,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c376_bind},
+     .bindings_fn = c377_bind},
     {.name = "neutral.depth.a-source-past-the-host-stack",
      .at = "18-host-neutrality.sqlt:190",
      .dialect = "mariadb",
@@ -7862,7 +7886,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c377_bind},
+     .bindings_fn = c378_bind},
     {.name = "neutral.register.no-ret",
      .at = "18-host-neutrality.sqlt:219",
      .dialect = "mariadb",
@@ -7875,8 +7899,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c378_reg,
-     .bindings_fn = c378_bind},
+     .register_fn = c379_reg,
+     .bindings_fn = c379_bind},
     {.name = "neutral.register.tpl-as-a-list",
      .at = "18-host-neutrality.sqlt:231",
      .dialect = "mariadb",
@@ -7917,8 +7941,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c381_reg,
-     .bindings_fn = c381_bind},
+     .register_fn = c382_reg,
+     .bindings_fn = c382_bind},
     {.name = "neutral.register.invented-caveat",
      .at = "18-host-neutrality.sqlt:267",
      .dialect = "mariadb",
@@ -7931,8 +7955,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c382_reg,
-     .bindings_fn = c382_bind},
+     .register_fn = c383_reg,
+     .bindings_fn = c383_bind},
     {.name = "neutral.register.lowercase-op-key",
      .at = "18-host-neutrality.sqlt:279",
      .dialect = "mariadb",
@@ -7945,8 +7969,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c383_reg,
-     .bindings_fn = c383_bind},
+     .register_fn = c384_reg,
+     .bindings_fn = c384_bind},
     {.name = "neutral.register.lowered-function",
      .at = "18-host-neutrality.sqlt:291",
      .dialect = "mariadb",
@@ -7959,8 +7983,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c384_reg,
-     .bindings_fn = c384_bind},
+     .register_fn = c385_reg,
+     .bindings_fn = c385_bind},
     {.name = "neutral.register.skeleton-slot-typo",
      .at = "18-host-neutrality.sqlt:303",
      .dialect = "mariadb",
@@ -7973,8 +7997,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c385_reg,
-     .bindings_fn = c385_bind},
+     .register_fn = c386_reg,
+     .bindings_fn = c386_bind},
     {.name = "neutral.register.dialect-redefined",
      .at = "18-host-neutrality.sqlt:315",
      .dialect = "mariadb",
@@ -7987,8 +8011,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c386_reg,
-     .bindings_fn = c386_bind},
+     .register_fn = c387_reg,
+     .bindings_fn = c387_bind},
     {.name = "neutral.register.target-not-a-boolean",
      .at = "18-host-neutrality.sqlt:327",
      .dialect = "mariadb",
@@ -8015,8 +8039,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c388_reg,
-     .bindings_fn = c388_bind},
+     .register_fn = c389_reg,
+     .bindings_fn = c389_bind},
     {.name = "neutral.register.text-escape-as-a-string",
      .at = "18-host-neutrality.sqlt:351",
      .dialect = "mariadb",
@@ -8029,8 +8053,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c389_reg,
-     .bindings_fn = c389_bind},
+     .register_fn = c390_reg,
+     .bindings_fn = c390_bind},
     {.name = "neutral.register.lexical-true-as-a-boolean",
      .at = "18-host-neutrality.sqlt:363",
      .dialect = "mariadb",
@@ -8057,8 +8081,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c391_reg,
-     .bindings_fn = c391_bind},
+     .register_fn = c392_reg,
+     .bindings_fn = c392_bind},
     {.name = "neutral.register.arity-null-withdraws",
      .at = "18-host-neutrality.sqlt:387",
      .dialect = "mariadb",
@@ -8071,8 +8095,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c392_reg,
-     .bindings_fn = c392_bind},
+     .register_fn = c393_reg,
+     .bindings_fn = c393_bind},
     {.name = "neutral.register.arity-fallback-still-applies",
      .at = "18-host-neutrality.sqlt:402",
      .dialect = "mariadb",
@@ -8085,8 +8109,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c393_reg,
-     .bindings_fn = c393_bind},
+     .register_fn = c394_reg,
+     .bindings_fn = c394_bind},
     {.name = "neutral.ordinal.tenth-column",
      .at = "18-host-neutrality.sqlt:415",
      .dialect = "mariadb",
@@ -8100,7 +8124,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c394_bind},
+     .bindings_fn = c395_bind},
     {.name = "neutral.ordinal.tenth-column-by-name",
      .at = "18-host-neutrality.sqlt:436",
      .dialect = "mariadb",
@@ -8114,7 +8138,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c395_bind},
+     .bindings_fn = c396_bind},
     {.name = "neutral.ordinal.tenth-element",
      .at = "18-host-neutrality.sqlt:451",
      .dialect = "mariadb",
@@ -8128,7 +8152,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c396_bind},
+     .bindings_fn = c397_bind},
     {.name = "neutral.ordinal.arity-key-past-nine",
      .at = "18-host-neutrality.sqlt:465",
      .dialect = "mariadb",
@@ -8141,8 +8165,8 @@ static const SqlCase CASES[] = {
      .mode = nullptr,
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c397_reg,
-     .bindings_fn = c397_bind},
+     .register_fn = c398_reg,
+     .bindings_fn = c398_bind},
     {.name = "neutral.ordinal.placeholder-past-nine",
      .at = "18-host-neutrality.sqlt:480",
      .dialect = "pg-numbered",
@@ -8155,8 +8179,8 @@ static const SqlCase CASES[] = {
      .mode = "params",
      .strict = false,
      .unrepresentable = nullptr,
-     .register_fn = c398_reg,
-     .bindings_fn = c398_bind},
+     .register_fn = c399_reg,
+     .bindings_fn = c399_bind},
     {.name = "warrant.numeric.a-text-column-is-guarded",
      .at = "19-kind-warrant.sqlt:21",
      .dialect = "mariadb",
@@ -8170,7 +8194,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c399_bind},
+     .bindings_fn = c400_bind},
     {.name = "warrant.numeric.either-side-is-guarded",
      .at = "19-kind-warrant.sqlt:34",
      .dialect = "mariadb",
@@ -8184,7 +8208,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c400_bind},
+     .bindings_fn = c401_bind},
     {.name = "warrant.numeric.an-undeclared-column-is-guarded",
      .at = "19-kind-warrant.sqlt:48",
      .dialect = "mariadb",
@@ -8198,7 +8222,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c401_bind},
+     .bindings_fn = c402_bind},
     {.name = "warrant.numeric.a-declared-num-is-not-guarded",
      .at = "19-kind-warrant.sqlt:62",
      .dialect = "mariadb",
@@ -8212,7 +8236,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c402_bind},
+     .bindings_fn = c403_bind},
     {.name = "warrant.numeric.a-constant-is-not-guarded",
      .at = "19-kind-warrant.sqlt:76",
      .dialect = "mariadb",
@@ -8226,7 +8250,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c403_bind},
+     .bindings_fn = c404_bind},
     {.name = "warrant.numeric.postgresql-asks-through-a-text-cast",
      .at = "19-kind-warrant.sqlt:91",
      .dialect = "postgresql",
@@ -8240,7 +8264,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c404_bind},
+     .bindings_fn = c405_bind},
     {.name = "warrant.numeric.sqlite-cannot-ask-and-refuses",
      .at = "19-kind-warrant.sqlt:106",
      .dialect = "sqlite",
@@ -8254,7 +8278,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c405_bind},
+     .bindings_fn = c406_bind},
     {.name = "warrant.bool.an-undeclared-column-is-not-a-boolean",
      .at = "19-kind-warrant.sqlt:124",
      .dialect = "mariadb",
@@ -8268,7 +8292,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c406_bind},
+     .bindings_fn = c407_bind},
     {.name = "warrant.numeric.the-guard-reaches-into-a-relation-body",
      .at = "19-kind-warrant.sqlt:140",
      .dialect = "mariadb",
@@ -8282,7 +8306,7 @@ static const SqlCase CASES[] = {
      .strict = false,
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c407_bind},
+     .bindings_fn = c408_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

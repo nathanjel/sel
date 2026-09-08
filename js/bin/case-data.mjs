@@ -2213,8 +2213,23 @@ export const SQL_CASES = [
     bindings: () => ({  }),
   },
   {
-    "name": "register.skel.withdrawn-refuses-before-the-operands",
+    "name": "register.lexical.the-charset-follows-the-collation",
     "at": "11-registration.sqlt:94",
+    "dialect": "cms",
+    "source": "FROM_UTF8(B)",
+    "expect": "CONVERT(`o`.`b` USING utf8mb3)",
+    "error": null,
+    "throws": null,
+    "params": null,
+    "as": null,
+    "mode": null,
+    "register": [{ "dialect": "cms", "extends": "mariadb", "version": "11.8", "lexical": { "textCollate": " COLLATE utf8mb3_bin", "textCharset": "utf8mb3" } }],
+    "options": null,
+    bindings: () => ({ "B": Binding.column("b", "o", "BIN") }),
+  },
+  {
+    "name": "register.skel.withdrawn-refuses-before-the-operands",
+    "at": "11-registration.sqlt:126",
     "dialect": "norel",
     "source": "UNBOUND IN ITEMS",
     "expect": null,
@@ -2229,7 +2244,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.since.gates-on-the-target-version",
-    "at": "11-registration.sqlt:117",
+    "at": "11-registration.sqlt:149",
     "dialect": "mariadb",
     "source": "UPPER(\"a\")",
     "expect": null,
@@ -2244,7 +2259,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.dialect.a-newer-version-passes-the-same-gate",
-    "at": "11-registration.sqlt:130",
+    "at": "11-registration.sqlt:162",
     "dialect": "mariadb-11.8",
     "source": "UPPER(\"a\")",
     "expect": "NEW_UPPER('a')",
@@ -2259,7 +2274,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.dialect.inherits-everything-else",
-    "at": "11-registration.sqlt:144",
+    "at": "11-registration.sqlt:176",
     "dialect": "mariadb-11.8",
     "source": "\"A\" $== \"a\"",
     "expect": "(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)",
@@ -2274,7 +2289,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.dialect.may-override-a-lexical-key",
-    "at": "11-registration.sqlt:154",
+    "at": "11-registration.sqlt:186",
     "dialect": "mariadb-nocollate",
     "source": "\"A\" $== \"a\"",
     "expect": "(CAST('A' AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a' AS CHAR) COLLATE utf8mb4_0900_bin)",
@@ -2289,7 +2304,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.dialect.unknown-parent-is-a-programming-error",
-    "at": "11-registration.sqlt:165",
+    "at": "11-registration.sqlt:197",
     "dialect": "mariadb",
     "source": "1 + 1",
     "expect": null,
@@ -2304,7 +2319,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.define.unknown-section-is-a-programming-error",
-    "at": "11-registration.sqlt:181",
+    "at": "11-registration.sqlt:213",
     "dialect": "mariadb",
     "source": "1 + 1",
     "expect": null,

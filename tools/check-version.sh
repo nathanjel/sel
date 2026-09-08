@@ -10,7 +10,7 @@
 # notices until a downstream resolver does.
 #
 #   tools/check-version.sh            check they agree
-#   tools/check-version.sh 0.4.0      check they all equal 0.4.0
+#   tools/check-version.sh 0.4.2      check they all equal 0.4.2
 
 set -uo pipefail
 cd "$(dirname "$0")/.."

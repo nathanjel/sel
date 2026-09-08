@@ -23,6 +23,13 @@
       "to": "\"textCollate\": \"\","
     },
     {
+      "name": "charset-spelled-inline-again",
+      "was": "FROM_UTF8 wrote USING utf8mb4 into its own template instead of naming the lexical key, so a deployment deriving a dialect for a utf8mb3 connection overrode textCollate and this one entry did not follow. Reported from the field. Harmless on a plain deployment, because textCast re-casts the result to the connection charset before the collation applies -- and MariaDB error 1253 the moment textCast is set to {0}, which ansi.json's own note recommends. The same defect postgresql.json's to-utf8-uses-the-lexical note records for binaryCast.",
+      "file": "sql/dialects/mysql-family.json",
+      "from": "\"tpl\": \"CONVERT({binaryCast:0} USING {textCharset})\",",
+      "to": "\"tpl\": \"CONVERT({binaryCast:0} USING utf8mb4)\","
+    },
+    {
       "name": "find-args-swapped",
       "was": "The reordering template that made Fragment::bindings() walk the output rather than return the pool.",
       "file": "sql/dialects/mysql-family.json",

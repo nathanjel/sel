@@ -16,7 +16,7 @@
   :description "SEL — a small expression language that evaluates identically on every host"
   :author "Marcin Gałczyński"
   :license "MIT"
-  :version "0.4.0"
+  :version "0.4.2"
   :homepage "https://github.com/nathanjel/sel"
   :source-control (:git "https://github.com/nathanjel/sel.git")
   :depends-on ("cl-ppcre")
@@ -54,7 +54,7 @@
   :description "SEL -> SQL translation"
   :author "Marcin Gałczyński"
   :license "MIT"
-  :version "0.4.0"
+  :version "0.4.2"
   :depends-on ("sel-lang")
   :serial t
   :components

@@ -110,12 +110,12 @@ def main(argv):
             return 2
 
     caught, holes, errors, skipped = 0, [], [], 0
-    # Under TMPDIR when the environment sets one, because the default is /tmp and
-    # /tmp is a tmpfs on a lot of Linux installs -- which makes every copy below
-    # resident memory rather than disk. One tree is only a few megabytes, so this
-    # is tidiness rather than a crisis, but a check that quietly grows the
-    # machine's memory with the size of its own corpus is the wrong shape.
-    work = tempfile.mkdtemp(prefix='mutate-sql.', dir=os.environ.get('TMPDIR') or None)
+    # Plain mkdtemp: it already honours TMPDIR, and passing dir= explicitly only
+    # removed tempfile's fallback -- a TMPDIR naming somewhere that does not
+    # exist raised FileNotFoundError where the default form quietly uses /tmp.
+    # Set TMPDIR to move this off a tmpfs; on a lot of Linux installs /tmp is
+    # one, which makes every copy below resident memory rather than disk.
+    work = tempfile.mkdtemp(prefix='mutate-sql.')
     try:
         for m in table['mutations']:
             name = m['name']
