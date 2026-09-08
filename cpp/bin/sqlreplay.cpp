@@ -145,6 +145,37 @@ int main() {
     }
   }
 
+  // And the memo must not outlive what it vouched for. define() lets the last
+  // writer win, so an ISNUM registered AFTER a dialect's guard was checked would
+  // never be compared against it. This dialect inherits a good guard, is translated
+  // once so the check runs and passes, and then has its ISNUM replaced by one the
+  // inherited guard does not carry.
+  {
+    const std::string memo_name = "mariadb" + std::string(SUF) + "~memo";
+    Map::define_dialect(memo_name,
+                        DialectSpec::extending("mariadb" + std::string(SUF)));
+    const sel::Program program = sel::compile("T == 25");
+    const Bindings text_col({{"T", Binding::column("t", std::nullopt,
+                                                    SqlKind::Text)}});
+    Sql::translate(program, memo_name, text_col);
+    Map::define(memo_name, Section::Funcs, "ISNUM",
+                EntrySpec::tpl("({0} REGEXP '^[0-9]+$')", "BOOL"));
+    bool stale = false;
+    try {
+      Sql::translate(program, memo_name, text_col);
+    } catch (const SqlError& e) {
+      problems.push_back(std::string("a redefined ISNUM raised ") + e.code() +
+                         " rather than a registration error");
+    } catch (const std::runtime_error&) {
+      stale = true;
+    }
+    if (!stale) {
+      problems.emplace_back(
+          "an ISNUM redefined after the guard was checked was not noticed; "
+          "the memo outlived the pairing it vouched for");
+    }
+  }
+
   for (const std::string& p : problems) std::printf("  DIFFERS %s\n", p.c_str());
   std::printf("%d registration calls rebuilt the map, %d lookups compared, "
               "%zu differences (and a disagreeing numericGuard is refused)\n",

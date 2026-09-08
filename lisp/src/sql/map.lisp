@@ -16,9 +16,13 @@
 (defvar *extra* '())
 (defvar *overlay* '())        ; ((dialect . ((section . ((key . entry) ...)) ...)) ...)
 
-;; Dialects whose numericGuard has been checked against their ISNUM. The answer
-;; cannot change once both are registered, and the shipped dialects pass
-;; trivially.
+;; Dialects whose numericGuard has been checked against their ISNUM. Dropped
+;; whole whenever any dialect's ISNUM is (re)defined -- define() allows
+;; redefinition and the last writer wins, so a memo taken before an ISNUM changed
+;; would vouch for a pairing that no longer exists, and a redefinition against a
+;; BASE reaches every dialect that inherits from it. Registration is a start-up
+;; activity; throwing the whole set away costs one comparison per dialect
+;; afterwards.
 (defvar *guard-checked* '())
 
 ;;; Every key DEFINE-DIALECT accepts. sql/MAP.md §3 is the normative list.
@@ -494,7 +498,12 @@ withdraws it without one."
          (existing (assoc k (cdr scell) :test #'equal)))
     (if existing
         (setf (cdr existing) entry)
-        (setf (cdr scell) (append (cdr scell) (list (cons k entry))))))
+        (setf (cdr scell) (append (cdr scell) (list (cons k entry)))))
+    ;; A redefined ISNUM invalidates every memoised guard check: DEFINE-ENTRY
+    ;; lets the last writer win, and a redefinition against a BASE reaches every
+    ;; dialect that inherits from it, so the whole set goes rather than one name.
+    (when (and (eq section :funcs) (equal k "ISNUM"))
+      (setf *guard-checked* '())))
   (values))
 
 (defun define-builder (dialect section key fn)

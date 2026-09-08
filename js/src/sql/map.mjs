@@ -29,9 +29,13 @@ export const MISSING = '\0missing';
 const extra = new Map();
 const overlay = new Map();
 
-// Dialects whose numericGuard has been checked against their ISNUM. The answer
-// cannot change once both are registered, and the shipped dialects pass
-// trivially.
+// Dialects whose numericGuard has been checked against their ISNUM. Dropped
+// whole whenever any dialect's ISNUM is (re)defined -- define() allows
+// redefinition and the last writer wins, so a memo taken before an ISNUM changed
+// would vouch for a pairing that no longer exists, and a redefinition against a
+// BASE reaches every dialect that inherits from it. Registration is a start-up
+// activity; throwing the whole set away costs one comparison per dialect
+// afterwards.
 const guardChecked = new Set();
 
 // Object.hasOwn throughout, never `in` and never a truthiness test: the
@@ -146,6 +150,10 @@ export function define(dialect, section, key, entry_) {
   const byDialect = overlay.get(dialect);
   if (!byDialect.has(section)) byDialect.set(section, new Map());
   byDialect.get(section).set(k, entry_);
+  // A redefined ISNUM invalidates every memoised guard check: define() lets the
+  // last writer win, and a redefinition against a BASE reaches every dialect
+  // that inherits from it, so the whole set goes rather than one name.
+  if (section === 'funcs' && k === 'ISNUM') guardChecked.clear();
 }
 
 // The escape hatch, for what a template cannot say.

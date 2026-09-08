@@ -102,6 +102,30 @@ def main() -> int:
                         'accepted; sql/MAP.md rule 10 holds at generation time and '
                         'not at run time')
 
+    # And the memo must not outlive what it vouched for. define() lets the last
+    # writer win, so an ISNUM registered AFTER a dialect's guard was checked would
+    # never be compared against it. This dialect inherits a good guard, is translated
+    # once so the check runs and passes, and then has its ISNUM replaced by one the
+    # inherited guard does not carry.
+    memo_name = 'mariadb' + SUF + '~memo'
+    smap.define_dialect(memo_name, {'extends': 'mariadb' + SUF})
+    program = sel_compile('T == 25')
+    text_col = {'T': Binding.column('t', None, 'TEXT')}
+    Sql.translate(program, memo_name, text_col)
+    smap.define(memo_name, 'funcs', 'ISNUM',
+                {'tpl': "({0} REGEXP '^[0-9]+$')", 'ret': 'BOOL'})
+    stale = False
+    try:
+        Sql.translate(program, memo_name, text_col)
+    except ValueError:
+        stale = True
+    except Exception as e:                     # noqa: BLE001
+        problems.append(f'a redefined ISNUM raised {type(e).__name__} rather than '
+                        'a registration error')
+    if not stale:
+        problems.append('an ISNUM redefined after the guard was checked was not '
+                        'noticed; the memo outlived the pairing it vouched for')
+
     for p in problems:
         print(f'  DIFFERS {p}')
     print(f'{calls} registration calls rebuilt the map, {compared} lookups '

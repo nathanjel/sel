@@ -162,9 +162,13 @@ struct Registry {
   std::map<std::string, std::array<std::map<std::string, OwnedEntry*, std::less<>>, 3>,
            std::less<>> overlay;
 
-  // Dialects whose numericGuard has been checked against their ISNUM. The answer
-  // cannot change once both are registered, and the shipped dialects pass
-  // trivially.
+  // Dialects whose numericGuard has been checked against their ISNUM. Dropped
+  // whole whenever any dialect's ISNUM is (re)defined -- define() allows
+  // redefinition and the last writer wins, so a memo taken before an ISNUM changed
+  // would vouch for a pairing that no longer exists, and a redefinition against a
+  // BASE reaches every dialect that inherits from it. Registration is a start-up
+  // activity; throwing the whole set away costs one comparison per dialect
+  // afterwards.
   std::set<std::string, std::less<>> guard_checked;
 };
 
@@ -561,6 +565,10 @@ void Map::define(const std::string& dialect, Section section,
   OwnedEntry* raw = owned.get();
   reg().entry_arena.push_back(std::move(owned));
   reg().overlay[dialect][index_of(section)][k] = raw;
+  // A redefined ISNUM invalidates every memoised guard check: define() lets the
+  // last writer win, and a redefinition against a BASE reaches every dialect
+  // that inherits from it, so the whole set goes rather than one name.
+  if (section == Section::Funcs && k == "ISNUM") reg().guard_checked.clear();
 }
 
 void Map::define_builder(const std::string& dialect, Section section,

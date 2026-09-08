@@ -8,7 +8,10 @@ bool operator cells are done (§8); the function-argument family of §4.1a is no
 and until it is the warrant holds for operators and not for calls. Everything
 measured here was measured — the server behaviour against the
 pinned images behind `tools/oracle-db.sh`, the translator behaviour against the
-tree at the commit this document was written on.
+tree at the commit this document was written on. The warrant itself is measured
+against **rows**, not only against emitted strings: `sql/oracle/rows.json` runs
+each rule as a `WHERE` clause on a real server and against the evaluator over the
+same data, and a row SEL refuses is one SQL must not return.
 
 ---
 

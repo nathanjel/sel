@@ -78,6 +78,27 @@ than a registration error" (sql-error-code e)) problems))
       (unless refused
         (push "a numericGuard that disagrees with its funcs.ISNUM was accepted; ~
 sql/MAP.md rule 10 holds at generation time and not at run time" problems)))
+    ;; And the memo must not outlive what it vouched for. DEFINE-ENTRY lets the last
+    ;; writer win, so an ISNUM registered AFTER a dialect's guard was checked would
+    ;; never be compared against it. This dialect inherits a good guard, is translated
+    ;; once so the check runs and passes, and then has its ISNUM replaced by one the
+    ;; inherited guard does not carry.
+    (let* ((memo-name (concatenate 'string "mariadb" +suffix+ "~memo"))
+           (program (sel:compile-source "T == 25"))
+           (text-col (list (cons "T" (binding-column "t" nil :text))))
+           (stale nil))
+      (define-dialect memo-name
+        (list :extends (concatenate 'string "mariadb" +suffix+)))
+      (translate program memo-name text-col)
+      (define-entry memo-name :funcs "ISNUM" (list :tpl "({0} REGEXP '^[0-9]+$')" :ret "BOOL"))
+      (handler-case (translate program memo-name text-col)
+        (sql-error (e)
+          (push (format nil "a redefined ISNUM raised ~a rather than a ~
+registration error" (sql-error-code e)) problems))
+        (error () (setf stale t)))
+      (unless stale
+        (push "an ISNUM redefined after the guard was checked was not noticed; ~
+the memo outlived the pairing it vouched for" problems)))
     (dolist (p (reverse problems)) (format t "  DIFFERS ~a~%" p))
     (format t "~a registration calls rebuilt the map, ~a lookups compared, ~
 ~a differences (and a disagreeing numericGuard is refused)~%"

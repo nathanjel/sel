@@ -1099,6 +1099,41 @@
       "file": "cpp/sel_sql_emit.cpp",
       "from": "  Map::check_numeric_guard(dialect_);",
       "to": "  // Map::check_numeric_guard(dialect_);"
+    },
+    {
+      "name": "php-guard-memo-is-never-invalidated",
+      "was": "The memo outliving what it vouched for. define() lets the last writer win, so an ISNUM registered after a dialect's guard was checked is never compared against it -- and the comment beside the memo said the answer could not change, which was false on a documented API path.",
+      "file": "php/src/Sql/Map.php",
+      "from": "        if ($section === 'funcs' && $stored === 'ISNUM') {",
+      "to": "        if ($section === 'funcs' && $stored === 'ISNUM~never') {"
+    },
+    {
+      "name": "js-guard-memo-is-never-invalidated",
+      "was": "The memo outliving what it vouched for. define() lets the last writer win, so an ISNUM registered after a dialect's guard was checked is never compared against it -- and the comment beside the memo said the answer could not change, which was false on a documented API path.",
+      "file": "js/src/sql/map.mjs",
+      "from": "  if (section === 'funcs' && k === 'ISNUM') guardChecked.clear();",
+      "to": "  if (section === 'funcs' && k === 'ISNUM~never') guardChecked.clear();"
+    },
+    {
+      "name": "python-guard-memo-is-never-invalidated",
+      "was": "The memo outliving what it vouched for. define() lets the last writer win, so an ISNUM registered after a dialect's guard was checked is never compared against it -- and the comment beside the memo said the answer could not change, which was false on a documented API path.",
+      "file": "python/sel/sql/map.py",
+      "from": "    if section == 'funcs' and k == 'ISNUM':",
+      "to": "    if section == 'funcs' and k == 'ISNUM~never':"
+    },
+    {
+      "name": "lisp-guard-memo-is-never-invalidated",
+      "was": "The memo outliving what it vouched for. define() lets the last writer win, so an ISNUM registered after a dialect's guard was checked is never compared against it -- and the comment beside the memo said the answer could not change, which was false on a documented API path.",
+      "file": "lisp/src/sql/map.lisp",
+      "from": "    (when (and (eq section :funcs) (equal k \"ISNUM\"))",
+      "to": "    (when (and (eq section :funcs) (equal k \"ISNUM~never\"))"
+    },
+    {
+      "name": "cpp-guard-memo-is-never-invalidated",
+      "was": "The memo outliving what it vouched for. define() lets the last writer win, so an ISNUM registered after a dialect's guard was checked is never compared against it -- and the comment beside the memo said the answer could not change, which was false on a documented API path.",
+      "file": "cpp/sel_sql_map.cpp",
+      "from": "  if (section == Section::Funcs && k == \"ISNUM\") reg().guard_checked.clear();",
+      "to": "  if (section == Section::Funcs && k == \"ISNUM~never\") reg().guard_checked.clear();"
     }
   ]
 }

@@ -104,6 +104,32 @@ if (!refused) {
     + 'sql/MAP.md rule 10 holds at generation time and not at run time');
 }
 
+// And the memo must not outlive what it vouched for. define() lets the last
+// writer win, so an ISNUM registered AFTER a dialect's guard was checked would
+// never be compared against it. This dialect inherits a good guard, is translated
+// once so the check runs and passes, and then has its ISNUM replaced by one the
+// inherited guard does not carry.
+const memoName = `mariadb${SUF}~memo`;
+map.defineDialect(memoName, { extends: `mariadb${SUF}` });
+const program = compile('T == 25');
+const textCol = { T: Binding.column('t', null, 'TEXT') };
+Sql.translate(program, memoName, textCol);
+map.define(memoName, 'funcs', 'ISNUM', { tpl: "({0} REGEXP '^[0-9]+$')", ret: 'BOOL' });
+let stale = false;
+try {
+  Sql.translate(program, memoName, textCol);
+} catch (e) {
+  if (e && e.code) {
+    problems.push(`a redefined ISNUM raised ${e.code} rather than a registration error`);
+  } else {
+    stale = true;
+  }
+}
+if (!stale) {
+  problems.push('an ISNUM redefined after the guard was checked was not noticed; '
+    + 'the memo outlived the pairing it vouched for');
+}
+
 for (const p of problems) process.stdout.write(`  DIFFERS ${p}\n`);
 process.stdout.write(`${calls} registration calls rebuilt the map, `
   + `${compared} lookups compared, ${problems.length} differences`

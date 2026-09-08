@@ -27,9 +27,13 @@ final class Map
     private static array $overlay = [];
 
     /**
-     * Dialects whose numericGuard has been checked against their ISNUM. Keyed by
-     * name, because the answer cannot change once both are registered and the
-     * shipped dialects pass trivially.
+     * Dialects whose numericGuard has been checked against their ISNUM. Dropped
+     * whole whenever any dialect's ISNUM is (re)defined -- define() allows
+     * redefinition and the last writer wins, so a memo taken before an ISNUM changed
+     * would vouch for a pairing that no longer exists, and a redefinition against a
+     * BASE reaches every dialect that inherits from it. Registration is a start-up
+     * activity; throwing the whole set away costs one comparison per dialect
+     * afterwards.
      *
      * @var array<string,true>
      */
@@ -145,8 +149,11 @@ final class Map
         // the translator looks up verbatim — upper-casing those stored a
         // registered skeleton under a key nothing ever reads, which made the
         // documented escape hatch silently dead.
-        self::$overlay[$dialect][$section][$section === 'funcs' ? strtoupper($key) : $key]
-            = $entry;
+        $stored = $section === 'funcs' ? strtoupper($key) : $key;
+        self::$overlay[$dialect][$section][$stored] = $entry;
+        if ($section === 'funcs' && $stored === 'ISNUM') {
+            self::$guardChecked = [];
+        }
     }
 
     /**

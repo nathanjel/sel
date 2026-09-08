@@ -38,9 +38,13 @@ _extra: dict[str, dict[str, Any]] = {}
 # dialect -> section -> key -> entry | builder
 _overlay: dict[str, dict[str, dict[str, Any]]] = {}
 
-# Dialects whose numericGuard has been checked against their ISNUM. The answer
-# cannot change once both are registered, and the shipped dialects pass
-# trivially.
+# Dialects whose numericGuard has been checked against their ISNUM. Dropped
+# whole whenever any dialect's ISNUM is (re)defined -- define() allows
+# redefinition and the last writer wins, so a memo taken before an ISNUM changed
+# would vouch for a pairing that no longer exists, and a redefinition against a
+# BASE reaches every dialect that inherits from it. Registration is a start-up
+# activity; throwing the whole set away costs one comparison per dialect
+# afterwards.
 _guard_checked: set[str] = set()
 
 # Every key define_dialect() accepts. sql/MAP.md §3 is the normative list.
@@ -150,6 +154,11 @@ def define(dialect: str, section: str, key: str, entry: Any) -> None:
     # the note in bindings.py on why str.upper() is not the same function.
     k = ascii_upper(key) if section == 'funcs' else key
     _overlay.setdefault(dialect, {}).setdefault(section, {})[k] = entry
+    # A redefined ISNUM invalidates every memoised guard check: define() lets the
+    # last writer win, and a redefinition against a BASE reaches every dialect
+    # that inherits from it, so the whole set goes rather than one name.
+    if section == 'funcs' and k == 'ISNUM':
+        _guard_checked.clear()
 
 
 def define_builder(dialect: str, section: str, key: str, fn: Any) -> None:

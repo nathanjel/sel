@@ -348,6 +348,21 @@
         "postgresql": "E_SQL_SHAPE",
         "sqlite": "E_SQL_SHAPE"
       }
+    },
+    {
+      "name": "the comparison that matched every row",
+      "why": "The report as written: `T == 0` over a text column. MariaDB casts both 'x' and '' to 0, so this selected orders 3 and 4 -- rows SEL refuses -- and on a table of non-numeric values it selects all of them. It selects nothing now, and nothing is what SEL selects: order 1 is '25' and order 5 is '30', both FALSE, and the other three SEL refuses outright. Declared degenerate because an empty answer is the whole point here, not a fixture that stopped discriminating.",
+      "sel": "CODE == 0",
+      "expect": [],
+      "raises": [
+        2,
+        3,
+        4
+      ],
+      "degenerate": "selects nothing, and that is the assertion",
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      }
     }
   ]
 }

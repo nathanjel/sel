@@ -108,6 +108,32 @@ if ($refused === null) {
         . 'sql/MAP.md §7 rule 10 holds at generation time and not at run time';
 }
 
+// And the memo must not outlive what it vouched for. define() lets the last
+// writer win, so an ISNUM registered AFTER a dialect's guard was checked would
+// never be compared against it. This dialect inherits a good guard, is translated
+// once so the check runs and passes, and then has its ISNUM replaced by one the
+// inherited guard does not carry.
+$memoName = 'mariadb' . SUF . '~memo';
+Map::defineDialect($memoName, ['extends' => 'mariadb' . SUF]);
+$program = Sel::compile('T == 25');
+$textCol = ['T' => Binding::column('t', null, 'TEXT')];
+Sql::translate($program, $memoName, $textCol);
+Map::define($memoName, 'funcs', 'ISNUM',
+    ['tpl' => "({0} REGEXP '^[0-9]+$')", 'ret' => 'BOOL']);
+$stale = false;
+try {
+    Sql::translate($program, $memoName, $textCol);
+} catch (\LogicException $e) {
+    $stale = true;
+} catch (\Throwable $e) {
+    $problems[] = 'a redefined ISNUM raised ' . get_class($e)
+        . ' rather than a registration error: ' . $e->getMessage();
+}
+if (!$stale) {
+    $problems[] = 'an ISNUM redefined after the guard was checked was not noticed; '
+        . 'the memo outlived the pairing it vouched for';
+}
+
 foreach ($problems as $p) {
     echo "  DIFFERS {$p}\n";
 }
