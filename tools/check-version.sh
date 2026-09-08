@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Every manifest must declare the same version.
 #
-# There are seven of them now — six manifests plus python/sel/__init__.py's
-# __version__, which is not a manifest but is published in the wheel metadata
-# and would be just as wrong if it drifted. Nothing but this script relates
-# them. composer.json is deliberately absent: Packagist infers the version from
-# the git tag, and the check below fails if a version field ever appears there. A release where one has drifted publishes a package whose
-# metadata disagrees with its siblings — which is the sort of thing nobody
-# notices until a downstream resolver does.
+# There are eight of them now — six manifests, python/sel/__init__.py's
+# __version__ (not a manifest, but published in the wheel metadata and just as
+# wrong if it drifted), and the top heading of CHANGELOG.md, so that a release
+# whose notes were never written fails here rather than at the tag. Nothing but
+# this script relates them. composer.json is deliberately absent: Packagist
+# infers the version from the git tag, and the check below fails if a version
+# field ever appears there. A release where one has drifted publishes a package
+# whose metadata disagrees with its siblings — which is the sort of thing
+# nobody notices until a downstream resolver does.
 #
 #   tools/check-version.sh            check they agree
-#   tools/check-version.sh 0.5.0      check they all equal 0.5.0
+#   tools/check-version.sh 0.6.0      check they all equal 0.6.0
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -24,11 +26,13 @@ extract() {
     cpp/CMakeLists.txt) sed -n 's/.*project(sel-lang VERSION \([0-9.]*\).*/\1/p' cpp/CMakeLists.txt | head -1 ;;
     lisp/sel-lang.asd) sed -n 's/.*:version[[:space:]]*"\([^"]*\)".*/\1/p' lisp/sel-lang.asd | head -1 ;;
     python/sel/__init__.py) sed -n "s/^__version__[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" python/sel/__init__.py | head -1 ;;
+    CHANGELOG.md)      sed -n 's/^## \([0-9][0-9.]*\) .*/\1/p' CHANGELOG.md | head -1 ;;
   esac
 }
 
 FILES="package.json pyproject.toml cpp/conanfile.py cpp/vcpkg.json
-       cpp/CMakeLists.txt lisp/sel-lang.asd python/sel/__init__.py"
+       cpp/CMakeLists.txt lisp/sel-lang.asd python/sel/__init__.py
+       CHANGELOG.md"
 
 want="${1:-}"
 status=0

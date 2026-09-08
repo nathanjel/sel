@@ -31,7 +31,7 @@ tools/check.sh                                    # ALL GREEN, full roster
 SEL_IMPLS="$SEL_IMPLS python-wheel" tools/check.sh # and through the built wheel
 tools/oracle-db.sh                                # the map, against real servers
 tools/oracle-db.sh run python3 tools/mutate-sql.py # every mutation, none skipped
-tools/check-version.sh 0.5.0                      # every manifest agrees
+tools/check-version.sh 0.6.0                      # every manifest agrees
 ```
 
 The first is what makes the rest of this document possible. The SEL→SQL map is
@@ -53,24 +53,26 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.5.0 -m "SEL 0.5.0"
-git push origin v0.5.0
+git tag -a v0.6.0 -m "SEL 0.6.0"
+git push origin v0.6.0
 ```
 
 Versions live in six places. Keep them in step:
 
 ```
-package.json                     "version": "0.5.0"
-pyproject.toml                   version = "0.5.0"
-cpp/conanfile.py                 version = "0.5.0"
-cpp/vcpkg.json                   "version-semver": "0.5.0"
-cpp/CMakeLists.txt               project(... VERSION 0.5.0 ...)
-lisp/sel-lang.asd                :version "0.5.0"
+package.json                     "version": "0.6.0"
+pyproject.toml                   version = "0.6.0"
+cpp/conanfile.py                 version = "0.6.0"
+cpp/vcpkg.json                   "version-semver": "0.6.0"
+cpp/CMakeLists.txt               project(... VERSION 0.6.0 ...)
+lisp/sel-lang.asd                :version "0.6.0"
 ```
 
-`python/sel/__init__.py` carries `__version__` and is checked against
-`pyproject.toml` by `tools/check-version.sh`, so it is one place fewer to
-remember rather than one more.
+`python/sel/__init__.py` carries `__version__`, and `CHANGELOG.md`'s top
+heading carries the version being released. Both are checked against
+`pyproject.toml` by `tools/check-version.sh`, so they are two places fewer to
+remember rather than two more — and a release whose notes were never written
+fails the check before the tag is cut.
 
 `composer.json` deliberately carries **no** `version` field — Packagist infers it
 from the git tag, and hard-coding it there is a known way to publish a lie.
@@ -248,7 +250,7 @@ profile would only make the package unusable out of the box.
 To publish, either upload to your own remote:
 
 ```
-conan upload sel-lang/0.5.0 -r <remote> --confirm
+conan upload sel-lang/0.6.0 -r <remote> --confirm
 ```
 
 or open a pull request against
