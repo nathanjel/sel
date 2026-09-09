@@ -153,6 +153,7 @@ final class Core
         Registry::define(['name' => 'FILTER', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true,
             'fn' => static function (Args $a, Context $ctx): Value {
                 $out = Value::none();
+                $out->isList = true;
                 self::walk($a, $ctx, static function (Value $r, string $key, Value $item, array $body) use ($out): ?Value {
                     if ($r->asBool($body['pos'])) {
                         $out->set($key, $item->copy());

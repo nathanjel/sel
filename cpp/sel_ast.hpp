@@ -47,7 +47,7 @@ struct Spec {
   Value (*fn)(Args&, Context&) = nullptr;
 };
 
-enum class NT { Num, Text, Bool, Var, Index, Seq, List, Un, Bin, Assign, Call };
+enum class NT { Num, Text, Bool, Null, Var, Index, Seq, List, Un, Bin, Assign, Call };
 
 struct Node {
   NT t = NT::Num;

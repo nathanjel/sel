@@ -110,7 +110,11 @@
     },
     "BAND": "SQLite's & is integer-only and has no meaning over blobs",
     "BOR": "SQLite's | is integer-only and has no meaning over blobs",
-    "BXOR": "SQLite has no XOR operator at all, over integers or blobs"
+    "BXOR": "SQLite has no XOR operator at all, over integers or blobs",
+    "???": {
+      "tpl": "COALESCE(NULLIF(trim({0}, ' ' || char(9) || char(13) || char(10)), ''), {1})",
+      "ret": "@unify:0,1"
+    }
   },
   "funcs": {
     "UPPER": {
@@ -242,7 +246,23 @@
     "DECODE_BASE64": "SQLite has no base64 function in a default build",
     "CRC32": "SQLite has no CRC32 function in a default build",
     "RMATCH": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\"",
-    "RFIND": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\""
+    "RFIND": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\"",
+    "IS_NULL": {
+      "tpl": "({0} IS NULL)",
+      "ret": "BOOL"
+    },
+    "IS_NOT_NULL": {
+      "tpl": "({0} IS NOT NULL)",
+      "ret": "BOOL"
+    },
+    "IS_BLANK": {
+      "tpl": "(({0} IS NULL) OR (trim({0}, ' ' || char(9) || char(13) || char(10)) = ''))",
+      "ret": "BOOL"
+    },
+    "IS_PRESENT": {
+      "tpl": "(({0} IS NOT NULL) AND (trim({0}, ' ' || char(9) || char(13) || char(10)) <> ''))",
+      "ret": "BOOL"
+    }
   },
   "notes": {
     "purpose": "SQLite 3.35 or later. 3.35 is where the math functions can be built in, which ceil, floor, trunc, sign and pow all need (SQLITE_ENABLE_MATH_FUNCTIONS); a build without them refuses at run time rather than here, which is the one thing this document cannot check for you.",

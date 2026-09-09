@@ -119,6 +119,7 @@ function evalDispatch(node, ctx) {
     case 'num': return Value.text(node.v);      // canonicalised by the parser
     case 'text': return Value.text(node.v);
     case 'bool': return Value.bool(node.v);
+    case 'null': return Value.null();
 
     case 'var': {
       const v = ctx.lookup(node.name);
@@ -160,7 +161,7 @@ function evalDispatch(node, ctx) {
 // §5.9 — a value with children and no scalar contributes its children's values;
 // anything else contributes itself. Keys are always renumbered from 1.
 function evalList(node, ctx) {
-  const out = Value.none();
+  const out = new Value(NONE, null, true);
   let n = 0;
   for (const item of node.items) {
     const v = evalNode(item, ctx);
@@ -182,12 +183,40 @@ function evalUnary(node, ctx) {
 function evalBinary(node, ctx) {
   const op = node.op;
 
-  // Short-circuit before either side is touched (§5.5).
+  // Short-circuit before either side is touched (§5.5, §5.6).
   if (op === 'AND' || op === 'OR') {
     const left = evalNode(node.l, ctx).asBool(node.l.pos);
     if (op === 'AND' && !left) return Value.bool(false);
     if (op === 'OR' && left) return Value.bool(true);
     return Value.bool(evalNode(node.r, ctx).asBool(node.r.pos));
+  }
+
+  if (op === '??') {
+    let l;
+    try {
+      l = evalNode(node.l, ctx);
+    } catch (e) {
+      if (e.code === 'E_NO_KEY' || e.code === 'E_UNDEF_VAR') {
+        return evalNode(node.r, ctx);
+      }
+      throw e;
+    }
+    if (l.isNull()) return evalNode(node.r, ctx);
+    return l;
+  }
+
+  if (op === '???') {
+    let l;
+    try {
+      l = evalNode(node.l, ctx);
+    } catch (e) {
+      if (e.code === 'E_NO_KEY' || e.code === 'E_UNDEF_VAR') {
+        return evalNode(node.r, ctx);
+      }
+      throw e;
+    }
+    if (l.isVacuous()) return evalNode(node.r, ctx);
+    return l;
   }
 
   const l = evalNode(node.l, ctx);

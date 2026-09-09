@@ -11,10 +11,11 @@ export const BIN = 'BIN';
 export const BOOL = 'BOOL';
 
 export class Value {
-  constructor(kind, scalar) {
+  constructor(kind, scalar, isList = false) {
     this.kind = kind;
     this.scalar = scalar;
     this.children = null;   // Map<string, Value>, created on demand
+    this.isList = isList;
   }
 
   // The kind constants, mirrored as statics so `Value.BOOL` works the way
@@ -32,11 +33,21 @@ export class Value {
   // keyword in Lisp, so only a predicate can be documented uniformly.
   // These test the value's own kind and do not apply scalar context.
   isNone() { return this.kind === NONE; }
+  isNull() { return this.kind === NONE && this.size() === 0 && !this.isList; }
+  isVacuous() {
+    if (this.isNull()) return true;
+    if (this.kind === NONE && this.size() === 0) return true;
+    if (this.kind === TEXT && this.size() === 0) {
+      return /^[ \t\r\n]*$/.test(this.scalar);
+    }
+    return false;
+  }
   isText() { return this.kind === TEXT; }
   isBin() { return this.kind === BIN; }
   isBool() { return this.kind === BOOL; }
 
   static none() { return new Value(NONE, null); }
+  static null() { return new Value(NONE, null, false); }
   static text(s) { return new Value(TEXT, s); }
   static bin(b) { return new Value(BIN, b instanceof Uint8Array ? b : Uint8Array.from(b)); }
   static bool(b) { return new Value(BOOL, !!b); }
@@ -53,7 +64,7 @@ export class Value {
 
   // Builds a list keyed "1".."n". Used by `,` and by list-returning built-ins.
   static list(values) {
-    const v = Value.none();
+    const v = new Value(NONE, null, true);
     values.forEach((x, i) => v.set(String(i + 1), x));
     return v;
   }
@@ -84,6 +95,9 @@ export class Value {
     let v = this;
     let guard = 0;
     while (v.kind === NONE) {
+      if (v.isNull()) {
+        fail('E_NULL', 'value is NULL', pos);
+      }
       if (!v.children || v.children.size === 0) {
         fail('E_NO_SCALAR', 'value has no scalar and no children', pos);
       }
@@ -158,7 +172,7 @@ export class Value {
 
   cloneAt(depth, pos) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
-    const out = new Value(this.kind, this.kind === BIN ? this.scalar.slice() : this.scalar);
+    const out = new Value(this.kind, this.kind === BIN ? this.scalar.slice() : this.scalar, this.isList);
     if (this.children) {
       out.children = new Map();
       for (const [k, v] of this.children) out.children.set(k, v.cloneAt(depth + 1, pos));
@@ -212,7 +226,7 @@ export class Value {
 
   static fromNativeAt(x, depth) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
-    if (x === null || x === undefined) return Value.none();
+    if (x === null || x === undefined) return Value.null();
     if (typeof x === 'boolean') return Value.bool(x);
     if (typeof x === 'number') {
       if (!Number.isFinite(x)) throw new TypeError('cannot convert non-finite number to SEL');

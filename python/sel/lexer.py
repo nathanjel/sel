@@ -20,13 +20,14 @@ from .errors import Pos, fail
 from .utf8 import to_code_points
 
 OPERATORS = [
+    '???', '??',
     '$==', '$!=', '$<=', '$>=',
     '$<', '$>', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '&=',
     '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', '[', ']', ',', ';',
 ]
 
 RESERVED = frozenset([
-    'TRUE', 'FALSE', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
+    'TRUE', 'FALSE', 'NULL', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
 ])
 
 _SIMPLE_ESCAPES = {

@@ -9,3 +9,4 @@ import './text.mjs';
 import './number.mjs';
 import './binary.mjs';
 import './regex.mjs';
+import './null.mjs';

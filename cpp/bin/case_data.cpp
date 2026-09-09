@@ -2907,6 +2907,56 @@ static void c453_reg() {
       Map::define_dialect("ansi-probe", DialectSpec::extending("ansi").version("1").target(true));
 }
 
+static std::vector<std::pair<std::string, Binding>> c454_bind() {
+  return {
+      {"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c455_bind() {
+  return {
+      {"A", Binding::column("a", std::nullopt, SqlKind::Num)},
+      {"B", Binding::column("b", std::nullopt, SqlKind::Num)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c456_bind() {
+  return {
+      {"CODE", Binding::column("code", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c457_bind() {
+  return {
+      {"DISCOUNT", Binding::column("discount", std::nullopt, SqlKind::Num)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c458_bind() {
+  return {
+      {"DISCOUNT", Binding::column("discount", std::nullopt, SqlKind::Num)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c459_bind() {
+  return {
+      {"A", Binding::column("a", std::nullopt, SqlKind::Num)},
+      {"B", Binding::column("b", std::nullopt, SqlKind::Num)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c460_bind() {
+  return {
+      {"POSTCODE", Binding::column("postcode", std::nullopt, SqlKind::Text)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c461_bind() {
+  return {
+      {"POSTCODE", Binding::column("postcode", std::nullopt, SqlKind::Text)},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -9264,6 +9314,118 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = c453_reg,
      .bindings_fn = c453_bind},
+    {.name = "op.coalesce.basic",
+     .at = "21-null.sqlt:3",
+     .dialect = "mariadb",
+     .source = "QTY ?? 0",
+     .expect = "COALESCE(`qty`, 0)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c454_bind},
+    {.name = "op.coalesce.chain",
+     .at = "21-null.sqlt:14",
+     .dialect = "mariadb",
+     .source = "A ?? B ?? 10",
+     .expect = "COALESCE(`a`, COALESCE(`b`, 10))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c455_bind},
+    {.name = "op.vacuous.basic",
+     .at = "21-null.sqlt:25",
+     .dialect = "mariadb",
+     .source = "CODE ??? \"N/A\"",
+     .expect = "COALESCE(NULLIF(REGEXP_REPLACE(`code`, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), 'N/A')",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c456_bind},
+    {.name = "func.is-null.column",
+     .at = "21-null.sqlt:36",
+     .dialect = "mariadb",
+     .source = "IS_NULL(DISCOUNT)",
+     .expect = "(`discount` IS NULL)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c457_bind},
+    {.name = "func.is-not-null.column",
+     .at = "21-null.sqlt:47",
+     .dialect = "mariadb",
+     .source = "IS_NOT_NULL(DISCOUNT)",
+     .expect = "(`discount` IS NOT NULL)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c458_bind},
+    {.name = "func.coalesce.multiple",
+     .at = "21-null.sqlt:58",
+     .dialect = "mariadb",
+     .source = "COALESCE(A, B, 0)",
+     .expect = "COALESCE(`a`, `b`, 0)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c459_bind},
+    {.name = "func.is-blank.column",
+     .at = "21-null.sqlt:69",
+     .dialect = "mariadb",
+     .source = "IS_BLANK(POSTCODE)",
+     .expect = "((`postcode` IS NULL) OR (REGEXP_REPLACE(`postcode`, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c460_bind},
+    {.name = "func.is-present.column",
+     .at = "21-null.sqlt:80",
+     .dialect = "mariadb",
+     .source = "IS_PRESENT(POSTCODE)",
+     .expect = "((`postcode` IS NOT NULL) AND (REGEXP_REPLACE(`postcode`, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c461_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

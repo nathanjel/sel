@@ -44,6 +44,12 @@ int replay_register() {
               "NEG", EntrySpec::tpl("(-{numericCast:0})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
+              "??", EntrySpec::tpl("COALESCE({0}, {1})", "@unify:0,1"));
+  ++calls;
+  Map::define("ansi~replay", Section::Ops,
+              "???", EntrySpec::tpl("COALESCE(NULLIF(TRIM(BOTH FROM {textCast:0}), ''), {1})", "@unify:0,1"));
+  ++calls;
+  Map::define("ansi~replay", Section::Ops,
               "&", EntrySpec::variants({{"text", "({textCast:0} || {textCast:1})"}}, "@concat").caveat("concat-null"));
   ++calls;
   Map::define("ansi~replay", Section::Ops,
@@ -235,6 +241,27 @@ int replay_register() {
   Map::define("ansi~replay", Section::Funcs,
               "RGROUPS", EntrySpec::withdraw("yields a list, and a SQL expression is a scalar"));
   ++calls;
+  Map::define("ansi~replay", Section::Funcs,
+              "IS_NULL", EntrySpec::tpl("({textCast:0} IS NULL)", "BOOL"));
+  ++calls;
+  Map::define("ansi~replay", Section::Funcs,
+              "IS_NOT_NULL", EntrySpec::tpl("({textCast:0} IS NOT NULL)", "BOOL"));
+  ++calls;
+  Map::define("ansi~replay", Section::Funcs,
+              "COALESCE", EntrySpec::tpl("COALESCE({*})", "@unify:0,1,2,3,4,5,6,7,8,9"));
+  ++calls;
+  Map::define("ansi~replay", Section::Funcs,
+              "IS_BLANK", EntrySpec::tpl("(({textCast:0} IS NULL) OR (TRIM(BOTH FROM {textCast:0}) = ''))", "BOOL"));
+  ++calls;
+  Map::define("ansi~replay", Section::Funcs,
+              "IS_PRESENT", EntrySpec::tpl("(({textCast:0} IS NOT NULL) AND (TRIM(BOTH FROM {textCast:0}) <> ''))", "BOOL"));
+  ++calls;
+  Map::define("ansi~replay", Section::Funcs,
+              "GET", EntrySpec::withdraw("takes a container, and a SQL expression is a scalar"));
+  ++calls;
+  Map::define("ansi~replay", Section::Funcs,
+              "PATH", EntrySpec::withdraw("takes a container, and a SQL expression is a scalar"));
+  ++calls;
   Map::define("ansi~replay", Section::Skel,
               "case", EntrySpec::skeleton("CASE {branches} ELSE {else} END"));
   ++calls;
@@ -285,6 +312,9 @@ int replay_register() {
   ++calls;
   Map::define("mysql-family~replay", Section::Ops,
               "NEG", EntrySpec::tpl("(-{0})", "NUM"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Ops,
+              "???", EntrySpec::tpl("COALESCE(NULLIF(REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), {1})", "@unify:0,1"));
   ++calls;
   Map::define("mysql-family~replay", Section::Funcs,
               "LEFT", EntrySpec::tpl("LEFT({0}, {1})", "TEXT"));
@@ -388,6 +418,18 @@ int replay_register() {
   Map::define("mysql-family~replay", Section::Funcs,
               "LOWER", EntrySpec::tpl("LOWER({0})", "TEXT").caveat("unicode-case"));
   ++calls;
+  Map::define("mysql-family~replay", Section::Funcs,
+              "IS_NULL", EntrySpec::tpl("({0} IS NULL)", "BOOL"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Funcs,
+              "IS_NOT_NULL", EntrySpec::tpl("({0} IS NOT NULL)", "BOOL"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Funcs,
+              "IS_BLANK", EntrySpec::tpl("(({0} IS NULL) OR (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))", "BOOL"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Funcs,
+              "IS_PRESENT", EntrySpec::tpl("(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))", "BOOL"));
+  ++calls;
   Map::define("mysql-family~replay", Section::Skel,
               "join", EntrySpec::withdraw("GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"));
   ++calls;
@@ -417,6 +459,9 @@ int replay_register() {
   ++calls;
   Map::define("postgresql~replay", Section::Ops,
               "&", EntrySpec::variants({{"text", "({textCast:0} || {textCast:1})"}, {"bin", "({0} || {1})"}}, "@concat").caveat("concat-null"));
+  ++calls;
+  Map::define("postgresql~replay", Section::Ops,
+              "???", EntrySpec::tpl("COALESCE(NULLIF(btrim({textCast:0}, E' \\t\\r\\n'), ''), {1})", "@unify:0,1"));
   ++calls;
   Map::define("postgresql~replay", Section::Funcs,
               "LEN", EntrySpec::tpl("length({textCast:0})", "NUM"));
@@ -529,6 +574,18 @@ int replay_register() {
   Map::define("postgresql~replay", Section::Funcs,
               "FLOOR", EntrySpec::tpl("floor({numericCast:0})", "NUM"));
   ++calls;
+  Map::define("postgresql~replay", Section::Funcs,
+              "IS_NULL", EntrySpec::tpl("({textCast:0} IS NULL)", "BOOL"));
+  ++calls;
+  Map::define("postgresql~replay", Section::Funcs,
+              "IS_NOT_NULL", EntrySpec::tpl("({textCast:0} IS NOT NULL)", "BOOL"));
+  ++calls;
+  Map::define("postgresql~replay", Section::Funcs,
+              "IS_BLANK", EntrySpec::tpl("(({textCast:0} IS NULL) OR (btrim({textCast:0}, E' \\t\\r\\n') = ''))", "BOOL"));
+  ++calls;
+  Map::define("postgresql~replay", Section::Funcs,
+              "IS_PRESENT", EntrySpec::tpl("(({textCast:0} IS NOT NULL) AND (btrim({textCast:0}, E' \\t\\r\\n') <> ''))", "BOOL"));
+  ++calls;
   Map::define_dialect("sqlite~replay",
                       DialectSpec::extending("ansi~replay").version("3.35").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "1").lexical("false", "0").lexical("binaryLiteral", "x'{hex}'").lexical("numericLiteral", "'{0}'").lexical("textCollate", "").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("binaryCast", "CAST({0} AS BLOB)").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?"));
   ++calls;
@@ -579,6 +636,9 @@ int replay_register() {
   ++calls;
   Map::define("sqlite~replay", Section::Ops,
               "BXOR", EntrySpec::withdraw("SQLite has no XOR operator at all, over integers or blobs"));
+  ++calls;
+  Map::define("sqlite~replay", Section::Ops,
+              "???", EntrySpec::tpl("COALESCE(NULLIF(trim({0}, ' ' || char(9) || char(13) || char(10)), ''), {1})", "@unify:0,1"));
   ++calls;
   Map::define("sqlite~replay", Section::Funcs,
               "UPPER", EntrySpec::tpl("upper({0})", "TEXT"));
@@ -690,6 +750,18 @@ int replay_register() {
   ++calls;
   Map::define("sqlite~replay", Section::Funcs,
               "RFIND", EntrySpec::withdraw("SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\""));
+  ++calls;
+  Map::define("sqlite~replay", Section::Funcs,
+              "IS_NULL", EntrySpec::tpl("({0} IS NULL)", "BOOL"));
+  ++calls;
+  Map::define("sqlite~replay", Section::Funcs,
+              "IS_NOT_NULL", EntrySpec::tpl("({0} IS NOT NULL)", "BOOL"));
+  ++calls;
+  Map::define("sqlite~replay", Section::Funcs,
+              "IS_BLANK", EntrySpec::tpl("(({0} IS NULL) OR (trim({0}, ' ' || char(9) || char(13) || char(10)) = ''))", "BOOL"));
+  ++calls;
+  Map::define("sqlite~replay", Section::Funcs,
+              "IS_PRESENT", EntrySpec::tpl("(({0} IS NOT NULL) AND (trim({0}, ' ' || char(9) || char(13) || char(10)) <> ''))", "BOOL"));
   ++calls;
   Map::define_dialect("mariadb~replay",
                       DialectSpec::extending("mysql-family~replay").version("10.5").target(true));

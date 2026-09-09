@@ -17,13 +17,14 @@ final class Lexer
 {
     /** Longest first: `$<=` must not lex as `$<` then `=`. */
     public const OPERATORS = [
+        '???', '??',
         '$==', '$!=', '$<=', '$>=',
         '$<', '$>', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '&=',
         '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', '[', ']', ',', ';',
     ];
 
     public const RESERVED = [
-        'TRUE', 'FALSE', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
+        'TRUE', 'FALSE', 'NULL', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
     ];
 
     private const SIMPLE_ESCAPES = [

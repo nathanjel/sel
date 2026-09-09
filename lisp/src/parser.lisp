@@ -46,13 +46,14 @@
 (defconstant +bp-and+ 6)
 (defconstant +bp-not+ 7)       ; prefix
 (defconstant +bp-compare+ 8)   ; non-associative
-(defconstant +bp-bor+ 9)
-(defconstant +bp-bxor+ 10)
-(defconstant +bp-band+ 11)
-(defconstant +bp-concat+ 12)   ; &
-(defconstant +bp-add+ 13)      ; + -
-(defconstant +bp-mul+ 14)      ; * / %
-(defconstant +bp-neg+ 15)      ; prefix
+(defconstant +bp-coalesce+ 9)  ; ?? ??? (right associative)
+(defconstant +bp-bor+ 10)
+(defconstant +bp-bxor+ 11)
+(defconstant +bp-band+ 12)
+(defconstant +bp-concat+ 13)   ; &
+(defconstant +bp-add+ 14)      ; + -
+(defconstant +bp-mul+ 15)      ; * / %
+(defconstant +bp-neg+ 16)      ; prefix
 
 ;;; An infix operator's binding power and associativity, as (BP . ASSOC) where
 ;;; ASSOC is #\L, #\R or #\N. #\L parses its right side at BP + 1, #\R at BP --
@@ -67,7 +68,9 @@
 ;;; unknown and every program would be a syntax error at its first operator.
 (defparameter +infix-ops+
   (let ((m (make-hash-table :test #'equal)))
-    (setf (gethash "&" m) (cons +bp-concat+ #\L)
+    (setf (gethash "??" m) (cons +bp-coalesce+ #\R)
+          (gethash "???" m) (cons +bp-coalesce+ #\R)
+          (gethash "&" m) (cons +bp-concat+ #\L)
           (gethash "+" m) (cons +bp-add+ #\L)
           (gethash "-" m) (cons +bp-add+ #\L)
           (gethash "*" m) (cons +bp-mul+ #\L)
@@ -209,22 +212,21 @@
           (p-next p)
           (cond
             ((char= assoc #\R)
-             ;; Assignment. The target is validated against the AST shape, not
-             ;; against a value, which is what makes `(A) = 1` a compile error.
-             ;; The right side is parsed at BP rather than BP + 1, which is what
-             ;; makes it right-associative.
-             (check-target left tok)
-             ;; Counted, for the same reason PARSE-PREFIX counts: the right side
-             ;; recurses through neither PARSE-SEQUENCE nor PARSE-PRIMARY, so
-             ;; uncounted a chain of assignments is bounded by nothing but this
-             ;; host's own control stack.
-             (with-depth (p (token-pos tok))
-               (let ((value (parse-term p bp))
-                     (n (make-node :assign (node-pos left))))
-                 (setf (node-s n) (token-value tok)
-                       (node-l n) left
-                       (node-r n) value)
-                 (setf left n))))
+             (if (member (token-value tok) +assign-ops+ :test #'string=)
+                 (progn
+                   (check-target left tok)
+                   ;; Counted, for the same reason PARSE-PREFIX counts: the right side
+                   ;; recurses through neither PARSE-SEQUENCE nor PARSE-PRIMARY, so
+                   ;; uncounted a chain of assignments is bounded by nothing but this
+                   ;; host's own control stack.
+                   (with-depth (p (token-pos tok))
+                     (let ((value (parse-term p bp))
+                           (n (make-node :assign (node-pos left))))
+                       (setf (node-s n) (token-value tok)
+                             (node-l n) left
+                             (node-r n) value)
+                       (setf left n))))
+                 (setf left (bin-node tok left (parse-term p bp)))))
 
             ((char= assoc #\N)
              ;; Deliberately non-associative, and the E_SYNTAX is reported at the
@@ -327,6 +329,9 @@
             (let ((n (make-node :bool (token-pos tok))))
               (setf (node-b n) (string= (token-value tok) "TRUE"))
               n))
+           ((string= (token-value tok) "NULL")
+            (p-next p)
+            (make-node :null (token-pos tok)))
            (t
             (let ((after (aref (parser-toks p) (1+ (parser-i p)))))
               (if (and (eq (token-type after) :op) (string= (token-value after) "("))

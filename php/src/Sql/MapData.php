@@ -68,6 +68,14 @@ final class MapData
                     'tpl' => '(-{numericCast:0})',
                     'ret' => 'NUM',
                 ],
+                '??' => [
+                    'tpl' => 'COALESCE({0}, {1})',
+                    'ret' => '@unify:0,1',
+                ],
+                '???' => [
+                    'tpl' => 'COALESCE(NULLIF(TRIM(BOTH FROM {textCast:0}), \'\'), {1})',
+                    'ret' => '@unify:0,1',
+                ],
                 '&' => [
                     'variants' => [
                         'text' => '({textCast:0} || {textCast:1})',
@@ -270,6 +278,28 @@ final class MapData
                 'RFIND' => 'regular expressions are not ANSI; set per dialect',
                 'RREPLACE' => 'regular expressions are not ANSI; set per dialect',
                 'RGROUPS' => 'yields a list, and a SQL expression is a scalar',
+                'IS_NULL' => [
+                    'tpl' => '({textCast:0} IS NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'IS_NOT_NULL' => [
+                    'tpl' => '({textCast:0} IS NOT NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'COALESCE' => [
+                    'tpl' => 'COALESCE({*})',
+                    'ret' => '@unify:0,1,2,3,4,5,6,7,8,9',
+                ],
+                'IS_BLANK' => [
+                    'tpl' => '(({textCast:0} IS NULL) OR (TRIM(BOTH FROM {textCast:0}) = \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'IS_PRESENT' => [
+                    'tpl' => '(({textCast:0} IS NOT NULL) AND (TRIM(BOTH FROM {textCast:0}) <> \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'GET' => 'takes a container, and a SQL expression is a scalar',
+                'PATH' => 'takes a container, and a SQL expression is a scalar',
             ],
             'skel' => [
                 'case' => [
@@ -349,6 +379,14 @@ final class MapData
                 'NEG' => [
                     'tpl' => '(-{0})',
                     'ret' => 'NUM',
+                ],
+                '??' => [
+                    'tpl' => 'COALESCE({0}, {1})',
+                    'ret' => '@unify:0,1',
+                ],
+                '???' => [
+                    'tpl' => 'COALESCE(NULLIF(REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\'), \'\'), {1})',
+                    'ret' => '@unify:0,1',
                 ],
                 '&' => [
                     'variants' => [
@@ -638,6 +676,28 @@ final class MapData
                 ],
                 'RREPLACE' => 'SEL replacement syntax is $0-$9 and MariaDB\'s is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express',
                 'RGROUPS' => 'yields a list, and a SQL expression is a scalar',
+                'IS_NULL' => [
+                    'tpl' => '({0} IS NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'IS_NOT_NULL' => [
+                    'tpl' => '({0} IS NOT NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'COALESCE' => [
+                    'tpl' => 'COALESCE({*})',
+                    'ret' => '@unify:0,1,2,3,4,5,6,7,8,9',
+                ],
+                'IS_BLANK' => [
+                    'tpl' => '(({0} IS NULL) OR (REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\') = \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'IS_PRESENT' => [
+                    'tpl' => '(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\') <> \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'GET' => 'takes a container, and a SQL expression is a scalar',
+                'PATH' => 'takes a container, and a SQL expression is a scalar',
             ],
             'skel' => [
                 'case' => [
@@ -719,6 +779,14 @@ final class MapData
                     'tpl' => '(-{0})',
                     'ret' => 'NUM',
                 ],
+                '??' => [
+                    'tpl' => 'COALESCE({0}, {1})',
+                    'ret' => '@unify:0,1',
+                ],
+                '???' => [
+                    'tpl' => 'COALESCE(NULLIF(REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\'), \'\'), {1})',
+                    'ret' => '@unify:0,1',
+                ],
                 '&' => [
                     'variants' => [
                         'text' => 'CONCAT({0}, {1})',
@@ -1007,6 +1075,28 @@ final class MapData
                 ],
                 'RREPLACE' => 'SEL replacement syntax is $0-$9 and MariaDB\'s is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express',
                 'RGROUPS' => 'yields a list, and a SQL expression is a scalar',
+                'IS_NULL' => [
+                    'tpl' => '({0} IS NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'IS_NOT_NULL' => [
+                    'tpl' => '({0} IS NOT NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'COALESCE' => [
+                    'tpl' => 'COALESCE({*})',
+                    'ret' => '@unify:0,1,2,3,4,5,6,7,8,9',
+                ],
+                'IS_BLANK' => [
+                    'tpl' => '(({0} IS NULL) OR (REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\') = \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'IS_PRESENT' => [
+                    'tpl' => '(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\') <> \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'GET' => 'takes a container, and a SQL expression is a scalar',
+                'PATH' => 'takes a container, and a SQL expression is a scalar',
             ],
             'skel' => [
                 'case' => [
@@ -1087,6 +1177,14 @@ final class MapData
                     'tpl' => '(-{0})',
                     'ret' => 'NUM',
                 ],
+                '??' => [
+                    'tpl' => 'COALESCE({0}, {1})',
+                    'ret' => '@unify:0,1',
+                ],
+                '???' => [
+                    'tpl' => 'COALESCE(NULLIF(REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\'), \'\'), {1})',
+                    'ret' => '@unify:0,1',
+                ],
                 '&' => [
                     'variants' => [
                         'text' => 'CONCAT({0}, {1})',
@@ -1375,6 +1473,28 @@ final class MapData
                 ],
                 'RREPLACE' => 'SEL replacement syntax is $0-$9 and MariaDB\'s is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express',
                 'RGROUPS' => 'yields a list, and a SQL expression is a scalar',
+                'IS_NULL' => [
+                    'tpl' => '({0} IS NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'IS_NOT_NULL' => [
+                    'tpl' => '({0} IS NOT NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'COALESCE' => [
+                    'tpl' => 'COALESCE({*})',
+                    'ret' => '@unify:0,1,2,3,4,5,6,7,8,9',
+                ],
+                'IS_BLANK' => [
+                    'tpl' => '(({0} IS NULL) OR (REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\') = \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'IS_PRESENT' => [
+                    'tpl' => '(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, \'^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$\', \'\') <> \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'GET' => 'takes a container, and a SQL expression is a scalar',
+                'PATH' => 'takes a container, and a SQL expression is a scalar',
             ],
             'skel' => [
                 'case' => [
@@ -1452,6 +1572,14 @@ final class MapData
                 'NEG' => [
                     'tpl' => '(-{numericCast:0})',
                     'ret' => 'NUM',
+                ],
+                '??' => [
+                    'tpl' => 'COALESCE({0}, {1})',
+                    'ret' => '@unify:0,1',
+                ],
+                '???' => [
+                    'tpl' => 'COALESCE(NULLIF(btrim({textCast:0}, E\' \\t\\r\\n\'), \'\'), {1})',
+                    'ret' => '@unify:0,1',
                 ],
                 '&' => [
                     'variants' => [
@@ -1734,6 +1862,28 @@ final class MapData
                 ],
                 'RREPLACE' => 'regular expressions are not ANSI; set per dialect',
                 'RGROUPS' => 'yields a list, and a SQL expression is a scalar',
+                'IS_NULL' => [
+                    'tpl' => '({textCast:0} IS NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'IS_NOT_NULL' => [
+                    'tpl' => '({textCast:0} IS NOT NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'COALESCE' => [
+                    'tpl' => 'COALESCE({*})',
+                    'ret' => '@unify:0,1,2,3,4,5,6,7,8,9',
+                ],
+                'IS_BLANK' => [
+                    'tpl' => '(({textCast:0} IS NULL) OR (btrim({textCast:0}, E\' \\t\\r\\n\') = \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'IS_PRESENT' => [
+                    'tpl' => '(({textCast:0} IS NOT NULL) AND (btrim({textCast:0}, E\' \\t\\r\\n\') <> \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'GET' => 'takes a container, and a SQL expression is a scalar',
+                'PATH' => 'takes a container, and a SQL expression is a scalar',
             ],
             'skel' => [
                 'case' => [
@@ -1815,6 +1965,14 @@ final class MapData
                     'tpl' => '(-{0})',
                     'ret' => 'NUM',
                     'caveat' => 'decimal-float',
+                ],
+                '??' => [
+                    'tpl' => 'COALESCE({0}, {1})',
+                    'ret' => '@unify:0,1',
+                ],
+                '???' => [
+                    'tpl' => 'COALESCE(NULLIF(trim({0}, \' \' || char(9) || char(13) || char(10)), \'\'), {1})',
+                    'ret' => '@unify:0,1',
                 ],
                 '&' => [
                     'variants' => [
@@ -2072,6 +2230,28 @@ final class MapData
                 'RFIND' => 'SQLite has no REGEXP function unless the application registers one; a default build raises "no such function: REGEXP"',
                 'RREPLACE' => 'regular expressions are not ANSI; set per dialect',
                 'RGROUPS' => 'yields a list, and a SQL expression is a scalar',
+                'IS_NULL' => [
+                    'tpl' => '({0} IS NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'IS_NOT_NULL' => [
+                    'tpl' => '({0} IS NOT NULL)',
+                    'ret' => 'BOOL',
+                ],
+                'COALESCE' => [
+                    'tpl' => 'COALESCE({*})',
+                    'ret' => '@unify:0,1,2,3,4,5,6,7,8,9',
+                ],
+                'IS_BLANK' => [
+                    'tpl' => '(({0} IS NULL) OR (trim({0}, \' \' || char(9) || char(13) || char(10)) = \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'IS_PRESENT' => [
+                    'tpl' => '(({0} IS NOT NULL) AND (trim({0}, \' \' || char(9) || char(13) || char(10)) <> \'\'))',
+                    'ret' => 'BOOL',
+                ],
+                'GET' => 'takes a container, and a SQL expression is a scalar',
+                'PATH' => 'takes a container, and a SQL expression is a scalar',
             ],
             'skel' => [
                 'case' => [
@@ -2136,6 +2316,8 @@ final class MapData
             '==' => [2, 2],
             '>' => [2, 2],
             '>=' => [2, 2],
+            '??' => [2, 2],
+            '???' => [2, 2],
             'AND' => [2, 2],
             'BAND' => [2, 2],
             'BOR' => [2, 2],
@@ -2154,6 +2336,7 @@ final class MapData
             'BTL' => [1, 1],
             'CEIL' => [1, 1],
             'CHAR' => [1, 1],
+            'COALESCE' => [1, null],
             'CODE' => [1, 1],
             'CRC32' => [1, 1],
             'DECODE_BASE64' => [1, 1],
@@ -2162,7 +2345,12 @@ final class MapData
             'FLOOR' => [1, 1],
             'FROM_HEX' => [1, 1],
             'FROM_UTF8' => [1, 1],
+            'GET' => [2, 3],
             'ISNUM' => [1, 1],
+            'IS_BLANK' => [1, 1],
+            'IS_NOT_NULL' => [1, 1],
+            'IS_NULL' => [1, 1],
+            'IS_PRESENT' => [1, 1],
             'LEFT' => [2, 2],
             'LEN' => [1, 1],
             'LOWER' => [1, 1],
@@ -2172,6 +2360,7 @@ final class MapData
             'MIN' => [1, null],
             'PADL' => [3, 3],
             'PADR' => [3, 3],
+            'PATH' => [2, 3],
             'POWER' => [2, 2],
             'REPEAT' => [2, 2],
             'REPLACE' => [3, 3],

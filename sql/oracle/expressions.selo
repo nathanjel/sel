@@ -162,6 +162,19 @@ NOT (1 > 2)
 "open" IN ("open", "held")
 "3.0" IN ("3")
 
+% --- coalescing --------------------------------------------------------------
+
+### entry: ops.??
+"a" ?? "b"
+10 ?? 20
+"hello" ?? "world"
+
+### entry: ops.???
+"a" ??? "b"
+"" ??? "fallback"
+"   " ??? "fallback"
+"text" ??? "alt"
+
 % --- text -------------------------------------------------------------------
 
 ### entry: funcs.UPPER
@@ -309,6 +322,35 @@ ISNUM("12.5")
 ISNUM(" 2")
 ISNUM("x")
 ISNUM("")
+
+% --- null safety and blanks --------------------------------------------------
+
+### entry: funcs.IS_NULL
+IS_NULL("abc")
+IS_NULL(123)
+IS_NULL("")
+
+### entry: funcs.IS_NOT_NULL
+IS_NOT_NULL("abc")
+IS_NOT_NULL(123)
+IS_NOT_NULL("")
+
+### entry: funcs.COALESCE
+COALESCE("a", "b")
+COALESCE(1, 2, 3)
+COALESCE("first", "second", "third")
+
+### entry: funcs.IS_BLANK
+IS_BLANK("")
+IS_BLANK("   ")
+IS_BLANK("hello")
+IS_BLANK(123)
+
+### entry: funcs.IS_PRESENT
+IS_PRESENT("hello")
+IS_PRESENT("")
+IS_PRESENT("   ")
+IS_PRESENT(123)
 
 % --- binary -----------------------------------------------------------------
 

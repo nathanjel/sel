@@ -27,18 +27,19 @@
 ;;; because LENGTH on a list is itself O(n).
 (defconstant +index-threshold+ 16)
 
-(defstruct (value (:constructor %make-value (kind scalar children)))
+(defstruct (value (:constructor %make-value (kind scalar children &optional is-list)))
   (kind :none :type keyword)     ; :none :text :bin :bool
   (scalar nil)
   (children nil :type list)      ; list of (key . value), insertion-ordered
   (tail nil :type list)          ; last cons of CHILDREN
   (count 0 :type fixnum)
-  (index nil))                   ; key -> cons cell, once COUNT reaches the threshold
+  (index nil)                    ; key -> cons cell, once COUNT reaches the threshold
+  (is-list nil :type boolean))
 
-(defun %value-with-children (kind scalar entries)
+(defun %value-with-children (kind scalar entries &optional is-list)
   "Build a value from an ordered list of (key . value) conses, wiring up the
 tail, count and index that keep lookup and append O(1)."
-  (let ((v (%make-value kind scalar entries)))
+  (let ((v (%make-value kind scalar entries is-list)))
     (setf (value-tail v) (last entries)
           (value-count v) (length entries))
     (when (>= (value-count v) +index-threshold+)
@@ -58,7 +59,8 @@ tail, count and index that keep lookup and append O(1)."
         (gethash key idx)
         (assoc key (value-children v) :test #'string=))))
 
-(defun make-none () (%make-value :none nil nil))
+(defun make-none () (%make-value :none nil nil nil))
+(defun make-null () (%make-value :none nil nil nil))
 
 (defun make-text (s)
   (unless (valid-utf8-string-p s)
@@ -88,7 +90,7 @@ tail, count and index that keep lookup and append O(1)."
 
 ;;; Builds a list keyed "1".."n". Used by `,` and by list-returning built-ins.
 (defun make-list-value (values)
-  (let ((v (make-none)))
+  (let ((v (%make-value :none nil nil t)))
     (loop for x in values
           for i from 1
           do (value-set v (format nil "~d" i) x))
@@ -102,6 +104,22 @@ tail, count and index that keep lookup and append O(1)."
 ;;; enum in C++, so only a predicate can be documented uniformly. These test the
 ;;; value's own kind and do not apply scalar context.
 (defun value-none-p (v) (eq (value-kind v) :none))
+
+(defun value-null-p (v)
+  (and (eq (value-kind v) :none)
+       (zerop (value-size v))
+       (not (value-is-list v))))
+
+(defun value-vacuous-p (v)
+  (cond
+    ((value-null-p v) t)
+    ((and (eq (value-kind v) :none) (zerop (value-size v))) t)
+    ((and (eq (value-kind v) :text) (zerop (value-size v)))
+     (let ((s (value-scalar v)))
+       (or (zerop (length s))
+           (every (lambda (c) (member c '(#\Space #\Tab #\Return #\Newline))) s))))
+    (t nil)))
+
 (defun value-text-p (v) (eq (value-kind v) :text))
 (defun value-bin-p (v) (eq (value-kind v) :bin))
 (defun value-bool-p (v) (eq (value-kind v) :bool))
@@ -140,7 +158,9 @@ tail, count and index that keep lookup and append O(1)."
   (let ((cur v)
         (guard 0))
     (loop while (eq (value-kind cur) :none)
-          do (when (null (value-children cur))
+          do (when (value-null-p cur)
+               (fail "E_NULL" "value is NULL" at))
+             (when (null (value-children cur))
                (fail "E_NO_SCALAR" "value has no scalar and no children" at))
              (setf cur (cdr (first (value-children cur))))
              (incf guard)
@@ -215,7 +235,8 @@ tail, count and index that keep lookup and append O(1)."
    (value-kind v)
    (if (eq (value-kind v) :bin) (copy-seq (value-scalar v)) (value-scalar v))
    (loop for (k . child) in (value-children v)
-         collect (cons k (value-copy-at child (1+ depth) pos)))))
+         collect (cons k (value-copy-at child (1+ depth) pos)))
+   (value-is-list v)))
 
 ;;; --- structural equality (§5.4) --------------------------------------------
 

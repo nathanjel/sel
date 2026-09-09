@@ -1,0 +1,89 @@
+% NULL semantics, coalescing operators, and safety functions.
+
+### name: op.coalesce.basic
+--- dialect
+mariadb
+--- source
+QTY ?? 0
+--- bindings
+{"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}
+--- expect
+COALESCE(`qty`, 0)
+===
+
+### name: op.coalesce.chain
+--- dialect
+mariadb
+--- source
+A ?? B ?? 10
+--- bindings
+{"A": {"kind": "column", "column": "a", "type": "NUM"}, "B": {"kind": "column", "column": "b", "type": "NUM"}}
+--- expect
+COALESCE(`a`, COALESCE(`b`, 10))
+===
+
+### name: op.vacuous.basic
+--- dialect
+mariadb
+--- source
+CODE ??? "N/A"
+--- bindings
+{"CODE": {"kind": "column", "column": "code", "type": "TEXT"}}
+--- expect
+COALESCE(NULLIF(REGEXP_REPLACE(`code`, '^[ \\t\\r\\n]+|[ \\t\\r\\n]+$', ''), ''), 'N/A')
+===
+
+### name: func.is-null.column
+--- dialect
+mariadb
+--- source
+IS_NULL(DISCOUNT)
+--- bindings
+{"DISCOUNT": {"kind": "column", "column": "discount", "type": "NUM"}}
+--- expect
+(`discount` IS NULL)
+===
+
+### name: func.is-not-null.column
+--- dialect
+mariadb
+--- source
+IS_NOT_NULL(DISCOUNT)
+--- bindings
+{"DISCOUNT": {"kind": "column", "column": "discount", "type": "NUM"}}
+--- expect
+(`discount` IS NOT NULL)
+===
+
+### name: func.coalesce.multiple
+--- dialect
+mariadb
+--- source
+COALESCE(A, B, 0)
+--- bindings
+{"A": {"kind": "column", "column": "a", "type": "NUM"}, "B": {"kind": "column", "column": "b", "type": "NUM"}}
+--- expect
+COALESCE(`a`, `b`, 0)
+===
+
+### name: func.is-blank.column
+--- dialect
+mariadb
+--- source
+IS_BLANK(POSTCODE)
+--- bindings
+{"POSTCODE": {"kind": "column", "column": "postcode", "type": "TEXT"}}
+--- expect
+((`postcode` IS NULL) OR (REGEXP_REPLACE(`postcode`, '^[ \\t\\r\\n]+|[ \\t\\r\\n]+$', '') = ''))
+===
+
+### name: func.is-present.column
+--- dialect
+mariadb
+--- source
+IS_PRESENT(POSTCODE)
+--- bindings
+{"POSTCODE": {"kind": "column", "column": "postcode", "type": "TEXT"}}
+--- expect
+((`postcode` IS NOT NULL) AND (REGEXP_REPLACE(`postcode`, '^[ \\t\\r\\n]+|[ \\t\\r\\n]+$', '') <> ''))
+===

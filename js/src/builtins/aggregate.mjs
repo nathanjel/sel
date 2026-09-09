@@ -72,7 +72,7 @@ define({
 define({
   name: 'FILTER', min: 2, max: 3, lazy: true, binds: true,
   fn: (args, ctx) => {
-    const out = Value.none();
+    const out = new Value(NONE, null, true);
     walk(args, ctx, (r, key, item, body) => {
       if (r.asBool(body.pos)) out.set(key, item.clone());
       return undefined;

@@ -62,6 +62,7 @@ built at run time is validated when the call executes.
 | `E_NOT_BIN` | BIN was required and could not be produced |
 | `E_NOT_BOOL` | a condition or logical operand is not BOOL — there is no truthiness |
 | `E_NOT_INT` | an integer was required and a fractional number was given |
+| `E_NULL` | an operation required a non-null scalar and NULL was given |
 | `E_EXPECT_SYMBOL` | an aggregate's three-argument form was given something other than a bare identifier as its binder |
 
 ### Values

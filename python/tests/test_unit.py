@@ -143,7 +143,8 @@ def test_clone_is_deep():
 
 def test_scalar_context_takes_first_child():
     assert evaluate('(7, 8)').as_text() == '7'
-    raises('E_NO_SCALAR', Value.none().as_text)
+    raises('E_NULL', Value.none().as_text)
+    raises('E_NO_SCALAR', Value.list([]).as_text)
 
 
 def test_dump_escapes():

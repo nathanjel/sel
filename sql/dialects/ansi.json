@@ -48,6 +48,14 @@
       "tpl": "(-{numericCast:0})",
       "ret": "NUM"
     },
+    "??": {
+      "tpl": "COALESCE({0}, {1})",
+      "ret": "@unify:0,1"
+    },
+    "???": {
+      "tpl": "COALESCE(NULLIF(TRIM(BOTH FROM {textCast:0}), ''), {1})",
+      "ret": "@unify:0,1"
+    },
     "&": {
       "variants": {
         "text": "({textCast:0} || {textCast:1})"
@@ -249,7 +257,29 @@
     "RMATCH": "regular expressions are not ANSI; set per dialect",
     "RFIND": "regular expressions are not ANSI; set per dialect",
     "RREPLACE": "regular expressions are not ANSI; set per dialect",
-    "RGROUPS": "yields a list, and a SQL expression is a scalar"
+    "RGROUPS": "yields a list, and a SQL expression is a scalar",
+    "IS_NULL": {
+      "tpl": "({textCast:0} IS NULL)",
+      "ret": "BOOL"
+    },
+    "IS_NOT_NULL": {
+      "tpl": "({textCast:0} IS NOT NULL)",
+      "ret": "BOOL"
+    },
+    "COALESCE": {
+      "tpl": "COALESCE({*})",
+      "ret": "@unify:0,1,2,3,4,5,6,7,8,9"
+    },
+    "IS_BLANK": {
+      "tpl": "(({textCast:0} IS NULL) OR (TRIM(BOTH FROM {textCast:0}) = ''))",
+      "ret": "BOOL"
+    },
+    "IS_PRESENT": {
+      "tpl": "(({textCast:0} IS NOT NULL) AND (TRIM(BOTH FROM {textCast:0}) <> ''))",
+      "ret": "BOOL"
+    },
+    "GET": "takes a container, and a SQL expression is a scalar",
+    "PATH": "takes a container, and a SQL expression is a scalar"
   },
   "skel": {
     "case": {

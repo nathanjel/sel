@@ -104,7 +104,7 @@ inside N counts as bound, so ALL((1, 2), _ > 0) is constant and
 ALL(ITEMS, _ > 0) is not -- the same rule the evaluator applies, which is what
 lets the whole node be handed to it."
   (case (snode-kind n)
-    ((:num :text :bool) t)
+    ((:num :text :bool :null) t)
     (:var (and (member (sel::node-s n) bound :test #'equal) t))
     (:un (is-constant (sel::node-l n) bound))
     ((:bin :index) (and (is-constant (sel::node-l n) bound)
@@ -228,7 +228,7 @@ accepts was decided by the host."
          node
          (let ((cell (assoc (sel::node-s node) defs :test #'equal)))
            (if cell (cdr cell) node))))
-    ((:num :text :bool) node)
+    ((:num :text :bool :null) node)
     (:assign (refuse "E_SQL_ASSIGN"
                      "an assignment here would have to happen while the query ~
 runs, and a SQL expression cannot assign" (snode-pos node)))

@@ -38,13 +38,14 @@ final class Parser
     private const BP_AND = 6;
     private const BP_NOT = 7;       // prefix
     private const BP_COMPARE = 8;   // non-associative
-    private const BP_BOR = 9;
-    private const BP_BXOR = 10;
-    private const BP_BAND = 11;
-    private const BP_CONCAT = 12;   // &
-    private const BP_ADD = 13;      // + -
-    private const BP_MUL = 14;      // * / %
-    private const BP_NEG = 15;      // prefix
+    private const BP_COALESCE = 9;  // ?? ??? (right associative)
+    private const BP_BOR = 10;
+    private const BP_BXOR = 11;
+    private const BP_BAND = 12;
+    private const BP_CONCAT = 13;   // &
+    private const BP_ADD = 14;      // + -
+    private const BP_MUL = 15;      // * / %
+    private const BP_NEG = 16;      // prefix
 
     // BP_SEQ and BP_LIST are deliberately unused: `;` and `,` build N-ary nodes,
     // so they stay hand-written loops in parseSequence/parseList rather than
@@ -69,6 +70,8 @@ final class Parser
     {
         if (self::$infixOps === null) {
             $t = [
+                '??' => [self::BP_COALESCE, 'R'],
+                '???' => [self::BP_COALESCE, 'R'],
                 '&' => [self::BP_CONCAT, 'L'],
                 '+' => [self::BP_ADD, 'L'], '-' => [self::BP_ADD, 'L'],
                 '*' => [self::BP_MUL, 'L'], '/' => [self::BP_MUL, 'L'], '%' => [self::BP_MUL, 'L'],
@@ -368,7 +371,7 @@ final class Parser
 
             $this->next();
 
-            if ($assoc === 'R') {
+            if (in_array($t['value'], self::ASSIGN_OPS, true)) {
                 // Assignment. The target is validated against the AST shape, not
                 // against a value, which is what makes `(A) = 1` a compile error.
                 // Parsing the right side at $bp rather than $bp + 1 is what makes
@@ -388,6 +391,12 @@ final class Parser
                 } finally {
                     $this->leave();
                 }
+                continue;
+            }
+
+            if ($assoc === 'R') {
+                $right = $this->parseTerm($bp);
+                $left = ['t' => 'bin', 'op' => $t['value'], 'l' => $left, 'r' => $right, 'pos' => $t];
                 continue;
             }
 
@@ -503,6 +512,10 @@ final class Parser
                 if ($t['value'] === 'TRUE' || $t['value'] === 'FALSE') {
                     $this->next();
                     return ['t' => 'bool', 'v' => $t['value'] === 'TRUE', 'pos' => $t];
+                }
+                if ($t['value'] === 'NULL') {
+                    $this->next();
+                    return ['t' => 'null', 'pos' => $t];
                 }
                 $after = $this->toks[$this->i + 1] ?? null;
                 if ($after !== null && $after['type'] === 'op' && $after['value'] === '(') {

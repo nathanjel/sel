@@ -12,12 +12,13 @@
 
 ;;; Longest match first: `$<=` must not lex as `$<` followed by `=`.
 (defparameter +operators+
-  '("$==" "$!=" "$<=" "$>="
+  '("???" "??"
+    "$==" "$!=" "$<=" "$>="
     "$<" "$>" "==" "!=" "<=" ">=" "+=" "-=" "*=" "/=" "%=" "&="
     "+" "-" "*" "/" "%" "&" "=" "<" ">" "(" ")" "[" "]" "," ";"))
 
 (defparameter +reserved+
-  '("TRUE" "FALSE" "AND" "OR" "NOT" "XOR" "EQL" "IN" "BAND" "BOR" "BXOR"))
+  '("TRUE" "FALSE" "NULL" "AND" "OR" "NOT" "XOR" "EQL" "IN" "BAND" "BOR" "BXOR"))
 
 (defun reservedp (word) (member word +reserved+ :test #'string=))
 

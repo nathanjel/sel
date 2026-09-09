@@ -58,6 +58,14 @@ export const DIALECTS = {
         "tpl": "(-{numericCast:0})",
         "ret": "NUM"
       },
+      "??": {
+        "tpl": "COALESCE({0}, {1})",
+        "ret": "@unify:0,1"
+      },
+      "???": {
+        "tpl": "COALESCE(NULLIF(TRIM(BOTH FROM {textCast:0}), ''), {1})",
+        "ret": "@unify:0,1"
+      },
       "&": {
         "variants": {
           "text": "({textCast:0} || {textCast:1})"
@@ -259,7 +267,29 @@ export const DIALECTS = {
       "RMATCH": "regular expressions are not ANSI; set per dialect",
       "RFIND": "regular expressions are not ANSI; set per dialect",
       "RREPLACE": "regular expressions are not ANSI; set per dialect",
-      "RGROUPS": "yields a list, and a SQL expression is a scalar"
+      "RGROUPS": "yields a list, and a SQL expression is a scalar",
+      "IS_NULL": {
+        "tpl": "({textCast:0} IS NULL)",
+        "ret": "BOOL"
+      },
+      "IS_NOT_NULL": {
+        "tpl": "({textCast:0} IS NOT NULL)",
+        "ret": "BOOL"
+      },
+      "COALESCE": {
+        "tpl": "COALESCE({*})",
+        "ret": "@unify:0,1,2,3,4,5,6,7,8,9"
+      },
+      "IS_BLANK": {
+        "tpl": "(({textCast:0} IS NULL) OR (TRIM(BOTH FROM {textCast:0}) = ''))",
+        "ret": "BOOL"
+      },
+      "IS_PRESENT": {
+        "tpl": "(({textCast:0} IS NOT NULL) AND (TRIM(BOTH FROM {textCast:0}) <> ''))",
+        "ret": "BOOL"
+      },
+      "GET": "takes a container, and a SQL expression is a scalar",
+      "PATH": "takes a container, and a SQL expression is a scalar"
     },
     "skel": {
       "case": {
@@ -339,6 +369,14 @@ export const DIALECTS = {
       "NEG": {
         "tpl": "(-{0})",
         "ret": "NUM"
+      },
+      "??": {
+        "tpl": "COALESCE({0}, {1})",
+        "ret": "@unify:0,1"
+      },
+      "???": {
+        "tpl": "COALESCE(NULLIF(REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), {1})",
+        "ret": "@unify:0,1"
       },
       "&": {
         "variants": {
@@ -633,7 +671,29 @@ export const DIALECTS = {
         "caveat": "regex-engine"
       },
       "RREPLACE": "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express",
-      "RGROUPS": "yields a list, and a SQL expression is a scalar"
+      "RGROUPS": "yields a list, and a SQL expression is a scalar",
+      "IS_NULL": {
+        "tpl": "({0} IS NULL)",
+        "ret": "BOOL"
+      },
+      "IS_NOT_NULL": {
+        "tpl": "({0} IS NOT NULL)",
+        "ret": "BOOL"
+      },
+      "COALESCE": {
+        "tpl": "COALESCE({*})",
+        "ret": "@unify:0,1,2,3,4,5,6,7,8,9"
+      },
+      "IS_BLANK": {
+        "tpl": "(({0} IS NULL) OR (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))",
+        "ret": "BOOL"
+      },
+      "IS_PRESENT": {
+        "tpl": "(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))",
+        "ret": "BOOL"
+      },
+      "GET": "takes a container, and a SQL expression is a scalar",
+      "PATH": "takes a container, and a SQL expression is a scalar"
     },
     "skel": {
       "case": {
@@ -715,6 +775,14 @@ export const DIALECTS = {
         "tpl": "(-{0})",
         "ret": "NUM"
       },
+      "??": {
+        "tpl": "COALESCE({0}, {1})",
+        "ret": "@unify:0,1"
+      },
+      "???": {
+        "tpl": "COALESCE(NULLIF(REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), {1})",
+        "ret": "@unify:0,1"
+      },
       "&": {
         "variants": {
           "text": "CONCAT({0}, {1})",
@@ -1008,7 +1076,29 @@ export const DIALECTS = {
         "caveat": "regex-engine"
       },
       "RREPLACE": "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express",
-      "RGROUPS": "yields a list, and a SQL expression is a scalar"
+      "RGROUPS": "yields a list, and a SQL expression is a scalar",
+      "IS_NULL": {
+        "tpl": "({0} IS NULL)",
+        "ret": "BOOL"
+      },
+      "IS_NOT_NULL": {
+        "tpl": "({0} IS NOT NULL)",
+        "ret": "BOOL"
+      },
+      "COALESCE": {
+        "tpl": "COALESCE({*})",
+        "ret": "@unify:0,1,2,3,4,5,6,7,8,9"
+      },
+      "IS_BLANK": {
+        "tpl": "(({0} IS NULL) OR (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))",
+        "ret": "BOOL"
+      },
+      "IS_PRESENT": {
+        "tpl": "(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))",
+        "ret": "BOOL"
+      },
+      "GET": "takes a container, and a SQL expression is a scalar",
+      "PATH": "takes a container, and a SQL expression is a scalar"
     },
     "skel": {
       "case": {
@@ -1089,6 +1179,14 @@ export const DIALECTS = {
         "tpl": "(-{0})",
         "ret": "NUM"
       },
+      "??": {
+        "tpl": "COALESCE({0}, {1})",
+        "ret": "@unify:0,1"
+      },
+      "???": {
+        "tpl": "COALESCE(NULLIF(REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), {1})",
+        "ret": "@unify:0,1"
+      },
       "&": {
         "variants": {
           "text": "CONCAT({0}, {1})",
@@ -1382,7 +1480,29 @@ export const DIALECTS = {
         "caveat": "regex-engine"
       },
       "RREPLACE": "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express",
-      "RGROUPS": "yields a list, and a SQL expression is a scalar"
+      "RGROUPS": "yields a list, and a SQL expression is a scalar",
+      "IS_NULL": {
+        "tpl": "({0} IS NULL)",
+        "ret": "BOOL"
+      },
+      "IS_NOT_NULL": {
+        "tpl": "({0} IS NOT NULL)",
+        "ret": "BOOL"
+      },
+      "COALESCE": {
+        "tpl": "COALESCE({*})",
+        "ret": "@unify:0,1,2,3,4,5,6,7,8,9"
+      },
+      "IS_BLANK": {
+        "tpl": "(({0} IS NULL) OR (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))",
+        "ret": "BOOL"
+      },
+      "IS_PRESENT": {
+        "tpl": "(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))",
+        "ret": "BOOL"
+      },
+      "GET": "takes a container, and a SQL expression is a scalar",
+      "PATH": "takes a container, and a SQL expression is a scalar"
     },
     "skel": {
       "case": {
@@ -1460,6 +1580,14 @@ export const DIALECTS = {
       "NEG": {
         "tpl": "(-{numericCast:0})",
         "ret": "NUM"
+      },
+      "??": {
+        "tpl": "COALESCE({0}, {1})",
+        "ret": "@unify:0,1"
+      },
+      "???": {
+        "tpl": "COALESCE(NULLIF(btrim({textCast:0}, E' \\t\\r\\n'), ''), {1})",
+        "ret": "@unify:0,1"
       },
       "&": {
         "variants": {
@@ -1750,7 +1878,29 @@ export const DIALECTS = {
         "caveat": "regex-engine"
       },
       "RREPLACE": "regular expressions are not ANSI; set per dialect",
-      "RGROUPS": "yields a list, and a SQL expression is a scalar"
+      "RGROUPS": "yields a list, and a SQL expression is a scalar",
+      "IS_NULL": {
+        "tpl": "({textCast:0} IS NULL)",
+        "ret": "BOOL"
+      },
+      "IS_NOT_NULL": {
+        "tpl": "({textCast:0} IS NOT NULL)",
+        "ret": "BOOL"
+      },
+      "COALESCE": {
+        "tpl": "COALESCE({*})",
+        "ret": "@unify:0,1,2,3,4,5,6,7,8,9"
+      },
+      "IS_BLANK": {
+        "tpl": "(({textCast:0} IS NULL) OR (btrim({textCast:0}, E' \\t\\r\\n') = ''))",
+        "ret": "BOOL"
+      },
+      "IS_PRESENT": {
+        "tpl": "(({textCast:0} IS NOT NULL) AND (btrim({textCast:0}, E' \\t\\r\\n') <> ''))",
+        "ret": "BOOL"
+      },
+      "GET": "takes a container, and a SQL expression is a scalar",
+      "PATH": "takes a container, and a SQL expression is a scalar"
     },
     "skel": {
       "case": {
@@ -1832,6 +1982,14 @@ export const DIALECTS = {
         "tpl": "(-{0})",
         "ret": "NUM",
         "caveat": "decimal-float"
+      },
+      "??": {
+        "tpl": "COALESCE({0}, {1})",
+        "ret": "@unify:0,1"
+      },
+      "???": {
+        "tpl": "COALESCE(NULLIF(trim({0}, ' ' || char(9) || char(13) || char(10)), ''), {1})",
+        "ret": "@unify:0,1"
       },
       "&": {
         "variants": {
@@ -2091,7 +2249,29 @@ export const DIALECTS = {
       "RMATCH": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\"",
       "RFIND": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\"",
       "RREPLACE": "regular expressions are not ANSI; set per dialect",
-      "RGROUPS": "yields a list, and a SQL expression is a scalar"
+      "RGROUPS": "yields a list, and a SQL expression is a scalar",
+      "IS_NULL": {
+        "tpl": "({0} IS NULL)",
+        "ret": "BOOL"
+      },
+      "IS_NOT_NULL": {
+        "tpl": "({0} IS NOT NULL)",
+        "ret": "BOOL"
+      },
+      "COALESCE": {
+        "tpl": "COALESCE({*})",
+        "ret": "@unify:0,1,2,3,4,5,6,7,8,9"
+      },
+      "IS_BLANK": {
+        "tpl": "(({0} IS NULL) OR (trim({0}, ' ' || char(9) || char(13) || char(10)) = ''))",
+        "ret": "BOOL"
+      },
+      "IS_PRESENT": {
+        "tpl": "(({0} IS NOT NULL) AND (trim({0}, ' ' || char(9) || char(13) || char(10)) <> ''))",
+        "ret": "BOOL"
+      },
+      "GET": "takes a container, and a SQL expression is a scalar",
+      "PATH": "takes a container, and a SQL expression is a scalar"
     },
     "skel": {
       "case": {
@@ -2231,6 +2411,14 @@ export const RULES = {
       2,
       2
     ],
+    "??": [
+      2,
+      2
+    ],
+    "???": [
+      2,
+      2
+    ],
     "AND": [
       2,
       2
@@ -2297,6 +2485,10 @@ export const RULES = {
       1,
       1
     ],
+    "COALESCE": [
+      1,
+      null
+    ],
     "CODE": [
       1,
       1
@@ -2329,7 +2521,27 @@ export const RULES = {
       1,
       1
     ],
+    "GET": [
+      2,
+      3
+    ],
     "ISNUM": [
+      1,
+      1
+    ],
+    "IS_BLANK": [
+      1,
+      1
+    ],
+    "IS_NOT_NULL": [
+      1,
+      1
+    ],
+    "IS_NULL": [
+      1,
+      1
+    ],
+    "IS_PRESENT": [
       1,
       1
     ],
@@ -2367,6 +2579,10 @@ export const RULES = {
     ],
     "PADR": [
       3,
+      3
+    ],
+    "PATH": [
+      2,
       3
     ],
     "POWER": [

@@ -66,6 +66,14 @@ RAW: list[dict[str, Any]] = [{
             "tpl": "(-{numericCast:0})",
             "ret": "NUM",
         },
+        "??": {
+            "tpl": "COALESCE({0}, {1})",
+            "ret": "@unify:0,1",
+        },
+        "???": {
+            "tpl": "COALESCE(NULLIF(TRIM(BOTH FROM {textCast:0}), ''), {1})",
+            "ret": "@unify:0,1",
+        },
         "&": {
             "variants": {
                 "text": "({textCast:0} || {textCast:1})",
@@ -268,6 +276,28 @@ RAW: list[dict[str, Any]] = [{
         "RFIND": "regular expressions are not ANSI; set per dialect",
         "RREPLACE": "regular expressions are not ANSI; set per dialect",
         "RGROUPS": "yields a list, and a SQL expression is a scalar",
+        "IS_NULL": {
+            "tpl": "({textCast:0} IS NULL)",
+            "ret": "BOOL",
+        },
+        "IS_NOT_NULL": {
+            "tpl": "({textCast:0} IS NOT NULL)",
+            "ret": "BOOL",
+        },
+        "COALESCE": {
+            "tpl": "COALESCE({*})",
+            "ret": "@unify:0,1,2,3,4,5,6,7,8,9",
+        },
+        "IS_BLANK": {
+            "tpl": "(({textCast:0} IS NULL) OR (TRIM(BOTH FROM {textCast:0}) = ''))",
+            "ret": "BOOL",
+        },
+        "IS_PRESENT": {
+            "tpl": "(({textCast:0} IS NOT NULL) AND (TRIM(BOTH FROM {textCast:0}) <> ''))",
+            "ret": "BOOL",
+        },
+        "GET": "takes a container, and a SQL expression is a scalar",
+        "PATH": "takes a container, and a SQL expression is a scalar",
     },
     "skel": {
         "case": {
@@ -361,6 +391,10 @@ RAW: list[dict[str, Any]] = [{
         "NEG": {
             "tpl": "(-{0})",
             "ret": "NUM",
+        },
+        "???": {
+            "tpl": "COALESCE(NULLIF(REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), {1})",
+            "ret": "@unify:0,1",
         },
     },
     "funcs": {
@@ -512,6 +546,22 @@ RAW: list[dict[str, Any]] = [{
             "ret": "TEXT",
             "caveat": "unicode-case",
         },
+        "IS_NULL": {
+            "tpl": "({0} IS NULL)",
+            "ret": "BOOL",
+        },
+        "IS_NOT_NULL": {
+            "tpl": "({0} IS NOT NULL)",
+            "ret": "BOOL",
+        },
+        "IS_BLANK": {
+            "tpl": "(({0} IS NULL) OR (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))",
+            "ret": "BOOL",
+        },
+        "IS_PRESENT": {
+            "tpl": "(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))",
+            "ret": "BOOL",
+        },
     },
     "skel": {
         "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
@@ -610,6 +660,10 @@ RAW: list[dict[str, Any]] = [{
             },
             "ret": "@concat",
             "caveat": "concat-null",
+        },
+        "???": {
+            "tpl": "COALESCE(NULLIF(btrim({textCast:0}, E' \\t\\r\\n'), ''), {1})",
+            "ret": "@unify:0,1",
         },
     },
     "funcs": {
@@ -770,6 +824,22 @@ RAW: list[dict[str, Any]] = [{
             "tpl": "floor({numericCast:0})",
             "ret": "NUM",
         },
+        "IS_NULL": {
+            "tpl": "({textCast:0} IS NULL)",
+            "ret": "BOOL",
+        },
+        "IS_NOT_NULL": {
+            "tpl": "({textCast:0} IS NOT NULL)",
+            "ret": "BOOL",
+        },
+        "IS_BLANK": {
+            "tpl": "(({textCast:0} IS NULL) OR (btrim({textCast:0}, E' \\t\\r\\n') = ''))",
+            "ret": "BOOL",
+        },
+        "IS_PRESENT": {
+            "tpl": "(({textCast:0} IS NOT NULL) AND (btrim({textCast:0}, E' \\t\\r\\n') <> ''))",
+            "ret": "BOOL",
+        },
     },
     "notes": {
         "purpose": "PostgreSQL 15 or later. 15 is where regexp_instr arrived, which RFIND needs; everything else here works further back.",
@@ -903,6 +973,10 @@ RAW: list[dict[str, Any]] = [{
         "BAND": "SQLite's & is integer-only and has no meaning over blobs",
         "BOR": "SQLite's | is integer-only and has no meaning over blobs",
         "BXOR": "SQLite has no XOR operator at all, over integers or blobs",
+        "???": {
+            "tpl": "COALESCE(NULLIF(trim({0}, ' ' || char(9) || char(13) || char(10)), ''), {1})",
+            "ret": "@unify:0,1",
+        },
     },
     "funcs": {
         "UPPER": {
@@ -1032,6 +1106,22 @@ RAW: list[dict[str, Any]] = [{
         "CRC32": "SQLite has no CRC32 function in a default build",
         "RMATCH": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\"",
         "RFIND": "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\"",
+        "IS_NULL": {
+            "tpl": "({0} IS NULL)",
+            "ret": "BOOL",
+        },
+        "IS_NOT_NULL": {
+            "tpl": "({0} IS NOT NULL)",
+            "ret": "BOOL",
+        },
+        "IS_BLANK": {
+            "tpl": "(({0} IS NULL) OR (trim({0}, ' ' || char(9) || char(13) || char(10)) = ''))",
+            "ret": "BOOL",
+        },
+        "IS_PRESENT": {
+            "tpl": "(({0} IS NOT NULL) AND (trim({0}, ' ' || char(9) || char(13) || char(10)) <> ''))",
+            "ret": "BOOL",
+        },
     },
     "notes": {
         "purpose": "SQLite 3.35 or later. 3.35 is where the math functions can be built in, which ceil, floor, trunc, sign and pow all need (SQLITE_ENABLE_MATH_FUNCTIONS); a build without them refuses at run time rather than here, which is the one thing this document cannot check for you.",

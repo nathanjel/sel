@@ -128,7 +128,8 @@ b\"c\\d")))
     (sel:value-set nested "1" (sel:make-text "first"))
     (sel:value-set nested "2" (sel:make-text "second"))
     (is (string= "first" (sel:as-text nested))))
-  (raises "E_NO_SCALAR" (sel:as-text (sel:make-none)))
+  (raises "E_NULL" (sel:as-text (sel:make-none)))
+  (raises "E_NO_SCALAR" (sel:as-text (sel:make-list-value nil)))
   (raises "E_NOT_BOOL" (sel:as-bool (sel:make-text "TRUE"))))
 
 (test host-api

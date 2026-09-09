@@ -41,7 +41,7 @@ using SNodePtr = std::shared_ptr<const SNode>;
 
 class SNode {
  public:
-  enum class T { Num, Text, Bool, Var, Index, Seq, List, Un, Bin, Assign, Call, CList };
+  enum class T { Num, Text, Bool, Null, Var, Index, Seq, List, Un, Bin, Assign, Call, CList };
 
   // A leaf, unchanged: num, text, bool, or a var stage 1 did not inline.
   static SNodePtr leaf(NodePtr n);

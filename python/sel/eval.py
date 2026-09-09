@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from . import decimal as D
-from .errors import MAX_DEPTH, Pos, fail
+from .errors import MAX_DEPTH, Pos, SelError, fail
 from .parser import Node
 from .utf8 import bytes_compare
 from .value import BIN, BOOL, NONE, TEXT, Value
@@ -136,6 +136,8 @@ def _dispatch(node: Node, ctx: Context) -> Value:
         return Value.text(node.v)
     if t == 'bool':
         return Value.bool(node.v)
+    if t == 'null':
+        return Value.null()
 
     if t == 'var':
         v = ctx.lookup(node.name)
@@ -181,7 +183,7 @@ def _eval_list(node: Node, ctx: Context) -> Value:
     """§5.9 — a value with children and no scalar contributes its children's
     values; anything else contributes itself. Keys are always renumbered from 1.
     """
-    out = Value.none()
+    out = Value(NONE, None, is_list=True)
     n = 0
     for item in node.items:
         v = eval_node(item, ctx)
@@ -205,7 +207,7 @@ def _eval_unary(node: Node, ctx: Context) -> Value:
 def _eval_binary(node: Node, ctx: Context) -> Value:
     op = node.op
 
-    # Short-circuit before either side is touched (§5.5).
+    # Short-circuit before either side is touched (§5.5, §5.6).
     if op == 'AND' or op == 'OR':
         left = eval_node(node.l, ctx).as_bool(node.l.pos)
         if op == 'AND' and not left:
@@ -213,6 +215,28 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
         if op == 'OR' and left:
             return Value.bool(True)
         return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
+
+    if op == '??':
+        try:
+            l = eval_node(node.l, ctx)
+        except SelError as e:
+            if e.code in ('E_NO_KEY', 'E_UNDEF_VAR'):
+                return eval_node(node.r, ctx)
+            raise
+        if l.is_null():
+            return eval_node(node.r, ctx)
+        return l
+
+    if op == '???':
+        try:
+            l = eval_node(node.l, ctx)
+        except SelError as e:
+            if e.code in ('E_NO_KEY', 'E_UNDEF_VAR'):
+                return eval_node(node.r, ctx)
+            raise
+        if l.is_vacuous():
+            return eval_node(node.r, ctx)
+        return l
 
     l = eval_node(node.l, ctx)
     r = eval_node(node.r, ctx)

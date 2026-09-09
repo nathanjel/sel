@@ -46,6 +46,9 @@ final class Evaluator
             case 'bool':
                 return Value::bool($node['v']);
 
+            case 'null':
+                return Value::null();
+
             case 'var':
                 $v = $ctx->lookup($node['name']);
                 if ($v === null) {
@@ -103,6 +106,7 @@ final class Evaluator
     private static function evalList(array $node, Context $ctx): Value
     {
         $out = Value::none();
+        $out->isList = true;
         $n = 0;
         foreach ($node['items'] as $item) {
             $v = self::evalNode($item, $ctx);
@@ -132,7 +136,7 @@ final class Evaluator
     {
         $op = $node['op'];
 
-        // Short-circuit before either side is touched (§5.5).
+        // Short-circuit before either side is touched (§5.5, §5.6).
         if ($op === 'AND' || $op === 'OR') {
             $left = self::evalNode($node['l'], $ctx)->asBool($node['l']['pos']);
             if ($op === 'AND' && !$left) {
@@ -142,6 +146,36 @@ final class Evaluator
                 return Value::bool(true);
             }
             return Value::bool(self::evalNode($node['r'], $ctx)->asBool($node['r']['pos']));
+        }
+
+        if ($op === '??') {
+            try {
+                $l = self::evalNode($node['l'], $ctx);
+            } catch (SelError $e) {
+                if ($e->code === 'E_NO_KEY' || $e->code === 'E_UNDEF_VAR') {
+                    return self::evalNode($node['r'], $ctx);
+                }
+                throw $e;
+            }
+            if ($l->isNull()) {
+                return self::evalNode($node['r'], $ctx);
+            }
+            return $l;
+        }
+
+        if ($op === '???') {
+            try {
+                $l = self::evalNode($node['l'], $ctx);
+            } catch (SelError $e) {
+                if ($e->code === 'E_NO_KEY' || $e->code === 'E_UNDEF_VAR') {
+                    return self::evalNode($node['r'], $ctx);
+                }
+                throw $e;
+            }
+            if ($l->isVacuous()) {
+                return self::evalNode($node['r'], $ctx);
+            }
+            return $l;
         }
 
         $l = self::evalNode($node['l'], $ctx);

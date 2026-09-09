@@ -12,6 +12,7 @@ SNode::T from_nt(NT t) {
     case NT::Num: return SNode::T::Num;
     case NT::Text: return SNode::T::Text;
     case NT::Bool: return SNode::T::Bool;
+    case NT::Null: return SNode::T::Null;
     case NT::Var: return SNode::T::Var;
     case NT::Index: return SNode::T::Index;
     case NT::Seq: return SNode::T::Seq;
@@ -113,6 +114,7 @@ std::string_view node_kind_name(SNode::T t) {
     case SNode::T::Num: return "num";
     case SNode::T::Text: return "text";
     case SNode::T::Bool: return "bool";
+    case SNode::T::Null: return "null";
     case SNode::T::Var: return "var";
     case SNode::T::Index: return "index";
     case SNode::T::Seq: return "seq";

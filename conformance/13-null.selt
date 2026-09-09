@@ -1,0 +1,575 @@
+# Conformance suite: NULL, coalescing operators, and safety functions.
+#
+# Normative. Every implementation must pass every case.
+
+### name: null.literal.upper
+--- source
+NULL
+--- expect
+none
+===
+
+### name: null.literal.lower
+--- source
+null
+--- expect
+none
+===
+
+### name: null.literal.mixed
+--- source
+Null
+--- expect
+none
+===
+
+### name: null.reserved.var
+--- note
+NULL parses as a literal, so assignment target check rejects it.
+--- source
+NULL = 1
+--- expect
+error E_BAD_ASSIGN at 1:1
+===
+
+### name: null.reserved.binder
+--- note
+NULL is a literal, so binder is not a bare name.
+--- source
+ALL((1), NULL, TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:10
+===
+
+%
+% --- loud refusal on unhandled NULL — E_NULL
+%
+
+### name: null.refuse.add.left
+--- source
+NULL + 1
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.add.right
+--- source
+1 + NULL
+--- expect
+error E_NULL at 1:5
+===
+
+### name: null.refuse.sub.left
+--- source
+NULL - 1
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.sub.right
+--- source
+1 - NULL
+--- expect
+error E_NULL at 1:5
+===
+
+### name: null.refuse.mul.left
+--- source
+NULL * 2
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.mul.right
+--- source
+2 * NULL
+--- expect
+error E_NULL at 1:5
+===
+
+### name: null.refuse.div.left
+--- source
+NULL / 2
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.div.right
+--- source
+4 / NULL
+--- expect
+error E_NULL at 1:5
+===
+
+### name: null.refuse.mod.left
+--- source
+NULL % 2
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.mod.right
+--- source
+5 % NULL
+--- expect
+error E_NULL at 1:5
+===
+
+### name: null.refuse.neg
+--- source
+-NULL
+--- expect
+error E_NULL at 1:2
+===
+
+### name: null.refuse.concat.left
+--- source
+NULL & "x"
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.concat.right
+--- source
+"x" & NULL
+--- expect
+error E_NULL at 1:7
+===
+
+### name: null.refuse.num-eq
+--- source
+NULL == 0
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.num-ne
+--- source
+NULL != 0
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.num-lt
+--- source
+NULL < 5
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.num-gt
+--- source
+5 > NULL
+--- expect
+error E_NULL at 1:5
+===
+
+### name: null.refuse.num-le
+--- source
+NULL <= 5
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.num-ge
+--- source
+NULL >= 5
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.str-eq
+--- source
+NULL $== ""
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.str-ne
+--- source
+NULL $!= ""
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.str-lt
+--- source
+NULL $< "a"
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.bool.not
+--- source
+NOT NULL
+--- expect
+error E_NULL at 1:5
+===
+
+### name: null.refuse.bool.and
+--- source
+NULL AND TRUE
+--- expect
+error E_NULL at 1:1
+===
+
+### name: null.refuse.bool.if
+--- source
+IF(NULL, 1, 2)
+--- expect
+error E_NULL at 1:4
+===
+
+%
+% --- structural identity: EQL and IN
+%
+
+### name: null.eql.both-null
+--- source
+NULL EQL NULL
+--- expect
+bool TRUE
+===
+
+### name: null.eql.null-zero
+--- source
+NULL EQL 0
+--- expect
+bool FALSE
+===
+
+### name: null.eql.null-str
+--- source
+NULL EQL ""
+--- expect
+bool FALSE
+===
+
+### name: null.eql.null-bool
+--- source
+NULL EQL FALSE
+--- expect
+bool FALSE
+===
+
+### name: null.in.present
+--- source
+NULL IN (1, 2, NULL)
+--- expect
+bool TRUE
+===
+
+### name: null.in.absent
+--- source
+NULL IN (1, 2, 3)
+--- expect
+bool FALSE
+===
+
+%
+% --- ?? null-coalescing
+%
+
+### name: op.coalesce.null-left
+--- source
+NULL ?? 5
+--- expect
+num 5
+===
+
+### name: op.coalesce.val-left
+--- source
+7 ?? 5
+--- expect
+num 7
+===
+
+### name: op.coalesce.short-circuit
+--- source
+7 ?? (1 / 0)
+--- expect
+num 7
+===
+
+### name: op.coalesce.chain
+--- source
+NULL ?? NULL ?? 42
+--- expect
+num 42
+===
+
+### name: op.coalesce.no-swallow-div-zero
+--- source
+(1 / 0) ?? 5
+--- expect
+error E_DIV_ZERO at 1:4
+===
+
+### name: op.coalesce.missing-key
+--- setup
+A["k"] = 1
+--- source
+A["missing"] ?? 99
+--- expect
+num 99
+===
+
+### name: op.coalesce.present-key
+--- setup
+A["k"] = 1
+--- source
+A["k"] ?? 99
+--- expect
+num 1
+===
+
+### name: op.coalesce.undef-var
+--- source
+MISSING_VAR ?? 100
+--- expect
+num 100
+===
+
+### name: op.coalesce.assoc
+--- source
+NULL ?? NULL ?? "c"
+--- expect
+text "c"
+===
+
+### name: op.coalesce.precedence
+--- source
+(NULL ?? 5) + 1
+--- expect
+num 6
+===
+
+### name: op.coalesce.compare
+--- source
+(NULL ?? 5) > 3
+--- expect
+bool TRUE
+===
+
+%
+% --- ??? vacuous-coalescing (data invariant)
+%
+
+### name: op.vacuous.null
+--- source
+NULL ??? "fallback"
+--- expect
+text "fallback"
+===
+
+### name: op.vacuous.empty-str
+--- source
+"" ??? "fallback"
+--- expect
+text "fallback"
+===
+
+### name: op.vacuous.blank-str
+--- source
+"   " ??? "fallback"
+--- expect
+text "fallback"
+===
+
+### name: op.vacuous.empty-list
+--- source
+FILTER((1, 2), _ > 5) ??? "fallback"
+--- expect
+text "fallback"
+===
+
+### name: op.vacuous.non-empty-str
+--- source
+"hello" ??? "fallback"
+--- expect
+text "hello"
+===
+
+### name: op.vacuous.non-empty-num
+--- source
+123 ??? "fallback"
+--- expect
+num 123
+===
+
+### name: op.vacuous.short-circuit
+--- source
+"ok" ??? (1 / 0)
+--- expect
+text "ok"
+===
+
+### name: op.vacuous.missing-key
+--- source
+MISSING_VAR ??? "def"
+--- expect
+text "def"
+===
+
+%
+% --- Built-in functions: IS_NULL, IS_NOT_NULL, COALESCE, IS_BLANK, IS_PRESENT, GET, PATH
+%
+
+### name: func.is-null.true
+--- source
+IS_NULL(NULL)
+--- expect
+bool TRUE
+===
+
+### name: func.is-null.false-num
+--- source
+IS_NULL(0)
+--- expect
+bool FALSE
+===
+
+### name: func.is-null.false-str
+--- source
+IS_NULL("")
+--- expect
+bool FALSE
+===
+
+### name: func.is-null.false-bool
+--- source
+IS_NULL(FALSE)
+--- expect
+bool FALSE
+===
+
+### name: func.is-not-null.true
+--- source
+IS_NOT_NULL(1)
+--- expect
+bool TRUE
+===
+
+### name: func.is-not-null.false
+--- source
+IS_NOT_NULL(NULL)
+--- expect
+bool FALSE
+===
+
+### name: func.coalesce.hit
+--- source
+COALESCE(NULL, NULL, 42, 1 / 0)
+--- expect
+num 42
+===
+
+### name: func.coalesce.all-null
+--- source
+COALESCE(NULL, NULL)
+--- expect
+none
+===
+
+### name: func.is-blank.null
+--- source
+IS_BLANK(NULL)
+--- expect
+bool TRUE
+===
+
+### name: func.is-blank.empty
+--- source
+IS_BLANK("")
+--- expect
+bool TRUE
+===
+
+### name: func.is-blank.whitespace
+--- source
+IS_BLANK("  \t\n  ")
+--- expect
+bool TRUE
+===
+
+### name: func.is-blank.not-blank
+--- source
+IS_BLANK(" a ")
+--- expect
+bool FALSE
+===
+
+### name: func.is-blank.zero
+--- source
+IS_BLANK(0)
+--- expect
+bool FALSE
+===
+
+### name: func.is-present.true
+--- source
+IS_PRESENT("x")
+--- expect
+bool TRUE
+===
+
+### name: func.is-present.false
+--- source
+IS_PRESENT(" ")
+--- expect
+bool FALSE
+===
+
+### name: func.get.present
+--- setup
+M["a"] = 1
+--- source
+GET(M, "a")
+--- expect
+num 1
+===
+
+### name: func.get.absent-default
+--- setup
+M["a"] = 1
+--- source
+GET(M, "b", 99)
+--- expect
+num 99
+===
+
+### name: func.get.absent-no-default
+--- setup
+M["a"] = 1
+--- source
+GET(M, "b")
+--- expect
+none
+===
+
+### name: func.path.present
+--- setup
+P["a"]["b"]["c"] = "ok"
+--- source
+PATH(P, "a.b.c")
+--- expect
+text "ok"
+===
+
+### name: func.path.absent-default
+--- setup
+P["a"]["b"] = 1
+--- source
+PATH(P, "a.missing", "fallback")
+--- expect
+text "fallback"
+===
+
+### name: func.path.absent-no-default
+--- setup
+P["a"]["b"] = 1
+--- source
+PATH(P, "a.missing")
+--- expect
+none
+===

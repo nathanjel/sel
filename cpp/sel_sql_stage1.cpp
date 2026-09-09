@@ -94,6 +94,7 @@ SNodePtr substitute(const NodePtr& node, Defs& defs,
     case NT::Num:
     case NT::Text:
     case NT::Bool:
+    case NT::Null:
       return SNode::leaf(node);
 
     case NT::Assign:
@@ -287,6 +288,7 @@ bool is_constant(const SNode& n, const std::set<std::string>& bound) {
     case SNode::T::Num:
     case SNode::T::Text:
     case SNode::T::Bool:
+    case SNode::T::Null:
       return true;
     case SNode::T::Var:
       return bound.count(n.s()) != 0;

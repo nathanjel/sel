@@ -100,6 +100,7 @@
     (:num (%text (node-s node)))          ; canonicalised by the parser
     (:text (%text (node-s node)))
     (:bool (make-bool (node-b node)))
+    (:null (make-null))
 
     (:var
      (or (ctx-lookup ctx (node-s node))
@@ -135,7 +136,7 @@
 ;;; §5.9 — a value with children and no scalar contributes its children's values;
 ;;; anything else contributes itself. Keys are always renumbered from 1.
 (defun eval-list (node ctx)
-  (let ((out (make-none))
+  (let ((out (make-list-value nil))
         (n 0))
     (dolist (item (node-items node) out)
       (let ((v (eval-node item ctx)))
@@ -205,6 +206,28 @@
         (when (and (string= op "OR") left) (return-from eval-binary (make-bool t)))
         (return-from eval-binary
           (make-bool (as-bool (eval-node (node-r node) ctx) (node-pos (node-r node)))))))
+
+    (when (string= op "??")
+      (let ((l (handler-case (eval-node (node-l node) ctx)
+                 (sel-error (e)
+                   (if (or (string= (sel-error-code e) "E_NO_KEY")
+                           (string= (sel-error-code e) "E_UNDEF_VAR"))
+                       (return-from eval-binary (eval-node (node-r node) ctx))
+                       (error e))))))
+        (if (value-null-p l)
+            (return-from eval-binary (eval-node (node-r node) ctx))
+            (return-from eval-binary l))))
+
+    (when (string= op "???")
+      (let ((l (handler-case (eval-node (node-l node) ctx)
+                 (sel-error (e)
+                   (if (or (string= (sel-error-code e) "E_NO_KEY")
+                           (string= (sel-error-code e) "E_UNDEF_VAR"))
+                       (return-from eval-binary (eval-node (node-r node) ctx))
+                       (error e))))))
+        (if (value-vacuous-p l)
+            (return-from eval-binary (eval-node (node-r node) ctx))
+            (return-from eval-binary l))))
 
     (let* ((l (eval-node (node-l node) ctx))
            (r (eval-node (node-r node) ctx))

@@ -15,6 +15,7 @@ so nothing here can quietly stop being true.
 - [Operators](#operators)
 - [Control flow](#control-flow)
 - [Iteration](#iteration)
+- [Null safety and navigation](#null-safety-and-navigation)
 - [Function reference](#function-reference)
 - [Errors](#errors)
 - [Gotchas](#gotchas)
@@ -64,7 +65,7 @@ key→value map). The four kinds:
 | `TEXT` | a sequence of Unicode code points. Numbers are TEXT. |
 | `BIN` | a sequence of bytes. Not text; not assumed printable. |
 | `BOOL` | `TRUE` or `FALSE`. A real kind, not a string. |
-| `NONE` | no scalar of its own — a plain list is NONE with children. |
+| `NONE` | no scalar of its own — a plain list is NONE with children; `NULL` is a distinct NONE with no children and empty scalar. |
 
 TEXT and BIN convert **only through UTF-8**, and only when you ask:
 
@@ -298,6 +299,7 @@ Tightest binding first.
 | 4 | `+` `-` | |
 | 5 | `&` | concatenation |
 | 6 | `BAND` → `BXOR` → `BOR` | on BIN of equal length |
+| 7 | `??` `???` | coalescing, right-associative |
 | 9 | `==` `!=` `<` `<=` `>` `>=` `$==` `$!=` `$<` `$<=` `$>` `$>=` `EQL` `IN` | **cannot chain** |
 | 10 | `NOT x` | looser than comparison |
 | 11 | `AND` → `XOR` → `OR` | `AND`/`OR` short-circuit |
@@ -348,6 +350,23 @@ the point, not a bug:
 ```
 
 If either side is BIN the result is BIN, with text encoded as UTF-8.
+
+### Coalescing
+
+`??` provides null-coalescing. If the left-hand operand is `NULL` (or an undefined variable / missing key), it evaluates and yields the right-hand operand:
+
+```sel
+NULL ?? "default"      => default
+"value" ?? "fallback"  => value
+```
+
+`???` provides vacuous / data-invariant coalescing. If the left-hand operand is vacuous (`NULL`, missing, empty text, whitespace-only text, or empty container), it evaluates and yields the right-hand operand:
+
+```sel
+"" ??? "fallback"      => fallback
+"   " ??? "fallback"   => fallback
+"value" ??? "fallback" => value
+```
 
 ### Assignment
 
@@ -520,9 +539,34 @@ through end to end.
 
 ---
 
+## Null safety and navigation
+
+`NULL` is a distinct first-class absence value. SEL treats nullness with strict safety: **there is no silent conversion**.
+Operations like arithmetic, comparison, and string manipulation loudly refuse with `E_NULL`:
+
+```sel
+NULL + 1                 => !E_NULL
+UPPER(NULL)              => !E_NULL
+NULL == 0                => !E_NULL
+```
+
+Missing values can be navigated safely with `GET` and `PATH`, and inspected with `IS_NULL`, `IS_NOT_NULL`, `IS_BLANK`, and `IS_PRESENT`:
+
+```sel
+GET(NULL, "k", "def")    => def
+PATH(NULL, "a.b", 0)     => 0
+IS_NULL(NULL)            => TRUE
+IS_NOT_NULL("a")         => TRUE
+COALESCE(NULL, "a", "b") => a
+IS_BLANK("   ")          => TRUE
+IS_PRESENT("hello")      => TRUE
+```
+
+---
+
 ## Function reference
 
-54 functions. Names are case-insensitive.
+61 functions. Names are case-insensitive.
 
 ### Control
 
@@ -539,6 +583,18 @@ through end to end.
 | `COUNT(x)` | number of children |
 | `INDEXES(x)` | list of keys, in order |
 | `HAS(x, key)` | BOOL |
+
+### Null safety & navigation
+
+| Signature | Yields | |
+|---|---|---|
+| `IS_NULL(x)` | BOOL | `IS_NULL(NULL)  => TRUE` |
+| `IS_NOT_NULL(x)` | BOOL | `IS_NOT_NULL("a")  => TRUE` |
+| `COALESCE(v1, v2, …)` | first non-NULL value | `COALESCE(NULL, "a", "b")  => a` |
+| `GET(c, key [, default])` | value at key, or default/NULL | `C["x"] = 10; GET(C, "x")  => 10` |
+| `PATH(c, path [, default])` | value along path, or default/NULL | `N["a"]["b"] = 5; PATH(N, "a.b")  => 5` |
+| `IS_BLANK(x)` | BOOL, TRUE if NULL/empty/whitespace | `IS_BLANK("   ")  => TRUE` |
+| `IS_PRESENT(x)` | BOOL, TRUE if not blank | `IS_PRESENT("hello")  => TRUE` |
 
 ### Aggregates
 
@@ -663,6 +719,7 @@ At run time:
 | Code | When |
 |---|---|
 | `E_UNDEF_VAR` `E_NO_KEY` `E_NO_SCALAR` | something is not there |
+| `E_NULL` | unhandled operation on NULL |
 | `E_NOT_NUM` `E_NOT_TEXT` `E_NOT_BIN` `E_NOT_BOOL` `E_NOT_INT` | wrong kind |
 | `E_EXPECT_SYMBOL` | an aggregate binder that is not a bare name |
 | `E_DIV_ZERO` `E_UTF8` `E_RANGE` `E_BAD_ARG` `E_LEN_MISMATCH` | bad value |

@@ -18,12 +18,13 @@ comment   = "#" { any-but-newline }
 ```
 
 `ident` is ASCII only and case-insensitive; the canonical internal form is upper
-case. Reserved: `TRUE FALSE AND OR NOT XOR EQL IN BAND BOR BXOR`.
+case. Reserved: `TRUE FALSE NULL AND OR NOT XOR EQL IN BAND BOR BXOR`.
 
 Operator tokens, longest match first — this ordering matters, since `$<=` must
 not lex as `$<` followed by `=`, nor `<=` as `<` then `=`:
 
 ```
+???  ??
 $==  $!=  $<=  $>=  $<  $>
 ==   !=   <=   >=   <   >
 +=   -=   *=   /=   %=   &=
@@ -53,10 +54,12 @@ conjunction    = negation { "AND" negation }
 
 negation       = "NOT" negation | comparison
 
-comparison     = bit_or [ compare_op bit_or ]                (* non-assoc *)
+comparison     = coalesce [ compare_op coalesce ]            (* non-assoc *)
 compare_op     = "==" | "!=" | "<" | "<=" | ">" | ">="
                | "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>="
                | "EQL" | "IN"
+
+coalesce       = bit_or [ ( "??" | "???" ) coalesce ]        (* right assoc *)
 
 bit_or         = bit_xor { "BOR"  bit_xor }
 bit_xor        = bit_and { "BXOR" bit_and }
@@ -72,7 +75,7 @@ postfix        = primary { "[" sequence "]" }
 
 primary        = number
                | text
-               | "TRUE" | "FALSE"
+               | "TRUE" | "FALSE" | "NULL"
                | ident "(" [ sequence ] ")"
                | ident
                | "(" sequence ")"

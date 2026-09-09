@@ -10,6 +10,58 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.7.0 — 2026-09-09
+
+Strategic release introducing first-class `NULL` semantics, loud refusal (`E_NULL`)
+on unhandled operations, null and vacuous coalescing (`??`, `???`), safe container
+navigation (`GET`, `PATH`), presence predicates (`IS_NULL`, `IS_NOT_NULL`, `IS_BLANK`,
+`IS_PRESENT`), and comprehensive SQL pushdown verified against live database engines.
+
+  - **First-class `NULL` semantics and loud refusal (`E_NULL`).**
+    `NULL` is now a distinct absence value (`NONE` with no scalar and no children).
+    SEL strictly refuses silent coercion: arithmetic (`NULL + 1`), string operations
+    (`UPPER(NULL)`, `NULL & "x"`), and comparisons (`NULL == 0`, `NULL $== ""`, `NULL < 5`)
+    all fail loudly with `E_NULL` instead of quietly evaluating to 0, empty text, or false.
+    `EQL` structurally checks nullness: `NULL EQL NULL` is TRUE, and `NULL EQL ""` is FALSE.
+
+  - **Coalescing operators `??` and `???`.**
+    - `A ?? B` (Null coalescing): evaluates `A`; if `A` is `NULL` or encounters a missing
+      key / undefined variable (`E_NO_KEY`, `E_UNDEF_VAR`), evaluates and returns `B`.
+    - `A ??? B` (Vacuous / data-invariant coalescing): evaluates `A`; if `A` is vacuous
+      (`NULL`, missing, empty text `""`, whitespace-only text, or empty container),
+      evaluates and returns `B`. Right-associative with binding power 9.
+
+  - **Safe container navigation (`GET`, `PATH`).**
+    - `GET(container, key [, default])`: safe key retrieval from maps and lists. If the key
+      is missing or the container is non-indexable/NULL, returns `default` (or `NULL` if omitted),
+      suppressing `E_NO_KEY` and `E_UNDEF_VAR`.
+    - `PATH(container, path [, default])`: safe multi-step navigation along a dot/slash-separated
+      string (e.g. `"order.customer.name"`) or list of keys. Returns `default` (or `NULL` if omitted)
+      if any segment is missing or not a container.
+
+  - **Null and blank inspection functions.**
+    - `IS_NULL(x)`: returns TRUE if `x` is `NULL`, FALSE otherwise.
+    - `IS_NOT_NULL(x)`: returns FALSE if `x` is `NULL`, TRUE otherwise.
+    - `COALESCE(v1, v2, ...)`: variadic, returns the first non-NULL argument (or NULL if all NULL).
+    - `IS_BLANK(x)`: returns TRUE if `x` is NULL, empty string `""`, or only whitespace (`[ \t\r\n]`).
+    - `IS_PRESENT(x)`: returns TRUE if `x` is not blank (not NULL and has non-whitespace characters).
+
+  - **SQL pushdown & database oracle validation.**
+    - All null operations and functions (`??`, `???`, `IS_NULL`, `IS_NOT_NULL`, `COALESCE`,
+      `IS_BLANK`, `IS_PRESENT`) translate directly to SQL expressions across MariaDB, MySQL,
+      PostgreSQL, and SQLite.
+    - PostgreSQL strictly types parameters and text functions using `{textCast:0}` to prevent
+      prepared statement `42P18: Indeterminate datatype` and `btrim(integer)` errors.
+    - MariaDB and MySQL leverage regex replacement (`REGEXP_REPLACE`) for exact 4-character
+      whitespace handling in `IS_BLANK`, `IS_PRESENT`, and `???`.
+    - SQLite utilizes multi-character trim (`' ' || char(9) || char(13) || char(10)`).
+    - Fully validated against pinned Docker instances of MariaDB 11.8, MySQL 8.4, PostgreSQL 17,
+      and SQLite with 0 differences across 433 expressions and 22 row rules.
+    - Container functions `GET` and `PATH` remain strictly in-memory (registered with refusal
+      `takes a container, and a SQL expression is a scalar`).
+
+conformance 720 · sql cases 462 · mutations 161
+
 ## 0.6.1 — 2026-09-09
 
 A release closing §4.1a of the kind warrant, shipping TypeScript typings,

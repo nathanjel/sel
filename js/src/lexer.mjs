@@ -12,13 +12,14 @@ import { fail } from './errors.mjs';
 import { toCodePoints, fromCodePoints } from './utf8.mjs';
 
 export const OPERATORS = [
+  '???', '??',
   '$==', '$!=', '$<=', '$>=',
   '$<', '$>', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '&=',
   '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', '[', ']', ',', ';',
 ];
 
 export const RESERVED = new Set([
-  'TRUE', 'FALSE', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
+  'TRUE', 'FALSE', 'NULL', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
 ]);
 
 const SIMPLE_ESCAPES = {

@@ -39,55 +39,55 @@ constexpr Lexical d0_ansi_lexical[] = {
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHARACTER VARYING)"},
 };
-constexpr Keyed d0_ansi_ops6[] = {
+constexpr Keyed d0_ansi_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "({textCast:0} || {textCast:1})"}},
 };
-constexpr Keyed d0_ansi_ops11[] = {
+constexpr Keyed d0_ansi_ops13[] = {
     {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
-constexpr Keyed d0_ansi_ops12[] = {
+constexpr Keyed d0_ansi_ops14[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
-constexpr Keyed d0_ansi_ops13[] = {
+constexpr Keyed d0_ansi_ops15[] = {
     {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
-constexpr Keyed d0_ansi_ops14[] = {
+constexpr Keyed d0_ansi_ops16[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
-constexpr Keyed d0_ansi_ops15[] = {
+constexpr Keyed d0_ansi_ops17[] = {
     {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
-constexpr Keyed d0_ansi_ops16[] = {
+constexpr Keyed d0_ansi_ops18[] = {
     {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
-constexpr Keyed d0_ansi_ops17[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
-};
-constexpr Keyed d0_ansi_ops18[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
-};
 constexpr Keyed d0_ansi_ops19[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d0_ansi_ops20[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d0_ansi_ops21[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d0_ansi_ops22[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d0_ansi_ops23[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d0_ansi_ops24[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+};
+constexpr Keyed d0_ansi_ops25[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+};
+constexpr Keyed d0_ansi_ops26[] = {
     {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d0_ansi_ops[] = {
@@ -97,25 +97,27 @@ constexpr Entry d0_ansi_ops[] = {
     {.key = "/", .kind = EntryKind::Template, .one = "({numericCast:0} / {numericCast:1})", .ret = "NUM", .caveat = "division-scale"},
     {.key = "%", .kind = EntryKind::Template, .one = "MOD({numericCast:0}, {numericCast:1})", .ret = "NUM"},
     {.key = "NEG", .kind = EntryKind::Template, .one = "(-{numericCast:0})", .ret = "NUM"},
-    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops6, .ret = "@concat", .caveat = "concat-null"},
+    {.key = "??", .kind = EntryKind::Template, .one = "COALESCE({0}, {1})", .ret = "@unify:0,1"},
+    {.key = "???", .kind = EntryKind::Template, .one = "COALESCE(NULLIF(TRIM(BOTH FROM {textCast:0}), ''), {1})", .ret = "@unify:0,1"},
+    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops8, .ret = "@concat", .caveat = "concat-null"},
     {.key = "AND", .kind = EntryKind::Template, .one = "({0} AND {1})", .ret = "BOOL"},
     {.key = "OR", .kind = EntryKind::Template, .one = "({0} OR {1})", .ret = "BOOL"},
     {.key = "NOT", .kind = EntryKind::Template, .one = "(NOT {0})", .ret = "BOOL"},
     {.key = "XOR", .kind = EntryKind::Template, .one = "(({0}) <> ({1}))", .ret = "BOOL"},
-    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops11, .ret = "BOOL"},
-    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops12, .ret = "BOOL"},
-    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops13, .ret = "BOOL"},
-    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops14, .ret = "BOOL"},
-    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops15, .ret = "BOOL"},
-    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops16, .ret = "BOOL"},
-    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops17, .ret = "BOOL"},
-    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops18, .ret = "BOOL"},
-    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops19, .ret = "BOOL"},
-    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops20, .ret = "BOOL"},
-    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops21, .ret = "BOOL"},
-    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops22, .ret = "BOOL"},
-    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops23, .ret = "BOOL"},
-    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops24, .ret = "BOOL"},
+    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops13, .ret = "BOOL"},
+    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops14, .ret = "BOOL"},
+    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops15, .ret = "BOOL"},
+    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops16, .ret = "BOOL"},
+    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops17, .ret = "BOOL"},
+    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops18, .ret = "BOOL"},
+    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops19, .ret = "BOOL"},
+    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops20, .ret = "BOOL"},
+    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops21, .ret = "BOOL"},
+    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops22, .ret = "BOOL"},
+    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops23, .ret = "BOOL"},
+    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops24, .ret = "BOOL"},
+    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops25, .ret = "BOOL"},
+    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d0_ansi_ops26, .ret = "BOOL"},
     {.key = "BAND", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's & is an integer operator; SEL's BAND is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's | is an integer operator; SEL's BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
@@ -167,6 +169,13 @@ constexpr Entry d0_ansi_funcs[] = {
     {.key = "RFIND", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "regular expressions are not ANSI; set per dialect"}},
     {.key = "RREPLACE", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "regular expressions are not ANSI; set per dialect"}},
     {.key = "RGROUPS", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
+    {.key = "IS_NULL", .kind = EntryKind::Template, .one = "({textCast:0} IS NULL)", .ret = "BOOL"},
+    {.key = "IS_NOT_NULL", .kind = EntryKind::Template, .one = "({textCast:0} IS NOT NULL)", .ret = "BOOL"},
+    {.key = "COALESCE", .kind = EntryKind::Template, .one = "COALESCE({*})", .ret = "@unify:0,1,2,3,4,5,6,7,8,9"},
+    {.key = "IS_BLANK", .kind = EntryKind::Template, .one = "(({textCast:0} IS NULL) OR (TRIM(BOTH FROM {textCast:0}) = ''))", .ret = "BOOL"},
+    {.key = "IS_PRESENT", .kind = EntryKind::Template, .one = "(({textCast:0} IS NOT NULL) AND (TRIM(BOTH FROM {textCast:0}) <> ''))", .ret = "BOOL"},
+    {.key = "GET", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
+    {.key = "PATH", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
 };
 constexpr Entry d0_ansi_skel[] = {
     {.key = "case", .kind = EntryKind::Template, .one = "CASE {branches} ELSE {else} END"},
@@ -203,56 +212,56 @@ constexpr Lexical d1_mariadb_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
-constexpr Keyed d1_mariadb_ops6[] = {
+constexpr Keyed d1_mariadb_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
     {.key = "bin", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
 };
-constexpr Keyed d1_mariadb_ops11[] = {
+constexpr Keyed d1_mariadb_ops13[] = {
     {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
-constexpr Keyed d1_mariadb_ops12[] = {
+constexpr Keyed d1_mariadb_ops14[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
-constexpr Keyed d1_mariadb_ops13[] = {
+constexpr Keyed d1_mariadb_ops15[] = {
     {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
-constexpr Keyed d1_mariadb_ops14[] = {
+constexpr Keyed d1_mariadb_ops16[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
-constexpr Keyed d1_mariadb_ops15[] = {
+constexpr Keyed d1_mariadb_ops17[] = {
     {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
-constexpr Keyed d1_mariadb_ops16[] = {
+constexpr Keyed d1_mariadb_ops18[] = {
     {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
-constexpr Keyed d1_mariadb_ops17[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
-};
-constexpr Keyed d1_mariadb_ops18[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
-};
 constexpr Keyed d1_mariadb_ops19[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d1_mariadb_ops20[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d1_mariadb_ops21[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d1_mariadb_ops22[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d1_mariadb_ops23[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d1_mariadb_ops24[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+};
+constexpr Keyed d1_mariadb_ops25[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+};
+constexpr Keyed d1_mariadb_ops26[] = {
     {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d1_mariadb_ops[] = {
@@ -262,25 +271,27 @@ constexpr Entry d1_mariadb_ops[] = {
     {.key = "/", .kind = EntryKind::Template, .one = "({0} / {1})", .ret = "NUM", .caveat = "division-scale"},
     {.key = "%", .kind = EntryKind::Template, .one = "MOD({0}, {1})", .ret = "NUM"},
     {.key = "NEG", .kind = EntryKind::Template, .one = "(-{0})", .ret = "NUM"},
-    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops6, .ret = "@concat", .caveat = "concat-null"},
+    {.key = "??", .kind = EntryKind::Template, .one = "COALESCE({0}, {1})", .ret = "@unify:0,1"},
+    {.key = "???", .kind = EntryKind::Template, .one = "COALESCE(NULLIF(REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), {1})", .ret = "@unify:0,1"},
+    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops8, .ret = "@concat", .caveat = "concat-null"},
     {.key = "AND", .kind = EntryKind::Template, .one = "({0} AND {1})", .ret = "BOOL"},
     {.key = "OR", .kind = EntryKind::Template, .one = "({0} OR {1})", .ret = "BOOL"},
     {.key = "NOT", .kind = EntryKind::Template, .one = "(NOT {0})", .ret = "BOOL"},
     {.key = "XOR", .kind = EntryKind::Template, .one = "({0} XOR {1})", .ret = "BOOL"},
-    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops11, .ret = "BOOL"},
-    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops12, .ret = "BOOL"},
-    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops13, .ret = "BOOL"},
-    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops14, .ret = "BOOL"},
-    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops15, .ret = "BOOL"},
-    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops16, .ret = "BOOL"},
-    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops17, .ret = "BOOL"},
-    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops18, .ret = "BOOL"},
-    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops19, .ret = "BOOL"},
-    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops20, .ret = "BOOL"},
-    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops21, .ret = "BOOL"},
-    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops22, .ret = "BOOL"},
-    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops23, .ret = "BOOL"},
-    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops24, .ret = "BOOL"},
+    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops13, .ret = "BOOL"},
+    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops14, .ret = "BOOL"},
+    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops15, .ret = "BOOL"},
+    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops16, .ret = "BOOL"},
+    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops17, .ret = "BOOL"},
+    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops18, .ret = "BOOL"},
+    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops19, .ret = "BOOL"},
+    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops20, .ret = "BOOL"},
+    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops21, .ret = "BOOL"},
+    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops22, .ret = "BOOL"},
+    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops23, .ret = "BOOL"},
+    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops24, .ret = "BOOL"},
+    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops25, .ret = "BOOL"},
+    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d1_mariadb_ops26, .ret = "BOOL"},
     {.key = "BAND", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's & is an integer operator; SEL's BAND is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's | is an integer operator; SEL's BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
@@ -344,6 +355,13 @@ constexpr Entry d1_mariadb_funcs[] = {
     {.key = "RFIND", .kind = EntryKind::Template, .one = "REGEXP_INSTR({1}{textCollate}, {0})", .ret = "NUM", .caveat = "regex-engine", .has_arity = true, .arity_min = 2, .arity_max = 2},
     {.key = "RREPLACE", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express"}},
     {.key = "RGROUPS", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
+    {.key = "IS_NULL", .kind = EntryKind::Template, .one = "({0} IS NULL)", .ret = "BOOL"},
+    {.key = "IS_NOT_NULL", .kind = EntryKind::Template, .one = "({0} IS NOT NULL)", .ret = "BOOL"},
+    {.key = "COALESCE", .kind = EntryKind::Template, .one = "COALESCE({*})", .ret = "@unify:0,1,2,3,4,5,6,7,8,9"},
+    {.key = "IS_BLANK", .kind = EntryKind::Template, .one = "(({0} IS NULL) OR (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))", .ret = "BOOL"},
+    {.key = "IS_PRESENT", .kind = EntryKind::Template, .one = "(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))", .ret = "BOOL"},
+    {.key = "GET", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
+    {.key = "PATH", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
 };
 constexpr Entry d1_mariadb_skel[] = {
     {.key = "case", .kind = EntryKind::Template, .one = "CASE {branches} ELSE {else} END", .caveat = "numeric-scale"},
@@ -380,56 +398,56 @@ constexpr Lexical d2_mysql_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
-constexpr Keyed d2_mysql_ops6[] = {
+constexpr Keyed d2_mysql_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
     {.key = "bin", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
 };
-constexpr Keyed d2_mysql_ops11[] = {
+constexpr Keyed d2_mysql_ops13[] = {
     {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
-constexpr Keyed d2_mysql_ops12[] = {
+constexpr Keyed d2_mysql_ops14[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
-constexpr Keyed d2_mysql_ops13[] = {
+constexpr Keyed d2_mysql_ops15[] = {
     {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
-constexpr Keyed d2_mysql_ops14[] = {
+constexpr Keyed d2_mysql_ops16[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
-constexpr Keyed d2_mysql_ops15[] = {
+constexpr Keyed d2_mysql_ops17[] = {
     {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
-constexpr Keyed d2_mysql_ops16[] = {
+constexpr Keyed d2_mysql_ops18[] = {
     {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
-constexpr Keyed d2_mysql_ops17[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
-};
-constexpr Keyed d2_mysql_ops18[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
-};
 constexpr Keyed d2_mysql_ops19[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d2_mysql_ops20[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d2_mysql_ops21[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d2_mysql_ops22[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d2_mysql_ops23[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d2_mysql_ops24[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+};
+constexpr Keyed d2_mysql_ops25[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+};
+constexpr Keyed d2_mysql_ops26[] = {
     {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d2_mysql_ops[] = {
@@ -439,25 +457,27 @@ constexpr Entry d2_mysql_ops[] = {
     {.key = "/", .kind = EntryKind::Template, .one = "({0} / {1})", .ret = "NUM", .caveat = "division-scale"},
     {.key = "%", .kind = EntryKind::Template, .one = "MOD({0}, {1})", .ret = "NUM"},
     {.key = "NEG", .kind = EntryKind::Template, .one = "(-{0})", .ret = "NUM"},
-    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops6, .ret = "@concat", .caveat = "concat-null"},
+    {.key = "??", .kind = EntryKind::Template, .one = "COALESCE({0}, {1})", .ret = "@unify:0,1"},
+    {.key = "???", .kind = EntryKind::Template, .one = "COALESCE(NULLIF(REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), {1})", .ret = "@unify:0,1"},
+    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops8, .ret = "@concat", .caveat = "concat-null"},
     {.key = "AND", .kind = EntryKind::Template, .one = "({0} AND {1})", .ret = "BOOL"},
     {.key = "OR", .kind = EntryKind::Template, .one = "({0} OR {1})", .ret = "BOOL"},
     {.key = "NOT", .kind = EntryKind::Template, .one = "(NOT {0})", .ret = "BOOL"},
     {.key = "XOR", .kind = EntryKind::Template, .one = "({0} XOR {1})", .ret = "BOOL"},
-    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops11, .ret = "BOOL"},
-    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops12, .ret = "BOOL"},
-    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops13, .ret = "BOOL"},
-    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops14, .ret = "BOOL"},
-    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops15, .ret = "BOOL"},
-    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops16, .ret = "BOOL"},
-    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops17, .ret = "BOOL"},
-    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops18, .ret = "BOOL"},
-    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops19, .ret = "BOOL"},
-    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops20, .ret = "BOOL"},
-    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops21, .ret = "BOOL"},
-    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops22, .ret = "BOOL"},
-    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops23, .ret = "BOOL"},
-    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops24, .ret = "BOOL"},
+    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops13, .ret = "BOOL"},
+    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops14, .ret = "BOOL"},
+    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops15, .ret = "BOOL"},
+    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops16, .ret = "BOOL"},
+    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops17, .ret = "BOOL"},
+    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops18, .ret = "BOOL"},
+    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops19, .ret = "BOOL"},
+    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops20, .ret = "BOOL"},
+    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops21, .ret = "BOOL"},
+    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops22, .ret = "BOOL"},
+    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops23, .ret = "BOOL"},
+    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops24, .ret = "BOOL"},
+    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops25, .ret = "BOOL"},
+    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d2_mysql_ops26, .ret = "BOOL"},
     {.key = "BAND", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's & is an integer operator; SEL's BAND is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's | is an integer operator; SEL's BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
@@ -521,6 +541,13 @@ constexpr Entry d2_mysql_funcs[] = {
     {.key = "RFIND", .kind = EntryKind::Template, .one = "REGEXP_INSTR({1}{textCollate}, {0})", .ret = "NUM", .caveat = "regex-engine", .has_arity = true, .arity_min = 2, .arity_max = 2},
     {.key = "RREPLACE", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express"}},
     {.key = "RGROUPS", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
+    {.key = "IS_NULL", .kind = EntryKind::Template, .one = "({0} IS NULL)", .ret = "BOOL"},
+    {.key = "IS_NOT_NULL", .kind = EntryKind::Template, .one = "({0} IS NOT NULL)", .ret = "BOOL"},
+    {.key = "COALESCE", .kind = EntryKind::Template, .one = "COALESCE({*})", .ret = "@unify:0,1,2,3,4,5,6,7,8,9"},
+    {.key = "IS_BLANK", .kind = EntryKind::Template, .one = "(({0} IS NULL) OR (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))", .ret = "BOOL"},
+    {.key = "IS_PRESENT", .kind = EntryKind::Template, .one = "(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))", .ret = "BOOL"},
+    {.key = "GET", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
+    {.key = "PATH", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
 };
 constexpr Entry d2_mysql_skel[] = {
     {.key = "case", .kind = EntryKind::Template, .one = "CASE {branches} ELSE {else} END"},
@@ -557,56 +584,56 @@ constexpr Lexical d3_mysql_family_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
-constexpr Keyed d3_mysql_family_ops6[] = {
+constexpr Keyed d3_mysql_family_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
     {.key = "bin", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
 };
-constexpr Keyed d3_mysql_family_ops11[] = {
+constexpr Keyed d3_mysql_family_ops13[] = {
     {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
-constexpr Keyed d3_mysql_family_ops12[] = {
+constexpr Keyed d3_mysql_family_ops14[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
-constexpr Keyed d3_mysql_family_ops13[] = {
+constexpr Keyed d3_mysql_family_ops15[] = {
     {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
-constexpr Keyed d3_mysql_family_ops14[] = {
+constexpr Keyed d3_mysql_family_ops16[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
-constexpr Keyed d3_mysql_family_ops15[] = {
+constexpr Keyed d3_mysql_family_ops17[] = {
     {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
-constexpr Keyed d3_mysql_family_ops16[] = {
+constexpr Keyed d3_mysql_family_ops18[] = {
     {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
-constexpr Keyed d3_mysql_family_ops17[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
-};
-constexpr Keyed d3_mysql_family_ops18[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
-};
 constexpr Keyed d3_mysql_family_ops19[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops20[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops21[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops22[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops23[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d3_mysql_family_ops24[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+};
+constexpr Keyed d3_mysql_family_ops25[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+};
+constexpr Keyed d3_mysql_family_ops26[] = {
     {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d3_mysql_family_ops[] = {
@@ -616,25 +643,27 @@ constexpr Entry d3_mysql_family_ops[] = {
     {.key = "/", .kind = EntryKind::Template, .one = "({0} / {1})", .ret = "NUM", .caveat = "division-scale"},
     {.key = "%", .kind = EntryKind::Template, .one = "MOD({0}, {1})", .ret = "NUM"},
     {.key = "NEG", .kind = EntryKind::Template, .one = "(-{0})", .ret = "NUM"},
-    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops6, .ret = "@concat", .caveat = "concat-null"},
+    {.key = "??", .kind = EntryKind::Template, .one = "COALESCE({0}, {1})", .ret = "@unify:0,1"},
+    {.key = "???", .kind = EntryKind::Template, .one = "COALESCE(NULLIF(REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), {1})", .ret = "@unify:0,1"},
+    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops8, .ret = "@concat", .caveat = "concat-null"},
     {.key = "AND", .kind = EntryKind::Template, .one = "({0} AND {1})", .ret = "BOOL"},
     {.key = "OR", .kind = EntryKind::Template, .one = "({0} OR {1})", .ret = "BOOL"},
     {.key = "NOT", .kind = EntryKind::Template, .one = "(NOT {0})", .ret = "BOOL"},
     {.key = "XOR", .kind = EntryKind::Template, .one = "({0} XOR {1})", .ret = "BOOL"},
-    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops11, .ret = "BOOL"},
-    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops12, .ret = "BOOL"},
-    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops13, .ret = "BOOL"},
-    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops14, .ret = "BOOL"},
-    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops15, .ret = "BOOL"},
-    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops16, .ret = "BOOL"},
-    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops17, .ret = "BOOL"},
-    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops18, .ret = "BOOL"},
-    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops19, .ret = "BOOL"},
-    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops20, .ret = "BOOL"},
-    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops21, .ret = "BOOL"},
-    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops22, .ret = "BOOL"},
-    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops23, .ret = "BOOL"},
-    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops24, .ret = "BOOL"},
+    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops13, .ret = "BOOL"},
+    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops14, .ret = "BOOL"},
+    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops15, .ret = "BOOL"},
+    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops16, .ret = "BOOL"},
+    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops17, .ret = "BOOL"},
+    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops18, .ret = "BOOL"},
+    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops19, .ret = "BOOL"},
+    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops20, .ret = "BOOL"},
+    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops21, .ret = "BOOL"},
+    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops22, .ret = "BOOL"},
+    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops23, .ret = "BOOL"},
+    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops24, .ret = "BOOL"},
+    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops25, .ret = "BOOL"},
+    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d3_mysql_family_ops26, .ret = "BOOL"},
     {.key = "BAND", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's & is an integer operator; SEL's BAND is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's | is an integer operator; SEL's BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
@@ -698,6 +727,13 @@ constexpr Entry d3_mysql_family_funcs[] = {
     {.key = "RFIND", .kind = EntryKind::Template, .one = "REGEXP_INSTR({1}{textCollate}, {0})", .ret = "NUM", .caveat = "regex-engine", .has_arity = true, .arity_min = 2, .arity_max = 2},
     {.key = "RREPLACE", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SEL replacement syntax is $0-$9 and MariaDB's is \\1; rewriting one into the other is only possible when the replacement is a literal, which the map cannot express"}},
     {.key = "RGROUPS", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
+    {.key = "IS_NULL", .kind = EntryKind::Template, .one = "({0} IS NULL)", .ret = "BOOL"},
+    {.key = "IS_NOT_NULL", .kind = EntryKind::Template, .one = "({0} IS NOT NULL)", .ret = "BOOL"},
+    {.key = "COALESCE", .kind = EntryKind::Template, .one = "COALESCE({*})", .ret = "@unify:0,1,2,3,4,5,6,7,8,9"},
+    {.key = "IS_BLANK", .kind = EntryKind::Template, .one = "(({0} IS NULL) OR (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))", .ret = "BOOL"},
+    {.key = "IS_PRESENT", .kind = EntryKind::Template, .one = "(({0} IS NOT NULL) AND (REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))", .ret = "BOOL"},
+    {.key = "GET", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
+    {.key = "PATH", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
 };
 constexpr Entry d3_mysql_family_skel[] = {
     {.key = "case", .kind = EntryKind::Template, .one = "CASE {branches} ELSE {else} END"},
@@ -733,56 +769,56 @@ constexpr Lexical d4_postgresql_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS TEXT)"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"},
 };
-constexpr Keyed d4_postgresql_ops6[] = {
+constexpr Keyed d4_postgresql_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "({textCast:0} || {textCast:1})"}},
     {.key = "bin", .value = {.present = true, .text = "({0} || {1})"}},
 };
-constexpr Keyed d4_postgresql_ops11[] = {
+constexpr Keyed d4_postgresql_ops13[] = {
     {.key = "num", .value = {.present = true, .text = "({0} = {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
-constexpr Keyed d4_postgresql_ops12[] = {
+constexpr Keyed d4_postgresql_ops14[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <> {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
-constexpr Keyed d4_postgresql_ops13[] = {
+constexpr Keyed d4_postgresql_ops15[] = {
     {.key = "num", .value = {.present = true, .text = "({0} < {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
-constexpr Keyed d4_postgresql_ops14[] = {
+constexpr Keyed d4_postgresql_ops16[] = {
     {.key = "num", .value = {.present = true, .text = "({0} <= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
-constexpr Keyed d4_postgresql_ops15[] = {
+constexpr Keyed d4_postgresql_ops17[] = {
     {.key = "num", .value = {.present = true, .text = "({0} > {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
-constexpr Keyed d4_postgresql_ops16[] = {
+constexpr Keyed d4_postgresql_ops18[] = {
     {.key = "num", .value = {.present = true, .text = "({0} >= {1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
-constexpr Keyed d4_postgresql_ops17[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
-};
-constexpr Keyed d4_postgresql_ops18[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
-};
 constexpr Keyed d4_postgresql_ops19[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d4_postgresql_ops20[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d4_postgresql_ops21[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d4_postgresql_ops22[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d4_postgresql_ops23[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d4_postgresql_ops24[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+};
+constexpr Keyed d4_postgresql_ops25[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+};
+constexpr Keyed d4_postgresql_ops26[] = {
     {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d4_postgresql_ops[] = {
@@ -792,25 +828,27 @@ constexpr Entry d4_postgresql_ops[] = {
     {.key = "/", .kind = EntryKind::Template, .one = "({numericCast:0} / {numericCast:1})", .ret = "NUM", .caveat = "division-scale"},
     {.key = "%", .kind = EntryKind::Template, .one = "MOD({numericCast:0}, {numericCast:1})", .ret = "NUM"},
     {.key = "NEG", .kind = EntryKind::Template, .one = "(-{numericCast:0})", .ret = "NUM"},
-    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops6, .ret = "@concat", .caveat = "concat-null"},
+    {.key = "??", .kind = EntryKind::Template, .one = "COALESCE({0}, {1})", .ret = "@unify:0,1"},
+    {.key = "???", .kind = EntryKind::Template, .one = "COALESCE(NULLIF(btrim({textCast:0}, E' \\t\\r\\n'), ''), {1})", .ret = "@unify:0,1"},
+    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops8, .ret = "@concat", .caveat = "concat-null"},
     {.key = "AND", .kind = EntryKind::Template, .one = "({0} AND {1})", .ret = "BOOL"},
     {.key = "OR", .kind = EntryKind::Template, .one = "({0} OR {1})", .ret = "BOOL"},
     {.key = "NOT", .kind = EntryKind::Template, .one = "(NOT {0})", .ret = "BOOL"},
     {.key = "XOR", .kind = EntryKind::Template, .one = "(({0}) <> ({1}))", .ret = "BOOL"},
-    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops11, .ret = "BOOL"},
-    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops12, .ret = "BOOL"},
-    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops13, .ret = "BOOL"},
-    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops14, .ret = "BOOL"},
-    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops15, .ret = "BOOL"},
-    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops16, .ret = "BOOL"},
-    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops17, .ret = "BOOL"},
-    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops18, .ret = "BOOL"},
-    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops19, .ret = "BOOL"},
-    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops20, .ret = "BOOL"},
-    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops21, .ret = "BOOL"},
-    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops22, .ret = "BOOL"},
-    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops23, .ret = "BOOL"},
-    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops24, .ret = "BOOL"},
+    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops13, .ret = "BOOL"},
+    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops14, .ret = "BOOL"},
+    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops15, .ret = "BOOL"},
+    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops16, .ret = "BOOL"},
+    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops17, .ret = "BOOL"},
+    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops18, .ret = "BOOL"},
+    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops19, .ret = "BOOL"},
+    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops20, .ret = "BOOL"},
+    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops21, .ret = "BOOL"},
+    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops22, .ret = "BOOL"},
+    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops23, .ret = "BOOL"},
+    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops24, .ret = "BOOL"},
+    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops25, .ret = "BOOL"},
+    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d4_postgresql_ops26, .ret = "BOOL"},
     {.key = "BAND", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's & is an integer operator; SEL's BAND is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's | is an integer operator; SEL's BOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQL's ^ is an integer operator; SEL's BXOR is a byte-string operator over BIN of equal length, and no portable spelling of that exists"}},
@@ -862,6 +900,13 @@ constexpr Entry d4_postgresql_funcs[] = {
     {.key = "RFIND", .kind = EntryKind::Template, .one = "regexp_instr({textCast:1}{textCollate}, {0})", .ret = "NUM", .caveat = "regex-engine", .has_arity = true, .arity_min = 2, .arity_max = 2},
     {.key = "RREPLACE", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "regular expressions are not ANSI; set per dialect"}},
     {.key = "RGROUPS", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
+    {.key = "IS_NULL", .kind = EntryKind::Template, .one = "({textCast:0} IS NULL)", .ret = "BOOL"},
+    {.key = "IS_NOT_NULL", .kind = EntryKind::Template, .one = "({textCast:0} IS NOT NULL)", .ret = "BOOL"},
+    {.key = "COALESCE", .kind = EntryKind::Template, .one = "COALESCE({*})", .ret = "@unify:0,1,2,3,4,5,6,7,8,9"},
+    {.key = "IS_BLANK", .kind = EntryKind::Template, .one = "(({textCast:0} IS NULL) OR (btrim({textCast:0}, E' \\t\\r\\n') = ''))", .ret = "BOOL"},
+    {.key = "IS_PRESENT", .kind = EntryKind::Template, .one = "(({textCast:0} IS NOT NULL) AND (btrim({textCast:0}, E' \\t\\r\\n') <> ''))", .ret = "BOOL"},
+    {.key = "GET", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
+    {.key = "PATH", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
 };
 constexpr Entry d4_postgresql_skel[] = {
     {.key = "case", .kind = EntryKind::Template, .one = "CASE {branches} ELSE {else} END"},
@@ -896,56 +941,56 @@ constexpr Lexical d5_sqlite_lexical[] = {
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS TEXT)"},
 };
-constexpr Keyed d5_sqlite_ops6[] = {
+constexpr Keyed d5_sqlite_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "({0} || {1})"}},
     {.key = "bin", .value = {.present = true, .text = "({0} || {1})"}},
 };
-constexpr Keyed d5_sqlite_ops11[] = {
+constexpr Keyed d5_sqlite_ops13[] = {
     {.key = "num", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} = {numericCast:1})"}},
 };
-constexpr Keyed d5_sqlite_ops12[] = {
+constexpr Keyed d5_sqlite_ops14[] = {
     {.key = "num", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <> {numericCast:1})"}},
 };
-constexpr Keyed d5_sqlite_ops13[] = {
+constexpr Keyed d5_sqlite_ops15[] = {
     {.key = "num", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} < {numericCast:1})"}},
 };
-constexpr Keyed d5_sqlite_ops14[] = {
+constexpr Keyed d5_sqlite_ops16[] = {
     {.key = "num", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} <= {numericCast:1})"}},
 };
-constexpr Keyed d5_sqlite_ops15[] = {
+constexpr Keyed d5_sqlite_ops17[] = {
     {.key = "num", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} > {numericCast:1})"}},
 };
-constexpr Keyed d5_sqlite_ops16[] = {
+constexpr Keyed d5_sqlite_ops18[] = {
     {.key = "num", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
     {.key = "coerce", .value = {.present = true, .text = "({numericCast:0} >= {numericCast:1})"}},
 };
-constexpr Keyed d5_sqlite_ops17[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
-};
-constexpr Keyed d5_sqlite_ops18[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
-};
 constexpr Keyed d5_sqlite_ops19[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Keyed d5_sqlite_ops20[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <> {1})"}},
 };
 constexpr Keyed d5_sqlite_ops21[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} < {1})"}},
 };
 constexpr Keyed d5_sqlite_ops22[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} <= {1})"}},
 };
 constexpr Keyed d5_sqlite_ops23[] = {
-    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+    {.key = "text", .value = {.present = true, .text = "({0} > {1})"}},
 };
 constexpr Keyed d5_sqlite_ops24[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} >= {1})"}},
+};
+constexpr Keyed d5_sqlite_ops25[] = {
+    {.key = "text", .value = {.present = true, .text = "({0} = {1})"}},
+};
+constexpr Keyed d5_sqlite_ops26[] = {
     {.key = "scalar", .value = {.present = true, .text = "({0} = {1})"}},
 };
 constexpr Entry d5_sqlite_ops[] = {
@@ -955,25 +1000,27 @@ constexpr Entry d5_sqlite_ops[] = {
     {.key = "/", .kind = EntryKind::Template, .one = "({0} * 1.0 / {1})", .ret = "NUM", .caveat = "decimal-float"},
     {.key = "%", .kind = EntryKind::Template, .one = "({0} % {1})", .ret = "NUM", .caveat = "modulo-integer"},
     {.key = "NEG", .kind = EntryKind::Template, .one = "(-{0})", .ret = "NUM", .caveat = "decimal-float"},
-    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops6, .ret = "@concat"},
+    {.key = "??", .kind = EntryKind::Template, .one = "COALESCE({0}, {1})", .ret = "@unify:0,1"},
+    {.key = "???", .kind = EntryKind::Template, .one = "COALESCE(NULLIF(trim({0}, ' ' || char(9) || char(13) || char(10)), ''), {1})", .ret = "@unify:0,1"},
+    {.key = "&", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops8, .ret = "@concat"},
     {.key = "AND", .kind = EntryKind::Template, .one = "({0} AND {1})", .ret = "BOOL"},
     {.key = "OR", .kind = EntryKind::Template, .one = "({0} OR {1})", .ret = "BOOL"},
     {.key = "NOT", .kind = EntryKind::Template, .one = "(NOT {0})", .ret = "BOOL"},
     {.key = "XOR", .kind = EntryKind::Template, .one = "(({0}) <> ({1}))", .ret = "BOOL"},
-    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops11, .ret = "BOOL", .caveat = "decimal-float"},
-    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops12, .ret = "BOOL", .caveat = "decimal-float"},
-    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops13, .ret = "BOOL", .caveat = "decimal-float"},
-    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops14, .ret = "BOOL", .caveat = "decimal-float"},
-    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops15, .ret = "BOOL", .caveat = "decimal-float"},
-    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops16, .ret = "BOOL", .caveat = "decimal-float"},
-    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops17, .ret = "BOOL"},
-    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops18, .ret = "BOOL"},
-    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops19, .ret = "BOOL"},
-    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops20, .ret = "BOOL"},
-    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops21, .ret = "BOOL"},
-    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops22, .ret = "BOOL"},
-    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops23, .ret = "BOOL"},
-    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops24, .ret = "BOOL"},
+    {.key = "==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops13, .ret = "BOOL", .caveat = "decimal-float"},
+    {.key = "!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops14, .ret = "BOOL", .caveat = "decimal-float"},
+    {.key = "<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops15, .ret = "BOOL", .caveat = "decimal-float"},
+    {.key = "<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops16, .ret = "BOOL", .caveat = "decimal-float"},
+    {.key = ">", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops17, .ret = "BOOL", .caveat = "decimal-float"},
+    {.key = ">=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops18, .ret = "BOOL", .caveat = "decimal-float"},
+    {.key = "$==", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops19, .ret = "BOOL"},
+    {.key = "$!=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops20, .ret = "BOOL"},
+    {.key = "$<", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops21, .ret = "BOOL"},
+    {.key = "$<=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops22, .ret = "BOOL"},
+    {.key = "$>", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops23, .ret = "BOOL"},
+    {.key = "$>=", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops24, .ret = "BOOL"},
+    {.key = "EQL", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops25, .ret = "BOOL"},
+    {.key = "IN", .kind = EntryKind::Template, .body = BodyKind::Variants, .keyed = d5_sqlite_ops26, .ret = "BOOL"},
     {.key = "BAND", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQLite's & is integer-only and has no meaning over blobs"}},
     {.key = "BOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQLite's | is integer-only and has no meaning over blobs"}},
     {.key = "BXOR", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQLite has no XOR operator at all, over integers or blobs"}},
@@ -1025,6 +1072,13 @@ constexpr Entry d5_sqlite_funcs[] = {
     {.key = "RFIND", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQLite has no REGEXP function unless the application registers one; a default build raises \"no such function: REGEXP\""}},
     {.key = "RREPLACE", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "regular expressions are not ANSI; set per dialect"}},
     {.key = "RGROUPS", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
+    {.key = "IS_NULL", .kind = EntryKind::Template, .one = "({0} IS NULL)", .ret = "BOOL"},
+    {.key = "IS_NOT_NULL", .kind = EntryKind::Template, .one = "({0} IS NOT NULL)", .ret = "BOOL"},
+    {.key = "COALESCE", .kind = EntryKind::Template, .one = "COALESCE({*})", .ret = "@unify:0,1,2,3,4,5,6,7,8,9"},
+    {.key = "IS_BLANK", .kind = EntryKind::Template, .one = "(({0} IS NULL) OR (trim({0}, ' ' || char(9) || char(13) || char(10)) = ''))", .ret = "BOOL"},
+    {.key = "IS_PRESENT", .kind = EntryKind::Template, .one = "(({0} IS NOT NULL) AND (trim({0}, ' ' || char(9) || char(13) || char(10)) <> ''))", .ret = "BOOL"},
+    {.key = "GET", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
+    {.key = "PATH", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "takes a container, and a SQL expression is a scalar"}},
 };
 constexpr Entry d5_sqlite_skel[] = {
     {.key = "case", .kind = EntryKind::Template, .one = "CASE {branches} ELSE {else} END"},
@@ -1121,6 +1175,8 @@ constexpr Arity OP_ARITY[] = {
     {.key = "==", .min = 2, .max = 2},
     {.key = ">", .min = 2, .max = 2},
     {.key = ">=", .min = 2, .max = 2},
+    {.key = "??", .min = 2, .max = 2},
+    {.key = "???", .min = 2, .max = 2},
     {.key = "AND", .min = 2, .max = 2},
     {.key = "BAND", .min = 2, .max = 2},
     {.key = "BOR", .min = 2, .max = 2},
@@ -1139,6 +1195,7 @@ constexpr Arity FUNC_ARITY[] = {
     {.key = "BTL", .min = 1, .max = 1},
     {.key = "CEIL", .min = 1, .max = 1},
     {.key = "CHAR", .min = 1, .max = 1},
+    {.key = "COALESCE", .min = 1, .unbounded = true},
     {.key = "CODE", .min = 1, .max = 1},
     {.key = "CRC32", .min = 1, .max = 1},
     {.key = "DECODE_BASE64", .min = 1, .max = 1},
@@ -1147,7 +1204,12 @@ constexpr Arity FUNC_ARITY[] = {
     {.key = "FLOOR", .min = 1, .max = 1},
     {.key = "FROM_HEX", .min = 1, .max = 1},
     {.key = "FROM_UTF8", .min = 1, .max = 1},
+    {.key = "GET", .min = 2, .max = 3},
     {.key = "ISNUM", .min = 1, .max = 1},
+    {.key = "IS_BLANK", .min = 1, .max = 1},
+    {.key = "IS_NOT_NULL", .min = 1, .max = 1},
+    {.key = "IS_NULL", .min = 1, .max = 1},
+    {.key = "IS_PRESENT", .min = 1, .max = 1},
     {.key = "LEFT", .min = 2, .max = 2},
     {.key = "LEN", .min = 1, .max = 1},
     {.key = "LOWER", .min = 1, .max = 1},
@@ -1157,6 +1219,7 @@ constexpr Arity FUNC_ARITY[] = {
     {.key = "MIN", .min = 1, .unbounded = true},
     {.key = "PADL", .min = 3, .max = 3},
     {.key = "PADR", .min = 3, .max = 3},
+    {.key = "PATH", .min = 2, .max = 3},
     {.key = "POWER", .min = 2, .max = 2},
     {.key = "REPEAT", .min = 2, .max = 2},
     {.key = "REPLACE", .min = 3, .max = 3},

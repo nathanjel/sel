@@ -23,6 +23,7 @@ const char* kind_name(sel::NT t) {
     case sel::NT::Num: return "num";
     case sel::NT::Text: return "text";
     case sel::NT::Bool: return "bool";
+    case sel::NT::Null: return "null";
     case sel::NT::Var: return "var";
     case sel::NT::Index: return "index";
     case sel::NT::Seq: return "seq";

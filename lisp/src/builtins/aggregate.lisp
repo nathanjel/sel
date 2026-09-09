@@ -60,7 +60,7 @@
 ;;; addressable the way the original was.
 (define-builtin "FILTER" 2 3
   (lambda (a ctx)
-    (let ((out (make-none)))
+    (let ((out (make-list-value nil)))
       (aggregate-walk a ctx
                       (lambda (r key item body)
                         (when (as-bool r (node-pos body))

@@ -3,7 +3,7 @@
 % E_ARITY is a compile-time error raised from parseCall before a single argument
 % is evaluated, so the filler arguments are deliberately meaningless — `1` parses
 % and never runs. The position is the *call's*, which is why every case pins it:
-% this is the cheapest cross-host position check in the suite, and there are 54
+% this is the cheapest cross-host position check in the suite, and there are 61
 % functions behind it.
 %
 % Generated shape, maintained by hand. A new built-in lands with its two cases
@@ -129,6 +129,12 @@ CODE(1, 1)
 --- expect
 error E_ARITY at 1:1
 ===
+### name: arity.coalesce.too-few
+--- source
+COALESCE()
+--- expect
+error E_ARITY at 1:1
+===
 ### name: arity.cond.too-few
 --- source
 COND(1, 1)
@@ -243,6 +249,18 @@ FROM_UTF8(1, 1)
 --- expect
 error E_ARITY at 1:1
 ===
+### name: arity.get.too-few
+--- source
+GET(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.get.too-many
+--- source
+GET(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
 ### name: arity.has.too-few
 --- source
 HAS(1)
@@ -276,6 +294,54 @@ error E_ARITY at 1:1
 ### name: arity.indexes.too-many
 --- source
 INDEXES(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.is-blank.too-few
+--- source
+IS_BLANK()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.is-blank.too-many
+--- source
+IS_BLANK(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.is-not-null.too-few
+--- source
+IS_NOT_NULL()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.is-not-null.too-many
+--- source
+IS_NOT_NULL(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.is-null.too-few
+--- source
+IS_NULL()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.is-null.too-many
+--- source
+IS_NULL(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.is-present.too-few
+--- source
+IS_PRESENT()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.is-present.too-many
+--- source
+IS_PRESENT(1, 1)
 --- expect
 error E_ARITY at 1:1
 ===
@@ -408,6 +474,18 @@ error E_ARITY at 1:1
 ### name: arity.padr.too-many
 --- source
 PADR(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.path.too-few
+--- source
+PATH(1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.path.too-many
+--- source
+PATH(1, 1, 1, 1)
 --- expect
 error E_ARITY at 1:1
 ===

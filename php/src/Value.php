@@ -27,17 +27,24 @@ final class Value
     public $scalar;
     /** @var array<array-key, Value> */
     public array $children = [];
+    public bool $isList = false;
 
     /** @param string|bool|null $scalar */
-    private function __construct(string $kind, $scalar)
+    private function __construct(string $kind, $scalar, bool $isList = false)
     {
         $this->kind = $kind;
         $this->scalar = $scalar;
+        $this->isList = $isList;
     }
 
     public static function none(): self
     {
         return new self(self::NONE, null);
+    }
+
+    public static function null(): self
+    {
+        return new self(self::NONE, null, false);
     }
 
     public static function text(string $s): self
@@ -84,7 +91,7 @@ final class Value
     /** @param list<Value> $values */
     public static function list(array $values): self
     {
-        $v = self::none();
+        $v = new self(self::NONE, null, true);
         $i = 0;
         foreach ($values as $x) {
             $v->set((string) (++$i), $x);
@@ -102,6 +109,25 @@ final class Value
     public function isNone(): bool
     {
         return $this->kind === self::NONE;
+    }
+
+    public function isNull(): bool
+    {
+        return $this->kind === self::NONE && $this->size() === 0 && !$this->isList;
+    }
+
+    public function isVacuous(): bool
+    {
+        if ($this->isNull()) {
+            return true;
+        }
+        if ($this->kind === self::NONE && $this->size() === 0) {
+            return true;
+        }
+        if ($this->kind === self::TEXT && $this->size() === 0) {
+            return preg_match('/^[ \t\r\n]*$/', (string) $this->scalar) === 1;
+        }
+        return false;
     }
 
     public function isText(): bool
@@ -171,6 +197,9 @@ final class Value
         $v = $this;
         $guard = 0;
         while ($v->kind === self::NONE) {
+            if ($v->isNull()) {
+                fail('E_NULL', 'value is NULL', $pos);
+            }
             if (!$v->children) {
                 fail('E_NO_SCALAR', 'value has no scalar and no children', $pos);
             }
@@ -285,7 +314,7 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $pos);
         }
-        $out = new self($this->kind, $this->scalar);
+        $out = new self($this->kind, $this->scalar, $this->isList);
         foreach ($this->children as $k => $v) {
             $out->children[$k] = $v->copyAt($depth + 1, $pos);
         }
@@ -389,7 +418,7 @@ final class Value
             fail('E_DEPTH', 'value nested too deeply', null);
         }
         if ($x === null) {
-            return self::none();
+            return self::null();
         }
         if ($x instanceof Value) {
             return $x;
@@ -416,6 +445,7 @@ final class Value
             // array. Without the renumbering, ITEMS[1] would mean the first line
             // on the frontend and the second on the backend.
             if (array_is_list($x)) {
+                $v->isList = true;
                 $i = 0;
                 foreach ($x as $item) {
                     $v->set((string) (++$i), self::fromNativeAt($item, $depth + 1));

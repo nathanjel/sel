@@ -16,10 +16,13 @@
    #:value-p
    #:value-kind
    #:value-none-p
+   #:value-null-p
+   #:value-vacuous-p
    #:value-text-p
    #:value-bin-p
    #:value-bool-p
    #:make-none
+   #:make-null
    #:make-text
    #:make-bin
    #:make-bool

@@ -71,18 +71,21 @@ BP_XOR = 5
 BP_AND = 6
 BP_NOT = 7        # prefix
 BP_COMPARE = 8    # non-associative
-BP_BOR = 9
-BP_BXOR = 10
-BP_BAND = 11
-BP_CONCAT = 12    # &
-BP_ADD = 13       # + -
-BP_MUL = 14       # * / %
-BP_NEG = 15       # prefix
+BP_COALESCE = 9   # ?? ??? (right associative)
+BP_BOR = 10
+BP_BXOR = 11
+BP_BAND = 12
+BP_CONCAT = 13    # &
+BP_ADD = 14       # + -
+BP_MUL = 15       # * / %
+BP_NEG = 16       # prefix
 
 # Infix operator -> (binding power, associativity). 'L' left, 'R' right,
 # 'N' non-associative. Word operators are lexed as identifiers, so they are
 # looked up separately; the binding powers are the same table.
 INFIX_OPS: dict[str, tuple[int, str]] = {
+    '??': (BP_COALESCE, 'R'),
+    '???': (BP_COALESCE, 'R'),
     '&': (BP_CONCAT, 'L'),
     '+': (BP_ADD, 'L'), '-': (BP_ADD, 'L'),
     '*': (BP_MUL, 'L'), '/': (BP_MUL, 'L'), '%': (BP_MUL, 'L'),
@@ -229,7 +232,7 @@ class Parser:
 
             self.next()
 
-            if assoc == 'R':
+            if t.value in ASSIGN_OPS:
                 # Assignment. The target is validated against the AST shape, not
                 # against a value, which is what makes `(A) = 1` a compile error.
                 check_target(left, t)
@@ -245,6 +248,11 @@ class Parser:
                     left = Node('assign', left.pos, op=t.value, target=left, value=value)
                 finally:
                     self.leave()
+                continue
+
+            if assoc == 'R':
+                right = self.parse_term(bp)
+                left = Node('bin', t.pos, op=t.value, l=left, r=right)
                 continue
 
             if assoc == 'N':
@@ -338,6 +346,9 @@ class Parser:
                 if t.value in ('TRUE', 'FALSE'):
                     self.next()
                     return Node('bool', t.pos, v=(t.value == 'TRUE'))
+                if t.value == 'NULL':
+                    self.next()
+                    return Node('null', t.pos)
                 after = self.toks[self.i + 1] if self.i + 1 < len(self.toks) else None
                 if after is not None and after.type == 'op' and after.value == '(':
                     return self.parse_call()

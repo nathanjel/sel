@@ -157,7 +157,8 @@ void test_value() {
   nested.set("1", Value::text("first"));
   nested.set("2", Value::text("second"));
   selt::eq(nested.as_text(), std::string("first"), "scalar context takes the first child");
-  selt::raises("E_NO_SCALAR", [] { Value::none().as_text(); }, "no scalar and no children");
+  selt::raises("E_NULL", [] { Value::none().as_text(); }, "no scalar and no children is null");
+  selt::raises("E_NO_SCALAR", [] { Value::list({}).as_text(); }, "empty list has no scalar");
   selt::raises("E_NOT_BOOL", [] { Value::text("TRUE").as_bool(); }, "there is no truthiness");
 }
 

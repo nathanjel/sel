@@ -56,6 +56,10 @@
       },
       "ret": "@concat",
       "caveat": "concat-null"
+    },
+    "???": {
+      "tpl": "COALESCE(NULLIF(btrim({textCast:0}, E' \\t\\r\\n'), ''), {1})",
+      "ret": "@unify:0,1"
     }
   },
   "funcs": {
@@ -224,6 +228,22 @@
     "FLOOR": {
       "tpl": "floor({numericCast:0})",
       "ret": "NUM"
+    },
+    "IS_NULL": {
+      "tpl": "({textCast:0} IS NULL)",
+      "ret": "BOOL"
+    },
+    "IS_NOT_NULL": {
+      "tpl": "({textCast:0} IS NOT NULL)",
+      "ret": "BOOL"
+    },
+    "IS_BLANK": {
+      "tpl": "(({textCast:0} IS NULL) OR (btrim({textCast:0}, E' \\t\\r\\n') = ''))",
+      "ret": "BOOL"
+    },
+    "IS_PRESENT": {
+      "tpl": "(({textCast:0} IS NOT NULL) AND (btrim({textCast:0}, E' \\t\\r\\n') <> ''))",
+      "ret": "BOOL"
     }
   },
   "notes": {

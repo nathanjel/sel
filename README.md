@@ -424,6 +424,10 @@ RMATCH('^\d{2}-\d{3}$', "31-874")              => TRUE
 IF(1, "a", "b")                   => !E_NOT_BOOL
 " 2" + 1                          => !E_NOT_NUM
 1 < 2 < 3                         => !E_SYNTAX
+NULL ?? "default"                 => default
+"   " ??? "fallback"              => fallback
+IS_NULL(NULL)                     => TRUE
+IS_BLANK("   ")                   => TRUE
 ```
 
 No loops, no user-defined functions, no lexical scoping, no dynamic symbols, no
@@ -482,6 +486,14 @@ cl-ppcre folds neither of the two non-ASCII code points that simple-fold to an
 ASCII letter, and Python's `re` folds those two *and* two more (U+0130 and U+0131
 both fold to `i` there and nowhere else), so both hosts pre-fold the subject to
 land on the same set.
+
+**Null safety.** Missing data is represented as a distinct `NULL` value. SEL
+guarantees that `NULL` never silently coerces into zero, empty string, or false:
+operations like `+`, `-`, `&`, `UPPER`, or `==` immediately fail loudly with
+`E_NULL`. Explicit null coalescing (`??`) and vacuous / data-invariant coalescing
+(`???`) handle missing values cleanly, while `GET`, `PATH`, `IS_NULL`, `IS_NOT_NULL`,
+`IS_BLANK`, and `IS_PRESENT` provide complete navigation and inspection parity
+across in-memory evaluation and SQL translation pushdown.
 
 ## Layout
 

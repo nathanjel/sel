@@ -588,11 +588,12 @@ std::string quote_dump(std::string_view s);
 // existing text or encoded code points it had just validated, so re-validating
 // would be pure cost; Value::text() is the checked entry point host code uses.
 struct Internals {
-  static Value raw(Kind kind, std::string scalar, bool b) {
+  static Value raw(Kind kind, std::string scalar, bool b, bool is_list = false) {
     Value v;
     v.p_->kind = kind;
     v.p_->scalar = std::move(scalar);
     v.p_->boolean = b;
+    v.p_->is_list = is_list;
     return v;
   }
 };
@@ -627,6 +628,7 @@ Value Value::clone_at(int depth, Pos pos) const {
   out.p_->kind = p_->kind;
   out.p_->scalar = p_->scalar;
   out.p_->boolean = p_->boolean;
+  out.p_->is_list = p_->is_list;
   out.p_->children.reserve(p_->children.size());
   for (const Entry& e : p_->children) {
     out.p_->children.emplace_back(e.first, e.second.clone_at(depth + 1, pos));
@@ -675,6 +677,8 @@ Value make_int(long long n) { return make_text(dec_format(dec_from_int(n))); }
 
 Value Value::none() { return Internals::raw(Kind::None, "", false); }
 
+Value Value::null() { return Internals::raw(Kind::None, "", false, false); }
+
 Value Value::text(std::string utf8) {
   if (!sel::is_valid_utf8(utf8)) {
     throw SelError("E_UTF8", "text is not valid UTF-8", Pos{});
@@ -704,6 +708,7 @@ Value Value::integer(long long n) {
 
 Value Value::list(std::vector<Value> values) {
   Value v = none();
+  v.p_->is_list = true;
   for (std::size_t i = 0; i < values.size(); i++) {
     v.set(std::to_string(i + 1), std::move(values[i]));
   }
@@ -771,11 +776,31 @@ Value& Value::set(std::string key, Value value) {
   return *this;
 }
 
+bool Value::is_null() const {
+  return p_->kind == Kind::None && p_->children.empty() && !p_->is_list;
+}
+
+bool Value::is_vacuous() const {
+  if (is_null()) return true;
+  if (p_->kind == Kind::None && p_->children.empty()) return true;
+  if (p_->kind == Kind::Text && p_->children.empty()) {
+    if (p_->scalar.empty()) return true;
+    for (char ch : p_->scalar) {
+      if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 // The value that supplies the scalar: itself, or its first child, recursively.
 const Value& Value::scalar_source(Pos pos) const {
   const Value* v = this;
   int guard = 0;
   while (v->p_->kind == Kind::None) {
+    if (v->is_null()) {
+      throw SelError("E_NULL", "value is NULL", pos);
+    }
     if (v->p_->children.empty()) {
       throw SelError("E_NO_SCALAR", "value has no scalar and no children", pos);
     }
@@ -950,6 +975,7 @@ void ensure_registered() {
 // Longest match first: `$<=` must not lex as `$<` followed by `=`.
 const std::vector<std::string>& operators() {
   static const std::vector<std::string> ops = {
+      "???", "??",
       "$==", "$!=", "$<=", "$>=",
       "$<", "$>", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "&=",
       "+", "-", "*", "/", "%", "&", "=", "<", ">", "(", ")", "[", "]", ",", ";",
@@ -959,7 +985,7 @@ const std::vector<std::string>& operators() {
 
 bool is_reserved(const std::string& w) {
   static const std::set<std::string> r = {
-      "TRUE", "FALSE", "AND", "OR", "NOT", "XOR", "EQL", "IN", "BAND", "BOR", "BXOR",
+      "TRUE", "FALSE", "NULL", "AND", "OR", "NOT", "XOR", "EQL", "IN", "BAND", "BOR", "BXOR",
   };
   return r.count(w) > 0;
 }
@@ -1347,13 +1373,14 @@ constexpr int BP_XOR = 5;
 constexpr int BP_AND = 6;
 constexpr int BP_NOT = 7;       // prefix
 constexpr int BP_COMPARE = 8;   // non-associative
-constexpr int BP_BOR = 9;
-constexpr int BP_BXOR = 10;
-constexpr int BP_BAND = 11;
-constexpr int BP_CONCAT = 12;   // &
-constexpr int BP_ADD = 13;      // + -
-constexpr int BP_MUL = 14;      // * / %
-constexpr int BP_NEG = 15;      // prefix
+constexpr int BP_COALESCE = 9;  // ?? ??? (right associative)
+constexpr int BP_BOR = 10;
+constexpr int BP_BXOR = 11;
+constexpr int BP_BAND = 12;
+constexpr int BP_CONCAT = 13;   // &
+constexpr int BP_ADD = 14;      // + -
+constexpr int BP_MUL = 15;      // * / %
+constexpr int BP_NEG = 16;      // prefix
 
 // An infix operator's binding power and associativity. 'L' parses its right
 // side at bp + 1, 'R' at bp -- that is what makes it right-associative -- and
@@ -1476,6 +1503,7 @@ class Parser {
   static const Infix* infix_entry(const Token& t) {
     static const std::map<std::string, Infix> ops = [] {
       std::map<std::string, Infix> m = {
+          {"??", {BP_COALESCE, 'R'}}, {"???", {BP_COALESCE, 'R'}},
           {"&", {BP_CONCAT, 'L'}},
           {"+", {BP_ADD, 'L'}}, {"-", {BP_ADD, 'L'}},
           {"*", {BP_MUL, 'L'}}, {"/", {BP_MUL, 'L'}}, {"%", {BP_MUL, 'L'}},
@@ -1512,20 +1540,29 @@ class Parser {
       next();
 
       if (e->assoc == 'R') {
-        // Assignment. The target is validated against the AST shape, not against
-        // a value, which is what makes `(A) = 1` a compile error.
-        check_target(left, t);
-        // Counted, for the same reason parse_prefix counts: the right side
-        // recurses through neither parse_sequence nor parse_primary, so
-        // uncounted a chain of assignments is bounded by nothing but this host's
-        // own stack -- `A=` forty-four thousand times terminated it with SIGSEGV
-        // through the public CLI.
-        enter(t.pos);
-        const Leave leave_guard{this};
-        auto n = make(NT::Assign, left->pos);
+        if (assign_ops().count(t.value)) {
+          // Assignment. The target is validated against the AST shape, not against
+          // a value, which is what makes `(A) = 1` a compile error.
+          check_target(left, t);
+          // Counted, for the same reason parse_prefix counts: the right side
+          // recurses through neither parse_sequence nor parse_primary, so
+          // uncounted a chain of assignments is bounded by nothing but this host's
+          // own stack -- `A=` forty-four thousand times terminated it with SIGSEGV
+          // through the public CLI.
+          enter(t.pos);
+          const Leave leave_guard{this};
+          auto n = make(NT::Assign, left->pos);
+          n->s = t.value;
+          n->l = left;
+          n->r = parse_term(e->bp);        // bp, not bp + 1: right associative
+          left = n;
+          continue;
+        }
+
+        auto n = make(NT::Bin, t.pos);
         n->s = t.value;
         n->l = left;
-        n->r = parse_term(e->bp);        // bp, not bp + 1: right associative
+        n->r = parse_term(e->bp);
         left = n;
         continue;
       }
@@ -1658,6 +1695,10 @@ class Parser {
         auto n = make(NT::Bool, t.pos);
         n->b = t.value == "TRUE";
         return n;
+      }
+      if (t.value == "NULL") {
+        next();
+        return make(NT::Null, t.pos);
       }
       const Token& after = toks_[i_ + 1];
       if (after.type == Tok::Op && after.value == "(") return parse_call();
@@ -1907,6 +1948,7 @@ Value bitwise(const std::string& op, const std::string& a, const std::string& b,
 // anything else contributes itself. Keys are always renumbered from 1.
 Value eval_list(const Node& node, Context& ctx) {
   Value out = Value::none();
+  out.set_is_list(true);
   int n = 0;
   for (const auto& item : node.items) {
     Value v = eval_node(*item, ctx);
@@ -1957,6 +1999,26 @@ Value eval_binary(const Node& node, Context& ctx) {
     if (op == "AND" && !left) return Value::boolean(false);
     if (op == "OR" && left) return Value::boolean(true);
     return Value::boolean(eval_node(*node.r, ctx).as_bool(node.r->pos));
+  }
+
+  if (op == "??") {
+    try {
+      const Value l = eval_node(*node.l, ctx);
+      if (!l.is_null()) return l;
+    } catch (const SelError& e) {
+      if (e.code() != "E_NO_KEY" && e.code() != "E_UNDEF_VAR") throw;
+    }
+    return eval_node(*node.r, ctx);
+  }
+
+  if (op == "???") {
+    try {
+      const Value l = eval_node(*node.l, ctx);
+      if (!l.is_vacuous()) return l;
+    } catch (const SelError& e) {
+      if (e.code() != "E_NO_KEY" && e.code() != "E_UNDEF_VAR") throw;
+    }
+    return eval_node(*node.r, ctx);
   }
 
   const Value l = eval_node(*node.l, ctx);
@@ -2139,6 +2201,7 @@ Value eval_dispatch(const Node& node, Context& ctx) {
     case NT::Num: return make_text(node.s);     // canonicalised by the parser
     case NT::Text: return make_text(node.s);
     case NT::Bool: return Value::boolean(node.b);
+    case NT::Null: return Value::null();
 
     case NT::Var: {
       const Value* v = ctx.lookup(node.s);
@@ -2356,6 +2419,7 @@ void register_aggregates() {
   // addressable the way the original was.
   define(Spec{"FILTER", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
                 Value out = Value::none();
+                out.set_is_list(true);
                 walk(a, ctx, [&out](const Value& r, const std::string& key, const Value& item,
                                     const Node& body) -> std::optional<Value> {
                   if (r.as_bool(body.pos)) out.set(key, item.clone());
@@ -3224,6 +3288,76 @@ void register_regex() {
               }});
 }
 
+void register_null() {
+  define(Spec{"IS_NULL", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                return Value::boolean(a.val(0).is_null());
+              }});
+
+  define(Spec{"IS_NOT_NULL", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                return Value::boolean(!a.val(0).is_null());
+              }});
+
+  define(Spec{"COALESCE", 1, VARIADIC, true, false, nullptr, [](Args& a, Context&) -> Value {
+                for (int i = 0; i < a.count(); i++) {
+                  const Value v = a.val(i);
+                  if (!v.is_null()) return v;
+                }
+                return Value::null();
+              }});
+
+  define(Spec{"GET", 2, 3, true, false, nullptr, [](Args& a, Context&) -> Value {
+                const Value target = a.val(0);
+                const std::string key = a.text(1);
+                if (!target.is_null() && target.has(key)) {
+                  const Value* v = target.get(key);
+                  if (v != nullptr) return *v;
+                }
+                if (a.count() > 2) return a.val(2);
+                return Value::null();
+              }});
+
+  define(Spec{"PATH", 2, 3, true, false, nullptr, [](Args& a, Context&) -> Value {
+                const Value target = a.val(0);
+                const std::string path_str = a.text(1);
+                if (path_str.empty()) return target;
+
+                std::vector<std::string> segments;
+                std::size_t start = 0;
+                while (true) {
+                  std::size_t dot = path_str.find('.', start);
+                  if (dot == std::string::npos) {
+                    segments.push_back(path_str.substr(start));
+                    break;
+                  }
+                  segments.push_back(path_str.substr(start, dot - start));
+                  start = dot + 1;
+                }
+
+                Value cur = target;
+                for (const auto& seg : segments) {
+                  if (cur.is_null() || !cur.has(seg)) {
+                    if (a.count() > 2) return a.val(2);
+                    return Value::null();
+                  }
+                  const Value* next = cur.get(seg);
+                  if (next == nullptr) {
+                    if (a.count() > 2) return a.val(2);
+                    return Value::null();
+                  }
+                  cur = *next;
+                }
+                return cur;
+              }});
+
+  define(Spec{"IS_BLANK", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                return Value::boolean(a.val(0).is_vacuous());
+              }});
+
+  define(Spec{"IS_PRESENT", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                return Value::boolean(!a.val(0).is_vacuous());
+              }});
+}
+
 void register_builtins() {
   register_control();
   register_structure();
@@ -3232,6 +3366,7 @@ void register_builtins() {
   register_numbers();
   register_binary();
   register_regex();
+  register_null();
 }
 
 // --- dependencies -----------------------------------------------------------

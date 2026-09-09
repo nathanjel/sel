@@ -16,7 +16,7 @@
   :description "SEL — a small expression language that evaluates identically on every host"
   :author "Marcin Gałczyński"
   :license "MIT"
-  :version "0.6.1"
+  :version "0.7.0"
   :homepage "https://github.com/nathanjel/sel"
   :source-control (:git "https://github.com/nathanjel/sel.git")
   :depends-on ("cl-ppcre")
@@ -42,7 +42,8 @@
                    (:file "text")
                    (:file "number")
                    (:file "binary")
-                   (:file "regex")))
+                   (:file "regex")
+                   (:file "null")))
      (:file "sel"))))
   :in-order-to ((test-op (test-op "sel-lang/tests"))))
 

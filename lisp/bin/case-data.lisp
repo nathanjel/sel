@@ -6454,4 +6454,116 @@
    :strict nil
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
-   :bindings (lambda () (list )))))
+   :bindings (lambda () (list )))
+  (list
+   :name "op.coalesce.basic"
+   :at "21-null.sqlt:3"
+   :dialect "mariadb"
+   :source "QTY ?? 0"
+   :expect "COALESCE(`qty`, 0)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "QTY" (binding-column "qty" nil :num)))))
+  (list
+   :name "op.coalesce.chain"
+   :at "21-null.sqlt:14"
+   :dialect "mariadb"
+   :source "A ?? B ?? 10"
+   :expect "COALESCE(`a`, COALESCE(`b`, 10))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "a" nil :num)) (cons "B" (binding-column "b" nil :num)))))
+  (list
+   :name "op.vacuous.basic"
+   :at "21-null.sqlt:25"
+   :dialect "mariadb"
+   :source "CODE ??? \"N/A\""
+   :expect "COALESCE(NULLIF(REGEXP_REPLACE(`code`, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', ''), ''), 'N/A')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "CODE" (binding-column "code" nil :text)))))
+  (list
+   :name "func.is-null.column"
+   :at "21-null.sqlt:36"
+   :dialect "mariadb"
+   :source "IS_NULL(DISCOUNT)"
+   :expect "(`discount` IS NULL)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "DISCOUNT" (binding-column "discount" nil :num)))))
+  (list
+   :name "func.is-not-null.column"
+   :at "21-null.sqlt:47"
+   :dialect "mariadb"
+   :source "IS_NOT_NULL(DISCOUNT)"
+   :expect "(`discount` IS NOT NULL)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "DISCOUNT" (binding-column "discount" nil :num)))))
+  (list
+   :name "func.coalesce.multiple"
+   :at "21-null.sqlt:58"
+   :dialect "mariadb"
+   :source "COALESCE(A, B, 0)"
+   :expect "COALESCE(`a`, `b`, 0)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "a" nil :num)) (cons "B" (binding-column "b" nil :num)))))
+  (list
+   :name "func.is-blank.column"
+   :at "21-null.sqlt:69"
+   :dialect "mariadb"
+   :source "IS_BLANK(POSTCODE)"
+   :expect "((`postcode` IS NULL) OR (REGEXP_REPLACE(`postcode`, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') = ''))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "POSTCODE" (binding-column "postcode" nil :text)))))
+  (list
+   :name "func.is-present.column"
+   :at "21-null.sqlt:80"
+   :dialect "mariadb"
+   :source "IS_PRESENT(POSTCODE)"
+   :expect "((`postcode` IS NOT NULL) AND (REGEXP_REPLACE(`postcode`, '^[ \\\\t\\\\r\\\\n]+|[ \\\\t\\\\r\\\\n]+$', '') <> ''))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "POSTCODE" (binding-column "postcode" nil :text)))))))

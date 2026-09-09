@@ -29,8 +29,9 @@ export class Value {
   kind: ValueKind;
   scalar: any;
   children: Map<string, Value> | null;
+  isList: boolean;
 
-  constructor(kind: ValueKind, scalar: any);
+  constructor(kind: ValueKind, scalar: any, isList?: boolean);
 
   static get NONE(): 'NONE';
   static get TEXT(): 'TEXT';
@@ -38,11 +39,14 @@ export class Value {
   static get BOOL(): 'BOOL';
 
   isNone(): boolean;
+  isNull(): boolean;
+  isVacuous(): boolean;
   isText(): boolean;
   isBin(): boolean;
   isBool(): boolean;
 
   static none(): Value;
+  static null(): Value;
   static text(s: string): Value;
   static bin(b: Uint8Array | ArrayLike<number>): Value;
   static bool(b: boolean): Value;

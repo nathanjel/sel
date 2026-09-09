@@ -373,6 +373,33 @@
       "refuse": {
         "sqlite": "E_SQL_UNSUPPORTED"
       }
+    },
+    {
+      "name": "is-blank over a text column",
+      "why": "Tests IS_BLANK against a column containing both non-empty and empty strings. Order 4 is '' and must match; orders 1, 2, 3, 5 are non-empty and must not.",
+      "sel": "IS_BLANK(CODE)",
+      "expect": [
+        4
+      ]
+    },
+    {
+      "name": "is-present over a text column",
+      "why": "Inverse of IS_BLANK. Orders 1, 2, 3, 5 are non-empty and must match; order 4 is '' and must not.",
+      "sel": "IS_PRESENT(CODE)",
+      "expect": [
+        1,
+        2,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "vacuous coalescing over a text column",
+      "why": "Tests ??? replacing an empty string with a fallback. Order 4 is '' so ??? yields 'empty', matching the comparison; the other orders keep their non-empty code.",
+      "sel": "(CODE ??? \"empty\") $== \"empty\"",
+      "expect": [
+        4
+      ]
     }
   ]
 }

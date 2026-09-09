@@ -113,6 +113,7 @@ class Value {
   Value();
 
   static Value none();
+  static Value null();
   static Value text(std::string utf8);        // E_UTF8 if not valid UTF-8
   static Value bin(std::string bytes);
   static Value bin(const std::vector<std::uint8_t>& bytes);
@@ -132,9 +133,13 @@ class Value {
   // keyword in Lisp, so only a predicate can be documented uniformly. These
   // test the value's own kind and do not apply scalar context.
   bool is_none() const { return p_->kind == Kind::None; }
+  bool is_null() const;
+  bool is_vacuous() const;
   bool is_text() const { return p_->kind == Kind::Text; }
   bool is_bin() const { return p_->kind == Kind::Bin; }
   bool is_bool() const { return p_->kind == Kind::Bool; }
+  bool is_list() const { return p_->is_list; }
+  void set_is_list(bool b) { p_->is_list = b; }
 
   // --- children. Insertion-ordered; re-assigning a key keeps its position.
   std::size_t size() const { return p_->children.size(); }
@@ -196,6 +201,7 @@ class Value {
     Kind kind = Kind::None;
     std::string scalar;   // TEXT: UTF-8 bytes. BIN: raw bytes. Otherwise empty.
     bool boolean = false;  // BOOL only.
+    bool is_list = false;
     std::vector<Entry> children;
     std::unordered_map<std::string, std::size_t> index;
 

@@ -73,7 +73,7 @@ def _filter(args, ctx):
     """The one aggregate that preserves keys — a filtered list should still be
     addressable the way the original was.
     """
-    out = Value.none()
+    out = Value(NONE, None, is_list=True)
 
     def visit(r, key, item, body):
         if r.as_bool(body.pos):

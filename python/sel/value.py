@@ -17,7 +17,7 @@ BOOL = 'BOOL'
 
 
 class Value:
-    __slots__ = ('kind', 'scalar', 'children')
+    __slots__ = ('kind', 'scalar', 'children', 'is_list')
 
     # The kind constants, mirrored as class attributes so `Value.BOOL` works the
     # way `Value::BOOL` does in PHP. They are also exported from sel/__init__.py.
@@ -26,9 +26,10 @@ class Value:
     BIN = BIN
     BOOL = BOOL
 
-    def __init__(self, kind: str, scalar: Any) -> None:
+    def __init__(self, kind: str, scalar: Any, is_list: bool = False) -> None:
         self.kind = kind
         self.scalar = scalar
+        self.is_list = is_list
         # dict, created on demand. Python dicts are insertion-ordered and
         # re-assigning an existing key keeps its original position, which is
         # exactly the contract §3.3 requires — the same reason the JS host uses
@@ -46,6 +47,18 @@ class Value:
     def is_none(self) -> bool:
         return self.kind == NONE
 
+    def is_null(self) -> bool:
+        return self.kind == NONE and self.size() == 0 and not self.is_list
+
+    def is_vacuous(self) -> bool:
+        if self.is_null():
+            return True
+        if self.kind == NONE and self.size() == 0:
+            return True
+        if self.kind == TEXT and self.size() == 0:
+            return len(self.scalar) == 0 or all(ch in ' \t\r\n' for ch in self.scalar)
+        return False
+
     def is_text(self) -> bool:
         return self.kind == TEXT
 
@@ -59,6 +72,10 @@ class Value:
 
     @staticmethod
     def none() -> Value:
+        return Value(NONE, None)
+
+    @staticmethod
+    def null() -> Value:
         return Value(NONE, None)
 
     @staticmethod
@@ -105,7 +122,7 @@ class Value:
         """Builds a list keyed "1".."n". Used by `,` and by list-returning
         built-ins.
         """
-        v = Value.none()
+        v = Value(NONE, None, is_list=True)
         for i, x in enumerate(values):
             v.set(str(i + 1), x)
         return v
@@ -151,6 +168,8 @@ class Value:
         v = self
         guard = 0
         while v.kind == NONE:
+            if v.is_null():
+                fail('E_NULL', 'value is NULL', pos)
             if not v.children:
                 fail('E_NO_SCALAR', 'value has no scalar and no children', pos)
             v = next(iter(v.children.values()))
@@ -229,7 +248,7 @@ as as_text().
     def _clone_at(self, depth: int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
-        out = Value(self.kind, self.scalar)
+        out = Value(self.kind, self.scalar, self.is_list)
         if self.children:
             out.children = {k: v._clone_at(depth + 1, pos)
                             for k, v in self.children.items()}
@@ -296,7 +315,7 @@ as as_text().
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
         if x is None:
-            return Value.none()
+            return Value.null()
         if isinstance(x, Value):
             return x
         if isinstance(x, bool):          # before int: bool is a subclass of int

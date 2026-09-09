@@ -58,7 +58,7 @@ Identifiers are **ASCII only** and **case-insensitive**. They are canonicalised
 to upper case internally, so `total`, `Total` and `TOTAL` are one name. This
 applies to variables, function names and aggregate binders alike.
 
-`TRUE`, `FALSE`, `AND`, `OR`, `NOT`, `XOR`, `EQL`, `IN`, `BAND`, `BOR`, `BXOR` are
+`TRUE`, `FALSE`, `NULL`, `AND`, `OR`, `NOT`, `XOR`, `EQL`, `IN`, `BAND`, `BOR`, `BXOR` are
 reserved and may not be used as variable names (`E_RESERVED`).
 
 ### 2.4 Number literals
@@ -134,7 +134,7 @@ branches on "is this a list" — see §3.2.
 - **BIN** — a sequence of bytes, 0–255. Not text; not printable by assumption.
 - **BOOL** — `TRUE` or `FALSE`. A distinct kind, not a string and not a number.
   This is what makes strictness cheap: every truth test is a kind check.
-- **NONE** — no scalar of its own. A list built by `,` is NONE with children.
+- **NONE** — no scalar of its own. A list built by `,` is NONE with children. A NONE with no scalar and no children represents **NULL** (the explicit absence of a value). In source code it is written as `NULL`. In host boundaries, `from_native(None)` / `fromNative(null)` produces it, and `to_native()` yields `None` / `null`.
 
 TEXT and BIN interconvert **through UTF-8 and nothing else**. There is no
 encoding parameter anywhere in the language. Converting BIN to TEXT decodes
@@ -148,6 +148,7 @@ Converting TEXT to BIN always succeeds.
 asScalar(v):
     if v.kind is not NONE      -> v.scalar
     else if v has children     -> asScalar(first child in insertion order)
+    else if v is NULL          -> E_NULL
     else                       -> E_NO_SCALAR
 ```
 
@@ -300,14 +301,15 @@ Tightest binding first. Same-row operators associate as marked.
 | 6 | `BAND` | left | BIN, equal length |
 | 7 | `BXOR` | left | BIN, equal length |
 | 8 | `BOR` | left | BIN, equal length |
-| 9 | `==` `!=` `<` `<=` `>` `>=` `$==` `$!=` `$<` `$<=` `$>` `$>=` `EQL` `IN` | **none** | |
-| 10 | `NOT x` | prefix | |
-| 11 | `AND` | left | short-circuit |
-| 12 | `XOR` | left | |
-| 13 | `OR` | left | short-circuit |
-| 14 | `=` `+=` `-=` `*=` `/=` `%=` `&=` | right | |
-| 15 | `,` | left | list build / argument separator |
-| 16 | `;` | left | sequence |
+| 9 | `??` `???` | right | null-coalescing (`??`), vacuous-coalescing (`???`), short-circuit |
+| 10 | `==` `!=` `<` `<=` `>` `>=` `$==` `$!=` `$<` `$<=` `$>` `$>=` `EQL` `IN` | **none** | |
+| 11 | `NOT x` | prefix | |
+| 12 | `AND` | left | short-circuit |
+| 13 | `XOR` | left | |
+| 14 | `OR` | left | short-circuit |
+| 15 | `=` `+=` `-=` `*=` `/=` `%=` `&=` | right | |
+| 16 | `,` | left | list build / argument separator |
+| 17 | `;` | left | sequence |
 
 Two deliberate choices:
 
@@ -319,31 +321,49 @@ is what it reads like. This differs from C-family `!`.
 
 ### 5.1 Arithmetic — `+` `-` `*` `/` `%` and unary `-`
 
-Both operands must be numbers (§4). Anything else is `E_NOT_NUM`.
+Both operands must be numbers (§4). An operand that is NULL raises `E_NULL`.
+Anything else is `E_NOT_NUM`.
 
 ### 5.2 Concatenation — `&`
 
-Operands must be TEXT, BIN, or numbers. If both are TEXT the result is TEXT; if
-either is BIN the result is BIN, with TEXT operands encoded as UTF-8. BOOL is
-`E_NOT_TEXT`.
+Operands must be TEXT, BIN, or numbers. An operand that is NULL raises `E_NULL`.
+If both are TEXT the result is TEXT; if either is BIN the result is BIN, with
+TEXT operands encoded as UTF-8. BOOL is `E_NOT_TEXT`.
 
 ### 5.3 Text comparison — `$==` `$!=` `$<` `$<=` `$>` `$>=`
 
-Both operands are taken as bytes (TEXT via UTF-8) and compared **bytewise**. For
-valid UTF-8 this is code-point order. It is specified as byte order because JS
-strings compare in UTF-16 order natively, which disagrees above U+FFFF; an
-implementation must not use its host's native comparison.
+Both operands are taken as bytes (TEXT via UTF-8) and compared **bytewise**. An
+operand that is NULL raises `E_NULL`. For valid UTF-8 this is code-point order.
+It is specified as byte order because JS strings compare in UTF-16 order
+natively, which disagrees above U+FFFF; an implementation must not use its
+host's native comparison.
 
 ### 5.4 Deep comparison — `EQL`, `IN`
 
 `a EQL b` is `TRUE` when both have the same kind, equal scalars (BIN compared
 bytewise, TEXT bytewise, numbers **not** normalised — `EQL` is structural), and
-children with the same keys **in the same order**, pairwise `EQL`.
+children with the same keys **in the same order**, pairwise `EQL`. Two values
+that are NULL are `EQL` to each other. NULL is not `EQL` to any scalar or
+non-null value.
 
 `x IN list` is `TRUE` when some child of `list` is `EQL` to `x`. If `list` has no
-children it is compared directly against `x`.
+children it is compared directly against `x`. `NULL IN list` is `TRUE` if any
+element of `list` is NULL.
 
-### 5.5 Logic — `AND` `OR` `NOT` `XOR`
+### 5.5 Coalescing — `??` and `???`
+
+`a ?? b` evaluates `a`. If `a` evaluates to NULL, or if evaluating `a` fails
+with `E_NO_KEY` or `E_UNDEF_VAR`, `b` is evaluated and yielded. Otherwise `a` is
+yielded and `b` is not evaluated.
+
+`a ??? b` evaluates `a`. If `a` evaluates to NULL, an empty string `""`, a
+whitespace-only string, an empty list (a childless NONE), or fails with
+`E_NO_KEY` or `E_UNDEF_VAR`, `b` is evaluated and yielded. Otherwise `a` is
+yielded and `b` is not evaluated.
+
+Both operators short-circuit: if `a` is non-vacuous, `b` is never evaluated.
+
+### 5.6 Logic — `AND` `OR` `NOT` `XOR`
 
 Operands must be BOOL (`E_NOT_BOOL`). There is no truthiness: `IF(name, …)` is an
 error, not a shortcut. Write `IF(name $!= "", …)`.
@@ -351,12 +371,12 @@ error, not a shortcut. Write `IF(name $!= "", …)`.
 `AND` and `OR` **short-circuit**: `FALSE AND (1/0)` is `FALSE`, not an error.
 `XOR` evaluates both.
 
-### 5.6 Bitwise — `BAND` `BOR` `BXOR`
+### 5.7 Bitwise — `BAND` `BOR` `BXOR`
 
 Both operands must be BIN of **equal length** (`E_NOT_BIN`, `E_LEN_MISMATCH`).
 The result is BIN of that length. These operate on byte strings, not integers.
 
-### 5.7 Assignment
+### 5.8 Assignment
 
 The target must be an identifier, optionally followed by index operations
 (`A`, `A[1]`, `A["x"][2]`). Anything else is `E_BAD_ASSIGN` at parse time.
@@ -787,6 +807,18 @@ differ most:
 
 A capture that did not participate in the match yields TEXT `""`.
 
+### 7.9 Safety and Null
+
+| Signature | Yields |
+|---|---|
+| `IS_NULL(x)` | BOOL — `TRUE` if `x` is NULL, `FALSE` otherwise. Never raises. |
+| `IS_NOT_NULL(x)` | BOOL — `TRUE` if `x` is not NULL, `FALSE` otherwise. |
+| `COALESCE(a, b, …)` | first non-null argument, or NULL if all are null. Evaluates arguments lazily. |
+| `GET(target, key [, default])` | reads `target[key]`; yields `default` (or NULL) if absent or target is NULL. |
+| `PATH(target, path_str [, default])` | walks dot-separated child keys in memory; yields `default` (or NULL) if any key is absent. |
+| `IS_BLANK(x)` | BOOL — `TRUE` if `x` is NULL, empty text `""`, whitespace-only text, or an empty list. |
+| `IS_PRESENT(x)` | BOOL — inverse of `IS_BLANK(x)`. |
+
 ---
 
 ## 8. Host interface
@@ -798,9 +830,9 @@ Sel.compile(source)          -> Program        # throws on syntax error
 Program.run(context)         -> Value
 Program.dependencies()       -> array of variable names, upper case
 Program.ast                  -> the parse tree
-Value.text/bin/num/bool/list
+Value.text/bin/num/bool/list/null
 Value.fromNative/toNative                      # where the host has native data
-Value.isNone/isText/isBin/isBool               # kind predicates
+Value.isNone/isText/isBin/isBool/isNull        # kind predicates
 ```
 
 `fromNative`/`toNative` convert between a host's own maps and lists and a
