@@ -57,6 +57,8 @@ git tag -a v0.7.1 -m "SEL 0.7.1"
 git push origin v0.7.1
 ```
 
+**Never re-tag or move an existing tag.** Upstream registries forbid republishing under an existing version: Packagist blocks re-tagged releases with `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`, while npm and PyPI permanently refuse file uploads for already-published versions. If a defect or correction is needed after pushing a tag, always bump to the next patch version.
+
 Versions live in six manifests. Keep them in step:
 
 ```
@@ -194,6 +196,14 @@ Packagist infers release versions from git tags, but it reads `extra.branch-alia
 ```
 
 `tools/check-version.sh` enforces this against the release series, so an outdated branch alias fails the version check before tagging.
+
+### Tag immutability
+
+Never delete, move, or re-tag an existing release tag. Packagist explicitly tracks tag commit hashes and flags moved tags with:
+
+> `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`
+
+Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.7.2`) rather than moving `v0.7.1`.
 
 ---
 
