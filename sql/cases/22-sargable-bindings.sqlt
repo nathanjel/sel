@@ -209,3 +209,81 @@ TYPEPATH $== "home"
 ((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))
 ===
 
+### name: bind.separate.relation.mariadb
+--- note
+prefilter: "separate" on relation emits two sibling EXISTS subqueries conjoined by AND on MariaDB.
+--- dialect
+mariadb
+--- bindings
+{"FIELDS": {"kind": "relation", "from": "cms_fields", "alias": "g", "correlate": {"raw": "`g`.`cmsid` = `cms_entry`.`cmsid`"}, "prefilter": "separate", "fields": {"fname": {"table": "g", "column": "fname", "type": "TEXT", "exact": true}, "value": {"table": "g", "column": "value", "type": "TEXT", "sargable": true}}}}
+--- source
+ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
+--- expect
+(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))
+===
+
+### name: bind.separate.column.mariadb
+--- note
+prefilter: "separate" on column propagates through ANY when relation leaves prefilter unspecified.
+--- dialect
+mariadb
+--- bindings
+{"FIELDS": {"kind": "relation", "from": "cms_fields", "alias": "g", "correlate": {"raw": "`g`.`cmsid` = `cms_entry`.`cmsid`"}, "fields": {"fname": {"table": "g", "column": "fname", "type": "TEXT", "exact": true}, "value": {"table": "g", "column": "value", "type": "TEXT", "sargable": true, "prefilter": "separate"}}}}
+--- source
+ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
+--- expect
+(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))
+===
+
+### name: bind.separate.splitsargable.mariadb
+--- note
+splitSargable: true alias on relation is treated as prefilter: "separate".
+--- dialect
+mariadb
+--- bindings
+{"FIELDS": {"kind": "relation", "from": "cms_fields", "alias": "g", "correlate": {"raw": "`g`.`cmsid` = `cms_entry`.`cmsid`"}, "splitSargable": true, "fields": {"fname": {"table": "g", "column": "fname", "type": "TEXT", "exact": true}, "value": {"table": "g", "column": "value", "type": "TEXT", "sargable": true}}}}
+--- source
+ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
+--- expect
+(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))
+===
+
+### name: bind.separate.inline-override.mariadb
+--- note
+Relation prefilter: "inline" overrides column-level prefilter: "separate".
+--- dialect
+mariadb
+--- bindings
+{"FIELDS": {"kind": "relation", "from": "cms_fields", "alias": "g", "correlate": {"raw": "`g`.`cmsid` = `cms_entry`.`cmsid`"}, "prefilter": "inline", "fields": {"fname": {"table": "g", "column": "fname", "type": "TEXT", "exact": true}, "value": {"table": "g", "column": "value", "type": "TEXT", "sargable": true, "prefilter": "separate"}}}}
+--- source
+ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
+--- expect
+EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE)
+===
+
+### name: bind.separate.postgresql
+--- note
+On PostgreSQL sargable equality does not create a separate coarse prefilter, emitting a single clean EXISTS subquery.
+--- dialect
+postgresql
+--- bindings
+{"FIELDS": {"kind": "relation", "from": "cms_fields", "alias": "g", "correlate": {"raw": "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\""}, "prefilter": "separate", "fields": {"fname": {"table": "g", "column": "fname", "type": "TEXT", "exact": true}, "value": {"table": "g", "column": "value", "type": "TEXT", "sargable": true}}}}
+--- source
+ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
+--- expect
+EXISTS (SELECT 1 FROM "cms_fields" "g" WHERE "g"."cmsid" = "cms_entry"."cmsid" AND ((("g"."fname" = 'f_group') AND ("g"."value" = 'news'))) IS TRUE)
+===
+
+### name: bind.separate.sqlite
+--- note
+On SQLite sargable equality does not create a separate coarse prefilter, emitting a single clean EXISTS subquery.
+--- dialect
+sqlite
+--- bindings
+{"FIELDS": {"kind": "relation", "from": "cms_fields", "alias": "g", "correlate": {"raw": "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\""}, "prefilter": "separate", "fields": {"fname": {"table": "g", "column": "fname", "type": "TEXT", "exact": true}, "value": {"table": "g", "column": "value", "type": "TEXT", "sargable": true}}}}
+--- source
+ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
+--- expect
+EXISTS (SELECT 1 FROM "cms_fields" "g" WHERE "g"."cmsid" = "cms_entry"."cmsid" AND ((("g"."fname" = 'f_group') AND ("g"."value" = 'news'))) IS TRUE)
+===
+

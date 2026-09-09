@@ -48,7 +48,7 @@ export class Binding {
   // required, because nothing in SQL can ask a column whether it is one. A column
   // that a condition or a boolean operator will read has to say BOOL here; see
   // Translator.requireBool and Fragment.asCondition.
-  static column(column, table = null, type = 'UNKNOWN', exact = false, sargable = false, guard = false, collation = null) {
+  static column(column, table = null, type = 'UNKNOWN', exact = false, sargable = false, guard = false, collation = null, prefilter = null, splitSargable = false) {
     checkName('column', column);
     if (table !== null && table !== undefined) checkName('table', table);
     checkType(type);
@@ -60,10 +60,16 @@ export class Binding {
     checkBool("a column binding's exact flag", exact);
     checkBool("a column binding's sargable flag", sargable);
     checkBool("a column binding's guard flag", guard);
-    return new Binding({
+    if (splitSargable && (prefilter === null || prefilter === undefined)) {
+      prefilter = 'separate';
+    }
+    const pref = checkPrefilter(prefilter);
+    const spec = {
       kind: 'column', column, table: table ?? null, type,
       exact: Boolean(exact), sargable: Boolean(sargable), guard: Boolean(guard)
-    });
+    };
+    if (pref !== null) spec.prefilter = pref;
+    return new Binding(spec);
   }
 
   // A column expressed as SQL this layer will not read.
@@ -72,7 +78,7 @@ export class Binding {
   // whatever it contains is the application's promise rather than this layer's —
   // which is exactly why it is a named constructor and not a key somebody can
   // leave in a map by accident.
-  static raw(sql, type = 'UNKNOWN', exact = false, sargable = false, guard = false, collation = null) {
+  static raw(sql, type = 'UNKNOWN', exact = false, sargable = false, guard = false, collation = null, prefilter = null, splitSargable = false) {
     checkString('a raw column binding', sql);
     if (sql === '') throw new SqlError('E_SQL_BINDING', 'a raw column binding cannot be empty');
     checkType(type);
@@ -84,10 +90,16 @@ export class Binding {
     checkBool("a raw column binding's exact flag", exact);
     checkBool("a raw column binding's sargable flag", sargable);
     checkBool("a raw column binding's guard flag", guard);
-    return new Binding({
+    if (splitSargable && (prefilter === null || prefilter === undefined)) {
+      prefilter = 'separate';
+    }
+    const pref = checkPrefilter(prefilter);
+    const spec = {
       kind: 'column', raw: sql, type,
       exact: Boolean(exact), sargable: Boolean(sargable), guard: Boolean(guard)
-    });
+    };
+    if (pref !== null) spec.prefilter = pref;
+    return new Binding(spec);
   }
 
   // An ordered set of columns, iterated by an aggregate and indexed by position:
@@ -118,19 +130,25 @@ export class Binding {
   // `correlate` is SQL, like `raw()`, and joins the subquery back to the outer
   // row. Without it the subquery is over the whole table, which is legal and
   // occasionally what you want.
-  static relation(from, alias = null, fields = null, scalar = null, correlate = null) {
+  static relation(from, alias = null, fields = null, scalar = null, correlate = null, prefilter = null, splitSargable = false) {
     checkName('from', from);
     if (alias !== null && alias !== undefined) checkName('alias', alias);
-    return makeRelation({ kind: 'relation', from }, alias, fields, scalar, correlate);
+    if (splitSargable && (prefilter === null || prefilter === undefined)) {
+      prefilter = 'separate';
+    }
+    return makeRelation({ kind: 'relation', from }, alias, fields, scalar, correlate, prefilter);
   }
 
   // The same, over a query the application writes rather than a table.
-  static relationQuery(query, alias = null, fields = null, scalar = null, correlate = null) {
+  static relationQuery(query, alias = null, fields = null, scalar = null, correlate = null, prefilter = null, splitSargable = false) {
     checkString('a relation query', query);
     if (query === '') throw new SqlError('E_SQL_BINDING', 'a relation query cannot be empty');
     if (alias !== null && alias !== undefined) checkName('alias', alias);
+    if (splitSargable && (prefilter === null || prefilter === undefined)) {
+      prefilter = 'separate';
+    }
     return makeRelation({ kind: 'relation', from: { raw: query } },
-      alias, fields, scalar, correlate);
+      alias, fields, scalar, correlate, prefilter);
   }
 
   // A constant the application supplies, inlined as a literal.
@@ -166,7 +184,7 @@ export function typeName(v) {
 
 // --- internals ---------------------------------------------------------------
 
-function makeRelation(base, alias, fields, scalar, correlate) {
+function makeRelation(base, alias, fields, scalar, correlate, prefilter = null) {
   const f = fields ?? {};
   if (f === null || typeof f !== 'object' || Array.isArray(f)) {
     throw new SqlError('E_SQL_BINDING',
@@ -195,9 +213,11 @@ function makeRelation(base, alias, fields, scalar, correlate) {
     throw new SqlError('E_SQL_BINDING',
       `a relation binding names ${scalar} as its scalar, which is not one of its fields`);
   }
+  const pref = checkPrefilter(prefilter);
   const spec = { ...base, alias: alias ?? null, fields: out };
   if (scalar !== null && scalar !== undefined) spec.scalar = scalar;
   if (correlate !== null && correlate !== undefined) spec.correlate = { raw: correlate };
+  if (pref !== null) spec.prefilter = pref;
   return new Binding(spec);
 }
 
@@ -276,4 +296,20 @@ function checkCollation(c) {
   if (lower === 'default' || lower === 'none') return [false, false];
   throw new SqlError('E_SQL_BINDING',
     `unknown collation '${c}'; use 'binary', 'exact', 'sargable', or 'default'`);
+}
+
+function checkPrefilter(p) {
+  if (p === null || p === undefined) return null;
+  if (typeof p === 'boolean') return p ? 'separate' : 'inline';
+  if (typeof p !== 'string') {
+    throw new SqlError('E_SQL_BINDING',
+      `a binding prefilter must be a string or boolean, and this is ${typeName(p)}`);
+  }
+  const lower = p.toLowerCase();
+  if (lower === 'separate' || lower === 'splitsargable' || lower === 'split_sargable') {
+    return 'separate';
+  }
+  if (lower === 'inline') return 'inline';
+  throw new SqlError('E_SQL_BINDING',
+    `unknown prefilter '${p}'; use 'separate' or 'inline'`);
 }

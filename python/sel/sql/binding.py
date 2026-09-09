@@ -51,7 +51,8 @@ class Binding:
     @staticmethod
     def column(column: Any, table: Any = None, type: Any = 'UNKNOWN',  # noqa: A002
                exact: bool = False, sargable: bool = False, guard: bool = False,
-               collation: Any = None) -> 'Binding':
+               collation: Any = None, prefilter: Any = None,
+               split_sargable: bool = False, splitSargable: bool = False) -> 'Binding':
         """One column, optionally qualified by a table, optionally typed.
 
         ``type`` is what the kind guards read, and leaving it UNKNOWN costs a
@@ -81,14 +82,22 @@ class Binding:
         _check_bool("a column binding's exact flag", exact)
         _check_bool("a column binding's sargable flag", sargable)
         _check_bool("a column binding's guard flag", guard)
-        return Binding({'kind': 'column', 'column': column,
-                        'table': table, 'type': type,
-                        'exact': exact, 'sargable': sargable, 'guard': guard})
+        split = split_sargable or splitSargable
+        if split and prefilter is None:
+            prefilter = 'separate'
+        pref = _check_prefilter(prefilter)
+        spec = {'kind': 'column', 'column': column,
+                'table': table, 'type': type,
+                'exact': exact, 'sargable': sargable, 'guard': guard}
+        if pref is not None:
+            spec['prefilter'] = pref
+        return Binding(spec)
 
     @staticmethod
     def raw(sql: Any, type: Any = 'UNKNOWN',  # noqa: A002
             exact: bool = False, sargable: bool = False, guard: bool = False,
-            collation: Any = None) -> 'Binding':
+            collation: Any = None, prefilter: Any = None,
+            split_sargable: bool = False, splitSargable: bool = False) -> 'Binding':
         """A column expressed as SQL this layer will not read.
 
         The one place an application writes SQL here. It is emitted verbatim, so
@@ -107,8 +116,15 @@ class Binding:
         _check_bool("a raw column binding's exact flag", exact)
         _check_bool("a raw column binding's sargable flag", sargable)
         _check_bool("a raw column binding's guard flag", guard)
-        return Binding({'kind': 'column', 'raw': sql, 'type': type,
-                        'exact': exact, 'sargable': sargable, 'guard': guard})
+        split = split_sargable or splitSargable
+        if split and prefilter is None:
+            prefilter = 'separate'
+        pref = _check_prefilter(prefilter)
+        spec = {'kind': 'column', 'raw': sql, 'type': type,
+                'exact': exact, 'sargable': sargable, 'guard': guard}
+        if pref is not None:
+            spec['prefilter'] = pref
+        return Binding(spec)
 
     @staticmethod
     def columns(*items: 'Binding') -> 'Binding':
@@ -130,7 +146,9 @@ class Binding:
 
     @staticmethod
     def relation(from_: Any, alias: Any = None, fields: Any = None,
-                 scalar: Any = None, correlate: Any = None) -> 'Binding':
+                 scalar: Any = None, correlate: Any = None,
+                 prefilter: Any = None, split_sargable: bool = False,
+                 splitSargable: bool = False) -> 'Binding':
         """A set of rows, rendered as a correlated subquery.
 
         ``fields`` maps a SEL key to a column binding; the keys are upper-cased
@@ -146,20 +164,28 @@ class Binding:
         _check_name('from', from_)
         if alias is not None:
             _check_name('alias', alias)
+        split = split_sargable or splitSargable
+        if split and prefilter is None:
+            prefilter = 'separate'
         return _make_relation({'kind': 'relation', 'from': from_},
-                              alias, fields, scalar, correlate)
+                              alias, fields, scalar, correlate, prefilter)
 
     @staticmethod
     def relation_query(query: Any, alias: Any = None, fields: Any = None,
-                       scalar: Any = None, correlate: Any = None) -> 'Binding':
+                       scalar: Any = None, correlate: Any = None,
+                       prefilter: Any = None, split_sargable: bool = False,
+                       splitSargable: bool = False) -> 'Binding':
         """The same, over a query the application writes rather than a table."""
         _check_string('a relation query', query)
         if query == '':
             raise SqlError('E_SQL_BINDING', 'a relation query cannot be empty')
         if alias is not None:
             _check_name('alias', alias)
+        split = split_sargable or splitSargable
+        if split and prefilter is None:
+            prefilter = 'separate'
         return _make_relation({'kind': 'relation', 'from': {'raw': query}},
-                              alias, fields, scalar, correlate)
+                              alias, fields, scalar, correlate, prefilter)
 
     @staticmethod
     def value(v: Value, type: Any = None) -> 'Binding':  # noqa: A002
@@ -195,7 +221,7 @@ def type_name(v: Any) -> str:
 # --- internals ---------------------------------------------------------------
 
 def _make_relation(base: dict[str, Any], alias: Any, fields: Any,
-                   scalar: Any, correlate: Any) -> Binding:
+                   scalar: Any, correlate: Any, prefilter: Any = None) -> Binding:
     if fields is None:
         fields = {}
     if not isinstance(fields, dict):
@@ -219,11 +245,14 @@ def _make_relation(base: dict[str, Any], alias: Any, fields: Any,
         raise SqlError('E_SQL_BINDING',
                        f'a relation binding names {scalar} as its scalar, which is '
                        'not one of its fields')
-    spec = {**base, 'alias': alias, 'fields': out}
+    pref = _check_prefilter(prefilter)
+    spec: dict[str, Any] = {**base, 'alias': alias, 'fields': out}
     if scalar is not None:
         spec['scalar'] = scalar
     if correlate is not None:
         spec['correlate'] = {'raw': correlate}
+    if pref is not None:
+        spec['prefilter'] = pref
     return Binding(spec)
 
 
@@ -307,3 +336,20 @@ def _check_collation(c: Any) -> tuple[bool, bool]:
         return False, False
     raise SqlError('E_SQL_BINDING',
                    f"unknown collation '{c}'; use 'binary', 'exact', 'sargable', or 'default'")
+
+
+def _check_prefilter(p: Any) -> str | None:
+    if p is None:
+        return None
+    if isinstance(p, bool):
+        return 'separate' if p else 'inline'
+    if not isinstance(p, str):
+        raise SqlError('E_SQL_BINDING',
+                       f"a binding prefilter must be a string or boolean, and this is {type_name(p)}")
+    p_lower = p.lower()
+    if p_lower in ('separate', 'splitsargable', 'split_sargable'):
+        return 'separate'
+    if p_lower == 'inline':
+        return 'inline'
+    raise SqlError('E_SQL_BINDING',
+                   f"unknown prefilter '{p}'; use 'separate' or 'inline'")

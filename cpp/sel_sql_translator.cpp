@@ -289,6 +289,9 @@ Fragment Translator::column_ref(const ColumnSpec& c) {
   f.exact_ = c.exact;
   f.sargable_ = c.sargable;
   f.guard_ = c.guard;
+  if (c.prefilter && *c.prefilter == "separate") {
+    f.set_separate_prefilter(true);
+  }
   return f;
 }
 
@@ -856,7 +859,10 @@ Fragment Translator::binary(const SNode& n) {
         const Fragment res_args[] = {emit_.text_operand(l), emit_.text_operand(r)};
         const Fragment residual = apply(Section::Ops, "$==", res_args, n.pos(), variant);
         const Fragment and_args[] = {coarse, residual};
-        return apply(Section::Ops, "AND", and_args, n.pos());
+        Fragment res = apply(Section::Ops, "AND", and_args, n.pos());
+        res.set_prefilter(std::make_shared<Fragment>(coarse));
+        res.set_separate_prefilter(l.separate_prefilter() || r.separate_prefilter());
+        return res;
       }
     } else if (op == "$==" && r.sargable() && l_lit) {
       if (sargable_prefilter) {
@@ -865,7 +871,10 @@ Fragment Translator::binary(const SNode& n) {
         const Fragment res_args[] = {emit_.text_operand(l), emit_.text_operand(r)};
         const Fragment residual = apply(Section::Ops, "$==", res_args, n.pos(), variant);
         const Fragment and_args[] = {coarse, residual};
-        return apply(Section::Ops, "AND", and_args, n.pos());
+        Fragment res = apply(Section::Ops, "AND", and_args, n.pos());
+        res.set_prefilter(std::make_shared<Fragment>(coarse));
+        res.set_separate_prefilter(l.separate_prefilter() || r.separate_prefilter());
+        return res;
       }
     } else if (l.kind() != SqlKind::Bin || r.kind() != SqlKind::Bin) {
       l = emit_.text_operand(l);
@@ -873,7 +882,23 @@ Fragment Translator::binary(const SNode& n) {
     }
   }
   const Fragment args[] = {l, r};
-  return apply(Section::Ops, op, args, n.pos(), variant);
+  Fragment res = apply(Section::Ops, op, args, n.pos(), variant);
+  if (op == "AND") {
+    if (l.prefilter() && r.prefilter()) {
+      const Fragment pair[] = {*l.prefilter(), *r.prefilter()};
+      res.set_prefilter(std::make_shared<Fragment>(apply(Section::Ops, "AND", pair, n.pos())));
+    } else if (l.prefilter()) {
+      const Fragment pair[] = {*l.prefilter(), r};
+      res.set_prefilter(std::make_shared<Fragment>(apply(Section::Ops, "AND", pair, n.pos())));
+    } else if (r.prefilter()) {
+      const Fragment pair[] = {l, *r.prefilter()};
+      res.set_prefilter(std::make_shared<Fragment>(apply(Section::Ops, "AND", pair, n.pos())));
+    }
+    if (l.separate_prefilter() || r.separate_prefilter()) {
+      res.set_separate_prefilter(true);
+    }
+  }
+  return res;
 }
 
 }  // namespace sel::sql
@@ -1708,6 +1733,22 @@ Fragment Translator::agg_body(const std::string& name, const SNodePtr& body,
 Fragment Translator::relation_aggregate(const std::string& name,
                                         const RelationSpec& rel,
                                         const Fragment& body, const SNode& n) {
+  const bool is_separate = (rel.prefilter && *rel.prefilter == "separate") ||
+                           (!rel.prefilter && body.separate_prefilter());
+  if (name == "ANY" && body.prefilter() && is_separate) {
+    SlotMap pre_slots =
+        merge_slots(relation_slots(rel), SlotMap{{"body", {Slot{*body.prefilter()}}}});
+    Fragment pre = Fragment(
+        fill_named(skeleton(std::string(agg_skeleton(name)), n.pos()), pre_slots, n.pos()),
+        agg_returns(name), dialect_);
+    SlotMap main_slots =
+        merge_slots(relation_slots(rel), SlotMap{{"body", {Slot{body}}}});
+    Fragment main = Fragment(
+        fill_named(skeleton(std::string(agg_skeleton(name)), n.pos()), main_slots, n.pos()),
+        agg_returns(name), dialect_);
+    const Fragment pair[] = {pre, main};
+    return apply(Section::Ops, "AND", pair, n.pos());
+  }
   SlotMap slots =
       merge_slots(relation_slots(rel), SlotMap{{"body", {Slot{body}}}});
   return Fragment(

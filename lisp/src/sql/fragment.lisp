@@ -36,7 +36,9 @@ the class of bug this shape exists to make unreachable."
   (caveats '() :type list)
   (exact nil :type boolean)
   (sargable nil :type boolean)
-  (guard nil :type boolean))
+  (guard nil :type boolean)
+  (prefilter nil)
+  (separate-prefilter nil :type boolean))
 
 (defun slot-inline-p (f slot)
   "True for a slot rendered as a literal in every mode, never as a parameter.

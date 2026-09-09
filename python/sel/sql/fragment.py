@@ -25,7 +25,7 @@ class Fragment:
     """
 
     __slots__ = ('parts', 'params', 'param_kinds', 'kind', 'dialect', 'caveats',
-                 'exact', 'sargable', 'guard')
+                 'exact', 'sargable', 'guard', 'prefilter', 'separate_prefilter')
 
     def __init__(self, parts: list[Any], kind: str, dialect: str,
                  params: list[Value] | None = None,
@@ -46,6 +46,8 @@ class Fragment:
         self.exact = exact
         self.sargable = sargable
         self.guard = guard
+        self.prefilter: Fragment | None = None
+        self.separate_prefilter: bool = False
 
     def as_value(self, mode: str = 'inline') -> str:
         """Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but

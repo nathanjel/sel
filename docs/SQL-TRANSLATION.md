@@ -649,6 +649,9 @@ Relational database optimizers require expressions over indexed columns to be *s
   - `'binary'` or `'exact'`: sets `exact = true`.
   - `'sargable'` or `'prefilter'`: sets `sargable = true`.
   - `'default'` or `'none'`: default behavior.
+- **`prefilter: string = 'inline'`**: Controls whether coarse index prefilters remain inline or can emit separate sibling preconditions in aggregate subqueries:
+  - `'separate'` (or boolean `true`, alias `splitSargable: true`): on engines where `sargablePrefilter: true`, marks the coarse prefilter to be planned as a separate precondition where supported.
+  - `'inline'` (or boolean `false`, default): keeps coarse prefilters inline with exact residual checks.
 
 
 ### 5.2 `columns`
@@ -694,6 +697,7 @@ A correlated set of rows. This is what becomes a subquery.
         'PRICE' => ['column' => 'price', 'type' => 'NUM'],
     ],
     'scalar'    => 'QTY',          // what a bare binder reference means
+    'prefilter' => 'separate',     // 'separate' | 'inline', or boolean true/false (alias splitSargable)
 ],
 ```
 
@@ -704,6 +708,20 @@ A correlated set of rows. This is what becomes a subquery.
   is `E_SQL_BINDING` — again, no guessing.
 - `scalar` says what a bare `BINDER` means, so `ALL(ITEMS, _ > 0)` has something
   to compare. Absent, a bare reference is `E_SQL_SHAPE`.
+- `prefilter` (`'separate'` | `'inline'`, with aliases `true` / `false` and `splitSargable: true`)
+  controls how sargable conditions inside `ANY` are emitted:
+  - When `'separate'` (or configured on a referenced field without relation override): on engines
+    with `sargablePrefilter: true` (MariaDB, MySQL), `ANY` emits two sibling `EXISTS` subqueries
+    conjoined by `AND`:
+    `(EXISTS (SELECT 1 FROM rel WHERE corr AND coarse_prefilter IS TRUE) AND EXISTS (SELECT 1 FROM rel WHERE corr AND body IS TRUE))`
+  - The first subquery carries clean, bare index-friendly conditions (conjoining all exact and coarse
+    conditions through `AND`, e.g. `(g.fname = 'f_group' AND g.value = 'news')`). MariaDB and MySQL
+    optimizers plan this precondition using composite B-tree indexes (such as `(fname, value, cmsid)`
+    on EAV tables) to reduce candidate rows before evaluating residual collation expressions.
+  - On engines with `sargablePrefilter: false` (PostgreSQL, SQLite), sargable equality does not
+    produce coarse prefilters, emitting a single clean `EXISTS` subquery without duplication.
+  - An explicit `prefilter: 'inline'` on the relation overrides any column-level `'separate'`
+    preference, keeping all checks in a single subquery.
 
 `ALL(ITEMS, I, I["qty"] > 0)` on MySQL:
 

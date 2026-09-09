@@ -203,6 +203,10 @@ Four of these are load-bearing rather than cosmetic:
   under case-insensitive collations while preserving exact binary semantics;
   PostgreSQL and SQLite set `"false"` where text comparisons are exact by default.
   Derived dialects inherit this automatically through their `extends` chain.
+  When `prefilter: 'separate'` is configured on relation or column bindings,
+  `ANY` subqueries on dialects with `sargablePrefilter: "true"` emit separate sibling
+  `EXISTS` preconditions conjoined by `AND` to allow query optimizers to plan composite
+  indexes before evaluating collation-sensitive residuals.
 - **`numericGuard` is what makes `==` honest about data it was not promised.**
   `numericCast` alone answers 0 for `'x'` on three of the four servers, so a
   comparison against 0 matched every row of a text column. The guard tests the

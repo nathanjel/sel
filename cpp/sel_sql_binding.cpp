@@ -83,17 +83,33 @@ void check_numeric(const std::string& where, const sel::Value& v) {
   }
 }
 
+std::optional<std::string> check_prefilter(const std::optional<std::string>& p) {
+  if (!p) return std::nullopt;
+  std::string lower;
+  lower.reserve(p->size());
+  for (char c : *p) lower.push_back(static_cast<char>(std::tolower(c)));
+  if (lower == "separate" || lower == "splitsargable" || lower == "split_sargable" || lower == "true") {
+    return "separate";
+  }
+  if (lower == "inline" || lower == "false") {
+    return "inline";
+  }
+  refuse("E_SQL_BINDING", "unknown prefilter '" + *p + "'; use 'separate' or 'inline'");
+}
+
 RelationSpec make_relation(bool from_is_raw, std::string from,
                            std::optional<std::string> alias,
                            std::vector<std::pair<std::string, Binding>> fields,
                            std::optional<std::string> scalar,
-                           std::optional<std::string> correlate) {
+                           std::optional<std::string> correlate,
+                           std::optional<std::string> prefilter) {
   RelationSpec r;
   r.from_is_raw = from_is_raw;
   r.from = std::move(from);
   r.alias = std::move(alias);
   r.scalar = std::move(scalar);
   r.correlate = std::move(correlate);
+  r.prefilter = check_prefilter(prefilter);
 
   for (auto& [name, b] : fields) {
     if (b.kind() != Binding::Kind::Column) {
@@ -131,7 +147,8 @@ const ColumnSpec* RelationSpec::field(std::string_view name) const {
 // --- Binding -----------------------------------------------------------------
 
 Binding Binding::column(std::string col, std::optional<std::string> table,
-                        SqlKind type, bool exact, bool sargable, bool guard) {
+                        SqlKind type, bool exact, bool sargable, bool guard,
+                        std::optional<std::string> prefilter) {
   check_name("column", col);
   if (table) check_name("table", *table);
   Binding b;
@@ -142,11 +159,12 @@ Binding Binding::column(std::string col, std::optional<std::string> table,
   b.column_.exact = exact;
   b.column_.sargable = sargable;
   b.column_.guard = guard;
+  b.column_.prefilter = check_prefilter(prefilter);
   return b;
 }
 
 Binding Binding::raw(std::string sql, SqlKind type, bool exact, bool sargable,
-                     bool guard) {
+                     bool guard, std::optional<std::string> prefilter) {
   if (sql.empty()) {
     refuse("E_SQL_BINDING", "a raw column binding cannot be empty");
   }
@@ -158,6 +176,7 @@ Binding Binding::raw(std::string sql, SqlKind type, bool exact, bool sargable,
   b.column_.exact = exact;
   b.column_.sargable = sargable;
   b.column_.guard = guard;
+  b.column_.prefilter = check_prefilter(prefilter);
   return b;
 }
 
@@ -181,21 +200,23 @@ Binding Binding::columns(std::vector<Binding> items) {
 Binding Binding::relation(std::string from, std::optional<std::string> alias,
                           std::vector<std::pair<std::string, Binding>> fields,
                           std::optional<std::string> scalar,
-                          std::optional<std::string> correlate) {
+                          std::optional<std::string> correlate,
+                          std::optional<std::string> prefilter) {
   check_name("from", from);
   if (alias) check_name("alias", *alias);
   Binding b;
   b.kind_ = Kind::Relation;
   b.relation_ = make_relation(false, std::move(from), std::move(alias),
                               std::move(fields), std::move(scalar),
-                              std::move(correlate));
+                              std::move(correlate), std::move(prefilter));
   return b;
 }
 
 Binding Binding::relation_query(std::string query, std::optional<std::string> alias,
                                 std::vector<std::pair<std::string, Binding>> fields,
                                 std::optional<std::string> scalar,
-                                std::optional<std::string> correlate) {
+                                std::optional<std::string> correlate,
+                                std::optional<std::string> prefilter) {
   if (query.empty()) {
     refuse("E_SQL_BINDING", "a relation query cannot be empty");
   }
@@ -204,7 +225,7 @@ Binding Binding::relation_query(std::string query, std::optional<std::string> al
   b.kind_ = Kind::Relation;
   b.relation_ = make_relation(true, std::move(query), std::move(alias),
                               std::move(fields), std::move(scalar),
-                              std::move(correlate));
+                              std::move(correlate), std::move(prefilter));
   return b;
 }
 

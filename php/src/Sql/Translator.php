@@ -228,8 +228,12 @@ final class Translator
         $sql = isset($c['raw'])
             ? (string) $c['raw']
             : $this->emit->column($c['table'] ?? null, (string) $c['column']);
-        return new Fragment([$sql], (string) ($c['type'] ?? 'UNKNOWN'), $this->dialect, [], [], [],
+        $frag = new Fragment([$sql], (string) ($c['type'] ?? 'UNKNOWN'), $this->dialect, [], [], [],
             (bool) ($c['exact'] ?? false), (bool) ($c['sargable'] ?? false), (bool) ($c['guard'] ?? false));
+        if (($c['prefilter'] ?? null) === 'separate') {
+            $frag->separatePrefilter = true;
+        }
+        return $frag;
     }
 
     /**
@@ -415,21 +419,40 @@ final class Translator
                     $coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);
                     $residual = $this->apply('ops', '$==',
                         [$this->emit->textOperand($l), $this->emit->textOperand($r)], $n['pos'], $variant);
-                    return $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);
+                    $res = $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);
+                    $res->prefilter = $coarse;
+                    $res->separatePrefilter = $l->separatePrefilter || $r->separatePrefilter;
+                    return $res;
                 }
             } elseif ($op === '$==' && $r->sargable && $lLit) {
                 if ($this->emit->lex('sargablePrefilter') === 'true') {
                     $coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);
                     $residual = $this->apply('ops', '$==',
                         [$this->emit->textOperand($l), $this->emit->textOperand($r)], $n['pos'], $variant);
-                    return $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);
+                    $res = $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);
+                    $res->prefilter = $coarse;
+                    $res->separatePrefilter = $l->separatePrefilter || $r->separatePrefilter;
+                    return $res;
                 }
             } elseif ($l->kind !== 'BIN' || $r->kind !== 'BIN') {
                 $l = $this->emit->textOperand($l);
                 $r = $this->emit->textOperand($r);
             }
         }
-        return $this->apply('ops', $op, [$l, $r], $n['pos'], $variant);
+        $res = $this->apply('ops', $op, [$l, $r], $n['pos'], $variant);
+        if ($op === 'AND') {
+            if ($l->prefilter !== null && $r->prefilter !== null) {
+                $res->prefilter = $this->apply('ops', 'AND', [$l->prefilter, $r->prefilter], $n['pos']);
+            } elseif ($l->prefilter !== null) {
+                $res->prefilter = $this->apply('ops', 'AND', [$l->prefilter, $r], $n['pos']);
+            } elseif ($r->prefilter !== null) {
+                $res->prefilter = $this->apply('ops', 'AND', [$l, $r->prefilter], $n['pos']);
+            }
+            if ($l->separatePrefilter || $r->separatePrefilter) {
+                $res->separatePrefilter = true;
+            }
+        }
+        return $res;
     }
 
     /**
@@ -1316,6 +1339,19 @@ final class Translator
      */
     private function relationAggregate(string $name, array $rel, Fragment $body, array $n): Fragment
     {
+        $isSeparate = (($rel['prefilter'] ?? null) === 'separate')
+            || (($rel['prefilter'] ?? null) === null && $body->separatePrefilter);
+        if ($name === 'ANY' && $body->prefilter !== null && $isSeparate) {
+            $pre = new Fragment(
+                $this->fillNamed($this->skeleton(self::AGG_SKELETON[$name], $n['pos']),
+                    self::slots($this->relationSlots($rel), ['body' => [$body->prefilter]]), $n['pos']),
+                self::AGG_RETURNS[$name], $this->dialect);
+            $main = new Fragment(
+                $this->fillNamed($this->skeleton(self::AGG_SKELETON[$name], $n['pos']),
+                    self::slots($this->relationSlots($rel), ['body' => [$body]]), $n['pos']),
+                self::AGG_RETURNS[$name], $this->dialect);
+            return $this->apply('ops', 'AND', [$pre, $main], $n['pos']);
+        }
         return new Fragment(
             $this->fillNamed($this->skeleton(self::AGG_SKELETON[$name], $n['pos']),
                 self::slots($this->relationSlots($rel), ['body' => [$body]]), $n['pos']),

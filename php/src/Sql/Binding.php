@@ -57,7 +57,7 @@ final class Binding
     public static function column($column, $table = null,
                                   $type = 'UNKNOWN', bool $exact = false,
                                   bool $sargable = false, bool $guard = false,
-                                  ?string $collation = null): self
+                                  ?string $collation = null, $prefilter = null): self
     {
         self::checkName('column', $column);
         if ($table !== null) {
@@ -69,10 +69,15 @@ final class Binding
             $exact = $exact || $cExact;
             $sargable = $sargable || $cSargable;
         }
-        return new self(['kind' => 'column', 'column' => $column,
-                         'table' => $table, 'type' => $type,
-                         'exact' => $exact, 'sargable' => $sargable,
-                         'guard' => $guard]);
+        $pref = self::checkPrefilter($prefilter);
+        $spec = ['kind' => 'column', 'column' => $column,
+                 'table' => $table, 'type' => $type,
+                 'exact' => $exact, 'sargable' => $sargable,
+                 'guard' => $guard];
+        if ($pref !== null) {
+            $spec['prefilter'] = $pref;
+        }
+        return new self($spec);
     }
 
     /**
@@ -85,7 +90,7 @@ final class Binding
      */
     public static function raw($sql, $type = 'UNKNOWN', bool $exact = false,
                                bool $sargable = false, bool $guard = false,
-                               ?string $collation = null): self
+                               ?string $collation = null, $prefilter = null): self
     {
         self::checkString('a raw column binding', $sql);
         if ($sql === '') {
@@ -97,9 +102,14 @@ final class Binding
             $exact = $exact || $cExact;
             $sargable = $sargable || $cSargable;
         }
-        return new self(['kind' => 'column', 'raw' => $sql, 'type' => $type,
-                         'exact' => $exact, 'sargable' => $sargable,
-                         'guard' => $guard]);
+        $pref = self::checkPrefilter($prefilter);
+        $spec = ['kind' => 'column', 'raw' => $sql, 'type' => $type,
+                 'exact' => $exact, 'sargable' => $sargable,
+                 'guard' => $guard];
+        if ($pref !== null) {
+            $spec['prefilter'] = $pref;
+        }
+        return new self($spec);
     }
 
     /**
@@ -140,14 +150,18 @@ final class Binding
      */
     public static function relation($from, $alias = null,
                                     $fields = [], $scalar = null,
-                                    $correlate = null): self
+                                    $correlate = null, $prefilter = null,
+                                    bool $splitSargable = false): self
     {
         self::checkName('from', $from);
         if ($alias !== null) {
             self::checkName('alias', $alias);
         }
+        if ($splitSargable && $prefilter === null) {
+            $prefilter = 'separate';
+        }
         return self::makeRelation(['kind' => 'relation', 'from' => $from],
-            $alias, $fields, $scalar, $correlate);
+            $alias, $fields, $scalar, $correlate, $prefilter);
     }
 
     /**
@@ -157,7 +171,8 @@ final class Binding
      */
     public static function relationQuery($query, $alias = null,
                                          $fields = [], $scalar = null,
-                                         $correlate = null): self
+                                         $correlate = null, $prefilter = null,
+                                         bool $splitSargable = false): self
     {
         self::checkString('a relation query', $query);
         if ($query === '') {
@@ -166,8 +181,11 @@ final class Binding
         if ($alias !== null) {
             self::checkName('alias', $alias);
         }
+        if ($splitSargable && $prefilter === null) {
+            $prefilter = 'separate';
+        }
         return self::makeRelation(['kind' => 'relation', 'from' => ['raw' => $query]],
-            $alias, $fields, $scalar, $correlate);
+            $alias, $fields, $scalar, $correlate, $prefilter);
     }
 
     /**
@@ -205,7 +223,7 @@ final class Binding
      * @param array<string, self> $fields
      */
     private static function makeRelation(array $base, $alias, $fields,
-                                         $scalar, $correlate): self
+                                         $scalar, $correlate, $prefilter = null): self
     {
         if (!is_array($fields)) {
             throw new SqlError('E_SQL_BINDING',
@@ -240,12 +258,16 @@ final class Binding
         if ($correlate !== null && $correlate === '') {
             throw new SqlError('E_SQL_BINDING', 'a relation correlate cannot be empty');
         }
+        $pref = self::checkPrefilter($prefilter);
         $spec = $base + ['alias' => $alias, 'fields' => $out];
         if ($scalar !== null) {
             $spec['scalar'] = $scalar;
         }
         if ($correlate !== null) {
             $spec['correlate'] = ['raw' => $correlate];
+        }
+        if ($pref !== null) {
+            $spec['prefilter'] = $pref;
         }
         return new self($spec);
     }
@@ -351,5 +373,29 @@ final class Binding
         }
         throw new SqlError('E_SQL_BINDING',
             "unknown collation '{$c}'; use 'binary', 'exact', 'sargable', or 'default'");
+    }
+
+    private static function checkPrefilter($p): ?string
+    {
+        if ($p === null) {
+            return null;
+        }
+        if (is_bool($p)) {
+            return $p ? 'separate' : 'inline';
+        }
+        if (!is_string($p)) {
+            throw new SqlError('E_SQL_BINDING',
+                'a binding prefilter must be a string or boolean, and this is '
+                . get_debug_type($p));
+        }
+        $lower = strtolower($p);
+        if ($lower === 'separate' || $lower === 'splitsargable' || $lower === 'split_sargable') {
+            return 'separate';
+        }
+        if ($lower === 'inline') {
+            return 'inline';
+        }
+        throw new SqlError('E_SQL_BINDING',
+            "unknown prefilter '{$p}'; use 'separate' or 'inline'");
     }
 }

@@ -10,6 +10,24 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.7.3 — 2026-09-09
+
+Separately planable necessary prefilters for relation bindings (`prefilter: 'separate' | 'inline'`), enabling composite B-tree index acceleration in MariaDB/MySQL aggregate subqueries.
+
+  - **Separately planable necessary prefilters (`prefilter`, `splitSargable`).**
+    - Adds `prefilter: 'separate' | 'inline'` (with boolean aliases `true` -> `'separate'`, `false` -> `'inline'`, and `splitSargable: true` -> `'separate'`) to both relation bindings and column/raw bindings across PHP, JavaScript, Python, C++23, and Common Lisp.
+    - Resolves severe query plan degradations (up to 118.91× slowdown) on MariaDB and MySQL where residual collation expressions (`COLLATE utf8mb4_bin`) inside correlated subqueries prevent the optimizer from utilizing composite indexes on EAV tables.
+    - In `ANY` aggregate subqueries on engines where `sargablePrefilter: true` (MariaDB, MySQL) when `prefilter === 'separate'` (on relation or column), SEL emits two sibling `EXISTS` subqueries conjoined by `AND`:
+      `(EXISTS (SELECT 1 FROM rel WHERE corr AND coarse_prefilter IS TRUE) AND EXISTS (SELECT 1 FROM rel WHERE corr AND body IS TRUE))`
+    - The coarse precondition subquery retains clean, uncast conditions and conjoins exact conditions (`g.fname = 'f_group' AND g.value = 'news'`), enabling MariaDB/MySQL optimizers to perform composite index range scans on `(fname, value, cmsid)` to dramatically restrict candidate rows before evaluating collation-sensitive residuals.
+    - On PostgreSQL and SQLite (`sargablePrefilter: false`), sargable equality produces bare equality without coarse/residual splitting, emitting a single clean `EXISTS` subquery without duplication.
+    - Relation-level `prefilter: 'inline'` overrides column-level `prefilter: 'separate'`, keeping all checks in a single subquery.
+  - **Comprehensive test coverage & cross-runtime verification.**
+    - Adds 6 new test cases across MariaDB, PostgreSQL, and SQLite in `sql/cases/22-sargable-bindings.sqlt`, expanding the SQL test suite to 485 cases.
+    - 100% verified across all 5 host implementations (PHP, JavaScript, Python, C++23, Common Lisp).
+
+conformance 720 · sql cases 485 · mutations 161
+
 ## 0.7.2 — 2026-09-09
 
 Dialect map driven `sargablePrefilter` lexical configuration, enabling custom and derived SQL dialects extending MariaDB/MySQL to inherit sargable index prefilters.

@@ -279,10 +279,13 @@ class Translator:
     def _column_ref(self, c: dict[str, Any]) -> Fragment:
         sql = (str(c['raw']) if c.get('raw') is not None
                else self.emit.column(c.get('table'), str(c['column'])))
-        return Fragment([sql], str(c.get('type') or 'UNKNOWN'), self.dialect,
+        frag = Fragment([sql], str(c.get('type') or 'UNKNOWN'), self.dialect,
                         exact=bool(c.get('exact', False)),
                         sargable=bool(c.get('sargable', False)),
                         guard=bool(c.get('guard', False)))
+        if c.get('prefilter') == 'separate':
+            frag.separate_prefilter = True
+        return frag
 
     def _index(self, n: Node) -> Fragment:
         """Indexing is meaningful against a relation or columns binding -- a field
@@ -416,18 +419,38 @@ class Translator:
                     residual = self._apply('ops', '$==',
                                            [self.emit.text_operand(l), self.emit.text_operand(r)],
                                            n.pos, variant)
-                    return self._apply('ops', 'AND', [coarse, residual], n.pos)
+                    res = self._apply('ops', 'AND', [coarse, residual], n.pos)
+                    res.prefilter = coarse
+                    res.separate_prefilter = bool(getattr(l, 'separate_prefilter', False)
+                                                  or getattr(r, 'separate_prefilter', False))
+                    return res
             elif op == '$==' and getattr(r, 'sargable', False) and l_lit:
                 if self.emit.lex('sargablePrefilter') == 'true':
                     coarse = self._apply('ops', '$==', [l, r], n.pos, variant)
                     residual = self._apply('ops', '$==',
                                            [self.emit.text_operand(l), self.emit.text_operand(r)],
                                            n.pos, variant)
-                    return self._apply('ops', 'AND', [coarse, residual], n.pos)
+                    res = self._apply('ops', 'AND', [coarse, residual], n.pos)
+                    res.prefilter = coarse
+                    res.separate_prefilter = bool(getattr(l, 'separate_prefilter', False)
+                                                  or getattr(r, 'separate_prefilter', False))
+                    return res
             elif l.kind != 'BIN' or r.kind != 'BIN':
                 l = self.emit.text_operand(l)
                 r = self.emit.text_operand(r)
-        return self._apply('ops', op, [l, r], n.pos, variant)
+        res = self._apply('ops', op, [l, r], n.pos, variant)
+        if op == 'AND':
+            l_pref = getattr(l, 'prefilter', None)
+            r_pref = getattr(r, 'prefilter', None)
+            if l_pref is not None and r_pref is not None:
+                res.prefilter = self._apply('ops', 'AND', [l_pref, r_pref], n.pos)
+            elif l_pref is not None:
+                res.prefilter = self._apply('ops', 'AND', [l_pref, r], n.pos)
+            elif r_pref is not None:
+                res.prefilter = self._apply('ops', 'AND', [l, r_pref], n.pos)
+            if getattr(l, 'separate_prefilter', False) or getattr(r, 'separate_prefilter', False):
+                res.separate_prefilter = True
+        return res
 
     def _in_operator(self, n: Node) -> Fragment:
         """``x IN list`` is the one operator whose right operand is a list on
@@ -1021,6 +1044,18 @@ class Translator:
 
     def _relation_aggregate(self, name: str, rel: dict[str, Any],
                             body: Fragment, n: Node) -> Fragment:
+        is_separate = (rel.get('prefilter') == 'separate'
+                       or (rel.get('prefilter') is None and getattr(body, 'separate_prefilter', False)))
+        if name == 'ANY' and getattr(body, 'prefilter', None) is not None and is_separate:
+            pre = Fragment(
+                self._fill_named(self._skeleton(AGG_SKELETON[name], n.pos),
+                                 _slots(self._relation_slots(rel), {'body': [body.prefilter]}), n.pos),
+                AGG_RETURNS[name], self.dialect)
+            main = Fragment(
+                self._fill_named(self._skeleton(AGG_SKELETON[name], n.pos),
+                                 _slots(self._relation_slots(rel), {'body': [body]}), n.pos),
+                AGG_RETURNS[name], self.dialect)
+            return self._apply('ops', 'AND', [pre, main], n.pos)
         return Fragment(
             self._fill_named(self._skeleton(AGG_SKELETON[name], n.pos),
                              _slots(self._relation_slots(rel), {'body': [body]}), n.pos),

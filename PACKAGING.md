@@ -53,8 +53,8 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.7.2 -m "SEL 0.7.2"
-git push origin v0.7.2
+git tag -a v0.7.3 -m "SEL 0.7.3"
+git push origin v0.7.3
 ```
 
 **Never re-tag or move an existing tag.** Upstream registries forbid republishing under an existing version: Packagist blocks re-tagged releases with `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`, while npm and PyPI permanently refuse file uploads for already-published versions. If a defect or correction is needed after pushing a tag, always bump to the next patch version.
@@ -62,12 +62,12 @@ git push origin v0.7.2
 Versions live in six manifests. Keep them in step:
 
 ```
-package.json                     "version": "0.7.2"
-pyproject.toml                   version = "0.7.2"
-cpp/conanfile.py                 version = "0.7.2"
-cpp/vcpkg.json                   "version-semver": "0.7.2"
-cpp/CMakeLists.txt               project(... VERSION 0.7.2 ...)
-lisp/sel-lang.asd                :version "0.7.2"
+package.json                     "version": "0.7.3"
+pyproject.toml                   version = "0.7.3"
+cpp/conanfile.py                 version = "0.7.3"
+cpp/vcpkg.json                   "version-semver": "0.7.3"
+cpp/CMakeLists.txt               project(... VERSION 0.7.3 ...)
+lisp/sel-lang.asd                :version "0.7.3"
 ```
 
 `python/sel/__init__.py` carries `__version__`, `CHANGELOG.md`'s top heading
@@ -203,7 +203,7 @@ Never delete, move, or re-tag an existing release tag. Packagist explicitly trac
 
 > `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`
 
-Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.7.3`) rather than moving `v0.7.2`.
+Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.7.4`) rather than moving `v0.7.3`.
 
 ---
 

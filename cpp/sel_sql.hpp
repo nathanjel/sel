@@ -14,6 +14,7 @@
 
 #include <exception>
 #include <map>
+#include <memory>
 #include <functional>
 #include <optional>
 #include <span>
@@ -139,6 +140,10 @@ class Fragment {
   void set_exact(bool v) { exact_ = v; }
   void set_sargable(bool v) { sargable_ = v; }
   void set_guard(bool v) { guard_ = v; }
+  const std::shared_ptr<Fragment>& prefilter() const { return prefilter_; }
+  void set_prefilter(std::shared_ptr<Fragment> p) { prefilter_ = std::move(p); }
+  bool separate_prefilter() const { return separate_prefilter_; }
+  void set_separate_prefilter(bool v) { separate_prefilter_ = v; }
 
  private:
   friend class Translator;
@@ -166,6 +171,8 @@ class Fragment {
   bool exact_ = false;
   bool sargable_ = false;
   bool guard_ = false;
+  std::shared_ptr<Fragment> prefilter_;
+  bool separate_prefilter_ = false;
 };
 
 // --- the builder escape hatch -----------------------------------------------
@@ -223,6 +230,7 @@ struct ColumnSpec {
   bool exact = false;
   bool sargable = false;
   bool guard = false;
+  std::optional<std::string> prefilter;
 };
 
 struct RelationSpec {
@@ -237,6 +245,7 @@ struct RelationSpec {
   // fields.
   std::optional<std::string> scalar;
   std::optional<std::string> correlate;   // SQL, joining back to the outer row
+  std::optional<std::string> prefilter;
 
   const ColumnSpec* field(std::string_view name) const;
 };
@@ -252,14 +261,16 @@ class Binding {
 
   static Binding column(std::string col, std::optional<std::string> table = std::nullopt,
                         SqlKind type = SqlKind::Unknown, bool exact = false,
-                        bool sargable = false, bool guard = false);
+                        bool sargable = false, bool guard = false,
+                        std::optional<std::string> prefilter = std::nullopt);
   // A column expressed as SQL this layer will not read. The one place an
   // application writes SQL here; it is emitted verbatim, so whatever it contains
   // is the application's promise rather than this layer's -- which is exactly
   // why it is a named constructor and not a key somebody can leave in a map by
   // accident.
   static Binding raw(std::string sql, SqlKind type = SqlKind::Unknown,
-                     bool exact = false, bool sargable = false, bool guard = false);
+                     bool exact = false, bool sargable = false, bool guard = false,
+                     std::optional<std::string> prefilter = std::nullopt);
   // An ordered set of columns, iterated by an aggregate and indexed by position:
   // the first is V[1].
   static Binding columns(std::vector<Binding> items);
@@ -267,13 +278,15 @@ class Binding {
                           std::optional<std::string> alias = std::nullopt,
                           std::vector<std::pair<std::string, Binding>> fields = {},
                           std::optional<std::string> scalar = std::nullopt,
-                          std::optional<std::string> correlate = std::nullopt);
+                          std::optional<std::string> correlate = std::nullopt,
+                          std::optional<std::string> prefilter = std::nullopt);
   // The same, over a query the application writes rather than a table.
   static Binding relation_query(std::string query,
                                 std::optional<std::string> alias = std::nullopt,
                                 std::vector<std::pair<std::string, Binding>> fields = {},
                                 std::optional<std::string> scalar = std::nullopt,
-                                std::optional<std::string> correlate = std::nullopt);
+                                std::optional<std::string> correlate = std::nullopt,
+                                std::optional<std::string> prefilter = std::nullopt);
   // A constant the application supplies, inlined as a literal.
   //
   // Takes a Value, never a native number or string, and that is the fix for the

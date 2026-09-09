@@ -28,6 +28,8 @@ export class Fragment {
     this.exact = Boolean(exact);
     this.sargable = Boolean(sargable);
     this.guard = Boolean(guard);
+    this.prefilter = null;
+    this.separatePrefilter = false;
   }
 
   // Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but LIST,

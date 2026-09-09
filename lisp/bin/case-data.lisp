@@ -6805,4 +6805,88 @@
    :strict nil
    :register (lambda ()
       (define-dialect "cms-mariadb" (list :extends "mariadb" :version "11.8")))
-   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))))
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "bind.separate.relation.mariadb"
+   :at "22-sargable-bindings.sqlt:212"
+   :dialect "mariadb"
+   :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
+   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "`g`.`cmsid` = `cms_entry`.`cmsid`" :prefilter "separate")))))
+  (list
+   :name "bind.separate.column.mariadb"
+   :at "22-sargable-bindings.sqlt:225"
+   :dialect "mariadb"
+   :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
+   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil :prefilter "separate"))) nil "`g`.`cmsid` = `cms_entry`.`cmsid`")))))
+  (list
+   :name "bind.separate.splitsargable.mariadb"
+   :at "22-sargable-bindings.sqlt:238"
+   :dialect "mariadb"
+   :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
+   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "`g`.`cmsid` = `cms_entry`.`cmsid`" :prefilter "separate")))))
+  (list
+   :name "bind.separate.inline-override.mariadb"
+   :at "22-sargable-bindings.sqlt:251"
+   :dialect "mariadb"
+   :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
+   :expect "EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil :prefilter "separate"))) nil "`g`.`cmsid` = `cms_entry`.`cmsid`" :prefilter "inline")))))
+  (list
+   :name "bind.separate.postgresql"
+   :at "22-sargable-bindings.sqlt:264"
+   :dialect "postgresql"
+   :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
+   :expect "EXISTS (SELECT 1 FROM \"cms_fields\" \"g\" WHERE \"g\".\"cmsid\" = \"cms_entry\".\"cmsid\" AND (((\"g\".\"fname\" = 'f_group') AND (\"g\".\"value\" = 'news'))) IS TRUE)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\"" :prefilter "separate")))))
+  (list
+   :name "bind.separate.sqlite"
+   :at "22-sargable-bindings.sqlt:277"
+   :dialect "sqlite"
+   :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
+   :expect "EXISTS (SELECT 1 FROM \"cms_fields\" \"g\" WHERE \"g\".\"cmsid\" = \"cms_entry\".\"cmsid\" AND (((\"g\".\"fname\" = 'f_group') AND (\"g\".\"value\" = 'news'))) IS TRUE)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\"" :prefilter "separate")))))))

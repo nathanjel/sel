@@ -41,6 +41,8 @@ final class Fragment
     public bool $exact;
     public bool $sargable;
     public bool $guard;
+    public ?self $prefilter = null;
+    public bool $separatePrefilter = false;
 
     /**
      * @param list<string|int> $parts

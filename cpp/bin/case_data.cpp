@@ -2959,109 +2959,145 @@ static std::vector<std::pair<std::string, Binding>> c461_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c462_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c463_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c464_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c465_bind() {
   return {
-      {"A", Binding::column("a", std::nullopt, SqlKind::Text, true, false, false)},
-      {"B", Binding::column("b", std::nullopt, SqlKind::Text, true, false, false)},
+      {"A", Binding::column("a", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
+      {"B", Binding::column("b", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c466_bind() {
   return {
-      {"A", Binding::column("a", std::nullopt, SqlKind::Text, true, false, false)},
+      {"A", Binding::column("a", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c467_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c468_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c469_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c470_bind() {
   return {
-      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false)},
+      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c471_bind() {
   return {
-      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false)},
+      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c472_bind() {
   return {
-      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false)},
+      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c473_bind() {
   return {
-      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true)},
+      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c474_bind() {
   return {
-      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true)},
+      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c475_bind() {
   return {
-      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true)},
+      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c476_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c477_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c478_bind() {
   return {
-      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false, std::nullopt)},
   };
 }
 
 static void c478_reg() {
       Map::define_dialect("cms-mariadb", DialectSpec::extending("mariadb").version("11.8"));
+}
+
+static std::vector<std::pair<std::string, Binding>> c479_bind() {
+  return {
+      {"FIELDS", Binding::relation("cms_fields", "g", {{"fname", Binding::column("fname", "g", SqlKind::Text, true, false, false, std::nullopt)}, {"value", Binding::column("value", "g", SqlKind::Text, false, true, false, std::nullopt)}}, std::nullopt, "`g`.`cmsid` = `cms_entry`.`cmsid`", "separate")},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c480_bind() {
+  return {
+      {"FIELDS", Binding::relation("cms_fields", "g", {{"fname", Binding::column("fname", "g", SqlKind::Text, true, false, false, std::nullopt)}, {"value", Binding::column("value", "g", SqlKind::Text, false, true, false, "separate")}}, std::nullopt, "`g`.`cmsid` = `cms_entry`.`cmsid`")},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c481_bind() {
+  return {
+      {"FIELDS", Binding::relation("cms_fields", "g", {{"fname", Binding::column("fname", "g", SqlKind::Text, true, false, false, std::nullopt)}, {"value", Binding::column("value", "g", SqlKind::Text, false, true, false, std::nullopt)}}, std::nullopt, "`g`.`cmsid` = `cms_entry`.`cmsid`", "separate")},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c482_bind() {
+  return {
+      {"FIELDS", Binding::relation("cms_fields", "g", {{"fname", Binding::column("fname", "g", SqlKind::Text, true, false, false, std::nullopt)}, {"value", Binding::column("value", "g", SqlKind::Text, false, true, false, "separate")}}, std::nullopt, "`g`.`cmsid` = `cms_entry`.`cmsid`", "inline")},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c483_bind() {
+  return {
+      {"FIELDS", Binding::relation("cms_fields", "g", {{"fname", Binding::column("fname", "g", SqlKind::Text, true, false, false, std::nullopt)}, {"value", Binding::column("value", "g", SqlKind::Text, false, true, false, std::nullopt)}}, std::nullopt, "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\"", "separate")},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c484_bind() {
+  return {
+      {"FIELDS", Binding::relation("cms_fields", "g", {{"fname", Binding::column("fname", "g", SqlKind::Text, true, false, false, std::nullopt)}, {"value", Binding::column("value", "g", SqlKind::Text, false, true, false, std::nullopt)}}, std::nullopt, "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\"", "separate")},
+  };
 }
 
 static const SqlCase CASES[] = {
@@ -9771,6 +9807,90 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = c478_reg,
      .bindings_fn = c478_bind},
+    {.name = "bind.separate.relation.mariadb",
+     .at = "22-sargable-bindings.sqlt:212",
+     .dialect = "mariadb",
+     .source = "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")",
+     .expect = "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c479_bind},
+    {.name = "bind.separate.column.mariadb",
+     .at = "22-sargable-bindings.sqlt:225",
+     .dialect = "mariadb",
+     .source = "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")",
+     .expect = "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c480_bind},
+    {.name = "bind.separate.splitsargable.mariadb",
+     .at = "22-sargable-bindings.sqlt:238",
+     .dialect = "mariadb",
+     .source = "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")",
+     .expect = "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) IS TRUE) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c481_bind},
+    {.name = "bind.separate.inline-override.mariadb",
+     .at = "22-sargable-bindings.sqlt:251",
+     .dialect = "mariadb",
+     .source = "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")",
+     .expect = "EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c482_bind},
+    {.name = "bind.separate.postgresql",
+     .at = "22-sargable-bindings.sqlt:264",
+     .dialect = "postgresql",
+     .source = "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")",
+     .expect = "EXISTS (SELECT 1 FROM \"cms_fields\" \"g\" WHERE \"g\".\"cmsid\" = \"cms_entry\".\"cmsid\" AND (((\"g\".\"fname\" = 'f_group') AND (\"g\".\"value\" = 'news'))) IS TRUE)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c483_bind},
+    {.name = "bind.separate.sqlite",
+     .at = "22-sargable-bindings.sqlt:277",
+     .dialect = "sqlite",
+     .source = "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")",
+     .expect = "EXISTS (SELECT 1 FROM \"cms_fields\" \"g\" WHERE \"g\".\"cmsid\" = \"cms_entry\".\"cmsid\" AND (((\"g\".\"fname\" = 'f_group') AND (\"g\".\"value\" = 'news'))) IS TRUE)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c484_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

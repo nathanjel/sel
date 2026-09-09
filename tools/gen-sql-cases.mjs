@@ -115,19 +115,28 @@ function bindingCall(b, where) {
   const exact = b.exact === true || b.collation === 'binary' || b.collation === 'exact';
   const sargable = b.sargable === true || b.collation === 'sargable' || b.collation === 'prefilter';
   const guard = b.guard === true;
-  const hasFlags = exact || sargable || guard;
+  let prefilter = b.prefilter;
+  if (prefilter === undefined && b.splitSargable !== undefined) {
+    prefilter = b.splitSargable ? 'separate' : 'inline';
+  }
+  if (prefilter === true) prefilter = 'separate';
+  if (prefilter === false) prefilter = 'inline';
+  const hasFlags = exact || sargable || guard || (prefilter !== undefined);
+  const flagArgs = (extra) => (prefilter !== undefined)
+    ? [...extra, exact, sargable, guard, null, prefilter]
+    : [...extra, exact, sargable, guard];
 
   switch (b.kind) {
     case 'column': {
       const col = b.column === undefined ? null : b.column;
       const table = b.table === undefined ? null : b.table;
       return b.raw !== undefined
-        ? (hasFlags ? call('raw', [b.raw, type, exact, sargable, guard]) : call('raw', [b.raw, type]))
-        : (hasFlags ? call('column', [col, table, type, exact, sargable, guard])
+        ? (hasFlags ? call('raw', flagArgs([b.raw, type])) : call('raw', [b.raw, type]))
+        : (hasFlags ? call('column', flagArgs([col, table, type]))
                     : call('column', [col, table, type]));
     }
     case 'raw':
-      return hasFlags ? call('raw', [b.raw, type, exact, sargable, guard]) : call('raw', [b.raw, type]);
+      return hasFlags ? call('raw', flagArgs([b.raw, type])) : call('raw', [b.raw, type]);
 
     case 'columns': {
       // JS can see the difference PHP's decoder cannot, so it is decided here.
@@ -154,6 +163,9 @@ function bindingCall(b, where) {
         : (b.correlate === undefined ? null : b.correlate);
       const rest = [b.alias === undefined ? null : b.alias, builtFields,
                     b.scalar === undefined ? null : b.scalar, corr];
+      if (prefilter !== undefined) {
+        rest.push(prefilter);
+      }
       const from = b.from;
       if (isObj(from)) {
         return call('relationQuery', [from.raw === undefined ? from : from.raw, ...rest]);
@@ -451,19 +463,21 @@ function lispArg(v) {
   if (v.__call) {
     switch (v.__call) {
       case 'column': {
-        const [col, table, type, exact, sargable, guard] = v.args;
+        const [col, table, type, exact, sargable, guard, collation, prefilter] = v.args;
         // lispArg, not lispOpt: a JSON array or object here is the POINT of
         // several cases, and stringifying it would hand the constructor
         // "[object Object]" instead of the shape it is meant to refuse.
-        const flags = (exact || sargable || guard)
+        const flags = (exact || sargable || guard || (prefilter !== undefined && prefilter !== null))
           ? ` :exact ${exact ? 't' : 'nil'} :sargable ${sargable ? 't' : 'nil'} :guard ${guard ? 't' : 'nil'}`
+            + ((prefilter !== undefined && prefilter !== null) ? ` :prefilter ${lispStr(prefilter)}` : '')
           : '';
         return `(binding-column ${lispArg(col)} ${lispArg(table)} ${lispKind(type)}${flags})`;
       }
       case 'raw': {
-        const [sql, type, exact, sargable, guard] = v.args;
-        const flags = (exact || sargable || guard)
+        const [sql, type, exact, sargable, guard, collation, prefilter] = v.args;
+        const flags = (exact || sargable || guard || (prefilter !== undefined && prefilter !== null))
           ? ` :exact ${exact ? 't' : 'nil'} :sargable ${sargable ? 't' : 'nil'} :guard ${guard ? 't' : 'nil'}`
+            + ((prefilter !== undefined && prefilter !== null) ? ` :prefilter ${lispStr(prefilter)}` : '')
           : '';
         return `(binding-raw ${lispArg(sql)} ${lispKind(type)}${flags})`;
       }
@@ -475,14 +489,15 @@ function lispArg(v) {
       }
       case 'relation':
       case 'relationQuery': {
-        const [from, alias, fields, scalar, corr] = v.args;
+        const [from, alias, fields, scalar, corr, prefilter] = v.args;
         const ctor = v.__call === 'relation' ? 'binding-relation' : 'binding-relation-query';
         const f = (fields && typeof fields === 'object' && !Array.isArray(fields)
                    && !fields.__call && !fields.__raw)
           ? '(list ' + Object.entries(fields)
               .map(([k, b]) => `(cons ${lispStr(k)} ${lispArg(b)})`).join(' ') + ')'
           : lispArg(fields);
-        return `(${ctor} ${lispArg(from)} ${lispArg(alias)} ${f} ${lispArg(scalar)} ${lispArg(corr)})`;
+        const pref = (prefilter !== undefined && prefilter !== null) ? ` :prefilter ${lispStr(prefilter)}` : '';
+        return `(${ctor} ${lispArg(from)} ${lispArg(alias)} ${f} ${lispArg(scalar)} ${lispArg(corr)}${pref})`;
       }
     }
   }
@@ -650,19 +665,21 @@ function cppBinding(v) {
 
   switch (v.__call) {
     case 'column': {
-      const [col, table, type, exact, sargable, guard] = v.args;
+      const [col, table, type, exact, sargable, guard, collation, prefilter] = v.args;
       const base = `Binding::column(${cppName(col, 'a column name')}, `
            + `${cppOptName(table, 'a table name')}, ${cppKind(type)}`;
-      if (exact !== undefined || sargable !== undefined || guard !== undefined) {
-        return `${base}, ${exact ? 'true' : 'false'}, ${sargable ? 'true' : 'false'}, ${guard ? 'true' : 'false'})`;
+      if (exact !== undefined || sargable !== undefined || guard !== undefined || prefilter !== undefined) {
+        const pref = (prefilter !== undefined && prefilter !== null) ? cppStr(prefilter) : 'std::nullopt';
+        return `${base}, ${exact ? 'true' : 'false'}, ${sargable ? 'true' : 'false'}, ${guard ? 'true' : 'false'}, ${pref})`;
       }
       return `${base})`;
     }
     case 'raw': {
-      const [sql, type, exact, sargable, guard] = v.args;
+      const [sql, type, exact, sargable, guard, collation, prefilter] = v.args;
       const base = `Binding::raw(${cppName(sql, 'a raw column')}, ${cppKind(type)}`;
-      if (exact !== undefined || sargable !== undefined || guard !== undefined) {
-        return `${base}, ${exact ? 'true' : 'false'}, ${sargable ? 'true' : 'false'}, ${guard ? 'true' : 'false'})`;
+      if (exact !== undefined || sargable !== undefined || guard !== undefined || prefilter !== undefined) {
+        const pref = (prefilter !== undefined && prefilter !== null) ? cppStr(prefilter) : 'std::nullopt';
+        return `${base}, ${exact ? 'true' : 'false'}, ${sargable ? 'true' : 'false'}, ${guard ? 'true' : 'false'}, ${pref})`;
       }
       return `${base})`;
     }
@@ -670,7 +687,7 @@ function cppBinding(v) {
       return `Binding::columns({${v.args.map(cppBinding).join(', ')}})`;
     case 'relation':
     case 'relationQuery': {
-      const [from, alias, fields, scalar, corr] = v.args;
+      const [from, alias, fields, scalar, corr, prefilter] = v.args;
       const ctor = v.__call === 'relation' ? 'relation' : 'relation_query';
       if (fields === null || fields === undefined || Array.isArray(fields)
           || typeof fields !== 'object' || fields.__call || fields.__raw) {
@@ -678,10 +695,11 @@ function cppBinding(v) {
       }
       const f = Object.entries(fields)
         .map(([k, b]) => `{${cppStr(k)}, ${cppBinding(b)}}`).join(', ');
+      const pref = (prefilter !== undefined && prefilter !== null) ? `, ${cppStr(prefilter)}` : '';
       return `Binding::${ctor}(${cppName(from, 'a relation source')}, `
            + `${cppOptName(alias, 'a relation alias')}, {${f}}, `
            + `${cppOptName(scalar, 'a relation scalar')}, `
-           + `${cppOptName(corr, 'a relation correlate')})`;
+           + `${cppOptName(corr, 'a relation correlate')}${pref})`;
     }
     case 'value': {
       const [val, type] = v.args;

@@ -76,7 +76,17 @@ canonical, so pass it as text or drop the leading zeros" where text)))))
 
 ;;; --- the four kinds -------------------------------------------------------
 
-(defun binding-column (column &optional table (type :unknown) &key exact sargable guard collation)
+(defun check-prefilter (p)
+  (when p
+    (let ((c (string-downcase (string p))))
+      (cond
+        ((or (string= c "separate") (string= c "splitsargable") (string= c "split_sargable") (string= c "t") (string= c "true"))
+         "separate")
+        ((or (string= c "inline") (string= c "false"))
+         "inline")
+        (t (refuse "E_SQL_BINDING" (format nil "unknown prefilter ~s; use 'separate' or 'inline'" p)))))))
+
+(defun binding-column (column &optional table (type :unknown) &key exact sargable guard collation prefilter split-sargable)
   "One column, optionally qualified by a table, optionally typed.
 
 TYPE is what the kind guards read, and leaving it :UNKNOWN is honest rather than
@@ -96,12 +106,15 @@ condition has to say so here."
         ((or (string= c "sargable") (string= c "prefilter")) (setf sargable t))
         ((or (string= c "default") (string= c "none")))
         (t (refuse "E_SQL_BINDING" (format nil "unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'" collation))))))
-  (%binding :column (list :column column :table table :type type
-                          :exact (not (null exact))
-                          :sargable (not (null sargable))
-                          :guard (not (null guard)))))
+  (let ((pref (check-prefilter (or prefilter (when split-sargable "separate"))))
+        (spec (list :column column :table table :type type
+                    :exact (not (null exact))
+                    :sargable (not (null sargable))
+                    :guard (not (null guard)))))
+    (when pref (setf (getf spec :prefilter) pref))
+    (%binding :column spec)))
 
-(defun binding-raw (sql &optional (type :unknown) &key exact sargable guard collation)
+(defun binding-raw (sql &optional (type :unknown) &key exact sargable guard collation prefilter split-sargable)
   "A column expressed as SQL this layer will not read.
 
 The one place an application writes SQL here. It is emitted verbatim, so
@@ -119,10 +132,13 @@ in a map by accident."
         ((or (string= c "sargable") (string= c "prefilter")) (setf sargable t))
         ((or (string= c "default") (string= c "none")))
         (t (refuse "E_SQL_BINDING" (format nil "unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'" collation))))))
-  (%binding :column (list :raw sql :type type
-                          :exact (not (null exact))
-                          :sargable (not (null sargable))
-                          :guard (not (null guard)))))
+  (let ((pref (check-prefilter (or prefilter (when split-sargable "separate"))))
+        (spec (list :raw sql :type type
+                    :exact (not (null exact))
+                    :sargable (not (null sargable))
+                    :guard (not (null guard)))))
+    (when pref (setf (getf spec :prefilter) pref))
+    (%binding :column spec)))
 
 (defun binding-columns (&rest items)
   "An ordered set of columns, iterated by an aggregate and indexed by position:
@@ -139,7 +155,7 @@ item ~a is not one" i)))
              (push (binding-spec item) out))
     (%binding :columns (list :items (nreverse out)))))
 
-(defun %make-relation (from from-raw-p alias fields scalar correlate)
+(defun %make-relation (from from-raw-p alias fields scalar correlate &optional prefilter)
   (let ((out '()))
     (dolist (cell fields)
       (let ((name (car cell)) (b (cdr cell)))
@@ -158,10 +174,13 @@ column binding" name)))
       (refuse "E_SQL_BINDING"
               (format nil "a relation binding names ~a as its scalar, which is ~
 not one of its fields" scalar)))
-    (%binding :relation (list :from from :from-raw-p from-raw-p :alias alias
-                              :fields out :scalar scalar :correlate correlate))))
+    (let ((pref (check-prefilter prefilter))
+          (spec (list :from from :from-raw-p from-raw-p :alias alias
+                      :fields out :scalar scalar :correlate correlate)))
+      (when pref (setf (getf spec :prefilter) pref))
+      (%binding :relation spec))))
 
-(defun binding-relation (from &optional alias fields scalar correlate)
+(defun binding-relation (from &optional alias fields scalar correlate &key prefilter split-sargable)
   "A set of rows, rendered as a correlated subquery.
 
 FIELDS maps a SEL key to a column binding, as an ALIST -- the order is the
@@ -171,15 +190,15 @@ not the value of one of its fields. CORRELATE is SQL, like RAW, and joins the
 subquery back to the outer row."
   (check-name "from" from)
   (when alias (check-name "alias" alias))
-  (%make-relation from nil alias fields scalar correlate))
+  (%make-relation from nil alias fields scalar correlate (or prefilter (when split-sargable "separate"))))
 
-(defun binding-relation-query (query &optional alias fields scalar correlate)
+(defun binding-relation-query (query &optional alias fields scalar correlate &key prefilter split-sargable)
   "The same, over a query the application writes rather than a table."
   (check-string "a relation query" query)
   (when (zerop (length query))
     (refuse "E_SQL_BINDING" "a relation query cannot be empty"))
   (when alias (check-name "alias" alias))
-  (%make-relation query t alias fields scalar correlate))
+  (%make-relation query t alias fields scalar correlate (or prefilter (when split-sargable "separate"))))
 
 (defun binding-value (v &optional type)
   "A constant the application supplies, inlined as a literal.

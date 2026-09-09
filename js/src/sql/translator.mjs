@@ -259,8 +259,12 @@ export class Translator {
     const sql = (c.raw ?? null) !== null
       ? String(c.raw)
       : this.emit.column(c.table ?? null, String(c.column));
-    return new Fragment([sql], String(c.type || 'UNKNOWN'), this.dialect, [], [], [],
-                        Boolean(c.exact), Boolean(c.sargable), Boolean(c.guard));
+    const frag = new Fragment([sql], String(c.type || 'UNKNOWN'), this.dialect, [], [], [],
+                              Boolean(c.exact), Boolean(c.sargable), Boolean(c.guard));
+    if ((c.prefilter ?? null) === 'separate') {
+      frag.separatePrefilter = true;
+    }
+    return frag;
   }
 
   // Indexing is meaningful against a relation or columns binding — a field or a
@@ -401,21 +405,40 @@ export class Translator {
           const coarse = this.apply('ops', '$==', [l, r], n.pos, variant);
           const residual = this.apply('ops', '$==',
             [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, variant);
-          return this.apply('ops', 'AND', [coarse, residual], n.pos);
+          const res = this.apply('ops', 'AND', [coarse, residual], n.pos);
+          res.prefilter = coarse;
+          res.separatePrefilter = l.separatePrefilter || r.separatePrefilter;
+          return res;
         }
       } else if (op === '$==' && r.sargable && lLit) {
         if (this.emit.lex('sargablePrefilter') === 'true') {
           const coarse = this.apply('ops', '$==', [l, r], n.pos, variant);
           const residual = this.apply('ops', '$==',
             [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, variant);
-          return this.apply('ops', 'AND', [coarse, residual], n.pos);
+          const res = this.apply('ops', 'AND', [coarse, residual], n.pos);
+          res.prefilter = coarse;
+          res.separatePrefilter = l.separatePrefilter || r.separatePrefilter;
+          return res;
         }
       } else if (l.kind !== 'BIN' || r.kind !== 'BIN') {
         l = this.emit.textOperand(l);
         r = this.emit.textOperand(r);
       }
     }
-    return this.apply('ops', op, [l, r], n.pos, variant);
+    const res = this.apply('ops', op, [l, r], n.pos, variant);
+    if (op === 'AND') {
+      if (l.prefilter !== null && r.prefilter !== null) {
+        res.prefilter = this.apply('ops', 'AND', [l.prefilter, r.prefilter], n.pos);
+      } else if (l.prefilter !== null) {
+        res.prefilter = this.apply('ops', 'AND', [l.prefilter, r], n.pos);
+      } else if (r.prefilter !== null) {
+        res.prefilter = this.apply('ops', 'AND', [l, r.prefilter], n.pos);
+      }
+      if (l.separatePrefilter || r.separatePrefilter) {
+        res.separatePrefilter = true;
+      }
+    }
+    return res;
   }
 
   // `x IN list` is the one operator whose right operand is a list on purpose.
@@ -1044,6 +1067,19 @@ export class Translator {
   }
 
   relationAggregate(name, rel, body, n) {
+    const isSeparate = ((rel.prefilter ?? null) === 'separate')
+      || ((rel.prefilter ?? null) === null && body.separatePrefilter);
+    if (name === 'ANY' && body.prefilter !== null && isSeparate) {
+      const pre = new Fragment(
+        this.fillNamed(this.skeleton(AGG_SKELETON[name], n.pos),
+          slots(this.relationSlots(rel), { body: [body.prefilter] }), n.pos),
+        AGG_RETURNS[name], this.dialect);
+      const main = new Fragment(
+        this.fillNamed(this.skeleton(AGG_SKELETON[name], n.pos),
+          slots(this.relationSlots(rel), { body: [body] }), n.pos),
+        AGG_RETURNS[name], this.dialect);
+      return this.apply('ops', 'AND', [pre, main], n.pos);
+    }
     return new Fragment(
       this.fillNamed(this.skeleton(AGG_SKELETON[name], n.pos),
         slots(this.relationSlots(rel), { body: [body] }), n.pos),
