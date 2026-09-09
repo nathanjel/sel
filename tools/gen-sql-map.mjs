@@ -106,6 +106,7 @@ const SKEL_SLOTS = {
   any: ['from', 'corr', 'body'],
   sum: ['from', 'corr', 'body'],
   count: ['from', 'corr'],
+  prefilter: ['from', 'corr', 'body'],
   join: ['from', 'corr', 'body', 'sep'],
   inRelation: ['needle', 'from', 'corr', 'body'],
 };

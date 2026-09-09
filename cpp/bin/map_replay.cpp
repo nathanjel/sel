@@ -284,6 +284,9 @@ int replay_register() {
               "inRelation", EntrySpec::skeleton("(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"));
   ++calls;
   Map::define("ansi~replay", Section::Skel,
+              "prefilter", EntrySpec::skeleton("EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"));
+  ++calls;
+  Map::define("ansi~replay", Section::Skel,
               "join", EntrySpec::withdraw("LISTAGG is SQL:2016 and is spelled differently by every server that has it"));
   ++calls;
   Map::define_dialect("mysql-family~replay",

@@ -1739,7 +1739,7 @@ Fragment Translator::relation_aggregate(const std::string& name,
     SlotMap pre_slots =
         merge_slots(relation_slots(rel), SlotMap{{"body", {Slot{*body.prefilter()}}}});
     Fragment pre = Fragment(
-        fill_named(skeleton(std::string(agg_skeleton(name)), n.pos()), pre_slots, n.pos()),
+        fill_named(skeleton("prefilter", n.pos()), pre_slots, n.pos()),
         agg_returns(name), dialect_);
     SlotMap main_slots =
         merge_slots(relation_slots(rel), SlotMap{{"body", {Slot{body}}}});

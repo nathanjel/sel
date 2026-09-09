@@ -319,6 +319,9 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "inRelation": {
                 "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
+            "prefilter": {
+                "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})",
+            },
             "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
         },
     },
@@ -719,6 +722,9 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "inRelation": {
                 "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
+            "prefilter": {
+                "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})",
+            },
             "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
         },
     },
@@ -1117,6 +1123,9 @@ DIALECTS: dict[str, dict[str, Any]] = {
             },
             "inRelation": {
                 "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
+            },
+            "prefilter": {
+                "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})",
             },
             "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
         },
@@ -1517,6 +1526,9 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "inRelation": {
                 "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
+            "prefilter": {
+                "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})",
+            },
             "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
         },
     },
@@ -1907,6 +1919,9 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "inRelation": {
                 "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
+            "prefilter": {
+                "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})",
+            },
             "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
         },
     },
@@ -2276,6 +2291,9 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "inRelation": {
                 "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)",
             },
+            "prefilter": {
+                "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})",
+            },
             "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
         },
     },
@@ -2401,6 +2419,7 @@ RULES: dict[str, Any] = {
         "any": ["from", "corr", "body"],
         "sum": ["from", "corr", "body"],
         "count": ["from", "corr"],
+        "prefilter": ["from", "corr", "body"],
         "join": ["from", "corr", "body", "sep"],
         "inRelation": ["needle", "from", "corr", "body"],
     },

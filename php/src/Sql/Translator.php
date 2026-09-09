@@ -1343,7 +1343,7 @@ final class Translator
             || (($rel['prefilter'] ?? null) === null && $body->separatePrefilter);
         if ($name === 'ANY' && $body->prefilter !== null && $isSeparate) {
             $pre = new Fragment(
-                $this->fillNamed($this->skeleton(self::AGG_SKELETON[$name], $n['pos']),
+                $this->fillNamed($this->skeleton('prefilter', $n['pos']),
                     self::slots($this->relationSlots($rel), ['body' => [$body->prefilter]]), $n['pos']),
                 self::AGG_RETURNS[$name], $this->dialect);
             $main = new Fragment(

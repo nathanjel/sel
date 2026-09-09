@@ -194,6 +194,8 @@ of registration calls it took."
   (incf calls)
   (define-entry "ansi~replay" :skel "inRelation" (list :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"))
   (incf calls)
+  (define-entry "ansi~replay" :skel "prefilter" (list :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"))
+  (incf calls)
   (define-entry "ansi~replay" :skel "join" "LISTAGG is SQL:2016 and is spelled differently by every server that has it")
   (incf calls)
   (define-dialect "mysql-family~replay" (list :extends "ansi~replay" :version "0" :target nil :lexical '( ("identQuote" . "`") ("identEscape" . "``") ("textQuote" . "'") ("textEscape" ("'" . "''") ("\\" . "\\\\")) ("textCollate" . " COLLATE utf8mb4_bin") ("textCharset" . "utf8mb4") ("numericCast" . "CAST({0} AS DECIMAL(65,10))") ("numericGuard" . "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END") ("binaryCast" . "CAST({0} AS BINARY)") ("textCast" . "CAST({0} AS CHAR)") ("sargablePrefilter" . "true"))))

@@ -318,6 +318,9 @@ export const RAW = [
       "inRelation": {
         "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"
       },
+      "prefilter": {
+        "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
+      },
       "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
     },
     "notes": {

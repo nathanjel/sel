@@ -128,6 +128,7 @@
      ("sum" :tpl "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})")
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
+     ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
      ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it")))
   ("mariadb"
    :extends "mysql-family"
@@ -241,6 +242,7 @@
      ("sum" :tpl "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})")
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
+     ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
      ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")))
   ("mysql"
    :extends "mysql-family"
@@ -354,6 +356,7 @@
      ("sum" :tpl "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})")
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
+     ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
      ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")))
   ("mysql-family"
    :extends "ansi"
@@ -467,6 +470,7 @@
      ("sum" :tpl "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})")
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
+     ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
      ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")))
   ("postgresql"
    :extends "ansi"
@@ -580,6 +584,7 @@
      ("sum" :tpl "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})")
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
+     ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
      ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it")))
   ("sqlite"
    :extends "ansi"
@@ -692,6 +697,7 @@
      ("sum" :tpl "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})")
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
+     ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
      ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it"))))
   "Every shipped dialect, flattened.")
 
@@ -702,7 +708,7 @@
    :op-arity (("!=" 2 . 2) ("$!=" 2 . 2) ("$<" 2 . 2) ("$<=" 2 . 2) ("$==" 2 . 2) ("$>" 2 . 2) ("$>=" 2 . 2) ("%" 2 . 2) ("&" 2 . 2) ("*" 2 . 2) ("+" 2 . 2) ("-" 2 . 2) ("/" 2 . 2) ("<" 2 . 2) ("<=" 2 . 2) ("==" 2 . 2) (">" 2 . 2) (">=" 2 . 2) ("??" 2 . 2) ("???" 2 . 2) ("AND" 2 . 2) ("BAND" 2 . 2) ("BOR" 2 . 2) ("BXOR" 2 . 2) ("EQL" 2 . 2) ("IN" 1 . nil) ("NEG" 1 . 1) ("NOT" 1 . 1) ("OR" 2 . 2) ("XOR" 2 . 2))
    :func-arity (("ABS" 1 . 1) ("BACKWARDS" 1 . 1) ("BLEN" 1 . 1) ("BTL" 1 . 1) ("CEIL" 1 . 1) ("CHAR" 1 . 1) ("COALESCE" 1 . nil) ("CODE" 1 . 1) ("CRC32" 1 . 1) ("DECODE_BASE64" 1 . 1) ("ENCODE_BASE64" 1 . 1) ("FIND" 2 . 3) ("FLOOR" 1 . 1) ("FROM_HEX" 1 . 1) ("FROM_UTF8" 1 . 1) ("GET" 2 . 3) ("ISNUM" 1 . 1) ("IS_BLANK" 1 . 1) ("IS_NOT_NULL" 1 . 1) ("IS_NULL" 1 . 1) ("IS_PRESENT" 1 . 1) ("LEFT" 2 . 2) ("LEN" 1 . 1) ("LOWER" 1 . 1) ("LTB" 1 . 1) ("LTRIM" 1 . 1) ("MAX" 1 . nil) ("MIN" 1 . nil) ("PADL" 3 . 3) ("PADR" 3 . 3) ("PATH" 2 . 3) ("POWER" 2 . 2) ("REPEAT" 2 . 2) ("REPLACE" 3 . 3) ("RFIND" 2 . 3) ("RGROUPS" 2 . 3) ("RIGHT" 2 . 2) ("RMATCH" 2 . 3) ("ROUND" 2 . 2) ("RREPLACE" 3 . 4) ("RTRIM" 1 . 1) ("SIGN" 1 . 1) ("SPLIT" 2 . 2) ("SUBSTR" 2 . 3) ("TO_HEX" 1 . 1) ("TO_UTF8" 1 . 1) ("TRIM" 1 . 1) ("TRUNC" 1 . 1) ("UPPER" 1 . 1))
    :variants (("==" "num" "coerce") ("!=" "num" "coerce") ("<" "num" "coerce") ("<=" "num" "coerce") (">" "num" "coerce") (">=" "num" "coerce") ("$==" "text") ("$!=" "text") ("$<" "text") ("$<=" "text") ("$>" "text") ("$>=" "text") ("EQL" "text") ("IN" "scalar") ("&" "text" "bin"))
-   :skel-slots (("case" "branches" "else") ("caseBranch" "cond" "then") ("all" "from" "corr" "body") ("any" "from" "corr" "body") ("sum" "from" "corr" "body") ("count" "from" "corr") ("join" "from" "corr" "body" "sep") ("inRelation" "needle" "from" "corr" "body"))
+   :skel-slots (("case" "branches" "else") ("caseBranch" "cond" "then") ("all" "from" "corr" "body") ("any" "from" "corr" "body") ("sum" "from" "corr" "body") ("count" "from" "corr") ("prefilter" "from" "corr" "body") ("join" "from" "corr" "body" "sep") ("inRelation" "needle" "from" "corr" "body"))
    :lexical-types (("identQuote" . :string) ("identEscape" . :string) ("textQuote" . :string) ("textEscape" . :map) ("true" . :string) ("false" . :string) ("binaryLiteral" . :string) ("numericLiteral" . :string) ("textCollate" . :string) ("textCharset" . :string) ("textCast" . :string) ("numericCast" . :string) ("binaryCast" . :string) ("isTrue" . :string) ("isNotTrue" . :string) ("placeholder" . :string) ("numericGuard" . :string) ("sargablePrefilter" . :string)))
   "The map's own vocabulary, so DEFINE-ENTRY can enforce at registration time
 what tools/gen-sql-map.mjs enforces at generation time. Emitted rather than

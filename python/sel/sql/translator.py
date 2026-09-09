@@ -1048,7 +1048,7 @@ class Translator:
                        or (rel.get('prefilter') is None and getattr(body, 'separate_prefilter', False)))
         if name == 'ANY' and getattr(body, 'prefilter', None) is not None and is_separate:
             pre = Fragment(
-                self._fill_named(self._skeleton(AGG_SKELETON[name], n.pos),
+                self._fill_named(self._skeleton('prefilter', n.pos),
                                  _slots(self._relation_slots(rel), {'body': [body.prefilter]}), n.pos),
                 AGG_RETURNS[name], self.dialect)
             main = Fragment(

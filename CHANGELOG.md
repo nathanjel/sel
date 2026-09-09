@@ -10,6 +10,21 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.7.4 — 2026-09-09
+
+Optimizer-transparent existential precondition subqueries (`skel.prefilter`) without `IS TRUE` wrappers, enabling composite B-tree index seeks and semijoin decorrelation on MariaDB and MySQL.
+
+  - **First-class `skel.prefilter` in the SQL dialect map.**
+    - Adds `prefilter: ['from', 'corr', 'body']` to `skel` in `sql/dialects/ansi.json` (`EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})`).
+    - Omits the three-valued logic fold (`IS TRUE`) from the coarse precondition subquery emitted for separate relation prefilters (`prefilter: 'separate'`).
+    - Eliminates the root `Item_func_istrue` AST node that previously prevented MariaDB/MySQL range optimizers from recognizing composite index keys (`(fname, value, cmsid)`) and caused subquery decorrelation to fail. Live query plans now successfully decorrelate into `LooseScan` semijoins driven by multi-part constant index seeks (`const,const`), reducing execution time to baseline (~1.30× legacy).
+    - Preserves `({body}) IS TRUE` in the authoritative aggregate subquery (`skel.any`) where strict two-valued SEL semantics are enforced.
+  - **Cross-runtime parity & test coverage.**
+    - Implemented uniformly across PHP, JavaScript, Python, C++23, and Common Lisp.
+    - Updated MariaDB separate prefilter test cases in `sql/cases/22-sargable-bindings.sqlt`, passing across all 5 host runtimes.
+
+conformance 720 · sql cases 485 · mutations 161
+
 ## 0.7.3 — 2026-09-09
 
 Separately planable necessary prefilters for relation bindings (`prefilter: 'separate' | 'inline'`), enabling composite B-tree index acceleration in MariaDB/MySQL aggregate subqueries.

@@ -314,6 +314,9 @@ export const DIALECTS = {
       "inRelation": {
         "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"
       },
+      "prefilter": {
+        "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
+      },
       "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
     }
   },
@@ -720,6 +723,9 @@ export const DIALECTS = {
       "inRelation": {
         "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"
       },
+      "prefilter": {
+        "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
+      },
       "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"
     }
   },
@@ -1124,6 +1130,9 @@ export const DIALECTS = {
       },
       "inRelation": {
         "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"
+      },
+      "prefilter": {
+        "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
       },
       "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"
     }
@@ -1530,6 +1539,9 @@ export const DIALECTS = {
       "inRelation": {
         "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"
       },
+      "prefilter": {
+        "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
+      },
       "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"
     }
   },
@@ -1929,6 +1941,9 @@ export const DIALECTS = {
       "inRelation": {
         "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"
       },
+      "prefilter": {
+        "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
+      },
       "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
     }
   },
@@ -2300,6 +2315,9 @@ export const DIALECTS = {
       },
       "inRelation": {
         "tpl": "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"
+      },
+      "prefilter": {
+        "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
       },
       "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
     }
@@ -2745,6 +2763,11 @@ export const RULES = {
     "count": [
       "from",
       "corr"
+    ],
+    "prefilter": [
+      "from",
+      "corr",
+      "body"
     ],
     "join": [
       "from",

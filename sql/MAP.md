@@ -568,10 +568,12 @@ mode is a refusal reason emitted into a query as SQL.
 | `count` | `{from}`, `{corr}` | `COUNT` |
 | `join` | `{from}`, `{corr}`, `{body}`, `{sep}` | `JOIN` |
 | `inRelation` | `{needle}`, `{from}`, `{corr}`, `{body}` | `x IN relation` |
+| `prefilter` | `{from}`, `{corr}`, `{body}` | Sibling `EXISTS` precondition for separate relation prefilters |
 
 ```jsonc
 "all":  { "tpl": "NOT EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS NOT TRUE)" },
 "any":  { "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS TRUE)" },
+"prefilter": { "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})" },
 "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by"
 ```
 
@@ -581,6 +583,10 @@ NULL, the `WHERE` rejects the row, and `NOT EXISTS` reports "every row satisfies
 it" — silently the wrong answer for exactly the case a validation rule exists to
 catch. `IS NOT TRUE` folds NULL into false, so a NULL body makes `ALL` false,
 which is the conservative reading.
+
+`prefilter` emits the coarse existential precondition directly without `IS TRUE`
+folding, allowing database optimizers (such as MariaDB and MySQL) to recognize clean
+composite equality predicates for B-tree index seek and semijoin decorrelation.
 
 `{corr}` fills with the binding's `correlate`, or with `lexical.true` when the
 binding omits one; an uncorrelated relation is a subquery over the whole table,

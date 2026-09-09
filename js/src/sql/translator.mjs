@@ -1071,7 +1071,7 @@ export class Translator {
       || ((rel.prefilter ?? null) === null && body.separatePrefilter);
     if (name === 'ANY' && body.prefilter !== null && isSeparate) {
       const pre = new Fragment(
-        this.fillNamed(this.skeleton(AGG_SKELETON[name], n.pos),
+        this.fillNamed(this.skeleton('prefilter', n.pos),
           slots(this.relationSlots(rel), { body: [body.prefilter] }), n.pos),
         AGG_RETURNS[name], this.dialect);
       const main = new Fragment(

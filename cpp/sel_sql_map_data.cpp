@@ -186,6 +186,7 @@ constexpr Entry d0_ansi_skel[] = {
     {.key = "sum", .kind = EntryKind::Template, .one = "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})"},
     {.key = "count", .kind = EntryKind::Template, .one = "(SELECT COUNT(*) FROM {from} WHERE {corr})"},
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
+    {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "LISTAGG is SQL:2016 and is spelled differently by every server that has it"}},
 };
 
@@ -373,6 +374,7 @@ constexpr Entry d1_mariadb_skel[] = {
     {.key = "sum", .kind = EntryKind::Template, .one = "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})"},
     {.key = "count", .kind = EntryKind::Template, .one = "(SELECT COUNT(*) FROM {from} WHERE {corr})"},
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
+    {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"}},
 };
 
@@ -560,6 +562,7 @@ constexpr Entry d2_mysql_skel[] = {
     {.key = "sum", .kind = EntryKind::Template, .one = "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})"},
     {.key = "count", .kind = EntryKind::Template, .one = "(SELECT COUNT(*) FROM {from} WHERE {corr})"},
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
+    {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"}},
 };
 
@@ -747,6 +750,7 @@ constexpr Entry d3_mysql_family_skel[] = {
     {.key = "sum", .kind = EntryKind::Template, .one = "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})"},
     {.key = "count", .kind = EntryKind::Template, .one = "(SELECT COUNT(*) FROM {from} WHERE {corr})"},
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
+    {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"}},
 };
 
@@ -921,6 +925,7 @@ constexpr Entry d4_postgresql_skel[] = {
     {.key = "sum", .kind = EntryKind::Template, .one = "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})"},
     {.key = "count", .kind = EntryKind::Template, .one = "(SELECT COUNT(*) FROM {from} WHERE {corr})"},
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
+    {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "LISTAGG is SQL:2016 and is spelled differently by every server that has it"}},
 };
 
@@ -1094,6 +1099,7 @@ constexpr Entry d5_sqlite_skel[] = {
     {.key = "sum", .kind = EntryKind::Template, .one = "(SELECT COALESCE(SUM({body}), 0) FROM {from} WHERE {corr})"},
     {.key = "count", .kind = EntryKind::Template, .one = "(SELECT COUNT(*) FROM {from} WHERE {corr})"},
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
+    {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "LISTAGG is SQL:2016 and is spelled differently by every server that has it"}},
 };
 
@@ -1283,8 +1289,9 @@ constexpr std::string_view slots2[] = {"from", "corr", "body"};
 constexpr std::string_view slots3[] = {"from", "corr", "body"};
 constexpr std::string_view slots4[] = {"from", "corr", "body"};
 constexpr std::string_view slots5[] = {"from", "corr"};
-constexpr std::string_view slots6[] = {"from", "corr", "body", "sep"};
-constexpr std::string_view slots7[] = {"needle", "from", "corr", "body"};
+constexpr std::string_view slots6[] = {"from", "corr", "body"};
+constexpr std::string_view slots7[] = {"from", "corr", "body", "sep"};
+constexpr std::string_view slots8[] = {"needle", "from", "corr", "body"};
 constexpr Names SKEL_SLOTS[] = {
     {.key = "case", .names = slots0},
     {.key = "caseBranch", .names = slots1},
@@ -1292,8 +1299,9 @@ constexpr Names SKEL_SLOTS[] = {
     {.key = "any", .names = slots3},
     {.key = "sum", .names = slots4},
     {.key = "count", .names = slots5},
-    {.key = "join", .names = slots6},
-    {.key = "inRelation", .names = slots7},
+    {.key = "prefilter", .names = slots6},
+    {.key = "join", .names = slots7},
+    {.key = "inRelation", .names = slots8},
 };
 constexpr LexType LEX_TYPES[] = {
     {.key = "identQuote", .escapes = false},

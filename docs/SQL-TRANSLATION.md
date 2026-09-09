@@ -713,11 +713,12 @@ A correlated set of rows. This is what becomes a subquery.
   - When `'separate'` (or configured on a referenced field without relation override): on engines
     with `sargablePrefilter: true` (MariaDB, MySQL), `ANY` emits two sibling `EXISTS` subqueries
     conjoined by `AND`:
-    `(EXISTS (SELECT 1 FROM rel WHERE corr AND coarse_prefilter IS TRUE) AND EXISTS (SELECT 1 FROM rel WHERE corr AND body IS TRUE))`
-  - The first subquery carries clean, bare index-friendly conditions (conjoining all exact and coarse
-    conditions through `AND`, e.g. `(g.fname = 'f_group' AND g.value = 'news')`). MariaDB and MySQL
-    optimizers plan this precondition using composite B-tree indexes (such as `(fname, value, cmsid)`
-    on EAV tables) to reduce candidate rows before evaluating residual collation expressions.
+    `(EXISTS (SELECT 1 FROM rel WHERE corr AND coarse_prefilter) AND EXISTS (SELECT 1 FROM rel WHERE corr AND body IS TRUE))`
+  - The first subquery carries clean, unadorned index-friendly conditions without `IS TRUE` or defensive
+    wrappers (conjoining all exact and coarse conditions through `AND`, e.g. `((g.fname = 'f_group') AND (g.value = 'news'))`).
+    MariaDB and MySQL optimizers recognize these direct equality conjuncts to plan composite B-tree indexes
+    (such as `(fname, value, cmsid)` on EAV tables) and decorrelate the subquery into a semijoin (`LooseScan`),
+    dramatically pruning candidate rows before evaluating residual collation expressions in the second subquery.
   - On engines with `sargablePrefilter: false` (PostgreSQL, SQLite), sargable equality does not
     produce coarse prefilters, emitting a single clean `EXISTS` subquery without duplication.
   - An explicit `prefilter: 'inline'` on the relation overrides any column-level `'separate'`
