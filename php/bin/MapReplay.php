@@ -45,6 +45,7 @@ final class MapReplay
                 'isNotTrue' => '({0}) IS NOT TRUE',
                 'placeholder' => '?',
                 'textCast' => 'CAST({0} AS CHARACTER VARYING)',
+                'sargablePrefilter' => 'false',
             ],
             'ops' => [
                 '+' => [
@@ -359,6 +360,7 @@ final class MapReplay
                 'numericGuard' => 'CASE WHEN ({0} REGEXP \'\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z\') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END',
                 'binaryCast' => 'CAST({0} AS BINARY)',
                 'textCast' => 'CAST({0} AS CHAR)',
+                'sargablePrefilter' => 'true',
             ],
             'ops' => [
                 '*' => [

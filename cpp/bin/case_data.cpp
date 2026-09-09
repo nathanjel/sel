@@ -3054,6 +3054,16 @@ static std::vector<std::pair<std::string, Binding>> c477_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c478_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+  };
+}
+
+static void c478_reg() {
+      Map::define_dialect("cms-mariadb", DialectSpec::extending("mariadb").version("11.8"));
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -9747,6 +9757,20 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c477_bind},
+    {.name = "bind.sargable.derived-dialect",
+     .at = "22-sargable-bindings.sqlt:197",
+     .dialect = "cms-mariadb",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = c478_reg,
+     .bindings_fn = c478_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

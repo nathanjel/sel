@@ -193,3 +193,19 @@ TYPEPATH $== "home"
 --- expect
 ((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))
 ===
+
+### name: bind.sargable.derived-dialect
+--- note
+A derived dialect extending MariaDB inherits sargablePrefilter from mysql-family.
+--- dialect
+cms-mariadb
+--- register
+[{"dialect": "cms-mariadb", "extends": "mariadb", "version": "11.8"}]
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "sargable": true}}
+--- source
+TYPEPATH $== "home"
+--- expect
+((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))
+===
+

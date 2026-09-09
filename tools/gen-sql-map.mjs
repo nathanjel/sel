@@ -67,7 +67,7 @@ const LEXICAL_KEYS = [
   'identQuote', 'identEscape', 'textQuote', 'textEscape', 'true', 'false',
   'binaryLiteral', 'numericLiteral', 'textCollate', 'textCharset', 'textCast',
   'numericCast', 'binaryCast', 'isTrue', 'isNotTrue', 'placeholder',
-  'numericGuard',
+  'numericGuard', 'sargablePrefilter',
 ];
 // Keys a target may leave undeclared, where the absence is itself the answer.
 //
@@ -84,7 +84,7 @@ const OPTIONAL_LEXICAL = new Set(['numericGuard']);
 // Substitutable in a template. textEscape is an object and binaryLiteral is
 // filled by the renderer, so neither is spliceable.
 const LEXICAL_TEMPLATE_KEYS = LEXICAL_KEYS.filter(
-  (k) => k !== 'textEscape' && k !== 'binaryLiteral',
+  (k) => k !== 'textEscape' && k !== 'binaryLiteral' && k !== 'sargablePrefilter',
 );
 
 // sql/MAP.md §4.3. A variants object may use only the names its family defines.
@@ -128,7 +128,7 @@ const LEXICAL_TYPES = {
   textCharset: 'string',
   textCast: 'string', numericCast: 'string', binaryCast: 'string',
   isTrue: 'string', isNotTrue: 'string', placeholder: 'string',
-  numericGuard: 'string',
+  numericGuard: 'string', sargablePrefilter: 'string',
 };
 
 /**

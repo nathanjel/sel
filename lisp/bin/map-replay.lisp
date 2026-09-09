@@ -20,7 +20,7 @@
   "Registers every shipped dialect under a ~replay suffix and returns the number
 of registration calls it took."
   (let ((calls 0))
-  (define-dialect "ansi~replay" (list :extends nil :version "1999" :target nil :lexical '( ("identQuote" . "\"") ("identEscape" . "\"\"") ("textQuote" . "'") ("textEscape" ("'" . "''")) ("true" . "TRUE") ("false" . "FALSE") ("binaryLiteral" . "X'{hex}'") ("numericLiteral" . "{0}") ("textCollate" . " COLLATE UCS_BASIC") ("textCharset") ("numericCast" . "CAST({0} AS NUMERIC)") ("binaryCast" . "CAST({0} AS BLOB)") ("isTrue" . "({0}) IS TRUE") ("isNotTrue" . "({0}) IS NOT TRUE") ("placeholder" . "?") ("textCast" . "CAST({0} AS CHARACTER VARYING)"))))
+  (define-dialect "ansi~replay" (list :extends nil :version "1999" :target nil :lexical '( ("identQuote" . "\"") ("identEscape" . "\"\"") ("textQuote" . "'") ("textEscape" ("'" . "''")) ("true" . "TRUE") ("false" . "FALSE") ("binaryLiteral" . "X'{hex}'") ("numericLiteral" . "{0}") ("textCollate" . " COLLATE UCS_BASIC") ("textCharset") ("numericCast" . "CAST({0} AS NUMERIC)") ("binaryCast" . "CAST({0} AS BLOB)") ("isTrue" . "({0}) IS TRUE") ("isNotTrue" . "({0}) IS NOT TRUE") ("placeholder" . "?") ("textCast" . "CAST({0} AS CHARACTER VARYING)") ("sargablePrefilter" . "false"))))
   (incf calls)
   (define-entry "ansi~replay" :ops "+" (list :tpl "({numericCast:0} + {numericCast:1})" :ret "NUM"))
   (incf calls)
@@ -196,7 +196,7 @@ of registration calls it took."
   (incf calls)
   (define-entry "ansi~replay" :skel "join" "LISTAGG is SQL:2016 and is spelled differently by every server that has it")
   (incf calls)
-  (define-dialect "mysql-family~replay" (list :extends "ansi~replay" :version "0" :target nil :lexical '( ("identQuote" . "`") ("identEscape" . "``") ("textQuote" . "'") ("textEscape" ("'" . "''") ("\\" . "\\\\")) ("textCollate" . " COLLATE utf8mb4_bin") ("textCharset" . "utf8mb4") ("numericCast" . "CAST({0} AS DECIMAL(65,10))") ("numericGuard" . "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END") ("binaryCast" . "CAST({0} AS BINARY)") ("textCast" . "CAST({0} AS CHAR)"))))
+  (define-dialect "mysql-family~replay" (list :extends "ansi~replay" :version "0" :target nil :lexical '( ("identQuote" . "`") ("identEscape" . "``") ("textQuote" . "'") ("textEscape" ("'" . "''") ("\\" . "\\\\")) ("textCollate" . " COLLATE utf8mb4_bin") ("textCharset" . "utf8mb4") ("numericCast" . "CAST({0} AS DECIMAL(65,10))") ("numericGuard" . "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END") ("binaryCast" . "CAST({0} AS BINARY)") ("textCast" . "CAST({0} AS CHAR)") ("sargablePrefilter" . "true"))))
   (incf calls)
   (define-entry "mysql-family~replay" :ops "*" (list :tpl "({0} * {1})" :ret "NUM" :caveat "scale-limit"))
   (incf calls)

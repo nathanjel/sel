@@ -845,10 +845,12 @@ Fragment Translator::binary(const SNode& n) {
     const bool r_exact = r.exact();
     const bool l_lit = n.l() && n.l()->t() == SNode::T::Text;
     const bool r_lit = n.r() && n.r()->t() == SNode::T::Text;
+    const Lexical* spf = emit_.lex("sargablePrefilter");
+    const bool sargable_prefilter = (spf && spf->kind == LexKind::Text && spf->text == "true");
     if ((l_exact && (r_exact || r_lit)) || (r_exact && l_lit)) {
       // bare comparison
     } else if (op == "$==" && l.sargable() && r_lit) {
-      if (dialect_ == "mariadb" || dialect_ == "mysql" || dialect_ == "mysql-family") {
+      if (sargable_prefilter) {
         const Fragment coarse_args[] = {l, r};
         const Fragment coarse = apply(Section::Ops, "$==", coarse_args, n.pos(), variant);
         const Fragment res_args[] = {emit_.text_operand(l), emit_.text_operand(r)};
@@ -857,7 +859,7 @@ Fragment Translator::binary(const SNode& n) {
         return apply(Section::Ops, "AND", and_args, n.pos());
       }
     } else if (op == "$==" && r.sargable() && l_lit) {
-      if (dialect_ == "mariadb" || dialect_ == "mysql" || dialect_ == "mysql-family") {
+      if (sargable_prefilter) {
         const Fragment coarse_args[] = {l, r};
         const Fragment coarse = apply(Section::Ops, "$==", coarse_args, n.pos(), variant);
         const Fragment res_args[] = {emit_.text_operand(l), emit_.text_operand(r)};

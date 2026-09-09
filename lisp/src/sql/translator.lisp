@@ -632,7 +632,7 @@ those differ per aggregate."
                ;; bare comparison
                nil)
               ((and (equal op "$==") (fragment-sargable l) r-lit)
-               (when (member (translator-dialect tr) '("mariadb" "mysql" "mysql-family") :test #'equal)
+               (when (equal (dialect-lexical (translator-dialect tr) "sargablePrefilter") "true")
                  (let* ((coarse (apply-entry tr :ops "$==" (list l r) (snode-pos n) variant))
                         (residual (apply-entry tr :ops "$=="
                                                (list (emit-text-operand (translator-dialect tr) l)
@@ -640,7 +640,7 @@ those differ per aggregate."
                                                (snode-pos n) variant)))
                    (return-from translate-binary (apply-entry tr :ops "AND" (list coarse residual) (snode-pos n))))))
               ((and (equal op "$==") (fragment-sargable r) l-lit)
-               (when (member (translator-dialect tr) '("mariadb" "mysql" "mysql-family") :test #'equal)
+               (when (equal (dialect-lexical (translator-dialect tr) "sargablePrefilter") "true")
                  (let* ((coarse (apply-entry tr :ops "$==" (list l r) (snode-pos n) variant))
                         (residual (apply-entry tr :ops "$=="
                                                (list (emit-text-operand (translator-dialect tr) l)

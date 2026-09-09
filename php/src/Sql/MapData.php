@@ -41,6 +41,7 @@ final class MapData
                 'isNotTrue' => '({0}) IS NOT TRUE',
                 'placeholder' => '?',
                 'textCast' => 'CAST({0} AS CHARACTER VARYING)',
+                'sargablePrefilter' => 'false',
             ],
             'ops' => [
                 '+' => [
@@ -351,6 +352,7 @@ final class MapData
                 'isNotTrue' => '({0}) IS NOT TRUE',
                 'placeholder' => '?',
                 'textCast' => 'CAST({0} AS CHAR)',
+                'sargablePrefilter' => 'true',
                 'numericGuard' => 'CASE WHEN ({0} REGEXP \'\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z\') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END',
             ],
             'ops' => [
@@ -750,6 +752,7 @@ final class MapData
                 'isNotTrue' => '({0}) IS NOT TRUE',
                 'placeholder' => '?',
                 'textCast' => 'CAST({0} AS CHAR)',
+                'sargablePrefilter' => 'true',
                 'numericGuard' => 'CASE WHEN ({0} REGEXP \'\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z\') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END',
             ],
             'ops' => [
@@ -1148,6 +1151,7 @@ final class MapData
                 'isNotTrue' => '({0}) IS NOT TRUE',
                 'placeholder' => '?',
                 'textCast' => 'CAST({0} AS CHAR)',
+                'sargablePrefilter' => 'true',
                 'numericGuard' => 'CASE WHEN ({0} REGEXP \'\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z\') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END',
             ],
             'ops' => [
@@ -1545,6 +1549,7 @@ final class MapData
                 'isNotTrue' => '(({0}) IS NOT TRUE)',
                 'placeholder' => '?',
                 'textCast' => 'CAST({0} AS TEXT)',
+                'sargablePrefilter' => 'false',
                 'numericGuard' => 'CASE WHEN ({textCast:0} ~ \'^-?[0-9]+(\\.[0-9]+)?$\') THEN CAST({0} AS NUMERIC) ELSE NULL END',
             ],
             'ops' => [
@@ -1934,6 +1939,7 @@ final class MapData
                 'isNotTrue' => '(({0}) IS NOT TRUE)',
                 'placeholder' => '?',
                 'textCast' => 'CAST({0} AS TEXT)',
+                'sargablePrefilter' => 'false',
             ],
             'ops' => [
                 '+' => [
@@ -2425,6 +2431,7 @@ final class MapData
             'isNotTrue' => 'string',
             'placeholder' => 'string',
             'numericGuard' => 'string',
+            'sargablePrefilter' => 'string',
         ],
         'templateKeys' => ['identQuote', 'identEscape', 'textQuote', 'true', 'false', 'numericLiteral', 'textCollate', 'textCharset', 'textCast', 'numericCast', 'binaryCast', 'isTrue', 'isNotTrue', 'placeholder', 'numericGuard'],
     ];

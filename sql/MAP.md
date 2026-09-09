@@ -185,8 +185,9 @@ key. Every key below must resolve for a `target` dialect; the generator checks.
 | `binaryCast` | string | template wrapping `{0}` to cast a text or num operand to bytes |
 | `isTrue` / `isNotTrue` | string | templates folding SQL's third truth value into two |
 | `placeholder` | string | `params`-mode placeholder; `{n}` is the 1-based ordinal, absent for positional `?` |
+| `sargablePrefilter` | string | `"true"` if the engine requires a coarse equality prefilter on sargable text equality (`col = 'val' AND ...`), `"false"` where bare equality is exact |
 
-Three of these are load-bearing rather than cosmetic:
+Four of these are load-bearing rather than cosmetic:
 
 - **`textEscape` carries the backslash entry for MySQL and MariaDB and omits it
   for PostgreSQL and SQLite**, because MySQL treats `\` as an escape inside
@@ -196,6 +197,12 @@ Three of these are load-bearing rather than cosmetic:
 - **`textCollate` is what makes `$==` honest.** SEL's `$` family compares bytes;
   MySQL's and MariaDB's default collation is case- and accent-insensitive, so a
   bare `=` would make `"A" $== "a"` true in the database and false in SEL.
+- **`sargablePrefilter` controls whether sargable text comparisons emit a coarse
+  index prefilter.** MySQL and MariaDB set `"true"` to emit
+  `((col = 'val') AND (CAST(col...) = CAST('val'...)))` to enable index seeks
+  under case-insensitive collations while preserving exact binary semantics;
+  PostgreSQL and SQLite set `"false"` where text comparisons are exact by default.
+  Derived dialects inherit this automatically through their `extends` chain.
 - **`numericGuard` is what makes `==` honest about data it was not promised.**
   `numericCast` alone answers 0 for `'x'` on three of the four servers, so a
   comparison against 0 matched every row of a text column. The guard tests the

@@ -30,7 +30,8 @@ export const DIALECTS = {
       "isTrue": "({0}) IS TRUE",
       "isNotTrue": "({0}) IS NOT TRUE",
       "placeholder": "?",
-      "textCast": "CAST({0} AS CHARACTER VARYING)"
+      "textCast": "CAST({0} AS CHARACTER VARYING)",
+      "sargablePrefilter": "false"
     },
     "ops": {
       "+": {
@@ -341,6 +342,7 @@ export const DIALECTS = {
       "isNotTrue": "({0}) IS NOT TRUE",
       "placeholder": "?",
       "textCast": "CAST({0} AS CHAR)",
+      "sargablePrefilter": "true",
       "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
     },
     "ops": {
@@ -746,6 +748,7 @@ export const DIALECTS = {
       "isNotTrue": "({0}) IS NOT TRUE",
       "placeholder": "?",
       "textCast": "CAST({0} AS CHAR)",
+      "sargablePrefilter": "true",
       "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
     },
     "ops": {
@@ -1150,6 +1153,7 @@ export const DIALECTS = {
       "isNotTrue": "({0}) IS NOT TRUE",
       "placeholder": "?",
       "textCast": "CAST({0} AS CHAR)",
+      "sargablePrefilter": "true",
       "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
     },
     "ops": {
@@ -1553,6 +1557,7 @@ export const DIALECTS = {
       "isNotTrue": "(({0}) IS NOT TRUE)",
       "placeholder": "?",
       "textCast": "CAST({0} AS TEXT)",
+      "sargablePrefilter": "false",
       "numericGuard": "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"
     },
     "ops": {
@@ -1950,7 +1955,8 @@ export const DIALECTS = {
       "isTrue": "(({0}) IS TRUE)",
       "isNotTrue": "(({0}) IS NOT TRUE)",
       "placeholder": "?",
-      "textCast": "CAST({0} AS TEXT)"
+      "textCast": "CAST({0} AS TEXT)",
+      "sargablePrefilter": "false"
     },
     "ops": {
       "+": {
@@ -2770,7 +2776,8 @@ export const RULES = {
     "isTrue": "string",
     "isNotTrue": "string",
     "placeholder": "string",
-    "numericGuard": "string"
+    "numericGuard": "string",
+    "sargablePrefilter": "string"
   },
   "templateKeys": [
     "identQuote",

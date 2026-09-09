@@ -397,14 +397,14 @@ export class Translator {
       if ((lExact && (rExact || rLit)) || (rExact && lLit)) {
         // bare comparison
       } else if (op === '$==' && l.sargable && rLit) {
-        if (['mariadb', 'mysql', 'mysql-family'].includes(this.dialect)) {
+        if (this.emit.lex('sargablePrefilter') === 'true') {
           const coarse = this.apply('ops', '$==', [l, r], n.pos, variant);
           const residual = this.apply('ops', '$==',
             [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, variant);
           return this.apply('ops', 'AND', [coarse, residual], n.pos);
         }
       } else if (op === '$==' && r.sargable && lLit) {
-        if (['mariadb', 'mysql', 'mysql-family'].includes(this.dialect)) {
+        if (this.emit.lex('sargablePrefilter') === 'true') {
           const coarse = this.apply('ops', '$==', [l, r], n.pos, variant);
           const residual = this.apply('ops', '$==',
             [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, variant);

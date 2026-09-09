@@ -411,14 +411,14 @@ class Translator:
             if (l_exact and (r_exact or r_lit)) or (r_exact and l_lit):
                 pass
             elif op == '$==' and getattr(l, 'sargable', False) and r_lit:
-                if self.dialect in ('mariadb', 'mysql', 'mysql-family'):
+                if self.emit.lex('sargablePrefilter') == 'true':
                     coarse = self._apply('ops', '$==', [l, r], n.pos, variant)
                     residual = self._apply('ops', '$==',
                                            [self.emit.text_operand(l), self.emit.text_operand(r)],
                                            n.pos, variant)
                     return self._apply('ops', 'AND', [coarse, residual], n.pos)
             elif op == '$==' and getattr(r, 'sargable', False) and l_lit:
-                if self.dialect in ('mariadb', 'mysql', 'mysql-family'):
+                if self.emit.lex('sargablePrefilter') == 'true':
                     coarse = self._apply('ops', '$==', [l, r], n.pos, variant)
                     residual = self._apply('ops', '$==',
                                            [self.emit.text_operand(l), self.emit.text_operand(r)],

@@ -20,7 +20,8 @@
     "isTrue": "({0}) IS TRUE",
     "isNotTrue": "({0}) IS NOT TRUE",
     "placeholder": "?",
-    "textCast": "CAST({0} AS CHARACTER VARYING)"
+    "textCast": "CAST({0} AS CHARACTER VARYING)",
+    "sargablePrefilter": "false"
   },
   "ops": {
     "+": {

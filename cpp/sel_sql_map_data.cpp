@@ -38,6 +38,7 @@ constexpr Lexical d0_ansi_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "({0}) IS NOT TRUE"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHARACTER VARYING)"},
+    {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "false"},
 };
 constexpr Keyed d0_ansi_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "({textCast:0} || {textCast:1})"}},
@@ -210,6 +211,7 @@ constexpr Lexical d1_mariadb_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "({0}) IS NOT TRUE"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
+    {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "true"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
 constexpr Keyed d1_mariadb_ops8[] = {
@@ -396,6 +398,7 @@ constexpr Lexical d2_mysql_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "({0}) IS NOT TRUE"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
+    {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "true"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
 constexpr Keyed d2_mysql_ops8[] = {
@@ -582,6 +585,7 @@ constexpr Lexical d3_mysql_family_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "({0}) IS NOT TRUE"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
+    {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "true"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
 };
 constexpr Keyed d3_mysql_family_ops8[] = {
@@ -767,6 +771,7 @@ constexpr Lexical d4_postgresql_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "(({0}) IS NOT TRUE)"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS TEXT)"},
+    {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "false"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"},
 };
 constexpr Keyed d4_postgresql_ops8[] = {
@@ -940,6 +945,7 @@ constexpr Lexical d5_sqlite_lexical[] = {
     {.key = "isNotTrue", .kind = LexKind::Text, .text = "(({0}) IS NOT TRUE)"},
     {.key = "placeholder", .kind = LexKind::Text, .text = "?"},
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS TEXT)"},
+    {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "false"},
 };
 constexpr Keyed d5_sqlite_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "({0} || {1})"}},
@@ -1307,6 +1313,7 @@ constexpr LexType LEX_TYPES[] = {
     {.key = "isNotTrue", .escapes = false},
     {.key = "placeholder", .escapes = false},
     {.key = "numericGuard", .escapes = false},
+    {.key = "sargablePrefilter", .escapes = false},
 };
 
 constexpr Rules RULES = {

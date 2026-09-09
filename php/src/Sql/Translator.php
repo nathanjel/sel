@@ -411,14 +411,14 @@ final class Translator
             if (($lExact && ($rExact || $rLit)) || ($rExact && $lLit)) {
                 // bare comparison
             } elseif ($op === '$==' && $l->sargable && $rLit) {
-                if (in_array($this->dialect, ['mariadb', 'mysql', 'mysql-family'], true)) {
+                if ($this->emit->lex('sargablePrefilter') === 'true') {
                     $coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);
                     $residual = $this->apply('ops', '$==',
                         [$this->emit->textOperand($l), $this->emit->textOperand($r)], $n['pos'], $variant);
                     return $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);
                 }
             } elseif ($op === '$==' && $r->sargable && $lLit) {
-                if (in_array($this->dialect, ['mariadb', 'mysql', 'mysql-family'], true)) {
+                if ($this->emit->lex('sargablePrefilter') === 'true') {
                     $coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);
                     $residual = $this->apply('ops', '$==',
                         [$this->emit->textOperand($l), $this->emit->textOperand($r)], $n['pos'], $variant);

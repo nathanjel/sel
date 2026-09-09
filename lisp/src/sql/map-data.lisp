@@ -37,7 +37,8 @@
      ("isTrue" . "({0}) IS TRUE")
      ("isNotTrue" . "({0}) IS NOT TRUE")
      ("placeholder" . "?")
-     ("textCast" . "CAST({0} AS CHARACTER VARYING)"))
+     ("textCast" . "CAST({0} AS CHARACTER VARYING)")
+     ("sargablePrefilter" . "false"))
    :ops (
      ("+" :tpl "({numericCast:0} + {numericCast:1})" :ret "NUM")
      ("-" :tpl "({numericCast:0} - {numericCast:1})" :ret "NUM")
@@ -149,6 +150,7 @@
      ("isNotTrue" . "({0}) IS NOT TRUE")
      ("placeholder" . "?")
      ("textCast" . "CAST({0} AS CHAR)")
+     ("sargablePrefilter" . "true")
      ("numericGuard" . "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"))
    :ops (
      ("+" :tpl "({0} + {1})" :ret "NUM")
@@ -261,6 +263,7 @@
      ("isNotTrue" . "({0}) IS NOT TRUE")
      ("placeholder" . "?")
      ("textCast" . "CAST({0} AS CHAR)")
+     ("sargablePrefilter" . "true")
      ("numericGuard" . "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"))
    :ops (
      ("+" :tpl "({0} + {1})" :ret "NUM")
@@ -373,6 +376,7 @@
      ("isNotTrue" . "({0}) IS NOT TRUE")
      ("placeholder" . "?")
      ("textCast" . "CAST({0} AS CHAR)")
+     ("sargablePrefilter" . "true")
      ("numericGuard" . "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"))
    :ops (
      ("+" :tpl "({0} + {1})" :ret "NUM")
@@ -485,6 +489,7 @@
      ("isNotTrue" . "(({0}) IS NOT TRUE)")
      ("placeholder" . "?")
      ("textCast" . "CAST({0} AS TEXT)")
+     ("sargablePrefilter" . "false")
      ("numericGuard" . "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"))
    :ops (
      ("+" :tpl "({numericCast:0} + {numericCast:1})" :ret "NUM")
@@ -596,7 +601,8 @@
      ("isTrue" . "(({0}) IS TRUE)")
      ("isNotTrue" . "(({0}) IS NOT TRUE)")
      ("placeholder" . "?")
-     ("textCast" . "CAST({0} AS TEXT)"))
+     ("textCast" . "CAST({0} AS TEXT)")
+     ("sargablePrefilter" . "false"))
    :ops (
      ("+" :tpl "({0} + {1})" :ret "NUM" :caveat "decimal-float")
      ("-" :tpl "({0} - {1})" :ret "NUM" :caveat "decimal-float")
@@ -697,7 +703,7 @@
    :func-arity (("ABS" 1 . 1) ("BACKWARDS" 1 . 1) ("BLEN" 1 . 1) ("BTL" 1 . 1) ("CEIL" 1 . 1) ("CHAR" 1 . 1) ("COALESCE" 1 . nil) ("CODE" 1 . 1) ("CRC32" 1 . 1) ("DECODE_BASE64" 1 . 1) ("ENCODE_BASE64" 1 . 1) ("FIND" 2 . 3) ("FLOOR" 1 . 1) ("FROM_HEX" 1 . 1) ("FROM_UTF8" 1 . 1) ("GET" 2 . 3) ("ISNUM" 1 . 1) ("IS_BLANK" 1 . 1) ("IS_NOT_NULL" 1 . 1) ("IS_NULL" 1 . 1) ("IS_PRESENT" 1 . 1) ("LEFT" 2 . 2) ("LEN" 1 . 1) ("LOWER" 1 . 1) ("LTB" 1 . 1) ("LTRIM" 1 . 1) ("MAX" 1 . nil) ("MIN" 1 . nil) ("PADL" 3 . 3) ("PADR" 3 . 3) ("PATH" 2 . 3) ("POWER" 2 . 2) ("REPEAT" 2 . 2) ("REPLACE" 3 . 3) ("RFIND" 2 . 3) ("RGROUPS" 2 . 3) ("RIGHT" 2 . 2) ("RMATCH" 2 . 3) ("ROUND" 2 . 2) ("RREPLACE" 3 . 4) ("RTRIM" 1 . 1) ("SIGN" 1 . 1) ("SPLIT" 2 . 2) ("SUBSTR" 2 . 3) ("TO_HEX" 1 . 1) ("TO_UTF8" 1 . 1) ("TRIM" 1 . 1) ("TRUNC" 1 . 1) ("UPPER" 1 . 1))
    :variants (("==" "num" "coerce") ("!=" "num" "coerce") ("<" "num" "coerce") ("<=" "num" "coerce") (">" "num" "coerce") (">=" "num" "coerce") ("$==" "text") ("$!=" "text") ("$<" "text") ("$<=" "text") ("$>" "text") ("$>=" "text") ("EQL" "text") ("IN" "scalar") ("&" "text" "bin"))
    :skel-slots (("case" "branches" "else") ("caseBranch" "cond" "then") ("all" "from" "corr" "body") ("any" "from" "corr" "body") ("sum" "from" "corr" "body") ("count" "from" "corr") ("join" "from" "corr" "body" "sep") ("inRelation" "needle" "from" "corr" "body"))
-   :lexical-types (("identQuote" . :string) ("identEscape" . :string) ("textQuote" . :string) ("textEscape" . :map) ("true" . :string) ("false" . :string) ("binaryLiteral" . :string) ("numericLiteral" . :string) ("textCollate" . :string) ("textCharset" . :string) ("textCast" . :string) ("numericCast" . :string) ("binaryCast" . :string) ("isTrue" . :string) ("isNotTrue" . :string) ("placeholder" . :string) ("numericGuard" . :string)))
+   :lexical-types (("identQuote" . :string) ("identEscape" . :string) ("textQuote" . :string) ("textEscape" . :map) ("true" . :string) ("false" . :string) ("binaryLiteral" . :string) ("numericLiteral" . :string) ("textCollate" . :string) ("textCharset" . :string) ("textCast" . :string) ("numericCast" . :string) ("binaryCast" . :string) ("isTrue" . :string) ("isNotTrue" . :string) ("placeholder" . :string) ("numericGuard" . :string) ("sargablePrefilter" . :string)))
   "The map's own vocabulary, so DEFINE-ENTRY can enforce at registration time
 what tools/gen-sql-map.mjs enforces at generation time. Emitted rather than
 retyped in each host: every divergence a cross-host review found in runtime

@@ -10,6 +10,20 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.7.2 — 2026-09-09
+
+Dialect map driven `sargablePrefilter` lexical configuration, enabling custom and derived SQL dialects extending MariaDB/MySQL to inherit sargable index prefilters.
+
+  - **Architectural `sargablePrefilter` lexical configuration.**
+    - Moves the engine-specific decision for emitting coarse equality prefilters (`col = 'val' AND ...`) from hardcoded dialect name string checks into the SQL dialect map (`sql/dialects/*.json`).
+    - Configures `"sargablePrefilter": "true"` in `mysql-family.json` and `"false"` in `ansi.json`.
+    - Custom and derived dialects extending MariaDB or MySQL (e.g. `Map::defineDialect('cms-mariadb', ['extends' => 'mariadb'])`) now properly inherit `sargablePrefilter: true` via standard dialect inheritance across all host implementations (PHP, JavaScript, Python, C++23, Common Lisp).
+  - **Test coverage & dialect inheritance verification.**
+    - Adds `bind.sargable.derived-dialect` to `sql/cases/22-sargable-bindings.sqlt` verifying that custom dialects extending `mariadb` inherit index-sargable prefilters.
+    - SQL test suite expanded to 479 cases, passing across all 5 host implementations.
+
+conformance 720 · sql cases 479 · mutations 161
+
 ## 0.7.1 — 2026-09-09
 
 Index-sargable SQL bindings and numeric guard controls for relational database query optimizers, addressing 54×–102× execution regressions on indexed production tables.

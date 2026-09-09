@@ -6790,4 +6790,19 @@
    :mode nil
    :strict nil
    :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "bind.sargable.derived-dialect"
+   :at "22-sargable-bindings.sqlt:197"
+   :dialect "cms-mariadb"
+   :source "TYPEPATH $== \"home\""
+   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register (lambda ()
+      (define-dialect "cms-mariadb" (list :extends "mariadb" :version "11.8")))
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))))
