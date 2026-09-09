@@ -53,29 +53,31 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.6.1 -m "SEL 0.6.1"
-git push origin v0.6.1
+git tag -a v0.7.0 -m "SEL 0.7.0"
+git push origin v0.7.0
 ```
 
-Versions live in six places. Keep them in step:
+Versions live in six manifests. Keep them in step:
 
 ```
-package.json                     "version": "0.6.1"
-pyproject.toml                   version = "0.6.1"
-cpp/conanfile.py                 version = "0.6.1"
-cpp/vcpkg.json                   "version-semver": "0.6.1"
-cpp/CMakeLists.txt               project(... VERSION 0.6.1 ...)
-lisp/sel-lang.asd                :version "0.6.1"
+package.json                     "version": "0.7.0"
+pyproject.toml                   version = "0.7.0"
+cpp/conanfile.py                 version = "0.7.0"
+cpp/vcpkg.json                   "version-semver": "0.7.0"
+cpp/CMakeLists.txt               project(... VERSION 0.7.0 ...)
+lisp/sel-lang.asd                :version "0.7.0"
 ```
 
-`python/sel/__init__.py` carries `__version__`, and `CHANGELOG.md`'s top
-heading carries the version being released. Both are checked against
-`pyproject.toml` by `tools/check-version.sh`, so they are two places fewer to
-remember rather than two more — and a release whose notes were never written
-fails the check before the tag is cut.
+`python/sel/__init__.py` carries `__version__`, `CHANGELOG.md`'s top heading
+carries the version being released, and `composer.json` carries
+`extra.branch-alias.dev-main` (`0.7.x-dev`). All are checked against the release
+version by `tools/check-version.sh`, so they are places fewer to remember rather
+than more — and a release whose notes or branch alias were never updated fails
+the check before the tag is cut.
 
-`composer.json` deliberately carries **no** `version` field — Packagist infers it
-from the git tag, and hard-coding it there is a known way to publish a lie.
+`composer.json` deliberately carries **no** `version` field — Packagist infers
+release versions from git tags, and hard-coding it there is a known way to
+publish a lie.
 
 ---
 
@@ -178,6 +180,20 @@ Verify before publishing:
 ```
 composer validate
 ```
+
+### Branch alias (`dev-main`)
+
+Packagist infers release versions from git tags, but it reads `extra.branch-alias.dev-main` in `composer.json` to determine what `dev-main` represents. On every minor release series bump, update this alias to match:
+
+```json
+  "extra": {
+    "branch-alias": {
+      "dev-main": "0.7.x-dev"
+    }
+  }
+```
+
+`tools/check-version.sh` enforces this against the release series, so an outdated branch alias fails the version check before tagging.
 
 ---
 

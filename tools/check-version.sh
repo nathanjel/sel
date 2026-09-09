@@ -63,6 +63,24 @@ if grep -q '"version"' composer.json 2>/dev/null; then
   status=1
 fi
 
+# composer.json carries extra.branch-alias.dev-main so Packagist knows what
+# version dev-main represents. It must match the current release series (<major>.<minor>.x-dev).
+if [ -n "$first" ]; then
+  major_minor="$(echo "$first" | cut -d. -f1,2)"
+  expected_alias="${major_minor}.x-dev"
+  actual_alias="$(sed -n 's/.*"dev-main"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' composer.json | head -1)"
+  if [ -z "$actual_alias" ]; then
+    echo "composer.json: missing extra.branch-alias.dev-main" >&2
+    status=1
+  elif [ "$actual_alias" != "$expected_alias" ]; then
+    printf '  %-24s %s\n' "composer.json dev-main" "$actual_alias"
+    echo "    ^ expected $expected_alias for release series $major_minor" >&2
+    status=1
+  else
+    printf '  %-24s %s\n' "composer.json dev-main" "$actual_alias"
+  fi
+fi
+
 if [ "$status" -eq 0 ]; then
   echo "versions agree: $first"
 else
