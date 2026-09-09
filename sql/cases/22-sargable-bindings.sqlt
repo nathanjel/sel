@@ -1,0 +1,195 @@
+% Exact, sargable, and guarded column bindings for index acceleration.
+
+### name: bind.exact.mariadb
+--- note
+exact: true skips CAST(... AS CHAR) and COLLATE utf8mb4_bin, restoring index usage.
+--- dialect
+mariadb
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "exact": true}}
+--- source
+TYPEPATH $== "home"
+--- expect
+(`cms_entry`.`typepath` = 'home')
+===
+
+### name: bind.exact.sqlite
+--- dialect
+sqlite
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "exact": true}}
+--- source
+TYPEPATH $== "home"
+--- expect
+("cms_entry"."typepath" = 'home')
+===
+
+### name: bind.exact.postgresql
+--- dialect
+postgresql
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "exact": true}}
+--- source
+TYPEPATH $== "home"
+--- expect
+("cms_entry"."typepath" = 'home')
+===
+
+### name: bind.exact.two-columns
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "a", "type": "TEXT", "exact": true}, "B": {"kind": "column", "column": "b", "type": "TEXT", "exact": true}}
+--- source
+A $== B
+--- expect
+(`a` = `b`)
+===
+
+### name: bind.exact.ordering
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "a", "type": "TEXT", "exact": true}}
+--- source
+A $< "z"
+--- expect
+(`a` < 'z')
+===
+
+### name: bind.sargable.mariadb
+--- note
+sargable: true generates a coarse equality prefilter to leverage indexes on _ci columns,
+followed by the exact binary collation check as residual.
+--- dialect
+mariadb
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "sargable": true}}
+--- source
+TYPEPATH $== "home"
+--- expect
+((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))
+===
+
+### name: bind.sargable.postgresql
+--- note
+On PostgreSQL text equality is already exact, so sargable emits clean bare equality.
+--- dialect
+postgresql
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "sargable": true}}
+--- source
+TYPEPATH $== "home"
+--- expect
+("cms_entry"."typepath" = 'home')
+===
+
+### name: bind.sargable.sqlite
+--- note
+On SQLite text equality is already exact, so sargable emits clean bare equality.
+--- dialect
+sqlite
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "sargable": true}}
+--- source
+TYPEPATH $== "home"
+--- expect
+("cms_entry"."typepath" = 'home')
+===
+
+### name: bind.in.exact.mariadb
+--- note
+exact: true causes IN expansion over literal list to emit bare equality comparisons,
+allowing B-tree index range scans.
+--- dialect
+mariadb
+--- bindings
+{"STATUS": {"kind": "column", "column": "status", "type": "TEXT", "exact": true}}
+--- source
+STATUS IN ("open", "held")
+--- expect
+((`status` = 'open') OR (`status` = 'held'))
+===
+
+### name: bind.in.exact.postgresql
+--- dialect
+postgresql
+--- bindings
+{"STATUS": {"kind": "column", "column": "status", "type": "TEXT", "exact": true}}
+--- source
+STATUS IN ("open", "held")
+--- expect
+(("status" = 'open') OR ("status" = 'held'))
+===
+
+### name: bind.in.exact.sqlite
+--- dialect
+sqlite
+--- bindings
+{"STATUS": {"kind": "column", "column": "status", "type": "TEXT", "exact": true}}
+--- source
+STATUS IN ("open", "held")
+--- expect
+(("status" = 'open') OR ("status" = 'held'))
+===
+
+### name: bind.guard.mariadb
+--- note
+guard: true forces numeric guard checks even when the column binding is declared NUM.
+--- dialect
+mariadb
+--- bindings
+{"VAL": {"kind": "column", "column": "val", "type": "NUM", "guard": true}}
+--- source
+VAL == 25
+--- expect
+(CASE WHEN (`val` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`val` AS DECIMAL(65,10)) ELSE NULL END = 25)
+===
+
+### name: bind.guard.postgresql
+--- dialect
+postgresql
+--- bindings
+{"VAL": {"kind": "column", "column": "val", "type": "NUM", "guard": true}}
+--- source
+VAL == 25
+--- expect
+(CASE WHEN (CAST("val" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("val" AS NUMERIC) ELSE NULL END = 25)
+===
+
+### name: bind.guard.sqlite-refusal
+--- dialect
+sqlite
+--- bindings
+{"VAL": {"kind": "column", "column": "val", "type": "NUM", "guard": true}}
+--- source
+VAL == 25
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+
+### name: bind.collation.binary
+--- note
+Aliases collation="binary" to exact=true.
+--- dialect
+mariadb
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "collation": "binary"}}
+--- source
+TYPEPATH $== "home"
+--- expect
+(`cms_entry`.`typepath` = 'home')
+===
+
+### name: bind.collation.sargable
+--- note
+Aliases collation="sargable" to sargable=true.
+--- dialect
+mariadb
+--- bindings
+{"TYPEPATH": {"kind": "column", "table": "cms_entry", "column": "typepath", "type": "TEXT", "collation": "sargable"}}
+--- source
+TYPEPATH $== "home"
+--- expect
+((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))
+===

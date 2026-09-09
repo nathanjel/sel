@@ -147,7 +147,11 @@ it is a named constructor and not a map key."
                  (getf spec :raw)
                  (emit-column (translator-dialect tr) (getf spec :table)
                               (getf spec :column)))))
-    (%fragment (list sql) (or (getf spec :type) :unknown) (translator-dialect tr))))
+    (%fragment (list sql) (or (getf spec :type) :unknown) (translator-dialect tr)
+               nil nil nil
+               (not (null (getf spec :exact)))
+               (not (null (getf spec :sargable)))
+               (not (null (getf spec :guard))))))
 
 (defun translate-variable (tr n)
   (let ((name (sel::node-s n)))
@@ -618,10 +622,34 @@ those differ per aggregate."
       (let ((variant (variant-for op (list l r))))
         (when (member op +byte-comparisons+ :test #'equal)
           (require-comparable-kinds l r op (snode-pos n))
-          ;; The cast and collate are skipped only when BOTH operands are BIN.
-          (unless (and (eq (fragment-kind l) :bin) (eq (fragment-kind r) :bin))
-            (setf l (emit-text-operand (translator-dialect tr) l)
-                  r (emit-text-operand (translator-dialect tr) r))))
+          (let ((l-exact (fragment-exact l))
+                (r-exact (fragment-exact r))
+                (l-lit (eq (snode-kind (sel::node-l n)) :text))
+                (r-lit (eq (snode-kind (sel::node-r n)) :text)))
+            (cond
+              ((or (and l-exact (or r-exact r-lit))
+                   (and r-exact l-lit))
+               ;; bare comparison
+               nil)
+              ((and (equal op "$==") (fragment-sargable l) r-lit)
+               (when (member (translator-dialect tr) '("mariadb" "mysql" "mysql-family") :test #'equal)
+                 (let* ((coarse (apply-entry tr :ops "$==" (list l r) (snode-pos n) variant))
+                        (residual (apply-entry tr :ops "$=="
+                                               (list (emit-text-operand (translator-dialect tr) l)
+                                                     (emit-text-operand (translator-dialect tr) r))
+                                               (snode-pos n) variant)))
+                   (return-from translate-binary (apply-entry tr :ops "AND" (list coarse residual) (snode-pos n))))))
+              ((and (equal op "$==") (fragment-sargable r) l-lit)
+               (when (member (translator-dialect tr) '("mariadb" "mysql" "mysql-family") :test #'equal)
+                 (let* ((coarse (apply-entry tr :ops "$==" (list l r) (snode-pos n) variant))
+                        (residual (apply-entry tr :ops "$=="
+                                               (list (emit-text-operand (translator-dialect tr) l)
+                                                     (emit-text-operand (translator-dialect tr) r))
+                                               (snode-pos n) variant)))
+                   (return-from translate-binary (apply-entry tr :ops "AND" (list coarse residual) (snode-pos n))))))
+              ((not (and (eq (fragment-kind l) :bin) (eq (fragment-kind r) :bin)))
+               (setf l (emit-text-operand (translator-dialect tr) l)
+                     r (emit-text-operand (translator-dialect tr) r))))))
         (apply-entry tr :ops op (list l r) (snode-pos n) variant)))))
 
 ;;; --- skeletons ------------------------------------------------------------
@@ -1394,7 +1422,8 @@ projected column as a relation with that one field." (sel::node-s rhs) (length f
           ;; remove: splicing one fragment N times puts the same slot number in
           ;; the output N times while PARAMS holds one entry.
           (let* ((raw (walk-node tr (sel::node-l n)))
-                 (needle (emit-text-operand d raw))
+                 (is-exact (fragment-exact raw))
+                 (needle (if is-exact raw (emit-text-operand d raw)))
                  (f (walk-node tr e)))
             (when (eq (fragment-kind f) :list)
               (refuse "E_SQL_SHAPE"
@@ -1402,10 +1431,11 @@ projected column as a relation with that one field." (sel::node-s rhs) (length f
 SQL counterpart" (snode-pos e)))
             ;; RAW, not NEEDLE: needle's kind is always TEXT after the cast.
             (require-comparable-kinds raw f "IN" (snode-pos e))
-            ;; The map key is EQL with variant text; the IN entry is not used here.
-            (push (apply-entry tr :ops "EQL" (list needle (emit-text-operand d f))
-                               (snode-pos e) "text")
-                  tests)))
+            (let ((item (if is-exact f (emit-text-operand d f))))
+              ;; The map key is EQL with variant text; the IN entry is not used here.
+              (push (apply-entry tr :ops "EQL" (list needle item)
+                                 (snode-pos e) "text")
+                    tests))))
         (fold-pairwise tr "OR" (nreverse tests) (snode-pos n))))))
 
 ;;; --- the public interface -------------------------------------------------

@@ -16,7 +16,8 @@
   (find name +kinds+ :key #'kind-name :test #'equal))
 
 (defstruct (fragment (:constructor %fragment (parts kind dialect
-                                              &optional params param-kinds caveats)))
+                                              &optional params param-kinds caveats
+                                                        exact sargable guard)))
   "PARTS alternates finished SQL and parameter slots -- a string is SQL, an
 integer is the 1-based index of a value in PARAMS. The renderer never
 concatenates a literal into a string, so inline and params output are two ways
@@ -32,7 +33,10 @@ the class of bug this shape exists to make unreachable."
   ;; text values (spec §4), so (make-num "5.00") and (make-text "5.00") are one
   ;; object.
   (param-kinds '() :type list)
-  (caveats '() :type list))
+  (caveats '() :type list)
+  (exact nil :type boolean)
+  (sargable nil :type boolean)
+  (guard nil :type boolean))
 
 (defun slot-inline-p (f slot)
   "True for a slot rendered as a literal in every mode, never as a parameter.

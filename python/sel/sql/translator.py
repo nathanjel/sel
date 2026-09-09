@@ -279,7 +279,10 @@ class Translator:
     def _column_ref(self, c: dict[str, Any]) -> Fragment:
         sql = (str(c['raw']) if c.get('raw') is not None
                else self.emit.column(c.get('table'), str(c['column'])))
-        return Fragment([sql], str(c.get('type') or 'UNKNOWN'), self.dialect)
+        return Fragment([sql], str(c.get('type') or 'UNKNOWN'), self.dialect,
+                        exact=bool(c.get('exact', False)),
+                        sargable=bool(c.get('sargable', False)),
+                        guard=bool(c.get('guard', False)))
 
     def _index(self, n: Node) -> Fragment:
         """Indexing is meaningful against a relation or columns binding -- a field
@@ -401,7 +404,27 @@ class Translator:
             # MariaDB and MySQL whenever either side was not valid UTF-8, where
             # SEL answers FALSE. The corpus had exactly one BIN value, 7ac3a9,
             # which is valid UTF-8 and could not show it.
-            if l.kind != 'BIN' or r.kind != 'BIN':
+            l_exact = getattr(l, 'exact', False)
+            r_exact = getattr(r, 'exact', False)
+            l_lit = (n.l.t == 'text')
+            r_lit = (n.r.t == 'text')
+            if (l_exact and (r_exact or r_lit)) or (r_exact and l_lit):
+                pass
+            elif op == '$==' and getattr(l, 'sargable', False) and r_lit:
+                if self.dialect in ('mariadb', 'mysql', 'mysql-family'):
+                    coarse = self._apply('ops', '$==', [l, r], n.pos, variant)
+                    residual = self._apply('ops', '$==',
+                                           [self.emit.text_operand(l), self.emit.text_operand(r)],
+                                           n.pos, variant)
+                    return self._apply('ops', 'AND', [coarse, residual], n.pos)
+            elif op == '$==' and getattr(r, 'sargable', False) and l_lit:
+                if self.dialect in ('mariadb', 'mysql', 'mysql-family'):
+                    coarse = self._apply('ops', '$==', [l, r], n.pos, variant)
+                    residual = self._apply('ops', '$==',
+                                           [self.emit.text_operand(l), self.emit.text_operand(r)],
+                                           n.pos, variant)
+                    return self._apply('ops', 'AND', [coarse, residual], n.pos)
+            elif l.kind != 'BIN' or r.kind != 'BIN':
                 l = self.emit.text_operand(l)
                 r = self.emit.text_operand(r)
         return self._apply('ops', op, [l, r], n.pos, variant)
@@ -498,15 +521,17 @@ class Translator:
             # spliced N times: splicing one Fragment twice puts the same slot
             # number in the output twice while `params` holds one entry.
             raw = self._node(n.l)
-            needle = self.emit.text_operand(raw)
+            is_exact = getattr(raw, 'exact', False)
+            needle = raw if is_exact else self.emit.text_operand(raw)
             f = self._node(e)
             if f.kind == 'LIST':
                 refuse('E_SQL_SHAPE',
                        'IN over a list of lists is structural in SEL and has no SQL '
                        'counterpart', e.pos)
             _require_comparable_kinds(raw, f, 'IN', e.pos)
+            item = f if is_exact else self.emit.text_operand(f)
             tests.append(self._apply('ops', 'EQL',
-                                     [needle, self.emit.text_operand(f)], e.pos, 'text'))
+                                     [needle, item], e.pos, 'text'))
         return self.fold_pairwise('OR', tests, n.pos)
 
     def fold_pairwise(self, op: str, parts: list[Fragment], pos: Pos) -> Fragment:

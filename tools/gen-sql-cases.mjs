@@ -112,12 +112,22 @@ function bindingCall(b, where) {
     return call('column', ['?']);
   }
   const type = b.type === undefined ? 'UNKNOWN' : b.type;
+  const exact = b.exact === true || b.collation === 'binary' || b.collation === 'exact';
+  const sargable = b.sargable === true || b.collation === 'sargable' || b.collation === 'prefilter';
+  const guard = b.guard === true;
+  const hasFlags = exact || sargable || guard;
+
   switch (b.kind) {
-    case 'column':
+    case 'column': {
+      const col = b.column === undefined ? null : b.column;
+      const table = b.table === undefined ? null : b.table;
       return b.raw !== undefined
-        ? call('raw', [b.raw, type])
-        : call('column', [b.column === undefined ? null : b.column,
-                          b.table === undefined ? null : b.table, type]);
+        ? (hasFlags ? call('raw', [b.raw, type, exact, sargable, guard]) : call('raw', [b.raw, type]))
+        : (hasFlags ? call('column', [col, table, type, exact, sargable, guard])
+                    : call('column', [col, table, type]));
+    }
+    case 'raw':
+      return hasFlags ? call('raw', [b.raw, type, exact, sargable, guard]) : call('raw', [b.raw, type]);
 
     case 'columns': {
       // JS can see the difference PHP's decoder cannot, so it is decided here.
@@ -441,14 +451,22 @@ function lispArg(v) {
   if (v.__call) {
     switch (v.__call) {
       case 'column': {
-        const [col, table, type] = v.args;
+        const [col, table, type, exact, sargable, guard] = v.args;
         // lispArg, not lispOpt: a JSON array or object here is the POINT of
         // several cases, and stringifying it would hand the constructor
         // "[object Object]" instead of the shape it is meant to refuse.
-        return `(binding-column ${lispArg(col)} ${lispArg(table)} ${lispKind(type)})`;
+        const flags = (exact || sargable || guard)
+          ? ` :exact ${exact ? 't' : 'nil'} :sargable ${sargable ? 't' : 'nil'} :guard ${guard ? 't' : 'nil'}`
+          : '';
+        return `(binding-column ${lispArg(col)} ${lispArg(table)} ${lispKind(type)}${flags})`;
       }
-      case 'raw':
-        return `(binding-raw ${lispArg(v.args[0])} ${lispKind(v.args[1])})`;
+      case 'raw': {
+        const [sql, type, exact, sargable, guard] = v.args;
+        const flags = (exact || sargable || guard)
+          ? ` :exact ${exact ? 't' : 'nil'} :sargable ${sargable ? 't' : 'nil'} :guard ${guard ? 't' : 'nil'}`
+          : '';
+        return `(binding-raw ${lispArg(sql)} ${lispKind(type)}${flags})`;
+      }
       case 'columns':
         return `(binding-columns ${v.args.map(lispArg).join(' ')})`;
       case 'value': {
@@ -632,13 +650,21 @@ function cppBinding(v) {
 
   switch (v.__call) {
     case 'column': {
-      const [col, table, type] = v.args;
-      return `Binding::column(${cppName(col, 'a column name')}, `
-           + `${cppOptName(table, 'a table name')}, ${cppKind(type)})`;
+      const [col, table, type, exact, sargable, guard] = v.args;
+      const base = `Binding::column(${cppName(col, 'a column name')}, `
+           + `${cppOptName(table, 'a table name')}, ${cppKind(type)}`;
+      if (exact !== undefined || sargable !== undefined || guard !== undefined) {
+        return `${base}, ${exact ? 'true' : 'false'}, ${sargable ? 'true' : 'false'}, ${guard ? 'true' : 'false'})`;
+      }
+      return `${base})`;
     }
     case 'raw': {
-      const [sql, type] = v.args;
-      return `Binding::raw(${cppName(sql, 'a raw column')}, ${cppKind(type)})`;
+      const [sql, type, exact, sargable, guard] = v.args;
+      const base = `Binding::raw(${cppName(sql, 'a raw column')}, ${cppKind(type)}`;
+      if (exact !== undefined || sargable !== undefined || guard !== undefined) {
+        return `${base}, ${exact ? 'true' : 'false'}, ${sargable ? 'true' : 'false'}, ${guard ? 'true' : 'false'})`;
+      }
+      return `${base})`;
     }
     case 'columns':
       return `Binding::columns({${v.args.map(cppBinding).join(', ')}})`;

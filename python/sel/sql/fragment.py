@@ -24,12 +24,16 @@ class Fragment:
     and that is the class of bug this shape exists to make unreachable.
     """
 
-    __slots__ = ('parts', 'params', 'param_kinds', 'kind', 'dialect', 'caveats')
+    __slots__ = ('parts', 'params', 'param_kinds', 'kind', 'dialect', 'caveats',
+                 'exact', 'sargable', 'guard')
 
     def __init__(self, parts: list[Any], kind: str, dialect: str,
                  params: list[Value] | None = None,
                  param_kinds: list[str] | None = None,
-                 caveats: list[str] | None = None) -> None:
+                 caveats: list[str] | None = None,
+                 exact: bool = False,
+                 sargable: bool = False,
+                 guard: bool = False) -> None:
         self.parts = parts
         self.kind = kind
         self.dialect = dialect
@@ -39,6 +43,9 @@ class Fragment:
         # cannot be derived -- see emit.literal.
         self.param_kinds = param_kinds if param_kinds is not None else []
         self.caveats = caveats if caveats is not None else []
+        self.exact = exact
+        self.sargable = sargable
+        self.guard = guard
 
     def as_value(self, mode: str = 'inline') -> str:
         """Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but

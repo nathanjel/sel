@@ -611,12 +611,13 @@ the class an application catches, where a `TypeError` is not.
 
 Four kinds.
 
-### 5.1 `column`
+### 5.1 `column` and `raw`
 
 ```php
-'TOTAL' => ['kind' => 'column', 'table' => 'o', 'column' => 'total', 'type' => 'NUM'],
-'NAME'  => ['kind' => 'column', 'column' => 'customer_name', 'type' => 'TEXT'],
-'NOW'   => ['kind' => 'column', 'raw' => 'CURRENT_TIMESTAMP', 'type' => 'UNKNOWN'],
+'TOTAL'    => Binding::column('total', 'o', 'NUM'),
+'NAME'     => Binding::column('customer_name', type: 'TEXT'),
+'TYPEPATH' => Binding::column('typepath', 'cms_entry', 'TEXT', exact: true),
+'NOW'      => Binding::raw('CURRENT_TIMESTAMP', type: 'UNKNOWN'),
 ```
 
 `table` is the table name or alias and is optional. `type` seeds kind inference
@@ -631,6 +632,24 @@ character escaped per `identEscape`.
 ```sql
 (`o`.`total` > 100)
 ```
+
+#### Index Sargability, Collation, and Numeric Guards
+
+Relational database optimizers require expressions over indexed columns to be *sargable* (search-argument-able) to perform B-tree index seek and range scans rather than falling back to full table scans. `Binding::column` and `Binding::raw` provide metadata parameters to declare schema properties:
+
+- **`exact: bool = false`**: Declares that the underlying column or expression already provides exact binary comparison semantics (e.g. `_bin` or binary collations, byte-identical ASCII, UUIDs). When true:
+  - String equality, inequality, and ordering comparisons (`$==`, `$!=`, `$<`, `$<=`, `$>`, `$>=`) omit defensive `CAST(... AS CHAR)` and `COLLATE` wrapping.
+  - The translator emits bare comparisons (`col = 'val'`), enabling index seeks across MariaDB, MySQL, PostgreSQL, and SQLite.
+  - In `x IN ("a", "b")` expansions over literal lists, each comparison is emitted uncast (`((col = 'a') OR (col = 'b'))`), enabling B-tree index range scans.
+- **`sargable: bool = false`**: For case-insensitive columns (e.g. MySQL `_ci` collations):
+  - On MariaDB and MySQL, emits a coarse equality prefilter combined with the exact binary check: `((col = 'val') AND (CAST(col AS CHAR) COLLATE utf8mb4_bin = CAST('val' AS CHAR) COLLATE utf8mb4_bin))`. The database query engine uses the index for the coarse equality prefilter to discard non-matching rows, executing the exact collation check only on candidate rows.
+  - On PostgreSQL and SQLite, where text equality is already exact by default, emits clean bare equality (`col = 'val'`).
+- **`guard: bool = false`**: Forces regex validation and safe numeric casting (`CASE WHEN col REGEXP ... THEN CAST(col AS DECIMAL) ELSE NULL END`) even when the binding is declared `NUM`. This protects against engine errors (such as MariaDB error 1292: `Truncated incorrect DOUBLE value`) when querying heterogeneous or dirty EAV string columns.
+- **`collation: ?string = null`**: String alias for collation configuration:
+  - `'binary'` or `'exact'`: sets `exact = true`.
+  - `'sargable'` or `'prefilter'`: sets `sargable = true`.
+  - `'default'` or `'none'`: default behavior.
+
 
 ### 5.2 `columns`
 

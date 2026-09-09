@@ -6566,4 +6566,228 @@
    :mode nil
    :strict nil
    :register nil
-   :bindings (lambda () (list (cons "POSTCODE" (binding-column "postcode" nil :text)))))))
+   :bindings (lambda () (list (cons "POSTCODE" (binding-column "postcode" nil :text)))))
+  (list
+   :name "bind.exact.mariadb"
+   :at "22-sargable-bindings.sqlt:3"
+   :dialect "mariadb"
+   :source "TYPEPATH $== \"home\""
+   :expect "(`cms_entry`.`typepath` = 'home')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.exact.sqlite"
+   :at "22-sargable-bindings.sqlt:16"
+   :dialect "sqlite"
+   :source "TYPEPATH $== \"home\""
+   :expect "(\"cms_entry\".\"typepath\" = 'home')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.exact.postgresql"
+   :at "22-sargable-bindings.sqlt:27"
+   :dialect "postgresql"
+   :source "TYPEPATH $== \"home\""
+   :expect "(\"cms_entry\".\"typepath\" = 'home')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.exact.two-columns"
+   :at "22-sargable-bindings.sqlt:38"
+   :dialect "mariadb"
+   :source "A $== B"
+   :expect "(`a` = `b`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "a" nil :text :exact t :sargable nil :guard nil)) (cons "B" (binding-column "b" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.exact.ordering"
+   :at "22-sargable-bindings.sqlt:49"
+   :dialect "mariadb"
+   :source "A $< \"z\""
+   :expect "(`a` < 'z')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "a" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.sargable.mariadb"
+   :at "22-sargable-bindings.sqlt:60"
+   :dialect "mariadb"
+   :source "TYPEPATH $== \"home\""
+   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "bind.sargable.postgresql"
+   :at "22-sargable-bindings.sqlt:74"
+   :dialect "postgresql"
+   :source "TYPEPATH $== \"home\""
+   :expect "(\"cms_entry\".\"typepath\" = 'home')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "bind.sargable.sqlite"
+   :at "22-sargable-bindings.sqlt:87"
+   :dialect "sqlite"
+   :source "TYPEPATH $== \"home\""
+   :expect "(\"cms_entry\".\"typepath\" = 'home')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "bind.in.exact.mariadb"
+   :at "22-sargable-bindings.sqlt:100"
+   :dialect "mariadb"
+   :source "STATUS IN (\"open\", \"held\")"
+   :expect "((`status` = 'open') OR (`status` = 'held'))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "STATUS" (binding-column "status" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.in.exact.postgresql"
+   :at "22-sargable-bindings.sqlt:114"
+   :dialect "postgresql"
+   :source "STATUS IN (\"open\", \"held\")"
+   :expect "((\"status\" = 'open') OR (\"status\" = 'held'))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "STATUS" (binding-column "status" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.in.exact.sqlite"
+   :at "22-sargable-bindings.sqlt:125"
+   :dialect "sqlite"
+   :source "STATUS IN (\"open\", \"held\")"
+   :expect "((\"status\" = 'open') OR (\"status\" = 'held'))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "STATUS" (binding-column "status" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.guard.mariadb"
+   :at "22-sargable-bindings.sqlt:136"
+   :dialect "mariadb"
+   :source "VAL == 25"
+   :expect "(CASE WHEN (`val` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`val` AS DECIMAL(65,10)) ELSE NULL END = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "VAL" (binding-column "val" nil :num :exact nil :sargable nil :guard t)))))
+  (list
+   :name "bind.guard.postgresql"
+   :at "22-sargable-bindings.sqlt:149"
+   :dialect "postgresql"
+   :source "VAL == 25"
+   :expect "(CASE WHEN (CAST(\"val\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"val\" AS NUMERIC) ELSE NULL END = 25)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "VAL" (binding-column "val" nil :num :exact nil :sargable nil :guard t)))))
+  (list
+   :name "bind.guard.sqlite-refusal"
+   :at "22-sargable-bindings.sqlt:160"
+   :dialect "sqlite"
+   :source "VAL == 25"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "VAL" (binding-column "val" nil :num :exact nil :sargable nil :guard t)))))
+  (list
+   :name "bind.collation.binary"
+   :at "22-sargable-bindings.sqlt:171"
+   :dialect "mariadb"
+   :source "TYPEPATH $== \"home\""
+   :expect "(`cms_entry`.`typepath` = 'home')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "bind.collation.sargable"
+   :at "22-sargable-bindings.sqlt:184"
+   :dialect "mariadb"
+   :source "TYPEPATH $== \"home\""
+   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))))

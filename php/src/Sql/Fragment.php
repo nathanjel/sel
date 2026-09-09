@@ -38,6 +38,9 @@ final class Fragment
     public string $dialect;
     /** @var list<string> */
     public array $caveats;
+    public bool $exact;
+    public bool $sargable;
+    public bool $guard;
 
     /**
      * @param list<string|int> $parts
@@ -51,7 +54,10 @@ final class Fragment
         string $dialect,
         array $params = [],
         array $paramKinds = [],
-        array $caveats = []
+        array $caveats = [],
+        bool $exact = false,
+        bool $sargable = false,
+        bool $guard = false
     ) {
         $this->parts = $parts;
         $this->kind = $kind;
@@ -59,6 +65,9 @@ final class Fragment
         $this->params = $params;
         $this->paramKinds = $paramKinds;
         $this->caveats = $caveats;
+        $this->exact = $exact;
+        $this->sargable = $sargable;
+        $this->guard = $guard;
     }
 
     /**

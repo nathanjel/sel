@@ -474,8 +474,8 @@
       "name": "two-bins-compared-as-characters",
       "was": "A byte comparison casting two BIN operands to CHAR. MariaDB and MySQL answer NULL when either side is not valid UTF-8, where SEL answers FALSE. The corpus's only BIN value was 7ac3a9 -- valid UTF-8, and precisely the byte string that could not show it.",
       "file": "php/src/Sql/Translator.php",
-      "from": "            if ($l->kind !== 'BIN' || $r->kind !== 'BIN') {",
-      "to": "            if (true) {"
+      "from": "            } elseif ($l->kind !== 'BIN' || $r->kind !== 'BIN') {",
+      "to": "            } elseif (true) {"
     },
     {
       "name": "in-relation-does-not-fold-null",
@@ -901,8 +901,8 @@
       "name": "php-warrant-the-guard-is-never-applied",
       "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
       "file": "php/src/Sql/Emit.php",
-      "from": "if ($f->kind === 'NUM') {",
-      "to": "if ($f->kind !== 'LIST') {"
+      "from": "        if ($f->kind === 'NUM' && !$f->guard) {",
+      "to": "        if ($f->kind !== 'LIST') {"
     },
     {
       "name": "php-warrant-unknown-is-a-boolean-again",
@@ -922,7 +922,7 @@
       "name": "js-warrant-the-guard-is-never-applied",
       "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
       "file": "js/src/sql/emit.mjs",
-      "from": "    if (f.kind === 'NUM') return f;",
+      "from": "    if (f.kind === 'NUM' && !f.guard) return f;",
       "to": "    if (f.kind !== 'LIST') return f;"
     },
     {
@@ -943,7 +943,7 @@
       "name": "python-warrant-the-guard-is-never-applied",
       "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
       "file": "python/sel/sql/emit.py",
-      "from": "        if f.kind == 'NUM':",
+      "from": "        if f.kind == 'NUM' and not getattr(f, 'guard', False):",
       "to": "        if f.kind != 'LIST':"
     },
     {
@@ -964,7 +964,7 @@
       "name": "cpp-warrant-the-guard-is-never-applied",
       "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
       "file": "cpp/sel_sql_emit.cpp",
-      "from": "  if (f.kind() == SqlKind::Num) return f;",
+      "from": "  if (f.kind() == SqlKind::Num && !f.guard()) return f;",
       "to": "  if (f.kind() != SqlKind::List) return f;"
     },
     {
@@ -985,7 +985,7 @@
       "name": "lisp-warrant-the-guard-is-never-applied",
       "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
       "file": "lisp/src/sql/emit.lisp",
-      "from": "  (if (eq (fragment-kind f) :num)",
+      "from": "  (if (and (eq (fragment-kind f) :num) (not (fragment-guard f)))",
       "to": "  (if (not (eq (fragment-kind f) :list))"
     },
     {

@@ -53,19 +53,19 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.7.0 -m "SEL 0.7.0"
-git push origin v0.7.0
+git tag -a v0.7.1 -m "SEL 0.7.1"
+git push origin v0.7.1
 ```
 
 Versions live in six manifests. Keep them in step:
 
 ```
-package.json                     "version": "0.7.0"
-pyproject.toml                   version = "0.7.0"
-cpp/conanfile.py                 version = "0.7.0"
-cpp/vcpkg.json                   "version-semver": "0.7.0"
-cpp/CMakeLists.txt               project(... VERSION 0.7.0 ...)
-lisp/sel-lang.asd                :version "0.7.0"
+package.json                     "version": "0.7.1"
+pyproject.toml                   version = "0.7.1"
+cpp/conanfile.py                 version = "0.7.1"
+cpp/vcpkg.json                   "version-semver": "0.7.1"
+cpp/CMakeLists.txt               project(... VERSION 0.7.1 ...)
+lisp/sel-lang.asd                :version "0.7.1"
 ```
 
 `python/sel/__init__.py` carries `__version__`, `CHANGELOG.md`'s top heading

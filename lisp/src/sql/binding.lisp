@@ -76,7 +76,7 @@ canonical, so pass it as text or drop the leading zeros" where text)))))
 
 ;;; --- the four kinds -------------------------------------------------------
 
-(defun binding-column (column &optional table (type :unknown))
+(defun binding-column (column &optional table (type :unknown) &key exact sargable guard collation)
   "One column, optionally qualified by a table, optionally typed.
 
 TYPE is what the kind guards read, and leaving it :UNKNOWN is honest rather than
@@ -89,9 +89,19 @@ condition has to say so here."
   (check-name "column" column)
   (when table (check-name "table" table))
   (check-binding-type type)
-  (%binding :column (list :column column :table table :type type)))
+  (when collation
+    (let ((c (string-downcase (string collation))))
+      (cond
+        ((or (string= c "binary") (string= c "exact")) (setf exact t))
+        ((or (string= c "sargable") (string= c "prefilter")) (setf sargable t))
+        ((or (string= c "default") (string= c "none")))
+        (t (refuse "E_SQL_BINDING" (format nil "unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'" collation))))))
+  (%binding :column (list :column column :table table :type type
+                          :exact (not (null exact))
+                          :sargable (not (null sargable))
+                          :guard (not (null guard)))))
 
-(defun binding-raw (sql &optional (type :unknown))
+(defun binding-raw (sql &optional (type :unknown) &key exact sargable guard collation)
   "A column expressed as SQL this layer will not read.
 
 The one place an application writes SQL here. It is emitted verbatim, so
@@ -102,7 +112,17 @@ in a map by accident."
   (when (zerop (length sql))
     (refuse "E_SQL_BINDING" "a raw column binding cannot be empty"))
   (check-binding-type type)
-  (%binding :column (list :raw sql :type type)))
+  (when collation
+    (let ((c (string-downcase (string collation))))
+      (cond
+        ((or (string= c "binary") (string= c "exact")) (setf exact t))
+        ((or (string= c "sargable") (string= c "prefilter")) (setf sargable t))
+        ((or (string= c "default") (string= c "none")))
+        (t (refuse "E_SQL_BINDING" (format nil "unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'" collation))))))
+  (%binding :column (list :raw sql :type type
+                          :exact (not (null exact))
+                          :sargable (not (null sargable))
+                          :guard (not (null guard)))))
 
 (defun binding-columns (&rest items)
   "An ordered set of columns, iterated by an aggregate and indexed by position:

@@ -10,6 +10,22 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.7.1 — 2026-09-09
+
+Index-sargable SQL bindings and numeric guard controls for relational database query optimizers, addressing 54×–102× execution regressions on indexed production tables.
+
+  - **Index-sargable SQL bindings (`exact`, `sargable`, `collation`).**
+    - Adds database-agnostic binding metadata parameters across all 5 host languages: `exact: bool = false`, `sargable: bool = false`, `guard: bool = false`, and `collation: ?string = null`.
+    - `exact: true` skips defensive `CAST(... AS CHAR)` and `COLLATE` wrapping for string equality and ordering (`$==`, `$!=`, `$<`, `$<=`, `$>`, `$>=`) and `IN ("a", "b")` literal list expansions, restoring B-tree index seek and range scans across MariaDB, MySQL, PostgreSQL, and SQLite. Resolves 54×–102× query plan regressions on indexed production tables.
+    - `sargable: true` emits a coarse equality prefilter combined with the exact binary check on MariaDB and MySQL (`((col = 'val') AND (CAST(col AS CHAR) COLLATE utf8mb4_bin = CAST('val' AS CHAR) COLLATE utf8mb4_bin))`), and clean bare equality on PostgreSQL and SQLite where text equality is already exact by default.
+  - **Numeric guard control on EAV columns (`guard`).**
+    - `guard: true` forces safe `numericGuard` evaluation on dirty EAV string columns even when declared `NUM`, preventing MariaDB error 1292 (`Truncated incorrect DOUBLE value`).
+  - **Test coverage & cross-host parity.**
+    - Adds 16 new test cases across all dialects in `sql/cases/22-sargable-bindings.sqlt`, expanding SQL test suite to 478 cases.
+    - 100% verified across JavaScript, PHP, Python, C++23, and Common Lisp, with live database oracle validation on MariaDB 11.8, MySQL 8.4, PostgreSQL 17, and SQLite 3.51 (161 caught mutations, 0 survived).
+
+conformance 720 · sql cases 478 · mutations 161
+
 ## 0.7.0 — 2026-09-09
 
 Strategic release introducing first-class `NULL` semantics, loud refusal (`E_NULL`)

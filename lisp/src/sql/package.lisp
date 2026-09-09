@@ -31,6 +31,9 @@
    #:fragment-params
    #:fragment-dialect
    #:fragment-caveats
+   #:fragment-exact
+   #:fragment-sargable
+   #:fragment-guard
    #:as-value
    #:as-condition
    #:bindings

@@ -55,15 +55,24 @@ final class Binding
      * numeric function argument, and a bare aggregate body.
      */
     public static function column($column, $table = null,
-                                  $type = 'UNKNOWN'): self
+                                  $type = 'UNKNOWN', bool $exact = false,
+                                  bool $sargable = false, bool $guard = false,
+                                  ?string $collation = null): self
     {
         self::checkName('column', $column);
         if ($table !== null) {
             self::checkName('table', $table);
         }
         self::checkType($type);
+        if ($collation !== null) {
+            [$cExact, $cSargable] = self::checkCollation($collation);
+            $exact = $exact || $cExact;
+            $sargable = $sargable || $cSargable;
+        }
         return new self(['kind' => 'column', 'column' => $column,
-                         'table' => $table, 'type' => $type]);
+                         'table' => $table, 'type' => $type,
+                         'exact' => $exact, 'sargable' => $sargable,
+                         'guard' => $guard]);
     }
 
     /**
@@ -74,14 +83,23 @@ final class Binding
      * layer's -- which is exactly why it is a named constructor and not a key
      * somebody can leave in a map by accident.
      */
-    public static function raw($sql, $type = 'UNKNOWN'): self
+    public static function raw($sql, $type = 'UNKNOWN', bool $exact = false,
+                               bool $sargable = false, bool $guard = false,
+                               ?string $collation = null): self
     {
         self::checkString('a raw column binding', $sql);
         if ($sql === '') {
             throw new SqlError('E_SQL_BINDING', 'a raw column binding cannot be empty');
         }
         self::checkType($type);
-        return new self(['kind' => 'column', 'raw' => $sql, 'type' => $type]);
+        if ($collation !== null) {
+            [$cExact, $cSargable] = self::checkCollation($collation);
+            $exact = $exact || $cExact;
+            $sargable = $sargable || $cSargable;
+        }
+        return new self(['kind' => 'column', 'raw' => $sql, 'type' => $type,
+                         'exact' => $exact, 'sargable' => $sargable,
+                         'guard' => $guard]);
     }
 
     /**
@@ -314,5 +332,24 @@ final class Binding
                 . 'emitted unquoted and must already be canonical, so pass it as '
                 . 'text or drop the leading zeros');
         }
+    }
+
+    /**
+     * @return array{0: bool, 1: bool}
+     */
+    private static function checkCollation(string $c): array
+    {
+        $lower = strtolower($c);
+        if ($lower === 'binary' || $lower === 'exact') {
+            return [true, false];
+        }
+        if ($lower === 'sargable' || $lower === 'prefilter') {
+            return [false, true];
+        }
+        if ($lower === 'default' || $lower === 'none') {
+            return [false, false];
+        }
+        throw new SqlError('E_SQL_BINDING',
+            "unknown collation '{$c}'; use 'binary', 'exact', 'sargable', or 'default'");
     }
 }

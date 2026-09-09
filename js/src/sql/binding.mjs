@@ -48,11 +48,22 @@ export class Binding {
   // required, because nothing in SQL can ask a column whether it is one. A column
   // that a condition or a boolean operator will read has to say BOOL here; see
   // Translator.requireBool and Fragment.asCondition.
-  static column(column, table = null, type = 'UNKNOWN') {
+  static column(column, table = null, type = 'UNKNOWN', exact = false, sargable = false, guard = false, collation = null) {
     checkName('column', column);
     if (table !== null && table !== undefined) checkName('table', table);
     checkType(type);
-    return new Binding({ kind: 'column', column, table: table ?? null, type });
+    if (collation !== null && collation !== undefined) {
+      const [cExact, cSargable] = checkCollation(collation);
+      exact = exact || cExact;
+      sargable = sargable || cSargable;
+    }
+    checkBool("a column binding's exact flag", exact);
+    checkBool("a column binding's sargable flag", sargable);
+    checkBool("a column binding's guard flag", guard);
+    return new Binding({
+      kind: 'column', column, table: table ?? null, type,
+      exact: Boolean(exact), sargable: Boolean(sargable), guard: Boolean(guard)
+    });
   }
 
   // A column expressed as SQL this layer will not read.
@@ -61,11 +72,22 @@ export class Binding {
   // whatever it contains is the application's promise rather than this layer's —
   // which is exactly why it is a named constructor and not a key somebody can
   // leave in a map by accident.
-  static raw(sql, type = 'UNKNOWN') {
+  static raw(sql, type = 'UNKNOWN', exact = false, sargable = false, guard = false, collation = null) {
     checkString('a raw column binding', sql);
     if (sql === '') throw new SqlError('E_SQL_BINDING', 'a raw column binding cannot be empty');
     checkType(type);
-    return new Binding({ kind: 'column', raw: sql, type });
+    if (collation !== null && collation !== undefined) {
+      const [cExact, cSargable] = checkCollation(collation);
+      exact = exact || cExact;
+      sargable = sargable || cSargable;
+    }
+    checkBool("a raw column binding's exact flag", exact);
+    checkBool("a raw column binding's sargable flag", sargable);
+    checkBool("a raw column binding's guard flag", guard);
+    return new Binding({
+      kind: 'column', raw: sql, type,
+      exact: Boolean(exact), sargable: Boolean(sargable), guard: Boolean(guard)
+    });
   }
 
   // An ordered set of columns, iterated by an aggregate and indexed by position:
@@ -233,4 +255,25 @@ function checkNumeric(where, v) {
       + 'writes that number; a NUM binding is emitted unquoted and must already be '
       + 'canonical, so pass it as text or drop the leading zeros');
   }
+}
+
+function checkBool(what, v) {
+  if (typeof v !== 'boolean') {
+    throw new SqlError('E_SQL_BINDING',
+      `${what} must be a boolean, and this is ${typeName(v)}`);
+  }
+}
+
+function checkCollation(c) {
+  if (c === null || c === undefined) return [false, false];
+  if (typeof c !== 'string') {
+    throw new SqlError('E_SQL_BINDING',
+      `collation must be a string, and this is ${typeName(c)}`);
+  }
+  const lower = c.toLowerCase();
+  if (lower === 'binary' || lower === 'exact') return [true, false];
+  if (lower === 'sargable' || lower === 'prefilter') return [false, true];
+  if (lower === 'default' || lower === 'none') return [false, false];
+  throw new SqlError('E_SQL_BINDING',
+    `unknown collation '${c}'; use 'binary', 'exact', 'sargable', or 'default'`);
 }

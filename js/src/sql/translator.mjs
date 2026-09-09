@@ -259,7 +259,8 @@ export class Translator {
     const sql = (c.raw ?? null) !== null
       ? String(c.raw)
       : this.emit.column(c.table ?? null, String(c.column));
-    return new Fragment([sql], String(c.type || 'UNKNOWN'), this.dialect);
+    return new Fragment([sql], String(c.type || 'UNKNOWN'), this.dialect, [], [], [],
+                        Boolean(c.exact), Boolean(c.sargable), Boolean(c.guard));
   }
 
   // Indexing is meaningful against a relation or columns binding — a field or a
@@ -389,7 +390,27 @@ export class Translator {
       // MySQL whenever either side was not valid UTF-8, where SEL answers FALSE.
       // The corpus had exactly one BIN value, 7ac3a9, which is valid UTF-8 and
       // could not show it.
-      if (l.kind !== 'BIN' || r.kind !== 'BIN') {
+      const lExact = Boolean(l.exact);
+      const rExact = Boolean(r.exact);
+      const lLit = (n.l.t === 'text');
+      const rLit = (n.r.t === 'text');
+      if ((lExact && (rExact || rLit)) || (rExact && lLit)) {
+        // bare comparison
+      } else if (op === '$==' && l.sargable && rLit) {
+        if (['mariadb', 'mysql', 'mysql-family'].includes(this.dialect)) {
+          const coarse = this.apply('ops', '$==', [l, r], n.pos, variant);
+          const residual = this.apply('ops', '$==',
+            [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, variant);
+          return this.apply('ops', 'AND', [coarse, residual], n.pos);
+        }
+      } else if (op === '$==' && r.sargable && lLit) {
+        if (['mariadb', 'mysql', 'mysql-family'].includes(this.dialect)) {
+          const coarse = this.apply('ops', '$==', [l, r], n.pos, variant);
+          const residual = this.apply('ops', '$==',
+            [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, variant);
+          return this.apply('ops', 'AND', [coarse, residual], n.pos);
+        }
+      } else if (l.kind !== 'BIN' || r.kind !== 'BIN') {
         l = this.emit.textOperand(l);
         r = this.emit.textOperand(r);
       }
@@ -488,7 +509,8 @@ export class Translator {
       // spliced N times: splicing one Fragment twice puts the same slot number in
       // the output twice while `params` holds one entry.
       const raw = this.node(n.l);
-      const needle = this.emit.textOperand(raw);
+      const isExact = Boolean(raw.exact);
+      const needle = isExact ? raw : this.emit.textOperand(raw);
       const f = this.node(e);
       if (f.kind === 'LIST') {
         refuse('E_SQL_SHAPE',
@@ -496,8 +518,9 @@ export class Translator {
           e.pos);
       }
       requireComparableKinds(raw, f, 'IN', e.pos);
+      const item = isExact ? f : this.emit.textOperand(f);
       tests.push(this.apply('ops', 'EQL',
-        [needle, this.emit.textOperand(f)], e.pos, 'text'));
+        [needle, item], e.pos, 'text'));
     }
     return this.foldPairwise('OR', tests, n.pos);
   }

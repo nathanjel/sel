@@ -101,7 +101,11 @@ class Fragment {
   };
 
   Fragment() = default;
-  Fragment(std::vector<Part> parts, SqlKind kind, std::string dialect);
+  Fragment(std::vector<Part> parts, SqlKind kind, std::string dialect,
+           std::vector<Value> params = {},
+           std::vector<SqlKind> param_kinds = {},
+           std::vector<std::string> caveats = {},
+           bool exact = false, bool sargable = false, bool guard = false);
 
   // Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but LIST,
   // which is not a SQL value at all.
@@ -129,6 +133,12 @@ class Fragment {
   const std::vector<std::string>& caveats() const { return caveats_; }
   const std::vector<Part>& parts() const { return parts_; }
   const std::vector<Value>& params() const { return params_; }
+  bool exact() const { return exact_; }
+  bool sargable() const { return sargable_; }
+  bool guard() const { return guard_; }
+  void set_exact(bool v) { exact_ = v; }
+  void set_sargable(bool v) { sargable_ = v; }
+  void set_guard(bool v) { guard_ = v; }
 
  private:
   friend class Translator;
@@ -153,6 +163,9 @@ class Fragment {
   SqlKind kind_ = SqlKind::Unknown;
   std::string dialect_;
   std::vector<std::string> caveats_;
+  bool exact_ = false;
+  bool sargable_ = false;
+  bool guard_ = false;
 };
 
 // --- the builder escape hatch -----------------------------------------------
@@ -207,6 +220,9 @@ struct ColumnSpec {
   // question instead -- is this a number? -- the operand is wrapped, and where
   // it cannot -- is this a boolean? -- the expression is refused.
   SqlKind type = SqlKind::Unknown;
+  bool exact = false;
+  bool sargable = false;
+  bool guard = false;
 };
 
 struct RelationSpec {
@@ -235,13 +251,15 @@ class Binding {
   // exactly as it does in the other hosts.
 
   static Binding column(std::string col, std::optional<std::string> table = std::nullopt,
-                        SqlKind type = SqlKind::Unknown);
+                        SqlKind type = SqlKind::Unknown, bool exact = false,
+                        bool sargable = false, bool guard = false);
   // A column expressed as SQL this layer will not read. The one place an
   // application writes SQL here; it is emitted verbatim, so whatever it contains
   // is the application's promise rather than this layer's -- which is exactly
   // why it is a named constructor and not a key somebody can leave in a map by
   // accident.
-  static Binding raw(std::string sql, SqlKind type = SqlKind::Unknown);
+  static Binding raw(std::string sql, SqlKind type = SqlKind::Unknown,
+                     bool exact = false, bool sargable = false, bool guard = false);
   // An ordered set of columns, iterated by an aggregate and indexed by position:
   // the first is V[1].
   static Binding columns(std::vector<Binding> items);

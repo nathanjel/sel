@@ -194,7 +194,7 @@ export class Emit {
   // no regex — declares no numericGuard, and this refuses rather than emitting
   // something that answers when SEL would not.
   numericOperand(f, pos = null) {
-    if (f.kind === 'NUM') return f;
+    if (f.kind === 'NUM' && !f.guard) return f;
     map.checkNumericGuard(this._dialect);
     const guard = this.lex('numericGuard');
     if (typeof guard !== 'string') {
@@ -219,13 +219,14 @@ export class Emit {
   // operand comparisons, IN over a list, and the inRelation skeleton — and only
   // one of those is a two-operand template.
   textOperand(f) {
+    if (f.exact) return f;
     const cast = this.lex('textCast');
     const collate = String(this.lex('textCollate') ?? '');
     let parts = f.parts;
 
     if (typeof cast === 'string' && cast !== '{0}') parts = this.fill(cast, [f]);
     if (collate !== '') parts = [...parts, collate];
-    return new Fragment(parts, 'TEXT', this._dialect);
+    return new Fragment(parts, 'TEXT', this._dialect, f.params, f.paramKinds, f.caveats);
   }
 
   // --- identifiers ---------------------------------------------------------

@@ -2957,6 +2957,103 @@ static std::vector<std::pair<std::string, Binding>> c461_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c462_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c463_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c464_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c465_bind() {
+  return {
+      {"A", Binding::column("a", std::nullopt, SqlKind::Text, true, false, false)},
+      {"B", Binding::column("b", std::nullopt, SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c466_bind() {
+  return {
+      {"A", Binding::column("a", std::nullopt, SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c467_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c468_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c469_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c470_bind() {
+  return {
+      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c471_bind() {
+  return {
+      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c472_bind() {
+  return {
+      {"STATUS", Binding::column("status", std::nullopt, SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c473_bind() {
+  return {
+      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c474_bind() {
+  return {
+      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c475_bind() {
+  return {
+      {"VAL", Binding::column("val", std::nullopt, SqlKind::Num, false, false, true)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c476_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, true, false, false)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c477_bind() {
+  return {
+      {"TYPEPATH", Binding::column("typepath", "cms_entry", SqlKind::Text, false, true, false)},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -9426,6 +9523,230 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c461_bind},
+    {.name = "bind.exact.mariadb",
+     .at = "22-sargable-bindings.sqlt:3",
+     .dialect = "mariadb",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "(`cms_entry`.`typepath` = 'home')",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c462_bind},
+    {.name = "bind.exact.sqlite",
+     .at = "22-sargable-bindings.sqlt:16",
+     .dialect = "sqlite",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "(\"cms_entry\".\"typepath\" = 'home')",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c463_bind},
+    {.name = "bind.exact.postgresql",
+     .at = "22-sargable-bindings.sqlt:27",
+     .dialect = "postgresql",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "(\"cms_entry\".\"typepath\" = 'home')",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c464_bind},
+    {.name = "bind.exact.two-columns",
+     .at = "22-sargable-bindings.sqlt:38",
+     .dialect = "mariadb",
+     .source = "A $== B",
+     .expect = "(`a` = `b`)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c465_bind},
+    {.name = "bind.exact.ordering",
+     .at = "22-sargable-bindings.sqlt:49",
+     .dialect = "mariadb",
+     .source = "A $< \"z\"",
+     .expect = "(`a` < 'z')",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c466_bind},
+    {.name = "bind.sargable.mariadb",
+     .at = "22-sargable-bindings.sqlt:60",
+     .dialect = "mariadb",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c467_bind},
+    {.name = "bind.sargable.postgresql",
+     .at = "22-sargable-bindings.sqlt:74",
+     .dialect = "postgresql",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "(\"cms_entry\".\"typepath\" = 'home')",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c468_bind},
+    {.name = "bind.sargable.sqlite",
+     .at = "22-sargable-bindings.sqlt:87",
+     .dialect = "sqlite",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "(\"cms_entry\".\"typepath\" = 'home')",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c469_bind},
+    {.name = "bind.in.exact.mariadb",
+     .at = "22-sargable-bindings.sqlt:100",
+     .dialect = "mariadb",
+     .source = "STATUS IN (\"open\", \"held\")",
+     .expect = "((`status` = 'open') OR (`status` = 'held'))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c470_bind},
+    {.name = "bind.in.exact.postgresql",
+     .at = "22-sargable-bindings.sqlt:114",
+     .dialect = "postgresql",
+     .source = "STATUS IN (\"open\", \"held\")",
+     .expect = "((\"status\" = 'open') OR (\"status\" = 'held'))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c471_bind},
+    {.name = "bind.in.exact.sqlite",
+     .at = "22-sargable-bindings.sqlt:125",
+     .dialect = "sqlite",
+     .source = "STATUS IN (\"open\", \"held\")",
+     .expect = "((\"status\" = 'open') OR (\"status\" = 'held'))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c472_bind},
+    {.name = "bind.guard.mariadb",
+     .at = "22-sargable-bindings.sqlt:136",
+     .dialect = "mariadb",
+     .source = "VAL == 25",
+     .expect = "(CASE WHEN (`val` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`val` AS DECIMAL(65,10)) ELSE NULL END = 25)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c473_bind},
+    {.name = "bind.guard.postgresql",
+     .at = "22-sargable-bindings.sqlt:149",
+     .dialect = "postgresql",
+     .source = "VAL == 25",
+     .expect = "(CASE WHEN (CAST(\"val\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"val\" AS NUMERIC) ELSE NULL END = 25)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c474_bind},
+    {.name = "bind.guard.sqlite-refusal",
+     .at = "22-sargable-bindings.sqlt:160",
+     .dialect = "sqlite",
+     .source = "VAL == 25",
+     .expect = nullptr,
+     .error = "E_SQL_UNSUPPORTED 1:1",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c475_bind},
+    {.name = "bind.collation.binary",
+     .at = "22-sargable-bindings.sqlt:171",
+     .dialect = "mariadb",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "(`cms_entry`.`typepath` = 'home')",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c476_bind},
+    {.name = "bind.collation.sargable",
+     .at = "22-sargable-bindings.sqlt:184",
+     .dialect = "mariadb",
+     .source = "TYPEPATH $== \"home\"",
+     .expect = "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c477_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

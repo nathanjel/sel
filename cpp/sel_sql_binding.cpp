@@ -131,7 +131,7 @@ const ColumnSpec* RelationSpec::field(std::string_view name) const {
 // --- Binding -----------------------------------------------------------------
 
 Binding Binding::column(std::string col, std::optional<std::string> table,
-                        SqlKind type) {
+                        SqlKind type, bool exact, bool sargable, bool guard) {
   check_name("column", col);
   if (table) check_name("table", *table);
   Binding b;
@@ -139,10 +139,14 @@ Binding Binding::column(std::string col, std::optional<std::string> table,
   b.column_.column = std::move(col);
   b.column_.table = table ? *table : std::string{};
   b.column_.type = type;
+  b.column_.exact = exact;
+  b.column_.sargable = sargable;
+  b.column_.guard = guard;
   return b;
 }
 
-Binding Binding::raw(std::string sql, SqlKind type) {
+Binding Binding::raw(std::string sql, SqlKind type, bool exact, bool sargable,
+                     bool guard) {
   if (sql.empty()) {
     refuse("E_SQL_BINDING", "a raw column binding cannot be empty");
   }
@@ -151,6 +155,9 @@ Binding Binding::raw(std::string sql, SqlKind type) {
   b.column_.is_raw = true;
   b.column_.raw = std::move(sql);
   b.column_.type = type;
+  b.column_.exact = exact;
+  b.column_.sargable = sargable;
+  b.column_.guard = guard;
   return b;
 }
 

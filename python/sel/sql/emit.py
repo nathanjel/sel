@@ -178,7 +178,7 @@ class Emit:
         refuses rather than emitting something that answers when SEL would not.
         """
         from .fragment import Fragment
-        if f.kind == 'NUM':
+        if f.kind == 'NUM' and not getattr(f, 'guard', False):
             return f
         _map.check_numeric_guard(self._dialect)
         guard = self.lex('numericGuard')
@@ -206,6 +206,8 @@ class Emit:
         and only one of those is a two-operand template.
         """
         from .fragment import Fragment
+        if getattr(f, 'exact', False):
+            return f
         cast = self.lex('textCast')
         collate = str(self.lex('textCollate') or '')
         parts = f.parts
@@ -214,7 +216,7 @@ class Emit:
             parts = self.fill(cast, [f])
         if collate != '':
             parts = [*parts, collate]
-        return Fragment(parts, 'TEXT', self._dialect)
+        return Fragment(parts, 'TEXT', self._dialect, f.params, f.param_kinds, f.caveats)
 
     # --- identifiers ---------------------------------------------------------
 

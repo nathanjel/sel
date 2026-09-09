@@ -228,7 +228,8 @@ final class Translator
         $sql = isset($c['raw'])
             ? (string) $c['raw']
             : $this->emit->column($c['table'] ?? null, (string) $c['column']);
-        return new Fragment([$sql], (string) ($c['type'] ?? 'UNKNOWN'), $this->dialect);
+        return new Fragment([$sql], (string) ($c['type'] ?? 'UNKNOWN'), $this->dialect, [], [], [],
+            (bool) ($c['exact'] ?? false), (bool) ($c['sargable'] ?? false), (bool) ($c['guard'] ?? false));
     }
 
     /**
@@ -403,7 +404,27 @@ final class Translator
             // MariaDB and MySQL whenever either side was not valid UTF-8, where
             // SEL answers FALSE. The corpus had exactly one BIN value, 7ac3a9,
             // which is valid UTF-8 and could not show it.
-            if ($l->kind !== 'BIN' || $r->kind !== 'BIN') {
+            $lExact = (bool) $l->exact;
+            $rExact = (bool) $r->exact;
+            $lLit = ($n['l']['t'] === 'text');
+            $rLit = ($n['r']['t'] === 'text');
+            if (($lExact && ($rExact || $rLit)) || ($rExact && $lLit)) {
+                // bare comparison
+            } elseif ($op === '$==' && $l->sargable && $rLit) {
+                if (in_array($this->dialect, ['mariadb', 'mysql', 'mysql-family'], true)) {
+                    $coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);
+                    $residual = $this->apply('ops', '$==',
+                        [$this->emit->textOperand($l), $this->emit->textOperand($r)], $n['pos'], $variant);
+                    return $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);
+                }
+            } elseif ($op === '$==' && $r->sargable && $lLit) {
+                if (in_array($this->dialect, ['mariadb', 'mysql', 'mysql-family'], true)) {
+                    $coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);
+                    $residual = $this->apply('ops', '$==',
+                        [$this->emit->textOperand($l), $this->emit->textOperand($r)], $n['pos'], $variant);
+                    return $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);
+                }
+            } elseif ($l->kind !== 'BIN' || $r->kind !== 'BIN') {
                 $l = $this->emit->textOperand($l);
                 $r = $this->emit->textOperand($r);
             }
@@ -518,7 +539,8 @@ final class Translator
             // and spliced N times: splicing one Fragment twice puts the same
             // slot number in the output twice while `params` holds one entry.
             $raw = $this->node($n['l']);
-            $needle = $this->emit->textOperand($raw);
+            $isExact = (bool) $raw->exact;
+            $needle = $isExact ? $raw : $this->emit->textOperand($raw);
             $f = $this->node($e);
             if ($f->kind === 'LIST') {
                 refuse('E_SQL_SHAPE',
@@ -526,8 +548,9 @@ final class Translator
                     . 'counterpart', $e['pos']);
             }
             self::requireComparableKinds($raw, $f, 'IN', $e['pos']);
+            $item = $isExact ? $f : $this->emit->textOperand($f);
             $tests[] = $this->apply('ops', 'EQL',
-                [$needle, $this->emit->textOperand($f)], $e['pos'], 'text');
+                [$needle, $item], $e['pos'], 'text');
         }
         return $this->foldPairwise('OR', $tests, $n['pos']);
     }

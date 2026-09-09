@@ -205,7 +205,7 @@ final class Emit
      */
     public function numericOperand(Fragment $f, ?array $pos = null): Fragment
     {
-        if ($f->kind === 'NUM') {
+        if ($f->kind === 'NUM' && !$f->guard) {
             return $f;
         }
         Map::checkNumericGuard($this->dialect);
@@ -236,6 +236,9 @@ final class Emit
      */
     public function textOperand(Fragment $f): Fragment
     {
+        if ($f->exact) {
+            return $f;
+        }
         $cast = $this->lex('textCast');
         $collate = (string) $this->lex('textCollate');
         $parts = $f->parts;
@@ -246,7 +249,7 @@ final class Emit
         if ($collate !== '') {
             $parts[] = $collate;
         }
-        return new Fragment($parts, 'TEXT', $this->dialect);
+        return new Fragment($parts, 'TEXT', $this->dialect, $f->params, $f->paramKinds, $f->caveats);
     }
 
     // --- identifiers --------------------------------------------------------

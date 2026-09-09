@@ -15,7 +15,7 @@ export const KINDS = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST'];
 // be confused about where a literal ends, whatever the literal contains, and
 // that is the class of bug this shape exists to make unreachable.
 export class Fragment {
-  constructor(parts, kind, dialect, params = null, paramKinds = null, caveats = null) {
+  constructor(parts, kind, dialect, params = null, paramKinds = null, caveats = null, exact = false, sargable = false, guard = false) {
     this.parts = parts;
     this.kind = kind;
     this.dialect = dialect;
@@ -25,6 +25,9 @@ export class Fragment {
     // cannot be derived — see emit.literal.
     this.paramKinds = paramKinds ?? [];
     this.caveats = caveats ?? [];
+    this.exact = Boolean(exact);
+    this.sargable = Boolean(sargable);
+    this.guard = Boolean(guard);
   }
 
   // Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but LIST,

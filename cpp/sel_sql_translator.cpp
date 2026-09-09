@@ -286,6 +286,9 @@ Fragment Translator::column_ref(const ColumnSpec& c) {
   f.parts_.push_back(std::move(p));
   f.kind_ = c.type;
   f.dialect_ = dialect_;
+  f.exact_ = c.exact;
+  f.sargable_ = c.sargable;
+  f.guard_ = c.guard;
   return f;
 }
 
@@ -838,8 +841,31 @@ Fragment Translator::binary(const SNode& n) {
 
   if (contains(BYTE_COMPARISONS, op)) {
     require_comparable_kinds(l, r, op, n.pos());
-    // The cast and collate are skipped only when BOTH operands are already BIN.
-    if (l.kind() != SqlKind::Bin || r.kind() != SqlKind::Bin) {
+    const bool l_exact = l.exact();
+    const bool r_exact = r.exact();
+    const bool l_lit = n.l() && n.l()->t() == SNode::T::Text;
+    const bool r_lit = n.r() && n.r()->t() == SNode::T::Text;
+    if ((l_exact && (r_exact || r_lit)) || (r_exact && l_lit)) {
+      // bare comparison
+    } else if (op == "$==" && l.sargable() && r_lit) {
+      if (dialect_ == "mariadb" || dialect_ == "mysql" || dialect_ == "mysql-family") {
+        const Fragment coarse_args[] = {l, r};
+        const Fragment coarse = apply(Section::Ops, "$==", coarse_args, n.pos(), variant);
+        const Fragment res_args[] = {emit_.text_operand(l), emit_.text_operand(r)};
+        const Fragment residual = apply(Section::Ops, "$==", res_args, n.pos(), variant);
+        const Fragment and_args[] = {coarse, residual};
+        return apply(Section::Ops, "AND", and_args, n.pos());
+      }
+    } else if (op == "$==" && r.sargable() && l_lit) {
+      if (dialect_ == "mariadb" || dialect_ == "mysql" || dialect_ == "mysql-family") {
+        const Fragment coarse_args[] = {l, r};
+        const Fragment coarse = apply(Section::Ops, "$==", coarse_args, n.pos(), variant);
+        const Fragment res_args[] = {emit_.text_operand(l), emit_.text_operand(r)};
+        const Fragment residual = apply(Section::Ops, "$==", res_args, n.pos(), variant);
+        const Fragment and_args[] = {coarse, residual};
+        return apply(Section::Ops, "AND", and_args, n.pos());
+      }
+    } else if (l.kind() != SqlKind::Bin || r.kind() != SqlKind::Bin) {
       l = emit_.text_operand(l);
       r = emit_.text_operand(r);
     }
@@ -1124,7 +1150,8 @@ Fragment Translator::in_operator(const SNode& n) {
     // splicing one Fragment N times puts the same slot number in the output N
     // times while params holds one entry.
     const Fragment raw = node(n.l());
-    const Fragment needle = emit_.text_operand(raw);
+    const bool is_exact = raw.exact();
+    const Fragment needle = is_exact ? raw : emit_.text_operand(raw);
     const Fragment f = node(e);
     if (f.kind() == SqlKind::List) {
       refuse("E_SQL_SHAPE",
@@ -1134,7 +1161,8 @@ Fragment Translator::in_operator(const SNode& n) {
     }
     // `raw`, not `needle`: needle's kind is always TEXT after the cast.
     require_comparable_kinds(raw, f, "IN", e->pos());
-    const Fragment args[] = {needle, emit_.text_operand(f)};
+    const Fragment item = is_exact ? f : emit_.text_operand(f);
+    const Fragment args[] = {needle, item};
     // The map key is EQL with variant text; the IN entry is not used here.
     tests.push_back(apply(Section::Ops, "EQL", args, e->pos(), "text"));
   }

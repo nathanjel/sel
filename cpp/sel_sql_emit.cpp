@@ -205,7 +205,7 @@ std::string Emit::column(const std::string& table, const std::string& col) const
 }
 
 Fragment Emit::numeric_operand(const Fragment& f, Pos pos) const {
-  if (f.kind() == SqlKind::Num) return f;
+  if (f.kind() == SqlKind::Num && !f.guard()) return f;
   Map::check_numeric_guard(dialect_);
   const Lexical* guard = lex("numericGuard");
   if (!guard || guard->kind != LexKind::Text) {
@@ -221,6 +221,7 @@ Fragment Emit::numeric_operand(const Fragment& f, Pos pos) const {
 }
 
 Fragment Emit::text_operand(const Fragment& f) const {
+  if (f.exact()) return f;
   const Lexical* cast = lex("textCast");
   const Lexical* collate = lex("textCollate");
 
@@ -234,7 +235,8 @@ Fragment Emit::text_operand(const Fragment& f) const {
     p.sql = std::string(collate->text);
     parts.push_back(p);
   }
-  return Fragment(std::move(parts), SqlKind::Text, dialect_);
+  return Fragment(std::move(parts), SqlKind::Text, dialect_, f.params(),
+                  f.param_kinds_, f.caveats());
 }
 
 // --- templates ---------------------------------------------------------------

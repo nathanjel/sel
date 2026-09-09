@@ -182,7 +182,7 @@ which asks the same question; tools/gen-sql-map.mjs requires the two to agree. A
 dialect that cannot ask it -- sqlite has no REGEXP, ansi has no regex -- declares
 no numericGuard, and this refuses rather than emitting something that answers
 when SEL would not."
-  (if (eq (fragment-kind f) :num)
+  (if (and (eq (fragment-kind f) :num) (not (fragment-guard f)))
       f
       ;; DIALECT-LEXICAL rather than LEX-TEXT, whose message names the missing
       ;; key. The key is not what an author can act on here; declaring the
@@ -207,14 +207,19 @@ MariaDB's default is case-insensitive, so `\"A\" $== \"a\"` is true there and
 false in SEL. Without the cast the collation does not stop two numeric operands
 being compared as numbers, so `3.0 EQL 3` is true there and false in SEL -- EQL
 is structural and does not normalise numbers."
-  (let ((cast (dialect-lexical dialect "textCast"))
-        (collate (dialect-lexical dialect "textCollate"))
-        (parts (fragment-parts f)))
-    (when (and (stringp cast) (not (equal cast "{0}")))
-      (setf parts (emit-fill dialect cast (list f))))
-    (when (and (stringp collate) (plusp (length collate)))
-      (setf parts (append parts (list collate))))
-    (%fragment parts :text dialect)))
+  (if (fragment-exact f)
+      f
+      (let ((cast (dialect-lexical dialect "textCast"))
+            (collate (dialect-lexical dialect "textCollate"))
+            (parts (fragment-parts f)))
+        (when (and (stringp cast) (not (equal cast "{0}")))
+          (setf parts (emit-fill dialect cast (list f))))
+        (when (and (stringp collate) (plusp (length collate)))
+          (setf parts (append parts (list collate))))
+        (%fragment parts :text dialect
+                   (fragment-params f)
+                   (fragment-param-kinds f)
+                   (fragment-caveats f)))))
 
 (defun emit-fill (dialect tpl args &optional pos expanding)
   "Fill a template with already-rendered arguments, producing a part list.

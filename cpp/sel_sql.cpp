@@ -65,8 +65,20 @@ std::optional<Mode> mode_from_name(std::string_view name) {
 
 // --- fragments ---------------------------------------------------------------
 
-Fragment::Fragment(std::vector<Part> parts, SqlKind kind, std::string dialect)
-    : parts_(std::move(parts)), kind_(kind), dialect_(std::move(dialect)) {}
+Fragment::Fragment(std::vector<Part> parts, SqlKind kind, std::string dialect,
+                   std::vector<Value> params,
+                   std::vector<SqlKind> param_kinds,
+                   std::vector<std::string> caveats,
+                   bool exact, bool sargable, bool guard)
+    : parts_(std::move(parts)),
+      params_(std::move(params)),
+      param_kinds_(std::move(param_kinds)),
+      kind_(kind),
+      dialect_(std::move(dialect)),
+      caveats_(std::move(caveats)),
+      exact_(exact),
+      sargable_(sargable),
+      guard_(guard) {}
 
 bool Fragment::is_inline_slot(int slot) const {
   const auto i = static_cast<std::size_t>(slot - 1);

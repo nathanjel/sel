@@ -49,7 +49,9 @@ class Binding:
     # --- the four kinds ------------------------------------------------------
 
     @staticmethod
-    def column(column: Any, table: Any = None, type: Any = 'UNKNOWN') -> 'Binding':  # noqa: A002
+    def column(column: Any, table: Any = None, type: Any = 'UNKNOWN',  # noqa: A002
+               exact: bool = False, sargable: bool = False, guard: bool = False,
+               collation: Any = None) -> 'Binding':
         """One column, optionally qualified by a table, optionally typed.
 
         ``type`` is what the kind guards read, and leaving it UNKNOWN costs a
@@ -62,16 +64,31 @@ class Binding:
         what skips that wrapper and keeps the index. It still passes bare in the
         two places docs/SQL-KINDS.md §4 marks broken: a function argument read as
         a number, and a bare aggregate body.
+
+        ``exact`` declares that the column already guarantees exact byte comparison
+        semantics in the schema, skipping defensive CAST and COLLATE wrappers.
+        ``sargable`` requests an index-friendly coarse pre-filter on text equality.
+        ``guard`` forces numericGuard even when typed NUM, guarding dirty EAV data.
         """
         _check_name('column', column)
         if table is not None:
             _check_name('table', table)
         _check_type(type)
+        if collation is not None:
+            c_exact, c_sargable = _check_collation(collation)
+            exact = exact or c_exact
+            sargable = sargable or c_sargable
+        _check_bool("a column binding's exact flag", exact)
+        _check_bool("a column binding's sargable flag", sargable)
+        _check_bool("a column binding's guard flag", guard)
         return Binding({'kind': 'column', 'column': column,
-                        'table': table, 'type': type})
+                        'table': table, 'type': type,
+                        'exact': exact, 'sargable': sargable, 'guard': guard})
 
     @staticmethod
-    def raw(sql: Any, type: Any = 'UNKNOWN') -> 'Binding':  # noqa: A002
+    def raw(sql: Any, type: Any = 'UNKNOWN',  # noqa: A002
+            exact: bool = False, sargable: bool = False, guard: bool = False,
+            collation: Any = None) -> 'Binding':
         """A column expressed as SQL this layer will not read.
 
         The one place an application writes SQL here. It is emitted verbatim, so
@@ -83,7 +100,15 @@ class Binding:
         if sql == '':
             raise SqlError('E_SQL_BINDING', 'a raw column binding cannot be empty')
         _check_type(type)
-        return Binding({'kind': 'column', 'raw': sql, 'type': type})
+        if collation is not None:
+            c_exact, c_sargable = _check_collation(collation)
+            exact = exact or c_exact
+            sargable = sargable or c_sargable
+        _check_bool("a raw column binding's exact flag", exact)
+        _check_bool("a raw column binding's sargable flag", sargable)
+        _check_bool("a raw column binding's guard flag", guard)
+        return Binding({'kind': 'column', 'raw': sql, 'type': type,
+                        'exact': exact, 'sargable': sargable, 'guard': guard})
 
     @staticmethod
     def columns(*items: 'Binding') -> 'Binding':
@@ -259,3 +284,26 @@ def _check_numeric(where: str, v: Value) -> None:
                        + ', which is not how SEL writes that number; a NUM binding '
                        'is emitted unquoted and must already be canonical, so pass '
                        'it as text or drop the leading zeros')
+
+
+def _check_bool(what: str, v: Any) -> None:
+    if not isinstance(v, bool):
+        raise SqlError('E_SQL_BINDING',
+                       f'{what} must be a boolean, and this is {type_name(v)}')
+
+
+def _check_collation(c: Any) -> tuple[bool, bool]:
+    if c is None:
+        return False, False
+    if not isinstance(c, str):
+        raise SqlError('E_SQL_BINDING',
+                       f"collation must be a string, and this is {type_name(c)}")
+    c_lower = c.lower()
+    if c_lower in ('binary', 'exact'):
+        return True, False
+    if c_lower in ('sargable', 'prefilter'):
+        return False, True
+    if c_lower in ('default', 'none'):
+        return False, False
+    raise SqlError('E_SQL_BINDING',
+                   f"unknown collation '{c}'; use 'binary', 'exact', 'sargable', or 'default'")

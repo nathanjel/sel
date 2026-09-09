@@ -350,15 +350,17 @@ mutation, because the natural mutation for it is pathological.
   wrap a non-NUM operand.
 - The bool guard refuses `UNKNOWN` instead of passing it.
 
-No new option, no Options plumbing, no API change. `UNKNOWN` stays the default
-for `Binding::column`, and under these rules it is now the *safe* default rather
-than the silent one: not declaring gets you the guarded path, and declaring
-`NUM` is what buys the fast one.
+`UNKNOWN` stays the default for `Binding::column`, and under these rules it is
+now the *safe* default rather than the silent one: not declaring gets you the
+guarded path, and declaring `NUM` is what buys the fast one. Where a column is
+declared `NUM` but draws from an untrusted or dirty source (such as an EAV string
+table), setting `guard: true` on the binding forces the guarded path explicitly.
 
 ### What it costs
 
-- **The index, on every uncertain numeric column.** Unconditional, no opt-out
-  short of declaring `NUM`.
+- **The index, on every uncertain numeric column.** Declaring `NUM`
+  restores direct index usage (with `guard: true` available when explicit
+  runtime validation is required on dirty data).
 - **SQLite and ANSI stop translating numeric comparison over uncertain
   operands.** The one place this takes functionality away rather than making it
   safer. Pinned as `warrant.numeric.sqlite-cannot-ask-and-refuses`.
