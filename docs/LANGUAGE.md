@@ -566,7 +566,7 @@ IS_PRESENT("hello")      => TRUE
 
 ## Function reference
 
-61 functions. Names are case-insensitive.
+70 functions. Names are case-insensitive.
 
 ### Control
 
@@ -576,13 +576,19 @@ IS_PRESENT("hello")      => TRUE
 | `COND(c1, r1, …, default)` | first matching result; odd argument count required |
 | `ABORT(message)` | always fails with `E_ABORT` |
 
-### Structure
+### Structure & Relations
 
 | Signature | Yields |
 |---|---|
 | `COUNT(x)` | number of children |
 | `INDEXES(x)` | list of keys, in order |
 | `HAS(x, key)` | BOOL |
+| `LIST(v1, v2, …)` | list of elements without flattening |
+| `RECORD(k1, v1, …)` | record from key-value pairs |
+| `TAKE(list, n)` | first `n` elements as a list |
+| `DROP(list, n)` | drops first `n` elements |
+| `SELECT_COLS(rel, c1, …)` | projects specified columns |
+| `DISTINCT(list)` | unique elements preserving order |
 
 ### Null safety & navigation
 
@@ -606,6 +612,9 @@ IS_PRESENT("hello")      => TRUE
 | `FILTER(list [, name], body)` | matching elements, **keys preserved** |
 | `SUM(list [, name], body)` | exact sum, `0` when empty |
 | `JOIN(list, separator)` | TEXT — strict, the second argument is not a body |
+| `SORT(list [, name, body])` | sorts elements in ascending order |
+| `SORT_DESC(list [, name, body])` | sorts elements in descending order |
+| `SORT_BY(list, [name,] body [, dir])` | sorts elements by evaluated key expression |
 
 ### Text
 

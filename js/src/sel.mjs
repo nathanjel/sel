@@ -67,8 +67,48 @@ function collect(node, bound, reads, assigned, depth) {
     }
 
     case 'call': {
-      // An aggregate's three-argument form binds its second argument as a name
-      // for the duration of the third.
+      const name = node.name || '';
+      if (name === 'SORT' || name === 'SORT_DESC' || name === 'SORT_BY') {
+        const n = node.args.length;
+        if (n === 1) {
+          collect(node.args[0], bound, reads, assigned, depth + 1);
+          return;
+        }
+        if (n === 4 && node.args[1].t === 'var') {
+          collect(node.args[0], bound, reads, assigned, depth + 1);
+          const inner = new Set(bound);
+          inner.add(node.args[1].name);
+          inner.add('_K');
+          collect(node.args[2], inner, reads, assigned, depth + 1);
+          collect(node.args[3], bound, reads, assigned, depth + 1);
+          return;
+        }
+        if (n === 3 && node.args[1].t === 'var') {
+          collect(node.args[0], bound, reads, assigned, depth + 1);
+          const inner = new Set(bound);
+          inner.add(node.args[1].name);
+          inner.add('_K');
+          collect(node.args[2], inner, reads, assigned, depth + 1);
+          return;
+        }
+        if (n === 3) {
+          collect(node.args[0], bound, reads, assigned, depth + 1);
+          const inner = new Set(bound);
+          inner.add('_');
+          inner.add('_K');
+          collect(node.args[1], inner, reads, assigned, depth + 1);
+          collect(node.args[2], bound, reads, assigned, depth + 1);
+          return;
+        }
+        if (n === 2) {
+          collect(node.args[0], bound, reads, assigned, depth + 1);
+          const inner = new Set(bound);
+          inner.add('_');
+          inner.add('_K');
+          collect(node.args[1], inner, reads, assigned, depth + 1);
+          return;
+        }
+      }
       if (node.spec && node.spec.binds && node.args.length === 3 && node.args[1].t === 'var') {
         collect(node.args[0], bound, reads, assigned, depth + 1);
         const inner = new Set(bound);

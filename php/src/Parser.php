@@ -527,7 +527,7 @@ final class Parser
 
         $count = count($args);
         $hasPlaceholder = false;
-        if ($count >= $spec['min']) {
+        if (empty($spec['binds']) && $count >= $spec['min']) {
             foreach ($args as $idx => $arg) {
                 if ($arg['t'] === 'var' && $arg['name'] === '_' && empty($arg['grouped'])) {
                     $args[$idx] = $left;

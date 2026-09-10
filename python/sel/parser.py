@@ -353,7 +353,7 @@ class Parser:
             fail('E_UNKNOWN_FUNC', f'unknown function {name_tok.value}', name_tok.pos)
 
         has_placeholder = False
-        if len(args) >= spec.min:
+        if not spec.binds and len(args) >= spec.min:
             for i, arg in enumerate(args):
                 if arg.t == 'var' and arg.name == '_' and not arg.grouped:
                     args[i] = left

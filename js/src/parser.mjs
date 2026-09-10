@@ -311,7 +311,7 @@ class Parser {
 
     const count = args.length;
     let hasPlaceholder = false;
-    if (count >= spec.min) {
+    if (!spec.binds && count >= spec.min) {
       for (let i = 0; i < args.length; i++) {
         if (args[i].t === 'var' && args[i].name === '_' && !args[i].grouped) {
           args[i] = left;

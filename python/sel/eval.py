@@ -113,6 +113,10 @@ class Args:
                  n.pos)
         return n.name
 
+    def is_symbol(self, i: int) -> bool:
+        n = self.nodes[i]
+        return n.t == 'var' and not n.grouped
+
 
 # --- evaluation -------------------------------------------------------------
 

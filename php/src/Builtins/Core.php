@@ -69,7 +69,241 @@ final class Core
         Registry::define(['name' => 'HAS', 'min' => 2, 'max' => 2,
             'fn' => static fn (Args $a): Value => Value::bool($a->val(0)->has($a->text(1)))]);
 
+        Registry::define(['name' => 'LIST', 'min' => 0, 'max' => PHP_INT_MAX,
+            'fn' => static function (Args $a): Value {
+                $n = $a->count();
+                $out = [];
+                for ($i = 0; $i < $n; $i++) {
+                    $out[] = $a->val($i)->copy();
+                }
+                return Value::list($out);
+            }]);
+
+        Registry::define(['name' => 'RECORD', 'min' => 0, 'max' => PHP_INT_MAX,
+            'arityError' => static fn (int $count): ?string =>
+                $count % 2 !== 0 ? "RECORD takes an even number of arguments (key-value pairs), got {$count}" : null,
+            'fn' => static function (Args $a): Value {
+                $rec = Value::none();
+                $n = $a->count();
+                for ($i = 0; $i < $n; $i += 2) {
+                    $key = $a->text($i);
+                    $val = $a->val($i + 1);
+                    $rec->set($key, $val->copy());
+                }
+                return $rec;
+            }]);
+
+        Registry::define(['name' => 'TAKE', 'min' => 2, 'max' => 2,
+            'fn' => static function (Args $a): Value {
+                $val = $a->val(0);
+                $count = $a->nonNegInt(1);
+                if ($count === 0 || $val->isNull()) {
+                    return Value::list([]);
+                }
+                $entries = self::elements($val);
+                $out = [];
+                $limit = min($count, count($entries));
+                for ($i = 0; $i < $limit; $i++) {
+                    $out[] = $entries[$i][1]->copy();
+                }
+                return Value::list($out);
+            }]);
+
+        Registry::define(['name' => 'DROP', 'min' => 2, 'max' => 2,
+            'fn' => static function (Args $a): Value {
+                $val = $a->val(0);
+                $count = $a->nonNegInt(1);
+                if ($val->isNull()) {
+                    return Value::list([]);
+                }
+                $entries = self::elements($val);
+                $total = count($entries);
+                if ($count >= $total) {
+                    return Value::list([]);
+                }
+                $out = [];
+                for ($i = $count; $i < $total; $i++) {
+                    $out[] = $entries[$i][1]->copy();
+                }
+                return Value::list($out);
+            }]);
+
+        Registry::define(['name' => 'SELECT_COLS', 'min' => 2, 'max' => PHP_INT_MAX,
+            'fn' => static function (Args $a): Value {
+                $val = $a->val(0);
+                if ($val->isNull()) {
+                    return Value::list([]);
+                }
+                $colCount = $a->count();
+                $cols = [];
+                for ($i = 1; $i < $colCount; $i++) {
+                    $cols[] = $a->text($i);
+                }
+                $entries = self::elements($val);
+                $out = [];
+                foreach ($entries as [, $row]) {
+                    $newRow = Value::none();
+                    foreach ($cols as $c) {
+                        if ($row->has($c)) {
+                            $newRow->set($c, $row->get($c)->copy());
+                        }
+                    }
+                    $out[] = $newRow;
+                }
+                return Value::list($out);
+            }]);
+
+        Registry::define(['name' => 'DISTINCT', 'min' => 1, 'max' => 1,
+            'fn' => static function (Args $a): Value {
+                $val = $a->val(0);
+                if ($val->isNull()) {
+                    return Value::list([]);
+                }
+                $entries = self::elements($val);
+                $out = [];
+                foreach ($entries as [, $item]) {
+                    $seen = false;
+                    foreach ($out as $existing) {
+                        if ($item->eql($existing)) {
+                            $seen = true;
+                            break;
+                        }
+                    }
+                    if (!$seen) {
+                        $out[] = $item->copy();
+                    }
+                }
+                return Value::list($out);
+            }]);
+
+        Registry::define(['name' => 'SORT', 'min' => 1, 'max' => 3, 'lazy' => true, 'binds' => true,
+            'fn' => static function (Args $a, Context $ctx): Value {
+                return self::doSort($a, $ctx, 'ASC');
+            }]);
+
+        Registry::define(['name' => 'SORT_DESC', 'min' => 1, 'max' => 3, 'lazy' => true, 'binds' => true,
+            'fn' => static function (Args $a, Context $ctx): Value {
+                return self::doSort($a, $ctx, 'DESC');
+            }]);
+
+        Registry::define(['name' => 'SORT_BY', 'min' => 2, 'max' => 4, 'lazy' => true, 'binds' => true,
+            'fn' => static function (Args $a, Context $ctx): Value {
+                return self::doSort($a, $ctx, null);
+            }]);
+
         self::registerAggregates();
+    }
+
+    public static function compareValues(Value $a, Value $b): int
+    {
+        $aNull = $a->isNull();
+        $bNull = $b->isNull();
+        if ($aNull && $bNull) return 0;
+        if ($aNull) return -1;
+        if ($bNull) return 1;
+
+        $aNum = $a->looksNumeric();
+        $bNum = $b->looksNumeric();
+        if ($aNum && $bNum) {
+            return Dec::cmp($a->asDecimal(), $b->asDecimal());
+        }
+
+        if ($a->kind === Value::BOOL && $b->kind === Value::BOOL) {
+            $av = (int) (bool) $a->scalar;
+            $bv = (int) (bool) $b->scalar;
+            return $av <=> $bv;
+        }
+
+        if (($a->kind === Value::TEXT || $a->kind === Value::BIN) &&
+            ($b->kind === Value::TEXT || $b->kind === Value::BIN)) {
+            return strcmp($a->asBytes(), $b->asBytes());
+        }
+
+        $rank = static function (Value $v): int {
+            if ($v->isNull()) return 0;
+            if ($v->kind === Value::BOOL) return 1;
+            if ($v->looksNumeric()) return 2;
+            if ($v->kind === Value::TEXT) return 3;
+            if ($v->kind === Value::BIN) return 4;
+            return 5;
+        };
+        return $rank($a) <=> $rank($b);
+    }
+
+    private static function doSort(Args $a, Context $ctx, ?string $forcedDir): Value
+    {
+        $val = $a->val(0);
+        if ($val->isNull()) {
+            return Value::list([]);
+        }
+        $entries = self::elements($val);
+        if ($entries === []) {
+            return Value::list([]);
+        }
+
+        $count = $a->count();
+        if ($count === 1) {
+            $dir = $forcedDir ?? 'ASC';
+            $indexed = [];
+            foreach ($entries as $idx => [, $item]) {
+                $indexed[] = ['item' => $item, 'key' => $item, 'idx' => $idx];
+            }
+        } else {
+            if ($count === 2) {
+                $binder = '_';
+                $body = $a->node(1);
+                $dir = $forcedDir ?? 'ASC';
+            } elseif ($count === 3) {
+                if ($forcedDir !== null) {
+                    $binder = $a->symbol(1);
+                    $body = $a->node(2);
+                    $dir = $forcedDir;
+                } elseif ($a->node(2)['t'] === 'text') {
+                    $binder = '_';
+                    $body = $a->node(1);
+                    $dir = strtoupper($a->text(2));
+                } elseif ($a->isSymbol(1)) {
+                    $binder = $a->symbol(1);
+                    $body = $a->node(2);
+                    $dir = 'ASC';
+                } else {
+                    $binder = '_';
+                    $body = $a->node(1);
+                    $dir = strtoupper($a->text(2));
+                }
+            } else {
+                $binder = $a->symbol(1);
+                $body = $a->node(2);
+                $dir = strtoupper($a->text(3));
+            }
+
+            if ($dir !== 'ASC' && $dir !== 'DESC') {
+                $posIdx = $count === 4 ? 3 : 2;
+                fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($posIdx));
+            }
+
+            $indexed = [];
+            foreach ($entries as $idx => [$k, $item]) {
+                $ctx->pushFrame([$binder => $item, '_K' => Value::text($k)]);
+                try {
+                    $evalKey = $a->evalNode($body);
+                } finally {
+                    $ctx->popFrame();
+                }
+                $indexed[] = ['item' => $item, 'key' => $evalKey, 'idx' => $idx];
+            }
+        }
+
+        usort($indexed, static function (array $x, array $y) use ($dir): int {
+            $c = self::compareValues($x['key'], $y['key']);
+            if ($dir === 'DESC') {
+                $c = -$c;
+            }
+            return $c !== 0 ? $c : ($x['idx'] <=> $y['idx']);
+        });
+
+        $out = array_map(static fn (array $x) => $x['item']->copy(), $indexed);
+        return Value::list($out);
     }
 
     /**

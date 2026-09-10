@@ -334,7 +334,7 @@
                 (token-pos name-tok)))
         (let ((has-placeholder nil)
               (new-args (copy-list args)))
-          (when (>= (length args) (spec-min spec))
+          (when (and (not (spec-binds spec)) (>= (length args) (spec-min spec)))
             (loop for sub on new-args
                   when (and (eq (node-kind (car sub)) :var)
                             (string= (node-s (car sub)) "_")

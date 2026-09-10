@@ -1698,7 +1698,7 @@ class Parser {
 
     const int count = static_cast<int>(args.size());
     bool has_placeholder = false;
-    if (count >= spec->min) {
+    if (!spec->binds && count >= spec->min) {
       for (std::size_t i = 0; i < args.size(); ++i) {
         if (args[i]->t == NT::Var && args[i]->s == "_" && !args[i]->grouped) {
           args[i] = left;
@@ -1936,6 +1936,11 @@ class Args {
            n.pos);
     }
     return n.s;
+  }
+
+  bool is_symbol(int i) const {
+    const Node& n = *nodes_[i];
+    return n.t == NT::Var && !n.grouped;
   }
 
  private:
@@ -2390,6 +2395,16 @@ void register_control() {
 
 // --- structure
 
+// A scalar with no children behaves as a one-element list containing itself,
+// consistent with scalar context (§3.2). A NONE with no children is genuinely
+// empty — that is what FILTER returns when nothing matched, and ALL over it must
+// be TRUE rather than a scalar-context failure.
+std::vector<Value::Entry> elements(const Value& value) {
+  if (value.size() > 0) return value.entries();
+  if (value.kind() == Kind::None) return {};
+  return {{"1", value}};
+}
+
 void register_structure() {
   define(Spec{"COUNT", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
                 return make_int(static_cast<long long>(a.val(0).size()));
@@ -2404,20 +2419,109 @@ void register_structure() {
   define(Spec{"HAS", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 return Value::boolean(a.val(0).has(a.text(1)));
               }});
+
+  define(Spec{"LIST", 0, VARIADIC, false, false, nullptr, [](Args& a, Context&) -> Value {
+                std::vector<Value> out;
+                out.reserve(a.count());
+                for (int i = 0; i < a.count(); i++) {
+                  out.push_back(a.val(i).clone());
+                }
+                return Value::list(std::move(out));
+              }});
+
+  define(Spec{"RECORD", 0, VARIADIC, false, false,
+              [](int n) -> std::string {
+                if (n % 2 != 0) {
+                  return "RECORD takes an even number of arguments (key-value pairs), got " +
+                         std::to_string(n);
+                }
+                return "";
+              },
+              [](Args& a, Context&) -> Value {
+                Value rec = Value::none();
+                const int n = a.count();
+                for (int i = 0; i < n; i += 2) {
+                  rec.set(a.text(i), a.val(i + 1).clone());
+                }
+                return rec;
+              }});
+
+  define(Spec{"TAKE", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
+                const Value& val = a.val(0);
+                const long long count = a.non_neg_int(1);
+                if (count == 0 || val.is_null()) return Value::list({});
+                const auto ents = elements(val);
+                std::vector<Value> out;
+                const std::size_t limit =
+                    std::min<std::size_t>(static_cast<std::size_t>(count), ents.size());
+                out.reserve(limit);
+                for (std::size_t i = 0; i < limit; i++) {
+                  out.push_back(ents[i].second.clone());
+                }
+                return Value::list(std::move(out));
+              }});
+
+  define(Spec{"DROP", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
+                const Value& val = a.val(0);
+                const long long count = a.non_neg_int(1);
+                if (val.is_null()) return Value::list({});
+                const auto ents = elements(val);
+                if (static_cast<std::size_t>(count) >= ents.size()) return Value::list({});
+                std::vector<Value> out;
+                out.reserve(ents.size() - static_cast<std::size_t>(count));
+                for (std::size_t i = static_cast<std::size_t>(count); i < ents.size(); i++) {
+                  out.push_back(ents[i].second.clone());
+                }
+                return Value::list(std::move(out));
+              }});
+
+  define(Spec{"SELECT_COLS", 2, VARIADIC, false, false, nullptr, [](Args& a, Context&) -> Value {
+                const Value& val = a.val(0);
+                if (val.is_null()) return Value::list({});
+                const int col_count = a.count();
+                std::vector<std::string> cols;
+                cols.reserve(col_count - 1);
+                for (int i = 1; i < col_count; i++) {
+                  cols.push_back(a.text(i));
+                }
+                const auto ents = elements(val);
+                std::vector<Value> out;
+                out.reserve(ents.size());
+                for (const auto& [_, row] : ents) {
+                  Value new_row = Value::none();
+                  for (const auto& c : cols) {
+                    if (row.has(c)) {
+                      new_row.set(c, row.get(c)->clone());
+                    }
+                  }
+                  out.push_back(std::move(new_row));
+                }
+                return Value::list(std::move(out));
+              }});
+
+  define(Spec{"DISTINCT", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                const Value& val = a.val(0);
+                if (val.is_null()) return Value::list({});
+                const auto ents = elements(val);
+                std::vector<Value> out;
+                for (const auto& [_, item] : ents) {
+                  bool found = false;
+                  for (const auto& existing : out) {
+                    if (item.eql(existing)) {
+                      found = true;
+                      break;
+                    }
+                  }
+                  if (!found) {
+                    out.push_back(item.clone());
+                  }
+                }
+                return Value::list(std::move(out));
+              }});
 }
 
 // --- aggregates. These are why SEL needs no loop: each evaluates one argument
 // node once per element, which is the same move IF makes, repeated.
-
-// A scalar with no children behaves as a one-element list containing itself,
-// consistent with scalar context (§3.2). A NONE with no children is genuinely
-// empty — that is what FILTER returns when nothing matched, and ALL over it must
-// be TRUE rather than a scalar-context failure.
-std::vector<Value::Entry> elements(const Value& value) {
-  if (value.size() > 0) return value.entries();
-  if (value.kind() == Kind::None) return {};
-  return {{"1", value}};
-}
 
 // Runs `visit` per element with the binder and _K in scope. Returning a value
 // from `visit` stops the walk and becomes the result.
@@ -2442,6 +2546,145 @@ std::optional<Value> walk(Args& a, Context& ctx,
     if (result.has_value()) return result;
   }
   return std::nullopt;
+}
+
+int compare_values(const Value& a, const Value& b) {
+  const bool a_null = a.is_null();
+  const bool b_null = b.is_null();
+  if (a_null && b_null) return 0;
+  if (a_null) return -1;
+  if (b_null) return 1;
+
+  const bool a_num = a.looks_numeric();
+  const bool b_num = b.looks_numeric();
+  if (a_num && b_num) {
+    Dec da, db;
+    dec_parse(a.scalar_source().scalar(), da);
+    dec_parse(b.scalar_source().scalar(), db);
+    return dec_cmp(da, db);
+  }
+
+  if (a.kind() == Kind::Bool && b.kind() == Kind::Bool) {
+    const int av = a.boolean_scalar() ? 1 : 0;
+    const int bv = b.boolean_scalar() ? 1 : 0;
+    return (av > bv) - (av < bv);
+  }
+
+  if ((a.kind() == Kind::Text || a.kind() == Kind::Bin) &&
+      (b.kind() == Kind::Text || b.kind() == Kind::Bin)) {
+    const std::string& as = a.as_bytes();
+    const std::string& bs = b.as_bytes();
+    if (as < bs) return -1;
+    if (as > bs) return 1;
+    return 0;
+  }
+
+  auto rank = [](const Value& v) -> int {
+    if (v.is_null()) return 0;
+    if (v.kind() == Kind::Bool) return 1;
+    if (v.looks_numeric()) return 2;
+    if (v.kind() == Kind::Text) return 3;
+    if (v.kind() == Kind::Bin) return 4;
+    return 5;
+  };
+
+  const int ra = rank(a);
+  const int rb = rank(b);
+  return (ra > rb) - (ra < rb);
+}
+
+struct SortEntry {
+  Value item;
+  Value key;
+  std::size_t idx;
+};
+
+Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
+  const Value& val = a.val(0);
+  if (val.is_null()) return Value::list({});
+  const auto ents = elements(val);
+  if (ents.empty()) return Value::list({});
+
+  const int count = a.count();
+  std::string direction;
+  std::vector<SortEntry> indexed;
+  indexed.reserve(ents.size());
+
+  if (count == 1) {
+    direction = forced_dir.value_or("ASC");
+    for (std::size_t i = 0; i < ents.size(); i++) {
+      indexed.push_back({ents[i].second.clone(), ents[i].second.clone(), i});
+    }
+  } else {
+    std::string binder;
+    const Node* body = nullptr;
+
+    if (count == 2) {
+      binder = "_";
+      body = &a.node(1);
+      direction = forced_dir.value_or("ASC");
+    } else if (count == 3) {
+      if (forced_dir.has_value()) {
+        binder = a.symbol(1);
+        body = &a.node(2);
+        direction = *forced_dir;
+      } else if (a.node(2).t == NT::Text) {
+        binder = "_";
+        body = &a.node(1);
+        std::string d = a.text(2);
+        for (char& c : d) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        direction = d;
+      } else if (a.is_symbol(1)) {
+        binder = a.symbol(1);
+        body = &a.node(2);
+        direction = "ASC";
+      } else {
+        binder = "_";
+        body = &a.node(1);
+        std::string d = a.text(2);
+        for (char& c : d) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        direction = d;
+      }
+    } else {  // 4
+      binder = a.symbol(1);
+      body = &a.node(2);
+      std::string d = a.text(3);
+      for (char& c : d) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      direction = d;
+    }
+
+    if (direction != "ASC" && direction != "DESC") {
+      const int pos_idx = (count == 4) ? 3 : 2;
+      fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", a.pos_of(pos_idx));
+    }
+
+    for (std::size_t i = 0; i < ents.size(); i++) {
+      ctx.frames.push_back({{binder, ents[i].second}, {"_K", make_text(ents[i].first)}});
+      Value eval_key;
+      try {
+        eval_key = a.eval(*body);
+      } catch (...) {
+        ctx.frames.pop_back();
+        throw;
+      }
+      ctx.frames.pop_back();
+      indexed.push_back({ents[i].second.clone(), std::move(eval_key), i});
+    }
+  }
+
+  const bool desc = (direction == "DESC");
+  std::stable_sort(indexed.begin(), indexed.end(), [desc](const SortEntry& x, const SortEntry& y) {
+    int c = compare_values(x.key, y.key);
+    if (desc) c = -c;
+    return c < 0;
+  });
+
+  std::vector<Value> out;
+  out.reserve(indexed.size());
+  for (auto& x : indexed) {
+    out.push_back(std::move(x.item));
+  }
+  return Value::list(std::move(out));
 }
 
 void register_aggregates() {
@@ -2507,6 +2750,18 @@ void register_aggregates() {
                   first = false;
                 }
                 return make_text(out);
+              }});
+
+  define(Spec{"SORT", 1, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
+                return do_sort(a, ctx, "ASC");
+              }});
+
+  define(Spec{"SORT_DESC", 1, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
+                return do_sort(a, ctx, "DESC");
+              }});
+
+  define(Spec{"SORT_BY", 2, 4, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
+                return do_sort(a, ctx, std::nullopt);
               }});
 }
 
@@ -3468,8 +3723,48 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
     }
 
     case NT::Call: {
-      // An aggregate's three-argument form binds its second argument as a name
-      // for the duration of the third.
+      const std::string name = node->s;
+      if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY") {
+        const std::size_t n = node->items.size();
+        if (n == 1) {
+          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
+          return;
+        }
+        if (n == 4 && node->items[1]->t == NT::Var) {
+          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
+          std::set<std::string> inner = bound;
+          inner.insert(node->items[1]->s);
+          inner.insert("_K");
+          collect(node->items[2].get(), inner, reads, assigned, depth + 1);
+          collect(node->items[3].get(), bound, reads, assigned, depth + 1);
+          return;
+        }
+        if (n == 3 && node->items[1]->t == NT::Var) {
+          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
+          std::set<std::string> inner = bound;
+          inner.insert(node->items[1]->s);
+          inner.insert("_K");
+          collect(node->items[2].get(), inner, reads, assigned, depth + 1);
+          return;
+        }
+        if (n == 3) {
+          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
+          std::set<std::string> inner = bound;
+          inner.insert("_");
+          inner.insert("_K");
+          collect(node->items[1].get(), inner, reads, assigned, depth + 1);
+          collect(node->items[2].get(), bound, reads, assigned, depth + 1);
+          return;
+        }
+        if (n == 2) {
+          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
+          std::set<std::string> inner = bound;
+          inner.insert("_");
+          inner.insert("_K");
+          collect(node->items[1].get(), inner, reads, assigned, depth + 1);
+          return;
+        }
+      }
       if (node->spec && node->spec->binds && node->items.size() == 3 &&
           node->items[1]->t == NT::Var) {
         collect(node->items[0].get(), bound, reads, assigned, depth + 1);

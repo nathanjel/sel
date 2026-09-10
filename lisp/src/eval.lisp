@@ -85,6 +85,10 @@
             (node-pos n)))
     (node-s n)))
 
+(defun args-symbol-p (a i)
+  (let ((n (args-node a i)))
+    (and (eq (node-kind n) :var) (not (node-grouped n)))))
+
 ;;; --- evaluation ------------------------------------------------------------
 
 (defun eval-node (node ctx)

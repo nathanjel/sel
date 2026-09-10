@@ -119,4 +119,10 @@ final class Args
         }
         return $n['name'];
     }
+
+    public function isSymbol(int $i): bool
+    {
+        $n = $this->nodes[$i];
+        return $n['t'] === 'var' && empty($n['grouped']);
+    }
 }

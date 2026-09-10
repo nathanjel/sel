@@ -122,6 +122,47 @@ final class Program
                 // a name for the duration of the third.
                 $binds = !empty($node['spec']['binds']);
                 $n = count($node['args']);
+                $name = $node['name'] ?? '';
+                if ($name === 'SORT' || $name === 'SORT_DESC' || $name === 'SORT_BY') {
+                    if ($n === 1) {
+                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
+                        return;
+                    }
+                    if ($n === 4 && $node['args'][1]['t'] === 'var') {
+                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
+                        $inner = $bound;
+                        $inner[$node['args'][1]['name']] = true;
+                        $inner['_K'] = true;
+                        self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
+                        self::collect($node['args'][3], $bound, $reads, $assigned, $depth + 1);
+                        return;
+                    }
+                    if ($n === 3 && $node['args'][1]['t'] === 'var') {
+                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
+                        $inner = $bound;
+                        $inner[$node['args'][1]['name']] = true;
+                        $inner['_K'] = true;
+                        self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
+                        return;
+                    }
+                    if ($n === 3) {
+                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
+                        $inner = $bound;
+                        $inner['_'] = true;
+                        $inner['_K'] = true;
+                        self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
+                        self::collect($node['args'][2], $bound, $reads, $assigned, $depth + 1);
+                        return;
+                    }
+                    if ($n === 2) {
+                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
+                        $inner = $bound;
+                        $inner['_'] = true;
+                        $inner['_K'] = true;
+                        self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
+                        return;
+                    }
+                }
                 if ($binds && $n === 3 && $node['args'][1]['t'] === 'var') {
                     self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
                     $inner = $bound;

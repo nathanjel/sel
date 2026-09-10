@@ -3,15 +3,6 @@
 
 (in-package #:sel)
 
-;;; A scalar with no children behaves as a one-element list containing itself,
-;;; consistent with scalar context (§3.2). A NONE with no children is genuinely
-;;; empty — that is what FILTER returns when nothing matched, and ALL over it
-;;; must be TRUE rather than a scalar-context failure.
-(defun aggregate-elements (v)
-  (cond ((plusp (value-size v)) (value-entries v))
-        ((eq (value-kind v) :none) '())
-        (t (list (cons "1" v)))))
-
 ;;; Runs VISIT per element with the binder and _K in scope. A non-NIL return from
 ;;; VISIT stops the walk and becomes the result.
 (defun aggregate-walk (a ctx visit)
@@ -92,3 +83,122 @@
                      do (progn key)
                         (unless first (write-string sep out))
                         (write-string (as-text item at) out)))))))
+
+(defun compare-values (a b)
+  (let ((a-null (value-null-p a))
+        (b-null (value-null-p b)))
+    (cond
+      ((and a-null b-null) 0)
+      (a-null -1)
+      (b-null 1)
+      (t
+       (let ((a-num (looks-numeric a))
+             (b-num (looks-numeric b)))
+         (cond
+           ((and a-num b-num)
+            (dec-cmp (as-dec a) (as-dec b)))
+           ((and (eq (value-kind a) :bool) (eq (value-kind b) :bool))
+            (let ((av (if (value-scalar a) 1 0))
+                  (bv (if (value-scalar b) 1 0)))
+              (cond ((< av bv) -1) ((> av bv) 1) (t 0))))
+           ((and (member (value-kind a) '(:text :bin))
+                 (member (value-kind b) '(:text :bin)))
+            (bytes-compare (as-bytes a) (as-bytes b)))
+           (t
+            (flet ((rank (v)
+                     (cond
+                       ((value-null-p v) 0)
+                       ((eq (value-kind v) :bool) 1)
+                       ((looks-numeric v) 2)
+                       ((eq (value-kind v) :text) 3)
+                       ((eq (value-kind v) :bin) 4)
+                       (t 5))))
+              (let ((ra (rank a))
+                    (rb (rank b)))
+                (cond ((< ra rb) -1) ((> ra rb) 1) (t 0)))))))))))
+
+(defun do-sort (a ctx forced-dir)
+  (let ((val (args-val a 0)))
+    (if (value-null-p val)
+        (make-list-value nil)
+        (let ((ents (aggregate-elements val)))
+          (if (null ents)
+              (make-list-value nil)
+              (let* ((count (args-count a))
+                     direction
+                     binder
+                     body
+                     indexed)
+                (if (= count 1)
+                    (progn
+                      (setf direction (or forced-dir "ASC"))
+                      (setf indexed
+                            (loop for (nil . item) in ents
+                                  for idx from 0
+                                  collect (list :item item :key item :idx idx))))
+                    (progn
+                      (cond
+                        ((= count 2)
+                         (setf binder "_"
+                               body (args-node a 1)
+                               direction (or forced-dir "ASC")))
+                        ((= count 3)
+                         (cond
+                           (forced-dir
+                            (setf binder (args-symbol a 1)
+                                  body (args-node a 2)
+                                  direction forced-dir))
+                           ((eq (node-kind (args-node a 2)) :text)
+                            (setf binder "_"
+                                  body (args-node a 1)
+                                  direction (string-upcase (args-text a 2))))
+                           ((args-symbol-p a 1)
+                            (setf binder (args-symbol a 1)
+                                  body (args-node a 2)
+                                  direction "ASC"))
+                           (t
+                            (setf binder "_"
+                                  body (args-node a 1)
+                                  direction (string-upcase (args-text a 2))))))
+                        (t ; 4
+                         (setf binder (args-symbol a 1)
+                               body (args-node a 2)
+                               direction (string-upcase (args-text a 3)))))
+                      (unless (or (string= direction "ASC") (string= direction "DESC"))
+                        (let ((pos-idx (if (= count 4) 3 2)))
+                          (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
+                                (args-pos-of a pos-idx))))
+                      (setf indexed
+                            (loop for (k . item) in ents
+                                  for idx from 0
+                                  collect
+                                  (progn
+                                    (ctx-push-frame ctx (list (cons binder item)
+                                                             (cons "_K" (%text k))))
+                                    (let ((eval-key
+                                            (unwind-protect
+                                                 (args-eval a body)
+                                              (ctx-pop-frame ctx))))
+                                      (list :item item :key eval-key :idx idx)))))))
+                (let ((desc (string= direction "DESC")))
+                  (setf indexed
+                        (stable-sort indexed
+                                     (lambda (x y)
+                                       (let ((c (compare-values (getf x :key) (getf y :key))))
+                                         (when desc (setf c (- c)))
+                                         (< c 0))))))
+                (make-list-value
+                 (loop for x in indexed
+                       collect (value-copy (getf x :item))))))))))
+
+(define-builtin "SORT" 1 3
+  (lambda (a ctx) (do-sort a ctx "ASC"))
+  :lazy t :binds t)
+
+(define-builtin "SORT_DESC" 1 3
+  (lambda (a ctx) (do-sort a ctx "DESC"))
+  :lazy t :binds t)
+
+(define-builtin "SORT_BY" 2 4
+  (lambda (a ctx) (do-sort a ctx nil))
+  :lazy t :binds t)

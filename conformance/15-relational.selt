@@ -1,0 +1,291 @@
+# Conformance suite: In-memory relational operators.
+#
+# RECORD, LIST, TAKE, DROP, DISTINCT, SELECT_COLS, SORT, SORT_DESC, SORT_BY.
+# Normative. Every implementation must pass every case.
+
+### name: rel.record.empty
+--- source
+RECORD()
+--- expect
+none
+===
+
+### name: rel.record.single
+--- source
+RECORD("a", 1)
+--- expect
+tree -{"a"=t"1"}
+===
+
+### name: rel.record.multiple
+--- source
+RECORD("id", 10, "name", "Alice")
+--- expect
+tree -{"id"=t"10", "name"=t"Alice"}
+===
+
+### name: rel.record.duplicate-key
+--- source
+RECORD("a", 1, "b", 2, "a", 3)
+--- expect
+tree -{"a"=t"3", "b"=t"2"}
+===
+
+### name: rel.record.odd-arity
+--- source
+RECORD("a")
+--- expect
+error E_ARITY
+===
+
+### name: rel.record.odd-arity-multiple
+--- source
+RECORD("a", 1, "b")
+--- expect
+error E_ARITY
+===
+
+### name: rel.list.empty
+--- source
+LIST()
+--- expect
+none
+===
+
+### name: rel.list.scalars
+--- source
+LIST(1, 2, 3)
+--- expect
+tree -{"1"=t"1", "2"=t"2", "3"=t"3"}
+===
+
+### name: rel.list.records
+--- source
+LIST(RECORD("k", 1), RECORD("k", 2))
+--- expect
+tree -{"1"=-{"k"=t"1"}, "2"=-{"k"=t"2"}}
+===
+
+### name: rel.take.subset
+--- source
+LIST(1, 2, 3, 4) .> TAKE(2)
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: rel.take.exact
+--- source
+LIST(1, 2) .> TAKE(2)
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: rel.take.excess
+--- source
+LIST(1, 2) .> TAKE(5)
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: rel.take.zero
+--- source
+LIST(1, 2) .> TAKE(0)
+--- expect
+none
+===
+
+### name: rel.take.null
+--- source
+TAKE(NULL, 2)
+--- expect
+none
+===
+
+### name: rel.take.negative
+--- source
+LIST(1, 2) .> TAKE(-1)
+--- expect
+error E_RANGE
+===
+
+### name: rel.take.float
+--- source
+LIST(1, 2) .> TAKE(1.5)
+--- expect
+error E_NOT_INT
+===
+
+### name: rel.drop.subset
+--- source
+LIST(1, 2, 3, 4) .> DROP(2)
+--- expect
+tree -{"1"=t"3", "2"=t"4"}
+===
+
+### name: rel.drop.exact
+--- source
+LIST(1, 2) .> DROP(2)
+--- expect
+none
+===
+
+### name: rel.drop.excess
+--- source
+LIST(1, 2) .> DROP(5)
+--- expect
+none
+===
+
+### name: rel.drop.zero
+--- source
+LIST(1, 2) .> DROP(0)
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: rel.drop.null
+--- source
+DROP(NULL, 2)
+--- expect
+none
+===
+
+### name: rel.drop.negative
+--- source
+LIST(1, 2) .> DROP(-1)
+--- expect
+error E_RANGE
+===
+
+### name: rel.drop.float
+--- source
+LIST(1, 2) .> DROP(1.5)
+--- expect
+error E_NOT_INT
+===
+
+### name: rel.distinct.numbers
+--- source
+LIST(1, 2, 2, 3, 1) .> DISTINCT()
+--- expect
+tree -{"1"=t"1", "2"=t"2", "3"=t"3"}
+===
+
+### name: rel.distinct.strings
+--- source
+LIST("a", "b", "a") .> DISTINCT()
+--- expect
+tree -{"1"=t"a", "2"=t"b"}
+===
+
+### name: rel.distinct.records
+--- source
+LIST(RECORD("k", 1), RECORD("k", 2), RECORD("k", 1)) .> DISTINCT()
+--- expect
+tree -{"1"=-{"k"=t"1"}, "2"=-{"k"=t"2"}}
+===
+
+### name: rel.distinct.null
+--- source
+DISTINCT(NULL)
+--- expect
+none
+===
+
+### name: rel.select-cols.projection
+--- source
+LIST(RECORD("a", 1, "b", 2, "c", 3), RECORD("a", 4, "b", 5, "c", 6)) .> SELECT_COLS("a", "c")
+--- expect
+tree -{"1"=-{"a"=t"1", "c"=t"3"}, "2"=-{"a"=t"4", "c"=t"6"}}
+===
+
+### name: rel.select-cols.missing-key
+--- source
+LIST(RECORD("a", 1), RECORD("b", 2)) .> SELECT_COLS("a", "x")
+--- expect
+tree -{"1"=-{"a"=t"1"}, "2"=-}
+===
+
+### name: rel.select-cols.null
+--- source
+SELECT_COLS(NULL, "a")
+--- expect
+none
+===
+
+### name: rel.sort.direct-asc
+--- source
+LIST(3, 1, 2) .> SORT()
+--- expect
+tree -{"1"=t"1", "2"=t"2", "3"=t"3"}
+===
+
+### name: rel.sort.direct-desc
+--- source
+LIST(3, 1, 2) .> SORT_DESC()
+--- expect
+tree -{"1"=t"3", "2"=t"2", "3"=t"1"}
+===
+
+### name: rel.sort.text
+--- source
+LIST("b", "a", "c") .> SORT()
+--- expect
+tree -{"1"=t"a", "2"=t"b", "3"=t"c"}
+===
+
+### name: rel.sort.mixed
+--- source
+LIST("text", 42, TRUE, NULL) .> SORT()
+--- expect
+tree -{"1"=-, "2"=TRUE, "3"=t"42", "4"=t"text"}
+===
+
+### name: rel.sort-by.default-asc
+--- source
+LIST(RECORD("n", 30), RECORD("n", 10), RECORD("n", 20)) .> SORT_BY(_["n"]) .> MAP(_["n"])
+--- expect
+tree -{"1"=t"10", "2"=t"20", "3"=t"30"}
+===
+
+### name: rel.sort-by.explicit-desc
+--- source
+LIST(RECORD("n", 30), RECORD("n", 10), RECORD("n", 20)) .> SORT_BY(_["n"], "DESC") .> MAP(_["n"])
+--- expect
+tree -{"1"=t"30", "2"=t"20", "3"=t"10"}
+===
+
+### name: rel.sort-by.custom-binder
+--- source
+LIST(RECORD("n", 2), RECORD("n", 1)) .> SORT_BY(R, R["n"]) .> MAP(_["n"])
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: rel.sort-by.custom-binder-desc
+--- source
+LIST(RECORD("n", 1), RECORD("n", 2)) .> SORT_BY(R, R["n"], "DESC") .> MAP(_["n"])
+--- expect
+tree -{"1"=t"2", "2"=t"1"}
+===
+
+### name: rel.sort-by.bad-dir
+--- source
+SORT_BY(LIST(1, 2), _, "UP")
+--- expect
+error E_BAD_ARG
+===
+
+### name: rel.sort-by.stable
+--- source
+LIST(RECORD("k", 1, "id", "first"), RECORD("k", 1, "id", "second")) .> SORT_BY(_["k"]) .> MAP(_["id"])
+--- expect
+tree -{"1"=t"first", "2"=t"second"}
+===
+
+### name: rel.pipeline.query
+--- source
+LIST(RECORD("cat", "A", "val", 10), RECORD("cat", "B", "val", 50), RECORD("cat", "A", "val", 30), RECORD("cat", "B", "val", 20)) .> FILTER(_["cat"] $== "A") .> SORT_BY(_["val"], "DESC") .> SELECT_COLS("val")
+--- expect
+tree -{"1"=-{"val"=t"30"}, "2"=-{"val"=t"10"}}
+===

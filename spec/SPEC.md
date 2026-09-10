@@ -651,6 +651,9 @@ its first argument, in insertion order.
 | `FILTER(list, body)` | the elements for which `body` is `TRUE`, **keys preserved**. |
 | `SUM(list, body)` | the exact sum of each `body` result. Empty list yields `0`. |
 | `JOIN(list, sep)` | TEXT — **strict**, not an aggregate body; concatenates each element's scalar with `sep` between. |
+| `SORT(list [, body])` | list sorted ascending; `body` optional (defaults to element itself). |
+| `SORT_DESC(list [, body])` | list sorted descending; `body` optional (defaults to element itself). |
+| `SORT_BY(list, [binder,] key [, dir])` | list sorted by evaluated `key`; optional `dir` (`"ASC"` or `"DESC"`, default `"ASC"`). |
 
 Within a body, `_` is bound to the element and `_K` to its key.
 
@@ -678,6 +681,12 @@ failure.
 | `COUNT(x)` | number of children |
 | `INDEXES(x)` | list of the keys, in order |
 | `HAS(x, key)` | BOOL |
+| `LIST(v1, v2, …)` | list of values without flattening nested lists/records |
+| `RECORD(k1, v1, k2, v2, …)` | record from key-value pairs; even argument count required (`E_ARITY` otherwise) |
+| `TAKE(list, n)` | first `n` elements as a list (`n >= 0`, `E_RANGE` if negative, `E_NOT_INT` if non-integer) |
+| `DROP(list, n)` | list after dropping first `n` elements (`n >= 0`, `E_RANGE` if negative, `E_NOT_INT` if non-integer) |
+| `SELECT_COLS(rel, c1, c2, …)` | list of records with only specified column keys preserved |
+| `DISTINCT(list)` | list of unique elements preserving order of first occurrence via `EQL` |
 
 ### 7.5 Text
 

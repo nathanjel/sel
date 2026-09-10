@@ -4,6 +4,8 @@
 import * as D from '../decimal.mjs';
 import { Value, NONE } from '../value.mjs';
 import { define } from '../registry.mjs';
+import { bytesCompare } from '../utf8.mjs';
+import { fail } from '../errors.mjs';
 
 // Two-argument form binds `_`; three-argument form takes a bare identifier as
 // the binder, checked by inspecting the AST node the caller handed us.
@@ -102,4 +104,124 @@ define({
     for (const [, item] of elements(args.val(0))) parts.push(item.asText(args.posOf(0)));
     return Value.text(parts.join(sep));
   },
+});
+
+function compareValues(a, b) {
+  const aNull = a.isNull();
+  const bNull = b.isNull();
+  if (aNull && bNull) return 0;
+  if (aNull) return -1;
+  if (bNull) return 1;
+
+  const aNum = a.looksNumeric();
+  const bNum = b.looksNumeric();
+  if (aNum && bNum) {
+    return D.cmp(a.asDecimal(), b.asDecimal());
+  }
+
+  if (a.kind === 'BOOL' && b.kind === 'BOOL') {
+    const av = a.scalar ? 1 : 0;
+    const bv = b.scalar ? 1 : 0;
+    return av - bv;
+  }
+
+  if ((a.kind === 'TEXT' || a.kind === 'BIN') && (b.kind === 'TEXT' || b.kind === 'BIN')) {
+    return bytesCompare(a.asBytes(), b.asBytes());
+  }
+
+  const rank = (v) => {
+    if (v.isNull()) return 0;
+    if (v.kind === 'BOOL') return 1;
+    if (v.looksNumeric()) return 2;
+    if (v.kind === 'TEXT') return 3;
+    if (v.kind === 'BIN') return 4;
+    return 5;
+  };
+  return rank(a) - rank(b);
+}
+
+function doSort(args, ctx, forcedDir) {
+  const val = args.val(0);
+  if (val.isNull()) return Value.list([]);
+  const entries = elements(val);
+  if (entries.length === 0) return Value.list([]);
+
+  const count = args.count();
+  let dir;
+  let indexed;
+
+  if (count === 1) {
+    dir = forcedDir || 'ASC';
+    indexed = entries.map(([, item], idx) => ({ item, key: item, idx }));
+  } else {
+    let binder;
+    let body;
+    if (count === 2) {
+      binder = '_';
+      body = args.node(1);
+      dir = forcedDir || 'ASC';
+    } else if (count === 3) {
+      if (forcedDir !== null) {
+        binder = args.symbol(1);
+        body = args.node(2);
+        dir = forcedDir;
+      } else if (args.node(2).t === 'text') {
+        binder = '_';
+        body = args.node(1);
+        dir = args.text(2).toUpperCase();
+      } else if (args.isSymbol(1)) {
+        binder = args.symbol(1);
+        body = args.node(2);
+        dir = 'ASC';
+      } else {
+        binder = '_';
+        body = args.node(1);
+        dir = args.text(2).toUpperCase();
+      }
+    } else {
+      binder = args.symbol(1);
+      body = args.node(2);
+      dir = args.text(3).toUpperCase();
+    }
+
+    if (dir !== 'ASC' && dir !== 'DESC') {
+      const posIdx = count === 4 ? 3 : 2;
+      fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(posIdx));
+    }
+
+    indexed = entries.map(([k, item], idx) => {
+      const frame = new Map([[binder, item], ['_K', Value.text(k)]]);
+      ctx.pushFrame(frame);
+      let evalKey;
+      try {
+        evalKey = args.evalNode(body);
+      } finally {
+        ctx.popFrame();
+      }
+      return { item, key: evalKey, idx };
+    });
+  }
+
+  indexed.sort((x, y) => {
+    let c = compareValues(x.key, y.key);
+    if (dir === 'DESC') c = -c;
+    return c !== 0 ? c : (x.idx - y.idx);
+  });
+
+  return Value.list(indexed.map((x) => x.item.clone()));
+}
+
+define({
+  name: 'SORT', min: 1, max: 3, lazy: true, binds: true,
+  fn: (args, ctx) => doSort(args, ctx, 'ASC'),
+});
+
+define({
+  name: 'SORT_DESC', min: 1, max: 3, lazy: true, binds: true,
+  fn: (args, ctx) => doSort(args, ctx, 'DESC'),
+});
+
+define({
+  name: 'SORT_BY', min: 2, max: 4, lazy: true, binds: true,
+  fn: (args, ctx) => doSort(args, ctx, null),
 });
