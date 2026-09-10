@@ -22,5 +22,6 @@ require_once __DIR__ . '/Binding.php';
 require_once __DIR__ . '/Bindings.php';
 require_once __DIR__ . '/Constants.php';
 require_once __DIR__ . '/Normalise.php';
+require_once __DIR__ . '/RelationalPlan.php';
 require_once __DIR__ . '/Translator.php';
 require_once __DIR__ . '/Sql.php';

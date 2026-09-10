@@ -67,6 +67,7 @@
      (:file "map-data")
      (:file "map")
      (:file "fragment")
+     (:file "relational-plan")
      (:file "emit")
      (:file "binding")
      (:file "stage1")

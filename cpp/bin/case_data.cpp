@@ -3100,6 +3100,180 @@ static std::vector<std::pair<std::string, Binding>> c484_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c485_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c486_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", "i", {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c487_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"ID", Binding::column("id", std::nullopt, SqlKind::Unknown)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c488_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"ID", Binding::column("id", std::nullopt, SqlKind::Unknown)}, {"TOTAL", Binding::column("total", std::nullopt, SqlKind::Unknown)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c489_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"ID", Binding::column("id", std::nullopt, SqlKind::Unknown)}, {"TOTAL", Binding::column("total", std::nullopt, SqlKind::Unknown)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c490_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", "i", {{"ID", Binding::column("id", std::nullopt, SqlKind::Unknown)}, {"TOTAL", Binding::column("total", std::nullopt, SqlKind::Unknown)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c491_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c492_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c493_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"ID", Binding::column("id", std::nullopt, SqlKind::Num)}, {"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c494_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c495_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"ID", Binding::column("id", std::nullopt, SqlKind::Unknown)}, {"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c496_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"ID", Binding::column("id", std::nullopt, SqlKind::Unknown)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c497_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c498_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c499_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c500_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c501_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c502_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c503_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c504_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c505_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c506_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c507_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", "i", {{"TOTAL", Binding::column("total", "i", SqlKind::Num)}}, std::nullopt, "i.order_id = o.id")},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c508_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"TOTAL", Binding::column("total", std::nullopt, SqlKind::Num)}, {"NAME", Binding::column("name", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c509_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"NAME", Binding::column("name", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c510_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c511_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c512_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c513_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"ID", Binding::column("id", std::nullopt, SqlKind::Unknown)}}, std::nullopt, std::nullopt)},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -9891,6 +10065,412 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c484_bind},
+    {.name = "stmt.basic.star",
+     .at = "23-statements.sqlt:7",
+     .dialect = "mariadb",
+     .source = "ITEMS",
+     .expect = "SELECT * FROM `items`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c485_bind},
+    {.name = "stmt.basic.alias",
+     .at = "23-statements.sqlt:20",
+     .dialect = "mariadb",
+     .source = "ITEMS",
+     .expect = "SELECT `i`.* FROM `items` `i`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c486_bind},
+    {.name = "stmt.select-cols.single",
+     .at = "23-statements.sqlt:33",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SELECT_COLS(\"id\")",
+     .expect = "SELECT `id` FROM `items`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c487_bind},
+    {.name = "stmt.select-cols.multi",
+     .at = "23-statements.sqlt:46",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SELECT_COLS(\"id\", \"total\")",
+     .expect = "SELECT `id`, `total` FROM `items`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c488_bind},
+    {.name = "stmt.select-cols.list",
+     .at = "23-statements.sqlt:59",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SELECT_COLS((\"id\", \"total\"))",
+     .expect = "SELECT `id`, `total` FROM `items`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c489_bind},
+    {.name = "stmt.select-cols.with-alias",
+     .at = "23-statements.sqlt:72",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SELECT_COLS(\"id\", \"total\")",
+     .expect = "SELECT `i`.`id`, `i`.`total` FROM `items` `i`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c490_bind},
+    {.name = "stmt.filter.default-binder",
+     .at = "23-statements.sqlt:85",
+     .dialect = "mariadb",
+     .source = "ITEMS .> FILTER(_[\"total\"] > 100)",
+     .expect = "SELECT * FROM `items` WHERE (`total` > 100)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c491_bind},
+    {.name = "stmt.filter.custom-binder",
+     .at = "23-statements.sqlt:98",
+     .dialect = "mariadb",
+     .source = "ITEMS .> FILTER(x, x[\"total\"] > 100)",
+     .expect = "SELECT * FROM `items` WHERE (`total` > 100)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c492_bind},
+    {.name = "stmt.filter.multi",
+     .at = "23-statements.sqlt:111",
+     .dialect = "mariadb",
+     .source = "ITEMS .> FILTER(_[\"total\"] > 100) .> FILTER(_[\"id\"] == 1)",
+     .expect = "SELECT * FROM `items` WHERE (`total` > 100) AND (`id` = 1)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c493_bind},
+    {.name = "stmt.map.scalar",
+     .at = "23-statements.sqlt:124",
+     .dialect = "mariadb",
+     .source = "ITEMS .> MAP(_[\"total\"] * 2)",
+     .expect = "SELECT (`total` * 2) FROM `items`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c494_bind},
+    {.name = "stmt.map.record",
+     .at = "23-statements.sqlt:137",
+     .dialect = "mariadb",
+     .source = "ITEMS .> MAP(RECORD(\"doubled\", _[\"total\"] * 2, \"ident\", _[\"id\"]))",
+     .expect = "SELECT (`total` * 2) AS `doubled`, `id` AS `ident` FROM `items`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c495_bind},
+    {.name = "stmt.distinct",
+     .at = "23-statements.sqlt:150",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SELECT_COLS(\"id\") .> DISTINCT()",
+     .expect = "SELECT DISTINCT `id` FROM `items`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c496_bind},
+    {.name = "stmt.order-by.sort-by-asc",
+     .at = "23-statements.sqlt:163",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SORT_BY(_[\"total\"])",
+     .expect = "SELECT * FROM `items` ORDER BY `total` ASC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c497_bind},
+    {.name = "stmt.order-by.sort-by-desc",
+     .at = "23-statements.sqlt:176",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SORT_BY(_[\"total\"], \"DESC\")",
+     .expect = "SELECT * FROM `items` ORDER BY `total` DESC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c498_bind},
+    {.name = "stmt.order-by.sort-by-named-binder",
+     .at = "23-statements.sqlt:189",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SORT_BY(r, r[\"total\"], \"DESC\")",
+     .expect = "SELECT * FROM `items` ORDER BY `total` DESC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c499_bind},
+    {.name = "stmt.order-by.sort-desc-named-binder",
+     .at = "23-statements.sqlt:202",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SORT_DESC(r, r[\"total\"])",
+     .expect = "SELECT * FROM `items` ORDER BY `total` DESC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c500_bind},
+    {.name = "stmt.order-by.sort-single-field",
+     .at = "23-statements.sqlt:215",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SORT()",
+     .expect = "SELECT * FROM `items` ORDER BY `total` ASC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c501_bind},
+    {.name = "stmt.limit-offset.take",
+     .at = "23-statements.sqlt:228",
+     .dialect = "mariadb",
+     .source = "ITEMS .> TAKE(10)",
+     .expect = "SELECT * FROM `items` LIMIT 10",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c502_bind},
+    {.name = "stmt.limit-offset.take-and-drop",
+     .at = "23-statements.sqlt:241",
+     .dialect = "mariadb",
+     .source = "ITEMS .> TAKE(10) .> DROP(20)",
+     .expect = "SELECT * FROM `items` LIMIT 10 OFFSET 20",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c503_bind},
+    {.name = "stmt.limit-offset.drop-mariadb",
+     .at = "23-statements.sqlt:254",
+     .dialect = "mariadb",
+     .source = "ITEMS .> DROP(5)",
+     .expect = "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 5",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c504_bind},
+    {.name = "stmt.limit-offset.drop-sqlite",
+     .at = "23-statements.sqlt:267",
+     .dialect = "sqlite",
+     .source = "ITEMS .> DROP(5)",
+     .expect = "SELECT * FROM \"items\" LIMIT -1 OFFSET 5",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c505_bind},
+    {.name = "stmt.limit-offset.drop-postgres",
+     .at = "23-statements.sqlt:280",
+     .dialect = "postgresql",
+     .source = "ITEMS .> DROP(5)",
+     .expect = "SELECT * FROM \"items\" OFFSET 5",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c506_bind},
+    {.name = "stmt.correlate",
+     .at = "23-statements.sqlt:293",
+     .dialect = "mariadb",
+     .source = "ITEMS .> FILTER(_[\"total\"] > 10)",
+     .expect = "SELECT `i`.* FROM `items` `i` WHERE i.order_id = o.id AND (`i`.`total` > 10)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c507_bind},
+    {.name = "stmt.params.mode",
+     .at = "23-statements.sqlt:306",
+     .dialect = "mariadb",
+     .source = "ITEMS .> FILTER(_[\"total\"] > 100) .> FILTER(_[\"name\"] $== \"foo\")",
+     .expect = "SELECT * FROM `items` WHERE (`total` > 100) AND (`name` = ?)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = "t\"foo\"",
+     .as_ = "statement",
+     .mode = "params",
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c508_bind},
+    {.name = "stmt.params.order-by",
+     .at = "23-statements.sqlt:323",
+     .dialect = "mariadb",
+     .source = "ITEMS .> FILTER(_[\"name\"] $== \"foo\") .> SORT_BY(_[\"name\"] & \"bar\")",
+     .expect = "SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CONCAT(`name`, ~2~) ASC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = "debug",
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c509_bind},
+    {.name = "stmt.refusal.as-value",
+     .at = "23-statements.sqlt:338",
+     .dialect = "mariadb",
+     .source = "ITEMS",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "value",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c510_bind},
+    {.name = "stmt.refusal.take-negative",
+     .at = "23-statements.sqlt:351",
+     .dialect = "mariadb",
+     .source = "ITEMS .> TAKE(-1)",
+     .expect = nullptr,
+     .error = "E_RANGE 1:15",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c511_bind},
+    {.name = "stmt.refusal.take-float",
+     .at = "23-statements.sqlt:364",
+     .dialect = "mariadb",
+     .source = "ITEMS .> TAKE(1.5)",
+     .expect = nullptr,
+     .error = "E_NOT_INT 1:15",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c512_bind},
+    {.name = "stmt.refusal.unknown-col",
+     .at = "23-statements.sqlt:377",
+     .dialect = "mariadb",
+     .source = "ITEMS .> SELECT_COLS(\"nonexistent\")",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:22",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c513_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

@@ -11,7 +11,8 @@
 import { toCodePoints } from '../utf8.mjs';
 import { validate as regexValidate } from '../builtins/regex.mjs';
 import { SelError } from '../errors.mjs';
-import { MAX_DEPTH } from '../eval.mjs';
+import { evalNode, MAX_DEPTH, Context } from '../eval.mjs';
+import * as dec from '../decimal.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { Value, quoteDump } from '../value.mjs';
 import * as constants from './constants.mjs';
@@ -21,6 +22,7 @@ import { Binder } from './binder.mjs';
 import { Emit } from './emit.mjs';
 import { refuse } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
+import { RelationalPlan } from './relational-plan.mjs';
 
 // SEL list keys are the canonical decimals "1", "2", … — so "01" is not a key and
 // neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer used
@@ -42,6 +44,7 @@ function listKey(k) {
 
 // Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
+const PIPELINE_OPS = ['FILTER', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP'];
 
 const AGG_RETURNS = { ALL: 'BOOL', ANY: 'BOOL', SUM: 'NUM', JOIN: 'TEXT',
   MAP: 'LIST', FILTER: 'LIST' };
@@ -132,10 +135,33 @@ export class Translator {
     this.frames = [];
     this.depth = 0;
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
-    const f = this.node(normalise.run(ast, this.constNames, this.constCtx));
+    const norm = normalise.run(ast, this.constNames, this.constCtx);
+    const plan = this.analyzePipeline(norm);
+    if (plan !== null) {
+      return this.compileStatement(plan);
+    }
+    const f = this.node(norm);
 
     return new Fragment(f.parts, f.kind, this.dialect, this.params,
       this.paramKinds, [...this.caveats]);
+  }
+
+  translateStatement(ast) {
+    map.requireTarget(this.dialect);
+    this.bindings.checkAliases();
+
+    this.params = [];
+    this.paramKinds = [];
+    this.caveats = new Set();
+    this.frames = [];
+    this.depth = 0;
+    [this.constNames, this.constCtx] = constants.scope(this.bindings);
+    const norm = normalise.run(ast, this.constNames, this.constCtx);
+    const plan = this.analyzePipeline(norm);
+    if (plan === null) {
+      refuse('E_SQL_SHAPE', 'expected a relational query or pipeline');
+    }
+    return this.compileStatement(plan);
   }
 
   // --- the walk ------------------------------------------------------------
@@ -1455,6 +1481,412 @@ export class Translator {
       }
     }
     return parts;
+  }
+
+  // --- Relational Pipeline Statement Compilation --------------------------
+
+  analyzePipeline(n) {
+    const steps = [];
+    let curr = n;
+    while (curr.t === 'call' && PIPELINE_OPS.includes(curr.name)) {
+      if (!curr.args || curr.args.length === 0) break;
+      steps.push(curr);
+      curr = curr.args[0];
+    }
+
+    if (curr.t !== 'var') return null;
+
+    if (!this.bindings.has(curr.name)) return null;
+    const b = this.bindings.get(curr.name);
+    if (b.kind !== 'relation') return null;
+
+    const plan = new RelationalPlan();
+    plan.sourceName = curr.name;
+    plan.sourceRelation = b;
+    plan.sourceTable = b.from;
+    plan.sourceAlias = b.alias ?? null;
+    plan.correlate = b.correlate && typeof b.correlate === 'object' && b.correlate.raw
+      ? String(b.correlate.raw)
+      : (typeof b.correlate === 'string' ? b.correlate : null);
+
+    steps.reverse();
+
+    for (const step of steps) {
+      const name = step.name;
+      const args = step.args;
+
+      switch (name) {
+        case 'FILTER': {
+          let binder;
+          let pred;
+          if (args.length === 2) {
+            binder = '_';
+            pred = args[1];
+          } else if (args.length === 3) {
+            if (!constants.isBinderName(args[1])) {
+              refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', args[1].pos);
+            }
+            binder = args[1].name;
+            pred = args[2];
+          } else {
+            refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos);
+          }
+          plan.filters.push({ binder, node: pred, pos: step.pos });
+          break;
+        }
+
+        case 'SELECT_COLS': {
+          const colArgs = args.slice(1);
+          const items = colArgs.length === 1 && colArgs[0].t === 'list'
+            ? colArgs[0].items
+            : colArgs;
+          const cols = [];
+          for (const item of items) {
+            if (item.t !== 'text') {
+              refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos);
+            }
+            const col = item.v;
+            if (plan.sourceRelation.fields && Object.keys(plan.sourceRelation.fields).length > 0) {
+              const uc = asciiUpper(col);
+              if (!Object.hasOwn(plan.sourceRelation.fields, uc)) {
+                refuse('E_SQL_SHAPE',
+                  `relation ${plan.sourceName} has no field '${col}'; the relation declares `
+                  + Object.keys(plan.sourceRelation.fields).join(', '), item.pos);
+              }
+            }
+            cols.push(col);
+          }
+          plan.selectCols = cols;
+          plan.projections = null;
+          break;
+        }
+
+        case 'MAP': {
+          let binder;
+          let expr;
+          if (args.length === 2) {
+            binder = '_';
+            expr = args[1];
+          } else if (args.length === 3) {
+            if (!constants.isBinderName(args[1])) {
+              refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', args[1].pos);
+            }
+            binder = args[1].name;
+            expr = args[2];
+          } else {
+            refuse('E_ARITY', 'MAP takes 2 or 3 arguments', step.pos);
+          }
+
+          if (expr.t === 'call' && expr.name === 'RECORD') {
+            const recArgs = expr.args;
+            if (recArgs.length % 2 !== 0) {
+              refuse('E_ARITY', 'RECORD takes an even number of arguments', expr.pos);
+            }
+            const projections = [];
+            for (let i = 0; i < recArgs.length; i += 2) {
+              const kNode = recArgs[i];
+              const vNode = recArgs[i + 1];
+              if (kNode.t !== 'text') {
+                refuse('E_BAD_ARG', 'RECORD field names must be string literals', kNode.pos);
+              }
+              projections.push({
+                alias: kNode.v,
+                binder,
+                node: vNode,
+              });
+            }
+            plan.projections = projections;
+          } else {
+            plan.projections = [
+              {
+                alias: null,
+                binder,
+                node: expr,
+              },
+            ];
+          }
+          plan.selectCols = null;
+          break;
+        }
+
+        case 'DISTINCT':
+          plan.distinct = true;
+          break;
+
+        case 'TAKE': {
+          if (args.length !== 2) {
+            refuse('E_ARITY', 'TAKE takes 2 arguments', step.pos);
+          }
+          const lim = this.evalIntParam(args[1], 'TAKE');
+          plan.limit = plan.limit === null ? lim : Math.min(plan.limit, lim);
+          break;
+        }
+
+        case 'DROP': {
+          if (args.length !== 2) {
+            refuse('E_ARITY', 'DROP takes 2 arguments', step.pos);
+          }
+          const off = this.evalIntParam(args[1], 'DROP');
+          plan.offset = (plan.offset ?? 0) + off;
+          break;
+        }
+
+        case 'SORT':
+        case 'SORT_DESC':
+        case 'SORT_BY':
+          this.analyzeSortStep(step, plan);
+          break;
+      }
+    }
+
+    return plan;
+  }
+
+  evalIntParam(n, op) {
+    let val;
+    try {
+      val = evalNode(n, this.constCtx ?? new Context());
+    } catch (e) {
+      if (e instanceof SelError) {
+        constants.refuseAsSel(e, n);
+      }
+      throw e;
+    }
+    if (!val.looksNumeric() || val.isNull()) {
+      refuse('E_NOT_NUM', `${op} count must be a number`, n.pos);
+    }
+    const d = val.asDecimal(n.pos);
+    if (d.scale !== 0) {
+      refuse('E_NOT_INT', `${op} count must be an integer`, n.pos);
+    }
+    if (d.neg) {
+      refuse('E_RANGE', `${op} count cannot be negative`, n.pos);
+    }
+    return Number(d.digits);
+  }
+
+  analyzeSortStep(step, plan) {
+    const name = step.name;
+    const args = step.args;
+    const count = args.length;
+
+    if (name === 'SORT' || name === 'SORT_DESC') {
+      const dir = name === 'SORT' ? 'ASC' : 'DESC';
+      if (count === 1) {
+        if (plan.sourceRelation.scalar) {
+          const scalarCol = plan.sourceRelation.scalar;
+          plan.orderBy.push({
+            binder: '_',
+            node: {
+              t: 'index',
+              obj: { t: 'var', name: '_', pos: step.pos },
+              idx: { t: 'text', v: scalarCol, pos: step.pos },
+              pos: step.pos,
+            },
+            dir,
+            pos: step.pos,
+          });
+          return;
+        }
+        const fieldKeys = Object.keys(plan.sourceRelation.fields ?? {});
+        if (fieldKeys.length === 1) {
+          const fieldName = fieldKeys[0];
+          plan.orderBy.push({
+            binder: '_',
+            node: {
+              t: 'index',
+              obj: { t: 'var', name: '_', pos: step.pos },
+              idx: { t: 'text', v: fieldName, pos: step.pos },
+              pos: step.pos,
+            },
+            dir,
+            pos: step.pos,
+          });
+          return;
+        }
+        refuse('E_SQL_SHAPE', 'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos);
+      } else if (count === 2) {
+        plan.orderBy.push({
+          binder: '_',
+          node: args[1],
+          dir,
+          pos: step.pos,
+        });
+        return;
+      } else if (count === 3) {
+        if (!constants.isBinderName(args[1])) {
+          refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos);
+        }
+        plan.orderBy.push({
+          binder: args[1].name,
+          node: args[2],
+          dir,
+          pos: step.pos,
+        });
+        return;
+      } else {
+        refuse('E_ARITY', `${name} takes 1 to 3 arguments`, step.pos);
+      }
+    }
+
+    // SORT_BY
+    let binder;
+    let key;
+    let dir;
+    if (count === 2) {
+      binder = '_';
+      key = args[1];
+      dir = 'ASC';
+    } else if (count === 3) {
+      if (args[2].t === 'text') {
+        binder = '_';
+        key = args[1];
+        dir = asciiUpper(args[2].v);
+      } else if (constants.isBinderName(args[1])) {
+        binder = args[1].name;
+        key = args[2];
+        dir = 'ASC';
+      } else {
+        binder = '_';
+        key = args[1];
+        dir = asciiUpper(args[2].v);
+      }
+    } else if (count === 4) {
+      if (!constants.isBinderName(args[1])) {
+        refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos);
+      }
+      binder = args[1].name;
+      key = args[2];
+      if (args[3].t !== 'text') {
+        refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[3].pos);
+      }
+      dir = asciiUpper(args[3].v);
+    } else {
+      refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', step.pos);
+    }
+
+    if (dir !== 'ASC' && dir !== 'DESC') {
+      const dirPos = count === 4 ? args[3].pos : args[2].pos;
+      refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", dirPos);
+    }
+
+    plan.orderBy.push({
+      binder,
+      node: key,
+      dir,
+      pos: step.pos,
+    });
+  }
+
+  compileStatement(plan) {
+    const parts = [];
+    parts.push(plan.distinct ? 'SELECT DISTINCT ' : 'SELECT ');
+
+    const src = {
+      relation: plan.sourceRelation,
+      filters: plan.filters,
+      pos: null,
+    };
+
+    // 1. SELECT list (Projections)
+    if (plan.projections !== null) {
+      let first = true;
+      for (const proj of plan.projections) {
+        if (!first) parts.push(', ');
+        first = false;
+        const pFrag = this.withRow(src, proj.binder, () => this.node(proj.node));
+        for (const p of pFrag.parts) parts.push(p);
+        if (proj.alias !== null) {
+          parts.push(' AS ' + this.emit.ident(proj.alias));
+        }
+      }
+    } else if (plan.selectCols !== null) {
+      let first = true;
+      for (const col of plan.selectCols) {
+        if (!first) parts.push(', ');
+        first = false;
+        const uc = asciiUpper(col);
+        const fSpec = plan.sourceRelation.fields ? plan.sourceRelation.fields[uc] : null;
+        const table = fSpec?.table ?? plan.sourceAlias;
+        const column = fSpec?.column ?? col;
+        parts.push(this.emit.column(table, column));
+      }
+    } else {
+      if (plan.sourceAlias !== null) {
+        parts.push(this.emit.ident(plan.sourceAlias) + '.*');
+      } else {
+        parts.push('*');
+      }
+    }
+
+    // 2. FROM clause
+    parts.push(' FROM ');
+    let from = plan.sourceTable && typeof plan.sourceTable === 'object' && plan.sourceTable.raw
+      ? String(plan.sourceTable.raw)
+      : this.emit.ident(String(plan.sourceTable));
+    if (plan.sourceAlias) {
+      from += ' ' + this.emit.ident(String(plan.sourceAlias));
+    }
+    parts.push(from);
+
+    // 3. WHERE clause
+    const condParts = [];
+    if (plan.correlate) {
+      condParts.push([plan.correlate]);
+    }
+    for (const filter of plan.filters) {
+      const cFrag = this.withRow(src, filter.binder,
+        () => this.requireBool(this.node(filter.node), filter.pos, 'FILTER'));
+      condParts.push(cFrag.parts);
+    }
+
+    if (condParts.length > 0) {
+      parts.push(' WHERE ');
+      condParts.forEach((cp, idx) => {
+        if (idx > 0) parts.push(' AND ');
+        for (const p of cp) parts.push(p);
+      });
+    }
+
+    // 4. ORDER BY clause
+    if (plan.orderBy.length > 0) {
+      parts.push(' ORDER BY ');
+      let first = true;
+      for (const ord of plan.orderBy) {
+        if (!first) parts.push(', ');
+        first = false;
+        const oFrag = this.withRow(src, ord.binder, () => this.node(ord.node));
+        for (const p of oFrag.parts) parts.push(p);
+        parts.push(' ' + ord.dir);
+      }
+    }
+
+    // 5. LIMIT / OFFSET clause
+    const limit = plan.limit;
+    const offset = plan.offset;
+    if (limit !== null && offset !== null) {
+      parts.push(` LIMIT ${limit} OFFSET ${offset}`);
+    } else if (limit !== null) {
+      parts.push(` LIMIT ${limit}`);
+    } else if (offset !== null) {
+      const chain = map.chain(this.dialect);
+      if (chain.includes('mariadb') || chain.includes('mysql') || chain.includes('mysql-family')) {
+        parts.push(` LIMIT 18446744073709551615 OFFSET ${offset}`);
+      } else if (chain.includes('sqlite')) {
+        parts.push(` LIMIT -1 OFFSET ${offset}`);
+      } else {
+        parts.push(` OFFSET ${offset}`);
+      }
+    }
+
+    return new Fragment(
+      parts,
+      'STATEMENT',
+      this.dialect,
+      this.params,
+      this.paramKinds,
+      [...this.caveats]
+    );
   }
 }
 

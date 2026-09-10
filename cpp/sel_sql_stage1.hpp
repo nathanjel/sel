@@ -64,6 +64,7 @@ ConstScope const_scope(const Bindings* bindings);
 // language refuses is the one direction this layer must never fail in.
 bool is_binder_name(const Node& n);
 bool is_binder_name(const SNode& n);
+[[noreturn]] void refuse_as_sel(const SelError& e, const SNode& n);
 
 // Whether every leaf under `n` is a literal. A binder an aggregate introduces
 // inside `n` counts as bound, so `ALL((1, 2), _ > 0)` is constant and

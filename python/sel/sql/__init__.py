@@ -20,9 +20,10 @@ from .binding import Binding
 from .bindings import Bindings
 from .errors import SqlError
 from .fragment import Fragment
+from .relational_plan import RelationalPlan
 from .translator import Translator
 
-__all__ = ['DIALECTS', 'Binding', 'Bindings', 'Fragment', 'Sql', 'SqlError', 'map']
+__all__ = ['DIALECTS', 'Binding', 'Bindings', 'Fragment', 'RelationalPlan', 'Sql', 'SqlError', 'map']
 
 
 class Sql:
@@ -37,7 +38,8 @@ class Sql:
         want to know why a rule cannot be pushed down: during development, in a
         build-time audit of a rule set, or in a test.
         """
-        t = Translator(dialect, Bindings(bindings or {}), options or {})
+        b = bindings if isinstance(bindings, Bindings) else Bindings(bindings or {})
+        t = Translator(dialect, b, options or {})
         return t.translate(program.ast)
 
     @staticmethod
@@ -52,6 +54,23 @@ class Sql:
         """
         try:
             return Sql.translate(program, dialect, bindings, options)
+        except SqlError:
+            return None
+
+    @staticmethod
+    def translate_statement(program, dialect: str, bindings: dict[str, Any] | None = None,
+                            options: dict[str, Any] | None = None) -> Fragment:
+        """Translate a relational pipeline program into a SQL statement fragment."""
+        b = bindings if isinstance(bindings, Bindings) else Bindings(bindings or {})
+        t = Translator(dialect, b, options or {})
+        return t.translate_statement(program.ast)
+
+    @staticmethod
+    def try_translate_statement(program, dialect: str, bindings: dict[str, Any] | None = None,
+                                options: dict[str, Any] | None = None) -> Fragment | None:
+        """The same, returning None instead of raising."""
+        try:
+            return Sql.translate_statement(program, dialect, bindings, options)
         except SqlError:
             return None
 

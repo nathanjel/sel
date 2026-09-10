@@ -69,7 +69,7 @@ class SqlError : public std::exception {
 // Where the server can be asked the question instead -- is this a number? -- the
 // operand is wrapped and translation continues; where it cannot -- is this a
 // boolean? -- the expression is refused.
-enum class SqlKind { Num, Text, Bool, Bin, Unknown, List };
+enum class SqlKind { Num, Text, Bool, Bin, Unknown, List, Statement };
 
 std::string_view kind_name(SqlKind k);
 std::optional<SqlKind> kind_from_name(std::string_view name);
@@ -118,6 +118,9 @@ class Fragment {
   // o.total` is how a database turns a validation rule into the truthiness test
   // SEL spent its design avoiding.
   std::string as_condition(Mode mode = Mode::Inline) const;
+
+  // Usable as a top-level SQL query statement. STATEMENT and nothing else.
+  std::string as_statement(Mode mode = Mode::Inline) const;
 
   // The bound values for Params mode, in PLACEHOLDER order -- derived from the
   // part list rather than returned as stored, because the two orders are not the
@@ -383,6 +386,18 @@ class Sql {
                                                const std::string& dialect,
                                                const Bindings& bindings = {},
                                                const Options& options = {});
+
+  // Translate a compiled relational program into a SQL statement (SELECT ...).
+  static Fragment translate_statement(const Program& program,
+                                      const std::string& dialect,
+                                      const Bindings& bindings = {},
+                                      const Options& options = {});
+
+  // The same, returning nothing instead of throwing.
+  static std::optional<Fragment> try_translate_statement(const Program& program,
+                                                         const std::string& dialect,
+                                                         const Bindings& bindings = {},
+                                                         const Options& options = {});
 
   // Every dialect that may be named in a translate() call.
   static std::vector<std::string> dialects();

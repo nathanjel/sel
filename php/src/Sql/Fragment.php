@@ -20,7 +20,7 @@ use Sel\Value;
  */
 final class Fragment
 {
-    public const KINDS = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST'];
+    public const KINDS = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST', 'STATEMENT'];
 
     /** @var list<string|int> */
     public array $parts;
@@ -80,6 +80,20 @@ final class Fragment
     {
         if ($this->kind === 'LIST') {
             refuse('E_SQL_SHAPE', 'this expression yields a list, and a SQL expression is a scalar');
+        }
+        if ($this->kind === 'STATEMENT') {
+            refuse('E_SQL_SHAPE', 'this expression yields a statement, and a SQL expression is a scalar; use asStatement()');
+        }
+        return $this->join($mode);
+    }
+
+    /**
+     * Usable as a top-level SQL query statement.
+     */
+    public function asStatement(string $mode = 'inline'): string
+    {
+        if ($this->kind !== 'STATEMENT') {
+            refuse('E_SQL_SHAPE', "expected STATEMENT fragment, got {$this->kind}; use asValue() or asCondition()");
         }
         return $this->join($mode);
     }

@@ -262,9 +262,10 @@ bool constant_call(const SNode& n, const std::set<std::string>& bound) {
 
 // SEL's own refusal, reported as the translator's.
 //
-// The position is SEL's own -- the innermost node that failed, not the
-// outermost one this was entered at -- because that is the character the author
-// has to change.
+}  // namespace
+
+// --- the interface -----------------------------------------------------------
+
 [[noreturn]] void refuse_as_sel(const SelError& e, const SNode& n) {
   refuse("E_SQL_INVALID",
          "SEL rejects this expression (" + e.code() + ": " + e.message() +
@@ -272,10 +273,6 @@ bool constant_call(const SNode& n, const std::set<std::string>& bound) {
              "something rather than fail",
          e.line() > 0 ? e.pos() : n.pos());
 }
-
-}  // namespace
-
-// --- the interface -----------------------------------------------------------
 
 bool is_binder_name(const Node& n) { return is_binder_name_impl(n.t, n.grouped); }
 

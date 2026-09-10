@@ -15,9 +15,10 @@ import { Binding } from './binding.mjs';
 import { Bindings } from './bindings.mjs';
 import { SqlError } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
+import { RelationalPlan } from './relational-plan.mjs';
 import { Translator } from './translator.mjs';
 
-export { DIALECTS, Binding, Bindings, Fragment, SqlError, map };
+export { DIALECTS, Binding, Bindings, Fragment, RelationalPlan, SqlError, map };
 
 // The public interface of the SQL layer. See docs/SQL-TRANSLATION.md §10.
 export class Sql {
@@ -40,6 +41,22 @@ export class Sql {
   static tryTranslate(program, dialect, bindings = null, options = null) {
     try {
       return Sql.translate(program, dialect, bindings, options);
+    } catch (e) {
+      if (e instanceof SqlError) return null;
+      throw e;
+    }
+  }
+
+  // Translate a relational pipeline program into a SQL statement fragment.
+  static translateStatement(program, dialect, bindings = null, options = null) {
+    const t = new Translator(dialect, new Bindings(bindings ?? {}), options ?? {});
+    return t.translateStatement(program.ast);
+  }
+
+  // The same, returning null instead of throwing.
+  static tryTranslateStatement(program, dialect, bindings = null, options = null) {
+    try {
+      return Sql.translateStatement(program, dialect, bindings, options);
     } catch (e) {
       if (e instanceof SqlError) return null;
       throw e;

@@ -97,7 +97,9 @@ function runCase(c) {
     const bindings = c.bindings();
     const program = compile(c.source);
     frag = Sql.translate(program, dialect, bindings, options);
-    sql = as === 'condition' ? frag.asCondition(mode) : frag.asValue(mode);
+    sql = as === 'condition' ? frag.asCondition(mode)
+      : as === 'statement' ? frag.asStatement(mode)
+      : frag.asValue(mode);
   } catch (e) {
     if (e instanceof SuiteError) throw e;
     else if (e instanceof SqlError) error = e;
@@ -163,7 +165,8 @@ function runCase(c) {
   // `~1~`, not bare tildes: PostgreSQL's regex operator IS `~`, so counting them
   // divided a regex fragment's odd tilde count by two. PHP's runner shipped that
   // bug; this is the corrected form from the start.
-  const tildes = frag.asValue('debug').match(TILDE_RE) || [];
+  const debugStr = frag.kind === 'STATEMENT' ? frag.asStatement('debug') : frag.asValue('debug');
+  const tildes = debugStr.match(TILDE_RE) || [];
   if (frag.bindings().length !== tildes.length) {
     return 'bindings() and the emitted placeholders disagree in count';
   }

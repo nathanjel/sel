@@ -1,0 +1,388 @@
+# Statements: relational pipeline to SELECT queries.
+#
+# Covers top-level statement compilation across dialects:
+# sources, projections (SELECT_COLS, MAP(RECORD(...))),
+# filters, ordering, pagination (TAKE, DROP), and distinct.
+
+### name: stmt.basic.star
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS
+--- expect
+SELECT * FROM `items`
+===
+
+### name: stmt.basic.alias
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i"}}
+--- as
+statement
+--- source
+ITEMS
+--- expect
+SELECT `i`.* FROM `items` `i`
+===
+
+### name: stmt.select-cols.single
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"ID": {"kind": "column", "column": "id"}}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS("id")
+--- expect
+SELECT `id` FROM `items`
+===
+
+### name: stmt.select-cols.multi
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"ID": {"kind": "column", "column": "id"}, "TOTAL": {"kind": "column", "column": "total"}}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS("id", "total")
+--- expect
+SELECT `id`, `total` FROM `items`
+===
+
+### name: stmt.select-cols.list
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"ID": {"kind": "column", "column": "id"}, "TOTAL": {"kind": "column", "column": "total"}}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS(("id", "total"))
+--- expect
+SELECT `id`, `total` FROM `items`
+===
+
+### name: stmt.select-cols.with-alias
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"ID": {"kind": "column", "column": "id"}, "TOTAL": {"kind": "column", "column": "total"}}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS("id", "total")
+--- expect
+SELECT `i`.`id`, `i`.`total` FROM `items` `i`
+===
+
+### name: stmt.filter.default-binder
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(_["total"] > 100)
+--- expect
+SELECT * FROM `items` WHERE (`total` > 100)
+===
+
+### name: stmt.filter.custom-binder
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(x, x["total"] > 100)
+--- expect
+SELECT * FROM `items` WHERE (`total` > 100)
+===
+
+### name: stmt.filter.multi
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"ID": {"kind": "column", "column": "id", "type": "NUM"}, "TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(_["total"] > 100) .> FILTER(_["id"] == 1)
+--- expect
+SELECT * FROM `items` WHERE (`total` > 100) AND (`id` = 1)
+===
+
+### name: stmt.map.scalar
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(_["total"] * 2)
+--- expect
+SELECT (`total` * 2) FROM `items`
+===
+
+### name: stmt.map.record
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"ID": {"kind": "column", "column": "id"}, "TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("doubled", _["total"] * 2, "ident", _["id"]))
+--- expect
+SELECT (`total` * 2) AS `doubled`, `id` AS `ident` FROM `items`
+===
+
+### name: stmt.distinct
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"ID": {"kind": "column", "column": "id"}}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS("id") .> DISTINCT()
+--- expect
+SELECT DISTINCT `id` FROM `items`
+===
+
+### name: stmt.order-by.sort-by-asc
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["total"])
+--- expect
+SELECT * FROM `items` ORDER BY `total` ASC
+===
+
+### name: stmt.order-by.sort-by-desc
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["total"], "DESC")
+--- expect
+SELECT * FROM `items` ORDER BY `total` DESC
+===
+
+### name: stmt.order-by.sort-by-named-binder
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(r, r["total"], "DESC")
+--- expect
+SELECT * FROM `items` ORDER BY `total` DESC
+===
+
+### name: stmt.order-by.sort-desc-named-binder
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_DESC(r, r["total"])
+--- expect
+SELECT * FROM `items` ORDER BY `total` DESC
+===
+
+### name: stmt.order-by.sort-single-field
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT()
+--- expect
+SELECT * FROM `items` ORDER BY `total` ASC
+===
+
+### name: stmt.limit-offset.take
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(10)
+--- expect
+SELECT * FROM `items` LIMIT 10
+===
+
+### name: stmt.limit-offset.take-and-drop
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(10) .> DROP(20)
+--- expect
+SELECT * FROM `items` LIMIT 10 OFFSET 20
+===
+
+### name: stmt.limit-offset.drop-mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(5)
+--- expect
+SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 5
+===
+
+### name: stmt.limit-offset.drop-sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(5)
+--- expect
+SELECT * FROM "items" LIMIT -1 OFFSET 5
+===
+
+### name: stmt.limit-offset.drop-postgres
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(5)
+--- expect
+SELECT * FROM "items" OFFSET 5
+===
+
+### name: stmt.correlate
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "correlate": "i.order_id = o.id", "fields": {"TOTAL": {"kind": "column", "table": "i", "column": "total", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(_["total"] > 10)
+--- expect
+SELECT `i`.* FROM `items` `i` WHERE i.order_id = o.id AND (`i`.`total` > 10)
+===
+
+### name: stmt.params.mode
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"TOTAL": {"kind": "column", "column": "total", "type": "NUM"}, "NAME": {"kind": "column", "column": "name", "type": "TEXT", "exact": true}}}}
+--- as
+statement
+--- mode
+params
+--- source
+ITEMS .> FILTER(_["total"] > 100) .> FILTER(_["name"] $== "foo")
+--- expect
+SELECT * FROM `items` WHERE (`total` > 100) AND (`name` = ?)
+--- params
+t"foo"
+===
+
+### name: stmt.params.order-by
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"NAME": {"kind": "column", "column": "name", "type": "TEXT", "exact": true}}}}
+--- as
+statement
+--- mode
+debug
+--- source
+ITEMS .> FILTER(_["name"] $== "foo") .> SORT_BY(_["name"] & "bar")
+--- expect
+SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CONCAT(`name`, ~2~) ASC
+===
+
+### name: stmt.refusal.as-value
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+value
+--- source
+ITEMS
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.refusal.take-negative
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(-1)
+--- error
+E_RANGE 1:15
+===
+
+### name: stmt.refusal.take-float
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(1.5)
+--- error
+E_NOT_INT 1:15
+===
+
+### name: stmt.refusal.unknown-col
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"ID": {"kind": "column", "column": "id"}}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS("nonexistent")
+--- error
+E_SQL_SHAPE 1:22
+===

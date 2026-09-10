@@ -124,7 +124,9 @@ std::string run_case(const SqlCase& c, const std::string& dialect) {
     sel::sql::Options options;
     options.strict = c.strict;
     frag = Sql::translate(program, dialect, bindings, options);
-    sql = as_ == "condition" ? frag.as_condition(*mode) : frag.as_value(*mode);
+    sql = as_ == "condition" ? frag.as_condition(*mode)
+        : (as_ == "statement" ? frag.as_statement(*mode)
+                              : frag.as_value(*mode));
     have_sql = true;
   } catch (const SqlError& e) {
     error = e;
@@ -203,8 +205,12 @@ std::string run_case(const SqlCase& c, const std::string& dialect) {
     return "parameter slot(s) [" + orphans +
            "] were bound but never emitted — a fragment was rendered and discarded";
   }
-  if (static_cast<int>(frag.bindings().size()) !=
-      count_slots(frag.as_value(Mode::Debug))) {
+  const std::string debug_render =
+      as_ == "statement"
+          ? frag.as_statement(Mode::Debug)
+          : (as_ == "condition" ? frag.as_condition(Mode::Debug)
+                                : frag.as_value(Mode::Debug));
+  if (static_cast<int>(frag.bindings().size()) != count_slots(debug_render)) {
     return "bindings() and the emitted placeholders disagree in count";
   }
 

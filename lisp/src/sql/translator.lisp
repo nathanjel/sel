@@ -1476,6 +1476,335 @@ SQL counterpart" (snode-pos e)))
                     tests))))
         (fold-pairwise tr "OR" (nreverse tests) (snode-pos n))))))
 
+;;; --- relational pipeline statement compiler -------------------------------
+
+(defparameter +pipeline-ops+
+  '("FILTER" "SELECT_COLS" "MAP" "DISTINCT" "TAKE" "DROP"
+    "SORT" "SORT_DESC" "SORT_BY"))
+
+(defun eval-int-param (tr n op)
+  (when (clist-p n)
+    (refuse "E_SQL_SHAPE" (format nil "~a count cannot contain dynamic lists" op) (snode-pos n)))
+  (let ((val (handler-case (sel:run (sel::%make-program "" n) (translator-const-root tr))
+               (sel:sel-error (e) (refuse-as-sel e n)))))
+    (unless (and (sel:looks-numeric val) (not (sel:value-null-p val)))
+      (refuse "E_NOT_NUM" (format nil "~a count must be a number" op) (snode-pos n)))
+    (let ((d (handler-case (sel::as-dec val (snode-pos n))
+               (sel:sel-error (e) (refuse-as-sel e n)))))
+      (unless (zerop (sel::dec-scale d))
+        (refuse "E_NOT_INT" (format nil "~a count must be an integer" op) (snode-pos n)))
+      (when (sel::dec-neg d)
+        (refuse "E_RANGE" (format nil "~a count cannot be negative" op) (snode-pos n)))
+      (parse-integer (sel::dec-digits d)))))
+
+(defun analyze-sort-step (tr step plan)
+  (declare (ignore tr))
+  (let* ((name (sel::node-s step))
+         (args (sel::node-items step))
+         (count (length args))
+         (pos (snode-pos step)))
+    (cond
+      ((member name '("SORT" "SORT_DESC") :test #'equal)
+       (let ((dir (if (equal name "SORT") "ASC" "DESC")))
+         (cond
+           ((= count 1)
+            (let ((scalar (getf (relational-plan-source-relation plan) :scalar))
+                  (fields (getf (relational-plan-source-relation plan) :fields)))
+              (cond
+                (scalar
+                 (let ((idx-node (sel::make-node :index pos)))
+                   (setf (sel::node-l idx-node) (lit-node :var "_" nil pos)
+                         (sel::node-r idx-node) (lit-node :text scalar nil pos))
+                   (setf (relational-plan-order-by plan)
+                         (append (relational-plan-order-by plan)
+                                 (list (list "_" idx-node dir pos))))
+                   (return-from analyze-sort-step nil)))
+                ((= (length fields) 1)
+                 (let* ((field-name (car (first fields)))
+                        (idx-node (sel::make-node :index pos)))
+                   (setf (sel::node-l idx-node) (lit-node :var "_" nil pos)
+                         (sel::node-r idx-node) (lit-node :text field-name nil pos))
+                   (setf (relational-plan-order-by plan)
+                         (append (relational-plan-order-by plan)
+                                 (list (list "_" idx-node dir pos))))
+                   (return-from analyze-sort-step nil)))
+                (t
+                 (refuse "E_SQL_SHAPE"
+                         "SORT on a multi-field relation requires a key expression; use SORT_BY"
+                         pos)))))
+           ((= count 2)
+            (setf (relational-plan-order-by plan)
+                  (append (relational-plan-order-by plan)
+                          (list (list "_" (second args) dir pos)))))
+           ((= count 3)
+            (unless (is-binder-name (second args))
+              (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" name) (snode-pos (second args))))
+            (setf (relational-plan-order-by plan)
+                  (append (relational-plan-order-by plan)
+                          (list (list (sel::node-s (second args)) (third args) dir pos)))))
+           (t
+            (refuse "E_ARITY" (format nil "~a takes 1 to 3 arguments" name) pos)))))
+
+      ((equal name "SORT_BY")
+       (let (binder key dir dir-pos)
+         (cond
+           ((= count 2)
+            (setf binder "_" key (second args) dir "ASC" dir-pos pos))
+           ((= count 3)
+            (cond
+              ((eq (snode-kind (third args)) :text)
+               (setf binder "_" key (second args)
+                     dir (sel::ascii-upcase (sel::node-s (third args)))
+                     dir-pos (snode-pos (third args))))
+              ((is-binder-name (second args))
+               (setf binder (sel::node-s (second args)) key (third args)
+                     dir "ASC" dir-pos pos))
+              (t
+               (setf binder "_" key (second args)
+                     dir (sel::ascii-upcase (sel::node-s (third args)))
+                     dir-pos (snode-pos (third args))))))
+           ((= count 4)
+            (unless (is-binder-name (second args))
+              (refuse "E_SQL_SHAPE" "the binder of SORT_BY must be a bare name" (snode-pos (second args))))
+            (unless (eq (snode-kind (fourth args)) :text)
+              (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos (fourth args))))
+            (setf binder (sel::node-s (second args))
+                  key (third args)
+                  dir (sel::ascii-upcase (sel::node-s (fourth args)))
+                  dir-pos (snode-pos (fourth args))))
+           (t
+            (refuse "E_ARITY" "SORT_BY takes 2 to 4 arguments" pos)))
+         (unless (member dir '("ASC" "DESC") :test #'equal)
+           (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" dir-pos))
+         (setf (relational-plan-order-by plan)
+               (append (relational-plan-order-by plan)
+                       (list (list binder key dir pos)))))))))
+
+(defun analyze-pipeline (tr ast)
+  (let ((steps '())
+        (curr ast))
+    (loop while (and curr
+                     (not (clist-p curr))
+                     (eq (snode-kind curr) :call)
+                     (member (sel::node-s curr) +pipeline-ops+ :test #'equal)
+                     (sel::node-items curr))
+          do (push curr steps)
+             (setf curr (first (sel::node-items curr))))
+    (unless (and curr (not (clist-p curr)) (eq (snode-kind curr) :var))
+      (return-from analyze-pipeline nil))
+    (let ((name (sel::node-s curr)))
+      (unless (bindings-has (translator-bindings tr) name)
+        (return-from analyze-pipeline nil))
+      (let ((b (bindings-get (translator-bindings tr) name (snode-pos curr))))
+        (unless (eq (binding-kind b) :relation)
+          (return-from analyze-pipeline nil))
+        (let* ((spec (binding-spec b))
+               (plan (make-relational-plan
+                      :source-name name
+                      :source-relation spec
+                      :source-table (getf spec :from)
+                      :source-alias (getf spec :alias)
+                      :correlate (getf spec :correlate))))
+          (dolist (step steps)
+            (let ((sname (sel::node-s step))
+                  (args (sel::node-items step))
+                  (pos (snode-pos step)))
+              (cond
+                ((equal sname "FILTER")
+                 (let (binder pred)
+                   (cond
+                     ((= (length args) 2)
+                      (setf binder "_" pred (second args)))
+                     ((= (length args) 3)
+                      (unless (is-binder-name (second args))
+                        (refuse "E_SQL_SHAPE" "the binder of FILTER must be a bare name" (snode-pos (second args))))
+                      (setf binder (sel::node-s (second args)) pred (third args)))
+                     (t
+                      (refuse "E_ARITY" "FILTER takes 2 or 3 arguments" pos)))
+                   (setf (relational-plan-filters plan)
+                         (append (relational-plan-filters plan) (list (list binder pred pos))))))
+
+                ((equal sname "SELECT_COLS")
+                 (let* ((col-args (rest args))
+                        (items (if (and (= (length col-args) 1) (eq (snode-kind (first col-args)) :list))
+                                   (sel::node-items (first col-args))
+                                   col-args))
+                        (cols '()))
+                   (dolist (item items)
+                     (unless (eq (snode-kind item) :text)
+                       (refuse "E_BAD_ARG" "SELECT_COLS column names must be string literals" (snode-pos item)))
+                     (let ((col (sel::node-s item)))
+                       (when (getf (relational-plan-source-relation plan) :fields)
+                         (let ((uc (sel::ascii-upcase col)))
+                           (unless (assoc uc (getf (relational-plan-source-relation plan) :fields) :test #'equal)
+                             (let ((declared (format nil "~{~a~^, ~}" (mapcar #'car (getf (relational-plan-source-relation plan) :fields)))))
+                               (refuse "E_SQL_SHAPE" (format nil "relation ~a has no field '~a'; the relation declares ~a" (relational-plan-source-name plan) col declared) (snode-pos item))))))
+                       (push col cols)))
+                   (setf (relational-plan-select-cols plan) (nreverse cols)
+                         (relational-plan-projections plan) nil)))
+
+                ((equal sname "MAP")
+                 (let (binder expr)
+                   (cond
+                     ((= (length args) 2)
+                      (setf binder "_" expr (second args)))
+                     ((= (length args) 3)
+                      (unless (is-binder-name (second args))
+                        (refuse "E_SQL_SHAPE" "the binder of MAP must be a bare name" (snode-pos (second args))))
+                      (setf binder (sel::node-s (second args)) expr (third args)))
+                     (t
+                      (refuse "E_ARITY" "MAP takes 2 or 3 arguments" pos)))
+                   (if (and (not (clist-p expr)) (eq (snode-kind expr) :call) (equal (sel::node-s expr) "RECORD"))
+                       (let ((rec-args (sel::node-items expr))
+                             (projs '()))
+                         (unless (evenp (length rec-args))
+                           (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos expr)))
+                         (loop for (k-node v-node) on rec-args by #'cddr do
+                           (unless (eq (snode-kind k-node) :text)
+                             (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
+                           (push (list (sel::node-s k-node) binder v-node) projs))
+                         (setf (relational-plan-projections plan) (nreverse projs)))
+                       (setf (relational-plan-projections plan) (list (list nil binder expr))))
+                   (setf (relational-plan-select-cols plan) nil)))
+
+                ((equal sname "DISTINCT")
+                 (setf (relational-plan-distinct plan) t))
+
+                ((equal sname "TAKE")
+                 (unless (= (length args) 2)
+                   (refuse "E_ARITY" "TAKE takes 2 arguments" pos))
+                 (let ((lim (eval-int-param tr (second args) "TAKE")))
+                   (setf (relational-plan-limit plan)
+                         (if (relational-plan-limit plan)
+                             (min (relational-plan-limit plan) lim)
+                             lim))))
+
+                ((equal sname "DROP")
+                 (unless (= (length args) 2)
+                   (refuse "E_ARITY" "DROP takes 2 arguments" pos))
+                 (let ((off (eval-int-param tr (second args) "DROP")))
+                   (setf (relational-plan-offset plan)
+                         (+ (or (relational-plan-offset plan) 0) off))))
+
+                ((member sname '("SORT" "SORT_DESC" "SORT_BY") :test #'equal)
+                 (analyze-sort-step tr step plan)))))
+          plan)))))
+
+(defun compile-statement (tr plan)
+  (let ((parts '()))
+    (push (if (relational-plan-distinct plan) "SELECT DISTINCT " "SELECT ") parts)
+
+    (let* ((src-rel (relational-plan-source-relation plan))
+           (src (%source :relation '() src-rel
+                         (mapcar (lambda (f) (cons (first f) (second f))) (relational-plan-filters plan))
+                         nil)))
+
+      ;; 1. Projections
+      (cond
+        ((relational-plan-projections plan)
+         (let ((first t))
+           (dolist (proj (relational-plan-projections plan))
+             (unless first (push ", " parts))
+             (setf first nil)
+             (let* ((alias (first proj))
+                    (binder (second proj))
+                    (node (third proj))
+                    (p-frag (with-row tr src binder (lambda () (walk-node tr node)))))
+               (dolist (p (fragment-parts p-frag))
+                 (push p parts))
+               (when alias
+                 (push (format nil " AS ~a" (emit-ident (translator-dialect tr) alias)) parts))))))
+
+        ((relational-plan-select-cols plan)
+         (let ((first t))
+           (dolist (col (relational-plan-select-cols plan))
+             (unless first (push ", " parts))
+             (setf first nil)
+             (let* ((uc (sel::ascii-upcase col))
+                    (f-cell (assoc uc (getf src-rel :fields) :test #'equal))
+                    (f-spec (cdr f-cell))
+                    (table (or (getf f-spec :table) (relational-plan-source-alias plan)))
+                    (column (or (getf f-spec :column) col)))
+               (push (emit-column (translator-dialect tr) table column) parts)))))
+
+        (t
+         (if (and (relational-plan-source-alias plan)
+                  (plusp (length (relational-plan-source-alias plan))))
+             (push (format nil "~a.*" (emit-ident (translator-dialect tr) (relational-plan-source-alias plan))) parts)
+             (push "*" parts))))
+
+      ;; 2. FROM clause
+      (push " FROM " parts)
+      (let ((from (if (getf src-rel :from-raw-p)
+                      (getf src-rel :from)
+                      (emit-ident (translator-dialect tr) (relational-plan-source-table plan)))))
+        (when (and (relational-plan-source-alias plan)
+                   (plusp (length (relational-plan-source-alias plan))))
+          (setf from (format nil "~a ~a" from (emit-ident (translator-dialect tr) (relational-plan-source-alias plan)))))
+        (push from parts))
+
+      ;; 3. WHERE clause
+      (let ((cond-parts '()))
+        (when (and (relational-plan-correlate plan)
+                   (plusp (length (relational-plan-correlate plan))))
+          (push (list (relational-plan-correlate plan)) cond-parts))
+        (dolist (filter (relational-plan-filters plan))
+          (let* ((binder (first filter))
+                 (node (second filter))
+                 (pos (third filter))
+                 (c-frag (with-row tr src binder
+                           (lambda ()
+                             (require-bool (walk-node tr node) pos "FILTER")))))
+            (push (fragment-parts c-frag) cond-parts)))
+        (setf cond-parts (nreverse cond-parts))
+        (when cond-parts
+          (push " WHERE " parts)
+          (loop for cp in cond-parts
+                for idx from 0
+                do (when (plusp idx) (push " AND " parts))
+                   (dolist (p cp) (push p parts)))))
+
+      ;; 4. ORDER BY clause
+      (when (relational-plan-order-by plan)
+        (push " ORDER BY " parts)
+        (loop for ord in (relational-plan-order-by plan)
+              for idx from 0
+              do (when (plusp idx) (push ", " parts))
+                 (let* ((binder (first ord))
+                        (node (second ord))
+                        (dir (third ord))
+                        (o-frag (with-row tr src binder (lambda () (walk-node tr node)))))
+                   (dolist (p (fragment-parts o-frag))
+                     (push p parts))
+                   (push (format nil " ~a" dir) parts))))
+
+      ;; 5. LIMIT / OFFSET clause
+      (let ((limit (relational-plan-limit plan))
+            (offset (relational-plan-offset plan)))
+        (cond
+          ((and limit offset)
+           (push (format nil " LIMIT ~D OFFSET ~D" limit offset) parts))
+          (limit
+           (push (format nil " LIMIT ~D" limit) parts))
+          (offset
+           (let ((chain (dialect-chain (translator-dialect tr))))
+             (cond
+               ((or (member "mariadb" chain :test #'equal)
+                    (member "mysql" chain :test #'equal)
+                    (member "mysql-family" chain :test #'equal))
+                (push (format nil " LIMIT 18446744073709551615 OFFSET ~D" offset) parts))
+               ((member "sqlite" chain :test #'equal)
+                (push (format nil " LIMIT -1 OFFSET ~D" offset) parts))
+               (t
+                (push (format nil " OFFSET ~D" offset) parts)))))))
+
+      (%fragment (nreverse parts)
+                 :statement
+                 (translator-dialect tr)
+                 (reverse (translator-params tr))
+                 (reverse (translator-param-kinds tr))
+                 (reverse (translator-caveats tr))))))
+
 ;;; --- the public interface -------------------------------------------------
 
 (defun translate (program dialect &optional bindings options)
@@ -1483,16 +1812,6 @@ SQL counterpart" (snode-pos e)))
 
 Signals SQL-ERROR, whose message is written to be READ. Use this when you want
 to know why a rule cannot be pushed down."
-  ;; BEFORE the struct, not after. TRANSLATOR's DIALECT slot is declared
-  ;; :type string and SBCL enforces that at construction, so a non-string
-  ;; dialect signalled a raw TYPE-ERROR from inside %TRANSLATOR -- escaping
-  ;; TRY-TRANSLATE, which catches only SQL-ERROR -- before REQUIRE-TARGET, whose
-  ;; whole job is to turn a bad dialect name into a graceful refusal, ever ran.
-  ;; The slot type stays: it is a real invariant, and this moves its enforcement
-  ;; to after the refusal rather than removing it.
-  ;;
-  ;; The order below is contract too: a caller with both a bad dialect and a
-  ;; duplicate alias gets E_SQL_DIALECT, so those two must not be fused either.
   (require-target dialect)
   (let ((tr (%translator dialect (make-bindings (or bindings '()))
                          (and (getf options :strict) t))))
@@ -1500,13 +1819,15 @@ to know why a rule cannot be pushed down."
     (multiple-value-bind (names root) (const-scope (translator-bindings tr))
       (setf (translator-const-names tr) names
             (translator-const-root tr) root)
-      (let ((f (walk-node tr (normalise (sel:program-ast program) names root))))
-        ;; Only this final fragment carries the vectors; every intermediate one
-        ;; built during the walk has none.
-        (%fragment (fragment-parts f) (fragment-kind f) dialect
-                   (reverse (translator-params tr))
-                   (reverse (translator-param-kinds tr))
-                   (reverse (translator-caveats tr)))))))
+      (let* ((norm (normalise (sel:program-ast program) names root))
+             (plan (analyze-pipeline tr norm)))
+        (if plan
+            (compile-statement tr plan)
+            (let ((f (walk-node tr norm)))
+              (%fragment (fragment-parts f) (fragment-kind f) dialect
+                         (reverse (translator-params tr))
+                         (reverse (translator-param-kinds tr))
+                         (reverse (translator-caveats tr)))))))))
 
 (defun try-translate (program dialect &optional bindings options)
   "The same, returning NIL instead of signalling.
@@ -1514,6 +1835,26 @@ to know why a rule cannot be pushed down."
 Only SQL-ERROR is caught: a bug in the translator, or a malformed registration,
 must not be swallowed by the path that exists to handle refusals."
   (handler-case (translate program dialect bindings options)
+    (sql-error () nil)))
+
+(defun translate-statement (program dialect &optional bindings options)
+  "Translate a compiled relational program into a SQL statement (SELECT ...)."
+  (require-target dialect)
+  (let ((tr (%translator dialect (make-bindings (or bindings '()))
+                         (and (getf options :strict) t))))
+    (bindings-check-aliases (translator-bindings tr))
+    (multiple-value-bind (names root) (const-scope (translator-bindings tr))
+      (setf (translator-const-names tr) names
+            (translator-const-root tr) root)
+      (let* ((norm (normalise (sel:program-ast program) names root))
+             (plan (analyze-pipeline tr norm)))
+        (unless plan
+          (refuse "E_SQL_SHAPE" "expected a relational query or pipeline"))
+        (compile-statement tr plan)))))
+
+(defun try-translate-statement (program dialect &optional bindings options)
+  "The same, returning NIL instead of signalling."
+  (handler-case (translate-statement program dialect bindings options)
     (sql-error () nil)))
 
 (defun dialects () (dialect-targets))

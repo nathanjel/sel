@@ -75,11 +75,52 @@ class Binder {
 // in C++, where int64 would do, because it is part of the cross-host contract.
 std::optional<int> list_key(std::string_view k);
 
+struct RelationalProjection {
+  std::optional<std::string> alias;
+  std::string binder;
+  SNodePtr node;
+};
+
+struct RelationalFilter {
+  std::string binder;
+  SNodePtr node;
+  Pos pos;
+};
+
+struct RelationalOrder {
+  std::string binder;
+  SNodePtr node;
+  std::string dir;
+  Pos pos;
+};
+
+struct RelationalPlan {
+  std::string source_name;
+  RelationSpec source_relation;
+  bool source_from_raw = false;
+  std::string source_table;
+  std::optional<std::string> source_alias;
+  std::optional<std::string> correlate;
+  bool distinct = false;
+  std::optional<std::vector<std::string>> select_cols;
+  std::optional<std::vector<RelationalProjection>> projections;
+  std::vector<RelationalFilter> filters;
+  std::vector<RelationalOrder> order_by;
+  std::optional<int64_t> limit;
+  std::optional<int64_t> offset;
+};
+
 class Translator {
  public:
   Translator(std::string dialect, Bindings bindings, Options options);
 
   Fragment translate(const NodePtr& ast);
+  Fragment translate_statement(const NodePtr& ast);
+
+  std::optional<RelationalPlan> analyze_pipeline(const SNodePtr& ast);
+  Fragment compile_statement(const RelationalPlan& plan);
+  int64_t eval_int_param(const SNodePtr& n, const std::string& op);
+  void analyze_sort_step(const SNodePtr& step, RelationalPlan& plan);
 
  private:
   // One frame per element of an unroll, or one for a whole relation.

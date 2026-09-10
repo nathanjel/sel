@@ -4,7 +4,7 @@
 import * as emit from './emit.mjs';
 import { refuse } from './errors.mjs';
 
-export const KINDS = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST'];
+export const KINDS = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST', 'STATEMENT'];
 
 // A rendered SQL expression.
 //
@@ -38,6 +38,19 @@ export class Fragment {
     if (this.kind === 'LIST') {
       refuse('E_SQL_SHAPE',
         'this expression yields a list, and a SQL expression is a scalar');
+    }
+    if (this.kind === 'STATEMENT') {
+      refuse('E_SQL_SHAPE',
+        'this expression yields a statement, and a SQL expression is a scalar; use asStatement()');
+    }
+    return this.#join(mode);
+  }
+
+  // Usable as a top-level SQL query statement.
+  asStatement(mode = 'inline') {
+    if (this.kind !== 'STATEMENT') {
+      refuse('E_SQL_SHAPE',
+        `expected STATEMENT fragment, got ${this.kind}; use asValue() or asCondition()`);
     }
     return this.#join(mode);
   }

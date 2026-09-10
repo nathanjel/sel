@@ -6889,4 +6889,410 @@
    :mode nil
    :strict nil
    :register nil
-   :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\"" :prefilter "separate")))))))
+   :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\"" :prefilter "separate")))))
+  (list
+   :name "stmt.basic.star"
+   :at "23-statements.sqlt:7"
+   :dialect "mariadb"
+   :source "ITEMS"
+   :expect "SELECT * FROM `items`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.basic.alias"
+   :at "23-statements.sqlt:20"
+   :dialect "mariadb"
+   :source "ITEMS"
+   :expect "SELECT `i`.* FROM `items` `i`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list ) nil nil)))))
+  (list
+   :name "stmt.select-cols.single"
+   :at "23-statements.sqlt:33"
+   :dialect "mariadb"
+   :source "ITEMS .> SELECT_COLS(\"id\")"
+   :expect "SELECT `id` FROM `items`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.select-cols.multi"
+   :at "23-statements.sqlt:46"
+   :dialect "mariadb"
+   :source "ITEMS .> SELECT_COLS(\"id\", \"total\")"
+   :expect "SELECT `id`, `total` FROM `items`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown)) (cons "TOTAL" (binding-column "total" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.select-cols.list"
+   :at "23-statements.sqlt:59"
+   :dialect "mariadb"
+   :source "ITEMS .> SELECT_COLS((\"id\", \"total\"))"
+   :expect "SELECT `id`, `total` FROM `items`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown)) (cons "TOTAL" (binding-column "total" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.select-cols.with-alias"
+   :at "23-statements.sqlt:72"
+   :dialect "mariadb"
+   :source "ITEMS .> SELECT_COLS(\"id\", \"total\")"
+   :expect "SELECT `i`.`id`, `i`.`total` FROM `items` `i`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "ID" (binding-column "id" nil :unknown)) (cons "TOTAL" (binding-column "total" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.filter.default-binder"
+   :at "23-statements.sqlt:85"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(_[\"total\"] > 100)"
+   :expect "SELECT * FROM `items` WHERE (`total` > 100)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.filter.custom-binder"
+   :at "23-statements.sqlt:98"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(x, x[\"total\"] > 100)"
+   :expect "SELECT * FROM `items` WHERE (`total` > 100)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.filter.multi"
+   :at "23-statements.sqlt:111"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(_[\"total\"] > 100) .> FILTER(_[\"id\"] == 1)"
+   :expect "SELECT * FROM `items` WHERE (`total` > 100) AND (`id` = 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.map.scalar"
+   :at "23-statements.sqlt:124"
+   :dialect "mariadb"
+   :source "ITEMS .> MAP(_[\"total\"] * 2)"
+   :expect "SELECT (`total` * 2) FROM `items`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.map.record"
+   :at "23-statements.sqlt:137"
+   :dialect "mariadb"
+   :source "ITEMS .> MAP(RECORD(\"doubled\", _[\"total\"] * 2, \"ident\", _[\"id\"]))"
+   :expect "SELECT (`total` * 2) AS `doubled`, `id` AS `ident` FROM `items`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown)) (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.distinct"
+   :at "23-statements.sqlt:150"
+   :dialect "mariadb"
+   :source "ITEMS .> SELECT_COLS(\"id\") .> DISTINCT()"
+   :expect "SELECT DISTINCT `id` FROM `items`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.order-by.sort-by-asc"
+   :at "23-statements.sqlt:163"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"total\"])"
+   :expect "SELECT * FROM `items` ORDER BY `total` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.sort-by-desc"
+   :at "23-statements.sqlt:176"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"total\"], \"DESC\")"
+   :expect "SELECT * FROM `items` ORDER BY `total` DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.sort-by-named-binder"
+   :at "23-statements.sqlt:189"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(r, r[\"total\"], \"DESC\")"
+   :expect "SELECT * FROM `items` ORDER BY `total` DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.sort-desc-named-binder"
+   :at "23-statements.sqlt:202"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_DESC(r, r[\"total\"])"
+   :expect "SELECT * FROM `items` ORDER BY `total` DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.sort-single-field"
+   :at "23-statements.sqlt:215"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT()"
+   :expect "SELECT * FROM `items` ORDER BY `total` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
+  (list
+   :name "stmt.limit-offset.take"
+   :at "23-statements.sqlt:228"
+   :dialect "mariadb"
+   :source "ITEMS .> TAKE(10)"
+   :expect "SELECT * FROM `items` LIMIT 10"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.limit-offset.take-and-drop"
+   :at "23-statements.sqlt:241"
+   :dialect "mariadb"
+   :source "ITEMS .> TAKE(10) .> DROP(20)"
+   :expect "SELECT * FROM `items` LIMIT 10 OFFSET 20"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.limit-offset.drop-mariadb"
+   :at "23-statements.sqlt:254"
+   :dialect "mariadb"
+   :source "ITEMS .> DROP(5)"
+   :expect "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.limit-offset.drop-sqlite"
+   :at "23-statements.sqlt:267"
+   :dialect "sqlite"
+   :source "ITEMS .> DROP(5)"
+   :expect "SELECT * FROM \"items\" LIMIT -1 OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.limit-offset.drop-postgres"
+   :at "23-statements.sqlt:280"
+   :dialect "postgresql"
+   :source "ITEMS .> DROP(5)"
+   :expect "SELECT * FROM \"items\" OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.correlate"
+   :at "23-statements.sqlt:293"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(_[\"total\"] > 10)"
+   :expect "SELECT `i`.* FROM `items` `i` WHERE i.order_id = o.id AND (`i`.`total` > 10)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "TOTAL" (binding-column "total" "i" :num))) nil "i.order_id = o.id")))))
+  (list
+   :name "stmt.params.mode"
+   :at "23-statements.sqlt:306"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(_[\"total\"] > 100) .> FILTER(_[\"name\"] $== \"foo\")"
+   :expect "SELECT * FROM `items` WHERE (`total` > 100) AND (`name` = ?)"
+   :error nil
+   :throws nil
+   :params "t\"foo\""
+   :as "statement"
+   :mode "params"
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num)) (cons "NAME" (binding-column "name" nil :text :exact t :sargable nil :guard nil))) nil nil)))))
+  (list
+   :name "stmt.params.order-by"
+   :at "23-statements.sqlt:323"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(_[\"name\"] $== \"foo\") .> SORT_BY(_[\"name\"] & \"bar\")"
+   :expect "SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CONCAT(`name`, ~2~) ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode "debug"
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "NAME" (binding-column "name" nil :text :exact t :sargable nil :guard nil))) nil nil)))))
+  (list
+   :name "stmt.refusal.as-value"
+   :at "23-statements.sqlt:338"
+   :dialect "mariadb"
+   :source "ITEMS"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "value"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.refusal.take-negative"
+   :at "23-statements.sqlt:351"
+   :dialect "mariadb"
+   :source "ITEMS .> TAKE(-1)"
+   :expect nil
+   :error "E_RANGE 1:15"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.refusal.take-float"
+   :at "23-statements.sqlt:364"
+   :dialect "mariadb"
+   :source "ITEMS .> TAKE(1.5)"
+   :expect nil
+   :error "E_NOT_INT 1:15"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.refusal.unknown-col"
+   :at "23-statements.sqlt:377"
+   :dialect "mariadb"
+   :source "ITEMS .> SELECT_COLS(\"nonexistent\")"
+   :expect nil
+   :error "E_SQL_SHAPE 1:22"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))))

@@ -101,7 +101,9 @@ divided a regex fragment's odd tilde count by two."
           (let ((binds (funcall (getf c :bindings))))
             (setf frag (translate (sel:compile-source (getf c :source)) dialect binds
                                   (list :strict (getf c :strict))))
-            (setf sql (if (equal as "condition") (as-condition frag mode) (as-value frag mode)))))
+            (setf sql (cond ((equal as "condition") (as-condition frag mode))
+                            ((equal as "statement") (as-statement frag mode))
+                            (t (as-value frag mode))))))
       (sql-error (e) (setf err e))
       (sel:sel-error (e)
         (return-from run-case (format nil "the source did not compile: ~a" e)))
@@ -154,8 +156,11 @@ divided a regex fragment's odd tilde count by two."
           (return-from run-case
             (format nil "parameter slot(s) ~a were bound but never emitted — a ~
 fragment was rendered and discarded" orphans)))))
-    (unless (= (length (bindings frag)) (count-slots (as-value frag :debug)))
-      (return-from run-case "bindings and the emitted placeholders disagree in count"))
+    (let ((debug-render (cond ((equal as "statement") (as-statement frag :debug))
+                              ((equal as "condition") (as-condition frag :debug))
+                              (t (as-value frag :debug)))))
+      (unless (= (length (bindings frag)) (count-slots debug-render))
+        (return-from run-case "bindings and the emitted placeholders disagree in count")))
 
     (when (getf c :params)
       (let ((got (format nil "~{~a~^, ~}" (mapcar #'sel:value-dump (bindings frag)))))

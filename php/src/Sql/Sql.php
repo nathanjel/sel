@@ -20,9 +20,10 @@ final class Sql
      * @param array<string,mixed> $options  strict: refuse anything inexact
      */
     public static function translate(Program $program, string $dialect,
-                                     array $bindings = [], array $options = []): Fragment
+                                     array|Bindings $bindings = [], array $options = []): Fragment
     {
-        $t = new Translator($dialect, new Bindings($bindings), $options);
+        $b = $bindings instanceof Bindings ? $bindings : new Bindings($bindings);
+        $t = new Translator($dialect, $b, $options);
         return $t->translate($program->ast);
     }
 
@@ -34,14 +35,44 @@ final class Sql
      * a try/catch to observe. Only SqlError is caught: a bug in the translator
      * must not be swallowed by the path that exists to handle refusals.
      *
-     * @param array<string, array<string,mixed>> $bindings
+     * @param array<string, array<string,mixed>>|Bindings $bindings
      * @param array<string,mixed> $options
      */
     public static function tryTranslate(Program $program, string $dialect,
-                                        array $bindings = [], array $options = []): ?Fragment
+                                        array|Bindings $bindings = [], array $options = []): ?Fragment
     {
         try {
             return self::translate($program, $dialect, $bindings, $options);
+        } catch (SqlError $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Translate a relational pipeline program into a SQL statement fragment.
+     *
+     * @param array<string, array<string,mixed>>|Bindings $bindings
+     * @param array<string,mixed> $options
+     */
+    public static function translateStatement(Program $program, string $dialect,
+                                             array|Bindings $bindings = [], array $options = []): Fragment
+    {
+        $b = $bindings instanceof Bindings ? $bindings : new Bindings($bindings);
+        $t = new Translator($dialect, $b, $options);
+        return $t->translateStatement($program->ast);
+    }
+
+    /**
+     * The same, returning null instead of throwing on SqlError.
+     *
+     * @param array<string, array<string,mixed>>|Bindings $bindings
+     * @param array<string,mixed> $options
+     */
+    public static function tryTranslateStatement(Program $program, string $dialect,
+                                                array|Bindings $bindings = [], array $options = []): ?Fragment
+    {
+        try {
+            return self::translateStatement($program, $dialect, $bindings, $options);
         } catch (SqlError $e) {
             return null;
         }

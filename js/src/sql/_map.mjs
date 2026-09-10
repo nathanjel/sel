@@ -2525,6 +2525,14 @@ export const RULES = {
       1,
       1
     ],
+    "DISTINCT": [
+      1,
+      1
+    ],
+    "DROP": [
+      2,
+      2
+    ],
     "ENCODE_BASE64": [
       1,
       1
@@ -2577,6 +2585,10 @@ export const RULES = {
       1,
       1
     ],
+    "LIST": [
+      0,
+      null
+    ],
     "LOWER": [
       1,
       1
@@ -2612,6 +2624,10 @@ export const RULES = {
     "POWER": [
       2,
       2
+    ],
+    "RECORD": [
+      0,
+      null
     ],
     "REPEAT": [
       2,
@@ -2649,9 +2665,25 @@ export const RULES = {
       1,
       1
     ],
+    "SELECT_COLS": [
+      2,
+      null
+    ],
     "SIGN": [
       1,
       1
+    ],
+    "SORT": [
+      1,
+      3
+    ],
+    "SORT_BY": [
+      2,
+      4
+    ],
+    "SORT_DESC": [
+      1,
+      3
     ],
     "SPLIT": [
       2,
@@ -2660,6 +2692,10 @@ export const RULES = {
     "SUBSTR": [
       2,
       3
+    ],
+    "TAKE": [
+      2,
+      2
     ],
     "TO_HEX": [
       1,

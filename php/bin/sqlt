@@ -182,7 +182,11 @@ function run_case(array $c): ?string
         $bindings = ($c['bindings'])();
         $program = Sel::compile($c['source']);
         $frag = Sql::translate($program, $dialect, $bindings, $options);
-        $sql = $as === 'condition' ? $frag->asCondition($mode) : $frag->asValue($mode);
+        $sql = match ($as) {
+            'condition' => $frag->asCondition($mode),
+            'statement' => $frag->asStatement($mode),
+            default => $frag->asValue($mode),
+        };
     } catch (SqlError $e) {
         $error = $e;
     } catch (SelError $e) {
@@ -280,8 +284,9 @@ function run_case(array $c): ?string
     // integer against 2.5. §9 anticipated the collision and named the marker
     // accordingly; this check did not get the memo, and stayed latent until the
     // first PostgreSQL regex case existed to trip it.
+    $debugStr = $frag->kind === 'STATEMENT' ? $frag->asStatement('debug') : $frag->asValue('debug');
     if (count($frag->bindings())
-            !== preg_match_all('/~\d+~/', $frag->asValue('debug'))) {
+            !== preg_match_all('/~\d+~/', $debugStr)) {
         return 'bindings() and the emitted placeholders disagree in count';
     }
 

@@ -22,6 +22,7 @@ final class Translator
 {
     /** Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4. */
     private const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
+    public const PIPELINE_OPS = ['FILTER', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP'];
 
     private string $dialect;
     private Emit $emit;
@@ -70,10 +71,36 @@ final class Translator
         $this->frames = [];
         $this->depth = 0;
         [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
-        $f = $this->node(Normalise::run($ast, $this->constNames, $this->constCtx));
+        $norm = Normalise::run($ast, $this->constNames, $this->constCtx);
+        $plan = $this->analyzePipeline($norm);
+        if ($plan !== null) {
+            return $this->compileStatement($plan);
+        }
+        $f = $this->node($norm);
 
         return new Fragment($f->parts, $f->kind, $this->dialect,
             $this->params, $this->paramKinds, array_keys($this->caveats));
+    }
+
+    /** @param array<string,mixed> $ast */
+    public function translateStatement(array $ast): Fragment
+    {
+        Map::requireTarget($this->dialect);
+        $this->bindings->checkAliases();
+
+        $this->params = [];
+        $this->paramKinds = [];
+        $this->caveats = [];
+        $this->frames = [];
+        $this->depth = 0;
+        [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
+        $norm = Normalise::run($ast, $this->constNames, $this->constCtx);
+        $plan = $this->analyzePipeline($norm);
+        if ($plan === null) {
+            refuse('E_SQL_SHAPE', 'expected a relational query or pipeline');
+        }
+
+        return $this->compileStatement($plan);
     }
 
     // --- the walk -----------------------------------------------------------
@@ -2076,5 +2103,431 @@ final class Translator
             }
         }
         return $parts;
+    }
+
+    // --- Relational Pipeline Statement Compilation --------------------------
+
+    /** @param array<string,mixed> $n */
+    public function analyzePipeline(array $n): ?RelationalPlan
+    {
+        $steps = [];
+        $curr = $n;
+        while ($curr['t'] === 'call' && in_array($curr['name'], self::PIPELINE_OPS, true)) {
+            if (empty($curr['args'])) {
+                break;
+            }
+            $steps[] = $curr;
+            $curr = $curr['args'][0];
+        }
+
+        if ($curr['t'] !== 'var') {
+            return null;
+        }
+
+        if (!$this->bindings->has($curr['name'])) {
+            return null;
+        }
+
+        $b = $this->bindings->get($curr['name']);
+        if (($b['kind'] ?? null) !== 'relation') {
+            return null;
+        }
+
+        $plan = new RelationalPlan();
+        $plan->sourceName = $curr['name'];
+        $plan->sourceRelation = $b;
+        $plan->sourceTable = $b['from'];
+        $plan->sourceAlias = $b['alias'] ?? null;
+        $plan->correlate = isset($b['correlate']['raw'])
+            ? (string) $b['correlate']['raw']
+            : (isset($b['correlate']) && is_string($b['correlate']) ? $b['correlate'] : null);
+
+        $steps = array_reverse($steps);
+
+        foreach ($steps as $step) {
+            $name = $step['name'];
+            $args = $step['args'];
+
+            switch ($name) {
+                case 'FILTER':
+                    if (count($args) === 2) {
+                        $binder = '_';
+                        $pred = $args[1];
+                    } elseif (count($args) === 3) {
+                        if (!Constants::isBinderName($args[1])) {
+                            refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', $args[1]['pos']);
+                        }
+                        $binder = $args[1]['name'];
+                        $pred = $args[2];
+                    } else {
+                        refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', $step['pos']);
+                    }
+                    $plan->filters[] = [
+                        'binder' => $binder,
+                        'node' => $pred,
+                        'pos' => $step['pos'],
+                    ];
+                    break;
+
+                case 'SELECT_COLS':
+                    $colArgs = array_slice($args, 1);
+                    if (count($colArgs) === 1 && $colArgs[0]['t'] === 'list') {
+                        $items = $colArgs[0]['items'];
+                    } else {
+                        $items = $colArgs;
+                    }
+                    $cols = [];
+                    foreach ($items as $item) {
+                        if ($item['t'] !== 'text') {
+                            refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', $item['pos']);
+                        }
+                        $col = $item['v'];
+                        if (!empty($plan->sourceRelation['fields'])) {
+                            $uc = strtoupper($col);
+                            if (!isset($plan->sourceRelation['fields'][$uc])) {
+                                refuse('E_SQL_SHAPE',
+                                    "relation {$plan->sourceName} has no field '{$col}'; the relation declares "
+                                    . implode(', ', array_keys($plan->sourceRelation['fields'])), $item['pos']);
+                            }
+                        }
+                        $cols[] = $col;
+                    }
+                    $plan->selectCols = $cols;
+                    $plan->projections = null;
+                    break;
+
+                case 'MAP':
+                    if (count($args) === 2) {
+                        $binder = '_';
+                        $expr = $args[1];
+                    } elseif (count($args) === 3) {
+                        if (!Constants::isBinderName($args[1])) {
+                            refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', $args[1]['pos']);
+                        }
+                        $binder = $args[1]['name'];
+                        $expr = $args[2];
+                    } else {
+                        refuse('E_ARITY', 'MAP takes 2 or 3 arguments', $step['pos']);
+                    }
+
+                    if ($expr['t'] === 'call' && $expr['name'] === 'RECORD') {
+                        $recArgs = $expr['args'];
+                        if (count($recArgs) % 2 !== 0) {
+                            refuse('E_ARITY', 'RECORD takes an even number of arguments', $expr['pos']);
+                        }
+                        $projections = [];
+                        for ($i = 0; $i < count($recArgs); $i += 2) {
+                            $kNode = $recArgs[$i];
+                            $vNode = $recArgs[$i + 1];
+                            if ($kNode['t'] !== 'text') {
+                                refuse('E_BAD_ARG', 'RECORD field names must be string literals', $kNode['pos']);
+                            }
+                            $projections[] = [
+                                'alias' => $kNode['v'],
+                                'binder' => $binder,
+                                'node' => $vNode,
+                            ];
+                        }
+                        $plan->projections = $projections;
+                    } else {
+                        $plan->projections = [
+                            [
+                                'alias' => null,
+                                'binder' => $binder,
+                                'node' => $expr,
+                            ]
+                        ];
+                    }
+                    $plan->selectCols = null;
+                    break;
+
+                case 'DISTINCT':
+                    $plan->distinct = true;
+                    break;
+
+                case 'TAKE':
+                    if (count($args) !== 2) {
+                        refuse('E_ARITY', 'TAKE takes 2 arguments', $step['pos']);
+                    }
+                    $lim = $this->evalIntParam($args[1], 'TAKE');
+                    $plan->limit = $plan->limit === null ? $lim : min($plan->limit, $lim);
+                    break;
+
+                case 'DROP':
+                    if (count($args) !== 2) {
+                        refuse('E_ARITY', 'DROP takes 2 arguments', $step['pos']);
+                    }
+                    $off = $this->evalIntParam($args[1], 'DROP');
+                    $plan->offset = ($plan->offset ?? 0) + $off;
+                    break;
+
+                case 'SORT':
+                case 'SORT_DESC':
+                case 'SORT_BY':
+                    $this->analyzeSortStep($step, $plan);
+                    break;
+            }
+        }
+
+        return $plan;
+    }
+
+    /**
+     * @param array<string,mixed> $n
+     */
+    private function evalIntParam(array $n, string $op): int
+    {
+        try {
+            $val = \Sel\Evaluator::evalNode($n, $this->constCtx ?? new \Sel\Context());
+        } catch (\Sel\SelError $e) {
+            Constants::refuseAsSel($e, $n);
+        }
+        if (!$val->looksNumeric() || $val->isNull()) {
+            refuse('E_NOT_NUM', "{$op} count must be a number", $n['pos']);
+        }
+        $d = $val->asDecimal($n['pos']);
+        if ($d['scale'] !== 0) {
+            refuse('E_NOT_INT', "{$op} count must be an integer", $n['pos']);
+        }
+        if (\Sel\Dec::cmp($d, \Sel\Dec::zero()) < 0) {
+            refuse('E_RANGE', "{$op} count cannot be negative", $n['pos']);
+        }
+        return (int) $d['digits'];
+    }
+
+    /**
+     * @param array<string,mixed> $step
+     */
+    private function analyzeSortStep(array $step, RelationalPlan $plan): void
+    {
+        $name = $step['name'];
+        $args = $step['args'];
+        $count = count($args);
+
+        if ($name === 'SORT' || $name === 'SORT_DESC') {
+            $dir = $name === 'SORT' ? 'ASC' : 'DESC';
+            if ($count === 1) {
+                if (isset($plan->sourceRelation['scalar'])) {
+                    $scalarCol = $plan->sourceRelation['scalar'];
+                    $plan->orderBy[] = [
+                        'binder' => '_',
+                        'node' => [
+                            't' => 'index',
+                            'obj' => ['t' => 'var', 'name' => '_', 'pos' => $step['pos']],
+                            'idx' => ['t' => 'text', 'v' => $scalarCol, 'pos' => $step['pos']],
+                            'pos' => $step['pos'],
+                        ],
+                        'dir' => $dir,
+                        'pos' => $step['pos'],
+                    ];
+                    return;
+                }
+                if (count($plan->sourceRelation['fields']) === 1) {
+                    $fieldName = array_key_first($plan->sourceRelation['fields']);
+                    $plan->orderBy[] = [
+                        'binder' => '_',
+                        'node' => [
+                            't' => 'index',
+                            'obj' => ['t' => 'var', 'name' => '_', 'pos' => $step['pos']],
+                            'idx' => ['t' => 'text', 'v' => $fieldName, 'pos' => $step['pos']],
+                            'pos' => $step['pos'],
+                        ],
+                        'dir' => $dir,
+                        'pos' => $step['pos'],
+                    ];
+                    return;
+                }
+                refuse('E_SQL_SHAPE', 'SORT on a multi-field relation requires a key expression; use SORT_BY', $step['pos']);
+            } elseif ($count === 2) {
+                $binder = '_';
+                $key = $args[1];
+            } elseif ($count === 3) {
+                if (!Constants::isBinderName($args[1])) {
+                    refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', $args[1]['pos']);
+                }
+                $binder = $args[1]['name'];
+                $key = $args[2];
+            } else {
+                refuse('E_ARITY', "{$name} takes 1 to 3 arguments", $step['pos']);
+            }
+            $plan->orderBy[] = [
+                'binder' => $binder,
+                'node' => $key,
+                'dir' => $dir,
+                'pos' => $step['pos'],
+            ];
+            return;
+        }
+
+        // SORT_BY
+        if ($count === 2) {
+            $binder = '_';
+            $key = $args[1];
+            $dir = 'ASC';
+        } elseif ($count === 3) {
+            if ($args[2]['t'] === 'text') {
+                $binder = '_';
+                $key = $args[1];
+                $dir = strtoupper($args[2]['v']);
+            } elseif (Constants::isBinderName($args[1])) {
+                $binder = $args[1]['name'];
+                $key = $args[2];
+                $dir = 'ASC';
+            } else {
+                $binder = '_';
+                $key = $args[1];
+                $dir = strtoupper($args[2]['v']);
+            }
+        } elseif ($count === 4) {
+            if (!Constants::isBinderName($args[1])) {
+                refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', $args[1]['pos']);
+            }
+            $binder = $args[1]['name'];
+            $key = $args[2];
+            if ($args[3]['t'] !== 'text') {
+                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[3]['pos']);
+            }
+            $dir = strtoupper($args[3]['v']);
+        } else {
+            refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', $step['pos']);
+        }
+
+        if ($dir !== 'ASC' && $dir !== 'DESC') {
+            $dirPos = $count === 4 ? $args[3]['pos'] : $args[2]['pos'];
+            refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $dirPos);
+        }
+
+        $plan->orderBy[] = [
+            'binder' => $binder,
+            'node' => $key,
+            'dir' => $dir,
+            'pos' => $step['pos'],
+        ];
+    }
+
+    public function compileStatement(RelationalPlan $plan): Fragment
+    {
+        $parts = [];
+        $parts[] = $plan->distinct ? 'SELECT DISTINCT ' : 'SELECT ';
+
+        $src = [
+            'relation' => $plan->sourceRelation,
+            'filters' => $plan->filters,
+            'pos' => null,
+        ];
+
+        // 1. SELECT list (Projections)
+        if ($plan->projections !== null) {
+            $first = true;
+            foreach ($plan->projections as $proj) {
+                if (!$first) {
+                    $parts[] = ', ';
+                }
+                $first = false;
+                $pFrag = $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']));
+                foreach ($pFrag->parts as $p) {
+                    $parts[] = $p;
+                }
+                if ($proj['alias'] !== null) {
+                    $parts[] = ' AS ' . $this->emit->ident($proj['alias']);
+                }
+            }
+        } elseif ($plan->selectCols !== null) {
+            $first = true;
+            foreach ($plan->selectCols as $col) {
+                if (!$first) {
+                    $parts[] = ', ';
+                }
+                $first = false;
+                $uc = strtoupper($col);
+                $fSpec = $plan->sourceRelation['fields'][$uc] ?? null;
+                $table = $fSpec['table'] ?? $plan->sourceAlias;
+                $column = $fSpec['column'] ?? $col;
+                $parts[] = $this->emit->column($table, $column);
+            }
+        } else {
+            if ($plan->sourceAlias !== null) {
+                $parts[] = $this->emit->ident($plan->sourceAlias) . '.*';
+            } else {
+                $parts[] = '*';
+            }
+        }
+
+        // 2. FROM clause
+        $parts[] = ' FROM ';
+        $from = is_array($plan->sourceTable) && isset($plan->sourceTable['raw'])
+            ? (string) $plan->sourceTable['raw']
+            : $this->emit->ident((string) $plan->sourceTable);
+        if (!empty($plan->sourceAlias)) {
+            $from .= ' ' . $this->emit->ident((string) $plan->sourceAlias);
+        }
+        $parts[] = $from;
+
+        // 3. WHERE clause
+        $condParts = [];
+        if (!empty($plan->correlate)) {
+            $condParts[] = [$plan->correlate];
+        }
+        foreach ($plan->filters as $filter) {
+            $cFrag = $this->withRow($src, $filter['binder'],
+                fn (): Fragment => $this->requireBool($this->node($filter['node']), $filter['pos'], 'FILTER'));
+            $condParts[] = $cFrag->parts;
+        }
+
+        if ($condParts !== []) {
+            $parts[] = ' WHERE ';
+            foreach ($condParts as $idx => $cp) {
+                if ($idx > 0) {
+                    $parts[] = ' AND ';
+                }
+                foreach ($cp as $p) {
+                    $parts[] = $p;
+                }
+            }
+        }
+
+        // 4. ORDER BY clause
+        if ($plan->orderBy !== []) {
+            $parts[] = ' ORDER BY ';
+            $first = true;
+            foreach ($plan->orderBy as $ord) {
+                if (!$first) {
+                    $parts[] = ', ';
+                }
+                $first = false;
+                $oFrag = $this->withRow($src, $ord['binder'], fn (): Fragment => $this->node($ord['node']));
+                foreach ($oFrag->parts as $p) {
+                    $parts[] = $p;
+                }
+                $parts[] = ' ' . $ord['dir'];
+            }
+        }
+
+        // 5. LIMIT / OFFSET clause
+        $limit = $plan->limit;
+        $offset = $plan->offset;
+        if ($limit !== null && $offset !== null) {
+            $parts[] = " LIMIT {$limit} OFFSET {$offset}";
+        } elseif ($limit !== null) {
+            $parts[] = " LIMIT {$limit}";
+        } elseif ($offset !== null) {
+            $chain = Map::chain($this->dialect);
+            if (in_array('mariadb', $chain, true) || in_array('mysql', $chain, true) || in_array('mysql-family', $chain, true)) {
+                $parts[] = " LIMIT 18446744073709551615 OFFSET {$offset}";
+            } elseif (in_array('sqlite', $chain, true)) {
+                $parts[] = " LIMIT -1 OFFSET {$offset}";
+            } else {
+                $parts[] = " OFFSET {$offset}";
+            }
+        }
+
+        return new Fragment(
+            $parts,
+            'STATEMENT',
+            $this->dialect,
+            $this->params,
+            $this->paramKinds,
+            array_keys($this->caveats)
+        );
     }
 }

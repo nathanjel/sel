@@ -126,6 +126,10 @@ Fragment Translator::translate(const NodePtr& ast) {
   const_root_ = std::move(scope.root);
 
   const SNodePtr normalised = normalise(ast, const_names_, const_root_);
+  auto plan = analyze_pipeline(normalised);
+  if (plan) {
+    return compile_statement(*plan);
+  }
   const Fragment f = node(normalised);
 
   // Only this final Fragment carries the vectors; every intermediate one built
@@ -135,6 +139,28 @@ Fragment Translator::translate(const NodePtr& ast) {
   out.param_kinds_ = param_kinds_;
   out.caveats_ = caveats_;
   return out;
+}
+
+Fragment Translator::translate_statement(const NodePtr& ast) {
+  Map::require_target(dialect_);
+  bindings_.check_aliases();
+
+  params_.clear();
+  param_kinds_.clear();
+  caveats_.clear();
+  frames_.clear();
+  depth_ = 0;
+
+  ConstScope scope = const_scope(&bindings_);
+  const_names_ = std::move(scope.names);
+  const_root_ = std::move(scope.root);
+
+  const SNodePtr normalised = normalise(ast, const_names_, const_root_);
+  auto plan = analyze_pipeline(normalised);
+  if (!plan) {
+    refuse("E_SQL_SHAPE", "expected a relational query or pipeline");
+  }
+  return compile_statement(*plan);
 }
 
 void Translator::add_caveat(std::string name) {
@@ -1916,6 +1942,415 @@ Fragment Translator::join_aggregate(const SNode& n) {
   // what SEL's JOIN is; a variadic concat would need a lexical key spelled two
   // ways for one function.
   return fold_pairwise("&", parts, n.pos());
+}
+
+// --- relational pipeline statement compiler ---------------------------------
+
+constexpr std::string_view PIPELINE_OPS[] = {
+    "FILTER", "SELECT_COLS", "MAP", "DISTINCT", "TAKE", "DROP",
+    "SORT", "SORT_DESC", "SORT_BY"
+};
+
+std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) {
+  std::vector<SNodePtr> steps;
+  SNodePtr curr = ast;
+
+  while (curr && curr->t() == SNode::T::Call && contains(PIPELINE_OPS, curr->s()) && !curr->kids().empty()) {
+    steps.push_back(curr);
+    curr = curr->kids()[0];
+  }
+
+  if (!curr || curr->t() != SNode::T::Var) {
+    return std::nullopt;
+  }
+
+  if (!bindings_.has(curr->s())) {
+    return std::nullopt;
+  }
+
+  const Binding& b = bindings_.get(curr->s());
+  if (b.kind() != Binding::Kind::Relation) {
+    return std::nullopt;
+  }
+
+  RelationalPlan plan;
+  plan.source_name = curr->s();
+  const RelationSpec& rel = b.as_relation();
+  plan.source_relation = rel;
+  plan.source_from_raw = rel.from_is_raw;
+  plan.source_table = rel.from;
+  plan.source_alias = rel.alias;
+  plan.correlate = rel.correlate;
+
+  std::reverse(steps.begin(), steps.end());
+
+  for (const auto& step : steps) {
+    const std::string& name = step->s();
+    const auto& args = step->kids();
+
+    if (name == "FILTER") {
+      std::string binder;
+      SNodePtr pred;
+      if (args.size() == 2) {
+        binder = "_";
+        pred = args[1];
+      } else if (args.size() == 3) {
+        if (!is_binder_name(*args[1])) {
+          refuse("E_SQL_SHAPE", "the binder of FILTER must be a bare name", args[1]->pos());
+        }
+        binder = args[1]->s();
+        pred = args[2];
+      } else {
+        refuse("E_ARITY", "FILTER takes 2 or 3 arguments", step->pos());
+      }
+      plan.filters.push_back({binder, pred, step->pos()});
+    } else if (name == "SELECT_COLS") {
+      std::vector<SNodePtr> items;
+      if (args.size() == 2 && args[1]->t() == SNode::T::List) {
+        items = args[1]->kids();
+      } else {
+        for (std::size_t i = 1; i < args.size(); ++i) {
+          items.push_back(args[i]);
+        }
+      }
+      std::vector<std::string> cols;
+      for (const auto& item : items) {
+        if (item->t() != SNode::T::Text) {
+          refuse("E_BAD_ARG", "SELECT_COLS column names must be string literals", item->pos());
+        }
+        const std::string& col = item->s();
+        if (!plan.source_relation.fields.empty()) {
+          std::string uc = ascii_upper(col);
+          if (!plan.source_relation.field(uc)) {
+            std::string declared;
+            for (std::size_t i = 0; i < plan.source_relation.fields.size(); ++i) {
+              if (i > 0) declared += ", ";
+              declared += plan.source_relation.fields[i].first;
+            }
+            refuse("E_SQL_SHAPE",
+                   "relation " + plan.source_name + " has no field '" + col +
+                       "'; the relation declares " + declared,
+                   item->pos());
+          }
+        }
+        cols.push_back(col);
+      }
+      plan.select_cols = std::move(cols);
+      plan.projections = std::nullopt;
+    } else if (name == "MAP") {
+      std::string binder;
+      SNodePtr expr;
+      if (args.size() == 2) {
+        binder = "_";
+        expr = args[1];
+      } else if (args.size() == 3) {
+        if (!is_binder_name(*args[1])) {
+          refuse("E_SQL_SHAPE", "the binder of MAP must be a bare name", args[1]->pos());
+        }
+        binder = args[1]->s();
+        expr = args[2];
+      } else {
+        refuse("E_ARITY", "MAP takes 2 or 3 arguments", step->pos());
+      }
+
+      if (expr->t() == SNode::T::Call && expr->s() == "RECORD") {
+        const auto& rec_args = expr->kids();
+        if (rec_args.size() % 2 != 0) {
+          refuse("E_ARITY", "RECORD takes an even number of arguments", expr->pos());
+        }
+        std::vector<RelationalProjection> projections;
+        for (std::size_t i = 0; i < rec_args.size(); i += 2) {
+          const auto& k_node = rec_args[i];
+          const auto& v_node = rec_args[i + 1];
+          if (k_node->t() != SNode::T::Text) {
+            refuse("E_BAD_ARG", "RECORD field names must be string literals", k_node->pos());
+          }
+          projections.push_back({k_node->s(), binder, v_node});
+        }
+        plan.projections = std::move(projections);
+      } else {
+        std::vector<RelationalProjection> projections;
+        projections.push_back({std::nullopt, binder, expr});
+        plan.projections = std::move(projections);
+      }
+      plan.select_cols = std::nullopt;
+    } else if (name == "DISTINCT") {
+      plan.distinct = true;
+    } else if (name == "TAKE") {
+      if (args.size() != 2) {
+        refuse("E_ARITY", "TAKE takes 2 arguments", step->pos());
+      }
+      int64_t lim = eval_int_param(args[1], "TAKE");
+      plan.limit = !plan.limit.has_value() ? lim : std::min(*plan.limit, lim);
+    } else if (name == "DROP") {
+      if (args.size() != 2) {
+        refuse("E_ARITY", "DROP takes 2 arguments", step->pos());
+      }
+      int64_t off = eval_int_param(args[1], "DROP");
+      plan.offset = plan.offset.value_or(0) + off;
+    } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY") {
+      analyze_sort_step(step, plan);
+    }
+  }
+
+  return plan;
+}
+
+int64_t Translator::eval_int_param(const SNodePtr& n, const std::string& op) {
+  NodePtr node = n->to_node();
+  if (!node) {
+    refuse("E_SQL_SHAPE", op + " count cannot contain dynamic lists", n->pos());
+  }
+  Value val;
+  try {
+    val = Program("", node).run(const_root_);
+  } catch (const SelError& e) {
+    refuse_as_sel(e, *n);
+  }
+  if (!val.looks_numeric() || val.is_null()) {
+    refuse("E_NOT_NUM", op + " count must be a number", n->pos());
+  }
+  try {
+    require_number(val, n->pos());
+  } catch (const SelError& e) {
+    refuse_as_sel(e, *n);
+  }
+  const std::string& s = val.scalar();
+  if (s.find('.') != std::string::npos) {
+    refuse("E_NOT_INT", op + " count must be an integer", n->pos());
+  }
+  if (!s.empty() && s[0] == '-') {
+    refuse("E_RANGE", op + " count cannot be negative", n->pos());
+  }
+  try {
+    return std::stoll(s);
+  } catch (const std::exception&) {
+    refuse("E_RANGE", op + " count is out of range", n->pos());
+  }
+}
+
+void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
+  const std::string& name = step->s();
+  const auto& args = step->kids();
+  const auto count = args.size();
+
+  if (name == "SORT" || name == "SORT_DESC") {
+    std::string dir = name == "SORT" ? "ASC" : "DESC";
+    if (count == 1) {
+      if (plan.source_relation.scalar) {
+        const std::string& scalar_col = *plan.source_relation.scalar;
+        auto shape = std::make_shared<Node>();
+        shape->t = NT::Index;
+        shape->pos = step->pos();
+        SNodePtr var_n = SNode::leaf(lit_node(NT::Var, "_", false, step->pos()));
+        SNodePtr idx_n = SNode::leaf(lit_node(NT::Text, scalar_col, false, step->pos()));
+        SNodePtr index_node = SNode::rewritten(shape, {var_n, idx_n});
+        plan.order_by.push_back({"_", index_node, dir, step->pos()});
+        return;
+      }
+      if (plan.source_relation.fields.size() == 1) {
+        const std::string& field_name = plan.source_relation.fields[0].first;
+        auto shape = std::make_shared<Node>();
+        shape->t = NT::Index;
+        shape->pos = step->pos();
+        SNodePtr var_n = SNode::leaf(lit_node(NT::Var, "_", false, step->pos()));
+        SNodePtr idx_n = SNode::leaf(lit_node(NT::Text, field_name, false, step->pos()));
+        SNodePtr index_node = SNode::rewritten(shape, {var_n, idx_n});
+        plan.order_by.push_back({"_", index_node, dir, step->pos()});
+        return;
+      }
+      refuse("E_SQL_SHAPE", "SORT on a multi-field relation requires a key expression; use SORT_BY", step->pos());
+    } else if (count == 2) {
+      plan.order_by.push_back({"_", args[1], dir, step->pos()});
+    } else if (count == 3) {
+      if (!is_binder_name(*args[1])) {
+        refuse("E_SQL_SHAPE", "the binder of " + name + " must be a bare name", args[1]->pos());
+      }
+      plan.order_by.push_back({args[1]->s(), args[2], dir, step->pos()});
+    } else {
+      refuse("E_ARITY", name + " takes 1 to 3 arguments", step->pos());
+    }
+    return;
+  }
+
+  // SORT_BY
+  std::string binder = "_";
+  SNodePtr key;
+  std::string dir = "ASC";
+  Pos dir_pos = step->pos();
+
+  if (count == 2) {
+    binder = "_";
+    key = args[1];
+    dir = "ASC";
+  } else if (count == 3) {
+    if (args[2]->t() == SNode::T::Text) {
+      binder = "_";
+      key = args[1];
+      dir = ascii_upper(args[2]->s());
+      dir_pos = args[2]->pos();
+    } else if (is_binder_name(*args[1])) {
+      binder = args[1]->s();
+      key = args[2];
+      dir = "ASC";
+    } else {
+      binder = "_";
+      key = args[1];
+      dir = ascii_upper(args[2]->s());
+      dir_pos = args[2]->pos();
+    }
+  } else if (count == 4) {
+    if (!is_binder_name(*args[1])) {
+      refuse("E_SQL_SHAPE", "the binder of SORT_BY must be a bare name", args[1]->pos());
+    }
+    binder = args[1]->s();
+    key = args[2];
+    if (args[3]->t() != SNode::T::Text) {
+      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[3]->pos());
+    }
+    dir = ascii_upper(args[3]->s());
+    dir_pos = args[3]->pos();
+  } else {
+    refuse("E_ARITY", "SORT_BY takes 2 to 4 arguments", step->pos());
+  }
+
+  if (dir != "ASC" && dir != "DESC") {
+    refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", dir_pos);
+  }
+
+  plan.order_by.push_back({binder, key, dir, step->pos()});
+}
+
+Fragment Translator::compile_statement(const RelationalPlan& plan) {
+  std::vector<Fragment::Part> parts;
+  auto add_sql = [&](std::string sql) {
+    if (!sql.empty()) {
+      Fragment::Part p;
+      p.is_slot = false;
+      p.sql = std::move(sql);
+      parts.push_back(std::move(p));
+    }
+  };
+
+  add_sql(plan.distinct ? "SELECT DISTINCT " : "SELECT ");
+
+  Source src;
+  src.shape = Source::Shape::Relation;
+  src.relation = std::make_shared<RelationSpec>(plan.source_relation);
+  for (const auto& f : plan.filters) {
+    src.filters.push_back({f.binder, f.node});
+  }
+
+  // 1. SELECT list (Projections)
+  if (plan.projections) {
+    bool first = true;
+    for (const auto& proj : *plan.projections) {
+      if (!first) add_sql(", ");
+      first = false;
+      Fragment p_frag = with_row(src, proj.binder, [&]() {
+        return node(proj.node);
+      });
+      for (const auto& p : p_frag.parts()) {
+        parts.push_back(p);
+      }
+      if (proj.alias) {
+        add_sql(" AS " + emit_.ident(*proj.alias));
+      }
+    }
+  } else if (plan.select_cols) {
+    bool first = true;
+    for (const auto& col : *plan.select_cols) {
+      if (!first) add_sql(", ");
+      first = false;
+      const ColumnSpec* f_spec = plan.source_relation.field(ascii_upper(col));
+      std::string table = f_spec && !f_spec->table.empty()
+                              ? f_spec->table
+                              : (plan.source_alias ? *plan.source_alias : "");
+      std::string column = f_spec && !f_spec->column.empty() ? f_spec->column : col;
+      add_sql(emit_.column(table, column));
+    }
+  } else {
+    if (plan.source_alias && !plan.source_alias->empty()) {
+      add_sql(emit_.ident(*plan.source_alias) + ".*");
+    } else {
+      add_sql("*");
+    }
+  }
+
+  // 2. FROM clause
+  add_sql(" FROM ");
+  std::string from = plan.source_from_raw ? plan.source_table : emit_.ident(plan.source_table);
+  if (plan.source_alias && !plan.source_alias->empty()) {
+    from += " " + emit_.ident(*plan.source_alias);
+  }
+  add_sql(from);
+
+  // 3. WHERE clause
+  std::vector<std::vector<Fragment::Part>> cond_parts;
+  if (plan.correlate && !plan.correlate->empty()) {
+    Fragment::Part cp;
+    cp.is_slot = false;
+    cp.sql = *plan.correlate;
+    cond_parts.push_back({cp});
+  }
+  for (const auto& filter : plan.filters) {
+    Fragment c_frag = with_row(src, filter.binder, [&]() {
+      return require_bool(node(filter.node), filter.pos, "FILTER");
+    });
+    cond_parts.push_back(c_frag.parts());
+  }
+
+  if (!cond_parts.empty()) {
+    add_sql(" WHERE ");
+    for (std::size_t i = 0; i < cond_parts.size(); ++i) {
+      if (i > 0) add_sql(" AND ");
+      for (const auto& p : cond_parts[i]) {
+        parts.push_back(p);
+      }
+    }
+  }
+
+  // 4. ORDER BY clause
+  if (!plan.order_by.empty()) {
+    add_sql(" ORDER BY ");
+    bool first = true;
+    for (const auto& ord : plan.order_by) {
+      if (!first) add_sql(", ");
+      first = false;
+      Fragment o_frag = with_row(src, ord.binder, [&]() {
+        return node(ord.node);
+      });
+      for (const auto& p : o_frag.parts()) {
+        parts.push_back(p);
+      }
+      add_sql(" " + ord.dir);
+    }
+  }
+
+  // 5. LIMIT / OFFSET clause
+  if (plan.limit && plan.offset) {
+    add_sql(" LIMIT " + std::to_string(*plan.limit) + " OFFSET " + std::to_string(*plan.offset));
+  } else if (plan.limit) {
+    add_sql(" LIMIT " + std::to_string(*plan.limit));
+  } else if (plan.offset) {
+    auto chain = Map::chain(dialect_);
+    auto has_target = [&](std::string_view t) {
+      return std::find(chain.begin(), chain.end(), t) != chain.end();
+    };
+    if (has_target("mariadb") || has_target("mysql") || has_target("mysql-family")) {
+      add_sql(" LIMIT 18446744073709551615 OFFSET " + std::to_string(*plan.offset));
+    } else if (has_target("sqlite")) {
+      add_sql(" LIMIT -1 OFFSET " + std::to_string(*plan.offset));
+    } else {
+      add_sql(" OFFSET " + std::to_string(*plan.offset));
+    }
+  }
+
+  Fragment out(parts, SqlKind::Statement, dialect_);
+  out.params_ = params_;
+  out.param_kinds_ = param_kinds_;
+  out.caveats_ = caveats_;
+  return out;
 }
 
 }  // namespace sel::sql

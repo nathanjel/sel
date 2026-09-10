@@ -17,7 +17,7 @@ from typing import Any, Callable
 from .. import utf8
 from ..builtins import regex as _regex
 from ..errors import Pos, SelError
-from ..eval import MAX_DEPTH
+from ..eval import Context, MAX_DEPTH, eval_node
 from ..lexer import ascii_upper
 from ..parser import Node
 from ..value import Value, quote_dump
@@ -29,6 +29,9 @@ from .bindings import Bindings
 from .emit import Emit
 from .errors import refuse
 from .fragment import Fragment
+from .relational_plan import RelationalPlan
+
+PIPELINE_OPS = ('FILTER', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP')
 
 # SEL list keys are the canonical decimals "1", "2", … -- so "01" is not a key
 # and neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer
@@ -149,10 +152,30 @@ class Translator:
         self.frames = []
         self.depth = 0
         self.const_names, self.const_ctx = _constants.scope(self.bindings)
-        f = self._node(_normalise.run(ast, self.const_names, self.const_ctx))
+        norm = _normalise.run(ast, self.const_names, self.const_ctx)
+        plan = self.analyze_pipeline(norm)
+        if plan is not None:
+            return self.compile_statement(plan)
+        f = self._node(norm)
 
         return Fragment(f.parts, f.kind, self.dialect, self.params,
                         self.param_kinds, list(self.caveats))
+
+    def translate_statement(self, ast: Node) -> Fragment:
+        _map.require_target(self.dialect)
+        self.bindings.check_aliases()
+
+        self.params = []
+        self.param_kinds = []
+        self.caveats = {}
+        self.frames = []
+        self.depth = 0
+        self.const_names, self.const_ctx = _constants.scope(self.bindings)
+        norm = _normalise.run(ast, self.const_names, self.const_ctx)
+        plan = self.analyze_pipeline(norm)
+        if plan is None:
+            refuse('E_SQL_SHAPE', 'expected a relational query or pipeline')
+        return self.compile_statement(plan)
 
     # --- the walk ------------------------------------------------------------
 
@@ -1430,6 +1453,325 @@ class Translator:
                     else:
                         parts.append(p)
         return parts
+
+    # --- Relational Pipeline Statement Compilation --------------------------
+
+    def analyze_pipeline(self, n: Node) -> RelationalPlan | None:
+        steps: list[Node] = []
+        curr = n
+        while curr.t == 'call' and curr.name in PIPELINE_OPS:
+            if not curr.args:
+                break
+            steps.append(curr)
+            curr = curr.args[0]
+
+        if curr.t != 'var':
+            return None
+
+        if not self.bindings.has(curr.name):
+            return None
+        b = self.bindings.get(curr.name)
+        if b.get('kind') != 'relation':
+            return None
+
+        plan = RelationalPlan()
+        plan.source_name = curr.name
+        plan.source_relation = b
+        plan.source_table = b.get('from')
+        plan.source_alias = b.get('alias')
+        corr = b.get('correlate')
+        plan.correlate = str(corr.get('raw', '')) if isinstance(corr, dict) else (corr if isinstance(corr, str) else None)
+
+        steps.reverse()
+
+        for step in steps:
+            name = step.name
+            args = step.args
+
+            if name == 'FILTER':
+                if len(args) == 2:
+                    binder = '_'
+                    pred = args[1]
+                elif len(args) == 3:
+                    if not _constants.is_binder_name(args[1]):
+                        refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', args[1].pos)
+                    binder = args[1].name
+                    pred = args[2]
+                else:
+                    refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos)
+                plan.filters.append({'binder': binder, 'node': pred, 'pos': step.pos})
+
+            elif name == 'SELECT_COLS':
+                col_args = args[1:]
+                items = col_args[0].items if len(col_args) == 1 and col_args[0].t == 'list' else col_args
+                cols = []
+                for item in items:
+                    if item.t != 'text':
+                        refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos)
+                    col = item.v
+                    fields = plan.source_relation.get('fields') or {}
+                    if fields:
+                        uc = ascii_upper(col)
+                        if uc not in fields:
+                            refuse('E_SQL_SHAPE',
+                                   f"relation {plan.source_name} has no field '{col}'; the relation declares "
+                                   + ', '.join(sorted(fields)), item.pos)
+                    cols.append(col)
+                plan.select_cols = cols
+                plan.projections = None
+
+            elif name == 'MAP':
+                if len(args) == 2:
+                    binder = '_'
+                    expr = args[1]
+                elif len(args) == 3:
+                    if not _constants.is_binder_name(args[1]):
+                        refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', args[1].pos)
+                    binder = args[1].name
+                    expr = args[2]
+                else:
+                    refuse('E_ARITY', 'MAP takes 2 or 3 arguments', step.pos)
+
+                if expr.t == 'call' and expr.name == 'RECORD':
+                    rec_args = expr.args
+                    if len(rec_args) % 2 != 0:
+                        refuse('E_ARITY', 'RECORD takes an even number of arguments', expr.pos)
+                    projections = []
+                    for i in range(0, len(rec_args), 2):
+                        k_node = rec_args[i]
+                        v_node = rec_args[i + 1]
+                        if k_node.t != 'text':
+                            refuse('E_BAD_ARG', 'RECORD field names must be string literals', k_node.pos)
+                        projections.append({
+                            'alias': k_node.v,
+                            'binder': binder,
+                            'node': v_node,
+                        })
+                    plan.projections = projections
+                else:
+                    plan.projections = [{'alias': None, 'binder': binder, 'node': expr}]
+                plan.select_cols = None
+
+            elif name == 'DISTINCT':
+                plan.distinct = True
+
+            elif name == 'TAKE':
+                if len(args) != 2:
+                    refuse('E_ARITY', 'TAKE takes 2 arguments', step.pos)
+                lim = self._eval_int_param(args[1], 'TAKE')
+                plan.limit = lim if plan.limit is None else min(plan.limit, lim)
+
+            elif name == 'DROP':
+                if len(args) != 2:
+                    refuse('E_ARITY', 'DROP takes 2 arguments', step.pos)
+                off = self._eval_int_param(args[1], 'DROP')
+                plan.offset = (plan.offset or 0) + off
+
+            elif name in ('SORT', 'SORT_DESC', 'SORT_BY'):
+                self._analyze_sort_step(step, plan)
+
+        return plan
+
+    def _eval_int_param(self, n: Node, op: str) -> int:
+        try:
+            val = eval_node(n, self.const_ctx or Context())
+        except SelError as e:
+            _constants.refuse_as_sel(e, n)
+        if not val.looks_numeric() or val.is_null():
+            refuse('E_NOT_NUM', f'{op} count must be a number', n.pos)
+        d = val.as_decimal(n.pos)
+        if d.scale != 0:
+            refuse('E_NOT_INT', f'{op} count must be an integer', n.pos)
+        if d.neg:
+            refuse('E_RANGE', f'{op} count cannot be negative', n.pos)
+        return d.digits
+
+    def _analyze_sort_step(self, step: Node, plan: RelationalPlan) -> None:
+        name = step.name
+        args = step.args
+        count = len(args)
+
+        if name in ('SORT', 'SORT_DESC'):
+            dir_ = 'ASC' if name == 'SORT' else 'DESC'
+            if count == 1:
+                scalar = plan.source_relation.get('scalar')
+                if scalar:
+                    from ..parser import Node as PNode
+                    plan.order_by.append({
+                        'binder': '_',
+                        'node': PNode(t='index', pos=step.pos,
+                                      obj=PNode(t='var', pos=step.pos, name='_'),
+                                      idx=PNode(t='text', pos=step.pos, v=scalar)),
+                        'dir': dir_,
+                        'pos': step.pos,
+                    })
+                    return
+                fields = plan.source_relation.get('fields') or {}
+                if len(fields) == 1:
+                    field_name = next(iter(fields))
+                    from ..parser import Node as PNode
+                    plan.order_by.append({
+                        'binder': '_',
+                        'node': PNode(t='index', pos=step.pos,
+                                      obj=PNode(t='var', pos=step.pos, name='_'),
+                                      idx=PNode(t='text', pos=step.pos, v=field_name)),
+                        'dir': dir_,
+                        'pos': step.pos,
+                    })
+                    return
+                refuse('E_SQL_SHAPE', 'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos)
+            elif count == 2:
+                plan.order_by.append({'binder': '_', 'node': args[1], 'dir': dir_, 'pos': step.pos})
+                return
+            elif count == 3:
+                if not _constants.is_binder_name(args[1]):
+                    refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos)
+                plan.order_by.append({'binder': args[1].name, 'node': args[2], 'dir': dir_, 'pos': step.pos})
+                return
+            else:
+                refuse('E_ARITY', f'{name} takes 1 to 3 arguments', step.pos)
+
+        # SORT_BY
+        if count == 2:
+            binder = '_'
+            key = args[1]
+            dir_ = 'ASC'
+        elif count == 3:
+            if args[2].t == 'text':
+                binder = '_'
+                key = args[1]
+                dir_ = ascii_upper(args[2].v)
+            elif _constants.is_binder_name(args[1]):
+                binder = args[1].name
+                key = args[2]
+                dir_ = 'ASC'
+            else:
+                binder = '_'
+                key = args[1]
+                dir_ = ascii_upper(args[2].v)
+        elif count == 4:
+            if not _constants.is_binder_name(args[1]):
+                refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos)
+            binder = args[1].name
+            key = args[2]
+            if args[3].t != 'text':
+                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[3].pos)
+            dir_ = ascii_upper(args[3].v)
+        else:
+            refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', step.pos)
+
+        if dir_ not in ('ASC', 'DESC'):
+            dir_pos = args[3].pos if count == 4 else args[2].pos
+            refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", dir_pos)
+
+        plan.order_by.append({
+            'binder': binder,
+            'node': key,
+            'dir': dir_,
+            'pos': step.pos,
+        })
+
+    def compile_statement(self, plan: RelationalPlan) -> Fragment:
+        parts: list[Any] = []
+        parts.append('SELECT DISTINCT ' if plan.distinct else 'SELECT ')
+
+        src = {
+            'relation': plan.source_relation,
+            'filters': plan.filters,
+            'pos': None,
+        }
+
+        # 1. SELECT list (Projections)
+        if plan.projections is not None:
+            first = True
+            for proj in plan.projections:
+                if not first:
+                    parts.append(', ')
+                first = False
+                p_frag = self._with_row(src, proj['binder'], lambda: self._node(proj['node']))
+                parts.extend(p_frag.parts)
+                if proj['alias'] is not None:
+                    parts.append(' AS ' + self.emit.ident(proj['alias']))
+        elif plan.select_cols is not None:
+            first = True
+            for col in plan.select_cols:
+                if not first:
+                    parts.append(', ')
+                first = False
+                uc = ascii_upper(col)
+                fields = plan.source_relation.get('fields') or {}
+                f_spec = fields.get(uc)
+                table = (f_spec.get('table') or plan.source_alias) if f_spec else plan.source_alias
+                column = (f_spec.get('column') or col) if f_spec else col
+                parts.append(self.emit.column(table, column))
+        else:
+            if plan.source_alias:
+                parts.append(self.emit.ident(plan.source_alias) + '.*')
+            else:
+                parts.append('*')
+
+        # 2. FROM clause
+        parts.append(' FROM ')
+        if isinstance(plan.source_table, dict) and 'raw' in plan.source_table:
+            frm = str(plan.source_table['raw'])
+        else:
+            frm = self.emit.ident(str(plan.source_table))
+        if plan.source_alias:
+            frm += ' ' + self.emit.ident(str(plan.source_alias))
+        parts.append(frm)
+
+        # 3. WHERE clause
+        cond_parts: list[list[Any]] = []
+        if plan.correlate:
+            cond_parts.append([plan.correlate])
+        for filter_ in plan.filters:
+            c_frag = self._with_row(src, filter_['binder'],
+                lambda: self._require_bool(self._node(filter_['node']), filter_['pos'], 'FILTER'))
+            cond_parts.append(c_frag.parts)
+
+        if cond_parts:
+            parts.append(' WHERE ')
+            for idx, cp in enumerate(cond_parts):
+                if idx > 0:
+                    parts.append(' AND ')
+                parts.extend(cp)
+
+        # 4. ORDER BY clause
+        if plan.order_by:
+            parts.append(' ORDER BY ')
+            first = True
+            for ord_ in plan.order_by:
+                if not first:
+                    parts.append(', ')
+                first = False
+                o_frag = self._with_row(src, ord_['binder'], lambda: self._node(ord_['node']))
+                parts.extend(o_frag.parts)
+                parts.append(' ' + ord_['dir'])
+
+        # 5. LIMIT / OFFSET clause
+        limit = plan.limit
+        offset = plan.offset
+        if limit is not None and offset is not None:
+            parts.append(f' LIMIT {limit} OFFSET {offset}')
+        elif limit is not None:
+            parts.append(f' LIMIT {limit}')
+        elif offset is not None:
+            chain = _map.chain(self.dialect)
+            if any(d in chain for d in ('mariadb', 'mysql', 'mysql-family')):
+                parts.append(f' LIMIT 18446744073709551615 OFFSET {offset}')
+            elif 'sqlite' in chain:
+                parts.append(f' LIMIT -1 OFFSET {offset}')
+            else:
+                parts.append(f' OFFSET {offset}')
+
+        return Fragment(
+            parts,
+            'STATEMENT',
+            self.dialect,
+            self.params,
+            self.param_kinds,
+            list(self.caveats)
+        )
 
 
 # --- module-level helpers ----------------------------------------------------

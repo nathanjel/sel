@@ -8,7 +8,7 @@
 ;;; time. Declared so the forward reference is stated rather than warned about.
 (declaim (ftype function emit-literal emit-placeholder))
 
-(defparameter +kinds+ '(:num :text :bool :bin :unknown :list))
+(defparameter +kinds+ '(:num :text :bool :bin :unknown :list :statement))
 
 (defun kind-name (k) (string-upcase (symbol-name k)))
 
@@ -93,6 +93,17 @@ which is not a SQL value at all."
   (when (eq (fragment-kind f) :list)
     (refuse "E_SQL_SHAPE"
             "this expression yields a list, and a SQL expression is a scalar"))
+  (when (eq (fragment-kind f) :statement)
+    (refuse "E_SQL_SHAPE"
+            "this expression yields a statement, and a SQL expression is a scalar; use asStatement()"))
+  (frag-join f mode))
+
+(defun as-statement (f &optional (mode :inline))
+  "Usable as a top-level SQL query statement."
+  (unless (eq (fragment-kind f) :statement)
+    (refuse "E_SQL_SHAPE"
+            (format nil "expected STATEMENT fragment, got ~a; use asValue() or asCondition()"
+                    (kind-name (fragment-kind f)))))
   (frag-join f mode))
 
 (defun as-condition (f &optional (mode :inline))

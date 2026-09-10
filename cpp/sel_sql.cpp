@@ -33,6 +33,7 @@ std::string_view kind_name(SqlKind k) {
     case SqlKind::Bin: return "BIN";
     case SqlKind::Unknown: return "UNKNOWN";
     case SqlKind::List: return "LIST";
+    case SqlKind::Statement: return "STATEMENT";
   }
   return "";
 }
@@ -44,6 +45,7 @@ std::optional<SqlKind> kind_from_name(std::string_view name) {
   if (name == "BIN") return SqlKind::Bin;
   if (name == "UNKNOWN") return SqlKind::Unknown;
   if (name == "LIST") return SqlKind::List;
+  if (name == "STATEMENT") return SqlKind::Statement;
   return std::nullopt;
 }
 
@@ -123,6 +125,10 @@ std::string Fragment::as_value(Mode mode) const {
     refuse("E_SQL_SHAPE",
            "this expression yields a list, and a SQL expression is a scalar");
   }
+  if (kind_ == SqlKind::Statement) {
+    refuse("E_SQL_SHAPE",
+           "this expression yields a statement, and a SQL expression is a scalar; use asStatement()");
+  }
   return join(mode);
 }
 
@@ -139,6 +145,15 @@ std::string Fragment::as_condition(Mode mode) const {
          "a condition must be BOOL, and this expression is " +
              std::string(kind_name(kind_)) +
              "; SQL has no truthiness and neither does SEL");
+}
+
+std::string Fragment::as_statement(Mode mode) const {
+  if (kind_ != SqlKind::Statement) {
+    refuse("E_SQL_SHAPE",
+           "expected STATEMENT fragment, got " + std::string(kind_name(kind_)) +
+               "; use asValue() or asCondition()");
+  }
+  return join(mode);
 }
 
 std::vector<Value> Fragment::bindings() const {
@@ -174,6 +189,23 @@ std::optional<Fragment> Sql::try_translate(const Program& program,
   // not be swallowed by the path that exists to handle refusals.
   try {
     return translate(program, dialect, bindings, options);
+  } catch (const SqlError&) {
+    return std::nullopt;
+  }
+}
+
+Fragment Sql::translate_statement(const Program& program, const std::string& dialect,
+                                  const Bindings& bindings, const Options& options) {
+  Translator t(dialect, bindings, options);
+  return t.translate_statement(program.ast());
+}
+
+std::optional<Fragment> Sql::try_translate_statement(const Program& program,
+                                                     const std::string& dialect,
+                                                     const Bindings& bindings,
+                                                     const Options& options) {
+  try {
+    return translate_statement(program, dialect, bindings, options);
   } catch (const SqlError&) {
     return std::nullopt;
   }

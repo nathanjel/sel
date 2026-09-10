@@ -135,7 +135,12 @@ def run_case(c: dict) -> str | None:
         bindings = c['bindings']()
         program = sel.compile(c['source'])
         frag = Sql.translate(program, dialect, bindings, options)
-        sql = frag.as_condition(mode) if as_ == 'condition' else frag.as_value(mode)
+        if as_ == 'condition':
+            sql = frag.as_condition(mode)
+        elif as_ == 'statement':
+            sql = frag.as_statement(mode)
+        else:
+            sql = frag.as_value(mode)
     except SqlError as e:
         error = e
     except SelError as e:
@@ -207,7 +212,8 @@ def run_case(c: dict) -> str | None:
     # `~1~`, not bare tildes: PostgreSQL's regex operator IS `~`, so counting
     # them divided a regex fragment's odd tilde count by two. PHP's runner
     # shipped that bug; this is the corrected form from the start.
-    if len(frag.bindings()) != len(TILDE_RE.findall(frag.as_value('debug'))):
+    debug_str = frag.as_statement('debug') if frag.kind == 'STATEMENT' else frag.as_value('debug')
+    if len(frag.bindings()) != len(TILDE_RE.findall(debug_str)):
         return 'bindings() and the emitted placeholders disagree in count'
 
     if c['params'] is not None:

@@ -36,7 +36,13 @@
    #:fragment-guard
    #:as-value
    #:as-condition
+   #:as-statement
    #:bindings
+
+   ;; Relational plan
+   #:relational-plan
+   #:make-relational-plan
+   #:relational-plan-p
 
    ;; Bindings
    #:binding
@@ -63,4 +69,6 @@
    ;; The layer itself
    #:translate
    #:try-translate
+   #:translate-statement
+   #:try-translate-statement
    #:dialects))

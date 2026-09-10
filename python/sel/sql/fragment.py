@@ -10,7 +10,7 @@ from ..value import Value
 from . import emit as _emit
 from .errors import refuse
 
-KINDS = ('NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST')
+KINDS = ('NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST', 'STATEMENT')
 
 
 class Fragment:
@@ -56,6 +56,16 @@ class Fragment:
         if self.kind == 'LIST':
             refuse('E_SQL_SHAPE',
                    'this expression yields a list, and a SQL expression is a scalar')
+        if self.kind == 'STATEMENT':
+            refuse('E_SQL_SHAPE',
+                   'this expression yields a statement, and a SQL expression is a scalar; use as_statement()')
+        return self._join(mode)
+
+    def as_statement(self, mode: str = 'inline') -> str:
+        """Usable as a top-level SQL query statement."""
+        if self.kind != 'STATEMENT':
+            refuse('E_SQL_SHAPE',
+                   f'expected STATEMENT fragment, got {self.kind}; use as_value() or as_condition()')
         return self._join(mode)
 
     def as_condition(self, mode: str = 'inline') -> str:
