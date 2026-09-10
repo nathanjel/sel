@@ -478,18 +478,78 @@ final class Parser
     private function parsePostfix(): array
     {
         $node = $this->parsePrimary();
-        while ($this->atOp('[')) {
-            $br = $this->next();
-            $this->enter($br);
-            try {
-                $idx = $this->parseSequence();
-                $this->expectOp(']');
-                $node = ['t' => 'index', 'obj' => $node, 'idx' => $idx, 'pos' => $br];
-            } finally {
-                $this->leave();
+        while ($this->atOp('[') || $this->atOp('.>')) {
+            if ($this->atOp('[')) {
+                $br = $this->next();
+                $this->enter($br);
+                try {
+                    $idx = $this->parseSequence();
+                    $this->expectOp(']');
+                    $node = ['t' => 'index', 'obj' => $node, 'idx' => $idx, 'pos' => $br];
+                } finally {
+                    $this->leave();
+                }
+            } else {
+                $this->next();
+                $node = $this->parsePipeStep($node);
             }
         }
         return $node;
+    }
+
+    /**
+     * @param array<string,mixed> $left
+     * @return array<string,mixed>
+     */
+    private function parsePipeStep(array $left): array
+    {
+        $t = $this->peek();
+        if ($t['type'] !== 'ident' || in_array($t['value'], ['TRUE', 'FALSE', 'NULL'], true)) {
+            fail('E_SYNTAX', 'right-hand side of .> must be a function call or function name', $t);
+        }
+        $nameTok = $this->next();
+        $args = [];
+        if ($this->atOp('(')) {
+            $this->next();
+            if ($this->atOp(')')) {
+                $this->next();
+            } else {
+                $inner = $this->parseSequence();
+                $this->expectOp(')');
+                $args = ($inner['t'] === 'list' && empty($inner['grouped'])) ? $inner['items'] : [$inner];
+            }
+        }
+
+        $spec = Registry::lookup($nameTok['value']);
+        if ($spec === null) {
+            fail('E_UNKNOWN_FUNC', "unknown function {$nameTok['value']}", $nameTok);
+        }
+
+        $count = count($args);
+        $hasPlaceholder = false;
+        if ($count >= $spec['min']) {
+            foreach ($args as $idx => $arg) {
+                if ($arg['t'] === 'var' && $arg['name'] === '_' && empty($arg['grouped'])) {
+                    $args[$idx] = $left;
+                    $hasPlaceholder = true;
+                }
+            }
+        }
+        if (!$hasPlaceholder) {
+            array_unshift($args, $left);
+        }
+
+        $count = count($args);
+        if ($count < $spec['min'] || $count > $spec['max']) {
+            fail('E_ARITY', "{$spec['name']} takes " . self::arityText($spec) . ", got {$count}", $nameTok);
+        }
+        if ($spec['arityError'] !== null) {
+            $problem = ($spec['arityError'])($count);
+            if ($problem !== null) {
+                fail('E_ARITY', $problem, $nameTok);
+            }
+        }
+        return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args, 'pos' => $nameTok];
     }
 
     /** @return array<string,mixed> */

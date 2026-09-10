@@ -293,7 +293,7 @@ Tightest binding first. Same-row operators associate as marked.
 
 | # | Operators | Assoc | Notes |
 |---|---|---|---|
-| 1 | `x[k]` `f(…)` `( )` | left | indexing, call, grouping |
+| 1 | `x[k]` `f(…)` `( )` `x .> f(…)` `x .> f` | left | indexing, call, grouping, forward pipeline |
 | 2 | `-x` | prefix | numeric negation |
 | 3 | `*` `/` `%` | left | |
 | 4 | `+` `-` | left | |
@@ -426,6 +426,24 @@ This is what makes the append idiom work:
 A = ("a", "b");
 A = (A, "c");      # A is now three elements, keys 1..3
 ```
+
+### 5.10 Forward pipeline — `.>`
+
+The forward pipeline operator passes an expression into a function invocation on its right-hand side. It is desugared entirely at compile time:
+
+```sel
+"hello" .> UPPER                     # desugars to UPPER("hello")
+(1, 2, 3, 4) .> FILTER(_ % 2 == 0)   # desugars to FILTER((1, 2, 3, 4), _ % 2 == 0)
+"hello world" .> LEFT(5)             # desugars to LEFT("hello world", 5)
+"," .> JOIN((1, 2, 3), _)            # desugars to JOIN((1, 2, 3), ",")
+```
+
+Rules:
+1. **Thread-first default**: `x .> f(...)` prepends `x` as the first argument to `f`.
+2. **Bare identifier**: `x .> f` is equivalent to `x .> f()`, desugaring to `f(x)`.
+3. **Placeholder `_`**: If the number of arguments given to `f` is already at least `f`'s minimum arity and one of the top-level arguments is a bare identifier `_`, that placeholder is replaced by `x` rather than prepending `x`.
+4. **Postfix binding**: `.>` binds at the postfix level (tightest binding power alongside indexing `[ ]`), so `x .> f() > 0` parses as `(f(x)) > 0`, and `a .> f() AND b .> g()` parses as `f(a) AND g(b)` without requiring extra parentheses.
+5. **Compile-time validation**: The right-hand side must resolve to a valid registered function name or call; otherwise `E_UNKNOWN_FUNC`, `E_ARITY`, or `E_SYNTAX` is reported at compile time.
 
 ---
 

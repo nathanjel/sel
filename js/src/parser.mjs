@@ -269,18 +269,69 @@ class Parser {
   // RecursionError at 198 while the others still answered.
   parsePostfix() {
     let node = this.parsePrimary();
-    while (this.atOp('[')) {
-      const br = this.next();
-      this.enter(br);
-      try {
-        const idx = this.parseSequence();
-        this.expectOp(']');
-        node = { t: 'index', obj: node, idx, pos: br };
-      } finally {
-        this.leave();
+    while (this.atOp('[') || this.atOp('.>')) {
+      if (this.atOp('[')) {
+        const br = this.next();
+        this.enter(br);
+        try {
+          const idx = this.parseSequence();
+          this.expectOp(']');
+          node = { t: 'index', obj: node, idx, pos: br };
+        } finally {
+          this.leave();
+        }
+      } else {
+        this.next();
+        node = this.parsePipeStep(node);
       }
     }
     return node;
+  }
+
+  parsePipeStep(left) {
+    const t = this.peek();
+    if (t.type !== 'ident' || t.value === 'TRUE' || t.value === 'FALSE' || t.value === 'NULL') {
+      fail('E_SYNTAX', 'right-hand side of .> must be a function call or function name', t);
+    }
+    const nameTok = this.next();
+    let args = [];
+    if (this.atOp('(')) {
+      this.next();
+      if (this.atOp(')')) {
+        this.next();
+      } else {
+        const inner = this.parseSequence();
+        this.expectOp(')');
+        args = (inner.t === 'list' && !inner.grouped) ? inner.items : [inner];
+      }
+    }
+
+    const spec = lookup(nameTok.value);
+    if (!spec) fail('E_UNKNOWN_FUNC', `unknown function ${nameTok.value}`, nameTok);
+
+    const count = args.length;
+    let hasPlaceholder = false;
+    if (count >= spec.min) {
+      for (let i = 0; i < args.length; i++) {
+        if (args[i].t === 'var' && args[i].name === '_' && !args[i].grouped) {
+          args[i] = left;
+          hasPlaceholder = true;
+        }
+      }
+    }
+    if (!hasPlaceholder) {
+      args.unshift(left);
+    }
+
+    const finalCount = args.length;
+    if (finalCount < spec.min || finalCount > spec.max) {
+      fail('E_ARITY', `${spec.name} takes ${arityText(spec)}, got ${finalCount}`, nameTok);
+    }
+    if (spec.arityError) {
+      const problem = spec.arityError(finalCount);
+      if (problem) fail('E_ARITY', problem, nameTok);
+    }
+    return { t: 'call', name: spec.name, spec, args, pos: nameTok };
   }
 
   parsePrimary() {

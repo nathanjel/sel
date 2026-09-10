@@ -1,0 +1,227 @@
+% Forward pipeline operator (.>) desugars at parse time into a function call.
+%
+% Normative. Every implementation must pass every case.
+
+### name: pipe.ident.bare
+--- source
+"hello" .> UPPER
+--- expect
+text "HELLO"
+===
+
+### name: pipe.ident.empty-parens
+--- source
+"hello" .> UPPER()
+--- expect
+text "HELLO"
+===
+
+### name: pipe.chain.two
+--- source
+"  hello  " .> TRIM .> UPPER
+--- expect
+text "HELLO"
+===
+
+### name: pipe.chain.three
+--- source
+"  hello  " .> TRIM .> UPPER .> LEN
+--- expect
+num 5
+===
+
+### name: pipe.args.thread-first
+--- source
+"hello world" .> LEFT(5)
+--- expect
+text "hello"
+===
+
+### name: pipe.args.multiple
+--- source
+"hello world" .> SUBSTR(1, 5)
+--- expect
+text "hello"
+===
+
+### name: pipe.placeholder.second
+--- source
+"," .> JOIN((1, 2, 3), _)
+--- expect
+text "1,2,3"
+===
+
+### name: pipe.placeholder.first
+--- source
+"hello" .> LEFT(_, 4)
+--- expect
+text "hell"
+===
+
+### name: pipe.aggregate.filter
+--- source
+(1, 2, 3, 4) .> FILTER(_ % 2 == 0) .> JOIN(",")
+--- expect
+text "2,4"
+===
+
+### name: pipe.aggregate.filter.binder
+--- source
+(1, 2, 3, 4) .> FILTER(X, X > 2) .> JOIN(",")
+--- expect
+text "3,4"
+===
+
+### name: pipe.aggregate.map
+--- source
+(1, 2, 3) .> MAP(_ * 2) .> JOIN(",")
+--- expect
+text "2,4,6"
+===
+
+### name: pipe.aggregate.sum
+--- source
+(10, 20, 30) .> SUM(_)
+--- expect
+num 60
+===
+
+### name: pipe.count
+--- source
+(1, 2, 3) .> COUNT
+--- expect
+num 3
+===
+
+### name: pipe.precedence.compare
+--- source
+(1, 2, 3) .> COUNT > 0
+--- expect
+bool TRUE
+===
+
+### name: pipe.precedence.logical-and
+--- source
+(1, 2) .> COUNT > 0 AND (3, 4) .> COUNT > 0
+--- expect
+bool TRUE
+===
+
+### name: pipe.precedence.add
+--- source
+(1, 2) .> COUNT + 10
+--- expect
+num 12
+===
+
+### name: pipe.precedence.concat
+--- source
+"hello" .> UPPER & " world"
+--- expect
+text "HELLO world"
+===
+
+### name: pipe.parenthesised-lhs
+--- source
+(2 + 3) .> UPPER
+--- expect
+text "5"
+===
+
+### name: pipe.indexed-lhs
+--- source
+L = ("hello", "world"); L[1] .> UPPER
+--- expect
+text "HELLO"
+===
+
+### name: pipe.indexed-rhs
+--- source
+"a,b,c" .> SPLIT(",") [2]
+--- expect
+text "b"
+===
+
+### name: pipe.assignment.target
+--- source
+A = "hi" .> UPPER; A
+--- expect
+text "HI"
+===
+
+### name: pipe.assign-target-error
+--- source
+5 .> UPPER = 1
+--- expect
+error E_BAD_ASSIGN at 1:6
+===
+
+### name: pipe.syntax.rhs-number
+--- source
+5 .> 10
+--- expect
+error E_SYNTAX at 1:6
+===
+
+### name: pipe.syntax.rhs-text
+--- source
+5 .> "hello"
+--- expect
+error E_SYNTAX at 1:6
+===
+
+### name: pipe.syntax.rhs-paren
+--- source
+5 .> (1 + 2)
+--- expect
+error E_SYNTAX at 1:6
+===
+
+### name: pipe.syntax.rhs-bool
+--- source
+5 .> TRUE
+--- expect
+error E_SYNTAX at 1:6
+===
+
+### name: pipe.syntax.rhs-null
+--- source
+5 .> NULL
+--- expect
+error E_SYNTAX at 1:6
+===
+
+### name: pipe.syntax.trailing-eof
+--- source
+5 .>
+--- expect
+error E_SYNTAX at 1:5
+===
+
+### name: pipe.syntax.trailing-semicolon
+--- source
+5 .> ; 1
+--- expect
+error E_SYNTAX at 1:6
+===
+
+### name: pipe.unknown-func
+--- source
+5 .> UNKNOWN_FUNC
+--- expect
+error E_UNKNOWN_FUNC at 1:6
+===
+
+### name: pipe.arity.too-few
+--- source
+5 .> LEFT
+--- expect
+error E_ARITY at 1:6
+===
+
+### name: pipe.arity.too-many
+--- source
+5 .> UPPER(1)
+--- expect
+error E_ARITY at 1:6
+===

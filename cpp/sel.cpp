@@ -978,6 +978,7 @@ const std::vector<std::string>& operators() {
       "???", "??",
       "$==", "$!=", "$<=", "$>=",
       "$<", "$>", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "&=",
+      ".>",
       "+", "-", "*", "/", "%", "&", "=", "<", ">", "(", ")", "[", "]", ",", ";",
   };
   return ops;
@@ -1654,18 +1655,75 @@ class Parser {
   // nesting construct costs.
   NodePtr parse_postfix() {
     NodePtr node = parse_primary();
-    while (at_op("[")) {
-      const Token br = next();
-      enter(br.pos);
-      const Leave leave_guard{this};
-      NodePtr idx = parse_sequence();
-      expect_op("]");
-      auto n = make(NT::Index, br.pos);
-      n->l = node;
-      n->r = idx;
-      node = n;
+    while (at_op("[") || at_op(".>")) {
+      if (at_op("[")) {
+        const Token br = next();
+        enter(br.pos);
+        const Leave leave_guard{this};
+        NodePtr idx = parse_sequence();
+        expect_op("]");
+        auto n = make(NT::Index, br.pos);
+        n->l = node;
+        n->r = idx;
+        node = n;
+      } else {
+        next();
+        node = parse_pipe_step(std::move(node));
+      }
     }
     return node;
+  }
+
+  NodePtr parse_pipe_step(NodePtr left) {
+    const Token& t = peek();
+    if (t.type != Tok::Ident || t.value == "TRUE" || t.value == "FALSE" || t.value == "NULL") {
+      fail("E_SYNTAX", "right-hand side of .> must be a function call or function name", t.pos);
+    }
+    const Token name_tok = next();
+    std::vector<NodePtr> args;
+    if (at_op("(")) {
+      next();
+      if (at_op(")")) {
+        next();
+      } else {
+        NodePtr inner = parse_sequence();
+        expect_op(")");
+        if (inner->t == NT::List && !inner->grouped) args = inner->items;
+        else args.push_back(inner);
+      }
+    }
+
+    const Spec* spec = registry_lookup(name_tok.value);
+    if (!spec) fail("E_UNKNOWN_FUNC", "unknown function " + name_tok.value, name_tok.pos);
+
+    const int count = static_cast<int>(args.size());
+    bool has_placeholder = false;
+    if (count >= spec->min) {
+      for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i]->t == NT::Var && args[i]->s == "_" && !args[i]->grouped) {
+          args[i] = left;
+          has_placeholder = true;
+        }
+      }
+    }
+    if (!has_placeholder) {
+      args.insert(args.begin(), std::move(left));
+    }
+
+    const int final_count = static_cast<int>(args.size());
+    if (final_count < spec->min || final_count > spec->max) {
+      fail("E_ARITY", spec->name + " takes " + arity_text(*spec) + ", got " + std::to_string(final_count),
+           name_tok.pos);
+    }
+    if (spec->arity_error) {
+      const std::string problem = spec->arity_error(final_count);
+      if (!problem.empty()) fail("E_ARITY", problem, name_tok.pos);
+    }
+    auto n = make(NT::Call, name_tok.pos);
+    n->s = spec->name;
+    n->spec = spec;
+    n->items = std::move(args);
+    return n;
   }
 
   NodePtr parse_primary() {

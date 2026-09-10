@@ -318,16 +318,58 @@ class Parser:
     # level, which puts the guard back in front of the stack at every depth.
     def parse_postfix(self) -> Node:
         node = self.parse_primary()
-        while self.at_op('['):
-            br = self.next()
-            self.enter(br.pos)
-            try:
-                idx = self.parse_sequence()
-                self.expect_op(']')
-                node = Node('index', br.pos, obj=node, idx=idx)
-            finally:
-                self.leave()
+        while self.at_op('[') or self.at_op('.>'):
+            if self.at_op('['):
+                br = self.next()
+                self.enter(br.pos)
+                try:
+                    idx = self.parse_sequence()
+                    self.expect_op(']')
+                    node = Node('index', br.pos, obj=node, idx=idx)
+                finally:
+                    self.leave()
+            else:
+                self.next()  # consume '.>'
+                node = self.parse_pipe_step(node)
         return node
+
+    def parse_pipe_step(self, left: Node) -> Node:
+        t = self.peek()
+        if t.type != 'ident' or t.value in ('TRUE', 'FALSE', 'NULL'):
+            fail('E_SYNTAX', 'right-hand side of .> must be a function call or function name', t.pos)
+        name_tok = self.next()
+        args: list[Node] = []
+        if self.at_op('('):
+            self.next()
+            if self.at_op(')'):
+                self.next()
+            else:
+                inner = self.parse_sequence()
+                self.expect_op(')')
+                args = inner.items if (inner.t == 'list' and not inner.grouped) else [inner]
+
+        spec = lookup(name_tok.value)
+        if spec is None:
+            fail('E_UNKNOWN_FUNC', f'unknown function {name_tok.value}', name_tok.pos)
+
+        has_placeholder = False
+        if len(args) >= spec.min:
+            for i, arg in enumerate(args):
+                if arg.t == 'var' and arg.name == '_' and not arg.grouped:
+                    args[i] = left
+                    has_placeholder = True
+
+        if not has_placeholder:
+            args.insert(0, left)
+
+        if len(args) < spec.min or len(args) > spec.max:
+            fail('E_ARITY', f'{spec.name} takes {arity_text(spec)}, got {len(args)}',
+                 name_tok.pos)
+        if spec.arity_error is not None:
+            problem = spec.arity_error(len(args))
+            if problem:
+                fail('E_ARITY', problem, name_tok.pos)
+        return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args)
 
     def parse_primary(self) -> Node:
         t = self.peek()
