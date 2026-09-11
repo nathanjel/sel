@@ -18,7 +18,7 @@ is mutated in place by any assignment the program performs."
   (let ((root (cond ((null context) (make-none))
                     ((value-p context) context)
                     (t (from-native context)))))
-    (eval-node (program-ast program) (make-context root))))
+    (eval-node (optimize-ast (program-ast program)) (make-context root))))
 
 (defun evaluate (source &optional context)
   (run (compile-source source) context))

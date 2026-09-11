@@ -10,6 +10,32 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## [Unreleased]
+
+In-memory query engine optimizations, AST logical pipeline rewrites, and physical memory layout redesign. *(Note: Implemented in the Common Lisp / SBCL reference engine first; ports to PHP, JavaScript, Python, and C++ to follow per the porting roadmap.)*
+
+  - **Group 1: Logical AST Pipeline Optimizer (`lisp/src/optimizer.lisp`).**
+    - Automatic `FILTER` fusion (`FILTER(p1) .> FILTER(p2)` $\rightarrow$ `FILTER(p1 AND p2)`).
+    - Predicate pushdown across `LINK` / `LINK_LEFT` (splits conjuncts, pushes left-dependent checks before joins, and pushes right-dependent checks into the inner relation).
+    - Predicate pushdown across `MAP` (moves filters upstream when referencing unmodified fields).
+    - Redundant `SORT` / `SORT_BY` elimination and `SORT_BY` + `TAKE` $\rightarrow$ `TOP_BY` bounded-heap selection fusion.
+  - **Group 2: Physical Data Structures & Memory Layout (`lisp/src/value.lisp`, `decimal.lisp`).**
+    - Shared Record Shapes (hidden classes / schema descriptors) decoupling shape metadata from contiguous simple-vector row storage for $O(1)$ slot lookups.
+    - Scaled 64-bit fixed-point decimal arithmetic (`dec`: native 62-bit fixnum math with automatic bignum fallback; cached `dec-val` in numeric text values).
+    - Pre-compiled join projectors in `LINK` / `LINK_LEFT` (pre-calculates slot offsets on the first matched row for zero-reflection copying).
+    - Vector-backed `make-list-value` with zero-cons collection iteration.
+    - Structural record deduplication in `DEDUPE` via integer hash combining, completely bypassing string serialization.
+  - **Hybrid SQL Execution Planner (`lisp/src/sql/hybrid.lisp`).**
+    - Partitions pipeline AST into maximal SQL pushdown prefixes and in-memory continuation suffixes.
+    - Extended relational plan compiler with multi-table `INNER JOIN` / `LEFT JOIN` and derived table (`FROM (SELECT ...) AS _sub1`) subquery nesting.
+  - **Scale Benchmarks & Parity Certification (`tools/scale-test/`).**
+    - 10x scale enterprise benchmark battery (137,100 rows across 5 tables).
+    - Validated 100% exact value parity against PostgreSQL 17 and MariaDB 11.8 across all 6 enterprise scenarios.
+    - Achieved 7.0× in-memory speedup on deep 14-stage pipelines (from 5,604 ms down to 804 ms, approaching PostgreSQL's 713 ms).
+  - **Status & Cross-Host Roadmap.**
+    - Current implementation: Common Lisp (SBCL) reference engine.
+    - PHP, JavaScript, Python, and C++ ports, followed by greenfield Go, Rust, and Java implementations, are scheduled per `docs/interim/sel_porting_worklist_and_checklist.md`.
+
 ## 0.7.4 — 2026-09-09
 
 Optimizer-transparent existential precondition subqueries (`skel.prefilter`) without `IS TRUE` wrappers, enabling composite B-tree index seeks and semijoin decorrelation on MariaDB and MySQL.

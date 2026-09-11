@@ -43,6 +43,20 @@
    #:relational-plan
    #:make-relational-plan
    #:relational-plan-p
+   #:relational-plan-source-subquery
+   #:relational-plan-joins
+   #:join-plan
+   #:make-join-plan
+   #:join-plan-p
+   #:join-plan-type
+   #:join-plan-source-name
+   #:join-plan-source-relation
+   #:join-plan-source-table
+   #:join-plan-source-alias
+   #:join-plan-left-binder
+   #:join-plan-right-binder
+   #:join-plan-on-pred
+   #:join-plan-pos
 
    ;; Bindings
    #:binding
@@ -71,4 +85,17 @@
    #:try-translate
    #:translate-statement
    #:try-translate-statement
-   #:dialects))
+   #:dialects
+
+   ;; Hybrid execution planner
+   #:hybrid-plan
+   #:make-hybrid-plan
+   #:hybrid-plan-p
+   #:hybrid-plan-sql-statement
+   #:hybrid-plan-sql-prefix-ast
+   #:hybrid-plan-continuation-program
+   #:hybrid-plan-continuation-source-var
+   #:hybrid-plan-pure-sql-p
+   #:hybrid-plan-pure-memory-p
+   #:plan-hybrid
+   #:execute-hybrid))

@@ -101,3 +101,6 @@ python/.venv-wheel/
 dist/python/
 .pytest_cache/
 **/.venv*/
+
+# Scale-test generated large datasets (>50MB)
+tools/scale-test/*-100x*

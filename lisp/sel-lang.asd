@@ -44,6 +44,7 @@
                    (:file "binary")
                    (:file "regex")
                    (:file "null")))
+     (:file "optimizer")
      (:file "sel"))))
   :in-order-to ((test-op (test-op "sel-lang/tests"))))
 
@@ -71,7 +72,8 @@
      (:file "emit")
      (:file "binding")
      (:file "stage1")
-     (:file "translator")))))
+     (:file "translator")
+     (:file "hybrid")))))
 
 (defsystem "sel-lang/tests"
   :description "Unit tests for the layers underneath the conformance suite"

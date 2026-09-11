@@ -57,4 +57,10 @@
    #:run
    #:dependencies
    #:evaluate
-   #:function-names))
+   #:function-names
+   #:define-builtin
+   #:register-builtin
+   #:optimize-ast
+   #:optimize-ast-logical
+   #:optimize-ast-in-memory))
+

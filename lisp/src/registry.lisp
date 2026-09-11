@@ -26,8 +26,17 @@
     (setf (gethash upper *registry*)
           (make-spec upper min (or max min) lazy binds arity-error fn))))
 
+(defun register-builtin (name min max fn &key (lazy nil) (binds nil) (arity-error nil) (overwrite t))
+  "Register or redefine a custom builtin function in the SEL runtime."
+  (let ((upper (string-upcase name)))
+    (when (and (not overwrite) (gethash upper *registry*))
+      (error "SEL function ~a defined twice" upper))
+    (setf (gethash upper *registry*)
+          (make-spec upper min (or max min) lazy binds arity-error fn))))
+
 (defun registry-lookup (name)
   (gethash (string-upcase name) *registry*))
 
 (defun function-names ()
   (sort (loop for k being the hash-keys of *registry* collect k) #'string<))
+

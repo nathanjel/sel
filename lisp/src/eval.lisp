@@ -15,8 +15,8 @@
 (defun ctx-lookup (ctx name)
   (loop for frame in (context-frames ctx)
         do (let ((cell (assoc name frame :test #'string=)))
-             (when cell (return-from ctx-lookup (cdr cell)))))
-  (value-get (context-root ctx) name))
+             (when cell (return-from ctx-lookup (force-value (cdr cell))))))
+  (force-value (value-get (context-root ctx) name)))
 
 (defun ctx-bound-p (ctx name)
   (loop for frame in (context-frames ctx)
@@ -24,6 +24,12 @@
 
 (defun ctx-push-frame (ctx frame) (push frame (context-frames ctx)))
 (defun ctx-pop-frame (ctx) (pop (context-frames ctx)))
+
+(defun ctx-copy-current (ctx)
+  (let ((copy (make-context (context-root ctx))))
+    (setf (context-frames copy) (copy-tree (context-frames ctx))
+          (context-depth copy) (context-depth ctx))
+    copy))
 
 ;;; --- arguments -------------------------------------------------------------
 
@@ -48,7 +54,7 @@
 (defun args-val (a i)
   (let ((cached (aref (args-cache a) i)))
     (if (eq cached :unset)
-        (setf (aref (args-cache a) i) (eval-node (args-node a i) (args-ctx a)))
+        (setf (aref (args-cache a) i) (force-value (eval-node (args-node a i) (args-ctx a))))
         cached)))
 
 ;;; For lazy functions re-evaluating a body node under changed bindings.
