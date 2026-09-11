@@ -38,6 +38,24 @@ final class RelationalPlan
     public array $filters = [];
 
     /**
+     * Group by expressions from GROUP_BY(...).
+     * @var list<array{alias: ?string, binder: string, node: array<string,mixed>, pos: array{line:int,col:int,offset:int}}>|null
+     */
+    public ?array $groupBy = null;
+
+    /**
+     * Post-group filter predicates (HAVING) from FILTER(...) after GROUP_BY.
+     * @var list<array{binder: string, node: array<string,mixed>, pos: array{line:int,col:int,offset:int}}>
+     */
+    public array $having = [];
+
+    /**
+     * Aggregate aliases defined in GROUP_BY's RECORD(...) projection.
+     * @var array<string, array<string,mixed>>
+     */
+    public array $aggregateAliases = [];
+
+    /**
      * Order items from SORT / SORT_DESC / SORT_BY.
      * @var list<array{binder: string, node: array<string,mixed>, dir: string, pos: array{line:int,col:int,offset:int}}>
      */

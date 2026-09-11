@@ -2557,6 +2557,10 @@ export const RULES = {
       2,
       3
     ],
+    "GROUP_BY": [
+      2,
+      4
+    ],
     "ISNUM": [
       1,
       1

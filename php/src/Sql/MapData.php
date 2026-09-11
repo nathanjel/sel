@@ -2372,6 +2372,7 @@ final class MapData
             'FROM_HEX' => [1, 1],
             'FROM_UTF8' => [1, 1],
             'GET' => [2, 3],
+            'GROUP_BY' => [2, 4],
             'ISNUM' => [1, 1],
             'IS_BLANK' => [1, 1],
             'IS_NOT_NULL' => [1, 1],

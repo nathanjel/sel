@@ -11,6 +11,9 @@ export class RelationalPlan {
     this.selectCols = null;
     this.projections = null;
     this.filters = [];
+    this.groupBy = null;
+    this.having = [];
+    this.aggregateAliases = {};
     this.orderBy = [];
     this.limit = null;
     this.offset = null;

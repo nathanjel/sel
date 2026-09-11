@@ -1219,6 +1219,7 @@ constexpr Arity FUNC_ARITY[] = {
     {.key = "FROM_HEX", .min = 1, .max = 1},
     {.key = "FROM_UTF8", .min = 1, .max = 1},
     {.key = "GET", .min = 2, .max = 3},
+    {.key = "GROUP_BY", .min = 2, .max = 4},
     {.key = "ISNUM", .min = 1, .max = 1},
     {.key = "IS_BLANK", .min = 1, .max = 1},
     {.key = "IS_NOT_NULL", .min = 1, .max = 1},

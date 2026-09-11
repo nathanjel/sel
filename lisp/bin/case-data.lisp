@@ -7295,4 +7295,200 @@
    :mode nil
    :strict nil
    :register nil
-   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.group-by.basic"
+   :at "24-group-by.sqlt:9"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(_[\"dept\"])"
+   :expect "SELECT `dept` FROM `items` GROUP BY `dept`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-by.multi-list"
+   :at "24-group-by.sqlt:22"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY((_[\"dept\"], _[\"category\"]))"
+   :expect "SELECT `dept`, `category` FROM `items` GROUP BY `dept`, `category`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-by.multi-record"
+   :at "24-group-by.sqlt:35"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(RECORD(\"dept\", _[\"dept\"], \"category\", _[\"category\"]))"
+   :expect "SELECT `dept` AS `dept`, `category` AS `category` FROM `items` GROUP BY `dept`, `category`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-by.aggregates"
+   :at "24-group-by.sqlt:48"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_), \"total\", SUM(_, _[\"amount\"])))"
+   :expect "SELECT `dept` AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
+   :name "stmt.group-by.custom-binder"
+   :at "24-group-by.sqlt:61"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(r, r[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(r, x, x[\"amount\"])))"
+   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
+   :name "stmt.group-by.where-and-having"
+   :at "24-group-by.sqlt:74"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(_[\"active\"] == 1) .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100)"
+   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY `dept` HAVING (COALESCE(SUM(`amount`), 0) > 100)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num)) (cons "ACTIVE" (binding-column "active" nil :num))) nil nil)))))
+  (list
+   :name "stmt.group-by.order-by-agg"
+   :at "24-group-by.sqlt:87"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> SORT_BY(_[\"total\"], \"DESC\")"
+   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` ORDER BY COALESCE(SUM(`amount`), 0) DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
+   :name "stmt.group-by.pagination"
+   :at "24-group-by.sqlt:100"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(_[\"dept\"]) .> TAKE(10) .> DROP(5)"
+   :expect "SELECT `dept` FROM `items` GROUP BY `dept` LIMIT 10 OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-by.dialect-postgres"
+   :at "24-group-by.sqlt:113"
+   :dialect "postgresql"
+   :source "ITEMS .> FILTER(_[\"active\"] == 1) .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100) .> SORT_BY(_[\"total\"], \"DESC\")"
+   :expect "SELECT \"dept\" AS \"dept\", COALESCE(SUM(\"amount\"), 0) AS \"total\" FROM \"items\" WHERE (\"active\" = 1) GROUP BY \"dept\" HAVING (COALESCE(SUM(\"amount\"), 0) > 100) ORDER BY COALESCE(SUM(\"amount\"), 0) DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num)) (cons "ACTIVE" (binding-column "active" nil :num))) nil nil)))))
+  (list
+   :name "stmt.group-by.dialect-sqlite"
+   :at "24-group-by.sqlt:126"
+   :dialect "sqlite"
+   :source "ITEMS .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_))) .> DROP(5)"
+   :expect "SELECT \"dept\" AS \"dept\", COUNT(*) AS \"cnt\" FROM \"items\" GROUP BY \"dept\" LIMIT -1 OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-by.dialect-mysql"
+   :at "24-group-by.sqlt:139"
+   :dialect "mysql"
+   :source "ITEMS .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> DROP(5)"
+   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` LIMIT 18446744073709551615 OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
+   :name "stmt.group-by.refusal-binder"
+   :at "24-group-by.sqlt:152"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(123, _[\"dept\"], _[\"dept\"])"
+   :expect nil
+   :error "E_SQL_SHAPE 1:19"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-by.refusal-having-bool"
+   :at "24-group-by.sqlt:165"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(_[\"dept\"]) .> FILTER(\"not a bool\")"
+   :expect nil
+   :error "E_SQL_SHAPE 1:33"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-by.refusal-unknown-field"
+   :at "24-group-by.sqlt:178"
+   :dialect "mariadb"
+   :source "ITEMS .> GROUP_BY(_[\"unknown_col\"])"
+   :expect nil
+   :error "E_SQL_BINDING 1:20"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))))

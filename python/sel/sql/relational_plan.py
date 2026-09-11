@@ -16,6 +16,9 @@ class RelationalPlan:
         self.select_cols: list[str] | None = None
         self.projections: list[dict[str, Any]] | None = None
         self.filters: list[dict[str, Any]] = []
+        self.group_by: list[dict[str, Any]] | None = None
+        self.having: list[dict[str, Any]] = []
+        self.aggregate_aliases: dict[str, Any] = {}
         self.order_by: list[dict[str, Any]] = []
         self.limit: int | None = None
         self.offset: int | None = None

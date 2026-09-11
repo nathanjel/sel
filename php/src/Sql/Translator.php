@@ -22,7 +22,7 @@ final class Translator
 {
     /** Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4. */
     private const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
-    public const PIPELINE_OPS = ['FILTER', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP'];
+    public const PIPELINE_OPS = ['FILTER', 'GROUP_BY', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP'];
 
     private string $dialect;
     private Emit $emit;
@@ -49,6 +49,8 @@ final class Translator
     private ?\Sel\Context $constCtx = null;
     /** Walk depth, counted exactly as Evaluator counts evaluation nesting. */
     private int $depth = 0;
+    private ?RelationalPlan $statementPlan = null;
+    private bool $inWhere = false;
 
     /** @param array<string,mixed> $options */
     public function __construct(string $dialect, Bindings $bindings, array $options = [])
@@ -627,6 +629,55 @@ final class Translator
     private function call(array $n): Fragment
     {
         $name = $n['name'];
+        if ($this->statementPlan !== null) {
+            if ($name === 'COUNT') {
+                if (count($n['args']) === 1) {
+                    $arg0 = $n['args'][0];
+                    if ($arg0['t'] === 'var' && $this->binder($arg0['name'])?->shape === Binder::ROW) {
+                        return new Fragment(['COUNT(*)'], 'NUM', $this->dialect);
+                    }
+                }
+            } elseif ($name === 'SUM') {
+                if (count($n['args']) >= 2) {
+                    $arg0 = $n['args'][0];
+                    if ($arg0['t'] === 'var' && $this->binder($arg0['name'])?->shape === Binder::ROW) {
+                        $hasCustomBinder = count($n['args']) === 3 && Constants::isBinderName($n['args'][1]);
+                        $bodyNode = $hasCustomBinder ? $n['args'][2] : $n['args'][1];
+                        if ($hasCustomBinder) {
+                            $this->frames[] = [$n['args'][1]['name'] => $this->binder($arg0['name'])];
+                            try {
+                                $inner = $this->node($bodyNode);
+                            } finally {
+                                array_pop($this->frames);
+                            }
+                        } else {
+                            $inner = $this->node($bodyNode);
+                        }
+                        return new Fragment(['COALESCE(SUM(' . implode('', $inner->parts) . '), 0)'], 'NUM', $this->dialect);
+                    }
+                }
+            } elseif (in_array($name, ['AVG', 'MIN', 'MAX'], true)) {
+                if (count($n['args']) >= 2) {
+                    $arg0 = $n['args'][0];
+                    if ($arg0['t'] === 'var' && $this->binder($arg0['name'])?->shape === Binder::ROW) {
+                        $hasCustomBinder = count($n['args']) === 3 && Constants::isBinderName($n['args'][1]);
+                        $bodyNode = $hasCustomBinder ? $n['args'][2] : $n['args'][1];
+                        if ($hasCustomBinder) {
+                            $this->frames[] = [$n['args'][1]['name'] => $this->binder($arg0['name'])];
+                            try {
+                                $inner = $this->node($bodyNode);
+                            } finally {
+                                array_pop($this->frames);
+                            }
+                        } else {
+                            $inner = $this->node($bodyNode);
+                        }
+                        return new Fragment([$name . '(' . implode('', $inner->parts) . ')'], $inner->kind, $this->dialect);
+                    }
+                }
+            }
+        }
+
 
         if (in_array($name, self::AGGREGATES, true)) {
             return $this->aggregate($n);
@@ -999,7 +1050,23 @@ final class Translator
                     $n['pos']);
             }
             $field = strtoupper($key);
+            if (!$this->inWhere && $this->statementPlan !== null && $this->statementPlan->groupBy !== null) {
+                if (isset($this->statementPlan->aggregateAliases[$key])) {
+                    return $this->node($this->statementPlan->aggregateAliases[$key]);
+                }
+                if (isset($this->statementPlan->aggregateAliases[$field])) {
+                    return $this->node($this->statementPlan->aggregateAliases[$field]);
+                }
+            }
             if (!isset($b->payload['fields'][$field])) {
+                if ($this->statementPlan !== null) {
+                    if (isset($this->statementPlan->aggregateAliases[$key])) {
+                        return $this->node($this->statementPlan->aggregateAliases[$key]);
+                    }
+                    if (isset($this->statementPlan->aggregateAliases[$field])) {
+                        return $this->node($this->statementPlan->aggregateAliases[$field]);
+                    }
+                }
                 $known = array_keys($b->payload['fields']);
                 sort($known);
                 refuse('E_SQL_BINDING',
@@ -1345,10 +1412,15 @@ final class Translator
         }
 
         $row = Binder::row($src['relation']);
-        $frame = [$binderName => $row,
-                  '_K' => Binder::none('a row of a relation has no key: SQL rows are '
+        $kBinder = null;
+        if ($this->statementPlan !== null && !empty($this->statementPlan->groupBy) && count($this->statementPlan->groupBy) === 1) {
+            $kBinder = Binder::node($this->statementPlan->groupBy[0]['node']);
+        } else {
+            $kBinder = Binder::none('a row of a relation has no key: SQL rows are '
                       . 'unordered and unkeyed unless the schema says otherwise, and '
-                      . 'guessing which column is the key is not something this layer does')];
+                      . 'guessing which column is the key is not something this layer does');
+        }
+        $frame = [$binderName => $row, '_K' => $kBinder];
         foreach ($src['filters'] as $filter) {
             $frame[$filter['binder']] = $row;
         }
@@ -2162,11 +2234,134 @@ final class Translator
                     } else {
                         refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', $step['pos']);
                     }
-                    $plan->filters[] = [
-                        'binder' => $binder,
-                        'node' => $pred,
-                        'pos' => $step['pos'],
-                    ];
+                    if ($plan->groupBy !== null) {
+                        $plan->having[] = [
+                            'binder' => $binder,
+                            'node' => $pred,
+                            'pos' => $step['pos'],
+                        ];
+                    } else {
+                        $plan->filters[] = [
+                            'binder' => $binder,
+                            'node' => $pred,
+                            'pos' => $step['pos'],
+                        ];
+                    }
+                    break;
+
+                case 'GROUP_BY':
+                    if (count($args) === 2) {
+                        $binder = '_';
+                        $keyNode = $args[1];
+                        $aggNode = null;
+                    } elseif (count($args) === 3) {
+                        $binder = '_';
+                        $keyNode = $args[1];
+                        $aggNode = $args[2];
+                    } elseif (count($args) === 4) {
+                        if (!Constants::isBinderName($args[1])) {
+                            refuse('E_SQL_SHAPE', 'the binder of GROUP_BY must be a bare name', $args[1]['pos']);
+                        }
+                        $binder = $args[1]['name'];
+                        $keyNode = $args[2];
+                        $aggNode = $args[3];
+                    } else {
+                        refuse('E_ARITY', 'GROUP_BY takes 2 to 4 arguments', $step['pos']);
+                    }
+
+                    $groupBy = [];
+                    if (($keyNode['t'] === 'call' && $keyNode['name'] === 'LIST') || $keyNode['t'] === 'list') {
+                        $listItems = $keyNode['t'] === 'list' ? $keyNode['items'] : $keyNode['args'];
+                        foreach ($listItems as $kArg) {
+                            $groupBy[] = [
+                                'alias' => null,
+                                'binder' => $binder,
+                                'node' => $kArg,
+                                'pos' => $kArg['pos'] ?? $step['pos'],
+                            ];
+                        }
+                    } elseif ($keyNode['t'] === 'call' && $keyNode['name'] === 'RECORD') {
+                        $rArgs = $keyNode['args'];
+                        if (count($rArgs) % 2 !== 0) {
+                            refuse('E_ARITY', 'RECORD takes an even number of arguments', $keyNode['pos']);
+                        }
+                        for ($i = 0; $i < count($rArgs); $i += 2) {
+                            if ($rArgs[$i]['t'] !== 'text') {
+                                refuse('E_BAD_ARG', 'RECORD field names must be string literals', $rArgs[$i]['pos']);
+                            }
+                            $groupBy[] = [
+                                'alias' => $rArgs[$i]['v'],
+                                'binder' => $binder,
+                                'node' => $rArgs[$i + 1],
+                                'pos' => $rArgs[$i + 1]['pos'] ?? $step['pos'],
+                            ];
+                        }
+                    } else {
+                        $groupBy[] = [
+                            'alias' => null,
+                            'binder' => $binder,
+                            'node' => $keyNode,
+                            'pos' => $keyNode['pos'] ?? $step['pos'],
+                        ];
+                    }
+                    $plan->groupBy = $groupBy;
+
+                    if ($aggNode !== null) {
+                        if ($aggNode['t'] === 'call' && $aggNode['name'] === 'RECORD') {
+                            $recArgs = $aggNode['args'];
+                            if (count($recArgs) % 2 !== 0) {
+                                refuse('E_ARITY', 'RECORD takes an even number of arguments', $aggNode['pos']);
+                            }
+                            $projections = [];
+                            for ($i = 0; $i < count($recArgs); $i += 2) {
+                                $kNode = $recArgs[$i];
+                                $vNode = $recArgs[$i + 1];
+                                if ($kNode['t'] !== 'text') {
+                                    refuse('E_BAD_ARG', 'RECORD field names must be string literals', $kNode['pos']);
+                                }
+                                $alias = $kNode['v'];
+                                $actualNode = $vNode;
+                                if ($vNode['t'] === 'var' && $vNode['name'] === '_K' && count($plan->groupBy) === 1) {
+                                    $actualNode = $plan->groupBy[0]['node'];
+                                }
+                                $isSameField = $actualNode['t'] === 'index'
+                                    && isset($actualNode['obj'])
+                                    && $actualNode['obj']['t'] === 'var'
+                                    && ($actualNode['obj']['name'] === '_' || $actualNode['obj']['name'] === $binder)
+                                    && isset($actualNode['idx'])
+                                    && $actualNode['idx']['t'] === 'text'
+                                    && strtoupper($actualNode['idx']['v']) === strtoupper($alias);
+                                if (!$isSameField) {
+                                    $plan->aggregateAliases[$alias] = $actualNode;
+                                }
+                                $projections[] = [
+                                    'alias' => $alias,
+                                    'binder' => $binder,
+                                    'node' => $actualNode,
+                                ];
+                            }
+                            $plan->projections = $projections;
+                        } else {
+                            $plan->projections = [
+                                [
+                                    'alias' => null,
+                                    'binder' => $binder,
+                                    'node' => $aggNode,
+                                ]
+                            ];
+                        }
+                    } else {
+                        $projections = [];
+                        foreach ($plan->groupBy as $gb) {
+                            $projections[] = [
+                                'alias' => $gb['alias'],
+                                'binder' => $gb['binder'],
+                                'node' => $gb['node'],
+                            ];
+                        }
+                        $plan->projections = $projections;
+                    }
+                    $plan->selectCols = null;
                     break;
 
                 case 'SELECT_COLS':
@@ -2407,127 +2602,173 @@ final class Translator
 
     public function compileStatement(RelationalPlan $plan): Fragment
     {
-        $parts = [];
-        $parts[] = $plan->distinct ? 'SELECT DISTINCT ' : 'SELECT ';
+        $this->statementPlan = $plan;
+        try {
+            $parts = [];
+            $parts[] = $plan->distinct ? 'SELECT DISTINCT ' : 'SELECT ';
 
-        $src = [
-            'relation' => $plan->sourceRelation,
-            'filters' => $plan->filters,
-            'pos' => null,
-        ];
+            $src = [
+                'relation' => $plan->sourceRelation,
+                'filters' => $plan->filters,
+                'pos' => null,
+            ];
 
-        // 1. SELECT list (Projections)
-        if ($plan->projections !== null) {
-            $first = true;
-            foreach ($plan->projections as $proj) {
-                if (!$first) {
-                    $parts[] = ', ';
+            // 1. SELECT list (Projections)
+            if ($plan->projections !== null) {
+                $first = true;
+                foreach ($plan->projections as $proj) {
+                    if (!$first) {
+                        $parts[] = ', ';
+                    }
+                    $first = false;
+                    $pFrag = $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']));
+                    foreach ($pFrag->parts as $p) {
+                        $parts[] = $p;
+                    }
+                    if ($proj['alias'] !== null) {
+                        $parts[] = ' AS ' . $this->emit->ident($proj['alias']);
+                    }
                 }
-                $first = false;
-                $pFrag = $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']));
-                foreach ($pFrag->parts as $p) {
-                    $parts[] = $p;
+            } elseif ($plan->selectCols !== null) {
+                $first = true;
+                foreach ($plan->selectCols as $col) {
+                    if (!$first) {
+                        $parts[] = ', ';
+                    }
+                    $first = false;
+                    $uc = strtoupper($col);
+                    $fSpec = $plan->sourceRelation['fields'][$uc] ?? null;
+                    $table = $fSpec['table'] ?? $plan->sourceAlias;
+                    $column = $fSpec['column'] ?? $col;
+                    $parts[] = $this->emit->column($table, $column);
                 }
-                if ($proj['alias'] !== null) {
-                    $parts[] = ' AS ' . $this->emit->ident($proj['alias']);
-                }
-            }
-        } elseif ($plan->selectCols !== null) {
-            $first = true;
-            foreach ($plan->selectCols as $col) {
-                if (!$first) {
-                    $parts[] = ', ';
-                }
-                $first = false;
-                $uc = strtoupper($col);
-                $fSpec = $plan->sourceRelation['fields'][$uc] ?? null;
-                $table = $fSpec['table'] ?? $plan->sourceAlias;
-                $column = $fSpec['column'] ?? $col;
-                $parts[] = $this->emit->column($table, $column);
-            }
-        } else {
-            if ($plan->sourceAlias !== null) {
-                $parts[] = $this->emit->ident($plan->sourceAlias) . '.*';
             } else {
-                $parts[] = '*';
-            }
-        }
-
-        // 2. FROM clause
-        $parts[] = ' FROM ';
-        $from = is_array($plan->sourceTable) && isset($plan->sourceTable['raw'])
-            ? (string) $plan->sourceTable['raw']
-            : $this->emit->ident((string) $plan->sourceTable);
-        if (!empty($plan->sourceAlias)) {
-            $from .= ' ' . $this->emit->ident((string) $plan->sourceAlias);
-        }
-        $parts[] = $from;
-
-        // 3. WHERE clause
-        $condParts = [];
-        if (!empty($plan->correlate)) {
-            $condParts[] = [$plan->correlate];
-        }
-        foreach ($plan->filters as $filter) {
-            $cFrag = $this->withRow($src, $filter['binder'],
-                fn (): Fragment => $this->requireBool($this->node($filter['node']), $filter['pos'], 'FILTER'));
-            $condParts[] = $cFrag->parts;
-        }
-
-        if ($condParts !== []) {
-            $parts[] = ' WHERE ';
-            foreach ($condParts as $idx => $cp) {
-                if ($idx > 0) {
-                    $parts[] = ' AND ';
-                }
-                foreach ($cp as $p) {
-                    $parts[] = $p;
+                if ($plan->sourceAlias !== null) {
+                    $parts[] = $this->emit->ident($plan->sourceAlias) . '.*';
+                } else {
+                    $parts[] = '*';
                 }
             }
-        }
 
-        // 4. ORDER BY clause
-        if ($plan->orderBy !== []) {
-            $parts[] = ' ORDER BY ';
-            $first = true;
-            foreach ($plan->orderBy as $ord) {
-                if (!$first) {
-                    $parts[] = ', ';
-                }
-                $first = false;
-                $oFrag = $this->withRow($src, $ord['binder'], fn (): Fragment => $this->node($ord['node']));
-                foreach ($oFrag->parts as $p) {
-                    $parts[] = $p;
-                }
-                $parts[] = ' ' . $ord['dir'];
+            // 2. FROM clause
+            $parts[] = ' FROM ';
+            $from = is_array($plan->sourceTable) && isset($plan->sourceTable['raw'])
+                ? (string) $plan->sourceTable['raw']
+                : $this->emit->ident((string) $plan->sourceTable);
+            if (!empty($plan->sourceAlias)) {
+                $from .= ' ' . $this->emit->ident((string) $plan->sourceAlias);
             }
-        }
+            $parts[] = $from;
 
-        // 5. LIMIT / OFFSET clause
-        $limit = $plan->limit;
-        $offset = $plan->offset;
-        if ($limit !== null && $offset !== null) {
-            $parts[] = " LIMIT {$limit} OFFSET {$offset}";
-        } elseif ($limit !== null) {
-            $parts[] = " LIMIT {$limit}";
-        } elseif ($offset !== null) {
-            $chain = Map::chain($this->dialect);
-            if (in_array('mariadb', $chain, true) || in_array('mysql', $chain, true) || in_array('mysql-family', $chain, true)) {
-                $parts[] = " LIMIT 18446744073709551615 OFFSET {$offset}";
-            } elseif (in_array('sqlite', $chain, true)) {
-                $parts[] = " LIMIT -1 OFFSET {$offset}";
-            } else {
-                $parts[] = " OFFSET {$offset}";
+            // 3. WHERE clause
+            $condParts = [];
+            if (!empty($plan->correlate)) {
+                $condParts[] = [$plan->correlate];
             }
-        }
+            $this->inWhere = true;
+            try {
+                foreach ($plan->filters as $filter) {
+                    $cFrag = $this->withRow($src, $filter['binder'],
+                        fn (): Fragment => $this->requireBool($this->node($filter['node']), $filter['pos'], 'FILTER'));
+                    $condParts[] = $cFrag->parts;
+                }
+            } finally {
+                $this->inWhere = false;
+            }
 
-        return new Fragment(
-            $parts,
-            'STATEMENT',
-            $this->dialect,
-            $this->params,
-            $this->paramKinds,
-            array_keys($this->caveats)
-        );
+            if ($condParts !== []) {
+                $parts[] = ' WHERE ';
+                foreach ($condParts as $idx => $cp) {
+                    if ($idx > 0) {
+                        $parts[] = ' AND ';
+                    }
+                    foreach ($cp as $p) {
+                        $parts[] = $p;
+                    }
+                }
+            }
+
+            // 4. GROUP BY clause
+            if (!empty($plan->groupBy)) {
+                $parts[] = ' GROUP BY ';
+                $first = true;
+                foreach ($plan->groupBy as $gb) {
+                    if (!$first) {
+                        $parts[] = ', ';
+                    }
+                    $first = false;
+                    $gFrag = $this->withRow($src, $gb['binder'], fn (): Fragment => $this->node($gb['node']));
+                    foreach ($gFrag->parts as $p) {
+                        $parts[] = $p;
+                    }
+                }
+            }
+
+            // 5. HAVING clause
+            if (!empty($plan->having)) {
+                $parts[] = ' HAVING ';
+                $hCondParts = [];
+                foreach ($plan->having as $hav) {
+                    $hFrag = $this->withRow($src, $hav['binder'],
+                        fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER'));
+                    $hCondParts[] = $hFrag->parts;
+                }
+                foreach ($hCondParts as $idx => $hp) {
+                    if ($idx > 0) {
+                        $parts[] = ' AND ';
+                    }
+                    foreach ($hp as $p) {
+                        $parts[] = $p;
+                    }
+                }
+            }
+
+            // 6. ORDER BY clause
+            if ($plan->orderBy !== []) {
+                $parts[] = ' ORDER BY ';
+                $first = true;
+                foreach ($plan->orderBy as $ord) {
+                    if (!$first) {
+                        $parts[] = ', ';
+                    }
+                    $first = false;
+                    $oFrag = $this->withRow($src, $ord['binder'], fn (): Fragment => $this->node($ord['node']));
+                    foreach ($oFrag->parts as $p) {
+                        $parts[] = $p;
+                    }
+                    $parts[] = ' ' . $ord['dir'];
+                }
+            }
+
+            // 7. LIMIT / OFFSET clause
+            $limit = $plan->limit;
+            $offset = $plan->offset;
+            if ($limit !== null && $offset !== null) {
+                $parts[] = " LIMIT {$limit} OFFSET {$offset}";
+            } elseif ($limit !== null) {
+                $parts[] = " LIMIT {$limit}";
+            } elseif ($offset !== null) {
+                $chain = Map::chain($this->dialect);
+                if (in_array('mariadb', $chain, true) || in_array('mysql', $chain, true) || in_array('mysql-family', $chain, true)) {
+                    $parts[] = " LIMIT 18446744073709551615 OFFSET {$offset}";
+                } elseif (in_array('sqlite', $chain, true)) {
+                    $parts[] = " LIMIT -1 OFFSET {$offset}";
+                } else {
+                    $parts[] = " OFFSET {$offset}";
+                }
+            }
+
+            return new Fragment(
+                $parts,
+                'STATEMENT',
+                $this->dialect,
+                $this->params,
+                $this->paramKinds,
+                array_keys($this->caveats)
+            );
+        } finally {
+            $this->statementPlan = null;
+        }
     }
+
 }

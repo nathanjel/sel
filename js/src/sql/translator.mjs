@@ -44,7 +44,7 @@ function listKey(k) {
 
 // Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
-const PIPELINE_OPS = ['FILTER', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP'];
+const PIPELINE_OPS = ['FILTER', 'GROUP_BY', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP'];
 
 const AGG_RETURNS = { ALL: 'BOOL', ANY: 'BOOL', SUM: 'NUM', JOIN: 'TEXT',
   MAP: 'LIST', FILTER: 'LIST' };
@@ -123,6 +123,8 @@ export class Translator {
     this.constCtx = null;
     // Walk depth, counted exactly as evalNode counts evaluation nesting.
     this.depth = 0;
+    this.statementPlan = null;
+    this.inWhere = false;
   }
 
   translate(ast) {
@@ -589,6 +591,59 @@ export class Translator {
     let n = n0;
     const name = n.name;
 
+    if (this.statementPlan !== null) {
+      if (name === 'COUNT') {
+        if (n.args.length === 1) {
+          const arg0 = n.args[0];
+          if (arg0.t === 'var' && this.binder(arg0.name)?.shape === Binder.ROW) {
+            return new Fragment(['COUNT(*)'], 'NUM', this.dialect);
+          }
+        }
+      } else if (name === 'SUM') {
+        if (n.args.length >= 2) {
+          const arg0 = n.args[0];
+          if (arg0.t === 'var' && this.binder(arg0.name)?.shape === Binder.ROW) {
+            const hasCustomBinder = n.args.length === 3 && constants.isBinderName(n.args[1]);
+            const bodyNode = hasCustomBinder ? n.args[2] : n.args[1];
+            let inner;
+            if (hasCustomBinder) {
+              const frame = new Map([[n.args[1].name, this.binder(arg0.name)]]);
+              this.frames.push(frame);
+              try {
+                inner = this.node(bodyNode);
+              } finally {
+                this.frames.pop();
+              }
+            } else {
+              inner = this.node(bodyNode);
+            }
+            return new Fragment([`COALESCE(SUM(${inner.parts.join('')}), 0)`], 'NUM', this.dialect);
+          }
+        }
+      } else if (['AVG', 'MIN', 'MAX'].includes(name)) {
+        if (n.args.length >= 2) {
+          const arg0 = n.args[0];
+          if (arg0.t === 'var' && this.binder(arg0.name)?.shape === Binder.ROW) {
+            const hasCustomBinder = n.args.length === 3 && constants.isBinderName(n.args[1]);
+            const bodyNode = hasCustomBinder ? n.args[2] : n.args[1];
+            let inner;
+            if (hasCustomBinder) {
+              const frame = new Map([[n.args[1].name, this.binder(arg0.name)]]);
+              this.frames.push(frame);
+              try {
+                inner = this.node(bodyNode);
+              } finally {
+                this.frames.pop();
+              }
+            } else {
+              inner = this.node(bodyNode);
+            }
+            return new Fragment([`${name}(${inner.parts.join('')})`], inner.kind, this.dialect);
+          }
+        }
+      }
+    }
+
     if (AGGREGATES.includes(name)) return this.aggregate(n);
     if (name === 'COUNT') return this.count(n);
     if (name === 'HAS') return this.has(n);
@@ -834,7 +889,23 @@ export class Translator {
           + 'row without an ORDER BY that nothing here can supply', n.pos);
       }
       const field = asciiUpper(key);
+      if (!this.inWhere && this.statementPlan !== null && this.statementPlan.groupBy !== null) {
+        if (Object.hasOwn(this.statementPlan.aggregateAliases, key)) {
+          return this.node(this.statementPlan.aggregateAliases[key]);
+        }
+        if (Object.hasOwn(this.statementPlan.aggregateAliases, field)) {
+          return this.node(this.statementPlan.aggregateAliases[field]);
+        }
+      }
       if (!Object.hasOwn(b.payload.fields, field)) {
+        if (this.statementPlan !== null) {
+          if (Object.hasOwn(this.statementPlan.aggregateAliases, key)) {
+            return this.node(this.statementPlan.aggregateAliases[key]);
+          }
+          if (Object.hasOwn(this.statementPlan.aggregateAliases, field)) {
+            return this.node(this.statementPlan.aggregateAliases[field]);
+          }
+        }
         const known = Object.keys(b.payload.fields).sort();
         const tail = known.length === 0 ? '; it declares none' : `; it has ${known.join(', ')}`;
         refuse('E_SQL_BINDING',
@@ -1077,11 +1148,17 @@ export class Translator {
     }
 
     const row = Binder.row(src.relation);
+    let kBinder;
+    if (this.statementPlan !== null && this.statementPlan.groupBy && this.statementPlan.groupBy.length === 1) {
+      kBinder = Binder.node(this.statementPlan.groupBy[0].node);
+    } else {
+      kBinder = Binder.none('a row of a relation has no key: SQL rows are unordered '
+        + 'and unkeyed unless the schema says otherwise, and guessing which column '
+        + 'is the key is not something this layer does');
+    }
     const frame = new Map([
       [binderName, row],
-      ['_K', Binder.none('a row of a relation has no key: SQL rows are unordered '
-        + 'and unkeyed unless the schema says otherwise, and guessing which column '
-        + 'is the key is not something this layer does')],
+      ['_K', kBinder],
     ]);
     for (const f of src.filters) frame.set(f.binder, row);
     this.frames.push(frame);
@@ -1531,7 +1608,129 @@ export class Translator {
           } else {
             refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos);
           }
-          plan.filters.push({ binder, node: pred, pos: step.pos });
+          if (plan.groupBy !== null) {
+            plan.having.push({ binder, node: pred, pos: step.pos });
+          } else {
+            plan.filters.push({ binder, node: pred, pos: step.pos });
+          }
+          break;
+        }
+
+        case 'GROUP_BY': {
+          let binder;
+          let keyNode;
+          let aggNode = null;
+          if (args.length === 2) {
+            binder = '_';
+            keyNode = args[1];
+          } else if (args.length === 3) {
+            binder = '_';
+            keyNode = args[1];
+            aggNode = args[2];
+          } else if (args.length === 4) {
+            if (!constants.isBinderName(args[1])) {
+              refuse('E_SQL_SHAPE', 'the binder of GROUP_BY must be a bare name', args[1].pos);
+            }
+            binder = args[1].name;
+            keyNode = args[2];
+            aggNode = args[3];
+          } else {
+            refuse('E_ARITY', 'GROUP_BY takes 2 to 4 arguments', step.pos);
+          }
+
+          const groupBy = [];
+          if ((keyNode.t === 'call' && keyNode.name === 'LIST') || keyNode.t === 'list') {
+            const listItems = keyNode.t === 'list' ? keyNode.items : keyNode.args;
+            for (const kArg of listItems) {
+              groupBy.push({
+                alias: null,
+                binder,
+                node: kArg,
+                pos: kArg.pos ?? step.pos,
+              });
+            }
+          } else if (keyNode.t === 'call' && keyNode.name === 'RECORD') {
+            const rArgs = keyNode.args;
+            if (rArgs.length % 2 !== 0) {
+              refuse('E_ARITY', 'RECORD takes an even number of arguments', keyNode.pos);
+            }
+            for (let i = 0; i < rArgs.length; i += 2) {
+              if (rArgs[i].t !== 'text') {
+                refuse('E_BAD_ARG', 'RECORD field names must be string literals', rArgs[i].pos);
+              }
+              groupBy.push({
+                alias: rArgs[i].v,
+                binder,
+                node: rArgs[i + 1],
+                pos: rArgs[i + 1].pos ?? step.pos,
+              });
+            }
+          } else {
+            groupBy.push({
+              alias: null,
+              binder,
+              node: keyNode,
+              pos: keyNode.pos ?? step.pos,
+            });
+          }
+          plan.groupBy = groupBy;
+
+          if (aggNode !== null) {
+            if (aggNode.t === 'call' && aggNode.name === 'RECORD') {
+              const recArgs = aggNode.args;
+              if (recArgs.length % 2 !== 0) {
+                refuse('E_ARITY', 'RECORD takes an even number of arguments', aggNode.pos);
+              }
+              const projections = [];
+              for (let i = 0; i < recArgs.length; i += 2) {
+                const kNode = recArgs[i];
+                const vNode = recArgs[i + 1];
+                if (kNode.t !== 'text') {
+                  refuse('E_BAD_ARG', 'RECORD field names must be string literals', kNode.pos);
+                }
+                const alias = kNode.v;
+                let actualNode = vNode;
+                if (vNode.t === 'var' && vNode.name === '_K' && plan.groupBy.length === 1) {
+                  actualNode = plan.groupBy[0].node;
+                }
+                const isSameField = actualNode.t === 'index'
+                  && actualNode.obj
+                  && actualNode.obj.t === 'var'
+                  && (actualNode.obj.name === '_' || actualNode.obj.name === binder)
+                  && actualNode.idx
+                  && actualNode.idx.t === 'text'
+                  && actualNode.idx.v.toUpperCase() === alias.toUpperCase();
+                if (!isSameField) {
+                  plan.aggregateAliases[alias] = actualNode;
+                }
+                projections.push({
+                  alias,
+                  binder,
+                  node: actualNode,
+                });
+              }
+              plan.projections = projections;
+            } else {
+              plan.projections = [
+                {
+                  alias: null,
+                  binder,
+                  node: aggNode,
+                },
+              ];
+            }
+          } else {
+            const projections = [];
+            for (const gb of plan.groupBy) {
+              projections.push({
+                alias: gb.alias,
+                binder: gb.binder,
+                node: gb.node,
+              });
+            }
+            plan.projections = projections;
+          }
+          plan.selectCols = null;
           break;
         }
 
@@ -1779,116 +1978,154 @@ export class Translator {
   }
 
   compileStatement(plan) {
-    const parts = [];
-    parts.push(plan.distinct ? 'SELECT DISTINCT ' : 'SELECT ');
+    this.statementPlan = plan;
+    try {
+      const parts = [];
+      parts.push(plan.distinct ? 'SELECT DISTINCT ' : 'SELECT ');
 
-    const src = {
-      relation: plan.sourceRelation,
-      filters: plan.filters,
-      pos: null,
-    };
+      const src = {
+        relation: plan.sourceRelation,
+        filters: plan.filters,
+        pos: null,
+      };
 
-    // 1. SELECT list (Projections)
-    if (plan.projections !== null) {
-      let first = true;
-      for (const proj of plan.projections) {
-        if (!first) parts.push(', ');
-        first = false;
-        const pFrag = this.withRow(src, proj.binder, () => this.node(proj.node));
-        for (const p of pFrag.parts) parts.push(p);
-        if (proj.alias !== null) {
-          parts.push(' AS ' + this.emit.ident(proj.alias));
+      // 1. SELECT list (Projections)
+      if (plan.projections !== null) {
+        let first = true;
+        for (const proj of plan.projections) {
+          if (!first) parts.push(', ');
+          first = false;
+          const pFrag = this.withRow(src, proj.binder, () => this.node(proj.node));
+          for (const p of pFrag.parts) parts.push(p);
+          if (proj.alias !== null) {
+            parts.push(' AS ' + this.emit.ident(proj.alias));
+          }
+        }
+      } else if (plan.selectCols !== null) {
+        let first = true;
+        for (const col of plan.selectCols) {
+          if (!first) parts.push(', ');
+          first = false;
+          const uc = asciiUpper(col);
+          const fSpec = plan.sourceRelation.fields ? plan.sourceRelation.fields[uc] : null;
+          const table = fSpec?.table ?? plan.sourceAlias;
+          const column = fSpec?.column ?? col;
+          parts.push(this.emit.column(table, column));
+        }
+      } else {
+        if (plan.sourceAlias !== null) {
+          parts.push(this.emit.ident(plan.sourceAlias) + '.*');
+        } else {
+          parts.push('*');
         }
       }
-    } else if (plan.selectCols !== null) {
-      let first = true;
-      for (const col of plan.selectCols) {
-        if (!first) parts.push(', ');
-        first = false;
-        const uc = asciiUpper(col);
-        const fSpec = plan.sourceRelation.fields ? plan.sourceRelation.fields[uc] : null;
-        const table = fSpec?.table ?? plan.sourceAlias;
-        const column = fSpec?.column ?? col;
-        parts.push(this.emit.column(table, column));
+
+      // 2. FROM clause
+      parts.push(' FROM ');
+      let from = plan.sourceTable && typeof plan.sourceTable === 'object' && plan.sourceTable.raw
+        ? String(plan.sourceTable.raw)
+        : this.emit.ident(String(plan.sourceTable));
+      if (plan.sourceAlias) {
+        from += ' ' + this.emit.ident(String(plan.sourceAlias));
       }
-    } else {
-      if (plan.sourceAlias !== null) {
-        parts.push(this.emit.ident(plan.sourceAlias) + '.*');
-      } else {
-        parts.push('*');
+      parts.push(from);
+
+      // 3. WHERE clause
+      const condParts = [];
+      if (plan.correlate) {
+        condParts.push([plan.correlate]);
       }
-    }
-
-    // 2. FROM clause
-    parts.push(' FROM ');
-    let from = plan.sourceTable && typeof plan.sourceTable === 'object' && plan.sourceTable.raw
-      ? String(plan.sourceTable.raw)
-      : this.emit.ident(String(plan.sourceTable));
-    if (plan.sourceAlias) {
-      from += ' ' + this.emit.ident(String(plan.sourceAlias));
-    }
-    parts.push(from);
-
-    // 3. WHERE clause
-    const condParts = [];
-    if (plan.correlate) {
-      condParts.push([plan.correlate]);
-    }
-    for (const filter of plan.filters) {
-      const cFrag = this.withRow(src, filter.binder,
-        () => this.requireBool(this.node(filter.node), filter.pos, 'FILTER'));
-      condParts.push(cFrag.parts);
-    }
-
-    if (condParts.length > 0) {
-      parts.push(' WHERE ');
-      condParts.forEach((cp, idx) => {
-        if (idx > 0) parts.push(' AND ');
-        for (const p of cp) parts.push(p);
-      });
-    }
-
-    // 4. ORDER BY clause
-    if (plan.orderBy.length > 0) {
-      parts.push(' ORDER BY ');
-      let first = true;
-      for (const ord of plan.orderBy) {
-        if (!first) parts.push(', ');
-        first = false;
-        const oFrag = this.withRow(src, ord.binder, () => this.node(ord.node));
-        for (const p of oFrag.parts) parts.push(p);
-        parts.push(' ' + ord.dir);
+      this.inWhere = true;
+      try {
+        for (const filter of plan.filters) {
+          const cFrag = this.withRow(src, filter.binder,
+            () => this.requireBool(this.node(filter.node), filter.pos, 'FILTER'));
+          condParts.push(cFrag.parts);
+        }
+      } finally {
+        this.inWhere = false;
       }
-    }
 
-    // 5. LIMIT / OFFSET clause
-    const limit = plan.limit;
-    const offset = plan.offset;
-    if (limit !== null && offset !== null) {
-      parts.push(` LIMIT ${limit} OFFSET ${offset}`);
-    } else if (limit !== null) {
-      parts.push(` LIMIT ${limit}`);
-    } else if (offset !== null) {
-      const chain = map.chain(this.dialect);
-      if (chain.includes('mariadb') || chain.includes('mysql') || chain.includes('mysql-family')) {
-        parts.push(` LIMIT 18446744073709551615 OFFSET ${offset}`);
-      } else if (chain.includes('sqlite')) {
-        parts.push(` LIMIT -1 OFFSET ${offset}`);
-      } else {
-        parts.push(` OFFSET ${offset}`);
+      if (condParts.length > 0) {
+        parts.push(' WHERE ');
+        condParts.forEach((cp, idx) => {
+          if (idx > 0) parts.push(' AND ');
+          for (const p of cp) parts.push(p);
+        });
       }
-    }
 
-    return new Fragment(
-      parts,
-      'STATEMENT',
-      this.dialect,
-      this.params,
-      this.paramKinds,
-      [...this.caveats]
-    );
+      // 4. GROUP BY clause
+      if (plan.groupBy && plan.groupBy.length > 0) {
+        parts.push(' GROUP BY ');
+        let first = true;
+        for (const gb of plan.groupBy) {
+          if (!first) parts.push(', ');
+          first = false;
+          const gFrag = this.withRow(src, gb.binder, () => this.node(gb.node));
+          for (const p of gFrag.parts) parts.push(p);
+        }
+      }
+
+      // 5. HAVING clause
+      if (plan.having && plan.having.length > 0) {
+        parts.push(' HAVING ');
+        const hCondParts = [];
+        for (const hav of plan.having) {
+          const hFrag = this.withRow(src, hav.binder,
+            () => this.requireBool(this.node(hav.node), hav.pos, 'FILTER'));
+          hCondParts.push(hFrag.parts);
+        }
+        hCondParts.forEach((hp, idx) => {
+          if (idx > 0) parts.push(' AND ');
+          for (const p of hp) parts.push(p);
+        });
+      }
+
+      // 6. ORDER BY clause
+      if (plan.orderBy.length > 0) {
+        parts.push(' ORDER BY ');
+        let first = true;
+        for (const ord of plan.orderBy) {
+          if (!first) parts.push(', ');
+          first = false;
+          const oFrag = this.withRow(src, ord.binder, () => this.node(ord.node));
+          for (const p of oFrag.parts) parts.push(p);
+          parts.push(' ' + ord.dir);
+        }
+      }
+
+      // 7. LIMIT / OFFSET clause
+      const limit = plan.limit;
+      const offset = plan.offset;
+      if (limit !== null && offset !== null) {
+        parts.push(` LIMIT ${limit} OFFSET ${offset}`);
+      } else if (limit !== null) {
+        parts.push(` LIMIT ${limit}`);
+      } else if (offset !== null) {
+        const chain = map.chain(this.dialect);
+        if (chain.includes('mariadb') || chain.includes('mysql') || chain.includes('mysql-family')) {
+          parts.push(` LIMIT 18446744073709551615 OFFSET ${offset}`);
+        } else if (chain.includes('sqlite')) {
+          parts.push(` LIMIT -1 OFFSET ${offset}`);
+        } else {
+          parts.push(` OFFSET ${offset}`);
+        }
+      }
+
+      return new Fragment(
+        parts,
+        'STATEMENT',
+        this.dialect,
+        this.params,
+        this.paramKinds,
+        [...this.caveats]
+      );
+    } finally {
+      this.statementPlan = null;
+    }
   }
 }
+
 
 // --- module-level helpers ----------------------------------------------------
 

@@ -26,7 +26,9 @@
   (frames '() :type list)
   (const-names '() :type list)
   (const-root nil)
-  (depth 0 :type fixnum))
+  (depth 0 :type fixnum)
+  (statement-plan nil)
+  (in-where nil :type boolean))
 
 (defun list-key (k)
   "The 1-based list position a key names, or NIL when it names none.
@@ -293,17 +295,29 @@ index the field you want" name)
                (format nil "~a[~a] asks for a row by position, and a relation has ~
 no first row without an ORDER BY that nothing here can supply" name key)
                (snode-pos n)))
-     (let* ((fields (getf (binder-payload b) :fields))
-            (cell (assoc (sel::ascii-upcase key) fields :test #'equal)))
-       (unless cell
-         (refuse "E_SQL_BINDING"
-                 (format nil "~a[~s] is not a field of that relation~a" name key
-                         (if fields
-                             (format nil "; it has ~{~a~^, ~}"
-                                     (sort (mapcar #'car fields) #'string<))
-                             "; it declares none"))
-                 (snode-pos n)))
-       (column-ref tr (cdr cell))))
+     (let* ((plan (translator-statement-plan tr))
+            (uc-key (sel::ascii-upcase key)))
+       (when (and (not (translator-in-where tr)) plan (relational-plan-group-by plan))
+         (let ((alias-cell (or (assoc key (relational-plan-aggregate-aliases plan) :test #'equal)
+                               (assoc uc-key (relational-plan-aggregate-aliases plan) :test #'equal))))
+           (when alias-cell
+             (return-from index-binder (walk-node tr (cdr alias-cell))))))
+       (let* ((fields (getf (binder-payload b) :fields))
+              (cell (assoc uc-key fields :test #'equal)))
+         (unless cell
+           (when plan
+             (let ((alias-cell (or (assoc key (relational-plan-aggregate-aliases plan) :test #'equal)
+                                   (assoc uc-key (relational-plan-aggregate-aliases plan) :test #'equal))))
+               (when alias-cell
+                 (return-from index-binder (walk-node tr (cdr alias-cell))))))
+           (refuse "E_SQL_BINDING"
+                   (format nil "~a[~s] is not a field of that relation~a" name key
+                           (if fields
+                               (format nil "; it has ~{~a~^, ~}"
+                                       (sort (mapcar #'car fields) #'string<))
+                               "; it declares none"))
+                   (snode-pos n)))
+         (column-ref tr (cdr cell)))))
     (:node
      (let ((elem (child-of (binder-payload b) key)))
        (unless elem
@@ -969,6 +983,53 @@ requires for the same reason and refuses here too"
 (defun translate-call (tr n)
   ;; Captured before the rewrite, which preserves the name but rebinds the node.
   (let ((name (sel::node-s n)))
+    (when (translator-statement-plan tr)
+      (cond
+        ((equal name "COUNT")
+         (let ((args (sel::node-items n)))
+           (when (= (length args) 1)
+             (let* ((arg0 (first args))
+                    (bd (when (and (not (clist-p arg0)) (eq (snode-kind arg0) :var))
+                          (find-binder tr (sel::node-s arg0)))))
+               (when (and bd (eq (binder-shape bd) :row))
+                 (return-from translate-call
+                   (%fragment (list "COUNT(*)") :num (translator-dialect tr))))))))
+        ((equal name "SUM")
+         (let ((args (sel::node-items n)))
+           (when (>= (length args) 2)
+             (let* ((arg0 (first args))
+                    (bd (when (and (not (clist-p arg0)) (eq (snode-kind arg0) :var))
+                          (find-binder tr (sel::node-s arg0)))))
+               (when (and bd (eq (binder-shape bd) :row))
+                 (let* ((has-custom-binder (and (= (length args) 3) (is-binder-name (second args))))
+                        (body-node (if has-custom-binder (third args) (second args)))
+                        (inner (if has-custom-binder
+                                   (let ((frame (list (cons (sel::node-s (second args)) bd))))
+                                     (push frame (translator-frames tr))
+                                     (unwind-protect (walk-node tr body-node)
+                                       (pop (translator-frames tr))))
+                                   (walk-node tr body-node))))
+                   (return-from translate-call
+                     (%fragment (append (list "COALESCE(SUM(") (fragment-parts inner) (list "), 0)"))
+                                :num (translator-dialect tr)))))))))
+        ((member name '("AVG" "MIN" "MAX") :test #'equal)
+         (let ((args (sel::node-items n)))
+           (when (>= (length args) 2)
+             (let* ((arg0 (first args))
+                    (bd (when (and (not (clist-p arg0)) (eq (snode-kind arg0) :var))
+                          (find-binder tr (sel::node-s arg0)))))
+               (when (and bd (eq (binder-shape bd) :row))
+                 (let* ((has-custom-binder (and (= (length args) 3) (is-binder-name (second args))))
+                        (body-node (if has-custom-binder (third args) (second args)))
+                        (inner (if has-custom-binder
+                                   (let ((frame (list (cons (sel::node-s (second args)) bd))))
+                                     (push frame (translator-frames tr))
+                                     (unwind-protect (walk-node tr body-node)
+                                       (pop (translator-frames tr))))
+                                   (walk-node tr body-node))))
+                   (return-from translate-call
+                     (%fragment (append (list (format nil "~a(" name)) (fragment-parts inner) (list ")"))
+                                (fragment-kind inner) (translator-dialect tr)))))))))))
     ;; Each of these short-circuits before the next, and none reaches the funcs
     ;; table: the generator rejects a dialect document that lists one.
     (when (member name +aggregates+ :test #'equal)
@@ -1185,12 +1246,15 @@ resolves to the key -- which is what the evaluator does."
 and a subquery reusing its own alias shadows the outer row rather than comparing ~
 against it; the correlation names the alias, so it cannot be renamed here" alias))))))
     (let ((row (binder-row (source-relation src)))
+          (plan (translator-statement-plan tr))
           (frame '()))
       (setf frame (frame-set frame binder-name row))
       (setf frame (frame-set frame "_K"
-                             (binder-none "a row of a relation has no key: SQL rows ~
+                             (if (and plan (relational-plan-group-by plan) (= (length (relational-plan-group-by plan)) 1))
+                                 (binder-node (third (first (relational-plan-group-by plan))))
+                                 (binder-none "a row of a relation has no key: SQL rows ~
 are unordered and unkeyed unless the schema says otherwise, and guessing which ~
-column is the key is not something this layer does")))
+column is the key is not something this layer does"))))
       (dolist (f (source-filters src)) (setf frame (frame-set frame (car f) row)))
       (push frame (translator-frames tr))
       (unwind-protect (funcall render) (pop (translator-frames tr))))))
@@ -1479,7 +1543,7 @@ SQL counterpart" (snode-pos e)))
 ;;; --- relational pipeline statement compiler -------------------------------
 
 (defparameter +pipeline-ops+
-  '("FILTER" "SELECT_COLS" "MAP" "DISTINCT" "TAKE" "DROP"
+  '("FILTER" "GROUP_BY" "SELECT_COLS" "MAP" "DISTINCT" "TAKE" "DROP"
     "SORT" "SORT_DESC" "SORT_BY"))
 
 (defun eval-int-param (tr n op)
@@ -1621,8 +1685,80 @@ SQL counterpart" (snode-pos e)))
                       (setf binder (sel::node-s (second args)) pred (third args)))
                      (t
                       (refuse "E_ARITY" "FILTER takes 2 or 3 arguments" pos)))
-                   (setf (relational-plan-filters plan)
-                         (append (relational-plan-filters plan) (list (list binder pred pos))))))
+                   (if (relational-plan-group-by plan)
+                       (setf (relational-plan-having plan)
+                             (append (relational-plan-having plan) (list (list binder pred pos))))
+                       (setf (relational-plan-filters plan)
+                             (append (relational-plan-filters plan) (list (list binder pred pos)))))))
+
+                ((equal sname "GROUP_BY")
+                 (let (binder key-node agg-node)
+                   (cond
+                     ((= (length args) 2)
+                      (setf binder "_" key-node (second args) agg-node nil))
+                     ((= (length args) 3)
+                      (setf binder "_" key-node (second args) agg-node (third args)))
+                     ((= (length args) 4)
+                      (unless (is-binder-name (second args))
+                        (refuse "E_SQL_SHAPE" "the binder of GROUP_BY must be a bare name" (snode-pos (second args))))
+                      (setf binder (sel::node-s (second args))
+                            key-node (third args)
+                            agg-node (fourth args)))
+                     (t
+                      (refuse "E_ARITY" "GROUP_BY takes 2 to 4 arguments" pos)))
+
+                   (let ((group-by '()))
+                     (cond
+                       ((or (and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "LIST"))
+                            (and (not (clist-p key-node)) (eq (snode-kind key-node) :list)))
+                        (dolist (k-arg (sel::node-items key-node))
+                          (push (list nil binder k-arg (snode-pos k-arg)) group-by)))
+                       ((and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "RECORD"))
+                        (let ((r-args (sel::node-items key-node)))
+                          (unless (evenp (length r-args))
+                            (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos key-node)))
+                          (loop for (k-node v-node) on r-args by #'cddr do
+                            (unless (eq (snode-kind k-node) :text)
+                              (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
+                            (push (list (sel::node-s k-node) binder v-node (snode-pos v-node)) group-by))))
+                       (t
+                        (push (list nil binder key-node (snode-pos key-node)) group-by)))
+                     (setf (relational-plan-group-by plan) (nreverse group-by)))
+
+                   (if agg-node
+                       (if (and (not (clist-p agg-node)) (eq (snode-kind agg-node) :call) (equal (sel::node-s agg-node) "RECORD"))
+                           (let ((rec-args (sel::node-items agg-node))
+                                 (projs '()))
+                             (unless (evenp (length rec-args))
+                               (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos agg-node)))
+                             (loop for (k-node v-node) on rec-args by #'cddr do
+                               (unless (eq (snode-kind k-node) :text)
+                                 (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
+                               (let* ((alias (sel::node-s k-node))
+                                      (actual-node (if (and (not (clist-p v-node))
+                                                            (eq (snode-kind v-node) :var)
+                                                            (equal (sel::node-s v-node) "_K")
+                                                            (= (length (relational-plan-group-by plan)) 1))
+                                                       (third (first (relational-plan-group-by plan)))
+                                                       v-node))
+                                      (is-same-field (and (not (clist-p actual-node))
+                                                          (eq (snode-kind actual-node) :index)
+                                                          (let ((l (sel::node-l actual-node))
+                                                                (r (sel::node-r actual-node)))
+                                                            (and l (not (clist-p l)) (eq (snode-kind l) :var)
+                                                                 (or (equal (sel::node-s l) "_") (equal (sel::node-s l) binder))
+                                                                 r (not (clist-p r)) (eq (snode-kind r) :text)
+                                                                 (string-equal (sel::node-s r) alias))))))
+                                 (unless is-same-field
+                                   (push (cons alias actual-node) (relational-plan-aggregate-aliases plan)))
+                                 (push (list alias binder actual-node) projs)))
+                             (setf (relational-plan-projections plan) (nreverse projs)))
+                           (setf (relational-plan-projections plan) (list (list nil binder agg-node))))
+                       (let ((projs '()))
+                         (dolist (gb (relational-plan-group-by plan))
+                           (push (list (first gb) (second gb) (third gb)) projs))
+                         (setf (relational-plan-projections plan) (nreverse projs))))
+                   (setf (relational-plan-select-cols plan) nil)))
 
                 ((equal sname "SELECT_COLS")
                  (let* ((col-args (rest args))
@@ -1691,119 +1827,156 @@ SQL counterpart" (snode-pos e)))
           plan)))))
 
 (defun compile-statement (tr plan)
-  (let ((parts '()))
-    (push (if (relational-plan-distinct plan) "SELECT DISTINCT " "SELECT ") parts)
+  (setf (translator-statement-plan tr) plan)
+  (unwind-protect
+      (let ((parts '()))
+        (push (if (relational-plan-distinct plan) "SELECT DISTINCT " "SELECT ") parts)
 
-    (let* ((src-rel (relational-plan-source-relation plan))
-           (src (%source :relation '() src-rel
-                         (mapcar (lambda (f) (cons (first f) (second f))) (relational-plan-filters plan))
-                         nil)))
+        (let* ((src-rel (relational-plan-source-relation plan))
+               (src (%source :relation '() src-rel
+                             (mapcar (lambda (f) (cons (first f) (second f))) (relational-plan-filters plan))
+                             nil)))
 
-      ;; 1. Projections
-      (cond
-        ((relational-plan-projections plan)
-         (let ((first t))
-           (dolist (proj (relational-plan-projections plan))
-             (unless first (push ", " parts))
-             (setf first nil)
-             (let* ((alias (first proj))
-                    (binder (second proj))
-                    (node (third proj))
-                    (p-frag (with-row tr src binder (lambda () (walk-node tr node)))))
-               (dolist (p (fragment-parts p-frag))
-                 (push p parts))
-               (when alias
-                 (push (format nil " AS ~a" (emit-ident (translator-dialect tr) alias)) parts))))))
-
-        ((relational-plan-select-cols plan)
-         (let ((first t))
-           (dolist (col (relational-plan-select-cols plan))
-             (unless first (push ", " parts))
-             (setf first nil)
-             (let* ((uc (sel::ascii-upcase col))
-                    (f-cell (assoc uc (getf src-rel :fields) :test #'equal))
-                    (f-spec (cdr f-cell))
-                    (table (or (getf f-spec :table) (relational-plan-source-alias plan)))
-                    (column (or (getf f-spec :column) col)))
-               (push (emit-column (translator-dialect tr) table column) parts)))))
-
-        (t
-         (if (and (relational-plan-source-alias plan)
-                  (plusp (length (relational-plan-source-alias plan))))
-             (push (format nil "~a.*" (emit-ident (translator-dialect tr) (relational-plan-source-alias plan))) parts)
-             (push "*" parts))))
-
-      ;; 2. FROM clause
-      (push " FROM " parts)
-      (let ((from (if (getf src-rel :from-raw-p)
-                      (getf src-rel :from)
-                      (emit-ident (translator-dialect tr) (relational-plan-source-table plan)))))
-        (when (and (relational-plan-source-alias plan)
-                   (plusp (length (relational-plan-source-alias plan))))
-          (setf from (format nil "~a ~a" from (emit-ident (translator-dialect tr) (relational-plan-source-alias plan)))))
-        (push from parts))
-
-      ;; 3. WHERE clause
-      (let ((cond-parts '()))
-        (when (and (relational-plan-correlate plan)
-                   (plusp (length (relational-plan-correlate plan))))
-          (push (list (relational-plan-correlate plan)) cond-parts))
-        (dolist (filter (relational-plan-filters plan))
-          (let* ((binder (first filter))
-                 (node (second filter))
-                 (pos (third filter))
-                 (c-frag (with-row tr src binder
-                           (lambda ()
-                             (require-bool (walk-node tr node) pos "FILTER")))))
-            (push (fragment-parts c-frag) cond-parts)))
-        (setf cond-parts (nreverse cond-parts))
-        (when cond-parts
-          (push " WHERE " parts)
-          (loop for cp in cond-parts
-                for idx from 0
-                do (when (plusp idx) (push " AND " parts))
-                   (dolist (p cp) (push p parts)))))
-
-      ;; 4. ORDER BY clause
-      (when (relational-plan-order-by plan)
-        (push " ORDER BY " parts)
-        (loop for ord in (relational-plan-order-by plan)
-              for idx from 0
-              do (when (plusp idx) (push ", " parts))
-                 (let* ((binder (first ord))
-                        (node (second ord))
-                        (dir (third ord))
-                        (o-frag (with-row tr src binder (lambda () (walk-node tr node)))))
-                   (dolist (p (fragment-parts o-frag))
+          ;; 1. Projections
+          (cond
+            ((relational-plan-projections plan)
+             (let ((first t))
+               (dolist (proj (relational-plan-projections plan))
+                 (unless first (push ", " parts))
+                 (setf first nil)
+                 (let* ((alias (first proj))
+                        (binder (second proj))
+                        (node (third proj))
+                        (p-frag (with-row tr src binder (lambda () (walk-node tr node)))))
+                   (dolist (p (fragment-parts p-frag))
                      (push p parts))
-                   (push (format nil " ~a" dir) parts))))
+                   (when alias
+                     (push (format nil " AS ~a" (emit-ident (translator-dialect tr) alias)) parts))))))
 
-      ;; 5. LIMIT / OFFSET clause
-      (let ((limit (relational-plan-limit plan))
-            (offset (relational-plan-offset plan)))
-        (cond
-          ((and limit offset)
-           (push (format nil " LIMIT ~D OFFSET ~D" limit offset) parts))
-          (limit
-           (push (format nil " LIMIT ~D" limit) parts))
-          (offset
-           (let ((chain (dialect-chain (translator-dialect tr))))
-             (cond
-               ((or (member "mariadb" chain :test #'equal)
-                    (member "mysql" chain :test #'equal)
-                    (member "mysql-family" chain :test #'equal))
-                (push (format nil " LIMIT 18446744073709551615 OFFSET ~D" offset) parts))
-               ((member "sqlite" chain :test #'equal)
-                (push (format nil " LIMIT -1 OFFSET ~D" offset) parts))
-               (t
-                (push (format nil " OFFSET ~D" offset) parts)))))))
+            ((relational-plan-select-cols plan)
+             (let ((first t))
+               (dolist (col (relational-plan-select-cols plan))
+                 (unless first (push ", " parts))
+                 (setf first nil)
+                 (let* ((uc (sel::ascii-upcase col))
+                        (f-cell (assoc uc (getf src-rel :fields) :test #'equal))
+                        (f-spec (cdr f-cell))
+                        (table (or (getf f-spec :table) (relational-plan-source-alias plan)))
+                        (column (or (getf f-spec :column) col)))
+                   (push (emit-column (translator-dialect tr) table column) parts)))))
 
-      (%fragment (nreverse parts)
-                 :statement
-                 (translator-dialect tr)
-                 (reverse (translator-params tr))
-                 (reverse (translator-param-kinds tr))
-                 (reverse (translator-caveats tr))))))
+            (t
+             (if (and (relational-plan-source-alias plan)
+                      (plusp (length (relational-plan-source-alias plan))))
+                 (push (format nil "~a.*" (emit-ident (translator-dialect tr) (relational-plan-source-alias plan))) parts)
+                 (push "*" parts))))
+
+          ;; 2. FROM clause
+          (push " FROM " parts)
+          (let ((from (if (getf src-rel :from-raw-p)
+                          (getf src-rel :from)
+                          (emit-ident (translator-dialect tr) (relational-plan-source-table plan)))))
+            (when (and (relational-plan-source-alias plan)
+                       (plusp (length (relational-plan-source-alias plan))))
+              (setf from (format nil "~a ~a" from (emit-ident (translator-dialect tr) (relational-plan-source-alias plan)))))
+            (push from parts))
+
+          ;; 3. WHERE clause
+          (let ((cond-parts '()))
+            (when (and (relational-plan-correlate plan)
+                       (plusp (length (relational-plan-correlate plan))))
+              (push (list (relational-plan-correlate plan)) cond-parts))
+            (setf (translator-in-where tr) t)
+            (unwind-protect
+                 (dolist (filter (relational-plan-filters plan))
+                   (let* ((binder (first filter))
+                          (node (second filter))
+                          (pos (third filter))
+                          (c-frag (with-row tr src binder
+                                    (lambda ()
+                                      (require-bool (walk-node tr node) pos "FILTER")))))
+                     (push (fragment-parts c-frag) cond-parts)))
+              (setf (translator-in-where tr) nil))
+            (setf cond-parts (nreverse cond-parts))
+            (when cond-parts
+              (push " WHERE " parts)
+              (loop for cp in cond-parts
+                    for idx from 0
+                    do (when (plusp idx) (push " AND " parts))
+                       (dolist (p cp) (push p parts)))))
+
+          ;; 4. GROUP BY clause
+          (when (relational-plan-group-by plan)
+            (push " GROUP BY " parts)
+            (let ((first t))
+              (dolist (gb (relational-plan-group-by plan))
+                (unless first (push ", " parts))
+                (setf first nil)
+                (let* ((binder (second gb))
+                       (node (third gb))
+                       (g-frag (with-row tr src binder (lambda () (walk-node tr node)))))
+                  (dolist (p (fragment-parts g-frag))
+                    (push p parts))))))
+
+          ;; 5. HAVING clause
+          (when (relational-plan-having plan)
+            (push " HAVING " parts)
+            (let ((h-cond-parts '()))
+              (dolist (hav (relational-plan-having plan))
+                (let* ((binder (first hav))
+                       (node (second hav))
+                       (pos (third hav))
+                       (h-frag (with-row tr src binder
+                                 (lambda ()
+                                   (require-bool (walk-node tr node) pos "FILTER")))))
+                  (push (fragment-parts h-frag) h-cond-parts)))
+              (setf h-cond-parts (nreverse h-cond-parts))
+              (loop for hp in h-cond-parts
+                    for idx from 0
+                    do (when (plusp idx) (push " AND " parts))
+                       (dolist (p hp) (push p parts)))))
+
+          ;; 6. ORDER BY clause
+          (when (relational-plan-order-by plan)
+            (push " ORDER BY " parts)
+            (loop for ord in (relational-plan-order-by plan)
+                  for idx from 0
+                  do (when (plusp idx) (push ", " parts))
+                     (let* ((binder (first ord))
+                            (node (second ord))
+                            (dir (third ord))
+                            (o-frag (with-row tr src binder (lambda () (walk-node tr node)))))
+                       (dolist (p (fragment-parts o-frag))
+                         (push p parts))
+                       (push (format nil " ~a" dir) parts))))
+
+          ;; 7. LIMIT / OFFSET clause
+          (let ((limit (relational-plan-limit plan))
+                (offset (relational-plan-offset plan)))
+            (cond
+              ((and limit offset)
+               (push (format nil " LIMIT ~D OFFSET ~D" limit offset) parts))
+              (limit
+               (push (format nil " LIMIT ~D" limit) parts))
+              (offset
+               (let ((chain (dialect-chain (translator-dialect tr))))
+                 (cond
+                   ((or (member "mariadb" chain :test #'equal)
+                        (member "mysql" chain :test #'equal)
+                        (member "mysql-family" chain :test #'equal))
+                    (push (format nil " LIMIT 18446744073709551615 OFFSET ~D" offset) parts))
+                   ((member "sqlite" chain :test #'equal)
+                    (push (format nil " LIMIT -1 OFFSET ~D" offset) parts))
+                   (t
+                    (push (format nil " OFFSET ~D" offset) parts)))))))
+
+          (%fragment (nreverse parts)
+                     :statement
+                     (translator-dialect tr)
+                     (reverse (translator-params tr))
+                     (reverse (translator-param-kinds tr))
+                     (reverse (translator-caveats tr)))))
+    (setf (translator-statement-plan tr) nil)))
 
 ;;; --- the public interface -------------------------------------------------
 

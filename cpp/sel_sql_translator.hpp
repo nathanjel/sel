@@ -94,6 +94,13 @@ struct RelationalOrder {
   Pos pos;
 };
 
+struct RelationalGroup {
+  std::optional<std::string> alias;
+  std::string binder;
+  SNodePtr node;
+  Pos pos;
+};
+
 struct RelationalPlan {
   std::string source_name;
   RelationSpec source_relation;
@@ -105,6 +112,9 @@ struct RelationalPlan {
   std::optional<std::vector<std::string>> select_cols;
   std::optional<std::vector<RelationalProjection>> projections;
   std::vector<RelationalFilter> filters;
+  std::optional<std::vector<RelationalGroup>> group_by;
+  std::vector<RelationalFilter> having;
+  std::unordered_map<std::string, SNodePtr> aggregate_aliases;
   std::vector<RelationalOrder> order_by;
   std::optional<int64_t> limit;
   std::optional<int64_t> offset;
@@ -265,6 +275,8 @@ class Translator {
   std::set<std::string> const_names_;
   sel::Value const_root_ = sel::Value::none();
   int depth_ = 0;
+  const RelationalPlan* statement_plan_ = nullptr;
+  bool in_where_ = false;
 };
 
 }  // namespace sel::sql

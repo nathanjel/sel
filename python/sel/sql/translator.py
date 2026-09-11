@@ -31,7 +31,7 @@ from .errors import refuse
 from .fragment import Fragment
 from .relational_plan import RelationalPlan
 
-PIPELINE_OPS = ('FILTER', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP')
+PIPELINE_OPS = ('FILTER', 'GROUP_BY', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP')
 
 # SEL list keys are the canonical decimals "1", "2", … -- so "01" is not a key
 # and neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer
@@ -141,6 +141,8 @@ class Translator:
         self.const_ctx = None
         # Walk depth, counted exactly as eval.eval_node counts evaluation nesting.
         self.depth = 0
+        self.statement_plan: RelationalPlan | None = None
+        self.in_where: bool = False
 
     def translate(self, ast: Node) -> Fragment:
         _map.require_target(self.dialect)
@@ -594,6 +596,46 @@ class Translator:
     def _call(self, n: Node) -> Fragment:
         name = n.name
 
+        if self.statement_plan is not None:
+            if name == 'COUNT':
+                if len(n.args) == 1:
+                    arg0 = n.args[0]
+                    bd = self._binder(arg0.name) if arg0.t == 'var' else None
+                    if bd is not None and bd.shape == Binder.ROW:
+                        return Fragment(['COUNT(*)'], 'NUM', self.dialect)
+            elif name == 'SUM':
+                if len(n.args) >= 2:
+                    arg0 = n.args[0]
+                    bd = self._binder(arg0.name) if arg0.t == 'var' else None
+                    if bd is not None and bd.shape == Binder.ROW:
+                        has_custom_binder = len(n.args) == 3 and _constants.is_binder_name(n.args[1])
+                        body_node = n.args[2] if has_custom_binder else n.args[1]
+                        if has_custom_binder:
+                            self.frames.append({n.args[1].name: bd})
+                            try:
+                                inner = self._node(body_node)
+                            finally:
+                                self.frames.pop()
+                        else:
+                            inner = self._node(body_node)
+                        return Fragment([f"COALESCE(SUM({''.join(inner.parts)}), 0)"], 'NUM', self.dialect)
+            elif name in ('AVG', 'MIN', 'MAX'):
+                if len(n.args) >= 2:
+                    arg0 = n.args[0]
+                    bd = self._binder(arg0.name) if arg0.t == 'var' else None
+                    if bd is not None and bd.shape == Binder.ROW:
+                        has_custom_binder = len(n.args) == 3 and _constants.is_binder_name(n.args[1])
+                        body_node = n.args[2] if has_custom_binder else n.args[1]
+                        if has_custom_binder:
+                            self.frames.append({n.args[1].name: bd})
+                            try:
+                                inner = self._node(body_node)
+                            finally:
+                                self.frames.pop()
+                        else:
+                            inner = self._node(body_node)
+                        return Fragment([f"{name}({''.join(inner.parts)})"], inner.kind, self.dialect)
+
         if name in AGGREGATES:
             return self._aggregate(n)
         if name == 'COUNT':
@@ -827,7 +869,17 @@ class Translator:
                        'no first row without an ORDER BY that nothing here can supply',
                        n.pos)
             field = ascii_upper(key)
+            if not self.in_where and self.statement_plan is not None and self.statement_plan.group_by is not None:
+                if key in self.statement_plan.aggregate_aliases:
+                    return self._node(self.statement_plan.aggregate_aliases[key])
+                if field in self.statement_plan.aggregate_aliases:
+                    return self._node(self.statement_plan.aggregate_aliases[field])
             if field not in b.payload['fields']:
+                if self.statement_plan is not None:
+                    if key in self.statement_plan.aggregate_aliases:
+                        return self._node(self.statement_plan.aggregate_aliases[key])
+                    if field in self.statement_plan.aggregate_aliases:
+                        return self._node(self.statement_plan.aggregate_aliases[field])
                 known = sorted(b.payload['fields'])
                 tail = ('; it declares none' if not known
                         else '; it has ' + ', '.join(known))
@@ -1052,11 +1104,14 @@ class Translator:
                            src.get('pos'))
 
         row = Binder.row(src['relation'])
-        frame = {binder_name: row,
-                 '_K': Binder.none('a row of a relation has no key: SQL rows are '
+        if self.statement_plan is not None and self.statement_plan.group_by and len(self.statement_plan.group_by) == 1:
+            k_binder = Binder.node(self.statement_plan.group_by[0]['node'])
+        else:
+            k_binder = Binder.none('a row of a relation has no key: SQL rows are '
                                    'unordered and unkeyed unless the schema says '
                                    'otherwise, and guessing which column is the key '
-                                   'is not something this layer does')}
+                                   'is not something this layer does')
+        frame = {binder_name: row, '_K': k_binder}
         for f in src['filters']:
             frame[f['binder']] = row
         self.frames.append(frame)
@@ -1499,7 +1554,103 @@ class Translator:
                     pred = args[2]
                 else:
                     refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos)
-                plan.filters.append({'binder': binder, 'node': pred, 'pos': step.pos})
+                if plan.group_by is not None:
+                    plan.having.append({'binder': binder, 'node': pred, 'pos': step.pos})
+                else:
+                    plan.filters.append({'binder': binder, 'node': pred, 'pos': step.pos})
+
+            elif name == 'GROUP_BY':
+                if len(args) == 2:
+                    binder = '_'
+                    key_node = args[1]
+                    agg_node = None
+                elif len(args) == 3:
+                    binder = '_'
+                    key_node = args[1]
+                    agg_node = args[2]
+                elif len(args) == 4:
+                    if not _constants.is_binder_name(args[1]):
+                        refuse('E_SQL_SHAPE', 'the binder of GROUP_BY must be a bare name', args[1].pos)
+                    binder = args[1].name
+                    key_node = args[2]
+                    agg_node = args[3]
+                else:
+                    refuse('E_ARITY', 'GROUP_BY takes 2 to 4 arguments', step.pos)
+
+                group_by = []
+                if (key_node.t == 'call' and key_node.name == 'LIST') or key_node.t == 'list':
+                    list_items = key_node.items if key_node.t == 'list' else key_node.args
+                    for k_arg in list_items:
+                        group_by.append({
+                            'alias': None,
+                            'binder': binder,
+                            'node': k_arg,
+                            'pos': getattr(k_arg, 'pos', step.pos),
+                        })
+                elif key_node.t == 'call' and key_node.name == 'RECORD':
+                    r_args = key_node.args
+                    if len(r_args) % 2 != 0:
+                        refuse('E_ARITY', 'RECORD takes an even number of arguments', key_node.pos)
+                    for i in range(0, len(r_args), 2):
+                        if r_args[i].t != 'text':
+                            refuse('E_BAD_ARG', 'RECORD field names must be string literals', r_args[i].pos)
+                        group_by.append({
+                            'alias': r_args[i].v,
+                            'binder': binder,
+                            'node': r_args[i + 1],
+                            'pos': getattr(r_args[i + 1], 'pos', step.pos),
+                        })
+                else:
+                    group_by.append({
+                        'alias': None,
+                        'binder': binder,
+                        'node': key_node,
+                        'pos': getattr(key_node, 'pos', step.pos),
+                    })
+                plan.group_by = group_by
+
+                if agg_node is not None:
+                    if agg_node.t == 'call' and agg_node.name == 'RECORD':
+                        rec_args = agg_node.args
+                        if len(rec_args) % 2 != 0:
+                            refuse('E_ARITY', 'RECORD takes an even number of arguments', agg_node.pos)
+                        projections = []
+                        for i in range(0, len(rec_args), 2):
+                            k_node = rec_args[i]
+                            v_node = rec_args[i + 1]
+                            if k_node.t != 'text':
+                                refuse('E_BAD_ARG', 'RECORD field names must be string literals', k_node.pos)
+                            alias = k_node.v
+                            actual_node = v_node
+                            if v_node.t == 'var' and v_node.name == '_K' and len(plan.group_by) == 1:
+                                actual_node = plan.group_by[0]['node']
+                            is_same_field = (actual_node.t == 'index'
+                                and getattr(actual_node, 'obj', None) is not None
+                                and actual_node.obj.t == 'var'
+                                and (actual_node.obj.name == '_' or actual_node.obj.name == binder)
+                                and getattr(actual_node, 'idx', None) is not None
+                                and actual_node.idx.t == 'text'
+                                and ascii_upper(actual_node.idx.v) == ascii_upper(alias))
+                            if not is_same_field:
+                                plan.aggregate_aliases[alias] = actual_node
+                            projections.append({
+                                'alias': alias,
+                                'binder': binder,
+                                'node': actual_node,
+                            })
+                        plan.projections = projections
+                    else:
+                        plan.projections = [{'alias': None, 'binder': binder, 'node': agg_node}]
+                else:
+                    projections = []
+                    for gb in plan.group_by:
+                        projections.append({
+                            'alias': gb['alias'],
+                            'binder': gb['binder'],
+                            'node': gb['node'],
+                        })
+                    plan.projections = projections
+                plan.select_cols = None
 
             elif name == 'SELECT_COLS':
                 col_args = args[1:]
@@ -1672,106 +1823,139 @@ class Translator:
         })
 
     def compile_statement(self, plan: RelationalPlan) -> Fragment:
-        parts: list[Any] = []
-        parts.append('SELECT DISTINCT ' if plan.distinct else 'SELECT ')
+        self.statement_plan = plan
+        try:
+            parts: list[Any] = []
+            parts.append('SELECT DISTINCT ' if plan.distinct else 'SELECT ')
 
-        src = {
-            'relation': plan.source_relation,
-            'filters': plan.filters,
-            'pos': None,
-        }
+            src = {
+                'relation': plan.source_relation,
+                'filters': plan.filters,
+                'pos': None,
+            }
 
-        # 1. SELECT list (Projections)
-        if plan.projections is not None:
-            first = True
-            for proj in plan.projections:
-                if not first:
-                    parts.append(', ')
-                first = False
-                p_frag = self._with_row(src, proj['binder'], lambda: self._node(proj['node']))
-                parts.extend(p_frag.parts)
-                if proj['alias'] is not None:
-                    parts.append(' AS ' + self.emit.ident(proj['alias']))
-        elif plan.select_cols is not None:
-            first = True
-            for col in plan.select_cols:
-                if not first:
-                    parts.append(', ')
-                first = False
-                uc = ascii_upper(col)
-                fields = plan.source_relation.get('fields') or {}
-                f_spec = fields.get(uc)
-                table = (f_spec.get('table') or plan.source_alias) if f_spec else plan.source_alias
-                column = (f_spec.get('column') or col) if f_spec else col
-                parts.append(self.emit.column(table, column))
-        else:
+            # 1. SELECT list (Projections)
+            if plan.projections is not None:
+                first = True
+                for proj in plan.projections:
+                    if not first:
+                        parts.append(', ')
+                    first = False
+                    p_frag = self._with_row(src, proj['binder'], lambda: self._node(proj['node']))
+                    parts.extend(p_frag.parts)
+                    if proj['alias'] is not None:
+                        parts.append(' AS ' + self.emit.ident(proj['alias']))
+            elif plan.select_cols is not None:
+                first = True
+                for col in plan.select_cols:
+                    if not first:
+                        parts.append(', ')
+                    first = False
+                    uc = ascii_upper(col)
+                    fields = plan.source_relation.get('fields') or {}
+                    f_spec = fields.get(uc)
+                    table = (f_spec.get('table') or plan.source_alias) if f_spec else plan.source_alias
+                    column = (f_spec.get('column') or col) if f_spec else col
+                    parts.append(self.emit.column(table, column))
+            else:
+                if plan.source_alias:
+                    parts.append(self.emit.ident(plan.source_alias) + '.*')
+                else:
+                    parts.append('*')
+
+            # 2. FROM clause
+            parts.append(' FROM ')
+            if isinstance(plan.source_table, dict) and 'raw' in plan.source_table:
+                frm = str(plan.source_table['raw'])
+            else:
+                frm = self.emit.ident(str(plan.source_table))
             if plan.source_alias:
-                parts.append(self.emit.ident(plan.source_alias) + '.*')
-            else:
-                parts.append('*')
+                frm += ' ' + self.emit.ident(str(plan.source_alias))
+            parts.append(frm)
 
-        # 2. FROM clause
-        parts.append(' FROM ')
-        if isinstance(plan.source_table, dict) and 'raw' in plan.source_table:
-            frm = str(plan.source_table['raw'])
-        else:
-            frm = self.emit.ident(str(plan.source_table))
-        if plan.source_alias:
-            frm += ' ' + self.emit.ident(str(plan.source_alias))
-        parts.append(frm)
+            # 3. WHERE clause
+            cond_parts: list[list[Any]] = []
+            if plan.correlate:
+                cond_parts.append([plan.correlate])
+            self.in_where = True
+            try:
+                for filter_ in plan.filters:
+                    c_frag = self._with_row(src, filter_['binder'],
+                        lambda: self._require_bool(self._node(filter_['node']), filter_['pos'], 'FILTER'))
+                    cond_parts.append(c_frag.parts)
+            finally:
+                self.in_where = False
 
-        # 3. WHERE clause
-        cond_parts: list[list[Any]] = []
-        if plan.correlate:
-            cond_parts.append([plan.correlate])
-        for filter_ in plan.filters:
-            c_frag = self._with_row(src, filter_['binder'],
-                lambda: self._require_bool(self._node(filter_['node']), filter_['pos'], 'FILTER'))
-            cond_parts.append(c_frag.parts)
+            if cond_parts:
+                parts.append(' WHERE ')
+                for idx, cp in enumerate(cond_parts):
+                    if idx > 0:
+                        parts.append(' AND ')
+                    parts.extend(cp)
 
-        if cond_parts:
-            parts.append(' WHERE ')
-            for idx, cp in enumerate(cond_parts):
-                if idx > 0:
-                    parts.append(' AND ')
-                parts.extend(cp)
+            # 4. GROUP BY clause
+            if plan.group_by:
+                parts.append(' GROUP BY ')
+                first = True
+                for gb in plan.group_by:
+                    if not first:
+                        parts.append(', ')
+                    first = False
+                    g_frag = self._with_row(src, gb['binder'], lambda: self._node(gb['node']))
+                    parts.extend(g_frag.parts)
 
-        # 4. ORDER BY clause
-        if plan.order_by:
-            parts.append(' ORDER BY ')
-            first = True
-            for ord_ in plan.order_by:
-                if not first:
-                    parts.append(', ')
-                first = False
-                o_frag = self._with_row(src, ord_['binder'], lambda: self._node(ord_['node']))
-                parts.extend(o_frag.parts)
-                parts.append(' ' + ord_['dir'])
+            # 5. HAVING clause
+            if plan.having:
+                parts.append(' HAVING ')
+                h_cond_parts = []
+                for hav in plan.having:
+                    h_frag = self._with_row(src, hav['binder'],
+                        lambda: self._require_bool(self._node(hav['node']), hav['pos'], 'FILTER'))
+                    h_cond_parts.append(h_frag.parts)
+                for idx, hp in enumerate(h_cond_parts):
+                    if idx > 0:
+                        parts.append(' AND ')
+                    parts.extend(hp)
 
-        # 5. LIMIT / OFFSET clause
-        limit = plan.limit
-        offset = plan.offset
-        if limit is not None and offset is not None:
-            parts.append(f' LIMIT {limit} OFFSET {offset}')
-        elif limit is not None:
-            parts.append(f' LIMIT {limit}')
-        elif offset is not None:
-            chain = _map.chain(self.dialect)
-            if any(d in chain for d in ('mariadb', 'mysql', 'mysql-family')):
-                parts.append(f' LIMIT 18446744073709551615 OFFSET {offset}')
-            elif 'sqlite' in chain:
-                parts.append(f' LIMIT -1 OFFSET {offset}')
-            else:
-                parts.append(f' OFFSET {offset}')
+            # 6. ORDER BY clause
+            if plan.order_by:
+                parts.append(' ORDER BY ')
+                first = True
+                for ord_ in plan.order_by:
+                    if not first:
+                        parts.append(', ')
+                    first = False
+                    o_frag = self._with_row(src, ord_['binder'], lambda: self._node(ord_['node']))
+                    parts.extend(o_frag.parts)
+                    parts.append(' ' + ord_['dir'])
 
-        return Fragment(
-            parts,
-            'STATEMENT',
-            self.dialect,
-            self.params,
-            self.param_kinds,
-            list(self.caveats)
-        )
+            # 7. LIMIT / OFFSET clause
+            limit = plan.limit
+            offset = plan.offset
+            if limit is not None and offset is not None:
+                parts.append(f' LIMIT {limit} OFFSET {offset}')
+            elif limit is not None:
+                parts.append(f' LIMIT {limit}')
+            elif offset is not None:
+                chain = _map.chain(self.dialect)
+                if any(d in chain for d in ('mariadb', 'mysql', 'mysql-family')):
+                    parts.append(f' LIMIT 18446744073709551615 OFFSET {offset}')
+                elif 'sqlite' in chain:
+                    parts.append(f' LIMIT -1 OFFSET {offset}')
+                else:
+                    parts.append(f' OFFSET {offset}')
+
+            return Fragment(
+                parts,
+                'STATEMENT',
+                self.dialect,
+                self.params,
+                self.param_kinds,
+                list(self.caveats)
+            )
+        finally:
+            self.statement_plan = None
+
 
 
 # --- module-level helpers ----------------------------------------------------

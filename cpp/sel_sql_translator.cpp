@@ -18,6 +18,8 @@ std::string ascii_upper(std::string_view s) {
   }
   return out;
 }
+void frame_set(std::vector<std::pair<std::string, Binder>>& frame,
+               const std::string& name, Binder b);
 
 // The literal form of a value the HOST supplied, where no AST node exists to
 // say whether the author wrote 5.00 or "5.00".
@@ -445,7 +447,20 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
              n.pos());
     }
     const RelationSpec& rel = b.as_row();
-    if (const ColumnSpec* f = rel.field(ascii_upper(key))) return column_ref(*f);
+    std::string field = ascii_upper(key);
+    if (!in_where_ && statement_plan_ && statement_plan_->group_by) {
+      auto it = statement_plan_->aggregate_aliases.find(key);
+      if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
+      it = statement_plan_->aggregate_aliases.find(field);
+      if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
+    }
+    if (const ColumnSpec* f = rel.field(field)) return column_ref(*f);
+    if (statement_plan_) {
+      auto it = statement_plan_->aggregate_aliases.find(key);
+      if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
+      it = statement_plan_->aggregate_aliases.find(field);
+      if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
+    }
     std::vector<std::string> known;
     for (const auto& [k, spec] : rel.fields) {
       (void)spec;
@@ -1444,6 +1459,82 @@ Fragment Translator::call(const SNodePtr& n) {
   // Captured before the rewrite, which preserves the name but rebinds the node.
   const std::string name = n->s();
 
+  if (statement_plan_) {
+    if (name == "COUNT") {
+      if (n->kids().size() == 1) {
+        const auto& arg0 = n->kids()[0];
+        if (arg0->t() == SNode::T::Var) {
+          const Binder* bd = binder(arg0->s());
+          if (bd && bd->shape() == Binder::Shape::Row) {
+            std::vector<Fragment::Part> p;
+            p.push_back({false, "COUNT(*)"});
+            return Fragment(p, SqlKind::Num, dialect_);
+          }
+        }
+      }
+    } else if (name == "SUM") {
+      if (n->kids().size() >= 2) {
+        const auto& arg0 = n->kids()[0];
+        if (arg0->t() == SNode::T::Var) {
+          const Binder* bd = binder(arg0->s());
+          if (bd && bd->shape() == Binder::Shape::Row) {
+            bool has_custom_binder = n->kids().size() == 3 && is_binder_name(*n->kids()[1]);
+            const auto& body_node = has_custom_binder ? n->kids()[2] : n->kids()[1];
+            Fragment inner;
+            if (has_custom_binder) {
+              std::vector<std::pair<std::string, Binder>> frame;
+              frame_set(frame, n->kids()[1]->s(), *bd);
+              frames_.push_back(std::move(frame));
+              struct Pop {
+                std::vector<Frame>* f;
+                ~Pop() { f->pop_back(); }
+              } pop{&frames_};
+              inner = node(body_node);
+            } else {
+              inner = node(body_node);
+            }
+            std::string sql = "COALESCE(SUM(";
+            for (const auto& pt : inner.parts()) sql += pt.sql;
+            sql += "), 0)";
+            std::vector<Fragment::Part> p;
+            p.push_back({false, std::move(sql)});
+            return Fragment(p, SqlKind::Num, dialect_);
+          }
+        }
+      }
+    } else if (name == "AVG" || name == "MIN" || name == "MAX") {
+      if (n->kids().size() >= 2) {
+        const auto& arg0 = n->kids()[0];
+        if (arg0->t() == SNode::T::Var) {
+          const Binder* bd = binder(arg0->s());
+          if (bd && bd->shape() == Binder::Shape::Row) {
+            bool has_custom_binder = n->kids().size() == 3 && is_binder_name(*n->kids()[1]);
+            const auto& body_node = has_custom_binder ? n->kids()[2] : n->kids()[1];
+            Fragment inner;
+            if (has_custom_binder) {
+              std::vector<std::pair<std::string, Binder>> frame;
+              frame_set(frame, n->kids()[1]->s(), *bd);
+              frames_.push_back(std::move(frame));
+              struct Pop {
+                std::vector<Frame>* f;
+                ~Pop() { f->pop_back(); }
+              } pop{&frames_};
+              inner = node(body_node);
+            } else {
+              inner = node(body_node);
+            }
+            std::string sql = name + "(";
+            for (const auto& pt : inner.parts()) sql += pt.sql;
+            sql += ")";
+            std::vector<Fragment::Part> p;
+            p.push_back({false, std::move(sql)});
+            return Fragment(p, inner.kind(), dialect_);
+          }
+        }
+      }
+    }
+  }
+
   // Each of these short-circuits before the next, and none reaches the funcs
   // table: the generator rejects a dialect document that lists one, and the
   // registry refuses one.
@@ -1710,11 +1801,15 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
   const Binder row = Binder::row(src.relation);
   std::vector<std::pair<std::string, Binder>> frame;
   frame_set(frame, binder_name, row);
-  frame_set(frame, "_K",
-            Binder::none("a row of a relation has no key: SQL rows are "
-                         "unordered and unkeyed unless the schema says "
-                         "otherwise, and guessing which column is the key is "
-                         "not something this layer does"));
+  if (statement_plan_ && statement_plan_->group_by && statement_plan_->group_by->size() == 1) {
+    frame_set(frame, "_K", Binder::node((*statement_plan_->group_by)[0].node));
+  } else {
+    frame_set(frame, "_K",
+              Binder::none("a row of a relation has no key: SQL rows are "
+                           "unordered and unkeyed unless the schema says "
+                           "otherwise, and guessing which column is the key is "
+                           "not something this layer does"));
+  }
   for (const Filter& f : src.filters) frame_set(frame, f.binder, row);
 
   frames_.push_back(std::move(frame));
@@ -1947,7 +2042,7 @@ Fragment Translator::join_aggregate(const SNode& n) {
 // --- relational pipeline statement compiler ---------------------------------
 
 constexpr std::string_view PIPELINE_OPS[] = {
-    "FILTER", "SELECT_COLS", "MAP", "DISTINCT", "TAKE", "DROP",
+    "FILTER", "GROUP_BY", "SELECT_COLS", "MAP", "DISTINCT", "TAKE", "DROP",
     "SORT", "SORT_DESC", "SORT_BY"
 };
 
@@ -2003,7 +2098,96 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       } else {
         refuse("E_ARITY", "FILTER takes 2 or 3 arguments", step->pos());
       }
-      plan.filters.push_back({binder, pred, step->pos()});
+      if (plan.group_by.has_value()) {
+        plan.having.push_back({binder, pred, step->pos()});
+      } else {
+        plan.filters.push_back({binder, pred, step->pos()});
+      }
+    } else if (name == "GROUP_BY") {
+      std::string binder;
+      SNodePtr key_node;
+      SNodePtr agg_node = nullptr;
+      if (args.size() == 2) {
+        binder = "_";
+        key_node = args[1];
+      } else if (args.size() == 3) {
+        binder = "_";
+        key_node = args[1];
+        agg_node = args[2];
+      } else if (args.size() == 4) {
+        if (!is_binder_name(*args[1])) {
+          refuse("E_SQL_SHAPE", "the binder of GROUP_BY must be a bare name", args[1]->pos());
+        }
+        binder = args[1]->s();
+        key_node = args[2];
+        agg_node = args[3];
+      } else {
+        refuse("E_ARITY", "GROUP_BY takes 2 to 4 arguments", step->pos());
+      }
+
+      std::vector<RelationalGroup> group_by;
+      if ((key_node->t() == SNode::T::Call && key_node->s() == "LIST") || key_node->t() == SNode::T::List) {
+        for (const auto& k_arg : key_node->kids()) {
+          group_by.push_back({std::nullopt, binder, k_arg, k_arg->pos()});
+        }
+      } else if (key_node->t() == SNode::T::Call && key_node->s() == "RECORD") {
+        const auto& r_args = key_node->kids();
+        if (r_args.size() % 2 != 0) {
+          refuse("E_ARITY", "RECORD takes an even number of arguments", key_node->pos());
+        }
+        for (std::size_t i = 0; i < r_args.size(); i += 2) {
+          if (r_args[i]->t() != SNode::T::Text) {
+            refuse("E_BAD_ARG", "RECORD field names must be string literals", r_args[i]->pos());
+          }
+          group_by.push_back({r_args[i]->s(), binder, r_args[i + 1], r_args[i + 1]->pos()});
+        }
+      } else {
+        group_by.push_back({std::nullopt, binder, key_node, key_node->pos()});
+      }
+      plan.group_by = std::move(group_by);
+
+      if (agg_node) {
+        if (agg_node->t() == SNode::T::Call && agg_node->s() == "RECORD") {
+          const auto& rec_args = agg_node->kids();
+          if (rec_args.size() % 2 != 0) {
+            refuse("E_ARITY", "RECORD takes an even number of arguments", agg_node->pos());
+          }
+          std::vector<RelationalProjection> projections;
+          for (std::size_t i = 0; i < rec_args.size(); i += 2) {
+            const auto& k_node = rec_args[i];
+            const auto& v_node = rec_args[i + 1];
+            if (k_node->t() != SNode::T::Text) {
+              refuse("E_BAD_ARG", "RECORD field names must be string literals", k_node->pos());
+            }
+            std::string alias = k_node->s();
+            SNodePtr actual_node = v_node;
+            if (v_node->t() == SNode::T::Var && v_node->s() == "_K" && plan.group_by->size() == 1) {
+              actual_node = (*plan.group_by)[0].node;
+            }
+            bool is_same_field = actual_node->t() == SNode::T::Index
+              && actual_node->l() && actual_node->l()->t() == SNode::T::Var
+              && (actual_node->l()->s() == "_" || actual_node->l()->s() == binder)
+              && actual_node->r() && actual_node->r()->t() == SNode::T::Text
+              && ascii_upper(actual_node->r()->s()) == ascii_upper(alias);
+            if (!is_same_field) {
+              plan.aggregate_aliases[alias] = actual_node;
+            }
+            projections.push_back({alias, binder, actual_node});
+          }
+          plan.projections = std::move(projections);
+        } else {
+          std::vector<RelationalProjection> projections;
+          projections.push_back({std::nullopt, binder, agg_node});
+          plan.projections = std::move(projections);
+        }
+      } else {
+        std::vector<RelationalProjection> projections;
+        for (const auto& gb : *plan.group_by) {
+          projections.push_back({gb.alias, gb.binder, gb.node});
+        }
+        plan.projections = std::move(projections);
+      }
+      plan.select_cols = std::nullopt;
     } else if (name == "SELECT_COLS") {
       std::vector<SNodePtr> items;
       if (args.size() == 2 && args[1]->t() == SNode::T::List) {
@@ -2222,6 +2406,12 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
 }
 
 Fragment Translator::compile_statement(const RelationalPlan& plan) {
+  statement_plan_ = &plan;
+  struct ResetPlan {
+    const RelationalPlan** p;
+    ~ResetPlan() { *p = nullptr; }
+  } reset_plan{&statement_plan_};
+
   std::vector<Fragment::Part> parts;
   auto add_sql = [&](std::string sql) {
     if (!sql.empty()) {
@@ -2293,12 +2483,18 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     cp.sql = *plan.correlate;
     cond_parts.push_back({cp});
   }
+  in_where_ = true;
+  struct ResetWhere {
+    bool* w;
+    ~ResetWhere() { *w = false; }
+  } reset_where{&in_where_};
   for (const auto& filter : plan.filters) {
     Fragment c_frag = with_row(src, filter.binder, [&]() {
       return require_bool(node(filter.node), filter.pos, "FILTER");
     });
     cond_parts.push_back(c_frag.parts());
   }
+  in_where_ = false;
 
   if (!cond_parts.empty()) {
     add_sql(" WHERE ");
@@ -2310,7 +2506,41 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     }
   }
 
-  // 4. ORDER BY clause
+  // 4. GROUP BY clause
+  if (plan.group_by && !plan.group_by->empty()) {
+    add_sql(" GROUP BY ");
+    bool first = true;
+    for (const auto& gb : *plan.group_by) {
+      if (!first) add_sql(", ");
+      first = false;
+      Fragment g_frag = with_row(src, gb.binder, [&]() {
+        return node(gb.node);
+      });
+      for (const auto& p : g_frag.parts()) {
+        parts.push_back(p);
+      }
+    }
+  }
+
+  // 5. HAVING clause
+  if (!plan.having.empty()) {
+    add_sql(" HAVING ");
+    std::vector<std::vector<Fragment::Part>> h_cond_parts;
+    for (const auto& hav : plan.having) {
+      Fragment h_frag = with_row(src, hav.binder, [&]() {
+        return require_bool(node(hav.node), hav.pos, "FILTER");
+      });
+      h_cond_parts.push_back(h_frag.parts());
+    }
+    for (std::size_t i = 0; i < h_cond_parts.size(); ++i) {
+      if (i > 0) add_sql(" AND ");
+      for (const auto& p : h_cond_parts[i]) {
+        parts.push_back(p);
+      }
+    }
+  }
+
+  // 6. ORDER BY clause
   if (!plan.order_by.empty()) {
     add_sql(" ORDER BY ");
     bool first = true;
@@ -2327,7 +2557,7 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     }
   }
 
-  // 5. LIMIT / OFFSET clause
+  // 7. LIMIT / OFFSET clause
   if (plan.limit && plan.offset) {
     add_sql(" LIMIT " + std::to_string(*plan.limit) + " OFFSET " + std::to_string(*plan.offset));
   } else if (plan.limit) {
@@ -2352,5 +2582,6 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   out.caveats_ = caveats_;
   return out;
 }
+
 
 }  // namespace sel::sql

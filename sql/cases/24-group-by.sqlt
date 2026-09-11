@@ -1,0 +1,189 @@
+# Statements: GROUP_BY and HAVING in relational pipelines.
+#
+# Covers GROUP_BY key forms (single, LIST, RECORD),
+# aggregate projections (COUNT(*), SUM with COALESCE),
+# pre-filtering (WHERE) vs post-filtering (HAVING),
+# sorting by aggregate aliases in ORDER BY,
+# pagination with GROUP_BY, and dialect parity.
+
+### name: stmt.group-by.basic
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(_["dept"])
+--- expect
+SELECT `dept` FROM `items` GROUP BY `dept`
+===
+
+### name: stmt.group-by.multi-list
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY((_["dept"], _["category"]))
+--- expect
+SELECT `dept`, `category` FROM `items` GROUP BY `dept`, `category`
+===
+
+### name: stmt.group-by.multi-record
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(RECORD("dept", _["dept"], "category", _["category"]))
+--- expect
+SELECT `dept` AS `dept`, `category` AS `category` FROM `items` GROUP BY `dept`, `category`
+===
+
+### name: stmt.group-by.aggregates
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(_["dept"], RECORD("dept", _K, "cnt", COUNT(_), "total", SUM(_, _["amount"])))
+--- expect
+SELECT `dept` AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`
+===
+
+### name: stmt.group-by.custom-binder
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(r, r["dept"], RECORD("dept", _K, "total", SUM(r, x, x["amount"])))
+--- expect
+SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`
+===
+
+### name: stmt.group-by.where-and-having
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}, "ACTIVE": {"kind": "column", "column": "active", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(_["active"] == 1) .> GROUP_BY(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100)
+--- expect
+SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY `dept` HAVING (COALESCE(SUM(`amount`), 0) > 100)
+===
+
+### name: stmt.group-by.order-by-agg
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> SORT_BY(_["total"], "DESC")
+--- expect
+SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` ORDER BY COALESCE(SUM(`amount`), 0) DESC
+===
+
+### name: stmt.group-by.pagination
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(_["dept"]) .> TAKE(10) .> DROP(5)
+--- expect
+SELECT `dept` FROM `items` GROUP BY `dept` LIMIT 10 OFFSET 5
+===
+
+### name: stmt.group-by.dialect-postgres
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}, "ACTIVE": {"kind": "column", "column": "active", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(_["active"] == 1) .> GROUP_BY(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100) .> SORT_BY(_["total"], "DESC")
+--- expect
+SELECT "dept" AS "dept", COALESCE(SUM("amount"), 0) AS "total" FROM "items" WHERE ("active" = 1) GROUP BY "dept" HAVING (COALESCE(SUM("amount"), 0) > 100) ORDER BY COALESCE(SUM("amount"), 0) DESC
+===
+
+### name: stmt.group-by.dialect-sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(_["dept"], RECORD("dept", _K, "cnt", COUNT(_))) .> DROP(5)
+--- expect
+SELECT "dept" AS "dept", COUNT(*) AS "cnt" FROM "items" GROUP BY "dept" LIMIT -1 OFFSET 5
+===
+
+### name: stmt.group-by.dialect-mysql
+--- dialect
+mysql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> DROP(5)
+--- expect
+SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` LIMIT 18446744073709551615 OFFSET 5
+===
+
+### name: stmt.group-by.refusal-binder
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(123, _["dept"], _["dept"])
+--- error
+E_SQL_SHAPE 1:19
+===
+
+### name: stmt.group-by.refusal-having-bool
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(_["dept"]) .> FILTER("not a bool")
+--- error
+E_SQL_SHAPE 1:33
+===
+
+### name: stmt.group-by.refusal-unknown-field
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> GROUP_BY(_["unknown_col"])
+--- error
+E_SQL_BINDING 1:20
+===
