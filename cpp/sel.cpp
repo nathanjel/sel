@@ -2687,6 +2687,94 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   return Value::list(std::move(out));
 }
 
+struct GroupEntry {
+  Value key;
+  std::string key_str;
+  std::vector<Value> rows;
+};
+
+Value do_group_by(Args& a, Context& ctx) {
+  const Value& val = a.val(0);
+  if (val.is_null()) return Value::list({});
+  auto ents = elements(val);
+  if (ents.empty()) return Value::list({});
+
+  const int count = a.count();
+  std::string binder = "_";
+  const Node* key_node = nullptr;
+  const Node* agg_node = nullptr;
+
+  if (count == 2) {
+    key_node = &a.node(1);
+  } else if (count == 3) {
+    key_node = &a.node(1);
+    agg_node = &a.node(2);
+  } else {
+    binder = a.symbol(1);
+    key_node = &a.node(2);
+    agg_node = &a.node(3);
+  }
+
+  std::vector<GroupEntry> groups;
+  for (std::size_t i = 0; i < ents.size(); i++) {
+    ctx.frames.push_back({{binder, ents[i].second}, {"_K", make_text(std::to_string(i + 1))}});
+    Value eval_key;
+    try {
+      eval_key = a.eval(*key_node);
+    } catch (...) {
+      ctx.frames.pop_back();
+      throw;
+    }
+    ctx.frames.pop_back();
+
+    int found = -1;
+    for (std::size_t g_idx = 0; g_idx < groups.size(); g_idx++) {
+      if (groups[g_idx].key.eql(eval_key)) {
+        found = static_cast<int>(g_idx);
+        break;
+      }
+    }
+
+    if (found >= 0) {
+      groups[found].rows.push_back(ents[i].second.clone());
+    } else {
+      std::string key_str;
+      if (eval_key.kind() == Kind::Text) {
+        key_str = eval_key.scalar();
+      } else if (eval_key.kind() == Kind::Bool) {
+        key_str = eval_key.boolean_scalar() ? "TRUE" : "FALSE";
+      } else if (eval_key.looks_numeric()) {
+        key_str = eval_key.scalar();
+      }
+      groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {ents[i].second.clone()}});
+    }
+  }
+
+  if (!agg_node) {
+    Value out = Value::none();
+    for (auto& g : groups) {
+      out.set(g.key_str, Value::list(std::move(g.rows)));
+    }
+    return out;
+  }
+
+  std::vector<Value> out;
+  out.reserve(groups.size());
+  for (auto& g : groups) {
+    ctx.frames.push_back({{binder, Value::list(std::move(g.rows))}, {"_K", g.key.clone()}});
+    Value res;
+    try {
+      res = a.eval(*agg_node);
+    } catch (...) {
+      ctx.frames.pop_back();
+      throw;
+    }
+    ctx.frames.pop_back();
+    out.push_back(std::move(res));
+  }
+  return Value::list(std::move(out));
+}
+
 void register_aggregates() {
   define(Spec{"ALL", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
                 auto s = walk(a, ctx, [](const Value& r, const std::string&, const Value&,
@@ -2762,6 +2850,10 @@ void register_aggregates() {
 
   define(Spec{"SORT_BY", 2, 4, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
                 return do_sort(a, ctx, std::nullopt);
+              }});
+
+  define(Spec{"GROUP_BY", 2, 4, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
+                return do_group_by(a, ctx);
               }});
 }
 
@@ -3754,6 +3846,35 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
           inner.insert("_K");
           collect(node->items[1].get(), inner, reads, assigned, depth + 1);
           collect(node->items[2].get(), bound, reads, assigned, depth + 1);
+          return;
+        }
+        if (n == 2) {
+          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
+          std::set<std::string> inner = bound;
+          inner.insert("_");
+          inner.insert("_K");
+          collect(node->items[1].get(), inner, reads, assigned, depth + 1);
+          return;
+        }
+      }
+      if (name == "GROUP_BY") {
+        const std::size_t n = node->items.size();
+        if (n == 4 && node->items[1]->t == NT::Var) {
+          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
+          std::set<std::string> inner = bound;
+          inner.insert(node->items[1]->s);
+          inner.insert("_K");
+          collect(node->items[2].get(), inner, reads, assigned, depth + 1);
+          collect(node->items[3].get(), inner, reads, assigned, depth + 1);
+          return;
+        }
+        if (n == 3) {
+          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
+          std::set<std::string> inner = bound;
+          inner.insert("_");
+          inner.insert("_K");
+          collect(node->items[1].get(), inner, reads, assigned, depth + 1);
+          collect(node->items[2].get(), inner, reads, assigned, depth + 1);
           return;
         }
         if (n == 2) {

@@ -1,0 +1,57 @@
+% In-memory relational operator: GROUP_BY
+
+### name: rel.group-by.empty
+--- source
+LIST() .> GROUP_BY(_["cat"])
+--- expect
+none
+===
+
+### name: rel.group-by.null
+--- source
+GROUP_BY(NULL, _["cat"])
+--- expect
+none
+===
+
+### name: rel.group-by.map-keys
+--- source
+LIST(RECORD("cat", "A", "v", 1), RECORD("cat", "B", "v", 2), RECORD("cat", "A", "v", 3)) .> GROUP_BY(_["cat"])
+--- expect
+tree -{"A"=-{"1"=-{"cat"=t"A", "v"=t"1"}, "2"=-{"cat"=t"A", "v"=t"3"}}, "B"=-{"1"=-{"cat"=t"B", "v"=t"2"}}}
+===
+
+### name: rel.group-by.count
+--- source
+LIST(RECORD("cat", "A", "v", 1), RECORD("cat", "B", "v", 2), RECORD("cat", "A", "v", 3)) .> GROUP_BY(_["cat"], RECORD("cat", _K, "count", COUNT(_)))
+--- expect
+tree -{"1"=-{"cat"=t"A", "count"=t"2"}, "2"=-{"cat"=t"B", "count"=t"1"}}
+===
+
+### name: rel.group-by.sum
+--- source
+LIST(RECORD("cat", "A", "v", 10), RECORD("cat", "B", "v", 20), RECORD("cat", "A", "v", 30)) .> GROUP_BY(_["cat"], RECORD("cat", _K, "total", SUM(_, _["v"])))
+--- expect
+tree -{"1"=-{"cat"=t"A", "total"=t"40"}, "2"=-{"cat"=t"B", "total"=t"20"}}
+===
+
+### name: rel.group-by.custom-binder
+--- source
+LIST(RECORD("cat", "A", "v", 10), RECORD("cat", "B", "v", 20)) .> GROUP_BY(R, R["cat"], RECORD("c", _K, "t", SUM(R, x, x["v"])))
+--- expect
+tree -{"1"=-{"c"=t"A", "t"=t"10"}, "2"=-{"c"=t"B", "t"=t"20"}}
+===
+
+### name: rel.group-by.pipeline.filter-having
+--- source
+LIST(RECORD("cat", "A", "v", 10), RECORD("cat", "B", "v", 50), RECORD("cat", "A", "v", 30), RECORD("cat", "C", "v", 5)) .> FILTER(_["v"] >= 10) .> GROUP_BY(_["cat"], RECORD("cat", _K, "total", SUM(_, _["v"]))) .> FILTER(_["total"] >= 40) .> SORT_BY(_["total"], "DESC")
+--- expect
+tree -{"1"=-{"cat"=t"B", "total"=t"50"}, "2"=-{"cat"=t"A", "total"=t"40"}}
+===
+
+### name: rel.group-by.numeric-key
+--- source
+LIST(RECORD("dept", 10, "v", "x"), RECORD("dept", 20, "v", "y"), RECORD("dept", 10, "v", "z")) .> GROUP_BY(_["dept"], RECORD("dept", _K, "count", COUNT(_)))
+--- expect
+tree -{"1"=-{"dept"=t"10", "count"=t"2"}, "2"=-{"dept"=t"20", "count"=t"1"}}
+===

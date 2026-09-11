@@ -202,3 +202,61 @@
 (define-builtin "SORT_BY" 2 4
   (lambda (a ctx) (do-sort a ctx nil))
   :lazy t :binds t)
+
+(defun do-group-by (a ctx)
+  (let* ((val (args-val a 0)))
+    (if (value-null-p val)
+        (make-list-value nil)
+        (let ((ents (aggregate-elements val)))
+          (if (null ents)
+              (make-list-value nil)
+              (let* ((count (args-count a))
+                     (binder (if (= count 4) (args-symbol a 1) "_"))
+                     (key-node (cond ((= count 2) (args-node a 1))
+                                     ((= count 3) (args-node a 1))
+                                     (t (args-node a 2))))
+                     (agg-node (cond ((= count 2) nil)
+                                     ((= count 3) (args-node a 2))
+                                     (t (args-node a 3))))
+                     (groups '()))
+                (loop for (k . item) in ents
+                      for idx from 1
+                      do (ctx-push-frame ctx (list (cons binder item)
+                                                   (cons "_K" (%text (format nil "~d" idx)))))
+                         (let ((eval-key (unwind-protect
+                                              (args-eval a key-node)
+                                           (ctx-pop-frame ctx))))
+                           (let ((found (find-if (lambda (g) (value-eql (getf g :key) eval-key)) groups)))
+                             (if found
+                                 (setf (getf found :rows) (append (getf found :rows) (list (value-copy item))))
+                                 (let ((key-str (cond ((eq (value-kind eval-key) :text)
+                                                       (value-scalar eval-key))
+                                                      ((eq (value-kind eval-key) :bool)
+                                                       (if (value-scalar eval-key) "TRUE" "FALSE"))
+                                                      ((looks-numeric eval-key)
+                                                       (value-scalar eval-key))
+                                                      (t ""))))
+                                   (push (list :key (value-copy eval-key)
+                                               :key-str key-str
+                                               :rows (list (value-copy item)))
+                                         groups))))))
+                (setf groups (nreverse groups))
+                (if (null agg-node)
+                    (let ((out (make-none)))
+                      (dolist (g groups)
+                        (value-set out (getf g :key-str) (make-list-value (getf g :rows))))
+                      out)
+                    (let ((out '()))
+                      (dolist (g groups)
+                        (ctx-push-frame ctx (list (cons binder (make-list-value (getf g :rows)))
+                                                  (cons "_K" (value-copy (getf g :key)))))
+                        (let ((res (unwind-protect
+                                        (args-eval a agg-node)
+                                     (ctx-pop-frame ctx))))
+                          (push (value-copy res) out)))
+                      (make-list-value (nreverse out))))))))))
+
+(define-builtin "GROUP_BY" 2 4
+  (lambda (a ctx) (do-group-by a ctx))
+  :lazy t :binds t)
+

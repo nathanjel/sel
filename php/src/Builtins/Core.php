@@ -191,6 +191,85 @@ final class Core
                 return self::doSort($a, $ctx, null);
             }]);
 
+        Registry::define(['name' => 'GROUP_BY', 'min' => 2, 'max' => 4, 'lazy' => true, 'binds' => true,
+            'fn' => static function (Args $a, Context $ctx): Value {
+                $val = $a->val(0);
+                if ($val->isNull()) {
+                    return Value::list([]);
+                }
+                $entries = self::elements($val);
+                if ($entries === []) {
+                    return Value::list([]);
+                }
+                $count = $a->count();
+                if ($count === 2) {
+                    $binder = '_';
+                    $keyNode = $a->node(1);
+                    $aggNode = null;
+                } elseif ($count === 3) {
+                    $binder = '_';
+                    $keyNode = $a->node(1);
+                    $aggNode = $a->node(2);
+                } else {
+                    $binder = $a->symbol(1);
+                    $keyNode = $a->node(2);
+                    $aggNode = $a->node(3);
+                }
+
+                $groups = [];
+                foreach ($entries as $idx => [, $item]) {
+                    $ctx->pushFrame([$binder => $item, '_K' => Value::text((string) ($idx + 1))]);
+                    try {
+                        $kVal = $a->evalNode($keyNode);
+                    } finally {
+                        $ctx->popFrame();
+                    }
+
+                    $found = -1;
+                    foreach ($groups as $gIdx => $g) {
+                        if ($g['key']->eql($kVal)) {
+                            $found = $gIdx;
+                            break;
+                        }
+                    }
+                    if ($found >= 0) {
+                        $groups[$found]['rows'][] = $item->copy();
+                    } else {
+                        $keyStr = match ($kVal->kind) {
+                            Value::TEXT => (string) $kVal->scalar,
+                            Value::BOOL => $kVal->scalar ? 'TRUE' : 'FALSE',
+                            Value::NONE => '',
+                            default => $kVal->looksNumeric() ? (string) $kVal->scalar : '',
+                        };
+                        $groups[] = [
+                            'key' => $kVal->copy(),
+                            'keyStr' => $keyStr,
+                            'rows' => [$item->copy()],
+                        ];
+                    }
+                }
+
+                if ($aggNode === null) {
+                    $out = Value::none();
+                    foreach ($groups as $g) {
+                        $out->set($g['keyStr'], Value::list($g['rows']));
+                    }
+                    return $out;
+                }
+
+                $out = [];
+                foreach ($groups as $g) {
+                    $ctx->pushFrame([$binder => Value::list($g['rows']), '_K' => $g['key']->copy()]);
+                    try {
+                        $res = $a->evalNode($aggNode);
+                        $out[] = $res->copy();
+                    } finally {
+                        $ctx->popFrame();
+                    }
+                }
+                return Value::list($out);
+            }]);
+
         self::registerAggregates();
     }
 

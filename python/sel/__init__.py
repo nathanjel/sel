@@ -128,6 +128,25 @@ computed is exactly a program that could not have been evaluated.
                 inner = bound | {'_', '_K'}
                 _collect(node.args[1], inner, reads, assigned, depth + 1)
                 return
+        if name == 'GROUP_BY':
+            n = len(node.args)
+            if n == 4 and node.args[1].t == 'var':
+                _collect(node.args[0], bound, reads, assigned, depth + 1)
+                inner = bound | {node.args[1].name, '_K'}
+                _collect(node.args[2], inner, reads, assigned, depth + 1)
+                _collect(node.args[3], inner, reads, assigned, depth + 1)
+                return
+            if n == 3:
+                _collect(node.args[0], bound, reads, assigned, depth + 1)
+                inner = bound | {'_', '_K'}
+                _collect(node.args[1], inner, reads, assigned, depth + 1)
+                _collect(node.args[2], inner, reads, assigned, depth + 1)
+                return
+            if n == 2:
+                _collect(node.args[0], bound, reads, assigned, depth + 1)
+                inner = bound | {'_', '_K'}
+                _collect(node.args[1], inner, reads, assigned, depth + 1)
+                return
         if node.spec and node.spec.binds and len(node.args) == 3 and node.args[1].t == 'var':
             _collect(node.args[0], bound, reads, assigned, depth + 1)
             inner = bound | {node.args[1].name, '_K'}

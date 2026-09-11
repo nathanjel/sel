@@ -163,6 +163,34 @@ final class Program
                         return;
                     }
                 }
+                if ($name === 'GROUP_BY') {
+                    if ($n === 4 && $node['args'][1]['t'] === 'var') {
+                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
+                        $inner = $bound;
+                        $inner[$node['args'][1]['name']] = true;
+                        $inner['_K'] = true;
+                        self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
+                        self::collect($node['args'][3], $inner, $reads, $assigned, $depth + 1);
+                        return;
+                    }
+                    if ($n === 3) {
+                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
+                        $inner = $bound;
+                        $inner['_'] = true;
+                        $inner['_K'] = true;
+                        self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
+                        self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
+                        return;
+                    }
+                    if ($n === 2) {
+                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
+                        $inner = $bound;
+                        $inner['_'] = true;
+                        $inner['_K'] = true;
+                        self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
+                        return;
+                    }
+                }
                 if ($binds && $n === 3 && $node['args'][1]['t'] === 'var') {
                     self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
                     $inner = $bound;

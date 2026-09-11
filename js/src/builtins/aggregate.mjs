@@ -225,3 +225,85 @@ define({
   name: 'SORT_BY', min: 2, max: 4, lazy: true, binds: true,
   fn: (args, ctx) => doSort(args, ctx, null),
 });
+
+define({
+  name: 'GROUP_BY', min: 2, max: 4, lazy: true, binds: true,
+  fn: (args, ctx) => {
+    const val = args.val(0);
+    if (val.isNull()) return Value.list([]);
+    const entries = elements(val);
+    if (entries.length === 0) return Value.list([]);
+
+    const count = args.count();
+    let binder = '_';
+    let keyNode;
+    let aggNode = null;
+
+    if (count === 2) {
+      keyNode = args.node(1);
+    } else if (count === 3) {
+      keyNode = args.node(1);
+      aggNode = args.node(2);
+    } else {
+      binder = args.symbol(1);
+      keyNode = args.node(2);
+      aggNode = args.node(3);
+    }
+
+    const groups = [];
+    for (let idx = 0; idx < entries.length; idx++) {
+      const item = entries[idx][1];
+      ctx.pushFrame(new Map([[binder, item], ['_K', Value.text(String(idx + 1))]]));
+      let kVal;
+      try {
+        kVal = args.evalNode(keyNode);
+      } finally {
+        ctx.popFrame();
+      }
+
+      let found = -1;
+      for (let gIdx = 0; gIdx < groups.length; gIdx++) {
+        if (groups[gIdx].key.eql(kVal)) {
+          found = gIdx;
+          break;
+        }
+      }
+
+      if (found >= 0) {
+        groups[found].rows.push(item.clone());
+      } else {
+        let keyStr = '';
+        if (kVal.kind === 'TEXT') keyStr = String(kVal.scalar);
+        else if (kVal.kind === 'BOOL') keyStr = kVal.scalar ? 'TRUE' : 'FALSE';
+        else if (kVal.looksNumeric()) keyStr = String(kVal.scalar);
+
+        groups.push({
+          key: kVal.clone(),
+          keyStr,
+          rows: [item.clone()],
+        });
+      }
+    }
+
+    if (aggNode === null) {
+      const out = Value.none();
+      for (const g of groups) {
+        out.set(g.keyStr, Value.list(g.rows));
+      }
+      return out;
+    }
+
+    const out = [];
+    for (const g of groups) {
+      ctx.pushFrame(new Map([[binder, Value.list(g.rows)], ['_K', g.key.clone()]]));
+      try {
+        const res = args.evalNode(aggNode);
+        out.push(res.clone());
+      } finally {
+        ctx.popFrame();
+      }
+    }
+    return Value.list(out);
+  },
+});
+

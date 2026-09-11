@@ -221,3 +221,77 @@ define('SORT', 1, 3, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, c
 define('SORT_DESC', 1, 3, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, ctx, 'DESC'))
 define('SORT_BY', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, ctx, None))
 
+
+def do_group_by(args, ctx):
+    val = args.val(0)
+    if val.is_null():
+        return Value.list([])
+    entries = elements(val)
+    if not entries:
+        return Value.list([])
+
+    count = args.count()
+    binder = '_'
+    agg_node = None
+
+    if count == 2:
+        key_node = args.node(1)
+    elif count == 3:
+        key_node = args.node(1)
+        agg_node = args.node(2)
+    else:
+        binder = args.symbol(1)
+        key_node = args.node(2)
+        agg_node = args.node(3)
+
+    groups = []
+    for idx, (k, item) in enumerate(entries):
+        ctx.push_frame({binder: item, '_K': Value.text(str(idx + 1))})
+        try:
+            k_val = args.eval_node(key_node)
+        finally:
+            ctx.pop_frame()
+
+        found = -1
+        for g_idx, g in enumerate(groups):
+            if g['key'].eql(k_val):
+                found = g_idx
+                break
+
+        if found >= 0:
+            groups[found]['rows'].append(item.clone())
+        else:
+            key_str = ''
+            if k_val.kind == Value.TEXT:
+                key_str = str(k_val.scalar)
+            elif k_val.kind == Value.BOOL:
+                key_str = 'TRUE' if k_val.scalar else 'FALSE'
+            elif k_val.looks_numeric():
+                key_str = str(k_val.scalar)
+
+            groups.append({
+                'key': k_val.clone(),
+                'key_str': key_str,
+                'rows': [item.clone()],
+            })
+
+    if agg_node is None:
+        out = Value.none()
+        for g in groups:
+            out.set(g['key_str'], Value.list(g['rows']))
+        return out
+
+    out = []
+    for g in groups:
+        ctx.push_frame({binder: Value.list(g['rows']), '_K': g['key'].clone()})
+        try:
+            res = args.eval_node(agg_node)
+            out.append(res.clone())
+        finally:
+            ctx.pop_frame()
+    return Value.list(out)
+
+
+define('GROUP_BY', 2, 4, lazy=True, binds=True, fn=do_group_by)
+
+
