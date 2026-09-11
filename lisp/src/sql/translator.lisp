@@ -2013,8 +2013,8 @@ must not be swallowed by the path that exists to handle refusals."
 (defun translate-statement (program dialect &optional bindings options)
   "Translate a compiled relational program into a SQL statement (SELECT ...)."
   (require-target dialect)
-  (let ((tr (%translator dialect (make-bindings (or bindings '()))
-                         (and (getf options :strict) t))))
+  (let* ((b (make-bindings (or bindings '())))
+         (tr (%translator dialect b (and (getf options :strict) t))))
     (bindings-check-aliases (translator-bindings tr))
     (multiple-value-bind (names root) (const-scope (translator-bindings tr))
       (setf (translator-const-names tr) names
