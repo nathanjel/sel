@@ -83,14 +83,14 @@ final class Core
             'arityError' => static fn (int $count): ?string =>
                 $count % 2 !== 0 ? "RECORD takes an even number of arguments (key-value pairs), got {$count}" : null,
             'fn' => static function (Args $a): Value {
-                $rec = Value::none();
+                $keys = [];
+                $values = [];
                 $n = $a->count();
                 for ($i = 0; $i < $n; $i += 2) {
-                    $key = $a->text($i);
-                    $val = $a->val($i + 1);
-                    $rec->set($key, $val->copy());
+                    $keys[] = $a->text($i);
+                    $values[] = $a->val($i + 1)->copy();
                 }
-                return $rec;
+                return Value::record($keys, $values);
             }]);
 
         Registry::define(['name' => 'TAKE', 'min' => 2, 'max' => 2,
@@ -100,12 +100,12 @@ final class Core
                 if ($count === 0 || $val->isNull()) {
                     return Value::list([]);
                 }
-                $entries = self::elements($val);
                 $out = [];
-                $limit = min($count, count($entries));
-                for ($i = 0; $i < $limit; $i++) {
-                    $out[] = $entries[$i][1]->copy();
-                }
+                $seen = 0;
+                self::forEachElement($val, static function (string $key, Value $item) use (&$out, &$seen, $count): void {
+                    if ($seen < $count) $out[] = $item->copy();
+                    $seen++;
+                });
                 return Value::list($out);
             }]);
 
@@ -116,15 +116,11 @@ final class Core
                 if ($val->isNull()) {
                     return Value::list([]);
                 }
-                $entries = self::elements($val);
-                $total = count($entries);
-                if ($count >= $total) {
-                    return Value::list([]);
-                }
                 $out = [];
-                for ($i = $count; $i < $total; $i++) {
-                    $out[] = $entries[$i][1]->copy();
-                }
+                $index = 0;
+                self::forEachElement($val, static function (string $key, Value $item) use (&$out, &$index, $count): void {
+                    if ($index++ >= $count) $out[] = $item->copy();
+                });
                 return Value::list($out);
             }]);
 
@@ -139,9 +135,8 @@ final class Core
                 for ($i = 1; $i < $colCount; $i++) {
                     $cols[] = $a->text($i);
                 }
-                $entries = self::elements($val);
                 $out = [];
-                foreach ($entries as [, $row]) {
+                self::forEachElement($val, static function (string $key, Value $row) use (&$out, $cols): void {
                     $newRow = Value::none();
                     foreach ($cols as $c) {
                         if ($row->has($c)) {
@@ -149,7 +144,7 @@ final class Core
                         }
                     }
                     $out[] = $newRow;
-                }
+                });
                 return Value::list($out);
             }]);
 
@@ -159,20 +154,22 @@ final class Core
                 if ($val->isNull()) {
                     return Value::list([]);
                 }
-                $entries = self::elements($val);
+                $buckets = [];
                 $out = [];
-                foreach ($entries as [, $item]) {
+                self::forEachElement($val, static function (string $key, Value $item) use (&$buckets, &$out): void {
+                    $hash = $item->structuralHash();
                     $seen = false;
-                    foreach ($out as $existing) {
+                    foreach ($buckets[$hash] ?? [] as $existing) {
                         if ($item->eql($existing)) {
                             $seen = true;
                             break;
                         }
                     }
                     if (!$seen) {
+                        $buckets[$hash][] = $item;
                         $out[] = $item->copy();
                     }
-                }
+                });
                 return Value::list($out);
             }]);
 
@@ -197,10 +194,6 @@ final class Core
                 if ($val->isNull()) {
                     return Value::list([]);
                 }
-                $entries = self::elements($val);
-                if ($entries === []) {
-                    return Value::list([]);
-                }
                 $count = $a->count();
                 if ($count === 2) {
                     $binder = '_';
@@ -217,36 +210,56 @@ final class Core
                 }
 
                 $groups = [];
-                foreach ($entries as $idx => [, $item]) {
-                    $ctx->pushFrame([$binder => $item, '_K' => Value::text((string) ($idx + 1))]);
-                    try {
-                        $kVal = $a->evalNode($keyNode);
-                    } finally {
-                        $ctx->popFrame();
-                    }
-
-                    $found = -1;
-                    foreach ($groups as $gIdx => $g) {
-                        if ($g['key']->eql($kVal)) {
-                            $found = $gIdx;
-                            break;
+                $buckets = [];
+                $index = 0;
+                $needsK = self::containsVar($keyNode, '_K');
+                $frame = [$binder => Value::none()];
+                if ($needsK) $frame['_K'] = Value::none();
+                $ctx->pushFrame($frame);
+                try {
+                    self::forEachElement($val, function (string $key, Value $item) use (
+                        &$index, &$groups, &$buckets, $ctx, $binder, $a, $keyNode, &$frame, $needsK,
+                    ): void {
+                        $index++;
+                        $frame[$binder] = $item;
+                        $ctx->setFrameValue($binder, $item);
+                        if ($needsK) {
+                            $frame['_K'] = Value::text($key);
+                            $ctx->setFrameValue('_K', $frame['_K']);
                         }
-                    }
-                    if ($found >= 0) {
-                        $groups[$found]['rows'][] = $item->copy();
-                    } else {
+                        $kVal = $a->evalNode($keyNode);
+                        $hash = $kVal->structuralHash();
+                        $found = -1;
+                        foreach ($buckets[$hash] ?? [] as $gIdx) {
+                            if ($groups[$gIdx]['key']->eql($kVal)) {
+                                $found = $gIdx;
+                                break;
+                            }
+                        }
+                        if ($found >= 0) {
+                            $groups[$found]['rows'][] = $item->copy();
+                            return;
+                        }
                         $keyStr = match ($kVal->kind) {
                             Value::TEXT => (string) $kVal->scalar,
                             Value::BOOL => $kVal->scalar ? 'TRUE' : 'FALSE',
                             Value::NONE => '',
                             default => $kVal->looksNumeric() ? (string) $kVal->scalar : '',
                         };
+                        $groupIndex = count($groups);
                         $groups[] = [
                             'key' => $kVal->copy(),
                             'keyStr' => $keyStr,
                             'rows' => [$item->copy()],
                         ];
-                    }
+                        $buckets[$hash][] = $groupIndex;
+                    });
+                } finally {
+                    $ctx->popFrame();
+                }
+
+                if ($groups === []) {
+                    return Value::list([]);
                 }
 
                 if ($aggNode === null) {
@@ -258,14 +271,19 @@ final class Core
                 }
 
                 $out = [];
-                foreach ($groups as $g) {
-                    $ctx->pushFrame([$binder => Value::list($g['rows']), '_K' => $g['key']->copy()]);
-                    try {
+                $aggregateFrame = [$binder => Value::none(), '_K' => Value::none()];
+                $ctx->pushFrame($aggregateFrame);
+                try {
+                    foreach ($groups as $g) {
+                        $aggregateFrame[$binder] = Value::list($g['rows']);
+                        $aggregateFrame['_K'] = $g['key']->copy();
+                        $ctx->setFrameValue($binder, $aggregateFrame[$binder]);
+                        $ctx->setFrameValue('_K', $aggregateFrame['_K']);
                         $res = $a->evalNode($aggNode);
                         $out[] = $res->copy();
-                    } finally {
-                        $ctx->popFrame();
                     }
+                } finally {
+                    $ctx->popFrame();
                 }
                 return Value::list($out);
             }]);
@@ -315,18 +333,14 @@ final class Core
         if ($val->isNull()) {
             return Value::list([]);
         }
-        $entries = self::elements($val);
-        if ($entries === []) {
-            return Value::list([]);
-        }
-
         $count = $a->count();
         if ($count === 1) {
             $dir = $forcedDir ?? 'ASC';
             $indexed = [];
-            foreach ($entries as $idx => [, $item]) {
-                $indexed[] = ['item' => $item, 'key' => $item, 'idx' => $idx];
-            }
+            $idx = 0;
+            self::forEachElement($val, static function (string $key, Value $item) use (&$indexed, &$idx): void {
+                $indexed[] = ['item' => $item, 'key' => $item, 'idx' => $idx++];
+            });
         } else {
             if ($count === 2) {
                 $binder = '_';
@@ -362,14 +376,26 @@ final class Core
             }
 
             $indexed = [];
-            foreach ($entries as $idx => [$k, $item]) {
-                $ctx->pushFrame([$binder => $item, '_K' => Value::text($k)]);
-                try {
+            $idx = 0;
+            $needsK = self::containsVar($body, '_K');
+            $frame = [$binder => Value::none()];
+            if ($needsK) $frame['_K'] = Value::none();
+            $ctx->pushFrame($frame);
+            try {
+                self::forEachElement($val, function (string $k, Value $item) use (
+                    &$indexed, &$idx, $ctx, $binder, $body, $a, &$frame, $needsK,
+                ): void {
+                    $frame[$binder] = $item;
+                    $ctx->setFrameValue($binder, $item);
+                    if ($needsK) {
+                        $frame['_K'] = Value::text($k);
+                        $ctx->setFrameValue('_K', $frame['_K']);
+                    }
                     $evalKey = $a->evalNode($body);
-                } finally {
-                    $ctx->popFrame();
-                }
-                $indexed[] = ['item' => $item, 'key' => $evalKey, 'idx' => $idx];
+                    $indexed[] = ['item' => $item, 'key' => $evalKey, 'idx' => $idx++];
+                });
+            } finally {
+                $ctx->popFrame();
             }
         }
 
@@ -414,6 +440,29 @@ final class Core
         return $value->kind === Value::NONE ? [] : [['1', $value]];
     }
 
+    /** @param callable(string,Value):void $callback */
+    private static function forEachElement(Value $value, callable $callback): void
+    {
+        if ($value->isNull()) return;
+        if ($value->isList && $value->storage !== null) {
+            foreach ($value->storage as $i => $item) {
+                $callback((string) ($i + 1), $item->force());
+            }
+            return;
+        }
+        if ($value->shape !== null && $value->storage !== null) {
+            foreach ($value->shape->keys as $i => $key) {
+                $callback($key, $value->storage[$i]->force());
+            }
+            return;
+        }
+        if ($value->size() > 0) {
+            foreach ($value->entries() as [$key, $item]) $callback($key, $item);
+            return;
+        }
+        if ($value->kind !== Value::NONE) $callback('1', $value);
+    }
+
     /**
      * Runs $visit per element with the binder and _K in scope. Returning a Value
      * from $visit stops the walk and becomes the result.
@@ -421,18 +470,62 @@ final class Core
     private static function walk(Args $a, Context $ctx, callable $visit): ?Value
     {
         ['binder' => $binder, 'body' => $body] = self::shape($a);
-        foreach (self::elements($a->val(0)) as [$key, $item]) {
-            $ctx->pushFrame([$binder => $item, '_K' => Value::text($key)]);
-            try {
-                $result = $visit($a->evalNode($body), $key, $item, $body);
-            } finally {
-                $ctx->popFrame();
+        $result = null;
+        $value = $a->val(0);
+        $needsK = self::containsVar($body, '_K');
+        $frame = [$binder => Value::none()];
+        if ($needsK) $frame['_K'] = Value::none();
+        $ctx->pushFrame($frame);
+        try {
+            if ($value->isList && $value->storage !== null) {
+                foreach ($value->storage as $i => $item) {
+                    if ($result !== null) break;
+                    $key = (string) ($i + 1);
+                    $item = $item->force();
+                    $ctx->setFrameValue($binder, $item);
+                    if ($needsK) $ctx->setFrameValue('_K', Value::text($key));
+                    $result = $visit($a->evalNode($body), $key, $item, $body);
+                }
+            } elseif ($value->shape !== null && $value->storage !== null) {
+                foreach ($value->shape->keys as $i => $key) {
+                    if ($result !== null) break;
+                    $item = $value->storage[$i]->force();
+                    $ctx->setFrameValue($binder, $item);
+                    if ($needsK) $ctx->setFrameValue('_K', Value::text($key));
+                    $result = $visit($a->evalNode($body), $key, $item, $body);
+                }
+            } else {
+                foreach (self::elements($value) as [$key, $item]) {
+                    if ($result !== null) break;
+                    $ctx->setFrameValue($binder, $item);
+                    if ($needsK) $ctx->setFrameValue('_K', Value::text($key));
+                    $result = $visit($a->evalNode($body), $key, $item, $body);
+                }
             }
-            if ($result !== null) {
-                return $result;
+        } finally {
+            $ctx->popFrame();
+        }
+        return $result;
+    }
+
+    /** @param array<string,mixed>|null $node */
+    private static function containsVar(?array $node, string $name): bool
+    {
+        if ($node === null) return false;
+        if (($node['t'] ?? null) === 'var') {
+            return strcasecmp((string) ($node['name'] ?? ''), $name) === 0;
+        }
+        foreach (['args', 'items'] as $key) {
+            foreach ($node[$key] ?? [] as $child) {
+                if (self::containsVar($child, $name)) return true;
             }
         }
-        return null;
+        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
+            if (isset($node[$key]) && is_array($node[$key]) && self::containsVar($node[$key], $name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function registerAggregates(): void
@@ -455,7 +548,7 @@ final class Core
             'fn' => static function (Args $a, Context $ctx): Value {
                 $out = [];
                 self::walk($a, $ctx, static function (Value $r) use (&$out): ?Value {
-                    $out[] = $r->copy();
+                    $out[] = $r;
                     return null;
                 });
                 return Value::list($out);
@@ -491,9 +584,9 @@ final class Core
             'fn' => static function (Args $a): Value {
                 $sep = $a->text(1);
                 $parts = [];
-                foreach (self::elements($a->val(0)) as [, $item]) {
+                self::forEachElement($a->val(0), static function (string $key, Value $item) use (&$parts, $a, $sep): void {
                     $parts[] = $item->asText($a->posOf(0));
-                }
+                });
                 return Value::text(implode($sep, $parts));
             }]);
     }

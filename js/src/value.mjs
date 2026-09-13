@@ -10,12 +10,53 @@ export const TEXT = 'TEXT';
 export const BIN = 'BIN';
 export const BOOL = 'BOOL';
 
+// Records and lists are hot values in the in-memory relational lane.  Keep the
+// schema separate from the row so rows with the same keys share one Map and
+// field reads become a single slot lookup.  The ordinary Map representation is
+// retained for irregular/mutated values, because insertion order is part of
+// SEL's value semantics.
+export class RecordShape {
+  constructor(keys) {
+    this.keys = Object.freeze([...keys]);
+    this.keyMap = new Map(this.keys.map((key, i) => [key, i]));
+    this.size = this.keys.length;
+    this.aliasCache = new Map();
+  }
+}
+
+const SHAPES = new Map();
+
+function recordShape(keys) {
+  // Keys are arbitrary SEL text.  A delimiter-joined signature would alias
+  // distinct schemas when a key itself contains that delimiter.
+  const signature = JSON.stringify(keys);
+  let shape = SHAPES.get(signature);
+  if (!shape) {
+    shape = new RecordShape(keys);
+    SHAPES.set(signature, shape);
+  }
+  return shape;
+}
+
+const LIST_KEY = /^[1-9][0-9]{0,8}$/;
+
+function listIndex(key, length) {
+  if (typeof key !== 'string' || !LIST_KEY.test(key)) return -1;
+  const n = Number(key);
+  return n <= length ? n - 1 : -1;
+}
+
 export class Value {
   constructor(kind, scalar, isList = false) {
     this.kind = kind;
     this.scalar = scalar;
     this.children = null;   // Map<string, Value>, created on demand
+    this._entries = null;   // ordered duplicate-preserving fallback (join only)
     this.isList = isList;
+    this.shape = null;      // shared RecordShape for flat records
+    this.storage = null;    // flat array for records and lists
+    this._thunk = null;     // memoised lazy field, deliberately not public API
+    this._decimal = null;   // parsed decimal cache for numeric TEXT values
   }
 
   // The kind constants, mirrored as statics so `Value.BOOL` works the way
@@ -32,7 +73,7 @@ export class Value {
   // *values* are a string here, a class constant in PHP, an enum in C++ and a
   // keyword in Lisp, so only a predicate can be documented uniformly.
   // These test the value's own kind and do not apply scalar context.
-  isNone() { return this.kind === NONE; }
+  isNone() { this.force(); return this.kind === NONE; }
   isNull() { return this.kind === NONE && this.size() === 0 && !this.isList; }
   isVacuous() {
     if (this.isNull()) return true;
@@ -42,31 +83,138 @@ export class Value {
     }
     return false;
   }
-  isText() { return this.kind === TEXT; }
-  isBin() { return this.kind === BIN; }
-  isBool() { return this.kind === BOOL; }
+  isText() { this.force(); return this.kind === TEXT; }
+  isBin() { this.force(); return this.kind === BIN; }
+  isBool() { this.force(); return this.kind === BOOL; }
 
   static none() { return new Value(NONE, null); }
   static null() { return new Value(NONE, null, false); }
   static text(s) { return new Value(TEXT, s); }
   static bin(b) { return new Value(BIN, b instanceof Uint8Array ? b : Uint8Array.from(b)); }
   static bool(b) { return new Value(BOOL, !!b); }
+
+  static shaped(keys, values) {
+    if (keys.length === 0) return Value.none();
+    return Value.shapedOwned(recordShape(keys), values.slice());
+  }
+
+  // Internal constructors take ownership of freshly allocated packed arrays.
+  // Keeping the public constructors copying preserves their host-facing
+  // isolation, while the evaluator and relational built-ins avoid a second
+  // array allocation when the destination is already private.
+  static shapedOwned(keys, values) {
+    return Value.shapedFromShape(recordShape(keys), values);
+  }
+
+  static shapedFromShape(shape, values) {
+    const v = new Value(NONE, null);
+    v.shape = shape;
+    v.storage = values;
+    return v;
+  }
+
+  static fromEntries(entries, isList = false) {
+    if (isList) return Value.listOwned(entries.map(([, value]) => value));
+    if (entries.length > 0) {
+      const keys = new Array(entries.length);
+      const values = new Array(entries.length);
+      const seen = new Set();
+      let unique = true;
+      for (let i = 0; i < entries.length; i++) {
+        const [key, value] = entries[i];
+        keys[i] = key;
+        values[i] = value;
+        if (seen.has(key)) unique = false;
+        else seen.add(key);
+      }
+      if (unique) return Value.shapedOwned(keys, values);
+    }
+    const v = Value.none();
+    for (const [key, value] of entries) v.set(key, value);
+    return v;
+  }
+
+  // LINK can deliberately expose duplicate aliases when a caller's binder
+  // names collide with fields carried by an earlier link.  Ordinary RECORD
+  // construction still has last-write-wins semantics through fromEntries;
+  // this narrow internal form preserves the Lisp join builder's ordered
+  // alist only where the relational operator needs it.
+  static fromEntriesPreserveDuplicates(entries) {
+    if (entries.length === 0) return Value.none();
+    const keys = new Array(entries.length);
+    const values = new Array(entries.length);
+    const seen = new Set();
+    let unique = true;
+    for (let i = 0; i < entries.length; i++) {
+      const [key, value] = entries[i];
+      keys[i] = key;
+      values[i] = value;
+      if (seen.has(key)) unique = false;
+      else seen.add(key);
+    }
+    if (unique) return Value.shapedOwned(keys, values);
+    const v = Value.none();
+    v._entries = entries;
+    return v;
+  }
+
+  static thunk(fn) {
+    const v = new Value(NONE, null);
+    v._thunk = fn;
+    return v;
+  }
+
   // A string is canonicalised and validated: "007" becomes "7", and anything
   // that is not a number is E_NOT_NUM here rather than a TEXT value that fails
   // later somewhere else. Internal callers pass a decimal record, not a string.
   static num(d) {
-    if (typeof d !== 'string') return new Value(TEXT, D.format(d));
-    const parsed = D.parse(d);
-    if (parsed === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(d)}`, null);
-    return new Value(TEXT, D.format(parsed));
+    let parsed = d;
+    if (typeof d === 'string') {
+      parsed = D.parse(d);
+      if (parsed === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(d)}`, null);
+    }
+    const v = new Value(TEXT, D.format(parsed));
+    v._decimal = parsed;
+    return v;
   }
-  static int(n) { return new Value(TEXT, D.format(D.fromInt(n))); }
+  static int(n) {
+    const d = D.fromInt(n);
+    const v = new Value(TEXT, D.format(d));
+    v._decimal = d;
+    return v;
+  }
 
   // Builds a list keyed "1".."n". Used by `,` and by list-returning built-ins.
   static list(values) {
+    return Value.listOwned(values.slice());
+  }
+
+  static listOwned(values) {
     const v = new Value(NONE, null, true);
-    values.forEach((x, i) => v.set(String(i + 1), x));
+    v.storage = values;
     return v;
+  }
+
+  // Resolve a LAZY_RECORD field in place.  Keeping the resolved payload on the
+  // same Value means repeated reads are cheap and preserves reference identity
+  // for rows retained by MAP/TAKE.
+  force() {
+    if (this._thunk === null) return this;
+    const fn = this._thunk;
+    const real = fn();
+    real.force();
+    // Keep the thunk if evaluation raised, matching the reference value's
+    // commit-after-force behavior for callers that catch and retry.
+    this._thunk = null;
+    this.kind = real.kind;
+    this.scalar = real.scalar;
+    this.children = real.children;
+    this.isList = real.isList;
+    this.shape = real.shape;
+    this.storage = real.storage;
+    this._entries = real._entries;
+    this._decimal = real._decimal;
+    return this;
   }
 
   // --- children -------------------------------------------------------------
@@ -74,15 +222,112 @@ export class Value {
   // A method, not a getter, so it reads the same as $v->size(), v.size() and
   // (sel:value-size v) in the other three hosts. tools/check-api.sh keeps it
   // that way.
-  size() { return this.children ? this.children.size : 0; }
-  has(key) { return this.children ? this.children.has(key) : false; }
-  get(key) { return this.children ? this.children.get(key) : undefined; }
-  keys() { return this.children ? Array.from(this.children.keys()) : []; }
-  values() { return this.children ? Array.from(this.children.values()) : []; }
-  entries() { return this.children ? Array.from(this.children.entries()) : []; }
+  size() {
+    this.force();
+    if (this.storage !== null) return this.storage.length;
+    if (this._entries !== null) return this._entries.length;
+    return this.children ? this.children.size : 0;
+  }
+
+  has(key) {
+    this.force();
+    if (this.shape) return this.shape.keyMap.has(key);
+    if (this.isList && this.storage !== null) return listIndex(key, this.storage.length) >= 0;
+    if (this._entries !== null) return this._entries.some(([entryKey]) => entryKey === key);
+    return this.children ? this.children.has(key) : false;
+  }
+
+  get(key) {
+    this.force();
+    if (this.shape) {
+      const i = this.shape.keyMap.get(key);
+      return i === undefined ? undefined : this.storage[i].force();
+    }
+    if (this.isList && this.storage !== null) {
+      const i = listIndex(key, this.storage.length);
+      return i < 0 ? undefined : this.storage[i].force();
+    }
+    if (this._entries !== null) {
+      for (const [entryKey, value] of this._entries) {
+        if (entryKey === key) return value.force();
+      }
+      return undefined;
+    }
+    const value = this.children ? this.children.get(key) : undefined;
+    return value === undefined ? undefined : value.force();
+  }
+
+  keys() {
+    this.force();
+    // RecordShape.keys is frozen, so returning it is safe and avoids a fresh
+    // key array on every row inspected by a relational operator.
+    if (this.shape) return this.shape.keys;
+    if (this.isList && this.storage !== null) {
+      return this.storage.map((_, i) => String(i + 1));
+    }
+    if (this._entries !== null) return this._entries.map(([key]) => key);
+    return this.children ? Array.from(this.children.keys()) : [];
+  }
+
+  values() {
+    this.force();
+    if (this.storage !== null) return this.storage.map((value) => value.force());
+    if (this._entries !== null) return this._entries.map(([, value]) => value.force());
+    return this.children ? Array.from(this.children.values(), (value) => value.force()) : [];
+  }
+
+  entries() {
+    this.force();
+    if (this.shape) {
+      return this.shape.keys.map((key, i) => [key, this.storage[i].force()]);
+    }
+    if (this.isList && this.storage !== null) {
+      return this.storage.map((value, i) => [String(i + 1), value.force()]);
+    }
+    if (this._entries !== null) {
+      return this._entries.map(([key, value]) => [key, value.force()]);
+    }
+    return this.children
+      ? Array.from(this.children.entries(), ([key, value]) => [key, value.force()])
+      : [];
+  }
 
   // Re-assigning an existing key keeps its original position — Map does this.
   set(key, value) {
+    this.force();
+    if (this.shape) {
+      const index = this.shape.keyMap.get(key);
+      if (index !== undefined) {
+        this.storage[index] = value;
+        return this;
+      }
+      // A new record field cannot fit the existing shape. Materialise it once
+      // and continue with the ordered fallback.
+      const entries = this.entries();
+      this.shape = null;
+      this.storage = null;
+      this.children = new Map(entries);
+    } else if (this.isList && this.storage !== null) {
+      const index = listIndex(key, this.storage.length);
+      if (index >= 0) {
+        this.storage[index] = value;
+        return this;
+      }
+      // Keep the list marker when an assignment adds a non-positional key;
+      // the Lisp value does the same after materialising its backing vector.
+      const entries = this.entries();
+      this.storage = null;
+      this.children = new Map(entries);
+    } else if (this._entries !== null) {
+      for (const entry of this._entries) {
+        if (entry[0] === key) {
+          entry[1] = value;
+          return this;
+        }
+      }
+      this._entries.push([key, value]);
+      return this;
+    }
     if (!this.children) this.children = new Map();
     this.children.set(key, value);
     return this;
@@ -92,16 +337,21 @@ export class Value {
 
   // The value that supplies the scalar: itself, or its first child, recursively.
   scalarSource(pos) {
-    let v = this;
+    let v = this.force();
     let guard = 0;
     while (v.kind === NONE) {
       if (v.isNull()) {
         fail('E_NULL', 'value is NULL', pos);
       }
-      if (!v.children || v.children.size === 0) {
+      if (v.size() === 0) {
         fail('E_NO_SCALAR', 'value has no scalar and no children', pos);
       }
-      v = v.children.values().next().value;
+      v = v.children
+        ? v.children.values().next().value
+        : v._entries !== null
+          ? v._entries[0][1]
+        : v.storage[0];
+      v.force();
       if (++guard > 1000) fail('E_DEPTH', 'scalar context nested too deeply', pos);
     }
     return v;
@@ -132,8 +382,10 @@ export class Value {
     if (v.kind !== TEXT) {
       fail('E_NOT_NUM', `expected a number, got ${v.kind.toLowerCase()}`, pos);
     }
+    if (v._decimal !== null) return v._decimal;
     const d = D.parse(v.scalar, pos);
     if (d === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(v.scalar)}`, pos);
+    v._decimal = d;
     return d;
   }
 
@@ -146,7 +398,11 @@ export class Value {
     // 2 000 000-digit text that then failed on first use.
     try {
       const v = this.scalarSource(null);
-      return v.kind === TEXT && D.parse(v.scalar) !== null;
+      if (v.kind !== TEXT) return false;
+      if (v._decimal !== null) return true;
+      const d = D.parse(v.scalar);
+      if (d !== null) v._decimal = d;
+      return d !== null;
     } catch { return false; }
   }
 
@@ -172,7 +428,20 @@ export class Value {
 
   cloneAt(depth, pos) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
+    this.force();
+    if (this.shape) {
+      return Value.shapedFromShape(this.shape,
+        this.storage.map((value) => value.cloneAt(depth + 1, pos)));
+    }
+    if (this.isList && this.storage !== null) {
+      return Value.listOwned(this.storage.map((value) => value.cloneAt(depth + 1, pos)));
+    }
     const out = new Value(this.kind, this.kind === BIN ? this.scalar.slice() : this.scalar, this.isList);
+    out._decimal = this._decimal;
+    if (this._entries !== null) {
+      out._entries = this._entries.map(([key, value]) => [key, value.cloneAt(depth + 1, pos)]);
+      return out;
+    }
     if (this.children) {
       out.children = new Map();
       for (const [k, v] of this.children) out.children.set(k, v.cloneAt(depth + 1, pos));
@@ -186,6 +455,8 @@ export class Value {
 
   eqlAt(other, depth, pos) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
+    this.force();
+    other.force();
     if (this.kind !== other.kind) return false;
     if (this.kind === TEXT || this.kind === BOOL) {
       if (this.scalar !== other.scalar) return false;
@@ -194,6 +465,18 @@ export class Value {
     }
     if (this.size() !== other.size()) return false;
     if (this.size() === 0) return true;
+    if (this.shape && other.shape && this.shape === other.shape) {
+      for (let i = 0; i < this.storage.length; i++) {
+        if (!this.storage[i].eqlAt(other.storage[i], depth + 1, pos)) return false;
+      }
+      return true;
+    }
+    if (this.isList && other.isList && this.storage !== null && other.storage !== null) {
+      for (let i = 0; i < this.storage.length; i++) {
+        if (!this.storage[i].eqlAt(other.storage[i], depth + 1, pos)) return false;
+      }
+      return true;
+    }
     const a = this.entries(), b = other.entries();
     for (let i = 0; i < a.length; i++) {
       if (a[i][0] !== b[i][0]) return false;      // key order is normative
@@ -208,6 +491,7 @@ export class Value {
 
   dumpAt(depth) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
+    this.force();
     let s;
     switch (this.kind) {
       case NONE: s = '-'; break;
@@ -235,12 +519,11 @@ export class Value {
     if (typeof x === 'bigint') return Value.text(x.toString());
     if (typeof x === 'string') return Value.text(x);
     if (x instanceof Uint8Array) return Value.bin(x);
-    if (Array.isArray(x)) return Value.list(x.map((e) => Value.fromNativeAt(e, depth + 1)));
+    if (Array.isArray(x)) return Value.listOwned(x.map((e) => Value.fromNativeAt(e, depth + 1)));
     if (x instanceof Value) return x;
     if (typeof x === 'object') {
-      const v = Value.none();
-      for (const k of Object.keys(x)) v.set(String(k), Value.fromNativeAt(x[k], depth + 1));
-      return v;
+      const entries = Object.keys(x).map((key) => [String(key), Value.fromNativeAt(x[key], depth + 1)]);
+      return Value.fromEntries(entries);
     }
     throw new TypeError(`cannot convert ${typeof x} to SEL`);
   }
@@ -249,15 +532,58 @@ export class Value {
 
   toNativeAt(depth) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
+    this.force();
     const scalar =
       this.kind === TEXT ? this.scalar :
       this.kind === BIN ? this.scalar :
       this.kind === BOOL ? this.scalar : null;
     if (this.size() === 0) return scalar;
     const obj = {};
-    for (const [k, v] of this.children) obj[k] = v.toNativeAt(depth + 1);
+    for (const [k, v] of this.entries()) obj[k] = v.toNativeAt(depth + 1);
     return scalar === null ? obj : { _: scalar, ...obj };
   }
+}
+
+// Structural hashing is only a prefilter: callers must still use eql() inside
+// the bucket because collisions are allowed.  It deliberately walks the flat
+// storage directly so DEDUPE does not serialize every row just to find a bucket.
+export function structuralHash(value, depth = 1) {
+  if (depth > MAX_DEPTH) return 0;
+  value.force();
+  let h = value.kind === TEXT ? 17 : value.kind === BIN ? 31 : value.kind === BOOL ? 47 : 61;
+  if (value.kind === TEXT) h = mixHash(h, stringHash(value.scalar));
+  else if (value.kind === BOOL) h = mixHash(h, value.scalar ? 12345 : 67890);
+  else if (value.kind === BIN) {
+    h = mixHash(h, value.scalar.length);
+    for (const byte of value.scalar) h = mixHash(h, byte);
+  }
+  if (value.shape) {
+    for (let i = 0; i < value.shape.keys.length; i++) {
+      h = mixHash(h, stringHash(value.shape.keys[i]));
+      h = mixHash(h, structuralHash(value.storage[i], depth + 1));
+    }
+  } else if (value.isList && value.storage !== null) {
+    for (const child of value.storage) h = mixHash(h, structuralHash(child, depth + 1));
+  } else {
+    for (const [key, child] of value.entries()) {
+      h = mixHash(h, stringHash(key));
+      h = mixHash(h, structuralHash(child, depth + 1));
+    }
+  }
+  return h >>> 0;
+}
+
+function stringHash(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mixHash(a, b) {
+  return (Math.imul((a ^ b) >>> 0, 16777619) + 0x9e3779b9) >>> 0;
 }
 
 // JS numbers are doubles and SEL has none, so the host boundary is where the

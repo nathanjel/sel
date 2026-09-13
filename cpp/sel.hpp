@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -83,6 +84,20 @@ inline constexpr int MAX_DEPTH = 200;
 
 enum class Kind { None, Text, Bin, Bool };
 
+// A shared, immutable record layout.  Records produced by the relational
+// builtins can keep their values in the same order as this key list, so a
+// compiled projector can address a field by slot rather than repeating a map
+// lookup for every joined row.  Ordinary values may continue to use the
+// insertion-ordered fallback storage; the shape is an optimization, not a
+// second observable representation.
+struct RecordShape {
+  std::vector<std::string> keys;
+  std::unordered_map<std::string, std::size_t> key_map;
+
+  RecordShape() = default;
+  explicit RecordShape(std::vector<std::string> names);
+};
+
 // One value, used by the interpreter and by host code alike — there is
 // deliberately no second representation of state. See spec/SPEC.md §3.
 //
@@ -124,31 +139,46 @@ class Value {
   static Value integer(long long n);
   // A list keyed "1".."n", as `,` builds.
   static Value list(std::vector<Value> values);
+  // Build a regular record with an interned shared shape. Duplicate keys are
+  // retained through the ordinary fallback semantics used by set().
+  static Value record(std::vector<std::string> keys, std::vector<Value> values);
+  static Value shaped(std::shared_ptr<const RecordShape> shape,
+                      std::vector<Value> storage);
+  static Value thunk(std::function<Value()> fn);
 
-  Kind kind() const { return p_->kind; }
+  // Materialise a LAZY_RECORD field tree.  It is const because Value is a
+  // shared handle: forcing one handle must be visible through the aliases that
+  // SEL deliberately preserves.
+  void force() const;
+
+  Kind kind() const;
 
   // Kind predicates. The recommended way to branch on kind in every host,
   // because it is the one spelling that reads the same in all four: the kind
   // *values* are an enum here, a string in JS, a class constant in PHP and a
   // keyword in Lisp, so only a predicate can be documented uniformly. These
   // test the value's own kind and do not apply scalar context.
-  bool is_none() const { return p_->kind == Kind::None; }
+  bool is_none() const;
   bool is_null() const;
   bool is_vacuous() const;
-  bool is_text() const { return p_->kind == Kind::Text; }
-  bool is_bin() const { return p_->kind == Kind::Bin; }
-  bool is_bool() const { return p_->kind == Kind::Bool; }
-  bool is_list() const { return p_->is_list; }
-  void set_is_list(bool b) { p_->is_list = b; }
+  bool is_text() const;
+  bool is_bin() const;
+  bool is_bool() const;
+  bool is_list() const;
+  void set_is_list(bool b);
 
   // --- children. Insertion-ordered; re-assigning a key keeps its position.
-  std::size_t size() const { return p_->children.size(); }
+  std::size_t size() const;
   bool has(const std::string& key) const;
   const Value* get(const std::string& key) const;
   Value* get(const std::string& key);
   std::vector<std::string> keys() const;
-  const std::vector<Entry>& entries() const { return p_->children; }
+  const std::vector<Entry>& entries() const;
   Value& set(std::string key, Value value);
+
+  const std::shared_ptr<const RecordShape>& shape() const;
+  const std::vector<Value>& storage() const;
+  const Value* slot(std::size_t index) const;
 
   // --- scalar context (spec/SPEC.md §3.2). Each throws SelError on a mismatch,
   // reporting `pos` when one is supplied.
@@ -160,8 +190,13 @@ class Value {
   bool looks_numeric() const;
 
   // The raw scalar without applying scalar context. Empty for NONE.
-  const std::string& scalar() const { return p_->scalar; }
-  bool boolean_scalar() const { return p_->boolean; }
+  const std::string& scalar() const;
+  bool boolean_scalar() const;
+
+  // A stable structural hash used by DEDUPE and BUCKET.  It is deliberately
+  // computed from kinds, scalars, keys, and child structure rather than from
+  // the printable dump, so dump formatting can evolve independently.
+  std::uint64_t structural_hash(Pos pos = {}) const;
 
   // --- structural equality, as EQL uses: same kind, equal scalars with numbers
   // *not* normalised, and children with the same keys in the same order.
@@ -204,6 +239,9 @@ class Value {
     bool is_list = false;
     std::vector<Entry> children;
     std::unordered_map<std::string, std::size_t> index;
+    std::shared_ptr<const RecordShape> shape;
+    std::vector<Value> storage;
+    std::function<Value()> thunk;
 
     // Torn down iteratively, for the reason Node is: destroying a child is
     // usually the last reference to it, so freeing a deep tree recursed once per
@@ -234,7 +272,12 @@ class Value {
   // asan` runs the suite with the leak checker to keep that true.
   std::shared_ptr<Impl> p_;
 
-  void build_index();
+  // Shaped records and vector-backed lists keep their ordered-entry view lazy.
+  // The vector is still available to the public entries() API, but hot field
+  // access and collection sizing can stay on the flat storage without copying
+  // keys or Value handles first.
+  void ensure_children() const;
+  void build_index() const;
   std::vector<Entry>::iterator find(const std::string& key);
   std::vector<Entry>::const_iterator find(const std::string& key) const;
 };

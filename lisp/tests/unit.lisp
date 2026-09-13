@@ -773,6 +773,20 @@ b\"c\\d")))
     (let ((child (first (sel::node-items opt-ast))))
       (is (string= "TOP_BY" (sel::node-s child)))))
 
+  ;; 3b. Explicit TOP binder/key arity: do not push a computed key before MAP.
+  (let* ((source "((RECORD('x', 3), RECORD('x', 1), RECORD('x', 2)))")
+         (map " .> MAP(RECORD('x', _['x'], 'y', _['x'] + 1))")
+         (pass (sel:compile-source (concatenate 'string source map " .> TOP(r, r['x'], 1)")))
+         (computed (sel:compile-source (concatenate 'string source map " .> TOP(r, r['y'], 1)")))
+         (pass-opt (sel:optimize-ast-logical (sel:program-ast pass)))
+         (computed-opt (sel:optimize-ast-logical (sel:program-ast computed))))
+    (multiple-value-bind (root pass-steps) (sel::unwind-pipeline pass-opt)
+      (declare (ignore root))
+      (is (equal '("TOP" "MAP") (mapcar #'sel::node-s pass-steps))))
+    (multiple-value-bind (root computed-steps) (sel::unwind-pipeline computed-opt)
+      (declare (ignore root))
+      (is (equal '("MAP" "TOP") (mapcar #'sel::node-s computed-steps)))))
+
   ;; 4. End-to-end execution equivalence & optimization verification
   (let ((calc-count 0))
     (sel:register-builtin "EXPENSIVE_FUNC" 1 1
@@ -867,6 +881,14 @@ b\"c\\d")))
          (opt5 (sel:optimize-ast-logical (sel:program-ast prog5))))
     (is (eq :num (sel::node-kind opt5)))
     (is (string= "99" (sel::node-s opt5))))
+
+  ;; Unary folds report the operator's span, not the child literal's span.
+  (let* ((not-ast (sel:optimize-ast-logical
+                   (sel:program-ast (sel:compile-source "NOT FALSE"))))
+         (neg-ast (sel:optimize-ast-logical
+                   (sel:program-ast (sel:compile-source "-1")))))
+    (is (= 1 (sel::pos-col (sel::node-pos not-ast))))
+    (is (= 1 (sel::pos-col (sel::node-pos neg-ast)))))
 
   (let ((v (sel:evaluate "IF(2 + 2 == 4, 'yes', 'no')")))
     (is (string= "yes" (sel:as-text v))))

@@ -6,7 +6,26 @@ const table = new Map();
 export function define(spec) {
   const name = spec.name.toUpperCase();
   if (table.has(name)) throw new Error(`SEL function ${name} defined twice`);
-  table.set(name, {
+  table.set(name, makeSpec(spec));
+}
+
+export function register(nameOrSpec, min, max, fn, options = {}) {
+  const spec = typeof nameOrSpec === 'string'
+    ? { ...options, name: nameOrSpec, min, max, fn }
+    : nameOrSpec;
+  const name = spec.name.toUpperCase();
+  if (spec.overwrite === false && table.has(name)) {
+    throw new Error(`SEL function ${name} defined twice`);
+  }
+  table.set(name, makeSpec(spec));
+  return table.get(name);
+}
+
+export const registerBuiltin = register;
+
+function makeSpec(spec) {
+  const name = spec.name.toUpperCase();
+  return {
     name,
     min: spec.min,
     max: spec.max === undefined ? spec.min : spec.max,  // Infinity for variadic
@@ -16,7 +35,7 @@ export function define(spec) {
     // a message when the count is wrong, or null when it is fine.
     arityError: spec.arityError || null,
     fn: spec.fn,
-  });
+  };
 }
 
 export function lookup(name) { return table.get(name.toUpperCase()); }

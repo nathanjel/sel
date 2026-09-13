@@ -5,12 +5,27 @@ from __future__ import annotations
 from typing import Any
 
 
+class JoinPlan:
+    def __init__(self) -> None:
+        self.type: str = 'INNER'
+        self.source_name: str = ''
+        self.source_relation: dict[str, Any] | None = None
+        self.source_table: Any = ''
+        self.source_alias: str | None = None
+        self.left_binder: str = '_1'
+        self.right_binder: str = '_2'
+        self.on_pred: Any = None
+        self.pos: Any = None
+
+
 class RelationalPlan:
     def __init__(self) -> None:
         self.source_name: str = ''
         self.source_relation: dict[str, Any] | None = None
         self.source_table: Any = ''
         self.source_alias: str | None = None
+        self.source_subquery: RelationalPlan | None = None
+        self.joins: list[JoinPlan] = []
         self.correlate: str | None = None
         self.distinct: bool = False
         self.select_cols: list[str] | None = None

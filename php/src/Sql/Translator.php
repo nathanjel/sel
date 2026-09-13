@@ -22,7 +22,11 @@ final class Translator
 {
     /** Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4. */
     private const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
-    public const PIPELINE_OPS = ['FILTER', 'GROUP_BY', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP'];
+    public const PIPELINE_OPS = [
+        'FILTER', 'GROUP_BY', 'BUCKET', 'SORT', 'SORT_DESC', 'SORT_BY',
+        'TOP', 'TOP_DESC', 'TOP_BY', 'TAKE', 'DROP', 'DISTINCT', 'DEDUPE',
+        'SELECT_COLS', 'MAP', 'LINK', 'LINK_LEFT',
+    ];
 
     private string $dialect;
     private Emit $emit;
@@ -51,6 +55,7 @@ final class Translator
     private int $depth = 0;
     private ?RelationalPlan $statementPlan = null;
     private bool $inWhere = false;
+    private int $subqueryCounter = 0;
 
     /** @param array<string,mixed> $options */
     public function __construct(string $dialect, Bindings $bindings, array $options = [])
@@ -72,6 +77,7 @@ final class Translator
         $this->caveats = [];
         $this->frames = [];
         $this->depth = 0;
+        $this->subqueryCounter = 0;
         [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
         $norm = Normalise::run($ast, $this->constNames, $this->constCtx);
         $plan = $this->analyzePipeline($norm);
@@ -95,6 +101,7 @@ final class Translator
         $this->caveats = [];
         $this->frames = [];
         $this->depth = 0;
+        $this->subqueryCounter = 0;
         [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
         $norm = Normalise::run($ast, $this->constNames, $this->constCtx);
         $plan = $this->analyzePipeline($norm);
@@ -275,6 +282,12 @@ final class Translator
     private function index(array $n): Fragment
     {
         $obj = $n['obj'];
+        if ($this->statementPlan !== null && $obj['t'] === 'index'
+            && ($obj['obj']['t'] ?? null) === 'var') {
+            $qualifier = $this->constantIndex($obj['idx']);
+            $field = $this->constantIndex($n['idx']);
+            return $this->indexQualified($qualifier, $field, $n);
+        }
         if ($obj['t'] !== 'var') {
             refuse('E_SQL_SHAPE',
                 'only a bound name can be indexed here; SQL has no way to index '
@@ -771,6 +784,83 @@ final class Translator
             : (string) ($rel['from'] ?? '');
     }
 
+    /**
+     * Resolve the SQL qualifier for a relation in the current joined statement.
+     * A binding alias wins; when none is declared the physical table name is
+     * also the qualifier, matching the evaluator's relation-name form.
+     *
+     * @param array<string,mixed> $relation
+     */
+    private function relationTableAlias(array $relation, ?string $name = null): string
+    {
+        $plan = $this->statementPlan;
+        if ($plan !== null) {
+            if ($relation === $plan->sourceRelation
+                && ($name === null || in_array(strtoupper($name), array_map(
+                    static fn ($item): string => strtoupper((string) $item),
+                    array_filter([$plan->sourceName, $plan->sourceAlias], static fn ($item): bool => $item !== null)
+                ), true))) {
+                return $plan->sourceAlias ?? self::relationAlias($relation);
+            }
+            foreach ($plan->joins as $index => $join) {
+                $names = [$join->sourceName, $join->sourceAlias, $join->leftBinder,
+                          $join->rightBinder, '_' . ($index + 2)];
+                $names = array_filter($names, static fn ($item): bool => $item !== null);
+                if ($relation === $join->sourceRelation
+                    && ($name === null || in_array(strtoupper($name), array_map(
+                        static fn ($item): string => strtoupper((string) $item), $names), true))) {
+                    return $join->sourceAlias ?? self::relationAlias($relation);
+                }
+            }
+            if ($relation === $plan->sourceRelation) {
+                return $plan->sourceAlias ?? self::relationAlias($relation);
+            }
+        }
+        return self::relationAlias($relation);
+    }
+
+    /** @param array<string,mixed> $n */
+    private function indexQualified(string $qualifier, string $key, array $n): Fragment
+    {
+        $plan = $this->statementPlan;
+        if ($plan === null) {
+            refuse('E_SQL_SHAPE', 'qualified relation indexing is only valid in a statement', $n['pos']);
+        }
+        $sources = [[
+            'names' => [$plan->sourceName, $plan->sourceAlias, self::relationAlias($plan->sourceRelation)],
+            'relation' => $plan->sourceRelation,
+            'table' => $plan->sourceAlias ?? self::relationAlias($plan->sourceRelation),
+        ]];
+        foreach ($plan->joins as $join) {
+            $sources[] = [
+                'names' => [$join->sourceName, $join->sourceAlias, self::relationAlias($join->sourceRelation),
+                            $join->leftBinder, $join->rightBinder],
+                'relation' => $join->sourceRelation,
+                'table' => $join->sourceAlias ?? self::relationAlias($join->sourceRelation),
+            ];
+        }
+        $source = null;
+        foreach ($sources as $candidate) {
+            foreach ($candidate['names'] as $name) {
+                if ($name !== null && strtoupper((string) $name) === strtoupper($qualifier)) {
+                    $source = $candidate;
+                    break 2;
+                }
+            }
+        }
+        if ($source === null) {
+            refuse('E_SQL_BINDING', "unknown joined relation '{$qualifier}'", $n['pos']);
+        }
+        $field = $source['relation']['fields'][strtoupper($key)] ?? null;
+        if ($field === null) {
+            refuse('E_SQL_BINDING', "{$qualifier}[\"{$key}\"] is not a field of that relation", $n['pos']);
+        }
+        if (isset($field['raw'])) {
+            return $this->columnRef($field);
+        }
+        return $this->columnRef(array_merge($field, ['table' => $source['table']]));
+    }
+
     private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,
                                      'FROM_UTF8' => 0, 'ISNUM' => 0, 'TO_HEX' => 0,
                                      'TO_UTF8' => 0];
@@ -1034,7 +1124,13 @@ final class Translator
                         . 'of its fields a bare reference means; give the binding a '
                         . '"scalar", or index the field you want', $n['pos']);
                 }
-                return $this->columnRef($rel['fields'][$scalar]);
+                $field = $rel['fields'][$scalar];
+                if (isset($field['raw']) || $this->statementPlan === null) {
+                    return $this->columnRef($field);
+                }
+                return $this->columnRef(array_merge($field, [
+                    'table' => $this->relationTableAlias($rel, $n['name']),
+                ]));
         }
         refuse('E_SQL_SHAPE', (string) $b->reason, $n['pos']);
     }
@@ -1058,6 +1154,30 @@ final class Translator
                     return $this->node($this->statementPlan->aggregateAliases[$field]);
                 }
             }
+            if ($name === '_' && $this->statementPlan !== null && $this->statementPlan->joins !== []) {
+                $matches = [];
+                $sources = [[
+                    'relation' => $this->statementPlan->sourceRelation,
+                    'label' => $this->statementPlan->sourceName,
+                ]];
+                foreach ($this->statementPlan->joins as $join) {
+                    $sources[] = ['relation' => $join->sourceRelation, 'label' => $join->sourceName];
+                }
+                foreach ($sources as $source) {
+                    $candidate = $source['relation']['fields'][$field] ?? null;
+                    if ($candidate !== null) {
+                        $matches[] = array_merge($candidate, [
+                            'table' => $this->relationTableAlias($source['relation'], $source['label']),
+                        ]);
+                    }
+                }
+                if (count($matches) > 1) {
+                    refuse('E_SQL_SHAPE', "field \"{$key}\" is ambiguous across joined relations", $n['pos']);
+                }
+                if (count($matches) === 1) {
+                    return $this->columnRef($matches[0]);
+                }
+            }
             if (!isset($b->payload['fields'][$field])) {
                 if ($this->statementPlan !== null) {
                     if (isset($this->statementPlan->aggregateAliases[$key])) {
@@ -1074,7 +1194,17 @@ final class Translator
                     . ($known === [] ? '; it declares none' : '; it has ' . implode(', ', $known)),
                     $n['pos']);
             }
-            return $this->columnRef($b->payload['fields'][$field]);
+            $fieldSpec = $b->payload['fields'][$field];
+            if (isset($fieldSpec['raw'])) {
+                return $this->columnRef($fieldSpec);
+            }
+            if ($this->statementPlan !== null
+                && ($this->statementPlan->joins !== [] || $this->statementPlan->sourceSubquery !== null)) {
+                return $this->columnRef(array_merge($fieldSpec, [
+                    'table' => $this->relationTableAlias($b->payload, $name),
+                ]));
+            }
+            return $this->columnRef($fieldSpec);
         }
         if ($b->shape === Binder::NODE) {
             $elem = self::childOf($b->payload, $key);
@@ -1423,6 +1553,51 @@ final class Translator
         $frame = [$binderName => $row, '_K' => $kBinder];
         foreach ($src['filters'] as $filter) {
             $frame[$filter['binder']] = $row;
+        }
+        if ($this->statementPlan !== null && $this->statementPlan->joins !== []) {
+            $frame['_'] = $row;
+            $frame['_1'] = $row;
+            $frame[$this->statementPlan->sourceName] = $row;
+            if ($this->statementPlan->sourceAlias !== null) {
+                $frame[$this->statementPlan->sourceAlias] = $row;
+            }
+            foreach ($this->statementPlan->joins as $index => $join) {
+                $right = Binder::row($join->sourceRelation);
+                $frame['_' . ($index + 2)] = $right;
+                $frame[$join->rightBinder] = $right;
+                $frame[$join->sourceName] = $right;
+                if ($join->sourceAlias !== null) {
+                    $frame[$join->sourceAlias] = $right;
+                }
+            }
+        }
+        $this->frames[] = $frame;
+        try {
+            return $render();
+        } finally {
+            array_pop($this->frames);
+        }
+    }
+
+    /** @param callable():Fragment $render */
+    private function withJoinBinders(RelationalPlan $plan, JoinPlan $join, callable $render): Fragment
+    {
+        $left = Binder::row($plan->sourceRelation);
+        $right = Binder::row($join->sourceRelation);
+        $frame = [
+            '_' => $left,
+            '_1' => $left,
+            $plan->sourceName => $left,
+            '_2' => $right,
+            $join->leftBinder => $left,
+            $join->rightBinder => $right,
+            $join->sourceName => $right,
+        ];
+        if ($plan->sourceAlias !== null) {
+            $frame[$plan->sourceAlias] = $left;
+        }
+        if ($join->sourceAlias !== null) {
+            $frame[$join->sourceAlias] = $right;
         }
         $this->frames[] = $frame;
         try {
@@ -2179,6 +2354,93 @@ final class Translator
 
     // --- Relational Pipeline Statement Compilation --------------------------
 
+    private function planHasRowsAbove(RelationalPlan $plan): bool
+    {
+        return $plan->projections !== null || $plan->selectCols !== null
+            || $plan->groupBy !== null || $plan->distinct
+            || $plan->limit !== null || $plan->offset !== null
+            || $plan->orderBy !== [];
+    }
+
+    /** @return list<string> */
+    private function outputFieldNames(RelationalPlan $plan): array
+    {
+        $names = [];
+        if ($plan->projections !== null) {
+            foreach ($plan->projections as $index => $projection) {
+                if ($projection['alias'] !== null) {
+                    $names[] = (string) $projection['alias'];
+                } elseif (($projection['node']['t'] ?? null) === 'index'
+                    && ($projection['node']['idx']['t'] ?? null) === 'text') {
+                    $names[] = (string) $projection['node']['idx']['v'];
+                } else {
+                    $names[] = 'expr' . ($index + 1);
+                }
+            }
+        } elseif ($plan->selectCols !== null) {
+            $names = $plan->selectCols;
+        } else {
+            foreach (array_keys($plan->sourceRelation['fields'] ?? []) as $name) {
+                $names[] = $name;
+            }
+            foreach ($plan->joins as $join) {
+                foreach (array_keys($join->sourceRelation['fields'] ?? []) as $name) {
+                    $names[] = $name;
+                }
+            }
+        }
+        $unique = [];
+        foreach ($names as $name) {
+            if (!in_array($name, $unique, true)) {
+                $unique[] = $name;
+            }
+        }
+        return $unique;
+    }
+
+    private function wrapPlanAsDerivedTable(RelationalPlan $plan): RelationalPlan
+    {
+        $alias = '_sub' . (++$this->subqueryCounter);
+        $fields = [];
+        foreach ($this->outputFieldNames($plan) as $name) {
+            $sourceField = null;
+            if ($plan->projections === null && $plan->selectCols === null) {
+                $sourceField = $plan->sourceRelation['fields'][strtoupper($name)] ?? null;
+                if ($sourceField === null) {
+                    foreach ($plan->joins as $join) {
+                        $sourceField = $join->sourceRelation['fields'][strtoupper($name)] ?? null;
+                        if ($sourceField !== null) {
+                            break;
+                        }
+                    }
+                }
+            }
+            $fields[strtoupper($name)] = [
+                'kind' => 'column',
+                'column' => $sourceField['column'] ?? $name,
+                'table' => $alias,
+                'type' => 'UNKNOWN',
+            ];
+        }
+        $derived = new RelationalPlan();
+        $derived->sourceName = $alias;
+        $derived->sourceRelation = [
+            'kind' => 'relation',
+            'from' => ['raw' => ''],
+            'alias' => $alias,
+            'fields' => $fields,
+        ];
+        $derived->sourceTable = '';
+        $derived->sourceAlias = $alias;
+        $derived->sourceSubquery = $plan;
+        return $derived;
+    }
+
+    private function ensureDerived(RelationalPlan $plan, bool $condition): RelationalPlan
+    {
+        return $condition ? $this->wrapPlanAsDerivedTable($plan) : $plan;
+    }
+
     /** @param array<string,mixed> $n */
     public function analyzePipeline(array $n): ?RelationalPlan
     {
@@ -2222,6 +2484,11 @@ final class Translator
 
             switch ($name) {
                 case 'FILTER':
+                    $plan = $this->ensureDerived($plan,
+                        $plan->groupBy === null
+                        && ($plan->projections !== null || $plan->selectCols !== null
+                            || $plan->limit !== null || $plan->offset !== null
+                            || $plan->orderBy !== [] || $plan->distinct));
                     if (count($args) === 2) {
                         $binder = '_';
                         $pred = $args[1];
@@ -2250,6 +2517,8 @@ final class Translator
                     break;
 
                 case 'GROUP_BY':
+                case 'BUCKET':
+                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     if (count($args) === 2) {
                         $binder = '_';
                         $keyNode = $args[1];
@@ -2365,6 +2634,7 @@ final class Translator
                     break;
 
                 case 'SELECT_COLS':
+                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     $colArgs = array_slice($args, 1);
                     if (count($colArgs) === 1 && $colArgs[0]['t'] === 'list') {
                         $items = $colArgs[0]['items'];
@@ -2377,13 +2647,20 @@ final class Translator
                             refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', $item['pos']);
                         }
                         $col = $item['v'];
-                        if (!empty($plan->sourceRelation['fields'])) {
-                            $uc = strtoupper($col);
-                            if (!isset($plan->sourceRelation['fields'][$uc])) {
-                                refuse('E_SQL_SHAPE',
-                                    "relation {$plan->sourceName} has no field '{$col}'; the relation declares "
-                                    . implode(', ', array_keys($plan->sourceRelation['fields'])), $item['pos']);
+                        $uc = strtoupper($col);
+                        $matches = isset($plan->sourceRelation['fields'][$uc]) ? 1 : 0;
+                        foreach ($plan->joins as $join) {
+                            if (isset($join->sourceRelation['fields'][$uc])) {
+                                $matches++;
                             }
+                        }
+                        if ($matches > 1) {
+                            refuse('E_SQL_SHAPE', "column '{$col}' is ambiguous across joined tables; qualify with a table alias", $item['pos']);
+                        }
+                        if (!empty($plan->sourceRelation['fields']) && $matches === 0) {
+                            refuse('E_SQL_SHAPE',
+                                "relation {$plan->sourceName} has no field '{$col}'; the relation declares "
+                                . implode(', ', array_keys($plan->sourceRelation['fields'])), $item['pos']);
                         }
                         $cols[] = $col;
                     }
@@ -2392,6 +2669,7 @@ final class Translator
                     break;
 
                 case 'MAP':
+                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     if (count($args) === 2) {
                         $binder = '_';
                         $expr = $args[1];
@@ -2405,7 +2683,7 @@ final class Translator
                         refuse('E_ARITY', 'MAP takes 2 or 3 arguments', $step['pos']);
                     }
 
-                    if ($expr['t'] === 'call' && $expr['name'] === 'RECORD') {
+                    if ($expr['t'] === 'call' && in_array($expr['name'], ['RECORD', 'LAZY_RECORD'], true)) {
                         $recArgs = $expr['args'];
                         if (count($recArgs) % 2 !== 0) {
                             refuse('E_ARITY', 'RECORD takes an even number of arguments', $expr['pos']);
@@ -2437,6 +2715,8 @@ final class Translator
                     break;
 
                 case 'DISTINCT':
+                case 'DEDUPE':
+                    $plan = $this->ensureDerived($plan, $plan->limit !== null || $plan->offset !== null);
                     $plan->distinct = true;
                     break;
 
@@ -2459,7 +2739,54 @@ final class Translator
                 case 'SORT':
                 case 'SORT_DESC':
                 case 'SORT_BY':
+                case 'TOP':
+                case 'TOP_DESC':
+                case 'TOP_BY':
+                    $plan = $this->ensureDerived($plan,
+                        $plan->groupBy === null
+                        && ($plan->projections !== null || $plan->selectCols !== null
+                            || $plan->distinct || $plan->limit !== null || $plan->offset !== null
+                            || $plan->orderBy !== []));
                     $this->analyzeSortStep($step, $plan);
+                    break;
+
+                case 'LINK':
+                case 'LINK_LEFT':
+                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
+                    if (count($args) !== 3 && count($args) !== 5) {
+                        refuse('E_ARITY', "{$name} takes 3 or 5 arguments", $step['pos']);
+                    }
+                    $rightNode = $args[1];
+                    if (($rightNode['t'] ?? null) !== 'var' || !$this->bindings->has($rightNode['name'])) {
+                        refuse('E_SQL_SHAPE', "{$name} requires a bound relation as its right side", $rightNode['pos']);
+                    }
+                    $right = $this->bindings->get($rightNode['name'], $rightNode['pos']);
+                    if (($right['kind'] ?? null) !== 'relation') {
+                        refuse('E_SQL_SHAPE', "{$rightNode['name']} is not bound as a relation", $rightNode['pos']);
+                    }
+                    $join = new JoinPlan();
+                    $join->setKind($name === 'LINK_LEFT' ? 'LEFT' : 'INNER');
+                    $join->sourceName = $rightNode['name'];
+                    $join->sourceRelation = $right;
+                    $join->sourceTable = $right['from'];
+                    $join->sourceAlias = $right['alias'] ?? null;
+                    if (count($args) === 5) {
+                        if (!Constants::isBinderName($args[2]) || !Constants::isBinderName($args[3])) {
+                            refuse('E_SQL_SHAPE', 'join binders must be bare names', $args[2]['pos']);
+                        }
+                        $join->leftBinder = $args[2]['name'];
+                        $join->rightBinder = $args[3]['name'];
+                        $join->onPred = $args[4];
+                    } else {
+                        $join->leftBinder = $plan->sourceAlias ?? '_1';
+                        $join->rightBinder = $join->sourceAlias ?? '_2';
+                        $join->onPred = $args[2];
+                    }
+                    if ($join->sourceAlias === null) {
+                        $join->sourceAlias = $join->rightBinder;
+                    }
+                    $join->pos = $step['pos'];
+                    $plan->joins[] = $join;
                     break;
             }
         }
@@ -2497,10 +2824,15 @@ final class Translator
     {
         $name = $step['name'];
         $args = $step['args'];
-        $count = count($args);
+        $isTop = in_array($name, ['TOP', 'TOP_DESC', 'TOP_BY'], true);
+        $count = $isTop ? count($args) - 1 : count($args);
+        if ($isTop) {
+            $limit = $this->evalIntParam($args[count($args) - 1], $name);
+            $plan->limit = $plan->limit === null ? $limit : min($plan->limit, $limit);
+        }
 
-        if ($name === 'SORT' || $name === 'SORT_DESC') {
-            $dir = $name === 'SORT' ? 'ASC' : 'DESC';
+        if (in_array($name, ['SORT', 'SORT_DESC', 'TOP', 'TOP_DESC'], true)) {
+            $dir = in_array($name, ['SORT', 'TOP'], true) ? 'ASC' : 'DESC';
             if ($count === 1) {
                 if (isset($plan->sourceRelation['scalar'])) {
                     $scalarCol = $plan->sourceRelation['scalar'];
@@ -2602,6 +2934,7 @@ final class Translator
 
     public function compileStatement(RelationalPlan $plan): Fragment
     {
+        $previousPlan = $this->statementPlan;
         $this->statementPlan = $plan;
         try {
             $parts = [];
@@ -2638,7 +2971,20 @@ final class Translator
                     $first = false;
                     $uc = strtoupper($col);
                     $fSpec = $plan->sourceRelation['fields'][$uc] ?? null;
-                    $table = $fSpec['table'] ?? $plan->sourceAlias;
+                    $owner = $plan->sourceRelation;
+                    if ($fSpec === null) {
+                        foreach ($plan->joins as $join) {
+                            if (isset($join->sourceRelation['fields'][$uc])) {
+                                $fSpec = $join->sourceRelation['fields'][$uc];
+                                $owner = $join->sourceRelation;
+                                break;
+                            }
+                        }
+                    }
+                    $table = $plan->joins !== []
+                        ? $this->relationTableAlias($owner)
+                        : ($fSpec['table'] ?? ($owner === $plan->sourceRelation
+                            ? $plan->sourceAlias : self::relationAlias($owner)));
                     $column = $fSpec['column'] ?? $col;
                     $parts[] = $this->emit->column($table, $column);
                 }
@@ -2652,13 +2998,41 @@ final class Translator
 
             // 2. FROM clause
             $parts[] = ' FROM ';
-            $from = is_array($plan->sourceTable) && isset($plan->sourceTable['raw'])
-                ? (string) $plan->sourceTable['raw']
-                : $this->emit->ident((string) $plan->sourceTable);
-            if (!empty($plan->sourceAlias)) {
-                $from .= ' ' . $this->emit->ident((string) $plan->sourceAlias);
+            if ($plan->sourceSubquery !== null) {
+                $subquery = $this->compileStatement($plan->sourceSubquery);
+                $parts[] = '(';
+                foreach ($subquery->parts as $part) {
+                    $parts[] = $part;
+                }
+                $parts[] = ') ' . $this->emit->ident((string) $plan->sourceAlias);
+            } else {
+                $from = is_array($plan->sourceTable) && isset($plan->sourceTable['raw'])
+                    ? (string) $plan->sourceTable['raw']
+                    : $this->emit->ident((string) $plan->sourceTable);
+                if (!empty($plan->sourceAlias)) {
+                    $from .= ' ' . $this->emit->ident((string) $plan->sourceAlias);
+                }
+                $parts[] = $from;
             }
-            $parts[] = $from;
+
+            foreach ($plan->joins as $join) {
+                $parts[] = $join->type === 'LEFT' ? ' LEFT JOIN ' : ' INNER JOIN ';
+                $right = is_array($join->sourceTable) && isset($join->sourceTable['raw'])
+                    ? (string) $join->sourceTable['raw']
+                    : $this->emit->ident((string) $join->sourceTable);
+                $parts[] = $right;
+                if ($join->sourceAlias !== null) {
+                    $parts[] = ' ' . $this->emit->ident($join->sourceAlias);
+                }
+                $parts[] = ' ON ';
+                $on = $this->withJoinBinders($plan, $join,
+                    fn (): Fragment => $this->requireBool(
+                        $this->node($join->onPred ?? ['t' => 'bool', 'v' => false, 'pos' => $join->pos]),
+                        $join->pos ?? ['line' => 1, 'col' => 1, 'offset' => 0], 'LINK'));
+                foreach ($on->parts as $part) {
+                    $parts[] = $part;
+                }
+            }
 
             // 3. WHERE clause
             $condParts = [];
@@ -2767,7 +3141,7 @@ final class Translator
                 array_keys($this->caveats)
             );
         } finally {
-            $this->statementPlan = null;
+            $this->statementPlan = $previousPlan;
         }
     }
 

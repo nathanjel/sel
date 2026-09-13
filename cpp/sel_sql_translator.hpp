@@ -101,12 +101,27 @@ struct RelationalGroup {
   Pos pos;
 };
 
+struct RelationalJoin {
+  std::string type;  // INNER or LEFT
+  std::string source_name;
+  RelationSpec source_relation;
+  bool source_from_raw = false;
+  std::string source_table;
+  std::optional<std::string> source_alias;
+  std::string left_binder = "_1";
+  std::string right_binder = "_2";
+  SNodePtr on_pred;
+  Pos pos;
+};
+
 struct RelationalPlan {
   std::string source_name;
   RelationSpec source_relation;
   bool source_from_raw = false;
   std::string source_table;
   std::optional<std::string> source_alias;
+  std::shared_ptr<const RelationalPlan> source_subquery;
+  std::vector<RelationalJoin> joins;
   std::optional<std::string> correlate;
   bool distinct = false;
   std::optional<std::vector<std::string>> select_cols;
@@ -187,6 +202,8 @@ class Translator {
   Fragment from_binder(const Binder& b, const SNode& n);
   Fragment index_binder(const Binder& b, const std::string& name,
                         const std::string& key, const SNode& n);
+  Fragment relation_column(const RelationSpec& rel, const ColumnSpec& c);
+  std::string relation_table_alias(const RelationSpec& rel);
 
   // --- skeletons. A skeleton's placeholders are NAMED, not numbered, and the
   // grammar is deliberately NOT Emit::fill's: no {{ }} escapes, no {*} or {n:},
@@ -230,6 +247,11 @@ class Translator {
   Fragment count(const SNode& n);
   Fragment has(const SNode& n);
   Fragment join_aggregate(const SNode& n);
+  Fragment with_join_binders(const RelationalPlan& plan, const RelationalJoin& join,
+                             const std::function<Fragment()>& render);
+  bool plan_has_rows_above(const RelationalPlan& plan) const;
+  std::vector<std::string> output_field_names(const RelationalPlan& plan) const;
+  RelationalPlan ensure_derived(RelationalPlan plan, bool needed);
   // The programmatic CASE builder, for SUM over an absorbed FILTER. Its kind
   // rule is deliberately NOT unify's: two differing known kinds yield UNKNOWN
   // here where unify refuses, and an UNKNOWN `then` with a NUM `else` yields
@@ -277,6 +299,7 @@ class Translator {
   int depth_ = 0;
   const RelationalPlan* statement_plan_ = nullptr;
   bool in_where_ = false;
+  int subquery_counter_ = 0;
 };
 
 }  // namespace sel::sql

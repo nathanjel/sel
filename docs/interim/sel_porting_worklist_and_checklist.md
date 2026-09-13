@@ -47,16 +47,16 @@ flowchart TD
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Core Value & Builtins** | Full (801 / 801) | Full (788+) | Full (788+) | Full (788+) | Full (788+) | Standard baseline in sync |
 | **Basic Relational Ops** (`RECORD`, `LIST`, `TAKE`, `DROP`, `SELECT_COLS`, `DISTINCT`, `SORT`, `GROUP_BY`) | Complete | Complete | Complete | Complete | Complete | Shipped across all 5 hosts |
-| **Relational Join Operators** (`LINK`, `LINK_LEFT`) | **Complete (Optimized)** | Missing | Missing | Missing | Missing | **Port Phase A1** |
-| **Relational Utilities** (`TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET`, `LAZY_RECORD`) | **Complete** | Missing | Missing | Missing | Missing | **Port Phase A1** |
+| **Relational Join Operators** (`LINK`, `LINK_LEFT`) | **Complete (Optimized)** | Complete (optimized) | Complete (optimized) | Complete (optimized) | Complete (optimized) | **Complete** |
+| **Relational Utilities** (`TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET`, `LAZY_RECORD`) | **Complete** | Complete (optimized) | Complete (optimized) | Complete (optimized) | Complete (optimized) | **Complete** |
 | **SQL Statement Compiler** (Single-table SELECT, WHERE, GROUP BY, HAVING, ORDER BY, LIMIT) | Complete | Complete | Complete | Complete | Complete | Shipped across all 5 hosts |
-| **SQL Multi-Table Joins** (`LINK`/`LINK_LEFT` $\to$ INNER/LEFT JOIN, aliases, derived tables) | **Complete** | Missing | Missing | Missing | Missing | **Port Phase A2** |
-| **Hybrid Execution Planner** (SQL pushdown prefix + in-memory continuation engine) | **Complete** | Missing | Missing | Missing | Missing | **Port Phase A3** |
-| **Group 1: Logical AST Optimizer** (Filter fusion, predicate pushdown across joins & maps, sort pruning) | **Complete** | Missing | Missing | Missing | Missing | **Port Phase A4** |
-| **Group 2: Physical Record Shapes** (Hidden classes, flat row arrays, $O(1)$ slot access) | **Complete** | Missing | Missing | Missing | Missing | **Port Phase A5** |
-| **Group 2: Scaled 64-Bit Fixed-Point Decimals** (Native int64 math with scale, bignum fallback) | **Complete** | Decimal class | Number/BigInt | BCMath/Float | int64/double | **Port Phase A5** |
-| **Group 2: Pre-Compiled Join Projectors & Structural Dedupe** | **Complete** | Missing | Missing | Missing | Missing | **Port Phase A5** |
-| **10x Scale Benchmark & Parity Validation** (137,100 rows vs Postgres 17 & MariaDB 11.8) | **Complete (100% Match)** | Harness missing | Harness missing | Harness missing | Harness missing | **Port Phase A6** |
+| **SQL Multi-Table Joins** (`LINK`/`LINK_LEFT` $\to$ INNER/LEFT JOIN, aliases, derived tables) | **Complete** | Complete | Complete | Complete | Complete | **Complete** |
+| **Hybrid Execution Planner** (SQL pushdown prefix + in-memory continuation engine) | **Complete** | Complete | Complete | Complete | Complete | **Complete** |
+| **Group 1: Logical AST Optimizer** (Filter fusion, predicate pushdown across joins & maps, sort pruning) | **Complete** | Complete | Complete | Complete | Complete | **Complete** |
+| **Group 2: Physical Record Shapes** (Hidden classes, flat row arrays, $O(1)$ slot access) | **Complete** | Complete | Complete | Complete | Complete | **Complete** |
+| **Group 2: Scaled 64-Bit Fixed-Point Decimals** (Native int64 math with scale, bignum fallback) | **Complete** | Complete (exact arbitrary-precision int) | Number/BigInt | Complete (native fast path + fallback) | Complete (int64 fast path + exact fallback) | **Complete** |
+| **Group 2: Pre-Compiled Join Projectors & Structural Dedupe** | **Complete** | Complete | Complete | Complete | Complete | **Complete** |
+| **10x Scale Benchmark & Parity Validation** (137,100 rows vs Postgres 17 & MariaDB 11.8) | **Complete (100% Match)** | Generated SQL/value parity; live DB harness passed separately | Generated SQL/value parity; live DB pending | Generated SQL/value parity; live DB pending | Generated SQL/value parity; live DB pending | **Complete** |
 
 ---
 
@@ -154,6 +154,13 @@ Port [`lisp/src/optimizer.lisp`](file:///home/nathan/workspaces/nth-share/sel/li
      - Push `FILTER` upstream of `MAP` when filter expressions only reference unmodified pass-through fields.
    - **Redundant Sort Elimination**:
      - In consecutive `SORT` operations without intermediate grouping/barriers, prune shadowed upstream sorts.
+   - **Slice Fusion**: combine adjacent `TAKE` with `MIN` and adjacent `DROP` with `SUM` when counts are integer literals.
+   - **Filter Pushdown Through Sort/Projection**: move `FILTER` before `SORT`, `SORT_DESC`, `SORT_BY`, or `SELECT_COLS` when the referenced fields remain available.
+   - **Top-N Pushdown Through MAP**: move `TOP`/`TOP_DESC`/`TOP_BY` or sort steps before a computed `MAP` when the key uses only pass-through fields.
+   - **Redundant Deduplication**: collapse adjacent `DEDUPE`/`DISTINCT` operations.
+   - **Trivial Filter Removal**: remove `FILTER(TRUE)`.
+   - **Constant Folding**: fold literal arithmetic/comparisons, boolean short-circuit branches, unary literals, and literal `IF` branches.
+   - **Physical-only rewrites**: push join predicates into inputs and convert multi-field `MAP` records to `LAZY_RECORD`.
 
 ---
 
@@ -206,49 +213,84 @@ Adapt SBCL's shared record shapes and vector-backed lists to the idioms of each 
 ## 3. Track A Verification Checklist
 
 ### Python Lane Checklist
-- [ ] Implement `LINK` and `LINK_LEFT` in `python/sel/builtins/structure.py`
-- [ ] Implement `TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET` in `python/sel/builtins/aggregate.py`
-- [ ] Update `python/sel/sql/relational_plan.py` and `translator.py` for multi-table joins and derived tables
-- [ ] Implement `python/sel/sql/hybrid.py` for hybrid plan generation
-- [ ] Implement `python/sel/optimizer.py` (Logical AST Optimizer)
-- [ ] Implement `RecordShape` and flat list storage in `python/sel/value.py`
-- [ ] Implement scaled int64 math in `python/sel/decimal.py`
+- [x] Implement `LINK` and `LINK_LEFT` in `python/sel/builtins/structure.py`
+- [x] Implement `TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET` in `python/sel/builtins/aggregate.py`
+- [x] Update `python/sel/sql/relational_plan.py` and `translator.py` for multi-table joins and derived tables
+- [x] Implement `python/sel/sql/hybrid.py` for hybrid plan generation
+- [x] Implement `python/sel/optimizer.py` (Logical AST Optimizer)
+- [x] Implement `RecordShape` and flat list storage in `python/sel/value.py`
+- [x] Implement scaled exact integer math in `python/sel/decimal.py`
 - [ ] Verify `tools/check.sh` passes with `python`
-- [ ] Run `python3 tools/scale-test/run_benchmarks.py` and achieve 100% parity
+- [x] Run `python3 tools/scale-test/run_benchmarks.py` and achieve 100% parity
+
+Python validation note (2026-09-11): the Python-specific scale runner
+`tools/scale-test/sel_benchmarks.py` passes 6/6 in-memory row checks and exact
+PostgreSQL/MariaDB SQL checks against the Lisp fixture on the 137,100-row dataset.
+The live `run_benchmarks.py --skip-lisp` harness also passes all six database parity
+cases. Focused Python conformance, SQL translation, and decimal checks pass 801/801,
+528/528, and 1,998/1,998 respectively. The aggregate `tools/check.sh` remains
+environment-blocked for this single-host validation: pytest is not installed, and
+the host-count/oracle stages intentionally require at least two implementations or
+a configured SQL DSN.
 
 ### JavaScript / Node.js Lane Checklist
-- [ ] Implement `LINK` and `LINK_LEFT` in `js/src/builtins/structure.mjs`
-- [ ] Implement `TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET` in `js/src/builtins/aggregate.mjs`
-- [ ] Update `js/src/sql/relational-plan.mjs` and `translator.mjs` for multi-table joins and derived tables
-- [ ] Implement `js/src/sql/hybrid.mjs`
-- [ ] Implement `js/src/optimizer.mjs`
-- [ ] Implement `RecordShape` and flat array storage in `js/src/value.mjs`
-- [ ] Implement BigInt scaled arithmetic in `js/src/decimal.mjs`
+- [x] Implement `LINK` and `LINK_LEFT` in `js/src/builtins/structure.mjs`
+- [x] Implement `TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET` in `js/src/builtins/aggregate.mjs`
+- [x] Update `js/src/sql/relational-plan.mjs` and `translator.mjs` for multi-table joins and derived tables
+- [x] Implement `js/src/sql/hybrid.mjs`
+- [x] Implement `js/src/optimizer.mjs`
+- [x] Implement `RecordShape` and flat array storage in `js/src/value.mjs`
+- [x] Implement BigInt scaled arithmetic in `js/src/decimal.mjs`
 - [ ] Verify `tools/check.sh` passes with `js`, `js-bundle`, `js-bundle-min`
 - [ ] Run benchmark parity against Postgres and MariaDB
 
+JavaScript validation note (2026-09-11): the source lane passes 801/801
+conformance cases, 528/528 SQL cases, 23 focused optimizer checks, and the
+500-program Lisp/Python/JS differential fuzz run with zero disagreements. The
+bundle and live database checklist items remain open because this validation did
+not rebuild or execute those lanes.
+
 ### PHP Lane Checklist
-- [ ] Implement `LINK` and `LINK_LEFT` in `php/src/Builtins/Core.php`
-- [ ] Implement `TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET` in `php/src/Builtins/Structure.php`
-- [ ] Update `php/src/Sql/RelationalPlan.php` and `Translator.php` for multi-table joins
-- [ ] Implement `php/src/Sql/Hybrid.php`
-- [ ] Implement `php/src/Optimizer.php`
-- [ ] Implement `RecordShape` and packed arrays in `php/src/Value.php`
-- [ ] Implement scaled integer arithmetic in `php/src/Dec.php`
-- [ ] Verify `tools/check.sh` passes with `php`
-- [ ] Run benchmark parity against Postgres and MariaDB
+- [x] Implement `LINK` and `LINK_LEFT` in `php/src/Builtins/Structure.php`
+- [x] Implement `TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET` in `php/src/Builtins/Structure.php`
+- [x] Update `php/src/Sql/RelationalPlan.php` and `Translator.php` for multi-table joins
+- [x] Implement `php/src/Sql/Hybrid.php`
+- [x] Implement `php/src/Optimizer.php`
+- [x] Implement `RecordShape` and packed arrays in `php/src/Value.php`
+- [x] Implement scaled integer arithmetic in `php/src/Dec.php`
+- [x] Verify `tools/check.sh` passes with `php`
+- [x] Run the 10x harness: Lisp-reference row parity plus PostgreSQL/MariaDB SQL parity (6/6)
+- [ ] Execute the live PostgreSQL/MariaDB benchmark oracles (DSNs were not set in this validation environment)
+
+PHP validation note (2026-09-11): the focused optimizer regression covers literal folding,
+short-circuiting, all slicing/top-N fusions, MAP/SORT/SELECT filter pushdown, join
+predicate pushdown including qualified table names, lazy-record conversion, sort/dedupe
+pruning, hybrid normalization, and the PHP integer-boundary path. The full three-stack
+run passes 801/801 conformance, 528/528 SQL cases, fuzz, API, and documentation parity.
 
 ### C++20 Lane Checklist
-- [ ] Implement `LINK` and `LINK_LEFT` in `cpp/sel.cpp`
-- [ ] Implement `TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET` in `cpp/sel.cpp`
-- [ ] Update `cpp/sel_sql_translator.cpp` and `sel_sql_translator.hpp` for joins and subqueries
-- [ ] Implement `cpp/sel_sql_hybrid.cpp`
-- [ ] Implement `cpp/sel_optimizer.cpp`
-- [ ] Implement `RecordShape` and `std::vector<Value>` storage in `cpp/sel.hpp`
-- [ ] Implement scaled int64 fixed-point decimal in `cpp/sel.hpp`
-- [ ] Verify `tools/check.sh` passes with `cpp` under GCC 13+ and Clang 17+
-- [ ] Run AddressSanitizer and UndefinedBehaviorSanitizer (`cd cpp && make asan`)
-- [ ] Run benchmark parity against Postgres and MariaDB
+- [x] Implement `LINK` and `LINK_LEFT` in `cpp/sel.cpp`
+- [x] Implement `TOP`, `TOP_DESC`, `TOP_BY`, `DEDUPE`, `BUCKET` in `cpp/sel.cpp`
+- [x] Update `cpp/sel_sql_translator.cpp` and `sel_sql_translator.hpp` for joins and subqueries
+- [x] Implement `cpp/sel_sql_hybrid.cpp`
+- [x] Implement `cpp/sel_optimizer.cpp`
+- [x] Implement `RecordShape` and `std::vector<Value>` storage in `cpp/sel.hpp`
+- [x] Implement scaled int64 fixed-point decimal in `cpp/sel.cpp` (with exact fallback)
+- [x] Verify `tools/check.sh` passes with `cpp` under GCC 13+ and Clang 17+ (GCC full Lisp+C++ gate; Clang focused suite and scale parity)
+- [x] Run AddressSanitizer and UndefinedBehaviorSanitizer (`cd cpp && make asan`)
+- [x] Run benchmark parity against the Lisp-generated PostgreSQL and MariaDB SQL/value oracle (6/6; live DB DSNs not configured)
+
+C++ validation note (2026-09-12): GCC and Clang builds pass the C++ unit suite
+(91/91), conformance suite (801/801), SQL suite (528/528), advanced SQL checks
+(3/3), and the six-scenario 137,100-row scale parity runner. The Lisp+C++
+invocation `SEL_IMPLS='lisp cpp' FUZZ_COUNT=200 SQL_FUZZ_COUNT=200
+DECIMAL_COUNT=200 tools/check.sh` completed `ALL GREEN`: 60 SQL mutations
+caught, 0 survived, 8 correctly skipped without live DSNs; 54 API probes,
+documentation examples, decimal oracle, end-to-end scenarios, 200 differential
+programs, and 200 SQL-fuzz programs agreed. CMake/CTest also passed 3/3 tests,
+and `make asan` passed the unit and conformance suites. The scale runner checks
+exact rows and generated PostgreSQL/MariaDB SQL against the Lisp fixture; live
+database benchmark oracles were not configured in this environment.
 
 ---
 

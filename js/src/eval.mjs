@@ -25,9 +25,10 @@ export class Context {
   lookup(name) {
     for (let i = this.frames.length - 1; i >= 0; i--) {
       const v = this.frames[i].get(name);
-      if (v !== undefined) return v;
+      if (v !== undefined) return v.force();
     }
-    return this.root.get(name);
+    const v = this.root.get(name);
+    return v === undefined ? undefined : v.force();
   }
 
   isBound(name) {
@@ -39,6 +40,13 @@ export class Context {
 
   pushFrame(map) { this.frames.push(map); }
   popFrame() { this.frames.pop(); }
+
+  copyCurrent() {
+    const copy = new Context(this.root);
+    copy.frames = this.frames.map((frame) => new Map(frame));
+    copy.depth = this.depth;
+    return copy;
+  }
 }
 
 // --- arguments --------------------------------------------------------------
@@ -60,12 +68,12 @@ export class Args {
   posOf(i) { return this.nodes[i].pos; }
 
   val(i) {
-    if (this._vals[i] === undefined) this._vals[i] = evalNode(this.nodes[i], this.ctx);
+    if (this._vals[i] === undefined) this._vals[i] = evalNode(this.nodes[i], this.ctx).force();
     return this._vals[i];
   }
 
   // For lazy functions re-evaluating a body node under changed bindings.
-  evalNode(node) { return evalNode(node, this.ctx); }
+  evalNode(node, context = this.ctx) { return evalNode(node, context).force(); }
 
   text(i) { return this.val(i).asText(this.posOf(i)); }
   bytes(i) { return this.val(i).asBytes(this.posOf(i)); }
@@ -129,7 +137,7 @@ function evalDispatch(node, ctx) {
     case 'var': {
       const v = ctx.lookup(node.name);
       if (v === undefined) fail('E_UNDEF_VAR', `undefined variable ${node.name}`, node.pos);
-      return v;
+      return v.force();
     }
 
     case 'index': {
@@ -137,7 +145,7 @@ function evalDispatch(node, ctx) {
       const key = evalNode(node.idx, ctx).asText(node.idx.pos);
       const child = obj.get(key);
       if (child === undefined) fail('E_NO_KEY', `no key ${JSON.stringify(key)}`, node.pos);
-      return child;
+      return child.force();
     }
 
     case 'seq': {
@@ -166,17 +174,17 @@ function evalDispatch(node, ctx) {
 // §5.9 — a value with children and no scalar contributes its children's values;
 // anything else contributes itself. Keys are always renumbered from 1.
 function evalList(node, ctx) {
-  const out = new Value(NONE, null, true);
-  let n = 0;
+  const out = [];
   for (const item of node.items) {
     const v = evalNode(item, ctx);
+    v.force();
     if (v.kind === NONE && v.size() > 0) {
-      for (const child of v.values()) out.set(String(++n), child.clone());
+      for (const child of v.values()) out.push(child.clone());
     } else {
-      out.set(String(++n), v.clone());
+      out.push(v.clone());
     }
   }
-  return out;
+  return Value.listOwned(out);
 }
 
 function evalUnary(node, ctx) {

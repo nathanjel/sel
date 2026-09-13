@@ -3,7 +3,7 @@
 
 import { Program, Value, Pos } from './sel.js';
 
-export type SqlKind = 'NUM' | 'TEXT' | 'BOOL' | 'BIN' | 'UNKNOWN' | 'LIST';
+export type SqlKind = 'NUM' | 'TEXT' | 'BOOL' | 'BIN' | 'UNKNOWN' | 'LIST' | 'STATEMENT';
 export declare const KINDS: readonly SqlKind[];
 
 export type RenderMode = 'inline' | 'params' | 'debug';
@@ -38,6 +38,7 @@ export class Fragment {
 
   asValue(mode?: RenderMode): string;
   asCondition(mode?: RenderMode): string;
+  asStatement(mode?: RenderMode): string;
   bindings(): Value[];
 }
 
@@ -77,6 +78,75 @@ export class Bindings {
   checkAliases(pos?: Pos | null): void;
 }
 
+export class JoinPlan {
+  type: 'INNER' | 'LEFT';
+  kind: 'INNER' | 'LEFT';
+  sourceName: string;
+  sourceRelation: any;
+  sourceTable: any;
+  sourceAlias: string | null;
+  leftBinder: string;
+  rightBinder: string;
+  onPred: any;
+  pos: Pos | null;
+}
+
+export class RelationalPlan {
+  sourceName: string;
+  sourceRelation: any;
+  sourceTable: any;
+  sourceAlias: string | null;
+  sourceSubquery: RelationalPlan | null;
+  correlate: string | null;
+  joins: JoinPlan[];
+  distinct: boolean;
+  selectCols: string[] | null;
+  projections: any[] | null;
+  filters: any[];
+  groupBy: any[] | null;
+  having: any[];
+  aggregateAliases: Record<string, any>;
+  orderBy: any[];
+  limit: number | null;
+  offset: number | null;
+}
+
+export class HybridPlan {
+  dialect: string | null;
+  sqlStatement: Fragment | null;
+  sqlPrefixAst: any;
+  continuationAst: any;
+  continuationProgram: Program | null;
+  continuationSourceVar: string;
+  pureSql: boolean;
+  pureMemory: boolean;
+  sourceTables: string[];
+  readonly isHybrid: boolean;
+  readonly is_hybrid: boolean;
+  readonly sql_query: Fragment | null;
+  readonly sqlQuery: Fragment | null;
+  readonly sql_prefix_ast: any;
+  readonly continuation_ast: any;
+  readonly continuation_program: Program | null;
+  readonly continuation_source_var: string;
+  readonly pure_sql: boolean;
+  readonly pure_memory: boolean;
+  readonly source_tables: string[];
+}
+
+export function planHybrid(
+  program: Program,
+  dialect: string,
+  bindings?: Bindings | Record<string, Binding> | Map<string, Binding> | null,
+  options?: Record<string, any> | null
+): HybridPlan;
+
+export function executeHybrid(
+  plan: HybridPlan,
+  dbRunner: (sql: string, params: Value[]) => any,
+  context?: Value | Record<string, any> | null
+): any;
+
 export declare const DIALECTS: Record<string, any>;
 
 export namespace map {
@@ -112,6 +182,33 @@ export class Sql {
     bindings?: Bindings | Record<string, Binding> | Map<string, Binding> | null,
     options?: Record<string, any> | null
   ): Fragment | null;
+
+  static translateStatement(
+    program: Program,
+    dialect: string,
+    bindings?: Bindings | Record<string, Binding> | Map<string, Binding> | null,
+    options?: Record<string, any> | null
+  ): Fragment;
+
+  static tryTranslateStatement(
+    program: Program,
+    dialect: string,
+    bindings?: Bindings | Record<string, Binding> | Map<string, Binding> | null,
+    options?: Record<string, any> | null
+  ): Fragment | null;
+
+  static planHybrid(
+    program: Program,
+    dialect: string,
+    bindings?: Bindings | Record<string, Binding> | Map<string, Binding> | null,
+    options?: Record<string, any> | null
+  ): HybridPlan;
+
+  static executeHybrid(
+    plan: HybridPlan,
+    dbRunner: (sql: string, params: Value[]) => any,
+    context?: Value | Record<string, any> | null
+  ): any;
 
   static dialects(): string[];
 }

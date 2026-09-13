@@ -8,7 +8,7 @@ from .. import decimal as D
 from ..errors import fail
 from ..eval import bytes_compare
 from ..registry import define
-from ..value import NONE, Value
+from ..value import NONE, Value, iter_elements, structural_hash
 
 
 def shape(args):
@@ -26,9 +26,27 @@ def elements(value):
     empty — that is what FILTER returns when nothing matched, and ALL over it
     must be TRUE rather than a scalar-context failure.
     """
-    if value.size() > 0:
-        return value.entries()
-    return [] if value.kind == NONE else [('1', value)]
+    return list(iter_elements(value))
+
+
+def node_contains_var(node, name):
+    if node is None:
+        return False
+    if node.t == 'var':
+        return node.name.upper() == name.upper()
+    if node.t == 'index':
+        return node_contains_var(node.obj, name) or node_contains_var(node.idx, name)
+    if node.t == 'call':
+        return any(node_contains_var(item, name) for item in node.args)
+    if node.t == 'bin':
+        return node_contains_var(node.l, name) or node_contains_var(node.r, name)
+    if node.t == 'un':
+        return node_contains_var(node.x, name)
+    if node.t == 'assign':
+        return node_contains_var(node.target, name) or node_contains_var(node.value, name)
+    if node.t in ('seq', 'list'):
+        return any(node_contains_var(item, name) for item in node.items)
+    return False
 
 
 def walk(args, ctx, visit):
@@ -39,14 +57,20 @@ def walk(args, ctx, visit):
     binder in scope for whatever runs next.
     """
     binder, body = shape(args)
-    for key, item in elements(args.val(0)):
-        ctx.push_frame({binder: item, '_K': Value.text(key)})
-        try:
+    frame = {binder: None}
+    if node_contains_var(body, '_K'):
+        frame['_K'] = None
+    ctx.push_frame(frame)
+    try:
+        for key, item in iter_elements(args.val(0)):
+            frame[binder] = item
+            if '_K' in frame:
+                frame['_K'] = Value.text(key)
             result = visit(args.eval_node(body), key, item, body)
-        finally:
-            ctx.pop_frame()
-        if result is not None:
-            return result
+            if result is not None:
+                return result
+    finally:
+        ctx.pop_frame()
     return None
 
 
@@ -66,7 +90,7 @@ def _map(args, ctx):
     out = []
 
     def visit(r, k, i, body):
-        out.append(r.clone())
+        out.append(r)
         return None
 
     walk(args, ctx, visit)
@@ -81,7 +105,7 @@ def _filter(args, ctx):
 
     def visit(r, key, item, body):
         if r.as_bool(body.pos):
-            out.set(key, item.clone())
+            out.set(key, item)
         return None
 
     walk(args, ctx, visit)
@@ -115,6 +139,8 @@ define('JOIN', 2, 2, fn=_join)
 
 
 def compare_values(a: Value, b: Value) -> int:
+    a.force()
+    b.force()
     a_null = a.is_null()
     b_null = b.is_null()
     if a_null and b_null:
@@ -214,7 +240,7 @@ def do_sort(args, ctx, forced_dir):
         return c if c != 0 else (x['idx'] - y['idx'])
 
     indexed.sort(key=cmp_to_key(cmp_func))
-    return Value.list([x['item'].clone() for x in indexed])
+    return Value.list([x['item'] for x in indexed])
 
 
 define('SORT', 1, 3, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, ctx, 'ASC'))
@@ -222,9 +248,128 @@ define('SORT_DESC', 1, 3, lazy=True, binds=True, fn=lambda args, ctx: do_sort(ar
 define('SORT_BY', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, ctx, None))
 
 
+def do_top(args, ctx, forced_dir):
+    value = args.val(0)
+    limit = args.non_neg_int(args.count() - 1)
+    if limit == 0 or value.is_null():
+        return Value.list([])
+    value.force()
+    if value.kind == NONE and value.size() == 0:
+        return Value.list([])
+
+    sort_count = args.count() - 1
+    binder = '_'
+    body = None
+    direction = forced_dir or 'ASC'
+    if sort_count == 1:
+        binder = None
+    elif sort_count == 2:
+        body = args.node(1)
+    elif sort_count == 3:
+        if forced_dir is not None:
+            binder = args.symbol(1)
+            body = args.node(2)
+        elif args.node(2).t == 'text':
+            body = args.node(1)
+            direction = args.text(2).upper()
+        elif args.is_symbol(1):
+            binder = args.symbol(1)
+            body = args.node(2)
+        else:
+            body = args.node(1)
+            direction = args.text(2).upper()
+    elif sort_count == 4:
+        binder = args.symbol(1)
+        body = args.node(2)
+        direction = args.text(3).upper()
+    else:
+        fail('E_ARITY', f'{args.name} has an invalid sort form', args.pos)
+
+    if direction not in ('ASC', 'DESC'):
+        direction_index = 3 if sort_count == 4 else 2
+        fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'",
+             args.pos_of(direction_index))
+
+    def compare(a, b):
+        c = compare_values(a['key'], b['key'])
+        if direction == 'DESC':
+            c = -c
+        return c if c != 0 else a['idx'] - b['idx']
+
+    def worse(a, b):
+        c = compare(a, b)
+        return c > 0 or (c == 0 and a['idx'] > b['idx'])
+
+    heap = []
+
+    def sift_up(index):
+        while index > 0:
+            parent = (index - 1) // 2
+            if not worse(heap[index], heap[parent]):
+                break
+            heap[index], heap[parent] = heap[parent], heap[index]
+            index = parent
+
+    def sift_down(index):
+        while True:
+            left = index * 2 + 1
+            right = left + 1
+            worst_index = index
+            if left < len(heap) and worse(heap[left], heap[worst_index]):
+                worst_index = left
+            if right < len(heap) and worse(heap[right], heap[worst_index]):
+                worst_index = right
+            if worst_index == index:
+                return
+            heap[index], heap[worst_index] = heap[worst_index], heap[index]
+            index = worst_index
+
+    needs_k = body is not None and node_contains_var(body, '_K')
+    index = 0
+
+    def consume(key, item):
+        nonlocal index
+        if binder is None:
+            candidate = {'item': item, 'key': item, 'idx': index}
+        else:
+            frame = {binder: item}
+            if needs_k:
+                frame['_K'] = Value.text(key)
+            ctx.push_frame(frame)
+            try:
+                candidate = {'item': item, 'key': args.eval_node(body), 'idx': index}
+            finally:
+                ctx.pop_frame()
+        index += 1
+        if len(heap) < limit:
+            heap.append(candidate)
+            sift_up(len(heap) - 1)
+        elif worse(heap[0], candidate):
+            heap[0] = candidate
+            sift_down(0)
+
+    if value.is_list and value.storage is not None:
+        for i, item in enumerate(value.storage):
+            consume(str(i + 1), item)
+    elif value.shape is not None:
+        for i, item in enumerate(value.storage):
+            consume(value.shape.keys[i], item)
+    else:
+        for key, item in elements(value):
+            consume(key, item)
+
+    heap.sort(key=cmp_to_key(compare))
+    return Value.list([entry['item'] for entry in heap])
+
+
+define('TOP', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, 'ASC'))
+define('TOP_DESC', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, 'DESC'))
+define('TOP_BY', 3, 5, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, None))
+
+
 def do_group_by(args, ctx):
     val = args.val(0)
-    if val.is_null():
+    if val.is_null() or val.size() == 0:
         return Value.list([])
     entries = elements(val)
     if not entries:
@@ -244,54 +389,61 @@ def do_group_by(args, ctx):
         key_node = args.node(2)
         agg_node = args.node(3)
 
+    needs_k = node_contains_var(key_node, '_K')
+    frame = {binder: None}
+    if needs_k:
+        frame['_K'] = None
+    table = {}
     groups = []
-    for idx, (k, item) in enumerate(entries):
-        ctx.push_frame({binder: item, '_K': Value.text(str(idx + 1))})
-        try:
-            k_val = args.eval_node(key_node)
-        finally:
-            ctx.pop_frame()
 
-        found = -1
-        for g_idx, g in enumerate(groups):
-            if g['key'].eql(k_val):
-                found = g_idx
-                break
+    def process(key, item, index):
+        frame[binder] = item
+        if needs_k:
+            frame['_K'] = Value.text(key if key is not None else str(index))
+        group_key = args.eval_node(key_node)
+        hashed = structural_hash(group_key)
+        bucket = table.setdefault(hashed, [])
+        existing = next((group for group in bucket if group['key'].eql(group_key)), None)
+        if existing is not None:
+            existing['rows'].append(item)
+            return
+        key_str = ''
+        if agg_node is None:
+            if group_key.kind == Value.TEXT:
+                key_str = str(group_key.scalar)
+            elif group_key.kind == Value.BOOL:
+                key_str = 'TRUE' if group_key.scalar else 'FALSE'
+            elif group_key.looks_numeric():
+                key_str = str(group_key.scalar)
+        group = {'key': group_key, 'key_str': key_str, 'rows': [item]}
+        bucket.append(group)
+        groups.append(group)
 
-        if found >= 0:
-            groups[found]['rows'].append(item.clone())
-        else:
-            key_str = ''
-            if k_val.kind == Value.TEXT:
-                key_str = str(k_val.scalar)
-            elif k_val.kind == Value.BOOL:
-                key_str = 'TRUE' if k_val.scalar else 'FALSE'
-            elif k_val.looks_numeric():
-                key_str = str(k_val.scalar)
-
-            groups.append({
-                'key': k_val.clone(),
-                'key_str': key_str,
-                'rows': [item.clone()],
-            })
+    ctx.push_frame(frame)
+    try:
+        for index, (key, item) in enumerate(entries, 1):
+            process(key, item, index)
+    finally:
+        ctx.pop_frame()
 
     if agg_node is None:
         out = Value.none()
         for g in groups:
-            out.set(g['key_str'], Value.list(g['rows']))
+            out.set(g['key_str'], Value.list([row.clone() for row in g['rows']]))
         return out
 
     out = []
-    for g in groups:
-        ctx.push_frame({binder: Value.list(g['rows']), '_K': g['key'].clone()})
-        try:
-            res = args.eval_node(agg_node)
-            out.append(res.clone())
-        finally:
-            ctx.pop_frame()
+    aggregate_frame = {binder: None, '_K': None}
+    ctx.push_frame(aggregate_frame)
+    try:
+        for g in groups:
+            aggregate_frame[binder] = Value.list(g['rows'])
+            aggregate_frame['_K'] = g['key']
+            out.append(args.eval_node(agg_node))
+    finally:
+        ctx.pop_frame()
     return Value.list(out)
 
 
 define('GROUP_BY', 2, 4, lazy=True, binds=True, fn=do_group_by)
-
-
+define('BUCKET', 2, 4, lazy=True, binds=True, fn=do_group_by)

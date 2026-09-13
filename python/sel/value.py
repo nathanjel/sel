@@ -4,6 +4,7 @@ there is deliberately no second representation of state. See spec/SPEC.md §3.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterator
 
 from . import decimal as D
@@ -16,8 +17,126 @@ BIN = 'BIN'
 BOOL = 'BOOL'
 
 
+class RecordShape:
+    """Shared field layout for regular records.
+
+    The evaluator still supports the ordered-dict representation for irregular
+    or subsequently mutated values, but the common row shape is kept as a
+    tuple of keys plus a flat value array.  This is the representation used by
+    the JS lane and is important for the relational hot path: field access no
+    longer allocates or hashes a dictionary entry for every row.
+    """
+
+    __slots__ = ('keys', 'key_map', 'size', 'alias_cache')
+
+    def __init__(self, keys: tuple[str, ...], key_map: dict[str, int] | None = None) -> None:
+        self.keys = keys
+        self.key_map = (key_map if key_map is not None
+                        else {key: i for i, key in enumerate(keys)})
+        self.size = len(keys)
+        self.alias_cache: dict[str, tuple[tuple[str, ...], int, bool]] = {}
+
+
+_SHAPES: dict[tuple[str, ...], RecordShape] = {}
+_LIST_KEY = re.compile(r'[1-9][0-9]{0,8}\Z')
+
+
+def _record_shape(keys: list[str] | tuple[str, ...]) -> RecordShape:
+    signature = keys if isinstance(keys, tuple) else tuple(keys)
+    shape = _SHAPES.get(signature)
+    if shape is None:
+        shape = RecordShape(signature)
+        _SHAPES[signature] = shape
+    return shape
+
+
+def _unique_record_shape(keys: list[str] | tuple[str, ...]) -> RecordShape | None:
+    """Return the cached shape, or None for a duplicate-key record.
+
+    This is the constructor-side equivalent of Lisp's duplicate check.  It
+    builds the key map while checking uniqueness, so regular rows do not pay for
+    a temporary ``set(keys)`` on every record produced by a scale query.
+    """
+    signature = keys if isinstance(keys, tuple) else tuple(keys)
+    shape = _SHAPES.get(signature)
+    if shape is not None:
+        return shape
+    key_map: dict[str, int] = {}
+    for index, key in enumerate(signature):
+        if key in key_map:
+            return None
+        key_map[key] = index
+    shape = RecordShape(signature, key_map)
+    _SHAPES[signature] = shape
+    return shape
+
+
+def _list_index(key: str, length: int) -> int:
+    if not isinstance(key, str) or _LIST_KEY.fullmatch(key) is None:
+        return -1
+    index = int(key) - 1
+    return index if 0 <= index < length else -1
+
+
+def iter_entries(value: Any):
+    """Iterate ordered children without materialising an entry list.
+
+    The list-returning ``entries()`` API remains for callers that need a stable
+    snapshot.  Evaluator hot paths use this iterator so packed list/shape
+    storage does not become a stream of temporary ``(key, value)`` tuples.
+    """
+    value.force()
+    if value.shape is not None:
+        for index, key in enumerate(value.shape.keys):
+            yield key, value.storage[index].force()
+        return
+    if value.is_list and value.storage is not None:
+        for index, item in enumerate(value.storage):
+            yield str(index + 1), item.force()
+        return
+    if value.children:
+        for key, item in value.children.items():
+            yield key, item.force()
+        return
+
+
+def iter_values(value: Any):
+    """Iterate collection values directly, omitting synthetic keys."""
+    value.force()
+    if value.storage is not None:
+        for item in value.storage:
+            yield item.force()
+        return
+    if value.children:
+        for item in value.children.values():
+            yield item.force()
+        return
+    if value.kind != NONE:
+        yield value
+
+
+def iter_elements(value: Any):
+    """Iterate aggregate elements, including a scalar as synthetic key ``1``."""
+    value.force()
+    if value.shape is not None:
+        for index, key in enumerate(value.shape.keys):
+            yield key, value.storage[index].force()
+        return
+    if value.is_list and value.storage is not None:
+        for index, item in enumerate(value.storage):
+            yield str(index + 1), item.force()
+        return
+    if value.children:
+        for key, item in value.children.items():
+            yield key, item.force()
+        return
+    if value.kind != NONE:
+        yield '1', value
+
+
 class Value:
-    __slots__ = ('kind', 'scalar', 'children', 'is_list')
+    __slots__ = ('kind', 'scalar', 'children', 'is_list', 'shape', 'storage',
+                 '_thunk', '_dec_val')
 
     # The kind constants, mirrored as class attributes so `Value.BOOL` works the
     # way `Value::BOOL` does in PHP. They are also exported from sel/__init__.py.
@@ -35,6 +154,13 @@ class Value:
         # exactly the contract §3.3 requires — the same reason the JS host uses
         # Map rather than a plain object.
         self.children: dict[str, Value] | None = None
+        self.shape: RecordShape | None = None
+        self.storage: list[Value] | None = None
+        self._thunk: Any = None
+        # Lisp's VALUE-DEC-VAL is the same useful cache in Python: the text
+        # representation remains normative, while repeated numeric coercions
+        # reuse the immutable parsed decimal rather than allocating another Dec.
+        self._dec_val: D.Dec | None = None
 
     # --- kind predicates ------------------------------------------------------
     #
@@ -45,12 +171,14 @@ class Value:
     # value's own kind and do not apply scalar context.
 
     def is_none(self) -> bool:
+        self.force()
         return self.kind == NONE
 
     def is_null(self) -> bool:
         return self.kind == NONE and self.size() == 0 and not self.is_list
 
     def is_vacuous(self) -> bool:
+        self.force()
         if self.is_null():
             return True
         if self.kind == NONE and self.size() == 0:
@@ -60,12 +188,15 @@ class Value:
         return False
 
     def is_text(self) -> bool:
+        self.force()
         return self.kind == TEXT
 
     def is_bin(self) -> bool:
+        self.force()
         return self.kind == BIN
 
     def is_bool(self) -> bool:
+        self.force()
         return self.kind == BOOL
 
     # --- constructors ---------------------------------------------------------
@@ -97,6 +228,44 @@ class Value:
             fail('E_RANGE', f'not a sequence of bytes: {e}', None)
 
     @staticmethod
+    def shaped(keys: list[str] | tuple[str, ...] | RecordShape,
+               values: list[Value] | tuple[Value, ...]) -> Value:
+        if not keys:
+            return Value.none()
+        shape = keys if isinstance(keys, RecordShape) else _record_shape(keys)
+        return Value._from_shape(shape, values)
+
+    @staticmethod
+    def _from_shape(shape: RecordShape,
+                    values: list[Value] | tuple[Value, ...]) -> Value:
+        v = Value(NONE, None)
+        v.shape = shape
+        # The caller transfers ownership of freshly built storage.  Keeping the
+        # list avoids a second allocation in the join projector and list
+        # constructors; tuples/other sequences still get one defensive list.
+        v.storage = values if isinstance(values, list) else list(values)
+        return v
+
+    @staticmethod
+    def from_entries(entries: list[tuple[str, Value]], is_list: bool = False) -> Value:
+        if is_list:
+            return Value.list([value for _, value in entries])
+        keys = [key for key, _ in entries]
+        shape = _unique_record_shape(keys)
+        if shape is not None:
+            return Value._from_shape(shape, [value for _, value in entries])
+        v = Value.none()
+        for key, value in entries:
+            v.set(key, value)
+        return v
+
+    @staticmethod
+    def thunk(fn: Any) -> Value:
+        v = Value(NONE, None)
+        v._thunk = fn
+        return v
+
+    @staticmethod
     def bool(b: bool) -> Value:  # noqa: A003
         return Value(BOOL, bool(b))
 
@@ -107,15 +276,19 @@ class Value:
         that fails later somewhere else. Internal callers pass a Dec.
         """
         if not isinstance(d, str):
-            return Value(TEXT, D.format(d))
+            v = Value(TEXT, D.format(d))
+            v._dec_val = d
+            return v
         parsed = D.parse(d)
         if parsed is None:
             fail('E_NOT_NUM', f'not a number: {d!r}', None)
-        return Value(TEXT, D.format(parsed))
+        v = Value(TEXT, D.format(parsed))
+        v._dec_val = parsed
+        return v
 
     @staticmethod
     def int(n: int) -> Value:  # noqa: A003
-        return Value(TEXT, D.format(D.from_int(n)))
+        return Value.num(D.from_int(n))
 
     @staticmethod
     def list(values: list[Value]) -> Value:  # noqa: A003
@@ -123,9 +296,25 @@ class Value:
         built-ins.
         """
         v = Value(NONE, None, is_list=True)
-        for i, x in enumerate(values):
-            v.set(str(i + 1), x)
+        v.storage = values if isinstance(values, list) else list(values)
         return v
+
+    def force(self) -> Value:
+        """Materialise a LAZY_RECORD value once, in place."""
+        if self._thunk is None:
+            return self
+        fn = self._thunk
+        real = fn()
+        real.force()
+        self._thunk = None
+        self.kind = real.kind
+        self.scalar = real.scalar
+        self.children = real.children
+        self.is_list = real.is_list
+        self.shape = real.shape
+        self.storage = real.storage
+        self._dec_val = real._dec_val
+        return self
 
     # --- children -------------------------------------------------------------
 
@@ -134,26 +323,65 @@ class Value:
         v.size() and (sel:value-size v) in the other four hosts.
         tools/check-api.sh keeps it that way.
         """
+        self.force()
+        if self.storage is not None:
+            return len(self.storage)
         return len(self.children) if self.children else 0
 
     def has(self, key: str) -> bool:
+        self.force()
+        if self.shape is not None:
+            return key in self.shape.key_map
+        if self.is_list and self.storage is not None:
+            return _list_index(key, len(self.storage)) >= 0
         return bool(self.children) and key in self.children
 
     def get(self, key: str) -> Value | None:
-        return self.children.get(key) if self.children else None
+        self.force()
+        if self.shape is not None:
+            index = self.shape.key_map.get(key)
+            return None if index is None else self.storage[index].force()
+        if self.is_list and self.storage is not None:
+            index = _list_index(key, len(self.storage))
+            return None if index < 0 else self.storage[index].force()
+        value = self.children.get(key) if self.children else None
+        return None if value is None else value.force()
 
     def keys(self) -> list[str]:
+        self.force()
+        if self.shape is not None:
+            return list(self.shape.keys)
+        if self.is_list and self.storage is not None:
+            return [str(i + 1) for i in range(len(self.storage))]
         return list(self.children.keys()) if self.children else []
 
     def values(self) -> list[Value]:
-        return list(self.children.values()) if self.children else []
+        return list(iter_values(self))
 
     def entries(self) -> list[tuple[str, Value]]:
-        return list(self.children.items()) if self.children else []
+        return list(iter_entries(self))
 
     def set(self, key: str, value: Value) -> Value:
         # Re-assigning an existing key keeps its original position — dict does
         # this, as long as the key is not deleted first.
+        self.force()
+        if self.shape is not None:
+            index = self.shape.key_map.get(key)
+            if index is not None:
+                self.storage[index] = value
+                return self
+            entries = self.entries()
+            self.shape = None
+            self.storage = None
+            self.children = dict(entries)
+        elif self.is_list and self.storage is not None:
+            index = _list_index(key, len(self.storage))
+            if index >= 0:
+                self.storage[index] = value
+                return self
+            entries = self.entries()
+            self.storage = None
+            self.children = dict(entries)
         if self.children is None:
             self.children = {}
         self.children[key] = value
@@ -165,14 +393,15 @@ class Value:
         """The value that supplies the scalar: itself, or its first child,
         recursively.
         """
-        v = self
+        v = self.force()
         guard = 0
         while v.kind == NONE:
             if v.is_null():
                 fail('E_NULL', 'value is NULL', pos)
-            if not v.children:
+            children = v.values()
+            if not children:
                 fail('E_NO_SCALAR', 'value has no scalar and no children', pos)
-            v = next(iter(v.children.values()))
+            v = children[0].force()
             guard += 1
             if guard > 1000:
                 fail('E_DEPTH', 'scalar context nested too deeply', pos)
@@ -204,9 +433,12 @@ class Value:
         v = self.scalar_source(pos)
         if v.kind != TEXT:
             fail('E_NOT_NUM', f'expected a number, got {v.kind.lower()}', pos)
+        if v._dec_val is not None:
+            return v._dec_val
         d = D.parse(v.scalar, pos)
         if d is None:
             fail('E_NOT_NUM', f'not a number: {v.scalar!r}', pos)
+        v._dec_val = d
         return d
 
     def looks_numeric(self) -> bool:
@@ -219,7 +451,15 @@ class Value:
         # for a 2 000 000-digit text that then failed on first use.
         try:
             v = self.scalar_source(None)
-            return v.kind == TEXT and D.parse(v.scalar) is not None
+            if v.kind != TEXT:
+                return False
+            if v._dec_val is not None:
+                return True
+            d = D.parse(v.scalar)
+            if d is not None:
+                v._dec_val = d
+                return True
+            return False
         except SelError:
             return False
 
@@ -248,8 +488,15 @@ as as_text().
     def _clone_at(self, depth: int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
+        self.force()
         out = Value(self.kind, self.scalar, self.is_list)
-        if self.children:
+        out._dec_val = self._dec_val
+        if self.shape is not None:
+            out.shape = self.shape
+            out.storage = [v._clone_at(depth + 1, pos) for v in self.storage]
+        elif self.storage is not None:
+            out.storage = [v._clone_at(depth + 1, pos) for v in self.storage]
+        elif self.children:
             out.children = {k: v._clone_at(depth + 1, pos)
                             for k, v in self.children.items()}
         return out
@@ -266,6 +513,8 @@ as as_text().
     def _eql_at(self, other: Value, depth: int, pos: Pos | None) -> bool:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
+        self.force()
+        other.force()
         if self.kind != other.kind:
             return False
         if self.kind in (TEXT, BOOL, BIN):
@@ -291,6 +540,7 @@ as as_text().
     def _dump_at(self, depth: int) -> str:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
+        self.force()
         if self.kind == NONE:
             s = '-'
         elif self.kind == TEXT:
@@ -321,7 +571,7 @@ as as_text().
         if isinstance(x, bool):          # before int: bool is a subclass of int
             return Value.bool(x)
         if isinstance(x, int):
-            return Value.text(str(x))
+            return Value.int(x)
         if isinstance(x, float):
             # Refused on purpose, exactly as PHP's Value::fromNative does. There
             # is no floating point anywhere in SEL, and the host boundary is the
@@ -337,10 +587,10 @@ as as_text().
         if isinstance(x, (list, tuple)):
             return Value.list([Value._from_native_at(i, depth + 1) for i in x])
         if isinstance(x, dict):
-            v = Value.none()
-            for k, item in x.items():
-                v.set(str(k), Value._from_native_at(item, depth + 1))
-            return v
+            return Value.from_entries([
+                (str(k), Value._from_native_at(item, depth + 1))
+                for k, item in x.items()
+            ])
         raise TypeError(f'cannot convert {type(x).__name__} to SEL')
 
     def to_native(self) -> Any:
@@ -349,6 +599,7 @@ as as_text().
     def _to_native_at(self, depth: int) -> Any:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
+        self.force()
         if self.kind == TEXT or self.kind == BIN or self.kind == BOOL:
             scalar = self.scalar
         else:
@@ -379,6 +630,38 @@ as as_text().
         if v is None:
             raise KeyError(key)
         return v
+
+
+def structural_hash(value: Value) -> int:
+    """Return a deterministic structural hash suitable for equality buckets."""
+    return _structural_hash_at(value, 1)
+
+
+def _structural_hash_at(value: Value, depth: int) -> int:
+    if depth > MAX_DEPTH:
+        fail('E_DEPTH', 'value nested too deeply', None)
+    value.force()
+    h = 1469598103934665603
+
+    def add(part: bytes) -> None:
+        nonlocal h
+        for byte in part:
+            h ^= byte
+            h = (h * 1099511628211) & 0xffffffffffffffff
+
+    add(value.kind.encode('ascii'))
+    if value.kind == TEXT:
+        add(encode_utf8(value.scalar))
+    elif value.kind == BIN:
+        add(value.scalar)
+    elif value.kind == BOOL:
+        add(b'1' if value.scalar else b'0')
+    for key, child in value.entries():
+        add(b'k')
+        add(encode_utf8(key))
+        child_hash = _structural_hash_at(child, depth + 1)
+        add(child_hash.to_bytes(8, 'little'))
+    return h
 
 
 _DUMP_ESCAPES = {'\\': '\\\\', '"': '\\"', '\n': '\\n', '\t': '\\t', '\r': '\\r'}

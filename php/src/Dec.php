@@ -15,6 +15,8 @@ namespace Sel;
 final class Dec
 {
     public const DIV_SCALE = 10;
+    /** @var list<int>|null */
+    private static ?array $nativePow10 = null;
 
     // spec/SPEC.md §6.4. These bound the *value*; ROUND's scale cap and POWER's
     // exponent cap bound *arguments*, and an argument cap is not a value cap —
@@ -144,6 +146,70 @@ final class Dec
         return $k === 0 ? '1' : '1' . str_repeat('0', $k);
     }
 
+    /**
+     * Return a native mantissa when it is safe to do so. PHP turns an
+     * overflowing integer operation into a float, so the fast path is always
+     * checked with is_int() and the digit-string implementation remains the
+     * exact fallback at the boundary.
+     */
+    private static function intMantissa(array $d): ?int
+    {
+        $digits = $d['digits'];
+        $max = (string) PHP_INT_MAX;
+        if (strlen($digits) > strlen($max)
+            || (strlen($digits) === strlen($max) && $digits > $max)) {
+            // The negative side has one extra native value. Keep it on the
+            // integer fast path; positive values with this magnitude still
+            // use the exact digit-string fallback.
+            if ($d['neg'] && $digits === self::addAbs($max, '1')) {
+                return PHP_INT_MIN;
+            }
+            return null;
+        }
+        $value = (int) $digits;
+        return $d['neg'] ? -$value : $value;
+    }
+
+    private static function intPow10(int $scale): ?int
+    {
+        if ($scale < 0) return null;
+        if (self::$nativePow10 === null) {
+            self::$nativePow10 = [1];
+            for ($i = 1; $i <= 18; $i++) {
+                $next = self::$nativePow10[$i - 1] * 10;
+                if (!is_int($next)) break;
+                self::$nativePow10[] = $next;
+            }
+        }
+        return self::$nativePow10[$scale] ?? null;
+    }
+
+    /** @return array{0:int,1:int,2:int}|null */
+    private static function fastAligned(array $a, array $b): ?array
+    {
+        $left = self::intMantissa($a);
+        $right = self::intMantissa($b);
+        if ($left === null || $right === null) return null;
+        $scale = max($a['scale'], $b['scale']);
+        $lf = self::intPow10($scale - $a['scale']);
+        $rf = self::intPow10($scale - $b['scale']);
+        if ($lf === null || $rf === null) return null;
+        $left *= $lf;
+        $right *= $rf;
+        if (!is_int($left) || !is_int($right)) return null;
+        return [$left, $right, $scale];
+    }
+
+    /** @return array{neg:bool,digits:string,scale:int}|null */
+    private static function fromIntFast(int $value, int $scale): ?array
+    {
+        if ($value === PHP_INT_MIN) {
+            return self::make(true, self::addAbs((string) PHP_INT_MAX, '1'), $scale);
+        }
+        $neg = $value < 0;
+        return self::make($neg, (string) ($neg ? -$value : $value), $scale);
+    }
+
     // --- construction -------------------------------------------------------
 
     /** @return array{neg:bool,digits:string,scale:int} */
@@ -235,7 +301,10 @@ final class Dec
     /** @return array{neg:bool,digits:string,scale:int} */
     public static function fromInt(int $n): array
     {
-        return self::make($n < 0, (string) abs($n), 0);
+        if ($n === PHP_INT_MIN) {
+            return self::make(true, self::addAbs((string) PHP_INT_MAX, '1'), 0);
+        }
+        return self::make($n < 0, (string) ($n < 0 ? -$n : $n), 0);
     }
 
     /** @param array{neg:bool,digits:string,scale:int} $d */
@@ -310,6 +379,15 @@ final class Dec
      */
     public static function add(array $a, array $b, ?array $pos = null): array
     {
+        $fast = self::fastAligned($a, $b);
+        if ($fast !== null) {
+            [$left, $right, $scale] = $fast;
+            $sum = $left + $right;
+            if (is_int($sum)) {
+                $value = self::fromIntFast($sum, $scale);
+                if ($value !== null) return self::guard($value, $pos);
+            }
+        }
         [$A, $B, $s] = self::aligned($a, $b);
         if ($a['neg'] === $b['neg']) {
             // Only true addition can grow: a difference is never wider than its
@@ -342,6 +420,15 @@ final class Dec
      */
     public static function mul(array $a, array $b, ?array $pos = null): array
     {
+        $left = self::intMantissa($a);
+        $right = self::intMantissa($b);
+        if ($left !== null && $right !== null) {
+            $product = $left * $right;
+            if (is_int($product)) {
+                $value = self::fromIntFast($product, $a['scale'] + $b['scale']);
+                if ($value !== null) return self::guard($value, $pos);
+            }
+        }
         return self::guard(self::make(
             $a['neg'] !== $b['neg'],
             self::mulAbs($a['digits'], $b['digits']),
@@ -360,6 +447,13 @@ final class Dec
         }
         if ($a['neg'] !== $b['neg']) {
             return $a['neg'] ? -1 : 1;
+        }
+        $fast = self::fastAligned($a, $b);
+        if ($fast !== null) {
+            $c = $fast[0] <=> $fast[1];
+            // fastAligned carries signed mantissas, so PHP's native comparison
+            // already has the correct order for the negative branch too.
+            return $c;
         }
         [$A, $B] = self::aligned($a, $b);
         $c = self::cmpAbs($A, $B);

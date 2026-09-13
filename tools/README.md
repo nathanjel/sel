@@ -19,6 +19,9 @@ tools/mutate-sql.sh         break the SQL layer on purpose; the checks must noti
 tools/check-sql-oracle.sh   translated SQL against a real database
 tools/oracle-db.sh          starts pinned throwaway servers, runs the above, removes them
 tools/fuzz-sql.sh           seeded SQL differential fuzzing against a database
+tools/scale-test/benchmark_php_memory.php
+                            PHP-only shaped-ingestion, materialization, join,
+                            shape-cache, and memory probes
 ```
 
 Only the JS side owns generators: `gen-programs.mjs` (fuzz corpus),

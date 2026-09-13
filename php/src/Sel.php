@@ -45,7 +45,8 @@ final class Program
     public function run($context = null): Value
     {
         $root = $context instanceof Value ? $context : Value::fromNative($context ?? []);
-        return Evaluator::evalNode($this->ast, new Context($root));
+        $ast = Optimizer::optimize($this->ast, true);
+        return Evaluator::evalNode($ast, new Context($root));
     }
 
     /**

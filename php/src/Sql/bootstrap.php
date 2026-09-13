@@ -24,4 +24,5 @@ require_once __DIR__ . '/Constants.php';
 require_once __DIR__ . '/Normalise.php';
 require_once __DIR__ . '/RelationalPlan.php';
 require_once __DIR__ . '/Translator.php';
+require_once __DIR__ . '/Hybrid.php';
 require_once __DIR__ . '/Sql.php';

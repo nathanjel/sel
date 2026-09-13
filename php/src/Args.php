@@ -60,9 +60,9 @@ final class Args
      *
      * @param array<string,mixed> $node
      */
-    public function evalNode(array $node): Value
+    public function evalNode(array $node, ?Context $context = null): Value
     {
-        return Evaluator::evalNode($node, $this->ctx);
+        return Evaluator::evalNode($node, $context ?? $this->ctx)->force();
     }
 
     public function text(int $i): string

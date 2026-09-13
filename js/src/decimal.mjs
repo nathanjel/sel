@@ -8,7 +8,11 @@
 // A decimal is { neg, digits, scale }, meaning  (neg ? -1 : 1) * digits / 10^scale.
 // `digits` is the unscaled integer as a string with no leading zeros ("0" for
 // zero). Zero is never negative. Scale is part of the value: 2.50 is digits
-// "250" at scale 2, and stays "2.50" through addition.
+// "250" at scale 2, and stays "2.50" through addition. `intVal` caches the
+// signed unscaled integer for hot values: V8's exact safe-number path handles
+// the common case, while BigInt is materialised only for a value that crosses
+// the safe-integer boundary but still fits the bounded arithmetic fast path.
+// The digit-string implementation remains the arbitrary-size fallback.
 
 import { fail } from './errors.mjs';
 
@@ -102,8 +106,38 @@ const POW10 = (k) => (k === 0 ? '1' : '1' + '0'.repeat(k));
 
 // --- construction -----------------------------------------------------------
 
-function make(neg, digits, scale) {
-  return { neg: digits === '0' ? false : neg, digits, scale };
+const FAST_SCALE = 18;
+const SAFE_BIGINT = 9007199254740991n;
+const FAST_LIMIT = 4611686018427387900n; // just below signed 63-bit range
+
+function cacheIntFromDigits(neg, digits) {
+  const number = Number(digits);
+  if (Number.isSafeInteger(number)) return neg ? -number : number;
+  // Avoid BigInt allocation for the overwhelmingly common <= 15 digit case;
+  // this branch is only reached when the safe-number representation is not
+  // exact and the bounded integer fast path is worth retaining.
+  if (digits.length > 19) return undefined;
+  const magnitude = BigInt(digits);
+  if (magnitude > FAST_LIMIT) return undefined;
+  return neg ? -magnitude : magnitude;
+}
+
+function normaliseIntVal(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : undefined;
+  if (typeof value !== 'bigint') return undefined;
+  const magnitude = value < 0n ? -value : value;
+  if (magnitude <= SAFE_BIGINT) return Number(value);
+  return magnitude <= FAST_LIMIT ? value : undefined;
+}
+
+function make(neg, digits, scale, intVal = undefined) {
+  const actualNeg = digits === '0' ? false : neg;
+  if (intVal === undefined && scale <= FAST_SCALE) {
+    intVal = cacheIntFromDigits(actualNeg, digits);
+  } else if (intVal !== undefined) {
+    intVal = normaliseIntVal(intVal);
+  }
+  return { neg: actualNeg, digits, scale, intVal };
 }
 
 // Refuses a value SEL cannot hold, where it is built rather than where it is
@@ -150,13 +184,25 @@ export function format(d) {
 }
 
 export function fromInt(n) {
+  if (typeof n === 'bigint') {
+    const neg = n < 0n;
+    const magnitude = neg ? -n : n;
+    return make(neg, magnitude.toString(), 0, n);
+  }
   const neg = n < 0;
   return make(neg, String(Math.abs(n)), 0);
 }
 
 export function isZero(d) { return d.digits === '0'; }
-export function negate(d) { return make(!d.neg, d.digits, d.scale); }
-export function abs(d) { return make(false, d.digits, d.scale); }
+export function negate(d) {
+  return make(!d.neg, d.digits, d.scale,
+    d.intVal === undefined ? undefined : -d.intVal);
+}
+export function abs(d) {
+  return make(false, d.digits, d.scale,
+    d.intVal === undefined ? undefined
+      : (d.intVal < 0 ? -d.intVal : d.intVal));
+}
 export function sign(d) { return isZero(d) ? 0 : (d.neg ? -1 : 1); }
 
 // True when the value has no fractional part left after its scale is honoured.
@@ -179,7 +225,68 @@ function aligned(a, b) {
   return [ scaleUp(a.digits, s - a.scale), scaleUp(b.digits, s - b.scale), s ];
 }
 
+function pow10Big(k) {
+  return 10n ** BigInt(k);
+}
+
+function scaledFast(d, scale) {
+  if (d.intVal === undefined || scale < d.scale || scale > FAST_SCALE) return null;
+  const diff = scale - d.scale;
+  if (diff === 0) return d.intVal;
+  if (typeof d.intVal === 'number') {
+    const value = d.intVal * (10 ** diff);
+    if (Number.isSafeInteger(value)) return value;
+    const exact = BigInt(d.intVal) * pow10Big(diff);
+    const magnitude = exact < 0n ? -exact : exact;
+    return magnitude <= FAST_LIMIT ? exact : null;
+  }
+  const value = d.intVal * pow10Big(diff);
+  const magnitude = value < 0n ? -value : value;
+  return magnitude <= FAST_LIMIT ? value : null;
+}
+
+function fastValue(value, scale) {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) return null;
+    return make(value < 0, String(Math.abs(value)), scale, value);
+  }
+  const magnitude = value < 0n ? -value : value;
+  if (magnitude > FAST_LIMIT) return null;
+  return make(value < 0n, magnitude.toString(), scale, value);
+}
+
+function asBigInt(value) {
+  return typeof value === 'bigint' ? value : BigInt(value);
+}
+
+function tryFastAdd(a, b) {
+  if (a.intVal === undefined || b.intVal === undefined
+      || a.scale > FAST_SCALE || b.scale > FAST_SCALE) return null;
+  const scale = Math.max(a.scale, b.scale);
+  const aa = scaledFast(a, scale);
+  const bb = scaledFast(b, scale);
+  if (aa === null || bb === null) return null;
+  if (typeof aa === 'number' && typeof bb === 'number') {
+    const sum = aa + bb;
+    if (Number.isSafeInteger(sum)) return fastValue(sum, scale);
+  }
+  const sum = asBigInt(aa) + asBigInt(bb);
+  return fastValue(sum, scale);
+}
+
+function tryFastMul(a, b) {
+  const scale = a.scale + b.scale;
+  if (a.intVal === undefined || b.intVal === undefined || scale > FAST_SCALE) return null;
+  if (typeof a.intVal === 'number' && typeof b.intVal === 'number') {
+    const product = a.intVal * b.intVal;
+    if (Number.isSafeInteger(product)) return fastValue(product, scale);
+  }
+  return fastValue(asBigInt(a.intVal) * asBigInt(b.intVal), scale);
+}
+
 export function add(a, b, pos) {
+  const fast = tryFastAdd(a, b);
+  if (fast !== null) return fast;
   const [A, B, s] = aligned(a, b);
   // Only true addition can grow: a difference is never wider than its operands,
   // and the aligned scale is the larger of two already legal ones.
@@ -192,12 +299,27 @@ export function add(a, b, pos) {
 export function sub(a, b, pos) { return add(a, negate(b), pos); }
 
 export function mul(a, b, pos) {
+  const fast = tryFastMul(a, b);
+  if (fast !== null) return fast;
   return guard(make(a.neg !== b.neg, mulAbs(a.digits, b.digits), a.scale + b.scale), pos);
 }
 
 export function cmp(a, b) {
   if (isZero(a) && isZero(b)) return 0;
   if (a.neg !== b.neg) return a.neg ? -1 : 1;
+  if (a.intVal !== undefined && b.intVal !== undefined
+      && a.scale <= FAST_SCALE && b.scale <= FAST_SCALE) {
+    const scale = Math.max(a.scale, b.scale);
+    const aa = scaledFast(a, scale);
+    const bb = scaledFast(b, scale);
+    if (aa !== null && bb !== null) {
+      if (typeof aa === 'number' && typeof bb === 'number') {
+        return aa < bb ? -1 : aa > bb ? 1 : 0;
+      }
+      const A = asBigInt(aa), B = asBigInt(bb);
+      return A < B ? -1 : A > B ? 1 : 0;
+    }
+  }
   const [A, B] = aligned(a, b);
   const c = cmpAbs(A, B);
   return a.neg ? -c : c;

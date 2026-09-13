@@ -2501,6 +2501,10 @@ export const RULES = {
       1,
       1
     ],
+    "BUCKET": [
+      2,
+      4
+    ],
     "CEIL": [
       1,
       1
@@ -2522,6 +2526,10 @@ export const RULES = {
       1
     ],
     "DECODE_BASE64": [
+      1,
+      1
+    ],
+    "DEDUPE": [
       1,
       1
     ],
@@ -2581,6 +2589,10 @@ export const RULES = {
       1,
       1
     ],
+    "LAZY_RECORD": [
+      0,
+      null
+    ],
     "LEFT": [
       2,
       2
@@ -2588,6 +2600,14 @@ export const RULES = {
     "LEN": [
       1,
       1
+    ],
+    "LINK": [
+      3,
+      5
+    ],
+    "LINK_LEFT": [
+      3,
+      5
     ],
     "LIST": [
       0,
@@ -2700,6 +2720,18 @@ export const RULES = {
     "TAKE": [
       2,
       2
+    ],
+    "TOP": [
+      2,
+      4
+    ],
+    "TOP_BY": [
+      3,
+      5
+    ],
+    "TOP_DESC": [
+      2,
+      4
     ],
     "TO_HEX": [
       1,

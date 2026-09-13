@@ -28,10 +28,11 @@ final class Context
     {
         for ($i = count($this->frames) - 1; $i >= 0; $i--) {
             if (isset($this->frames[$i][$name])) {
-                return $this->frames[$i][$name];
+                return $this->frames[$i][$name]->force();
             }
         }
-        return $this->root->get($name);
+        $value = $this->root->get($name);
+        return $value?->force();
     }
 
     public function isBound(string $name): bool
@@ -53,5 +54,21 @@ final class Context
     public function popFrame(): void
     {
         array_pop($this->frames);
+    }
+
+    public function setFrameValue(string $name, Value $value): void
+    {
+        if ($this->frames === []) {
+            return;
+        }
+        $this->frames[count($this->frames) - 1][$name] = $value;
+    }
+
+    public function copyCurrent(): self
+    {
+        $copy = new self($this->root);
+        $copy->frames = $this->frames;
+        $copy->depth = $this->depth;
+        return $copy;
     }
 }

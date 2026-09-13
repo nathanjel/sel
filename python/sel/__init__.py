@@ -46,7 +46,8 @@ class Program:
         the context is mutated in place by any assignments the program performs.
         """
         root = context if isinstance(context, Value) else Value.from_native(context or {})
-        return eval_node(self.ast, _Context(root))
+        from .optimizer import optimize_ast
+        return eval_node(optimize_ast(self.ast), _Context(root))
 
     def dependencies(self) -> list[str]:
         """Every variable the program reads without having assigned it first,
@@ -128,7 +129,55 @@ computed is exactly a program that could not have been evaluated.
                 inner = bound | {'_', '_K'}
                 _collect(node.args[1], inner, reads, assigned, depth + 1)
                 return
-        if name == 'GROUP_BY':
+        if name in ('TOP', 'TOP_DESC', 'TOP_BY'):
+            n = len(node.args)
+            if name in ('TOP', 'TOP_DESC'):
+                if n == 2:
+                    _collect(node.args[0], bound, reads, assigned, depth + 1)
+                    _collect(node.args[1], bound, reads, assigned, depth + 1)
+                    return
+                if n == 3:
+                    _collect(node.args[0], bound, reads, assigned, depth + 1)
+                    inner = bound | {'_', '_K'}
+                    _collect(node.args[1], inner, reads, assigned, depth + 1)
+                    _collect(node.args[2], bound, reads, assigned, depth + 1)
+                    return
+                if n == 4 and node.args[1].t == 'var':
+                    _collect(node.args[0], bound, reads, assigned, depth + 1)
+                    inner = bound | {node.args[1].name, '_K'}
+                    _collect(node.args[2], inner, reads, assigned, depth + 1)
+                    _collect(node.args[3], bound, reads, assigned, depth + 1)
+                    return
+            else:
+                # TOP_BY has the same key/direction forms as SORT_BY, with the
+                # final argument reserved for the limit.
+                if n == 3:
+                    _collect(node.args[0], bound, reads, assigned, depth + 1)
+                    inner = bound | {'_', '_K'}
+                    _collect(node.args[1], inner, reads, assigned, depth + 1)
+                    _collect(node.args[2], bound, reads, assigned, depth + 1)
+                    return
+                if n == 4:
+                    _collect(node.args[0], bound, reads, assigned, depth + 1)
+                    if node.args[2].t == 'text':
+                        _collect(node.args[1], bound | {'_', '_K'}, reads, assigned, depth + 1)
+                        _collect(node.args[2], bound, reads, assigned, depth + 1)
+                    elif node.args[1].t == 'var' and not node.args[1].grouped:
+                        inner = bound | {node.args[1].name, '_K'}
+                        _collect(node.args[2], inner, reads, assigned, depth + 1)
+                    else:
+                        _collect(node.args[1], bound | {'_', '_K'}, reads, assigned, depth + 1)
+                        _collect(node.args[2], bound, reads, assigned, depth + 1)
+                    _collect(node.args[3], bound, reads, assigned, depth + 1)
+                    return
+                if n == 5:
+                    _collect(node.args[0], bound, reads, assigned, depth + 1)
+                    inner = bound | {node.args[1].name, '_K'}
+                    _collect(node.args[2], inner, reads, assigned, depth + 1)
+                    _collect(node.args[3], bound, reads, assigned, depth + 1)
+                    _collect(node.args[4], bound, reads, assigned, depth + 1)
+                    return
+        if name in ('GROUP_BY', 'BUCKET'):
             n = len(node.args)
             if n == 4 and node.args[1].t == 'var':
                 _collect(node.args[0], bound, reads, assigned, depth + 1)
@@ -147,6 +196,18 @@ computed is exactly a program that could not have been evaluated.
                 inner = bound | {'_', '_K'}
                 _collect(node.args[1], inner, reads, assigned, depth + 1)
                 return
+        if name in ('LINK', 'LINK_LEFT') and len(node.args) in (3, 5):
+            _collect(node.args[0], bound, reads, assigned, depth + 1)
+            _collect(node.args[1], bound, reads, assigned, depth + 1)
+            if len(node.args) == 5:
+                left_name = node.args[2].name if node.args[2].t == 'var' else '_1'
+                right_name = node.args[3].name if node.args[3].t == 'var' else '_2'
+                inner = bound | {left_name, right_name, '_', '_1', '_2', '_K'}
+                _collect(node.args[4], inner, reads, assigned, depth + 1)
+            else:
+                inner = bound | {'_', '_1', '_2', '_K'}
+                _collect(node.args[2], inner, reads, assigned, depth + 1)
+            return
         if node.spec and node.spec.binds and len(node.args) == 3 and node.args[1].t == 'var':
             _collect(node.args[0], bound, reads, assigned, depth + 1)
             inner = bound | {node.args[1].name, '_K'}

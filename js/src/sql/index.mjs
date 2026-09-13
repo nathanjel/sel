@@ -15,10 +15,12 @@ import { Binding } from './binding.mjs';
 import { Bindings } from './bindings.mjs';
 import { SqlError } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
-import { RelationalPlan } from './relational-plan.mjs';
+import { JoinPlan, RelationalPlan } from './relational-plan.mjs';
 import { Translator } from './translator.mjs';
+import { HybridPlan, executeHybrid, planHybrid } from './hybrid.mjs';
 
-export { DIALECTS, Binding, Bindings, Fragment, RelationalPlan, SqlError, map };
+export { DIALECTS, Binding, Bindings, Fragment, HybridPlan, JoinPlan, RelationalPlan, SqlError, map };
+export { executeHybrid, planHybrid };
 
 // The public interface of the SQL layer. See docs/SQL-TRANSLATION.md §10.
 export class Sql {
@@ -61,6 +63,14 @@ export class Sql {
       if (e instanceof SqlError) return null;
       throw e;
     }
+  }
+
+  static planHybrid(program, dialect, bindings = null, options = null) {
+    return planHybrid(program, dialect, bindings, options);
+  }
+
+  static executeHybrid(plan, dbRunner, context = null) {
+    return executeHybrid(plan, dbRunner, context);
   }
 
   // Every dialect that may be named in a translate() call.

@@ -20,6 +20,7 @@ std::string ascii_upper(std::string_view s) {
 }
 void frame_set(std::vector<std::pair<std::string, Binder>>& frame,
                const std::string& name, Binder b);
+std::string relation_alias(const RelationSpec& rel);
 
 // The literal form of a value the HOST supplied, where no AST node exists to
 // say whether the author wrote 5.00 or "5.00".
@@ -122,6 +123,7 @@ Fragment Translator::translate(const NodePtr& ast) {
   caveats_.clear();
   frames_.clear();
   depth_ = 0;
+  subquery_counter_ = 0;
 
   ConstScope scope = const_scope(&bindings_);
   const_names_ = std::move(scope.names);
@@ -152,6 +154,7 @@ Fragment Translator::translate_statement(const NodePtr& ast) {
   caveats_.clear();
   frames_.clear();
   depth_ = 0;
+  subquery_counter_ = 0;
 
   ConstScope scope = const_scope(&bindings_);
   const_names_ = std::move(scope.names);
@@ -340,6 +343,53 @@ std::string Translator::constant_index(const SNode& idx) {
 
 Fragment Translator::index(const SNode& n) {
   const SNode& obj = *n.l();
+  // A joined SEL row exposes both its ordinary fields and the nested table
+  // records used by the reference hosts: _["orders"]["id"]. The inner index
+  // is a qualifier, not a runtime lookup. Resolve it against the relational
+  // plan so the emitted SQL names the owning relation directly; treating it
+  // as an index into the left relation would stop hybrid planning at the first
+  // multi-table projection.
+  if (obj.t() == SNode::T::Index && obj.l() && obj.l()->t() == SNode::T::Var &&
+      obj.r() && obj.r()->t() == SNode::T::Text && statement_plan_) {
+    const std::string qualifier = obj.r()->s();
+    const auto same_name = [&](std::string_view candidate) {
+      return ascii_upper(qualifier) == ascii_upper(candidate);
+    };
+    const RelationSpec* relation = nullptr;
+    if (same_name(statement_plan_->source_name) ||
+        same_name(statement_plan_->source_relation.from) ||
+        (statement_plan_->source_alias && same_name(*statement_plan_->source_alias)) ||
+        same_name("_") || same_name("_1")) {
+      relation = &statement_plan_->source_relation;
+    } else {
+      for (std::size_t i = 0; i < statement_plan_->joins.size(); ++i) {
+        const RelationalJoin& join = statement_plan_->joins[i];
+        if (same_name(join.source_name) || same_name(join.source_relation.from) ||
+            (join.source_alias && same_name(*join.source_alias)) ||
+            same_name("_" + std::to_string(i + 2)) ||
+            same_name(join.left_binder) || same_name(join.right_binder)) {
+          relation = &join.source_relation;
+          break;
+        }
+      }
+    }
+    if (relation) {
+      const std::string key = constant_index(*n.r());
+      if (list_key(key)) {
+        refuse("E_SQL_SHAPE",
+               qualifier + "[" + key + "] asks for a row by position, and a "
+                       "joined relation has no positional field",
+               n.pos());
+      }
+      const ColumnSpec* field = relation->field(ascii_upper(key));
+      if (!field) {
+        refuse("E_SQL_BINDING",
+               qualifier + "[\"" + key + "\"] is not a field of that relation",
+               n.pos());
+      }
+      return relation_column(*relation, *field);
+    }
+  }
   // A PARENTHESISED variable still has t == Var -- the parser sets only a
   // `grouped` flag -- so `(C)[1]` reaches the same path as `C[1]`.
   if (obj.t() != SNode::T::Var) {
@@ -424,7 +474,7 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
                        "\"scalar\", or index the field you want",
                n.pos());
       }
-      return column_ref(*field);
+      return relation_column(rel, *field);
     }
     case Binder::Shape::None:
       // How `_K` inside a relation body reports "a row of a relation has no
@@ -454,7 +504,41 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
       it = statement_plan_->aggregate_aliases.find(field);
       if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
     }
-    if (const ColumnSpec* f = rel.field(field)) return column_ref(*f);
+    if (const ColumnSpec* f = rel.field(field)) {
+      if (statement_plan_ && statement_plan_->source_subquery &&
+          rel.from == statement_plan_->source_relation.from &&
+          rel.alias == statement_plan_->source_relation.alias) {
+        ColumnSpec derived = *f;
+        derived.column = key;
+        return relation_column(rel, derived);
+      }
+      return relation_column(rel, *f);
+    }
+    // Joined SEL rows promote unambiguous fields from the other relations.
+    // Resolve that same shape here instead of refusing a field that is absent
+    // from the left relation but present on exactly one joined relation.
+    const auto same_relation = [](const RelationSpec& left, const RelationSpec& right) {
+      return left.from == right.from && left.alias == right.alias &&
+             left.from_is_raw == right.from_is_raw;
+    };
+    if (statement_plan_ && same_relation(rel, statement_plan_->source_relation)) {
+      const ColumnSpec* match = nullptr;
+      const RelationSpec* owner = nullptr;
+      for (const RelationalJoin& join : statement_plan_->joins) {
+        if (const ColumnSpec* candidate = join.source_relation.field(field)) {
+          if (match) {
+            refuse("E_SQL_SHAPE",
+                   name + "[\"" + key +
+                       "\"] is ambiguous across joined relations; qualify the "
+                       "field with its table name",
+                   n.pos());
+          }
+          match = candidate;
+          owner = &join.source_relation;
+        }
+      }
+      if (match && owner) return relation_column(*owner, *match);
+    }
     if (statement_plan_) {
       auto it = statement_plan_->aggregate_aliases.find(key);
       if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
@@ -485,6 +569,38 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
   // rather than "a row of a relation has no key".
   refuse("E_SQL_SHAPE",
          name + " names a single column, which has no parts to index", n.pos());
+}
+
+std::string Translator::relation_table_alias(const RelationSpec& rel) {
+  if (statement_plan_) {
+    const auto same = [&rel](const RelationSpec& other) {
+      return rel.from == other.from && rel.alias == other.alias &&
+             rel.from_is_raw == other.from_is_raw;
+    };
+    if (same(statement_plan_->source_relation)) {
+      return statement_plan_->source_alias.value_or(relation_alias(rel));
+    }
+    for (const RelationalJoin& join : statement_plan_->joins) {
+      if (same(join.source_relation)) {
+        return join.source_alias.value_or(relation_alias(rel));
+      }
+    }
+  }
+  return relation_alias(rel);
+}
+
+Fragment Translator::relation_column(const RelationSpec& rel, const ColumnSpec& c) {
+  // Preserve the established single-table SQL spelling.  Qualification is
+  // required once a statement has multiple sources (or a derived source), but
+  // adding it to ordinary statements changes the public SQL byte contract and
+  // provides no semantic value.
+  if (c.is_raw || !statement_plan_ ||
+      (statement_plan_->joins.empty() && !statement_plan_->source_subquery)) {
+    return column_ref(c);
+  }
+  ColumnSpec qualified = c;
+  qualified.table = relation_table_alias(rel);
+  return column_ref(qualified);
 }
 
 }  // namespace sel::sql
@@ -1812,6 +1928,50 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
   }
   for (const Filter& f : src.filters) frame_set(frame, f.binder, row);
 
+  // A joined statement has one SQL row but several SEL row binders.  Keep all
+  // of them in the same frame so projections, filters, grouping and ordering
+  // can use either the ordinary `_`/`_1` spelling or the explicit join/table
+  // aliases.  The innermost frame still wins if an aggregate introduces a
+  // binder with one of these names.
+  if (statement_plan_ && !statement_plan_->joins.empty()) {
+    frame_set(frame, "_", row);
+    frame_set(frame, "_1", row);
+    frame_set(frame, statement_plan_->source_name, row);
+    if (statement_plan_->source_alias) frame_set(frame, *statement_plan_->source_alias, row);
+    for (std::size_t i = 0; i < statement_plan_->joins.size(); ++i) {
+      const RelationalJoin& join = statement_plan_->joins[i];
+      const Binder right = Binder::row(std::make_shared<RelationSpec>(join.source_relation));
+      frame_set(frame, "_" + std::to_string(i + 2), right);
+      frame_set(frame, join.right_binder, right);
+      frame_set(frame, join.source_name, right);
+      if (join.source_alias) frame_set(frame, *join.source_alias, right);
+      frame_set(frame, join.left_binder, row);
+    }
+  }
+
+  frames_.push_back(std::move(frame));
+  struct Pop {
+    std::vector<Frame>* f;
+    ~Pop() { f->pop_back(); }
+  } pop{&frames_};
+  return render();
+}
+
+Fragment Translator::with_join_binders(const RelationalPlan& plan,
+                                       const RelationalJoin& join,
+                                       const std::function<Fragment()>& render) {
+  std::vector<std::pair<std::string, Binder>> frame;
+  const Binder left = Binder::row(std::make_shared<RelationSpec>(plan.source_relation));
+  const Binder right = Binder::row(std::make_shared<RelationSpec>(join.source_relation));
+  frame_set(frame, "_", left);
+  frame_set(frame, "_1", left);
+  frame_set(frame, plan.source_name, left);
+  if (plan.source_alias) frame_set(frame, *plan.source_alias, left);
+  frame_set(frame, "_2", right);
+  frame_set(frame, join.left_binder, left);
+  frame_set(frame, join.right_binder, right);
+  frame_set(frame, join.source_name, right);
+  if (join.source_alias) frame_set(frame, *join.source_alias, right);
   frames_.push_back(std::move(frame));
   struct Pop {
     std::vector<Frame>* f;
@@ -2042,9 +2202,76 @@ Fragment Translator::join_aggregate(const SNode& n) {
 // --- relational pipeline statement compiler ---------------------------------
 
 constexpr std::string_view PIPELINE_OPS[] = {
-    "FILTER", "GROUP_BY", "SELECT_COLS", "MAP", "DISTINCT", "TAKE", "DROP",
-    "SORT", "SORT_DESC", "SORT_BY"
+    "FILTER", "GROUP_BY", "BUCKET", "SELECT_COLS", "MAP", "DISTINCT", "DEDUPE",
+    "TAKE", "DROP", "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY",
+    "LINK", "LINK_LEFT"
 };
+
+bool Translator::plan_has_rows_above(const RelationalPlan& plan) const {
+  return plan.projections.has_value() || plan.select_cols.has_value() ||
+         plan.group_by.has_value() || plan.distinct || plan.limit.has_value() ||
+         plan.offset.has_value() || !plan.order_by.empty();
+}
+
+std::vector<std::string> Translator::output_field_names(const RelationalPlan& plan) const {
+  std::vector<std::string> names;
+  if (plan.projections) {
+    for (std::size_t i = 0; i < plan.projections->size(); ++i) {
+      const RelationalProjection& projection = (*plan.projections)[i];
+      if (projection.alias) {
+        names.push_back(*projection.alias);
+      } else if (projection.node && projection.node->t() == SNode::T::Index &&
+                 projection.node->r()->t() == SNode::T::Text) {
+        names.push_back(projection.node->r()->s());
+      } else {
+        names.push_back("expr" + std::to_string(i + 1));
+      }
+    }
+  } else if (plan.select_cols) {
+    names = *plan.select_cols;
+  } else {
+    for (const auto& [name, ignored] : plan.source_relation.fields) {
+      (void)ignored;
+      names.push_back(name);
+    }
+    for (const RelationalJoin& join : plan.joins) {
+      for (const auto& [name, ignored] : join.source_relation.fields) {
+        (void)ignored;
+        names.push_back(name);
+      }
+    }
+  }
+  std::vector<std::string> unique;
+  std::set<std::string> seen;
+  for (const std::string& name : names) {
+    const std::string upper = ascii_upper(name);
+    if (seen.insert(upper).second) unique.push_back(name);
+  }
+  return unique;
+}
+
+RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
+  if (!needed) return plan;
+  const std::string alias = "_sub" + std::to_string(++subquery_counter_);
+  auto inner = std::make_shared<RelationalPlan>(std::move(plan));
+
+  RelationalPlan derived;
+  derived.source_name = alias;
+  derived.source_table = "";
+  derived.source_alias = alias;
+  derived.source_relation.from = alias;
+  derived.source_relation.alias = alias;
+  derived.source_subquery = std::move(inner);
+
+  for (const std::string& name : output_field_names(*derived.source_subquery)) {
+    ColumnSpec field;
+    field.column = name;
+    field.table = alias;
+    field.type = SqlKind::Unknown;
+    derived.source_relation.fields.emplace_back(ascii_upper(name), std::move(field));
+  }
+  return derived;
+}
 
 std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) {
   std::vector<SNodePtr> steps;
@@ -2084,6 +2311,12 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
     const auto& args = step->kids();
 
     if (name == "FILTER") {
+      const bool need_derived =
+          !plan.group_by.has_value() &&
+          (plan.projections.has_value() || plan.select_cols.has_value() ||
+           plan.distinct || plan.limit.has_value() || plan.offset.has_value() ||
+           !plan.order_by.empty());
+      plan = ensure_derived(std::move(plan), need_derived);
       std::string binder;
       SNodePtr pred;
       if (args.size() == 2) {
@@ -2103,7 +2336,9 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       } else {
         plan.filters.push_back({binder, pred, step->pos()});
       }
-    } else if (name == "GROUP_BY") {
+    } else if (name == "GROUP_BY" || name == "BUCKET") {
+      const bool need_derived = plan_has_rows_above(plan);
+      plan = ensure_derived(std::move(plan), need_derived);
       std::string binder;
       SNodePtr key_node;
       SNodePtr agg_node = nullptr;
@@ -2147,7 +2382,8 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       plan.group_by = std::move(group_by);
 
       if (agg_node) {
-        if (agg_node->t() == SNode::T::Call && agg_node->s() == "RECORD") {
+        if (agg_node->t() == SNode::T::Call &&
+            (agg_node->s() == "RECORD" || agg_node->s() == "LAZY_RECORD")) {
           const auto& rec_args = agg_node->kids();
           if (rec_args.size() % 2 != 0) {
             refuse("E_ARITY", "RECORD takes an even number of arguments", agg_node->pos());
@@ -2189,6 +2425,8 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       }
       plan.select_cols = std::nullopt;
     } else if (name == "SELECT_COLS") {
+      const bool need_derived = plan_has_rows_above(plan);
+      plan = ensure_derived(std::move(plan), need_derived);
       std::vector<SNodePtr> items;
       if (args.size() == 2 && args[1]->t() == SNode::T::List) {
         items = args[1]->kids();
@@ -2203,25 +2441,35 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
           refuse("E_BAD_ARG", "SELECT_COLS column names must be string literals", item->pos());
         }
         const std::string& col = item->s();
-        if (!plan.source_relation.fields.empty()) {
-          std::string uc = ascii_upper(col);
-          if (!plan.source_relation.field(uc)) {
-            std::string declared;
-            for (std::size_t i = 0; i < plan.source_relation.fields.size(); ++i) {
-              if (i > 0) declared += ", ";
-              declared += plan.source_relation.fields[i].first;
-            }
-            refuse("E_SQL_SHAPE",
-                   "relation " + plan.source_name + " has no field '" + col +
-                       "'; the relation declares " + declared,
-                   item->pos());
+        const std::string uc = ascii_upper(col);
+        int matches = plan.source_relation.field(uc) ? 1 : 0;
+        for (const RelationalJoin& join : plan.joins) {
+          if (join.source_relation.field(uc)) ++matches;
+        }
+        if (matches > 1) {
+          refuse("E_SQL_SHAPE",
+                 "column '" + col +
+                     "' is ambiguous across joined tables; qualify with a table alias",
+                 item->pos());
+        }
+        if (!plan.source_relation.fields.empty() && matches == 0) {
+          std::string declared;
+          for (std::size_t i = 0; i < plan.source_relation.fields.size(); ++i) {
+            if (i > 0) declared += ", ";
+            declared += plan.source_relation.fields[i].first;
           }
+          refuse("E_SQL_SHAPE",
+                 "relation " + plan.source_name + " has no field '" + col +
+                     "'; the relation declares " + declared,
+                 item->pos());
         }
         cols.push_back(col);
       }
       plan.select_cols = std::move(cols);
       plan.projections = std::nullopt;
     } else if (name == "MAP") {
+      const bool need_derived = plan_has_rows_above(plan);
+      plan = ensure_derived(std::move(plan), need_derived);
       std::string binder;
       SNodePtr expr;
       if (args.size() == 2) {
@@ -2237,7 +2485,8 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         refuse("E_ARITY", "MAP takes 2 or 3 arguments", step->pos());
       }
 
-      if (expr->t() == SNode::T::Call && expr->s() == "RECORD") {
+      if (expr->t() == SNode::T::Call &&
+          (expr->s() == "RECORD" || expr->s() == "LAZY_RECORD")) {
         const auto& rec_args = expr->kids();
         if (rec_args.size() % 2 != 0) {
           refuse("E_ARITY", "RECORD takes an even number of arguments", expr->pos());
@@ -2258,7 +2507,9 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         plan.projections = std::move(projections);
       }
       plan.select_cols = std::nullopt;
-    } else if (name == "DISTINCT") {
+    } else if (name == "DISTINCT" || name == "DEDUPE") {
+      const bool need_derived = plan.limit.has_value() || plan.offset.has_value();
+      plan = ensure_derived(std::move(plan), need_derived);
       plan.distinct = true;
     } else if (name == "TAKE") {
       if (args.size() != 2) {
@@ -2272,8 +2523,53 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       }
       int64_t off = eval_int_param(args[1], "DROP");
       plan.offset = plan.offset.value_or(0) + off;
-    } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY") {
+    } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
+               name == "TOP" || name == "TOP_DESC" || name == "TOP_BY") {
+      const bool need_derived =
+          !plan.group_by.has_value() &&
+          (plan.projections.has_value() || plan.select_cols.has_value() ||
+           plan.distinct || plan.limit.has_value() || plan.offset.has_value() ||
+           !plan.order_by.empty());
+      plan = ensure_derived(std::move(plan), need_derived);
       analyze_sort_step(step, plan);
+    } else if (name == "LINK" || name == "LINK_LEFT") {
+      const bool need_derived = plan_has_rows_above(plan);
+      plan = ensure_derived(std::move(plan), need_derived);
+      if (args.size() != 3 && args.size() != 5) {
+        refuse("E_ARITY", name + " takes 3 or 5 arguments", step->pos());
+      }
+      const SNodePtr& right_node = args[1];
+      if (right_node->t() != SNode::T::Var || !bindings_.has(right_node->s())) {
+        refuse("E_SQL_SHAPE", name + " requires a bound relation as its right side",
+               right_node->pos());
+      }
+      const Binding& right_binding = bindings_.get(right_node->s(), right_node->pos());
+      if (right_binding.kind() != Binding::Kind::Relation) {
+        refuse("E_SQL_SHAPE", right_node->s() + " is not bound as a relation",
+               right_node->pos());
+      }
+      RelationalJoin join;
+      join.type = name == "LINK_LEFT" ? "LEFT" : "INNER";
+      join.source_name = right_node->s();
+      join.source_relation = right_binding.as_relation();
+      join.source_from_raw = join.source_relation.from_is_raw;
+      join.source_table = join.source_relation.from;
+      join.source_alias = join.source_relation.alias;
+      if (args.size() == 5) {
+        if (!is_binder_name(*args[2]) || !is_binder_name(*args[3])) {
+          refuse("E_SQL_SHAPE", "join binders must be bare names", args[2]->pos());
+        }
+        join.left_binder = args[2]->s();
+        join.right_binder = args[3]->s();
+        join.on_pred = args[4];
+      } else {
+        join.left_binder = plan.source_alias.value_or("_1");
+        join.right_binder = join.source_alias.value_or("_2");
+        join.on_pred = args[2];
+      }
+      if (!join.source_alias) join.source_alias = join.right_binder;
+      join.pos = step->pos();
+      plan.joins.push_back(std::move(join));
     }
   }
 
@@ -2316,10 +2612,19 @@ int64_t Translator::eval_int_param(const SNodePtr& n, const std::string& op) {
 void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
   const std::string& name = step->s();
   const auto& args = step->kids();
-  const auto count = args.size();
+  const bool top = name == "TOP" || name == "TOP_DESC" || name == "TOP_BY";
+  if (top && args.empty()) {
+    refuse("E_ARITY", name + " has an invalid sort form", step->pos());
+  }
+  const auto count = top ? args.size() - 1 : args.size();
 
-  if (name == "SORT" || name == "SORT_DESC") {
-    std::string dir = name == "SORT" ? "ASC" : "DESC";
+  if (top) {
+    const int64_t limit = eval_int_param(args.back(), name);
+    plan.limit = !plan.limit.has_value() ? limit : std::min(*plan.limit, limit);
+  }
+
+  if (name == "SORT" || name == "SORT_DESC" || name == "TOP" || name == "TOP_DESC") {
+    std::string dir = (name == "SORT" || name == "TOP") ? "ASC" : "DESC";
     if (count == 1) {
       if (plan.source_relation.scalar) {
         const std::string& scalar_col = *plan.source_relation.scalar;
@@ -2406,11 +2711,13 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
 }
 
 Fragment Translator::compile_statement(const RelationalPlan& plan) {
+  const RelationalPlan* previous_plan = statement_plan_;
   statement_plan_ = &plan;
   struct ResetPlan {
     const RelationalPlan** p;
-    ~ResetPlan() { *p = nullptr; }
-  } reset_plan{&statement_plan_};
+    const RelationalPlan* previous;
+    ~ResetPlan() { *p = previous; }
+  } reset_plan{&statement_plan_, previous_plan};
 
   std::vector<Fragment::Part> parts;
   auto add_sql = [&](std::string sql) {
@@ -2452,12 +2759,23 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     for (const auto& col : *plan.select_cols) {
       if (!first) add_sql(", ");
       first = false;
+      const RelationSpec* owner = &plan.source_relation;
       const ColumnSpec* f_spec = plan.source_relation.field(ascii_upper(col));
-      std::string table = f_spec && !f_spec->table.empty()
-                              ? f_spec->table
-                              : (plan.source_alias ? *plan.source_alias : "");
-      std::string column = f_spec && !f_spec->column.empty() ? f_spec->column : col;
-      add_sql(emit_.column(table, column));
+      for (const RelationalJoin& join : plan.joins) {
+        if (!f_spec) {
+          f_spec = join.source_relation.field(ascii_upper(col));
+          if (f_spec) owner = &join.source_relation;
+        }
+      }
+      const std::string column = f_spec && !f_spec->column.empty() ? f_spec->column : col;
+      if (plan.joins.empty() && !plan.source_subquery) {
+        const std::string table = f_spec && !f_spec->table.empty()
+                                      ? f_spec->table
+                                      : (plan.source_alias ? *plan.source_alias : "");
+        add_sql(emit_.column(table, column));
+      } else {
+        add_sql(emit_.column(relation_table_alias(*owner), column));
+      }
     }
   } else {
     if (plan.source_alias && !plan.source_alias->empty()) {
@@ -2469,11 +2787,38 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
 
   // 2. FROM clause
   add_sql(" FROM ");
-  std::string from = plan.source_from_raw ? plan.source_table : emit_.ident(plan.source_table);
-  if (plan.source_alias && !plan.source_alias->empty()) {
-    from += " " + emit_.ident(*plan.source_alias);
+  if (plan.source_subquery) {
+    const Fragment subquery = compile_statement(*plan.source_subquery);
+    add_sql("(");
+    for (const Fragment::Part& p : subquery.parts()) parts.push_back(p);
+    add_sql(")");
+    if (plan.source_alias && !plan.source_alias->empty()) {
+      add_sql(" " + emit_.ident(*plan.source_alias));
+    }
+  } else {
+    std::string from = plan.source_from_raw ? plan.source_table : emit_.ident(plan.source_table);
+    if (plan.source_alias && !plan.source_alias->empty()) {
+      from += " " + emit_.ident(*plan.source_alias);
+    }
+    add_sql(from);
   }
-  add_sql(from);
+
+  // Joins are emitted before WHERE so a predicate that references both sides
+  // is rendered in the ON frame, where each binder resolves to its own table
+  // alias.  This is also what keeps a left join's unmatched rows from being
+  // accidentally filtered by an ON condition moved into WHERE.
+  for (const RelationalJoin& join : plan.joins) {
+    add_sql(join.type == "LEFT" ? " LEFT JOIN " : " INNER JOIN ");
+    std::string right = join.source_from_raw ? join.source_table : emit_.ident(join.source_table);
+    if (join.source_alias && !join.source_alias->empty()) {
+      right += " " + emit_.ident(*join.source_alias);
+    }
+    add_sql(right + " ON ");
+    const Fragment on = with_join_binders(plan, join, [&]() {
+      return require_bool(node(join.on_pred), join.pos, "LINK");
+    });
+    for (const Fragment::Part& p : on.parts()) parts.push_back(p);
+  }
 
   // 3. WHERE clause
   std::vector<std::vector<Fragment::Part>> cond_parts;

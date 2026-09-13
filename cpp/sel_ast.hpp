@@ -71,6 +71,14 @@ struct Node {
 
 using NodePtr = std::shared_ptr<const Node>;
 
+// Internal services shared by the evaluator and the SQL translation unit.
+// They are declared here rather than in sel.hpp so consumers still only need
+// the public Value/Program API.
+const Spec* lookup_builtin(const std::string& name);
+NodePtr optimize_ast_logical(const NodePtr& ast);
+NodePtr optimize_ast_in_memory(const NodePtr& ast);
+NodePtr optimize_ast(const NodePtr& ast);
+
 // Validates and rewrites a regex in one pass, returning source that means the
 // same thing to every engine. Throws SelError for a pattern outside the
 // portable subset of spec/SPEC.md §7.8.

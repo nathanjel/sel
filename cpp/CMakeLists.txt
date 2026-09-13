@@ -43,7 +43,10 @@ add_library(sel-lang
   sel_sql_map_data.cpp
   sel_sql_node.cpp
   sel_sql_stage1.cpp
-  sel_sql_translator.cpp)
+  sel_sql_translator.cpp
+  sel_sql_hybrid.cpp)
+set_property(SOURCE sel.cpp APPEND PROPERTY OBJECT_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/sel_optimizer.cpp")
 # The package is `sel-lang` everywhere it is published, so the exported target
 # matches. `sel::sel` is kept as a shorter alias for in-tree use.
 add_library(sel-lang::sel-lang ALIAS sel-lang)
@@ -143,8 +146,12 @@ if(SEL_BUILD_TOOLS)
   target_compile_features(sel-unit PRIVATE cxx_std_23)
   target_include_directories(sel-unit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+  add_executable(sel-sqlunit tests/sql_unit.cpp)
+  target_link_libraries(sel-sqlunit PRIVATE sel-lang)
+
   enable_testing()
   add_test(NAME unit COMMAND sel-unit)
+  add_test(NAME sqlunit COMMAND sel-sqlunit)
   add_test(NAME conformance COMMAND sel-conformance
            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..)
 endif()

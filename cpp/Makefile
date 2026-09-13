@@ -31,12 +31,13 @@ WHITEBOX := check-decimal
 # it from a link that never asks for it.
 SQL_SRCS := sel_sql.cpp sel_sql_binding.cpp sel_sql_emit.cpp sel_sql_map.cpp \
             sel_sql_map_data.cpp sel_sql_node.cpp sel_sql_stage1.cpp \
-            sel_sql_translator.cpp
+            sel_sql_translator.cpp sel_sql_hybrid.cpp
 SQL_OBJS := $(addprefix $(BUILD)/,$(SQL_SRCS:.cpp=.o))
 SQL_HDRS := sel_sql.hpp sel_sql_emit.hpp sel_sql_map.hpp sel_sql_node.hpp \
             sel_sql_stage1.hpp sel_sql_translator.hpp
 # Tools over that layer.
 SQLTOOLS := sqlmap sqlfuzz sqlt sqlreplay
+SCALETOOLS := scale-bench
 
 # The worked examples under ../examples/. They use the public interface only,
 # exactly like LINKED, but they live outside this directory on purpose: they are
@@ -59,13 +60,13 @@ EXAMPLE_BINS := $(addprefix $(BUILD)/example-,$(EXAMPLES)) \
 # `make` built everything else, tools/check.sh ran whatever build/unit happened
 # to be lying there, and once tests/unit.cpp stopped compiling against sel.cpp a
 # stale binary went on reporting 81 green checks for 27 commits.
-BINS := $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL) $(WHITEBOX) $(SQLTOOLS) unit) \
+BINS := $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL) $(WHITEBOX) $(SQLTOOLS) $(SCALETOOLS) unit sqlunit) \
         $(EXAMPLE_BINS)
 
 .PHONY: all test clean
 all: $(BINS)
 
-$(BUILD)/sel.o: sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
+$(BUILD)/sel.o: sel.cpp sel_optimizer.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ sel.cpp
 
 $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp sel.hpp sel_ast.hpp $(BUILD)/sel.o | $(BUILD)
@@ -108,6 +109,15 @@ $(BUILD)/sqlt: bin/sqlt.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp $(BUILD)/case_
 
 $(BUILD)/unit: tests/unit.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<
+
+$(BUILD)/sqlunit: tests/sql_unit.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS) $(BUILD)/sel.o
+
+# The scale runner includes sel.cpp directly because it also exercises the
+# public evaluator and benchmark-only builtin registration in one translation
+# unit; link only the SQL layer to avoid a duplicate evaluator definition.
+$(BUILD)/scale-bench: ../tools/scale-test/sel_benchmarks.cpp sel.cpp sel.hpp sel_ast.hpp $(SQL_HDRS) $(SQL_OBJS) | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS)
 
 $(BUILD):
 	mkdir -p $(BUILD)

@@ -34,7 +34,9 @@
     "and MariaDB reads || as logical OR. Its supported set is smaller than any real",
     "target's because ansi refuses most of what it declares."
   ],
-  "exclude": {},
+  "exclude": {
+    "skel.prefilter": "internal relation prefilter skeleton; its correlated slots are only emitted when a caller opts into split prefiltering, and no closed oracle rule exercises that host-supplied shape"
+  },
   "supported": {
     "mariadb": [
       "funcs.ABS",
@@ -110,7 +112,8 @@
       "skel.caseBranch",
       "skel.count",
       "skel.inRelation",
-      "skel.sum"
+      "skel.sum",
+      "skel.prefilter"
     ],
     "mysql": [
       "funcs.ABS",
@@ -186,7 +189,8 @@
       "skel.caseBranch",
       "skel.count",
       "skel.inRelation",
-      "skel.sum"
+      "skel.sum",
+      "skel.prefilter"
     ],
     "postgresql": [
       "funcs.ABS",
@@ -263,7 +267,8 @@
       "skel.caseBranch",
       "skel.count",
       "skel.inRelation",
-      "skel.sum"
+      "skel.sum",
+      "skel.prefilter"
     ],
     "sqlite": [
       "funcs.ABS",
@@ -330,7 +335,8 @@
       "skel.caseBranch",
       "skel.count",
       "skel.inRelation",
-      "skel.sum"
+      "skel.sum",
+      "skel.prefilter"
     ],
     "ansi-probe": [
       "funcs.ABS",
@@ -382,7 +388,8 @@
       "skel.caseBranch",
       "skel.count",
       "skel.inRelation",
-      "skel.sum"
+      "skel.sum",
+      "skel.prefilter"
     ]
   },
   "caveats_unwitnessable": {

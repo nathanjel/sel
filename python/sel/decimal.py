@@ -29,7 +29,7 @@ str() is the conversion being guarded.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 import sys
 
@@ -75,16 +75,39 @@ class Dec:
     neg: bool
     digits: int
     scale: int
+    # Signed unscaled mantissa for the small fixed-point fast path.  It is an
+    # implementation cache, not part of SEL equality: Python's arbitrary-size
+    # ``digits`` remains the exact fallback for values outside the 64-bit lane.
+    int_val: int | None = field(default=None, repr=False, compare=False)
 
 
-def make(neg: bool, digits: int, scale: int) -> Dec:
-    return Dec(False if digits == 0 else neg, digits, scale)
+_FAST_SCALE = 18
+_FAST_BITS = 60
 
 
+def _small_mantissa(digits: int, neg: bool, scale: int) -> int | None:
+    if scale <= _FAST_SCALE and digits.bit_length() <= _FAST_BITS:
+        return -digits if neg and digits else digits
+    return None
+
+
+def make(neg: bool, digits: int, scale: int,
+         int_val: int | None = None) -> Dec:
+    actual_neg = bool(neg and digits)
+    if int_val is None:
+        int_val = _small_mantissa(digits, actual_neg, scale)
+    elif scale > _FAST_SCALE or digits.bit_length() > _FAST_BITS:
+        int_val = None
+    return Dec(actual_neg, digits, scale, int_val)
+
+
+_POW10_SMALL = tuple(10 ** i for i in range(_FAST_SCALE + 1))
 _POW10: dict[int, int] = {}
 
 
 def _pow10(k: int) -> int:
+    if 0 <= k <= _FAST_SCALE:
+        return _POW10_SMALL[k]
     v = _POW10.get(k)
     if v is None:
         v = 10 ** k
@@ -198,7 +221,7 @@ def is_integer(d: Dec) -> bool:
     """True when the value has no fractional part left after its scale."""
     if d.scale == 0:
         return True
-    return d.digits % (10 ** d.scale) == 0
+    return d.digits % _pow10(d.scale) == 0
 
 
 def to_safe_int(d: Dec) -> int:
@@ -210,10 +233,26 @@ def to_safe_int(d: Dec) -> int:
 
 def _aligned(a: Dec, b: Dec) -> tuple[int, int, int]:
     s = max(a.scale, b.scale)
-    return a.digits * 10 ** (s - a.scale), b.digits * 10 ** (s - b.scale), s
+    return a.digits * _pow10(s - a.scale), b.digits * _pow10(s - b.scale), s
+
+
+def _fast_aligned(a: Dec, b: Dec) -> tuple[int, int, int] | None:
+    """Align two cached small mantissas without entering the bigint fallback."""
+    if a.int_val is None or b.int_val is None:
+        return None
+    scale = max(a.scale, b.scale)
+    if scale > _FAST_SCALE:
+        return None
+    return (a.int_val * _POW10_SMALL[scale - a.scale],
+            b.int_val * _POW10_SMALL[scale - b.scale], scale)
 
 
 def add(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
+    fast = _fast_aligned(a, b)
+    if fast is not None:
+        A, B, scale = fast
+        total = A + B
+        return _guard(make(total < 0, abs(total), scale), pos)
     A, B, s = _aligned(a, b)
     # Only true addition can grow: a difference is never wider than its
     # operands, and the aligned scale is the larger of two already legal ones.
@@ -229,6 +268,10 @@ def sub(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 
 def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
+    if a.int_val is not None and b.int_val is not None:
+        product = a.int_val * b.int_val
+        return _guard(make(product < 0, abs(product),
+                           a.scale + b.scale), pos)
     return _guard(make(a.neg != b.neg, a.digits * b.digits, a.scale + b.scale), pos)
 
 
@@ -237,6 +280,14 @@ def cmp(a: Dec, b: Dec) -> int:
         return 0
     if a.neg != b.neg:
         return -1 if a.neg else 1
+    fast = _fast_aligned(a, b)
+    if fast is not None:
+        A, B, _ = fast
+        c = 0 if A == B else (-1 if A < B else 1)
+        # The fast lane aligns signed mantissas, so their comparison already
+        # has the correct ordering for negative values.  The bigint fallback
+        # below compares magnitudes and therefore needs the sign inversion.
+        return c
     A, B, _ = _aligned(a, b)
     c = 0 if A == B else (-1 if A < B else 1)
     return -c if a.neg else c
@@ -249,9 +300,9 @@ def div(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     """
     if is_zero(b):
         fail('E_DIV_ZERO', 'division by zero', pos)
-    N = a.digits * 10 ** b.scale
-    D = b.digits * 10 ** a.scale
-    q, r = divmod(N * 10 ** DIV_SCALE, D)
+    N = a.digits * _pow10(b.scale)
+    D = b.digits * _pow10(a.scale)
+    q, r = divmod(N * _POW10_SMALL[DIV_SCALE], D)
     neg = a.neg != b.neg
 
     if r == 0:
@@ -281,8 +332,8 @@ def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 def round(d: Dec, n: int, pos: Pos | None = None) -> Dec:  # noqa: A001 - mirrors round() in the other hosts
     if n >= d.scale:
-        return _guard(make(d.neg, d.digits * 10 ** (n - d.scale), n), pos)
-    p = 10 ** (d.scale - n)
+        return _guard(make(d.neg, d.digits * _pow10(n - d.scale), n), pos)
+    p = _pow10(d.scale - n)
     q, r = divmod(d.digits, p)
     # Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
     return _guard(make(d.neg, q + 1 if 2 * r >= p else q, n), pos)
@@ -291,20 +342,20 @@ def round(d: Dec, n: int, pos: Pos | None = None) -> Dec:  # noqa: A001 - mirror
 def trunc(d: Dec) -> Dec:
     if d.scale == 0:
         return d
-    return make(d.neg, d.digits // (10 ** d.scale), 0)
+    return make(d.neg, d.digits // _pow10(d.scale), 0)
 
 
 def floor(d: Dec) -> Dec:
     if d.scale == 0:
         return d
-    q, r = divmod(d.digits, 10 ** d.scale)
+    q, r = divmod(d.digits, _pow10(d.scale))
     return make(d.neg, q + 1 if d.neg and r != 0 else q, 0)
 
 
 def ceil(d: Dec) -> Dec:
     if d.scale == 0:
         return d
-    q, r = divmod(d.digits, 10 ** d.scale)
+    q, r = divmod(d.digits, _pow10(d.scale))
     return make(d.neg, q + 1 if not d.neg and r != 0 else q, 0)
 
 

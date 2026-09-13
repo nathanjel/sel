@@ -52,6 +52,11 @@ for impl in $IMPLS; do
   step "sql translation ($impl)" impl_sql "$impl"
 done
 
+case " $IMPLS " in
+  *" js "*) step "JS optimizer" node tools/check-js-optimizer.mjs ;;
+  *" php "*) step "PHP optimizer" php tools/check-php-optimizer.php ;;
+esac
+
 # Before the cases, because it is cheaper and because it asks a more basic
 # question: can this host's own API build the map it ships? If it cannot, the
 # map is data rather than code, and a host with no JSON reader has nowhere to

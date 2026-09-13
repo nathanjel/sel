@@ -83,4 +83,22 @@ final class Sql
     {
         return Map::targets();
     }
+
+    /**
+     * Plan the maximal SQL prefix and, when needed, an in-memory continuation.
+     *
+     * @param array<string, Binding>|Bindings $bindings
+     * @param array<string,mixed> $options
+     */
+    public static function planHybrid(Program $program, string $dialect,
+                                      array|Bindings $bindings = [], array $options = []): HybridPlan
+    {
+        return Hybrid::plan($program, $dialect, $bindings, $options);
+    }
+
+    /** @param callable(string,list<Value>,Fragment):mixed $dbRunner */
+    public static function executeHybrid(HybridPlan $plan, callable $dbRunner, $context = null): mixed
+    {
+        return Hybrid::execute($plan, $dbRunner, $context);
+    }
 }

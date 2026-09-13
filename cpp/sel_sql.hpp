@@ -354,6 +354,8 @@ class Bindings {
 
 // --- the public interface ----------------------------------------------------
 
+struct HybridPlan;
+
 // Translation options. One flag today; a struct rather than a bool so that a
 // second one does not change every call site.
 struct Options {
@@ -401,6 +403,32 @@ class Sql {
 
   // Every dialect that may be named in a translate() call.
   static std::vector<std::string> dialects();
+
+  // Split a relational pipeline at the longest SQL-translatable prefix.  A
+  // pure SQL plan has only sql_statement, a pure-memory plan has only
+  // continuation_program, and a hybrid plan has both.  The planner never
+  // invents a database connection; callers decide how to execute the returned
+  // statement and feed its rows to the continuation.
+  static HybridPlan plan_hybrid(const Program& program, const std::string& dialect,
+                                const Bindings& bindings = {},
+                                const Options& options = {});
+
+  using DbRunner = std::function<Value(const std::string&, const std::vector<Value>&)>;
+  static Value execute_hybrid(const HybridPlan& plan, const DbRunner& db_runner,
+                              Value context = Value::none());
+};
+
+struct HybridPlan {
+  std::string dialect;
+  std::optional<Fragment> sql_statement;
+  std::shared_ptr<const Node> sql_prefix_ast;
+  std::shared_ptr<const Node> continuation_ast;
+  std::optional<Program> continuation_program;
+  std::string continuation_source_var = "_INPUT";
+  bool is_hybrid = false;
+  bool pure_sql = false;
+  bool pure_memory = false;
+  std::vector<std::string> source_tables;
 };
 
 }  // namespace sel::sql

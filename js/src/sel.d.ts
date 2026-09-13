@@ -14,6 +14,12 @@ export interface Pos {
   offset: number;
 }
 
+export interface RecordShapeAlias {
+  readonly keys: readonly string[];
+  readonly oldSize: number;
+  readonly addLower: boolean;
+}
+
 export class SelError extends Error {
   readonly code: string;
   readonly line: number;
@@ -25,11 +31,20 @@ export class SelError extends Error {
   toString(): string;
 }
 
+export class RecordShape {
+  readonly keys: readonly string[];
+  readonly keyMap: Map<string, number>;
+  readonly size: number;
+  readonly aliasCache: Map<string, RecordShapeAlias>;
+}
+
 export class Value {
   kind: ValueKind;
   scalar: any;
   children: Map<string, Value> | null;
   isList: boolean;
+  shape: RecordShape | null;
+  storage: Value[] | null;
 
   constructor(kind: ValueKind, scalar: any, isList?: boolean);
 
@@ -53,6 +68,11 @@ export class Value {
   static num(d: string): Value;
   static int(n: number | bigint): Value;
   static list(values: Value[]): Value;
+  static shaped(keys: readonly string[], values: Value[]): Value;
+  static fromEntries(entries: [string, Value][], isList?: boolean): Value;
+  static thunk(fn: () => Value): Value;
+
+  force(): this;
 
   size(): number;
   has(key: string): boolean;
@@ -98,3 +118,30 @@ export class Program {
 export function compile(source: string): Program;
 export function evaluate(source: string, context?: Value | Record<string, any> | null): Value;
 export function functionNames(): string[];
+export function optimizeAst(ast: any): any;
+export function optimizeAstLogical(ast: any, options?: Record<string, any>): any;
+export function optimizeAstInMemory(ast: any): any;
+
+export interface RegisterOptions {
+  lazy?: boolean;
+  binds?: boolean;
+  arityError?: (count: number) => string | null;
+  overwrite?: boolean;
+}
+
+export interface BuiltinSpec extends RegisterOptions {
+  name: string;
+  min: number;
+  max?: number;
+  fn: (args: any, context: any) => Value;
+}
+
+export function register(
+  name: string,
+  min: number,
+  max: number,
+  fn: (args: any, context: any) => Value,
+  options?: RegisterOptions
+): any;
+export function register(spec: BuiltinSpec): any;
+export const registerBuiltin: typeof register;

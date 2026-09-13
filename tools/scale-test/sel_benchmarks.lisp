@@ -39,6 +39,14 @@
 
 (defparameter *dataset-file* (or (uiop:getenv "SEL_DATASET_FILE") "tools/scale-test/dataset-10x.json"))
 
+(defun benchmark-env-integer (name fallback)
+  (or (ignore-errors (parse-integer (or (uiop:getenv name) ""))) fallback))
+
+(defun benchmark-only-p (only id)
+  (or (null only)
+      (some (lambda (item) (string= item id))
+            (uiop:split-string only :separator ","))))
+
 (defun build-schema-bindings (dialect)
   (let* ((categories (sel.sql:binding-relation "categories" "categories"
                        (list (cons "ID" (sel.sql:binding-column "id" "categories" :num))
@@ -189,6 +197,121 @@
              ht))))
     (t nil)))
 
+(defun benchmark-representation-counts (root)
+  (let ((counts (list :shaped-records 0 :fallback-records 0 :lists 0)))
+    (labels ((walk (value)
+               (cond
+                 ((sel::value-is-list value)
+                  (incf (getf counts :lists)))
+                 ((sel::value-shape value)
+                  (incf (getf counts :shaped-records)))
+                 ((plusp (sel:value-size value))
+                  (incf (getf counts :fallback-records))))
+               (let ((storage (sel::value-storage value)))
+                 (cond
+                   ((and storage (or (sel::value-shape value)
+                                     (sel::value-is-list value)))
+                    (dotimes (i (length storage)) (walk (aref storage i))))
+                   (t
+                    (dolist (key (sel:value-keys value))
+                      (walk (sel:value-get value key))))))))
+      (walk root))
+    counts))
+
+(defun benchmark-ms (start stop)
+  (* 1000.0 (/ (- stop start) internal-time-units-per-second)))
+
+(defun benchmark-hash (pairs)
+  (let ((hash (make-hash-table :test #'equal)))
+    (dolist (pair pairs hash)
+      (setf (gethash (car pair) hash) (cdr pair)))))
+
+(defun benchmark-file-sha256 (path)
+  (handler-case
+      (let* ((line (uiop:run-program (list "sha256sum" path) :output :string))
+             (space (position #\Space line)))
+        (when space (subseq line 0 space)))
+    (error () nil)))
+
+(defun benchmark-proc-line (path prefix)
+  (handler-case
+      (when (probe-file path)
+        (with-open-file (in path)
+          (loop for line = (read-line in nil nil)
+                while line
+                when (and (>= (length line) (length prefix))
+                          (string= prefix line :end2 (length prefix)))
+                  return (string-trim '(#\Space #\Tab #\Return) line))))
+    (error () nil)))
+
+(defun benchmark-positive-integer (text)
+  (let ((value (ignore-errors (parse-integer (or text "") :junk-allowed t))))
+    (and value (plusp value) value)))
+
+(defun benchmark-lisp-runtime ()
+  (let* ((cpu-line (benchmark-proc-line "/proc/cpuinfo" "model name"))
+         (cpu (or (machine-version)
+                  (and cpu-line
+                       (let ((colon (position #\: cpu-line)))
+                         (when colon
+                           (string-trim '(#\Space #\Tab)
+                                        (subseq cpu-line (1+ colon))))))
+                  "unknown"))
+         (mem-line (benchmark-proc-line "/proc/meminfo" "MemAvailable:"))
+         (mem-kb (and mem-line
+                      (let ((colon (position #\: mem-line)))
+                        (benchmark-positive-integer
+                         (and colon (subseq mem-line (1+ colon)))))))
+         (logical (benchmark-positive-integer
+                   (handler-case
+                       (uiop:run-program '("getconf" "_NPROCESSORS_ONLN")
+                                         :output :string)
+                     (error () nil)))))
+    (benchmark-hash
+     (list (cons "implementation" (lisp-implementation-type))
+           (cons "version" (lisp-implementation-version))
+           (cons "os" (software-type))
+           (cons "os_version" (software-version))
+           (cons "machine" (machine-type))
+           (cons "cpu" cpu)
+           (cons "logical_cpus" logical)
+           (cons "available_memory_bytes" (and mem-kb (* mem-kb 1024)))
+           (cons "dynamic_space_size" (sb-ext:dynamic-space-size))
+           (cons "optimization_policy" "SBCL defaults; no benchmark override")
+           (cons "gc_policy" "no forced GC in steady-state samples")))))
+
+(defun benchmark-run-once (program context)
+  (let* ((prepared-start (get-internal-real-time))
+         (run-start (get-internal-real-time))
+         (actual (sel:run program context))
+         (run-stop (get-internal-real-time))
+         (materialize-start (get-internal-real-time))
+         (rows (sel-value-to-json-ready actual))
+         (materialize-stop (get-internal-real-time)))
+    (values actual rows
+            (benchmark-ms run-start run-stop)
+            (benchmark-ms materialize-start materialize-stop)
+            (benchmark-ms prepared-start materialize-stop))))
+
+(defun benchmark-add-distances (context)
+  "Add the derived customer field while keeping every regular row shaped."
+  (let ((customers (sel:value-get context "CUSTOMERS")))
+    (when (and customers (plusp (sel:value-size customers)))
+      (let ((rows '()))
+        (dolist (customer (sel:value-values customers))
+          (let* ((lat (read-from-string (sel:as-text (sel:value-get customer "latitude"))))
+                 (lon (read-from-string (sel:as-text (sel:value-get customer "longitude"))))
+                 (dx (- lon 13.404954d0))
+                 (dy (- lat 52.520008d0))
+                 (dist (sqrt (+ (* dx dx) (* dy dy)))))
+            (let* ((keys (append (sel:value-keys customer) (list "dist_berlin")))
+                   (values (append (sel:value-values customer)
+                                   (list (sel:make-num (format nil "~,6F" dist)))))
+                   (shape (sel::get-record-shape keys)))
+              (push (sel::%make-shaped-value shape (coerce values 'simple-vector)) rows))))
+        (sel:value-set context "CUSTOMERS" (sel:make-list-value (nreverse rows))))))
+  context)
+
 (defun run-benchmarks (&optional (out-path "tools/scale-test/benchmark_results.json"))
   (format *error-output* "Loading dataset ~a...~%" *dataset-file*)
   (let* ((data (with-open-file (in *dataset-file*)
@@ -260,5 +383,170 @@
         (yason:encode (nreverse results) out))
       (format *error-output* "Benchmark results successfully written to ~a~%" out-path))))
 
-(run-benchmarks)
-(sb-ext:exit :code 0)
+(defun run-corrected-benchmarks (out-path)
+  (let* ((runs (benchmark-env-integer "SEL_BENCHMARK_RUNS" 1))
+         (warmups (benchmark-env-integer "SEL_BENCHMARK_WARMUPS" 0))
+         (only (uiop:getenv "SEL_BENCHMARK_ONLY"))
+         (timing-mode (or (uiop:getenv "SEL_BENCHMARK_TIMING_MODE") "steady-state"))
+         (reference-path (or (uiop:getenv "SEL_BENCHMARK_REFERENCE")
+                             "tools/scale-test/benchmark_results.json")))
+    (when (or (< runs 1) (< warmups 0))
+      (error "invalid benchmark run counts"))
+    (let* ((data (with-open-file (in *dataset-file*)
+                   (yason:parse in :object-as :alist)))
+           (ctx (sel:make-none))
+           (bindings-pg (build-schema-bindings "postgresql"))
+           (bindings-ma (build-schema-bindings "mariadb"))
+           (cases '())
+           (representation (benchmark-representation-counts ctx)))
+      (dolist (pair data)
+        (sel:value-set ctx (string-upcase (car pair)) (sel:from-native (cdr pair))))
+      ;; Keep the derived field outside the timed evaluator path, exactly as
+      ;; the other host runners do, while retaining the shared row shape.
+      (benchmark-add-distances ctx)
+      (setf representation (benchmark-representation-counts ctx))
+      (let ((context-signature (sel:value-dump ctx)))
+        ;; Compile and plan every scenario before any timing sample.
+        (dolist (sc *scenarios*)
+          (let ((id (getf sc :id)))
+            (when (benchmark-only-p only id)
+              (let* ((compile-start (get-internal-real-time))
+                     (program (sel:compile-source (getf sc :query)))
+                     (compile-stop (get-internal-real-time))
+                     (plan-pg (sel.sql:plan-hybrid program "postgresql" bindings-pg))
+                     (plan-ma (sel.sql:plan-hybrid program "mariadb" bindings-ma))
+                     (sql-pg (when (sel.sql:hybrid-plan-sql-statement plan-pg)
+                               (sel.sql:as-statement (sel.sql:hybrid-plan-sql-statement plan-pg))))
+                     (sql-ma (when (sel.sql:hybrid-plan-sql-statement plan-ma)
+                               (sel.sql:as-statement (sel.sql:hybrid-plan-sql-statement plan-ma)))))
+                (push (list :id id :scenario sc :program program
+                            :plan-pg plan-pg :plan-ma plan-ma
+                            :sql-pg sql-pg :sql-ma sql-ma
+                            :compile-ms (benchmark-ms compile-start compile-stop))
+                      cases)))))
+        (setf cases (nreverse cases))
+        (when (null cases) (error "benchmark only selected no scenarios"))
+        (let ((scenario-results '())
+              (all-passed t)
+              (table-rows (make-hash-table :test #'equal))
+              (total-rows 0))
+          (dolist (pair data)
+            (let ((count (length (cdr pair))))
+              (setf (gethash (string-upcase (car pair)) table-rows) count)
+              (incf total-rows count)))
+          (dolist (case cases)
+            (let* ((id (getf case :id))
+                   (sc (getf case :scenario))
+                   (program (getf case :program))
+                   (failures '())
+                   (samples '())
+                   (validation-rows nil)
+                   (context-unchanged t))
+              (format t "[lisp] ~a validation~%" id)
+              (let ((before (sel:value-dump ctx)))
+                (handler-case
+                    (multiple-value-bind (actual rows run-ms materialize-ms prepared-ms)
+                        (benchmark-run-once program ctx)
+                      (declare (ignore actual run-ms materialize-ms prepared-ms))
+                      ;; The Lisp reference runner is the source of the
+                      ;; oracle; generated rows are retained for the wrapper's
+                      ;; exact cross-lane comparison.
+                      (setf validation-rows rows))
+                  (error (e)
+                    (push (format nil "validation runtime: ~a" e) failures)))
+                (unless (string= before (sel:value-dump ctx))
+                  (setf context-unchanged nil)
+                  (push "prepared context changed during untimed validation" failures)))
+              (dotimes (warmup warmups)
+                (format t "[lisp] ~a warmup ~d/~d~%" id (1+ warmup) warmups)
+                (when (string= timing-mode "gc-controlled") (sb-ext:gc :full t))
+                (handler-case
+                    (benchmark-run-once program ctx)
+                  (error (e) (push (format nil "warmup runtime: ~a" e) failures))))
+              (dotimes (run runs)
+                (format t "[lisp] ~a measured ~d/~d~%" id (1+ run) runs)
+                (when (string= timing-mode "gc-controlled") (sb-ext:gc :full t))
+                (handler-case
+                    (multiple-value-bind (actual rows run-ms materialize-ms prepared-ms)
+                        (benchmark-run-once program ctx)
+                      (declare (ignore actual rows))
+                      (push (benchmark-hash
+                             (list (cons "program_run_ms" run-ms)
+                                   (cons "materialize_ms" materialize-ms)
+                                   (cons "prepared_total_ms" prepared-ms)
+                                   (cons "elapsed_ms" prepared-ms)))
+                            samples)
+                      (unless (string= (sel:value-dump ctx) context-signature)
+                        (push "measured run changed prepared context" failures)))
+                  (error (e) (push (format nil "measured runtime: ~a" e) failures))))
+              (setf samples (nreverse samples))
+              (let* ((passed (and context-unchanged
+                                  (null failures)
+                                  (= (length samples) runs)))
+                     (failure-list (nreverse failures))
+                     (entry (benchmark-hash
+                             (list (cons "id" id)
+                                   (cons "name" (getf sc :name))
+                                   (cons "description" (getf sc :desc))
+                                   (cons "query" (getf sc :query))
+                                   (cons "is_hybrid" (getf sc :hybrid-expected))
+                                   (cons "sql_postgres" (getf case :sql-pg))
+                                   (cons "sql_mariadb" (getf case :sql-ma))
+                                   (cons "has_continuation"
+                                         (not (null (sel.sql:hybrid-plan-continuation-program
+                                                     (getf case :plan-pg)))))
+                                   (cons "in_memory_rows" validation-rows)
+                                   (cons "compile_ms" (getf case :compile-ms))
+                                   (cons "samples" samples)
+                                   (cons "rows" (if (listp validation-rows)
+                                                    (length validation-rows) 0))
+                                   (cons "context_unchanged" context-unchanged)
+                                   (cons "parity"
+                                         (benchmark-hash
+                                          (list (cons "passed" passed)
+                                                (cons "failures" failure-list))))
+                                   (cons "passed" passed)
+                                   (cons "failures" failure-list)))))
+                (unless passed (setf all-passed nil))
+                (push entry scenario-results))))
+          (let ((metadata (benchmark-hash
+                           (list (cons "fixture"
+                                       (benchmark-hash
+                                        (list (cons "path" (namestring (truename *dataset-file*)))
+                                              (cons "sha256" (benchmark-file-sha256 *dataset-file*))
+                                              (cons "table_rows" table-rows)
+                                              (cons "total_source_rows" total-rows)
+                                              (cons "schema_version" 1))))
+                                 (cons "reference_path" reference-path)
+                                 (cons "reference_sha256"
+                                       (benchmark-file-sha256 reference-path))
+                                 (cons "reference_scenario_ids"
+                                       (mapcar (lambda (case) (getf case :id)) cases))
+                                 (cons "runtime" (benchmark-lisp-runtime))
+                                 (cons "representation"
+                                       (benchmark-hash
+                                        (list (cons "shaped_records" (getf representation :shaped-records))
+                                              (cons "fallback_records" (getf representation :fallback-records))
+                                              (cons "lists" (getf representation :lists)))))
+                                 (cons "scenario_order" (mapcar (lambda (case) (getf case :id)) cases))
+                                 (cons "timing_mode" timing-mode)
+                                 (cons "runs" runs)
+                                 (cons "warmups" warmups)))))
+            (with-open-file (out out-path :direction :output :if-exists :supersede)
+              (yason:encode
+               (benchmark-hash
+                (list (cons "schema_version" 2)
+                      (cons "implementation" "lisp")
+                      (cons "metadata" metadata)
+                      (cons "passed" all-passed)
+                      (cons "scenarios" (nreverse scenario-results))))
+               out))
+            (format *error-output* "Corrected Lisp benchmark report written to ~a~%" out-path)
+            (unless all-passed (error "Lisp benchmark parity failed"))))))))
+
+(if (string= (or (uiop:getenv "SEL_BENCHMARK_MODE") "steady-state") "legacy")
+    (progn
+      (run-benchmarks)
+      (sb-ext:exit :code 0))
+    (run-corrected-benchmarks
+     (or (uiop:getenv "SEL_BENCHMARK_OUTPUT") "tools/scale-test/benchmark_results_corrected.json")))

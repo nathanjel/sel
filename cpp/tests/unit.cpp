@@ -80,6 +80,12 @@ void test_decimal() {
   selt::eq(bin("2.50", "2.50", dec_add), std::string("5.00"), "money keeps its cents");
   selt::eq(bin("1.5", "1.5", dec_mul), std::string("2.25"), "* adds the scales");
   selt::eq(bin("0.1", "0.2", dec_add), std::string("0.3"), "no binary floating point here");
+  Dec neg_a, neg_b, neg_c;
+  dec_parse("-2", neg_a);
+  dec_parse("-3", neg_b);
+  dec_parse("-2.5", neg_c);
+  selt::eq(dec_cmp(neg_a, neg_b), 1, "signed mantissa comparison orders negatives");
+  selt::eq(dec_cmp(neg_a, neg_c), 1, "scaled signed mantissa comparison orders negatives");
 
   auto div = [](const char* a, const char* b) {
     Dec x, y;
@@ -237,6 +243,178 @@ void test_evaluation_order() {
   selt::eq(dump_of("TRUE OR (1/0) EQL TRUE"), std::string("TRUE"), "OR short-circuits");
 }
 
+void test_relational_optimizations() {
+  selt::section("relational optimizations");
+
+  const Value shaped = evaluate("RECORD(\"a\", 1, \"b\", 2)");
+  selt::ok(shaped.shape() != nullptr, "RECORD uses a shared shape");
+  selt::eq(shaped.slot(0)->scalar(), std::string("1"), "shaped records expose slot zero");
+  selt::eq(shaped.slot(1)->scalar(), std::string("2"), "shaped records expose slot one");
+  const Value shaped_again = evaluate("RECORD(\"a\", 9, \"b\", 8)");
+  selt::ok(shaped.shape().get() == shaped_again.shape().get(),
+           "equal record layouts reuse one immutable shape");
+  selt::eq(shaped.get("b")->scalar(), std::string("2"),
+           "shaped lookup uses the key map without rebuilding entries");
+
+  const Value alias_source = evaluate("RECORD(\"id\", 1, \"name\", \"Ada\")");
+  const Value alias_one = ensure_row_table_alias(alias_source, "CUSTOMERS");
+  const Value alias_two = ensure_row_table_alias(alias_source, "CUSTOMERS");
+  selt::ok(alias_one.shape() && alias_one.shape().get() == alias_two.shape().get(),
+           "repeated shaped aliases reuse one cached destination layout");
+
+  const Value duplicate = Value::record(
+      {"a", "b", "a"}, {Value::text("1"), Value::text("2"), Value::text("3")});
+  selt::ok(!duplicate.shape(), "duplicate record keys retain fallback representation");
+  selt::ok(duplicate.keys() == std::vector<std::string>({"a", "b"}),
+           "duplicate record keys keep first insertion positions");
+  selt::eq(duplicate.get("a")->as_text(), std::string("3"),
+           "duplicate record keys update the first slot");
+
+  const Value flat_list = Value::list({Value::integer(4), Value::integer(5)});
+  selt::eq(flat_list.storage().size(), 2u, "lists retain flat vector storage");
+  selt::eq(flat_list.get("2")->scalar(), std::string("5"),
+           "list lookup uses a parsed storage slot");
+  selt::eq(flat_list.slot(0)->scalar(), std::string("4"), "lists expose slot zero");
+
+  Value join_shape_context = Value::none();
+  join_shape_context.set(
+      "LEFT", Value::list({evaluate("RECORD(\"id\", 1)"), evaluate("RECORD(\"id\", 2)")}));
+  join_shape_context.set(
+      "RIGHT", Value::list({evaluate("RECORD(\"id\", 1)"), evaluate("RECORD(\"id\", 2)")}));
+  const Value joined_rows = evaluate(
+      "LINK(LEFT, RIGHT, _1[\"id\"] == _2[\"id\"])", join_shape_context);
+  const Value* joined_one = joined_rows.get("1");
+  const Value* joined_two = joined_rows.get("2");
+  selt::ok(joined_one && joined_two && joined_one->shape() &&
+               joined_one->shape().get() == joined_two->shape().get(),
+           "join rows reuse the precompiled output shape");
+
+  const std::string wide_integer(40, '9');
+  selt::eq(Value::num(wide_integer).as_text(), wide_integer,
+           "wide decimals bypass the int128 small-value probe safely");
+
+  const Value lazy = evaluate("LAZY_RECORD(\"a\", 1 + 2)");
+  selt::eq(lazy.get("a")->as_text(), std::string("3"), "LAZY_RECORD forces a field on access");
+
+  selt::eq(
+      dump_of("LIST(RECORD(\"x\", 1), RECORD(\"x\", 5), RECORD(\"x\", 3), "
+              "RECORD(\"x\", 4), RECORD(\"x\", 2)) .> TOP_BY(_[\"x\"], \"DESC\", 3)"),
+      std::string("-{\"1\"=-{\"x\"=t\"5\"}, \"2\"=-{\"x\"=t\"4\"}, \"3\"=-{\"x\"=t\"3\"}}"),
+      "TOP_BY keeps the bounded top set in final order");
+
+  Value join_context = Value::none();
+  join_context.set("A", Value::list({evaluate("RECORD(\"id\", 1)")}));
+  join_context.set("B", Value::list({evaluate("RECORD(\"id\", 2)")}));
+  const Value joined =
+      evaluate("LINK_LEFT(A, B, _1[\"id\"] == _2[\"id\"])", join_context);
+  const Value* right = joined.get("1")->get("_2");
+  selt::ok(right && right->get("id") && right->get("id")->is_null(),
+           "LINK_LEFT materializes null right fields");
+
+  Value mixed_shape_context = Value::none();
+  mixed_shape_context.set(
+      "LEFT", Value::list({evaluate("RECORD(\"id\", 1, \"x\", \"first\")"),
+                           evaluate("RECORD(\"id\", 2, \"z\", \"second\")")}));
+  mixed_shape_context.set(
+      "RIGHT", Value::list({evaluate("RECORD(\"id\", 1)"),
+                            evaluate("RECORD(\"id\", 2)")}));
+  const Value mixed_join =
+      evaluate("LINK(LEFT, RIGHT, _1[\"id\"] == _2[\"id\"])", mixed_shape_context);
+  const Value* missing_promoted = mixed_join.get("2")->get("x");
+  selt::ok(missing_promoted && missing_promoted->is_null(),
+           "mixed-shape joins use key lookup instead of a stale sample slot");
+
+  Value sort_context = Value::none();
+  sort_context.set(
+      "A", Value::list({evaluate("RECORD(\"k\", \"b\", \"n\", RECORD(\"x\", 1))"),
+                        evaluate("RECORD(\"k\", \"a\", \"n\", RECORD(\"x\", 2))")}));
+  evaluate("B = SORT(A); B[1][\"n\"][\"x\"] = 9", sort_context);
+  selt::eq(sort_context.get("A")->get("1")->get("n")->get("x")->as_text(),
+           std::string("1"), "plain SORT keeps nested source values detached");
+
+  const auto assert_collection_copy_is_detached = [](const std::string& producer,
+                                                      const std::string& label) {
+    Value context = Value::none();
+    context.set("A", Value::list({evaluate("RECORD(\"n\", RECORD(\"x\", 1))")}));
+    evaluate("B = " + producer + "; B[1][\"n\"][\"x\"] = 9", context);
+    selt::eq(context.get("A")->get("1")->get("n")->get("x")->as_text(),
+             std::string("1"), label);
+  };
+  assert_collection_copy_is_detached("A .> TAKE(1)",
+                                     "TAKE keeps nested source values detached");
+  assert_collection_copy_is_detached("A .> DROP(0)",
+                                     "DROP keeps nested source values detached");
+  assert_collection_copy_is_detached("MAP(A, _)",
+                                     "MAP keeps nested source values detached");
+  assert_collection_copy_is_detached("FILTER(A, TRUE)",
+                                     "FILTER keeps nested source values detached");
+
+  Value assignment_context = Value::none();
+  assignment_context.set(
+      "A", Value::list({evaluate("RECORD(\"n\", RECORD(\"x\", 1))")}));
+  evaluate("B = A; B[1][\"n\"][\"x\"] = 9", assignment_context);
+  selt::eq(assignment_context.get("A")->get("1")->get("n")->get("x")->as_text(),
+           std::string("1"), "assignment keeps nested source values detached");
+
+  const NodePtr folded = optimize_ast_logical(compile("1 + 2").ast());
+  selt::ok(folded->t == NT::Num && folded->s == "3", "optimizer folds literal arithmetic");
+
+  const NodePtr pipeline = optimize_ast_logical(compile(
+      "A .> FILTER(_[\"x\"] > 0) .> FILTER(_[\"y\"] > 0) .> "
+      "SORT_BY(_[\"x\"], \"DESC\") .> TAKE(2)").ast());
+  std::vector<NodePtr> steps;
+  NodePtr cursor = pipeline;
+  while (cursor && cursor->t == NT::Call && !cursor->items.empty()) {
+    steps.push_back(cursor);
+    cursor = cursor->items.front();
+  }
+  std::reverse(steps.begin(), steps.end());
+  selt::ok(steps.size() == 2 && steps[0]->s == "FILTER" && steps[1]->s == "TOP_BY",
+           "optimizer fuses filters and sort plus take");
+
+  const NodePtr physical = optimize_ast_in_memory(compile(
+      "A .> MAP(RECORD(\"x\", _[\"x\"], \"y\", _[\"y\"]))").ast());
+  selt::ok(physical->t == NT::Call && physical->s == "MAP" &&
+               physical->items.size() == 2 &&
+               physical->items[1]->t == NT::Call &&
+               physical->items[1]->s == "LAZY_RECORD",
+           "physical optimizer converts multi-field MAP records to LAZY_RECORD");
+
+  auto optimized_steps = [](const std::string& source) {
+    const NodePtr ast = optimize_ast_in_memory(compile(source).ast());
+    std::vector<NodePtr> out;
+    NodePtr cursor = ast;
+    while (cursor && cursor->t == NT::Call && !cursor->items.empty()) {
+      out.push_back(cursor);
+      cursor = cursor->items.front();
+    }
+    std::reverse(out.begin(), out.end());
+    return out;
+  };
+
+  const auto fixed_point = optimized_steps(
+      "ORDERS .> FILTER(_[\"status\"] $== \"ACTIVE\")"
+      " .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
+      " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\")");
+  selt::ok(fixed_point.size() == 2 && fixed_point[0]->s == "FILTER" &&
+               fixed_point[1]->s == "LINK",
+           "join pushdown returns to the logical fixed point");
+
+  const auto external_root = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
+      " .> FILTER(FOO[\"orders\"][\"status\"] $== \"ACTIVE\")");
+  selt::ok(external_root.size() == 2 && external_root[0]->s == "LINK" &&
+               external_root[1]->s == "FILTER",
+           "external qualified root is not pushed through LINK");
+
+  const auto group_key = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
+      " .> FILTER(_[\"orders\"][\"status\"] $== _K)");
+  selt::ok(group_key.size() == 2 && group_key[0]->s == "LINK" &&
+               group_key[1]->s == "FILTER",
+           "_K is an unknown join dependency");
+}
+
 }  // namespace
 
 int main() {
@@ -245,5 +423,6 @@ int main() {
   test_value();
   test_host_api();
   test_evaluation_order();
+  test_relational_optimizations();
   return selt::report("cpp unit");
 }

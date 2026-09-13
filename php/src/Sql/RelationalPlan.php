@@ -8,6 +8,36 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+final class JoinPlan
+{
+    /** Public name used by the portable plan contract. */
+    public string $kind = 'INNER';
+    public string $type = 'INNER';
+    public string $sourceName = '';
+    /** @var array<string,mixed> */
+    public array $sourceRelation = [];
+    /** @var string|array{raw:string} */
+    public string|array $sourceTable = '';
+    public ?string $sourceAlias = null;
+    public string $leftBinder = '_1';
+    public string $rightBinder = '_2';
+    /** @var array<string,mixed>|null */
+    public ?array $onPred = null;
+    /** @var array{line:int,col:int,offset:int}|null */
+    public ?array $pos = null;
+
+    public function getKind(): string
+    {
+        return $this->kind;
+    }
+
+    public function setKind(string $value): void
+    {
+        $this->kind = $value;
+        $this->type = $value;
+    }
+}
+
 final class RelationalPlan
 {
     public string $sourceName = '';
@@ -16,7 +46,10 @@ final class RelationalPlan
     /** @var string|array{raw:string} */
     public string|array $sourceTable = '';
     public ?string $sourceAlias = null;
+    public ?RelationalPlan $sourceSubquery = null;
     public ?string $correlate = null;
+    /** @var list<JoinPlan> */
+    public array $joins = [];
     public bool $distinct = false;
 
     /**

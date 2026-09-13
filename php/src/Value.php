@@ -15,6 +15,110 @@ declare(strict_types=1);
 
 namespace Sel;
 
+final class RecordShape
+{
+    /** @var array<string,self> */
+    private static array $cache = [];
+    private static bool $instrumentation = false;
+    /** @var array<string,int> */
+    private static array $stats = [
+        'intern_calls' => 0,
+        'intern_hits' => 0,
+        'new_shapes' => 0,
+        'signature_ns' => 0,
+        'alias_calls' => 0,
+        'alias_hits' => 0,
+        'alias_builds' => 0,
+    ];
+
+    /** @var list<string> */
+    public readonly array $keys;
+    /** @var array<string,int> */
+    public readonly array $keyMap;
+    public readonly int $size;
+    /** @var array<string,array{shape:self,oldSize:int,addLower:bool}> */
+    public array $aliasCache = [];
+
+    /** @param list<string> $keys */
+    public static function intern(array $keys): self
+    {
+        $started = self::$instrumentation ? hrtime(true) : 0;
+        if (self::$instrumentation) self::$stats['intern_calls']++;
+        if (!array_is_list($keys)) {
+            $keys = array_values($keys);
+        }
+        // serialize preserves order, key type, and embedded NUL bytes. Unlike a
+        // delimiter join it cannot merge two different SEL key sequences.
+        $signature = serialize($keys);
+        if (self::$instrumentation) self::$stats['signature_ns'] += hrtime(true) - $started;
+        if (isset(self::$cache[$signature])) {
+            if (self::$instrumentation) self::$stats['intern_hits']++;
+            return self::$cache[$signature];
+        }
+        if (self::$instrumentation) self::$stats['new_shapes']++;
+        return self::$cache[$signature] = new self($keys);
+    }
+
+    public static function enableInstrumentation(bool $enabled): void
+    {
+        self::$instrumentation = $enabled;
+    }
+
+    public static function resetStats(): void
+    {
+        foreach (self::$stats as $key => $_) self::$stats[$key] = 0;
+    }
+
+    /** @return array<string,int> */
+    public static function stats(): array
+    {
+        $stats = self::$stats;
+        $stats['cache_size'] = count(self::$cache);
+        $aliases = 0;
+        foreach (self::$cache as $shape) $aliases += count($shape->aliasCache);
+        $stats['alias_cache_entries'] = $aliases;
+        return $stats;
+    }
+
+    /** @param list<string> $keys */
+    public function __construct(array $keys)
+    {
+        $this->keys = array_is_list($keys) ? $keys : array_values($keys);
+        $keyMap = [];
+        foreach ($this->keys as $i => $key) {
+            $keyMap[$key] = $i;
+        }
+        $this->keyMap = $keyMap;
+        $this->size = count($this->keys);
+    }
+
+    /** @return array{shape:self,oldSize:int,addLower:bool} */
+    public function alias(string $tableName): array
+    {
+        if (self::$instrumentation) self::$stats['alias_calls']++;
+        $cached = $this->aliasCache[$tableName] ?? null;
+        if ($cached !== null) {
+            if (self::$instrumentation) self::$stats['alias_hits']++;
+            return $cached;
+        }
+        $lower = strtolower($tableName);
+        $addLower = $lower !== $tableName && !array_key_exists($lower, $this->keyMap);
+        $keys = $this->keys;
+        $keys[] = $tableName;
+        if ($addLower) {
+            $keys[] = $lower;
+        }
+        $cached = [
+            'shape' => self::intern($keys),
+            'oldSize' => $this->size,
+            'addLower' => $addLower,
+        ];
+        $this->aliasCache[$tableName] = $cached;
+        if (self::$instrumentation) self::$stats['alias_builds']++;
+        return $cached;
+    }
+}
+
 final class Value
 {
     public const NONE = 'NONE';
@@ -28,6 +132,13 @@ final class Value
     /** @var array<array-key, Value> */
     public array $children = [];
     public bool $isList = false;
+    public ?RecordShape $shape = null;
+    /** @var list<Value>|null */
+    public ?array $storage = null;
+    /** @var (callable():Value)|null */
+    private $thunk = null;
+    /** @var array{neg:bool,digits:string,scale:int}|null */
+    private ?array $decVal = null;
 
     /** @param string|bool|null $scalar */
     private function __construct(string $kind, $scalar, bool $isList = false)
@@ -73,18 +184,24 @@ final class Value
     public static function num($d): self
     {
         if (!is_string($d)) {
-            return new self(self::TEXT, Dec::format($d));
+            $v = new self(self::TEXT, Dec::format($d));
+            $v->decVal = $d;
+            return $v;
         }
         $parsed = Dec::parse($d);
         if ($parsed === null) {
             fail('E_NOT_NUM', 'not a number: ' . json_encode($d));
         }
-        return new self(self::TEXT, Dec::format($parsed));
+        $v = new self(self::TEXT, Dec::format($parsed));
+        $v->decVal = $parsed;
+        return $v;
     }
 
     public static function int(int $n): self
     {
-        return new self(self::TEXT, (string) $n);
+        $v = new self(self::TEXT, (string) $n);
+        $v->decVal = Dec::fromInt($n);
+        return $v;
     }
 
     /** Builds a list keyed "1".."n". Used by `,` and by list-returning built-ins. */
@@ -92,11 +209,175 @@ final class Value
     public static function list(array $values): self
     {
         $v = new self(self::NONE, null, true);
-        $i = 0;
-        foreach ($values as $x) {
-            $v->set((string) (++$i), $x);
+        // Keep PHP's packed representation when the caller already supplied a
+        // list. array_values() would eagerly duplicate a large COW array.
+        $v->storage = array_is_list($values) ? $values : array_values($values);
+        return $v;
+    }
+
+    /** @param list<string> $keys @param list<Value> $values */
+    public static function shaped(array $keys, array $values): self
+    {
+        if ($keys === []) {
+            return self::none();
+        }
+        if (count($keys) !== count($values)) {
+            throw new \InvalidArgumentException('record shape and storage sizes differ');
+        }
+        $shape = RecordShape::intern($keys);
+        return self::fromShape($shape, $values);
+    }
+
+    /**
+     * Reuse a previously interned shape without rebuilding its key map. The
+     * storage is still a separate packed array, as SEL values are mutable and
+     * assignment must not mutate a sibling value through PHP COW.
+     *
+     * @param list<Value> $values
+     */
+    public static function fromShape(RecordShape $shape, array $values): self
+    {
+        if (count($values) !== $shape->size) {
+            throw new \InvalidArgumentException('record shape and storage sizes differ');
+        }
+        $v = new self(self::NONE, null);
+        $v->shape = $shape;
+        $v->storage = array_is_list($values) ? $values : array_values($values);
+        return $v;
+    }
+
+    /**
+     * Build a record from parallel packed arrays. Keeping keys and values
+     * separate avoids allocating one two-element PHP array per field in the
+     * common RECORD path.
+     *
+     * @param list<string> $keys
+     * @param list<Value> $values
+     */
+    public static function record(array $keys, array $values): self
+    {
+        if ($keys === []) {
+            return self::none();
+        }
+        if (count($keys) !== count($values)) {
+            throw new \InvalidArgumentException('record keys and values sizes differ');
+        }
+        $seen = [];
+        $unique = true;
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $seen)) {
+                $unique = false;
+                break;
+            }
+            $seen[$key] = true;
+        }
+        if ($unique) {
+            return self::shaped($keys, $values);
+        }
+        $v = self::none();
+        foreach ($keys as $i => $key) {
+            $v->set($key, $values[$i]);
         }
         return $v;
+    }
+
+    /** @param list<array{0:string,1:Value}> $entries */
+    public static function fromEntries(array $entries, bool $isList = false): self
+    {
+        if ($isList) {
+            $values = [];
+            foreach ($entries as $entry) {
+                $values[] = $entry[1];
+            }
+            return self::list($values);
+        }
+        $keys = [];
+        $values = [];
+        foreach ($entries as $entry) {
+            $key = (string) $entry[0];
+            $keys[] = $key;
+            $values[] = $entry[1];
+        }
+        return self::record($keys, $values);
+    }
+
+    /**
+     * Convert a list of native rows using one prepared shape while the rows
+     * remain homogeneous. This is an internal ingestion path: it validates
+     * the first record and every subsequent key sequence, and falls back to
+     * the ordinary recursive converter as soon as the input stops matching.
+     *
+     * @param list<mixed> $rows
+     */
+    public static function fromNativeRows(array $rows): self
+    {
+        if ($rows === []) {
+            return self::list([]);
+        }
+        $out = [];
+        $shape = null;
+        $shapeKeys = null;
+        $homogeneous = true;
+        foreach ($rows as $row) {
+            if ($homogeneous && $shape !== null) {
+                if (is_array($row) && !array_is_list($row)
+                    && self::nativeKeysMatch($row, $shapeKeys)) {
+                    $values = [];
+                    foreach ($row as $item) {
+                        $values[] = self::fromNativeAt($item, 3);
+                    }
+                    $out[] = self::fromShape($shape, $values);
+                    continue;
+                }
+                // A heterogeneous row is deliberately converted generically;
+                // do not trust the prepared shape for any later rows.
+                $homogeneous = false;
+            }
+            if ($homogeneous && $shape === null) {
+                $candidate = self::nativeRecordKeys($row);
+                if ($candidate !== null) {
+                    $shapeKeys = $candidate;
+                    $shape = RecordShape::intern($candidate);
+                    $values = [];
+                    foreach ($row as $item) {
+                        $values[] = self::fromNativeAt($item, 3);
+                    }
+                    $out[] = self::fromShape($shape, $values);
+                    continue;
+                }
+                $homogeneous = false;
+            }
+            $out[] = self::fromNativeAt($row, 2);
+        }
+        return self::list($out);
+    }
+
+    /** @param callable():Value $fn */
+    public static function thunk(callable $fn): self
+    {
+        $v = new self(self::NONE, null);
+        $v->thunk = $fn;
+        return $v;
+    }
+
+    public function force(): self
+    {
+        if ($this->thunk === null) {
+            return $this;
+        }
+        $fn = $this->thunk;
+        $real = $fn();
+        $real->force();
+        // Commit only after successful evaluation so a caught exception can retry.
+        $this->thunk = null;
+        $this->kind = $real->kind;
+        $this->scalar = $real->scalar;
+        $this->children = $real->children;
+        $this->isList = $real->isList;
+        $this->shape = $real->shape;
+        $this->storage = $real->storage;
+        $this->decVal = $real->decVal;
+        return $this;
     }
 
     // --- children -----------------------------------------------------------
@@ -108,11 +389,13 @@ final class Value
      */
     public function isNone(): bool
     {
+        $this->force();
         return $this->kind === self::NONE;
     }
 
     public function isNull(): bool
     {
+        $this->force();
         return $this->kind === self::NONE && $this->size() === 0 && !$this->isList;
     }
 
@@ -132,52 +415,100 @@ final class Value
 
     public function isText(): bool
     {
+        $this->force();
         return $this->kind === self::TEXT;
     }
 
     public function isBin(): bool
     {
+        $this->force();
         return $this->kind === self::BIN;
     }
 
     public function isBool(): bool
     {
+        $this->force();
         return $this->kind === self::BOOL;
     }
 
     public function size(): int
     {
-        return count($this->children);
+        $this->force();
+        return $this->storage !== null ? count($this->storage) : count($this->children);
     }
 
     public function has(string $key): bool
     {
+        $this->force();
+        if ($this->shape !== null) {
+            return array_key_exists($key, $this->shape->keyMap);
+        }
+        if ($this->isList && $this->storage !== null) {
+            $index = self::listIndex($key, count($this->storage));
+            return $index >= 0;
+        }
         return array_key_exists($key, $this->children);
     }
 
     public function get(string $key): ?Value
     {
-        return $this->children[$key] ?? null;
+        $this->force();
+        if ($this->shape !== null) {
+            $index = $this->shape->keyMap[$key] ?? null;
+            return $index === null ? null : $this->storage[$index]->force();
+        }
+        if ($this->isList && $this->storage !== null) {
+            $index = self::listIndex($key, count($this->storage));
+            return $index < 0 ? null : $this->storage[$index]->force();
+        }
+        if (!array_key_exists($key, $this->children)) {
+            return null;
+        }
+        return $this->children[$key]->force();
     }
 
     /** @return list<string> */
     public function keys(): array
     {
+        $this->force();
+        if ($this->shape !== null) {
+            return $this->shape->keys;
+        }
+        if ($this->isList && $this->storage !== null) {
+            return array_map(static fn (int $i): string => (string) ($i + 1), array_keys($this->storage));
+        }
         return array_map('strval', array_keys($this->children));
     }
 
     /** @return list<Value> */
     public function values(): array
     {
-        return array_values($this->children);
+        $this->force();
+        if ($this->storage !== null) {
+            return array_map(static fn (Value $value): Value => $value->force(), $this->storage);
+        }
+        return array_map(static fn (Value $value): Value => $value->force(), array_values($this->children));
     }
 
     /** @return list<array{0:string,1:Value}> */
     public function entries(): array
     {
+        $this->force();
         $out = [];
+        if ($this->shape !== null) {
+            foreach ($this->shape->keys as $i => $key) {
+                $out[] = [$key, $this->storage[$i]->force()];
+            }
+            return $out;
+        }
+        if ($this->isList && $this->storage !== null) {
+            foreach ($this->storage as $i => $value) {
+                $out[] = [(string) ($i + 1), $value->force()];
+            }
+            return $out;
+        }
         foreach ($this->children as $k => $v) {
-            $out[] = [(string) $k, $v];
+            $out[] = [(string) $k, $v->force()];
         }
         return $out;
     }
@@ -185,8 +516,42 @@ final class Value
     /** Re-assigning an existing key keeps its original position. */
     public function set(string $key, Value $value): self
     {
+        $this->force();
+        if ($this->shape !== null) {
+            $index = $this->shape->keyMap[$key] ?? null;
+            if ($index !== null) {
+                $this->storage[$index] = $value;
+                return $this;
+            }
+            $this->children = [];
+            foreach ($this->entries() as [$existingKey, $existingValue]) {
+                $this->children[$existingKey] = $existingValue;
+            }
+            $this->shape = null;
+            $this->storage = null;
+        } elseif ($this->isList && $this->storage !== null) {
+            $index = self::listIndex($key, count($this->storage));
+            if ($index >= 0) {
+                $this->storage[$index] = $value;
+                return $this;
+            }
+            $this->children = [];
+            foreach ($this->entries() as [$existingKey, $existingValue]) {
+                $this->children[$existingKey] = $existingValue;
+            }
+            $this->storage = null;
+        }
         $this->children[$key] = $value;
         return $this;
+    }
+
+    private static function listIndex(string $key, int $length): int
+    {
+        if (!preg_match('/^[1-9][0-9]{0,8}$/D', $key)) {
+            return -1;
+        }
+        $index = (int) $key - 1;
+        return $index >= 0 && $index < $length ? $index : -1;
     }
 
     // --- scalar context (§3.2) ----------------------------------------------
@@ -194,19 +559,16 @@ final class Value
     /** @param array{line:int,col:int,offset:int}|null $pos */
     public function scalarSource(?array $pos = null): Value
     {
-        $v = $this;
+        $v = $this->force();
         $guard = 0;
         while ($v->kind === self::NONE) {
             if ($v->isNull()) {
                 fail('E_NULL', 'value is NULL', $pos);
             }
-            if (!$v->children) {
+            if ($v->size() === 0) {
                 fail('E_NO_SCALAR', 'value has no scalar and no children', $pos);
             }
-            foreach ($v->children as $first) {
-                $v = $first;
-                break;
-            }
+            $v = $v->values()[0]->force();
             if (++$guard > 1000) {
                 fail('E_DEPTH', 'scalar context nested too deeply', $pos);
             }
@@ -258,17 +620,22 @@ final class Value
         if ($v->kind !== self::TEXT) {
             fail('E_NOT_NUM', 'expected a number, got ' . strtolower($v->kind), $pos);
         }
+        if ($v->decVal !== null) {
+            return $v->decVal;
+        }
         $d = Dec::parse((string) $v->scalar, $pos);
         if ($d === null) {
             fail('E_NOT_NUM', 'not a number: ' . json_encode($v->scalar), $pos);
         }
+        $v->decVal = $d;
         return $d;
     }
 
     /** Non-throwing probe for ISNUM. */
     public function looksNumeric(): bool
     {
-        if ($this->kind === self::NONE && !$this->children) {
+        $this->force();
+        if ($this->kind === self::NONE && $this->size() === 0) {
             return false;
         }
         try {
@@ -277,7 +644,7 @@ final class Value
             // The probe answers no rather than raising, so ISNUM is true exactly
             // when the value can be used as a number — before the cap it said
             // TRUE for a 2 000 000-digit text that then failed on first use.
-            return $v->kind === self::TEXT && Dec::parse((string) $v->scalar) !== null;
+            return $v->kind === self::TEXT && $v->asDecimal() !== null;
         } catch (SelError) {
             return false;
         }
@@ -314,7 +681,23 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $pos);
         }
+        $this->force();
+        if ($this->shape !== null) {
+            $values = [];
+            foreach ($this->storage as $value) {
+                $values[] = $value->copyAt($depth + 1, $pos);
+            }
+            return self::fromShape($this->shape, $values);
+        }
+        if ($this->isList && $this->storage !== null) {
+            $values = [];
+            foreach ($this->storage as $value) {
+                $values[] = $value->copyAt($depth + 1, $pos);
+            }
+            return self::list($values);
+        }
         $out = new self($this->kind, $this->scalar, $this->isList);
+        $out->decVal = $this->decVal;
         foreach ($this->children as $k => $v) {
             $out->children[$k] = $v->copyAt($depth + 1, $pos);
         }
@@ -329,12 +712,60 @@ final class Value
         return $this->eqlAt($other, 1, $pos);
     }
 
+    public function structuralHash(): string
+    {
+        $hash = hash_init('sha256');
+        $this->updateStructuralHash($hash, 1);
+        return hash_final($hash);
+    }
+
+    /** @param mixed $hash */
+    private function updateStructuralHash($hash, int $depth): void
+    {
+        if ($depth > MAX_DEPTH) {
+            fail('E_DEPTH', 'value nested too deeply', null);
+        }
+        $this->force();
+        $scalar = match ($this->kind) {
+            self::NONE => '',
+            self::TEXT, self::BIN => (string) $this->scalar,
+            self::BOOL => $this->scalar ? '1' : '0',
+        };
+        hash_update($hash, $this->kind . ':' . strlen($scalar) . ':' . $scalar . ';');
+        hash_update($hash, $this->isList ? 'L;' : 'R;');
+        if ($this->shape !== null) {
+            foreach ($this->shape->keys as $i => $key) {
+                hash_update($hash, strlen($key) . ':' . $key . '=');
+                $this->storage[$i]->updateStructuralHash($hash, $depth + 1);
+                hash_update($hash, ';');
+            }
+            return;
+        }
+        if ($this->isList && $this->storage !== null) {
+            foreach ($this->storage as $i => $value) {
+                $key = (string) ($i + 1);
+                hash_update($hash, strlen($key) . ':' . $key . '=');
+                $value->updateStructuralHash($hash, $depth + 1);
+                hash_update($hash, ';');
+            }
+            return;
+        }
+        foreach ($this->children as $key => $value) {
+            $key = (string) $key;
+            hash_update($hash, strlen($key) . ':' . $key . '=');
+            $value->updateStructuralHash($hash, $depth + 1);
+            hash_update($hash, ';');
+        }
+    }
+
     /** @param array<string,mixed>|null $pos */
     private function eqlAt(Value $other, int $depth, ?array $pos): bool
     {
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $pos);
         }
+        $this->force();
+        $other->force();
         if ($this->kind !== $other->kind) {
             return false;
         }
@@ -343,6 +774,18 @@ final class Value
         }
         if ($this->size() !== $other->size()) {
             return false;
+        }
+        if ($this->shape !== null && $other->shape !== null && $this->shape === $other->shape) {
+            foreach ($this->storage as $i => $value) {
+                if (!$value->eqlAt($other->storage[$i], $depth + 1, $pos)) return false;
+            }
+            return true;
+        }
+        if ($this->isList && $other->isList && $this->storage !== null && $other->storage !== null) {
+            foreach ($this->storage as $i => $value) {
+                if (!$value->eqlAt($other->storage[$i], $depth + 1, $pos)) return false;
+            }
+            return true;
         }
         $a = $this->entries();
         $b = $other->entries();
@@ -369,13 +812,14 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', null);
         }
+        $this->force();
         $s = match ($this->kind) {
             self::NONE => '-',
             self::TEXT => 't' . self::quoteDump((string) $this->scalar),
             self::BIN => 'b' . bin2hex((string) $this->scalar),
             self::BOOL => $this->scalar ? 'TRUE' : 'FALSE',
         };
-        if (!$this->children) {
+        if ($this->size() === 0) {
             return $s;
         }
         $parts = [];
@@ -439,25 +883,59 @@ final class Value
             return self::text($x);
         }
         if (is_array($x)) {
-            $v = self::none();
             // A packed 0-based array is a list, and SEL lists are keyed from 1 —
             // that is what `,` produces and what the JS host produces for a JS
             // array. Without the renumbering, ITEMS[1] would mean the first line
             // on the frontend and the second on the backend.
             if (array_is_list($x)) {
-                $v->isList = true;
-                $i = 0;
-                foreach ($x as $item) {
-                    $v->set((string) (++$i), self::fromNativeAt($item, $depth + 1));
-                }
-                return $v;
+                return self::list(array_map(
+                    static fn ($item): Value => self::fromNativeAt($item, $depth + 1),
+                    $x,
+                ));
             }
+            $keys = [];
+            $values = [];
             foreach ($x as $k => $item) {
-                $v->set((string) $k, self::fromNativeAt($item, $depth + 1));
+                $keys[] = (string) $k;
+                $values[] = self::fromNativeAt($item, $depth + 1);
             }
-            return $v;
+            return self::record($keys, $values);
         }
         throw new \InvalidArgumentException('cannot convert ' . gettype($x) . ' to SEL');
+    }
+
+    /** @param mixed $row @return list<string>|null */
+    private static function nativeRecordKeys($row): ?array
+    {
+        if (!is_array($row) || array_is_list($row)) {
+            return null;
+        }
+        $keys = [];
+        $seen = [];
+        foreach ($row as $key => $_) {
+            $key = (string) $key;
+            if (array_key_exists($key, $seen)) {
+                return null;
+            }
+            $seen[$key] = true;
+            $keys[] = $key;
+        }
+        return $keys === [] ? null : $keys;
+    }
+
+    /** @param array<mixed> $row @param list<string>|null $keys */
+    private static function nativeKeysMatch(array $row, ?array $keys): bool
+    {
+        if ($keys === null || count($row) !== count($keys)) {
+            return false;
+        }
+        $i = 0;
+        foreach ($row as $key => $_) {
+            if ((string) $key !== $keys[$i++]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** @return mixed */
@@ -472,16 +950,31 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', null);
         }
+        $this->force();
         $scalar = $this->kind === self::NONE ? null : $this->scalar;
-        if (!$this->children) {
+        if ($this->size() === 0) {
             return $scalar;
+        }
+        if ($this->isList) {
+            $out = [];
+            $children = $this->storage ?? array_values($this->children);
+            foreach ($children as $value) {
+                $out[] = $value->toNativeAt($depth + 1);
+            }
+            return $out;
         }
         $out = [];
         if ($scalar !== null) {
             $out['_'] = $scalar;
         }
-        foreach ($this->entries() as [$k, $v]) {
-            $out[$k] = $v->toNativeAt($depth + 1);
+        if ($this->shape !== null && $this->storage !== null) {
+            foreach ($this->shape->keys as $i => $key) {
+                $out[$key] = $this->storage[$i]->toNativeAt($depth + 1);
+            }
+            return $out;
+        }
+        foreach ($this->children as $key => $value) {
+            $out[$key] = $value->toNativeAt($depth + 1);
         }
         return $out;
     }

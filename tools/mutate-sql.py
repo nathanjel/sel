@@ -88,6 +88,58 @@ CHECKS = [
 ]
 NEEDS_DB = {'oracle coverage', 'oracle expressions', 'oracle rows'}
 
+# Keep the mutation runner aligned with tools/impls.sh.  The main check driver
+# has always supported SEL_IMPLS, but this script historically ran every host's
+# SQL checks regardless of that selection and could therefore start a C++ build
+# during a JS-only validation.  Shared dialect-map mutations are relevant to
+# every selected SQL host; host-local mutations are only relevant when that host
+# is in scope.
+CHECK_IMPLS = {
+    'sqlt': {'php'},
+    'sqlt (python)': {'python'},
+    'sqlt (js)': {'js'},
+    'sqlt (lisp)': {'lisp'},
+    'sqlt (lisp, base 16)': {'lisp'},
+    'lisp unit': {'lisp'},
+    'sql map replay': {'php'},
+    'sql map replay (js)': {'js'},
+    'sql map replay (python)': {'python'},
+    'sql map replay (lisp)': {'lisp'},
+    'sqldoc': {'php'},
+    'oracle coverage': {'php'},
+    'oracle expressions': {'php'},
+    'sqlt (cpp)': {'cpp'},
+    'sql map replay (cpp)': {'cpp'},
+    'oracle rows': {'php'},
+}
+
+HOST_ROOTS = {
+    'php': 'php/',
+    'python': 'python/',
+    'js': 'js/',
+    'lisp': 'lisp/',
+    'cpp': 'cpp/',
+}
+
+
+def selected_impls():
+    raw = os.environ.get('SEL_IMPLS')
+    if raw is None or not raw.strip():
+        return set(HOST_ROOTS)
+    return set(raw.split())
+
+
+def selected_checks(impls):
+    return [check for check in CHECKS
+            if CHECK_IMPLS.get(check[0], set()) & impls]
+
+
+def mutation_in_scope(file, impls):
+    if file.startswith('sql/'):
+        return True
+    return any(impl in impls and file.startswith(root)
+               for impl, root in HOST_ROOTS.items())
+
 
 def run(cmd, cwd):
     # PYTHONPATH points at the mutated copy, not at the source tree, or the
@@ -102,6 +154,11 @@ def run(cmd, cwd):
 def main(argv):
     table = json.load(open(TABLE, encoding='utf-8'))
     filters = argv[1:]
+    impls = selected_impls()
+    checks = selected_checks(impls)
+    if not checks:
+        print('no SQL mutation checks selected for SEL_IMPLS=' + ' '.join(sorted(impls)))
+        return 0
     # Per dialect, not one MariaDB-shaped proxy for all four. With
     # SEL_SQL_SQLITE_DSN unset and MariaDB's set, a mutation the SQLite oracle
     # is the only witness for was reported as a HOLE rather than as skipped --
@@ -116,7 +173,7 @@ def main(argv):
     # not hypothetical: sqldoc went red when a skeleton changed and the design
     # document still quoted the old rendering, and the next four mutation runs
     # all reported `caught by sqldoc` for mutations sqldoc cannot see.
-    for label, cmd in CHECKS:
+    for label, cmd in checks:
         if label in NEEDS_DB and not any_db:
             continue
         if run(cmd, ROOT) != 0:
@@ -135,6 +192,8 @@ def main(argv):
         for m in table['mutations']:
             name = m['name']
             if filters and not any(f in name for f in filters):
+                continue
+            if not mutation_in_scope(m['file'], impls):
                 continue
 
             tree = os.path.join(work, name)
@@ -193,7 +252,7 @@ def main(argv):
                     continue
 
             by = None
-            for label, cmd in CHECKS:
+            for label, cmd in checks:
                 if label in NEEDS_DB and not any_db:
                     continue
                 if run(cmd, tree) != 0:

@@ -14,6 +14,7 @@ import pytest
 
 from sel import BOOL, SelError, Value, compile as sel_compile, evaluate
 from sel import decimal as D
+from sel.optimizer import optimize_ast_logical, unwind_pipeline
 from sel.utf8 import bytes_compare, decode_utf8, encode_utf8
 
 
@@ -112,6 +113,13 @@ def test_decimal_power():
     assert D.format(D.power(D.parse('1.5'), 2)) == '2.25'
 
 
+def test_decimal_cache_and_signed_fast_path():
+    value = Value.num('12.50')
+    assert value.as_decimal() is value.as_decimal()
+    assert value.as_decimal().int_val == 1250
+    assert D.cmp(D.parse('-284.7418'), D.parse('-1785.77373')) == 1
+
+
 # --- value ------------------------------------------------------------------
 
 def test_children_keep_insertion_order():
@@ -139,6 +147,33 @@ def test_clone_is_deep():
     b.get('1').set('1', Value.text('y'))
     assert a.dump() == '-{"1"=-{"1"=t"x"}}'
     assert b.dump() == '-{"1"=-{"1"=t"y"}}'
+
+
+def test_regular_values_share_shape_and_use_flat_storage():
+    first = Value.from_native({'id': 1, 'name': 'a'})
+    second = Value.from_native({'id': 2, 'name': 'b'})
+    assert first.shape is second.shape
+    assert first.shape.size == 2
+    assert [item.as_text() for item in first.storage] == ['1', 'a']
+    items = [Value.text('a'), Value.text('b')]
+    packed = Value.list(items)
+    assert packed.storage is items
+
+
+def test_join_output_is_shaped_and_irregular_rows_use_fallback():
+    regular = evaluate(
+        'LIST(RECORD("id", 1, "left", "a"), RECORD("id", 2, "left", "b"))'
+        ' .> LINK(LIST(RECORD("id", 2, "right", "x")), '
+        '_1["id"] == _2["id"])')
+    assert regular.storage[0].shape is not None
+    assert regular.storage[0].get('right').as_text() == 'x'
+
+    irregular = evaluate(
+        'LIST(RECORD("id", 1, "left", "a"), RECORD("left", "b", "id", 2))'
+        ' .> LINK(LIST(RECORD("id", 2, "right", "x")), '
+        '_1["id"] == _2["id"])')
+    assert irregular.size() == 1
+    assert irregular.get('1').get('right').as_text() == 'x'
 
 
 def test_scalar_context_takes_first_child():
@@ -222,6 +257,113 @@ def test_left_to_right_evaluation_is_observable():
     """Which operand's position an error reports is part of the contract."""
     e = raises('E_NOT_BIN', evaluate, 'TRUE $== FALSE')
     assert e.col == 1                      # the LEFT operand, not the right
+
+
+def test_optimizer_respects_explicit_top_binder_and_key():
+    """TOP's explicit binder form must inspect the key after the binder.
+
+    Moving TOP ahead of MAP is valid only when the key is a pass-through field.
+    The old off-by-one test treated `r` itself as the key for
+    TOP(r, r["y"], 1), moved it anyway, and then indexed the pre-map row.
+    """
+    def names(source):
+        _, steps = unwind_pipeline(optimize_ast_logical(sel_compile(source).ast))
+        return [step.name for step in steps]
+
+    prefix = ('LIST(RECORD("x", 3), RECORD("x", 1), RECORD("x", 2))'
+              ' .> MAP(RECORD("x", _["x"], "y", _["x"] + 1)) .> ')
+    assert names(prefix + 'TOP(r, r["x"], 1)') == ['TOP', 'MAP']
+    assert names(prefix + 'TOP(r, r["y"], 1)') == ['MAP', 'TOP']
+
+
+def test_optimizer_folded_unary_literals_keep_operator_position():
+    not_node = optimize_ast_logical(sel_compile('NOT FALSE').ast)
+    assert not_node.t == 'bool' and not_node.pos.col == 1
+
+    neg_node = optimize_ast_logical(sel_compile('-1').ast)
+    assert neg_node.t == 'num' and neg_node.pos.col == 1
+
+
+@pytest.mark.parametrize(('source', 'expected'), [
+    ('(3, 1, 2) .> TAKE(2) .> TAKE(1)', ['TAKE']),
+    ('(3, 1, 2) .> DROP(1) .> DROP(1)', ['DROP']),
+    ('(3, 1, 2) .> SORT() .> TAKE(1)', ['TOP']),
+    ('(3, 1, 2) .> SORT_DESC() .> TAKE(1)', ['TOP_DESC']),
+    ('((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
+     ' .> SORT_BY(_["x"], "DESC") .> TAKE(1)', ['TOP_BY']),
+    ('((RECORD("x", 1), RECORD("x", 2)))'
+     ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+     ' .> FILTER(_["x"] > 0)', ['FILTER', 'MAP']),
+    ('(1, 2) .> SORT() .> FILTER(_ > 0)', ['FILTER', 'SORT']),
+    ('((RECORD("x", 1), RECORD("x", 2)))'
+     ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0)', ['FILTER', 'SELECT_COLS']),
+    ('((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
+     ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+     ' .> SORT_BY(_["x"], "DESC")', ['SORT_BY', 'MAP']),
+    ('(1, 2) .> FILTER(_ > 0) .> FILTER(_ < 3)', ['FILTER']),
+    ('(1, 2) .> SORT() .> SORT_DESC()', ['SORT_DESC']),
+    ('(1, 2) .> DEDUPE() .> DISTINCT()', ['DEDUPE']),
+    ('(1, 2) .> FILTER(TRUE)', []),
+])
+def test_optimizer_logical_rules_fire(source, expected):
+    _, steps = unwind_pipeline(optimize_ast_logical(sel_compile(source).ast))
+    assert [step.name for step in steps] == expected
+
+
+def test_optimizer_physical_join_pushdown_and_lazy_record():
+    source = (
+        'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+        ' .> FILTER(_["orders"]["status"] $== "ACTIVE"'
+        ' AND _["customers"]["country"] $== "DE")'
+    )
+    _, steps = unwind_pipeline(optimize_ast_logical(sel_compile(source).ast))
+    assert [step.name for step in steps] == ['LINK', 'FILTER']
+    _, steps = unwind_pipeline(optimize_ast_logical(sel_compile(
+        '((RECORD("x", 1), RECORD("x", 2)))'
+        ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+    ).ast))
+    assert steps[0].name == 'MAP'
+
+    from sel.optimizer import optimize_ast_in_memory
+    physical = optimize_ast_in_memory(sel_compile(
+        '((RECORD("x", 1), RECORD("x", 2)))'
+        ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+    ).ast)
+    _, steps = unwind_pipeline(physical)
+    assert steps[0].args[1].name == 'LAZY_RECORD'
+
+    physical = optimize_ast_in_memory(sel_compile(source).ast)
+    _, steps = unwind_pipeline(physical)
+    assert [step.name for step in steps] == ['FILTER', 'LINK']
+
+    # Join pushdown must return to the logical fixed point: a pushed left
+    # predicate must fuse with a FILTER that was already before the LINK.
+    fixed_point = optimize_ast_in_memory(sel_compile(
+        'ORDERS .> FILTER(_["status"] $== "ACTIVE")'
+        ' .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+        ' .> FILTER(_["orders"]["status"] $== "ACTIVE")'
+    ).ast)
+    _, steps = unwind_pipeline(fixed_point)
+    assert [step.name for step in steps] == ['FILTER', 'LINK']
+
+    # A qualified table reference is only affinity-safe when rooted at the
+    # current filter binder or `_`; an external variable must remain above the
+    # join rather than being rewritten as a joined-row field.
+    external_root = optimize_ast_in_memory(sel_compile(
+        'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+        ' .> FILTER(FOO["orders"]["status"] $== "ACTIVE")'
+    ).ast)
+    _, steps = unwind_pipeline(external_root)
+    assert [step.name for step in steps] == ['LINK', 'FILTER']
+
+    # `_K` is an unknown dependency outside BUCKET and must not be treated as
+    # a neutral variable while classifying join predicates.
+    group_key = optimize_ast_in_memory(sel_compile(
+        'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+        ' .> FILTER(_["orders"]["status"] $== _K)'
+    ).ast)
+    _, steps = unwind_pipeline(group_key)
+    assert [step.name for step in steps] == ['LINK', 'FILTER']
 
 
 # --- parser: the precedence-climbing pilot ----------------------------------

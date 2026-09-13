@@ -22,8 +22,12 @@ from .errors import SqlError
 from .fragment import Fragment
 from .relational_plan import RelationalPlan
 from .translator import Translator
+from .hybrid import HybridPlan, execute_hybrid, plan_hybrid
 
-__all__ = ['DIALECTS', 'Binding', 'Bindings', 'Fragment', 'RelationalPlan', 'Sql', 'SqlError', 'map']
+__all__ = [
+    'DIALECTS', 'Binding', 'Bindings', 'Fragment', 'HybridPlan', 'RelationalPlan',
+    'Sql', 'SqlError', 'execute_hybrid', 'map', 'plan_hybrid',
+]
 
 
 class Sql:
@@ -73,6 +77,22 @@ class Sql:
             return Sql.translate_statement(program, dialect, bindings, options)
         except SqlError:
             return None
+
+    @staticmethod
+    def plan_hybrid(program, dialect: str,
+                    bindings: dict[str, Any] | Bindings | None = None,
+                    options: dict[str, Any] | None = None) -> HybridPlan:
+        """Plan the maximal SQL prefix and an optional SEL continuation."""
+        return plan_hybrid(program, dialect, bindings, options)
+
+    @staticmethod
+    def execute_hybrid(plan: HybridPlan, db_runner, context: Any = None):
+        """Execute a pure SQL, pure memory, or split plan."""
+        return execute_hybrid(plan, db_runner, context)
+
+    # Cross-host spelling aliases.
+    planHybrid = plan_hybrid
+    executeHybrid = execute_hybrid
 
     @staticmethod
     def dialects() -> list[str]:

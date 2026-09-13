@@ -3,9 +3,10 @@
 import './builtins/index.mjs';
 import { parse } from './parser.mjs';
 import { Context, evalNode, MAX_DEPTH } from './eval.mjs';
-import { Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
+import { RecordShape, Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { SelError, fail } from './errors.mjs';
-import { names } from './registry.mjs';
+import { names, register, registerBuiltin } from './registry.mjs';
+import { optimizeAst, optimizeAstLogical, optimizeAstInMemory } from './optimizer.mjs';
 
 export class Program {
   constructor(source, ast) {
@@ -17,7 +18,7 @@ export class Program {
   // context is mutated in place by any assignments the program performs.
   run(context) {
     const root = context instanceof Value ? context : Value.fromNative(context || {});
-    return evalNode(this.ast, new Context(root));
+    return evalNode(optimizeAst(this.ast), new Context(root));
   }
 
   // Every variable the program reads without having assigned it first, found
@@ -196,4 +197,7 @@ export function functionNames() { return names(); }
 // evaluator constructs one, and C++ and Lisp never exposed it. Exporting it in
 // three hosts and not the other two was an accident of what was convenient to
 // import here.
-export { Value, SelError, NONE, TEXT, BIN, BOOL };
+export {
+  RecordShape, Value, SelError, NONE, TEXT, BIN, BOOL, register, registerBuiltin,
+  optimizeAst, optimizeAstLogical, optimizeAstInMemory,
+};

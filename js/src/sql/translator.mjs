@@ -22,7 +22,8 @@ import { Binder } from './binder.mjs';
 import { Emit } from './emit.mjs';
 import { refuse } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
-import { RelationalPlan } from './relational-plan.mjs';
+import { JoinPlan, RelationalPlan } from './relational-plan.mjs';
+import { optimizeAstLogical } from '../optimizer.mjs';
 
 // SEL list keys are the canonical decimals "1", "2", … — so "01" is not a key and
 // neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer used
@@ -44,7 +45,9 @@ function listKey(k) {
 
 // Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
-const PIPELINE_OPS = ['FILTER', 'GROUP_BY', 'SORT', 'SORT_DESC', 'SORT_BY', 'TAKE', 'DROP', 'DISTINCT', 'SELECT_COLS', 'MAP'];
+const PIPELINE_OPS = ['FILTER', 'GROUP_BY', 'BUCKET', 'SORT', 'SORT_DESC', 'SORT_BY',
+  'TOP', 'TOP_DESC', 'TOP_BY', 'TAKE', 'DROP', 'DISTINCT', 'DEDUPE', 'SELECT_COLS',
+  'MAP', 'LINK', 'LINK_LEFT'];
 
 const AGG_RETURNS = { ALL: 'BOOL', ANY: 'BOOL', SUM: 'NUM', JOIN: 'TEXT',
   MAP: 'LIST', FILTER: 'LIST' };
@@ -110,6 +113,11 @@ export class Translator {
     this.emit = new Emit(dialect);
     this.bindings = bindings;
     this.strict = Boolean((options ?? {}).strict ?? false);
+    // SQL uses the logical pipeline rewrites, but leaves scalar constant
+    // folding and filter fusion off: the exact SQL lane intentionally preserves
+    // the source expression shape and its established parenthesisation.
+    this.optimize = (options ?? {}).optimizeSql !== false
+      && !Boolean((options ?? {}).noOptimize ?? false);
     this.params = [];
     this.paramKinds = [];
     // Aggregate binders, innermost last. Consulted before the bindings map, the
@@ -125,6 +133,7 @@ export class Translator {
     this.depth = 0;
     this.statementPlan = null;
     this.inWhere = false;
+    this.subqueryCounter = 0;
   }
 
   translate(ast) {
@@ -137,7 +146,9 @@ export class Translator {
     this.frames = [];
     this.depth = 0;
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
-    const norm = normalise.run(ast, this.constNames, this.constCtx);
+    const sourceAst = this.optimize
+      ? optimizeAstLogical(ast, { foldConstants: false, fuseFilters: false }) : ast;
+    const norm = normalise.run(sourceAst, this.constNames, this.constCtx);
     const plan = this.analyzePipeline(norm);
     if (plan !== null) {
       return this.compileStatement(plan);
@@ -157,8 +168,11 @@ export class Translator {
     this.caveats = new Set();
     this.frames = [];
     this.depth = 0;
+    this.subqueryCounter = 0;
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
-    const norm = normalise.run(ast, this.constNames, this.constCtx);
+    const sourceAst = this.optimize
+      ? optimizeAstLogical(ast, { foldConstants: false, fuseFilters: false }) : ast;
+    const norm = normalise.run(sourceAst, this.constNames, this.constCtx);
     const plan = this.analyzePipeline(norm);
     if (plan === null) {
       refuse('E_SQL_SHAPE', 'expected a relational query or pipeline');
@@ -300,6 +314,12 @@ export class Translator {
   // reach inside a value SQL has no way to look inside.
   index(n) {
     const obj = n.obj;
+    if (this.statementPlan !== null && obj && obj.t === 'index'
+        && obj.obj && obj.obj.t === 'var') {
+      const qualifier = this.constantIndex(obj.idx);
+      const field = this.constantIndex(n.idx);
+      return this.indexQualified(qualifier, field, n);
+    }
     if (obj.t !== 'var') {
       refuse('E_SQL_SHAPE',
         'only a bound name can be indexed here; SQL has no way to index into the '
@@ -345,6 +365,59 @@ export class Translator {
     }
     refuse('E_SQL_SHAPE',
       `${obj.name} is bound as a column, which has no parts to index`, n.pos);
+  }
+
+  indexQualified(qualifier, key, n) {
+    const plan = this.statementPlan;
+    const sources = [{
+      names: [plan.sourceName, plan.sourceAlias, relationAlias(plan.sourceRelation)],
+      relation: plan.sourceRelation,
+      table: plan.sourceAlias ?? relationAlias(plan.sourceRelation),
+    }];
+    for (const join of plan.joins ?? []) {
+      sources.push({
+        names: [join.sourceName, join.sourceAlias, relationAlias(join.sourceRelation), join.leftBinder, join.rightBinder],
+        relation: join.sourceRelation,
+        table: join.sourceAlias ?? relationAlias(join.sourceRelation),
+      });
+    }
+    const source = sources.find((item) => item.names.some((name) => name !== null
+      && name !== undefined && String(name).toUpperCase() === qualifier.toUpperCase()));
+    if (!source) {
+      refuse('E_SQL_BINDING', `unknown joined relation '${qualifier}'`, n.pos);
+    }
+    const field = source.relation.fields?.[asciiUpper(key)] ?? null;
+    if (!field) {
+      refuse('E_SQL_BINDING', `${qualifier}["${key}"] is not a field of that relation`, n.pos);
+    }
+    if (field.raw !== undefined) return this.columnRef(field);
+    return this.columnRef({ ...field, table: source.table });
+  }
+
+  relationTableAlias(relation, name = null) {
+    const plan = this.statementPlan;
+    if (plan !== null) {
+      if (relation === plan.sourceRelation
+          && (name === null || [plan.sourceName, plan.sourceAlias]
+            .some((item) => item !== null && item !== undefined
+              && String(item).toUpperCase() === String(name).toUpperCase()))) {
+        return plan.sourceAlias ?? relationAlias(relation);
+      }
+      for (let index = 0; index < (plan.joins ?? []).length; index += 1) {
+        const join = plan.joins[index];
+        const names = [join.sourceName, join.sourceAlias, join.leftBinder, join.rightBinder,
+          `_${index + 2}`];
+        if (relation === join.sourceRelation
+            && (name === null || names.some((item) => item !== null && item !== undefined
+              && String(item).toUpperCase() === String(name).toUpperCase()))) {
+          return join.sourceAlias ?? relationAlias(relation);
+        }
+      }
+      if (relation === plan.sourceRelation) {
+        return plan.sourceAlias ?? relationAlias(relation);
+      }
+    }
+    return relationAlias(relation);
   }
 
   constantIndex(idx) {
@@ -876,7 +949,9 @@ export class Translator {
           + 'a bare reference means; give the binding a "scalar", or index the field '
           + 'you want', n.pos);
       }
-      return this.columnRef(rel.fields[scalar]);
+      const field = rel.fields[scalar];
+      if (field.raw !== undefined || this.statementPlan === null) return this.columnRef(field);
+      return this.columnRef({ ...field, table: this.relationTableAlias(rel, n.name) });
     }
     refuse('E_SQL_SHAPE', String(b.reason), n.pos);
   }
@@ -897,6 +972,20 @@ export class Translator {
           return this.node(this.statementPlan.aggregateAliases[field]);
         }
       }
+      if (name === '_' && this.statementPlan !== null && this.statementPlan.joins?.length) {
+        const matches = [];
+        const sources = [{ relation: this.statementPlan.sourceRelation, label: this.statementPlan.sourceName },
+          ...this.statementPlan.joins.map((join) => ({ relation: join.sourceRelation, label: join.sourceName }))];
+        for (const source of sources) {
+          const candidate = source.relation.fields?.[field];
+          if (candidate) matches.push({ ...candidate,
+            table: this.relationTableAlias(source.relation, source.label) });
+        }
+        if (matches.length > 1) {
+          refuse('E_SQL_SHAPE', `field "${key}" is ambiguous across joined relations`, n.pos);
+        }
+        if (matches.length === 1) return this.columnRef(matches[0]);
+      }
       if (!Object.hasOwn(b.payload.fields, field)) {
         if (this.statementPlan !== null) {
           if (Object.hasOwn(this.statementPlan.aggregateAliases, key)) {
@@ -911,7 +1000,12 @@ export class Translator {
         refuse('E_SQL_BINDING',
           `${name}["${key}"] is not a field of that relation${tail}`, n.pos);
       }
-      return this.columnRef(b.payload.fields[field]);
+      const fieldSpec = b.payload.fields[field];
+      if (fieldSpec.raw !== undefined) return this.columnRef(fieldSpec);
+      if (this.statementPlan !== null && (this.statementPlan.joins?.length || this.statementPlan.sourceSubquery)) {
+        return this.columnRef({ ...fieldSpec, table: this.relationTableAlias(b.payload, name) });
+      }
+      return this.columnRef(fieldSpec);
     }
     if (b.shape === Binder.NODE) {
       const elem = childOf(b.payload, key);
@@ -1161,6 +1255,37 @@ export class Translator {
       ['_K', kBinder],
     ]);
     for (const f of src.filters) frame.set(f.binder, row);
+    if (this.statementPlan !== null && this.statementPlan.joins?.length) {
+      frame.set('_', row);
+      frame.set('_1', row);
+      frame.set(this.statementPlan.sourceName, row);
+      if (this.statementPlan.sourceAlias) frame.set(this.statementPlan.sourceAlias, row);
+      this.statementPlan.joins.forEach((join, index) => {
+        const right = Binder.row(join.sourceRelation);
+        frame.set(`_${index + 2}`, right);
+        frame.set(join.rightBinder, right);
+        frame.set(join.sourceName, right);
+        if (join.sourceAlias) frame.set(join.sourceAlias, right);
+      });
+    }
+    this.frames.push(frame);
+    try {
+      return render();
+    } finally {
+      this.frames.pop();
+    }
+  }
+
+  withJoinBinders(plan, join, render) {
+    const left = Binder.row(plan.sourceRelation);
+    const right = Binder.row(join.sourceRelation);
+    const frame = new Map([
+      ['_', left], ['_1', left], [plan.sourceName, left],
+      ['_2', right], [join.leftBinder, left], [join.rightBinder, right],
+      [join.sourceName, right],
+    ]);
+    if (plan.sourceAlias) frame.set(plan.sourceAlias, left);
+    if (join.sourceAlias) frame.set(join.sourceAlias, right);
     this.frames.push(frame);
     try {
       return render();
@@ -1562,6 +1687,66 @@ export class Translator {
 
   // --- Relational Pipeline Statement Compilation --------------------------
 
+  planHasRowsAbove(plan) {
+    return Boolean(plan.projections || plan.selectCols || plan.groupBy
+      || plan.distinct || plan.limit !== null || plan.offset !== null
+      || plan.orderBy.length);
+  }
+
+  outputFieldNames(plan) {
+    const names = [];
+    if (plan.projections) {
+      plan.projections.forEach((projection, index) => {
+        if (projection.alias !== null && projection.alias !== undefined) {
+          names.push(projection.alias);
+        } else if (projection.node?.t === 'index' && projection.node.idx?.t === 'text') {
+          names.push(projection.node.idx.v);
+        } else {
+          names.push(`expr${index + 1}`);
+        }
+      });
+    } else if (plan.selectCols) {
+      names.push(...plan.selectCols);
+    } else {
+      if (plan.sourceRelation?.fields) names.push(...Object.keys(plan.sourceRelation.fields));
+      for (const join of plan.joins ?? []) {
+        if (join.sourceRelation?.fields) names.push(...Object.keys(join.sourceRelation.fields));
+      }
+    }
+    return [...new Set(names)];
+  }
+
+  wrapPlanAsDerivedTable(plan) {
+    const alias = `_sub${++this.subqueryCounter}`;
+    const fields = Object.create(null);
+    for (const name of this.outputFieldNames(plan)) {
+      let sourceField = null;
+      if (!plan.projections && !plan.selectCols) {
+        sourceField = plan.sourceRelation?.fields?.[asciiUpper(name)] ?? null;
+        if (!sourceField) {
+          for (const join of plan.joins ?? []) {
+            sourceField = join.sourceRelation?.fields?.[asciiUpper(name)] ?? null;
+            if (sourceField) break;
+          }
+        }
+      }
+      fields[asciiUpper(name)] = {
+        kind: 'column', column: sourceField?.column ?? name, table: alias, type: 'UNKNOWN',
+      };
+    }
+    const derived = new RelationalPlan();
+    derived.sourceName = alias;
+    derived.sourceRelation = { kind: 'relation', from: { raw: '' }, alias, fields };
+    derived.sourceTable = '';
+    derived.sourceAlias = alias;
+    derived.sourceSubquery = plan;
+    return derived;
+  }
+
+  ensureDerived(plan, predicate) {
+    return predicate(plan) ? this.wrapPlanAsDerivedTable(plan) : plan;
+  }
+
   analyzePipeline(n) {
     const steps = [];
     let curr = n;
@@ -1577,7 +1762,7 @@ export class Translator {
     const b = this.bindings.get(curr.name);
     if (b.kind !== 'relation') return null;
 
-    const plan = new RelationalPlan();
+    let plan = new RelationalPlan();
     plan.sourceName = curr.name;
     plan.sourceRelation = b;
     plan.sourceTable = b.from;
@@ -1594,6 +1779,10 @@ export class Translator {
 
       switch (name) {
         case 'FILTER': {
+          plan = this.ensureDerived(plan, (candidate) =>
+            candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
+              || candidate.limit !== null || candidate.offset !== null
+              || candidate.orderBy.length || candidate.distinct));
           let binder;
           let pred;
           if (args.length === 2) {
@@ -1616,7 +1805,9 @@ export class Translator {
           break;
         }
 
-        case 'GROUP_BY': {
+        case 'GROUP_BY':
+        case 'BUCKET': {
+          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
           let binder;
           let keyNode;
           let aggNode = null;
@@ -1676,7 +1867,7 @@ export class Translator {
           plan.groupBy = groupBy;
 
           if (aggNode !== null) {
-            if (aggNode.t === 'call' && aggNode.name === 'RECORD') {
+            if (aggNode.t === 'call' && (aggNode.name === 'RECORD' || aggNode.name === 'LAZY_RECORD')) {
               const recArgs = aggNode.args;
               if (recArgs.length % 2 !== 0) {
                 refuse('E_ARITY', 'RECORD takes an even number of arguments', aggNode.pos);
@@ -1735,6 +1926,7 @@ export class Translator {
         }
 
         case 'SELECT_COLS': {
+          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
           const colArgs = args.slice(1);
           const items = colArgs.length === 1 && colArgs[0].t === 'list'
             ? colArgs[0].items
@@ -1745,13 +1937,21 @@ export class Translator {
               refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos);
             }
             const col = item.v;
-            if (plan.sourceRelation.fields && Object.keys(plan.sourceRelation.fields).length > 0) {
-              const uc = asciiUpper(col);
-              if (!Object.hasOwn(plan.sourceRelation.fields, uc)) {
-                refuse('E_SQL_SHAPE',
-                  `relation ${plan.sourceName} has no field '${col}'; the relation declares `
-                  + Object.keys(plan.sourceRelation.fields).join(', '), item.pos);
-              }
+            const uc = asciiUpper(col);
+            let matches = 0;
+            if (plan.sourceRelation.fields && Object.hasOwn(plan.sourceRelation.fields, uc)) matches += 1;
+            for (const join of plan.joins ?? []) {
+              if (join.sourceRelation.fields && Object.hasOwn(join.sourceRelation.fields, uc)) matches += 1;
+            }
+            if (matches > 1) {
+              refuse('E_SQL_SHAPE',
+                `column '${col}' is ambiguous across joined tables; qualify with a table alias`, item.pos);
+            }
+            if (plan.sourceRelation.fields && Object.keys(plan.sourceRelation.fields).length > 0
+                && matches === 0) {
+              refuse('E_SQL_SHAPE',
+                `relation ${plan.sourceName} has no field '${col}'; the relation declares `
+                + Object.keys(plan.sourceRelation.fields).join(', '), item.pos);
             }
             cols.push(col);
           }
@@ -1761,6 +1961,7 @@ export class Translator {
         }
 
         case 'MAP': {
+          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
           let binder;
           let expr;
           if (args.length === 2) {
@@ -1776,7 +1977,7 @@ export class Translator {
             refuse('E_ARITY', 'MAP takes 2 or 3 arguments', step.pos);
           }
 
-          if (expr.t === 'call' && expr.name === 'RECORD') {
+          if (expr.t === 'call' && (expr.name === 'RECORD' || expr.name === 'LAZY_RECORD')) {
             const recArgs = expr.args;
             if (recArgs.length % 2 !== 0) {
               refuse('E_ARITY', 'RECORD takes an even number of arguments', expr.pos);
@@ -1809,6 +2010,9 @@ export class Translator {
         }
 
         case 'DISTINCT':
+        case 'DEDUPE':
+          plan = this.ensureDerived(plan, (candidate) =>
+            candidate.limit !== null || candidate.offset !== null);
           plan.distinct = true;
           break;
 
@@ -1833,8 +2037,53 @@ export class Translator {
         case 'SORT':
         case 'SORT_DESC':
         case 'SORT_BY':
+        case 'TOP':
+        case 'TOP_DESC':
+        case 'TOP_BY':
+          plan = this.ensureDerived(plan, (candidate) =>
+            candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
+              || candidate.distinct || candidate.limit !== null || candidate.offset !== null
+              || candidate.orderBy.length));
           this.analyzeSortStep(step, plan);
           break;
+
+        case 'LINK':
+        case 'LINK_LEFT': {
+          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
+          if (args.length !== 3 && args.length !== 5) {
+            refuse('E_ARITY', `${name} takes 3 or 5 arguments`, step.pos);
+          }
+          const rightNode = args[1];
+          if (rightNode.t !== 'var' || !this.bindings.has(rightNode.name)) {
+            refuse('E_SQL_SHAPE', `${name} requires a bound relation as its right side`, rightNode.pos);
+          }
+          const right = this.bindings.get(rightNode.name, rightNode.pos);
+          if (right.kind !== 'relation') {
+            refuse('E_SQL_SHAPE', `${rightNode.name} is not bound as a relation`, rightNode.pos);
+          }
+          const join = new JoinPlan();
+          join.type = name === 'LINK_LEFT' ? 'LEFT' : 'INNER';
+          join.sourceName = rightNode.name;
+          join.sourceRelation = right;
+          join.sourceTable = right.from;
+          join.sourceAlias = right.alias ?? null;
+          if (args.length === 5) {
+            if (!constants.isBinderName(args[2]) || !constants.isBinderName(args[3])) {
+              refuse('E_SQL_SHAPE', 'join binders must be bare names', args[2].pos);
+            }
+            join.leftBinder = args[2].name;
+            join.rightBinder = args[3].name;
+            join.onPred = args[4];
+          } else {
+            join.leftBinder = plan.sourceAlias ?? '_1';
+            join.rightBinder = join.sourceAlias ?? '_2';
+            join.onPred = args[2];
+          }
+          if (join.sourceAlias === null) join.sourceAlias = join.rightBinder;
+          join.pos = step.pos;
+          plan.joins.push(join);
+          break;
+        }
       }
     }
 
@@ -1867,10 +2116,15 @@ export class Translator {
   analyzeSortStep(step, plan) {
     const name = step.name;
     const args = step.args;
-    const count = args.length;
+    const isTop = name === 'TOP' || name === 'TOP_DESC' || name === 'TOP_BY';
+    const count = isTop ? args.length - 1 : args.length;
+    if (isTop) {
+      const limit = this.evalIntParam(args[args.length - 1], name);
+      plan.limit = plan.limit === null ? limit : Math.min(plan.limit, limit);
+    }
 
-    if (name === 'SORT' || name === 'SORT_DESC') {
-      const dir = name === 'SORT' ? 'ASC' : 'DESC';
+    if (name === 'SORT' || name === 'SORT_DESC' || name === 'TOP' || name === 'TOP_DESC') {
+      const dir = name === 'SORT' || name === 'TOP' ? 'ASC' : 'DESC';
       if (count === 1) {
         if (plan.sourceRelation.scalar) {
           const scalarCol = plan.sourceRelation.scalar;
@@ -1928,7 +2182,7 @@ export class Translator {
       }
     }
 
-    // SORT_BY
+    // SORT_BY / TOP_BY
     let binder;
     let key;
     let dir;
@@ -1978,6 +2232,7 @@ export class Translator {
   }
 
   compileStatement(plan) {
+    const previousPlan = this.statementPlan;
     this.statementPlan = plan;
     try {
       const parts = [];
@@ -2007,8 +2262,20 @@ export class Translator {
           if (!first) parts.push(', ');
           first = false;
           const uc = asciiUpper(col);
-          const fSpec = plan.sourceRelation.fields ? plan.sourceRelation.fields[uc] : null;
-          const table = fSpec?.table ?? plan.sourceAlias;
+          let fSpec = plan.sourceRelation.fields ? plan.sourceRelation.fields[uc] : null;
+          let owner = plan.sourceRelation;
+          if (!fSpec) {
+            for (const join of plan.joins ?? []) {
+              if (join.sourceRelation.fields?.[uc]) {
+                fSpec = join.sourceRelation.fields[uc];
+                owner = join.sourceRelation;
+                break;
+              }
+            }
+          }
+          const table = plan.joins?.length
+            ? this.relationTableAlias(owner)
+            : (fSpec?.table ?? (owner === plan.sourceRelation ? plan.sourceAlias : relationAlias(owner)));
           const column = fSpec?.column ?? col;
           parts.push(this.emit.column(table, column));
         }
@@ -2022,13 +2289,33 @@ export class Translator {
 
       // 2. FROM clause
       parts.push(' FROM ');
-      let from = plan.sourceTable && typeof plan.sourceTable === 'object' && plan.sourceTable.raw
-        ? String(plan.sourceTable.raw)
-        : this.emit.ident(String(plan.sourceTable));
-      if (plan.sourceAlias) {
-        from += ' ' + this.emit.ident(String(plan.sourceAlias));
+      if (plan.sourceSubquery) {
+        const subquery = this.compileStatement(plan.sourceSubquery);
+        parts.push('(');
+        for (const p of subquery.parts) parts.push(p);
+        parts.push(') ' + this.emit.ident(String(plan.sourceAlias)));
+      } else {
+        let from = plan.sourceTable && typeof plan.sourceTable === 'object' && plan.sourceTable.raw
+          ? String(plan.sourceTable.raw)
+          : this.emit.ident(String(plan.sourceTable));
+        if (plan.sourceAlias) {
+          from += ' ' + this.emit.ident(String(plan.sourceAlias));
+        }
+        parts.push(from);
       }
-      parts.push(from);
+
+      for (const join of plan.joins ?? []) {
+        parts.push(join.type === 'LEFT' ? ' LEFT JOIN ' : ' INNER JOIN ');
+        const right = join.sourceTable && typeof join.sourceTable === 'object' && join.sourceTable.raw
+          ? String(join.sourceTable.raw)
+          : this.emit.ident(String(join.sourceTable));
+        parts.push(right);
+        if (join.sourceAlias) parts.push(' ' + this.emit.ident(String(join.sourceAlias)));
+        parts.push(' ON ');
+        const on = this.withJoinBinders(plan, join,
+          () => this.requireBool(this.node(join.onPred), join.pos, 'LINK'));
+        for (const p of on.parts) parts.push(p);
+      }
 
       // 3. WHERE clause
       const condParts = [];
@@ -2121,7 +2408,7 @@ export class Translator {
         [...this.caveats]
       );
     } finally {
-      this.statementPlan = null;
+      this.statementPlan = previousPlan;
     }
   }
 }

@@ -1,287 +1,462 @@
 #!/usr/bin/env python3
-"""
-tools/scale-test/run_benchmarks.py
-Scale & Parity Automated Benchmark Harness for SEL
+"""Run the corrected persistent-client PostgreSQL/MariaDB benchmark.
 
-Tests 5 complex relational scenarios across:
-  1. PostgreSQL 17 (in Docker sel-pg)
-  2. MariaDB 11.8 (local)
-  3. In-Memory SEL (Common Lisp SBCL over JSON dataset)
-  4. Hybrid Pushdown (SQL execution + in-memory continuation)
-
-Verifies 100% semantic and numeric parity, records execution latencies,
-and outputs a comprehensive benchmark report.
+The in-memory hosts are orchestrated by ``benchmark_all.py``.  This module is
+also importable by that wrapper and owns only the database lanes.  It keeps one
+PHP/PDO client alive per dialect, executes the generated SQL directly, and
+runs the generated SEL continuation for hybrid plans.
 """
 
-import subprocess
-import time
-import json
-import os
-import sys
-from decimal import Decimal
+from __future__ import annotations
 
 import argparse
+import gc
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
 
-BENCHMARK_JSON = "tools/scale-test/benchmark_results.json"
-SBCL_SCRIPT = "tools/scale-test/sel_benchmarks.lisp"
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(ROOT / "python"))
 
-def run_postgres_query(sql, db="sel_oracle"):
-    clean_sql = sql.strip().rstrip(';')
-    # Wrap in json_agg to get exact JSON records back
-    wrapper = f"SELECT json_agg(t) FROM ({clean_sql}) t;"
-    t0 = time.perf_counter()
-    res = subprocess.run(
-        ["docker", "exec", "-i", "sel-pg", "psql", "-U", "postgres", "-d", db, "-t", "-A", "-c", wrapper],
-        capture_output=True, text=True
-    )
-    dt = time.perf_counter() - t0
-    if res.returncode != 0:
-        raise RuntimeError(f"PostgreSQL query failed: {res.stderr.strip()}\nSQL:\n{clean_sql}")
-    out = res.stdout.strip()
-    data = json.loads(out) if out and out != "" else []
-    return data, dt
+from benchmark_support import fixture_metadata, resolve_path, runtime_metadata, sha256_file, stats
 
-def run_mariadb_query(sql, db="sel_oracle"):
-    clean_sql = sql.strip().rstrip(';')
-    t0 = time.perf_counter()
-    res = subprocess.run(
-        ["mariadb", "-D", db, "--batch", "--raw", "-e", clean_sql],
-        capture_output=True, text=True
-    )
-    dt = time.perf_counter() - t0
-    if res.returncode != 0:
-        raise RuntimeError(f"MariaDB query failed: {res.stderr.strip()}\nSQL:\n{clean_sql}")
-    lines = res.stdout.strip().split("\n")
-    if not lines or not lines[0]:
-        return [], dt
-    headers = lines[0].split("\t")
-    rows = []
-    for line in lines[1:]:
+
+DB_FIELD_TOLERANCES = {
+    # PostgreSQL's point-distance and MariaDB's ST_Distance kernels round the
+    # same decimal at the final boundary differently on some rows.  This is
+    # intentionally the only field-specific tolerance in the DB parity check.
+    "dist_berlin": Decimal("0.000001"),
+}
+_DECIMAL_TEXT = re.compile(r"^-?[0-9]+(?:\.[0-9]+)?$")
+
+
+class PersistentPdoClient:
+    """One PHP/PDO connection driven by a newline-delimited JSON protocol."""
+
+    def __init__(self, dialect: str, database: str) -> None:
+        self.dialect = dialect
+        self.process = subprocess.Popen(
+            [
+                "php",
+                str(Path(__file__).resolve().with_name("db_client.php")),
+                "--dialect",
+                dialect,
+                "--database",
+                database,
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        try:
+            assert self.process.stdin is not None
+            assert self.process.stdout is not None
+            line = self.process.stdout.readline()
+            if not line:
+                stderr = self.process.stderr.read() if self.process.stderr else ""
+                raise RuntimeError(f"{dialect} persistent client did not start: {stderr}")
+            ready = json.loads(line)
+            if ready.get("ready") is not True:
+                raise RuntimeError(f"{dialect} persistent client rejected connection: {ready}")
+            self.connect_ms = float(ready.get("connect_ms", 0.0))
+            self.boundary = str(ready.get("boundary", "execute/fetch combined"))
+            self.prepared_statement_policy = str(ready.get("prepared_statement_policy", "unknown"))
+            self.table_rows = ready.get("table_rows")
+            self.total_source_rows = ready.get("total_source_rows")
+            self._closed = False
+        except Exception:
+            self.process.kill()
+            self.process.wait()
+            raise
+
+    def query(self, scenario_id: str, sql: str) -> dict[str, Any]:
+        if self._closed:
+            raise RuntimeError(f"{self.dialect} persistent client is closed")
+        assert self.process.stdin is not None
+        assert self.process.stdout is not None
+        self.process.stdin.write(json.dumps({"id": scenario_id, "sql": sql}) + "\n")
+        self.process.stdin.flush()
+        line = self.process.stdout.readline()
         if not line:
-            continue
-        parts = line.split("\t")
-        rows.append(dict(zip(headers, parts)))
-    return rows, dt
+            stderr = self.process.stderr.read() if self.process.stderr else ""
+            raise RuntimeError(f"{self.dialect} persistent query client stopped: {stderr}")
+        response = json.loads(line)
+        if response.get("error"):
+            raise RuntimeError(f"{self.dialect} query failed: {response['error']}\nSQL:\n{sql}")
+        if response.get("id") != scenario_id:
+            raise RuntimeError(f"{self.dialect} response id mismatch")
+        if not isinstance(response.get("rows"), list):
+            raise RuntimeError(f"{self.dialect} response rows are not a list")
+        return response
 
-def canonical_val(v):
-    if v is None or v == "NULL":
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self.process.stdin:
+            self.process.stdin.close()
+        returncode = self.process.wait(timeout=30)
+        if returncode != 0:
+            stderr = self.process.stderr.read() if self.process.stderr else ""
+            raise RuntimeError(f"{self.dialect} persistent client exited {returncode}: {stderr}")
+
+
+def exact_db_value(value: object) -> object:
+    """Normalize transport strings without rounding ordinary numeric fields."""
+    if value is None or value == "NULL":
         return None
-    s = str(v).strip()
-    try:
-        d = Decimal(s)
-        d_rounded = round(d, 4)
-        if d_rounded == 0:
-            return "0"
-        norm = d_rounded.normalize()
-        return f"{norm:f}"
-    except Exception:
-        return s
+    text = str(value).strip()
+    if _DECIMAL_TEXT.fullmatch(text):
+        return ("decimal", Decimal(text))
+    return ("text", text)
 
-def compare_rows(rows_a, rows_b, label_a, label_b):
-    """Compares two lists of dictionaries for exact semantic parity."""
+
+def compare_rows_exact(
+    rows_a: list[dict[str, object]],
+    rows_b: list[dict[str, object]],
+    label_a: str,
+    label_b: str,
+) -> tuple[bool, str]:
+    """Compare ordered rows exactly, with one explicitly recorded tolerance."""
     if len(rows_a) != len(rows_b):
-        return False, f"Row count mismatch: {label_a} has {len(rows_a)} rows, {label_b} has {len(rows_b)} rows"
-    
-    for i, (ra, rb) in enumerate(zip(rows_a, rows_b)):
-        # Normalize keys (lowercase)
-        keys_a = {k.lower(): k for k in ra.keys()}
-        keys_b = {k.lower(): k for k in rb.keys()}
-        
-        all_keys = set(keys_a.keys()).union(keys_b.keys())
-        for k in all_keys:
-            va = ra.get(keys_a.get(k)) if k in keys_a else None
-            vb = rb.get(keys_b.get(k)) if k in keys_b else None
-            ca = canonical_val(va)
-            cb = canonical_val(vb)
-            if ca != cb:
-                return False, f"Row {i+1} field '{k}' mismatch: {label_a}={va!r} (canon: {ca}) vs {label_b}={vb!r} (canon: {cb})"
-    
+        return False, f"row count mismatch: {label_a}={len(rows_a)} {label_b}={len(rows_b)}"
+    for index, (left, right) in enumerate(zip(rows_a, rows_b)):
+        left_keys = {str(key).lower(): key for key in left}
+        right_keys = {str(key).lower(): key for key in right}
+        if set(left_keys) != set(right_keys):
+            return False, f"row {index + 1} key mismatch: {label_a} vs {label_b}"
+        for key in sorted(left_keys):
+            actual = exact_db_value(left[left_keys[key]])
+            expected = exact_db_value(right[right_keys[key]])
+            tolerant = (
+                key in DB_FIELD_TOLERANCES
+                and isinstance(actual, tuple)
+                and isinstance(expected, tuple)
+                and actual[0] == expected[0] == "decimal"
+                and abs(actual[1] - expected[1]) <= DB_FIELD_TOLERANCES[key]
+            )
+            if actual != expected and not tolerant:
+                return (
+                    False,
+                    f"row {index + 1} field {key}: "
+                    f"{label_a}={actual!r} {label_b}={expected!r}",
+                )
     return True, "PARITY"
 
-def run_hybrid_continuation(sc_id, intermediate_rows):
-    """Executes the in-memory continuation for hybrid pushdown scenarios."""
-    if sc_id == "scenario2":
-        # Fall-through: Evaluate CUSTOM_VIP_SCORE(tier, created_year)
-        def eval_vip_score(tier, year):
-            tier = str(tier or "").strip()
-            try:
-                yr = int(float(str(year).strip()))
-            except Exception:
-                yr = 2024
-            base = 100 if tier == "PLATINUM" else (50 if tier == "GOLD" else (25 if tier == "SILVER" else 10))
-            return str(base + (2026 - yr) * 5)
-        
-        out = []
-        for r in intermediate_rows:
-            cid = str(r.get("id") or r.get("ID"))
-            country = str(r.get("country") or r.get("COUNTRY"))
-            tier = r.get("tier") or r.get("TIER")
-            yr = r.get("created_year") or r.get("CREATED_YEAR")
-            out.append({
-                "id": cid,
-                "country": country,
-                "vip_score": eval_vip_score(tier, yr)
-            })
-        return out
-    
-    elif sc_id == "scenario3":
-        # Mid-pipeline fallback: Evaluate HOST_RISK_SCORE, filter > 50, bucket by country, sort count DESC, limit 5
-        def host_risk_score(country, discount):
-            try:
-                disc = int(float(str(discount or "0").strip()))
-            except Exception:
-                disc = 0
-            base = 30 if country == "US" else 10
-            return base + disc * 2
-        
-        from collections import Counter
-        counts = Counter()
-        for r in intermediate_rows:
-            country = str(r.get("country") or r.get("COUNTRY") or "")
-            disc = r.get("discount") or r.get("DISCOUNT") or 0
-            score = host_risk_score(country, disc)
-            if score > 50:
-                counts[country] += 1
-        
-        sorted_counts = sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:5]
-        return [{"country": c, "high_risk_count": str(cnt)} for c, cnt in sorted_counts]
-    
-    return intermediate_rows
 
-def main():
-    parser = argparse.ArgumentParser(description="SEL Scale & Parity Benchmark Runner")
-    parser.add_argument("--scale", type=int, choices=[10, 100], default=10, help="Scale factor (10 for ~137k rows, 100 for ~1.37M rows)")
-    parser.add_argument("--skip-lisp", action="store_true", help="Skip running SBCL in-memory benchmarks and reuse benchmark_results.json")
-    args = parser.parse_args()
+def continuation_rows(plan: Any, raw_rows: list[dict[str, object]]) -> tuple[list[dict[str, object]], float, float]:
+    """Materialize and execute the generated Python SEL continuation."""
+    from sel import Value
+    from sel_benchmarks import benchmark_value
 
-    db_name = "sel_oracle_100x" if args.scale == 100 else "sel_oracle"
-    dataset_rows = "1,370,200" if args.scale == 100 else "137,100"
+    if plan.pure_sql:
+        materialize_start = time.perf_counter()
+        canonical_rows = [dict(row) for row in raw_rows]
+        materialize_ms = (time.perf_counter() - materialize_start) * 1000.0
+        return canonical_rows, materialize_ms, 0.0
 
-    print("=" * 80)
-    print(f"SEL SCALE & PARITY BENCHMARK SUITE ({args.scale}x SCALE — {dataset_rows} ROWS)")
-    print("=" * 80)
-    
-    # 1. Generate / Refresh Lisp benchmark results (for 10x dataset)
-    if not args.skip_lisp:
-        print("\n[Step 1/3] Running In-Memory SEL Benchmarks via SBCL...")
-        t_start = time.perf_counter()
-        proc = subprocess.run(
-            ["sbcl", "--dynamic-space-size", "4096", "--noinform", "--disable-debugger", "--non-interactive",
-             "--load", SBCL_SCRIPT],
-            capture_output=True, text=True
-        )
-        if proc.returncode != 0:
-            print("SBCL runner failed:")
-            print(proc.stderr)
-            print(proc.stdout)
-            sys.exit(1)
-        print(f"SBCL finished in {time.perf_counter() - t_start:.2f}s")
-    else:
-        print("\n[Step 1/3] Skipping In-Memory SEL Benchmarks (reusing existing results)...")
-    
-    with open(BENCHMARK_JSON) as f:
-        scenarios = json.load(f)
-    
-    print(f"Loaded {len(scenarios)} benchmark scenarios.\n")
-    print(f"[Step 2/3] Executing queries on PostgreSQL & MariaDB ({db_name}) & validating Parity...")
-    
-    summary = []
-    
-    for sc in scenarios:
-        sc_id = sc["id"]
-        name = sc["name"]
-        desc = sc["description"]
-        is_hybrid = sc.get("is_hybrid", False)
-        sql_pg = sc.get("sql_postgres")
-        sql_ma = sc.get("sql_mariadb")
-        mem_rows = sc.get("in_memory_rows", []) if args.scale == 10 else []
-        mem_dt = sc.get("in_memory_latency_sec", 0.0) if args.scale == 10 else 0.0
-        
-        print(f"\n--- {name} ---")
-        print(f"Goal: {desc}")
-        
-        # PostgreSQL execution
-        pg_rows, pg_dt = [], 0.0
-        if sql_pg:
-            try:
-                pg_rows, pg_dt = run_postgres_query(sql_pg, db=db_name)
-            except Exception as e:
-                print(f"  [!] PostgreSQL error: {e}")
-        
-        # MariaDB execution
-        ma_rows, ma_dt = [], 0.0
-        if sql_ma:
-            try:
-                ma_rows, ma_dt = run_mariadb_query(sql_ma, db=db_name)
-            except Exception as e:
-                print(f"  [!] MariaDB error: {e}")
-        
-        # If hybrid scenario, apply continuation to DB rows
-        if is_hybrid:
-            pg_eval_rows = run_hybrid_continuation(sc_id, pg_rows)
-            ma_eval_rows = run_hybrid_continuation(sc_id, ma_rows)
-        else:
-            pg_eval_rows = pg_rows
-            ma_eval_rows = ma_rows
-            
-        # Parity checks
-        ok_pg_ma, msg_pg_ma = compare_rows(pg_eval_rows, ma_eval_rows, "PostgreSQL", "MariaDB")
-        if args.scale == 10:
-            ok_pg_mem, msg_pg_mem = compare_rows(pg_eval_rows, mem_rows, "PostgreSQL", "In-Memory SEL")
-            ok_ma_mem, msg_ma_mem = compare_rows(ma_eval_rows, mem_rows, "MariaDB", "In-Memory SEL")
-            all_parity = ok_pg_ma and ok_pg_mem and ok_ma_mem
-        else:
-            all_parity = ok_pg_ma
-            msg_pg_mem = msg_pg_ma
-            
-        print(f"  PostgreSQL:    {len(pg_rows):>4} rows in {pg_dt*1000:>7.2f} ms")
-        print(f"  MariaDB:       {len(ma_rows):>4} rows in {ma_dt*1000:>7.2f} ms")
-        if args.scale == 10:
-            print(f"  In-Memory SEL: {len(mem_rows):>4} rows in {mem_dt*1000:>7.2f} ms")
-            parity_label = "PostgreSQL, MariaDB & In-Memory SEL"
-        else:
-            parity_label = "PostgreSQL & MariaDB"
-        
-        if all_parity:
-            print(f"  Result Parity: [PASS] 100% Match across {parity_label}")
-        else:
-            print(f"  Result Parity: [FAIL]")
-            if not ok_pg_ma:  print(f"    - PG vs MariaDB: {msg_pg_ma}")
-            if args.scale == 10:
-                if not ok_pg_mem: print(f"    - PG vs In-Mem:  {msg_pg_mem}")
-                if not ok_ma_mem: print(f"    - Maria vs In-Mem: {msg_ma_mem}")
-            
-        if pg_eval_rows:
-            print(f"  Sample Row 1:  {pg_eval_rows[0]}")
-            
-        summary.append({
-            "id": sc_id,
-            "name": name,
-            "rows": len(pg_eval_rows),
-            "pg_ms": pg_dt * 1000,
-            "ma_ms": ma_dt * 1000,
-            "mem_ms": mem_dt * 1000 if args.scale == 10 else None,
-            "parity": all_parity,
-            "notes": msg_pg_ma if not all_parity else "Exact Match"
-        })
+    materialize_start = time.perf_counter()
+    input_value = Value.from_native(raw_rows)
+    materialize_ms = (time.perf_counter() - materialize_start) * 1000.0
 
-    print("\n" + "=" * 80)
-    print(f"BENCHMARK SUMMARY REPORT ({args.scale}x SCALE — {dataset_rows} ROWS)")
-    print("=" * 80)
-    if args.scale == 10:
-        print(f"{'Scenario':<42} | {'Rows':<5} | {'Postgres':<10} | {'MariaDB':<10} | {'In-Memory':<10} | {'Parity':<6}")
-        print("-" * 95)
-        for s in summary:
-            par_str = "PASS" if s["parity"] else "FAIL"
-            print(f"{s['name']:<42} | {s['rows']:<5} | {s['pg_ms']:>8.2f}ms | {s['ma_ms']:>8.2f}ms | {s['mem_ms']:>8.2f}ms | {par_str:<6}")
-        print("=" * 95)
-    else:
-        print(f"{'Scenario':<45} | {'Rows':<5} | {'Postgres':<12} | {'MariaDB':<12} | {'Parity':<6}")
-        print("-" * 88)
-        for s in summary:
-            par_str = "PASS" if s["parity"] else "FAIL"
-            print(f"{s['name']:<45} | {s['rows']:<5} | {s['pg_ms']:>10.2f}ms | {s['ma_ms']:>10.2f}ms | {par_str:<6}")
-        print("=" * 88)
+    continuation_start = time.perf_counter()
+    root = Value.none()
+    root.set(plan.continuation_source_var, input_value)
+    final_value = plan.continuation_program.run(root)
+    final_rows = benchmark_value(final_value)
+    continuation_ms = (time.perf_counter() - continuation_start) * 1000.0
+    if not isinstance(final_rows, list):
+        raise RuntimeError("generated database continuation did not return a row list")
+    return final_rows, materialize_ms, continuation_ms
+
+
+def database_plans(reference: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Compile Python plans and prove SQL/continuation shape against Lisp."""
+    from sel import compile
+    from sel.sql import Sql
+    from sel_benchmarks import register_benchmark_builtins, schema
+
+    register_benchmark_builtins()
+    plans: dict[str, dict[str, Any]] = {}
+    for expected in reference:
+        program = compile(expected["query"])
+        dialect_plans: dict[str, Any] = {}
+        for dialect in ("postgresql", "mariadb"):
+            plan = Sql.plan_hybrid(program, dialect, schema(dialect))
+            if plan.sql_statement is None:
+                raise RuntimeError(f"{dialect} has no SQL statement for {expected['id']}")
+            sql = plan.sql_statement.as_statement("inline")
+            expected_sql = expected["sql_postgres" if dialect == "postgresql" else "sql_mariadb"]
+            if sql != expected_sql:
+                raise RuntimeError(f"database {dialect} SQL differs from Lisp reference for {expected['id']}")
+            expected_hybrid = expected.get("is_hybrid") is True or expected.get("has_continuation") is True
+            if plan.is_hybrid != expected_hybrid or plan.pure_sql != (not expected_hybrid):
+                raise RuntimeError(f"database {dialect} hybrid metadata differs for {expected['id']}")
+            if (plan.continuation_program is not None) != (expected.get("has_continuation") is True):
+                raise RuntimeError(f"database {dialect} continuation metadata differs for {expected['id']}")
+            dialect_plans[dialect] = plan
+        plans[expected["id"]] = dialect_plans
+    return plans
+
+
+def run_corrected_database_benchmark(
+    dataset: Path,
+    reference_path: Path,
+    runs: int,
+    warmups: int,
+    timing_mode: str,
+    reference: list[dict[str, Any]] | None = None,
+    database: str | None = None,
+    dialects: tuple[str, ...] = ("postgresql", "mariadb"),
+) -> dict[str, dict[str, Any]]:
+    """Run both DB lanes with persistent connections and phase-separated data."""
+    if reference is None:
+        reference = json.loads(reference_path.read_text(encoding="utf-8"))
+    if runs < 1 or warmups < 0:
+        raise ValueError("runs must be positive and warmups must be non-negative")
+    if timing_mode not in ("steady-state", "gc-controlled"):
+        raise ValueError(f"unsupported timing mode: {timing_mode}")
+    if not dialects or any(dialect not in ("postgresql", "mariadb") for dialect in dialects):
+        raise ValueError(f"unsupported database dialect set: {dialects}")
+
+    dataset_value = json.loads(dataset.read_text(encoding="utf-8"), parse_float=str)
+    fixture = fixture_metadata(dataset, dataset_value)
+    plans = database_plans(reference)
+    db_name = database or os.environ.get(
+        "SEL_BENCH_DATABASE",
+        "sel_oracle_100x" if fixture["total_source_rows"] > 500_000 else "sel_oracle",
+    )
+    clients: dict[str, PersistentPdoClient] = {}
+    reports: dict[str, dict[str, Any]] = {}
+    raw_outputs: dict[str, dict[str, list[list[dict[str, object]]]]] = {
+        dialect: {item["id"]: [] for item in reference}
+        for dialect in dialects
+    }
+    scenario_reports: dict[str, dict[str, dict[str, Any]]] = {
+        dialect: {} for dialect in dialects
+    }
+
+    try:
+        for dialect in dialects:
+            clients[dialect] = PersistentPdoClient(dialect, db_name)
+        for dialect, client in clients.items():
+            if client.table_rows != fixture["table_rows"]:
+                raise RuntimeError(
+                    f"{dialect} database table counts differ from fixture: "
+                    f"{client.table_rows!r} != {fixture['table_rows']!r}"
+                )
+            if client.total_source_rows != fixture["total_source_rows"]:
+                raise RuntimeError(
+                    f"{dialect} database source-row count differs from fixture: "
+                    f"{client.total_source_rows!r} != {fixture['total_source_rows']}"
+                )
+
+        for dialect in dialects:
+            client = clients[dialect]
+            report: dict[str, Any] = {
+                "schema_version": 2,
+                "implementation": dialect,
+                "passed": True,
+                "metadata": {
+                    "fixture": fixture,
+                    "reference_path": str(reference_path.resolve()),
+                    "reference_sha256": sha256_file(reference_path),
+                    "reference_scenario_ids": [item["id"] for item in reference],
+                    "runtime": runtime_metadata(),
+                    "database": db_name,
+                    "client": "PHP PDO persistent connection",
+                    "connection_reuse": True,
+                    "boundary": client.boundary,
+                    "connect_ms": client.connect_ms,
+                    "prepared_statement_policy": client.prepared_statement_policy,
+                    "table_rows": client.table_rows,
+                    "total_source_rows": client.total_source_rows,
+                    "cache_policy": "uncontrolled-cache; warmed persistent connection",
+                    "field_tolerances": {key: str(value) for key, value in DB_FIELD_TOLERANCES.items()},
+                    "timing_mode": timing_mode,
+                    "gc_policy": "collect before host-side continuation" if timing_mode == "gc-controlled" else "not forced",
+                    "runs": runs,
+                    "warmups": warmups,
+                    "scenario_order": [item["id"] for item in reference],
+                },
+                "scenarios": [],
+            }
+
+            for expected in reference:
+                scenario_id = expected["id"]
+                plan = plans[scenario_id][dialect]
+                sql = plan.sql_statement.as_statement("inline")
+                failures: list[str] = []
+                for warmup in range(warmups):
+                    if timing_mode == "gc-controlled":
+                        gc.collect()
+                    print(
+                        f"[database] {dialect} {scenario_id} warmup {warmup + 1}/{warmups}",
+                        flush=True,
+                    )
+                    response = client.query(scenario_id, sql)
+                    continuation_rows(plan, response["rows"])
+
+                samples: list[dict[str, float]] = []
+                for run in range(runs):
+                    if timing_mode == "gc-controlled":
+                        gc.collect()
+                    print(
+                        f"[database] {dialect} {scenario_id} measured {run + 1}/{runs}",
+                        flush=True,
+                    )
+                    hybrid_start = time.perf_counter()
+                    response = client.query(scenario_id, sql)
+                    final_rows, materialize_ms, continuation_ms = continuation_rows(
+                        plan, response["rows"]
+                    )
+                    hybrid_total_ms = (time.perf_counter() - hybrid_start) * 1000.0
+                    raw_outputs[dialect][scenario_id].append(final_rows)
+                    db_ms = float(response["db_execute_fetch_ms"])
+                    samples.append({
+                        "db_execute_fetch_ms": db_ms,
+                        "db_materialize_ms": materialize_ms,
+                        "continuation_ms": continuation_ms,
+                        "hybrid_total_ms": hybrid_total_ms,
+                        "elapsed_ms": hybrid_total_ms,
+                    })
+                    ok, message = compare_rows_exact(
+                        final_rows, expected["in_memory_rows"], dialect, "In-Memory SEL"
+                    )
+                    if not ok:
+                        failures.append(f"run {run + 1}: {message}")
+
+                scenario_report: dict[str, Any] = {
+                    "id": scenario_id,
+                    "rows": len(raw_outputs[dialect][scenario_id][-1]),
+                    "samples": samples,
+                    "statistics": {
+                        phase: stats(sample[phase] for sample in samples)
+                        for phase in (
+                            "db_execute_fetch_ms",
+                            "db_materialize_ms",
+                            "continuation_ms",
+                            "hybrid_total_ms",
+                        )
+                    },
+                    "passed": not failures,
+                    "parity": {"passed": not failures, "failures": failures},
+                    "failures": failures,
+                }
+                report["scenarios"].append(scenario_report)
+                scenario_reports[dialect][scenario_id] = scenario_report
+            report["passed"] = all(item["passed"] for item in report["scenarios"])
+            reports[dialect] = report
+    finally:
+        for client in clients.values():
+            client.close()
+
+    # Cross-engine parity is checked for every measured repetition, not only
+    # the final result, so a transient database result cannot be hidden.
+    if set(("postgresql", "mariadb")).issubset(dialects):
+        for expected in reference:
+            scenario_id = expected["id"]
+            for run in range(runs):
+                left = raw_outputs["postgresql"][scenario_id][run]
+                right = raw_outputs["mariadb"][scenario_id][run]
+                ok, message = compare_rows_exact(left, right, "PostgreSQL", "MariaDB")
+                if not ok:
+                    for dialect in ("postgresql", "mariadb"):
+                        item = scenario_reports[dialect][scenario_id]
+                        item["failures"].append(f"run {run + 1}: {message}")
+                        item["passed"] = False
+                        item["parity"]["passed"] = False
+                        item["parity"]["failures"].append(f"run {run + 1}: {message}")
+
+    for report in reports.values():
+        report["passed"] = all(item["passed"] for item in report["scenarios"])
+    return reports
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run corrected SEL database benchmarks")
+    parser.add_argument("--dataset", type=Path, default=ROOT / "tools/scale-test/dataset-10x.json")
+    parser.add_argument("--reference", type=Path, default=ROOT / "tools/scale-test/benchmark_results.json")
+    parser.add_argument("--runs", type=int, default=10)
+    parser.add_argument("--warmups", type=int, default=2)
+    parser.add_argument("--timing-mode", choices=("steady-state", "gc-controlled"), default="steady-state")
+    parser.add_argument("--only", default=None, help="comma-separated scenario ids")
+    parser.add_argument("--database", default=None)
+    parser.add_argument("--dialect", choices=("postgresql", "mariadb"), default=None)
+    parser.add_argument("--output", type=Path, default=ROOT / "tools/scale-test/database_results_corrected.json")
+    parser.add_argument(
+        "--skip-lisp",
+        action="store_true",
+        help="compatibility option; this corrected runner never launches Lisp",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.runs < 1 or args.warmups < 0:
+        raise SystemExit("--runs must be positive and --warmups must be non-negative")
+    dataset = resolve_path(args.dataset)
+    reference_path = resolve_path(args.reference)
+    output = resolve_path(args.output)
+    reference = json.loads(reference_path.read_text(encoding="utf-8"))
+    if args.only:
+        wanted = set(args.only.split(","))
+        reference = [item for item in reference if item["id"] in wanted]
+        if not reference:
+            raise SystemExit("--only selected no scenarios")
+
+    print(
+        f"Starting corrected database benchmark: {args.runs} measured + "
+        f"{args.warmups} warmups per scenario.",
+        flush=True,
+    )
+    reports = run_corrected_database_benchmark(
+        dataset,
+        reference_path,
+        args.runs,
+        args.warmups,
+        args.timing_mode,
+        reference=reference,
+        database=args.database,
+        dialects=(args.dialect,) if args.dialect else ("postgresql", "mariadb"),
+    )
+    artifact = {
+        "schema_version": 2,
+        "metadata": {
+            "fixture": fixture_metadata(dataset, json.loads(dataset.read_text(encoding="utf-8"))),
+            "reference_path": str(reference_path.resolve()),
+            "reference_sha256": sha256_file(reference_path),
+            "reference_scenario_ids": [item["id"] for item in reference],
+            "runs": args.runs,
+            "warmups": args.warmups,
+            "timing_mode": args.timing_mode,
+            "scenario_order": [item["id"] for item in reference],
+            "lanes": list(reports),
+        },
+        "lanes": reports,
+        "passed": all(report["passed"] for report in reports.values()),
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(artifact, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    for dialect, report in reports.items():
+        print(f"{dialect}: {'PASS' if report['passed'] else 'FAIL'}", flush=True)
+    print(f"Machine-readable report: {output}")
+    return 0 if artifact["passed"] else 1
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        print(f"benchmark failed: {error}", file=sys.stderr)
+        raise SystemExit(1)
