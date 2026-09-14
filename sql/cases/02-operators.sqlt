@@ -67,6 +67,27 @@ TRUE XOR FALSE
 --- expect
 (TRUE XOR FALSE)
 ===
+### name: op.logic.short-circuit-constant-is-still-the-and
+--- note
+`FALSE AND TRUE` is a BOOL where `+` wants a number, and the node refused is
+the AND at 1:8 -- the same column run() names in
+op.logic.and-short-circuit-result-keeps-the-and-position. The translator does
+not fold, and the in-memory optimiser's fold must not move the column either.
+--- dialect
+mariadb
+--- source
+(FALSE AND TRUE) + 1
+--- error
+E_SQL_SHAPE 1:8
+===
+### name: op.logic.short-circuit-constant-is-still-the-or
+--- dialect
+mariadb
+--- source
+(TRUE OR FALSE) + 1
+--- error
+E_SQL_SHAPE 1:7
+===
 ### name: op.compare.num-variant-when-both-sides-are-numeric
 --- dialect
 mariadb

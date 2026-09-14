@@ -8,8 +8,30 @@ namespace Sel;
 final class Program
 {
     public string $source;
-    /** @var array<string,mixed> */
+    /**
+     * The parse tree, and the tree every other consumer reads: dependencies(),
+     * the SQL translator, the hybrid planner. It is IMMUTABLE once here -- the
+     * optimiser and the planner copy on the way down and never write into it
+     * (sql/cases/25-hybrid-plans.sqlt asserts so) -- and a caller who builds a
+     * Program from an AST of their own is held to the same rule. Not
+     * `readonly`, because __destruct has to take it apart by reference; a
+     * write to it after construction is unsupported rather than refused, and
+     * leaves run() evaluating the tree it was constructed with.
+     *
+     * @var array<string,mixed>
+     */
     public array $ast;
+
+    /**
+     * The physical tree run() evaluates: $ast after the in-memory optimiser,
+     * built on the first run and kept, because the rewrite and the copy it
+     * makes cost more than evaluating a small rule does. SQL translation never
+     * sees it, since a physical rewrite (LAZY_RECORD, join pushdown) is not
+     * something a database can be asked to run.
+     *
+     * @var array<string,mixed>|null
+     */
+    private ?array $physical = null;
 
     /** @param array<string,mixed> $ast */
     public function __construct(string $source, array $ast)
@@ -34,6 +56,12 @@ final class Program
     public function __destruct()
     {
         Parser::dismantle($this->ast);
+        // The physical tree shares most of its nodes with $ast and is as deep
+        // as it is; once $ast has been taken apart this is the last holder of
+        // those chains, so it gets the same treatment.
+        if ($this->physical !== null) {
+            Parser::dismantle($this->physical);
+        }
     }
 
     /**
@@ -45,8 +73,20 @@ final class Program
     public function run($context = null): Value
     {
         $root = $context instanceof Value ? $context : Value::fromNative($context ?? []);
-        $ast = Optimizer::optimize($this->ast, true);
-        return Evaluator::evalNode($ast, new Context($root));
+        return Evaluator::evalNode($this->physicalAst(), new Context($root));
+    }
+
+    /**
+     * The optimised tree run() evaluates, built once.
+     *
+     * @return array<string,mixed>
+     */
+    public function physicalAst(): array
+    {
+        if ($this->physical === null) {
+            $this->physical = Optimizer::optimize($this->ast, true);
+        }
+        return $this->physical;
     }
 
     /**
@@ -164,7 +204,7 @@ final class Program
                         return;
                     }
                 }
-                if ($name === 'GROUP_BY') {
+                if ($name === 'BUCKET') {
                     if ($n === 4 && $node['args'][1]['t'] === 'var') {
                         self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
                         $inner = $bound;

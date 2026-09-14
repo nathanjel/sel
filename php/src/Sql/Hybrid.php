@@ -1,5 +1,12 @@
 <?php
 // SQL-prefix planning with an in-memory SEL continuation.
+//
+// The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
+// and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at the
+// tree the translator will see, `sourceTables` names PHYSICAL sources (a
+// relation's `from`, or a relation query's text verbatim), a program stage 1
+// refuses is a pure-memory plan rather than an exception, and `$options` is
+// one array that reaches both the logical optimiser and the translator.
 
 declare(strict_types=1);
 
@@ -7,7 +14,6 @@ namespace Sel\Sql;
 
 use Sel\Optimizer;
 use Sel\Program;
-use Sel\SelError;
 use Sel\Value;
 
 final class HybridPlan
@@ -101,8 +107,18 @@ final class Hybrid
         $catalog = $bindings instanceof Bindings ? $bindings : new Bindings($bindings);
         Map::requireTarget($dialect);
         $catalog->checkAliases();
-        [$constNames, $constContext] = Constants::scope($catalog);
-        $normalized = Normalise::run($program->ast, $constNames, $constContext);
+        // Stage 1 first, exactly as the translator runs it, so the tree unwound
+        // below is the one a prefix will be translated from. A program stage 1
+        // refuses -- `A += 1; ...`, a bare statement before the result -- is a
+        // program no part of which can be pushed down, which is a pure-memory
+        // plan and not an exception: "none of it" is one of the planner's
+        // answers.
+        try {
+            [$constNames, $constContext] = Constants::scope($catalog);
+            $normalized = Normalise::run($program->ast, $constNames, $constContext);
+        } catch (SqlError) {
+            return self::pureMemoryPlan($program, $dialect, $catalog);
+        }
         $optimized = Optimizer::optimize($normalized, false, $options);
         $unwound = Optimizer::unwindPipeline($optimized);
         $source = $unwound['source'];
@@ -111,12 +127,7 @@ final class Hybrid
         if ($steps === [] || ($source['t'] ?? null) !== 'var'
             || !$catalog->has($source['name'])
             || ($catalog->get($source['name'], $source['pos'])['kind'] ?? null) !== 'relation') {
-            return new HybridPlan([
-                'dialect' => $dialect,
-                'pureMemory' => true,
-                'continuationProgram' => $program,
-                'sourceTables' => self::sourceTables($program->ast, $catalog),
-            ]);
+            return self::pureMemoryPlan($program, $dialect, $catalog);
         }
 
         $fullAst = Optimizer::buildPipeline($source, $steps);
@@ -136,6 +147,7 @@ final class Hybrid
 
         for ($count = count($steps) - 1; $count >= 1; $count--) {
             $prefixSteps = array_slice($steps, 0, $count);
+            if (self::bucketRowsAreKeys($prefixSteps)) continue;
             $prefixAst = Optimizer::buildPipeline($source, $prefixSteps);
             $sql = self::tryStatement($prefixAst, $dialect, $catalog, $options);
             if ($sql === null) continue;
@@ -152,10 +164,21 @@ final class Hybrid
             ]);
         }
 
+        return self::pureMemoryPlan($program, $dialect, $catalog);
+    }
+
+    /**
+     * The plan for a program nothing of which reaches the database. The
+     * continuation is the program itself, and the AST it exposes is the
+     * program's own, so a caller sees the same tree whichever way the plan went.
+     */
+    private static function pureMemoryPlan(Program $program, string $dialect, Bindings $catalog): HybridPlan
+    {
         return new HybridPlan([
             'dialect' => $dialect,
             'pureMemory' => true,
             'continuationProgram' => $program,
+            'continuationAst' => $program->ast,
             'sourceTables' => self::sourceTables($program->ast, $catalog),
         ]);
     }
@@ -170,7 +193,24 @@ final class Hybrid
         }
     }
 
-    /** @param array<string,mixed> $ast @return list<string> */
+    /**
+     * The physical source a relation binding reads: its table, or for a
+     * relation query the query text exactly as the application wrote it.
+     *
+     * @param array<string,mixed> $binding
+     */
+    private static function physicalSource(array $binding): string
+    {
+        $from = $binding['from'] ?? null;
+        return is_array($from) && array_key_exists('raw', $from) ? (string) $from['raw'] : (string) $from;
+    }
+
+    /**
+     * Every physical source the tree reads, first use first, each once. Keyed
+     * by the physical name, so two bindings over one table are one source.
+     *
+     * @param array<string,mixed> $ast @return list<string>
+     */
     private static function sourceTables(array $ast, Bindings $bindings): array
     {
         $out = [];
@@ -179,9 +219,12 @@ final class Hybrid
             if ($node === null) return;
             if (($node['t'] ?? null) === 'var' && $bindings->has($node['name'])) {
                 $binding = $bindings->get($node['name'], $node['pos'] ?? null);
-                if (($binding['kind'] ?? null) === 'relation' && !isset($seen[$node['name']])) {
-                    $seen[$node['name']] = true;
-                    $out[] = $node['name'];
+                if (($binding['kind'] ?? null) === 'relation') {
+                    $table = self::physicalSource($binding);
+                    if (!isset($seen[$table])) {
+                        $seen[$table] = true;
+                        $out[] = $table;
+                    }
                 }
                 return;
             }
@@ -192,6 +235,37 @@ final class Hybrid
         };
         $visit($ast);
         return $out;
+    }
+
+    /**
+     * Whether the SQL rows for this step list are a bucket's KEYS rather than
+     * the value SEL would have produced. A BUCKET without a projection is open:
+     * the translator projects its keys, and SEL's value is a map of member
+     * rows. The next MAP closes it -- it becomes the bucket's projection, one
+     * statement, one value in both lanes -- and a FILTER between them is a
+     * HAVING. Any other step seals it: the members are gone, and no
+     * continuation can get them back. So a prefix that is open or sealed is
+     * not a split point, whatever the translator says about it, and the MAP
+     * fall-through must not fire on a MAP that closes one -- its custom half
+     * would be evaluated over key rows.
+     *
+     * @param list<array<string,mixed>> $steps
+     */
+    private static function bucketRowsAreKeys(array $steps): bool
+    {
+        $open = false;
+        foreach ($steps as $step) {
+            $name = $step['name'] ?? '';
+            if ($name === 'BUCKET') {
+                if ($open) return true;
+                $open = count($step['args']) === 2;
+            } elseif ($open && $name === 'MAP') {
+                $open = false;
+            } elseif ($open && $name !== 'FILTER') {
+                return true;
+            }
+        }
+        return $open;
     }
 
     private static function containsUnsupportedSql(?array $node, string $dialect): bool
@@ -272,7 +346,7 @@ final class Hybrid
             $mapIndex = $i;
             break;
         }
-        if ($mapIndex === null) return null;
+        if ($mapIndex === null || self::bucketRowsAreKeys(array_slice($steps, 0, $mapIndex))) return null;
         $details = self::mapRecordDetails($steps[$mapIndex]);
         if ($details === null) return null;
         $pushable = [];

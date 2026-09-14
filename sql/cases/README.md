@@ -29,7 +29,18 @@ TOTAL > 100
 | `as` | `value` | `value` or `condition` |
 | `mode` | `inline` | `inline`, `params` or `debug` |
 | `params` | — | the bound values as SEL dumps, comma separated |
+| `plan` | — | a **planner** case: `pure_sql`, `hybrid`, `pure_memory` or `refused` |
+| `tables` | — | with `plan`: the physical sources, one per line, first-use order; empty means none |
 | `note` | — | prose, ignored |
+
+A case with `--- plan` asks `plan_hybrid` rather than `translate` (see
+docs/SQL-TRANSLATION.md §12.1). The runner asserts the classification, the
+`tables`, and for `pure_sql` and `hybrid` that `expect` is the prefix
+statement; a `pure_memory` plan has no `expect`, and a `refused` plan has
+`error` and nothing else. Every planner case also checks that the continuation
+is present exactly when the classification says so, and that the program's
+AST is the same tree after planning and after the physical optimiser as
+before — which is how the fixtures see an optimiser that writes into its input.
 
 `bindings` and `options` are JSON, which `conformance/*.selt` deliberately
 avoids. The reason the rule differs here: `.selt` is read by five hosts, two of
@@ -64,6 +75,7 @@ Categories:
 | `neutral` | that a host's own spelling does not reach the output |
 | `pin` | a rendering some other document quotes, so it cannot drift |
 | `review` | a finding from an adversarial review, kept as a case |
+| `plan` | the hybrid planner's contract: classification, physical sources, prefix, immutability |
 
 ## How the cases are read
 

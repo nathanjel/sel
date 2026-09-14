@@ -22,11 +22,11 @@ final class Translator
 {
     /** Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4. */
     private const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
-    public const PIPELINE_OPS = [
-        'FILTER', 'GROUP_BY', 'BUCKET', 'SORT', 'SORT_DESC', 'SORT_BY',
-        'TOP', 'TOP_DESC', 'TOP_BY', 'TAKE', 'DROP', 'DISTINCT', 'DEDUPE',
-        'SELECT_COLS', 'MAP', 'LINK', 'LINK_LEFT',
-    ];
+    /**
+     * The optimiser's list, not a second copy: one vocabulary of pipeline
+     * operators per host, or the planner and the translator drift apart.
+     */
+    public const PIPELINE_OPS = \Sel\Optimizer::PIPELINE_OPS;
 
     private string $dialect;
     private Emit $emit;
@@ -2433,12 +2433,90 @@ final class Translator
         $derived->sourceTable = '';
         $derived->sourceAlias = $alias;
         $derived->sourceSubquery = $plan;
+        if ($plan->bucket !== null) {
+            $derived->bucket = 'sealed';
+        }
         return $derived;
     }
 
     private function ensureDerived(RelationalPlan $plan, bool $condition): RelationalPlan
     {
         return $condition ? $this->wrapPlanAsDerivedTable($plan) : $plan;
+    }
+
+    /**
+     * The projection of a bucket: the RECORD (or single expression) evaluated
+     * once per group, with $binder bound to the group and _K to its key.
+     * Shared by the two spellings SEL has for it -- BUCKET(src, key, proj) and
+     * BUCKET(src, key) .> MAP(proj) -- which are one value in the evaluator and
+     * have to be one statement here. With no projection at all the keys are
+     * projected, which is the most SQL can say about a bucket on its own.
+     *
+     * @param array<string,mixed>|null $aggNode
+     */
+    private function bucketProjection(RelationalPlan $plan, string $binder, ?array $aggNode): void
+    {
+        if ($aggNode !== null) {
+            if ($aggNode['t'] === 'call' && in_array($aggNode['name'], ['RECORD', 'LAZY_RECORD'], true)) {
+                $recArgs = $aggNode['args'];
+                if (count($recArgs) % 2 !== 0) {
+                    refuse('E_ARITY', 'RECORD takes an even number of arguments', $aggNode['pos']);
+                }
+                $projections = [];
+                for ($i = 0; $i < count($recArgs); $i += 2) {
+                    $kNode = $recArgs[$i];
+                    $vNode = $recArgs[$i + 1];
+                    if ($kNode['t'] !== 'text') {
+                        refuse('E_BAD_ARG', 'RECORD field names must be string literals', $kNode['pos']);
+                    }
+                    $alias = $kNode['v'];
+                    $actualNode = $vNode;
+                    // _K is the key, which was written against the KEY's binder --
+                    // the MAP spelling may name the group differently, so the
+                    // projection keeps the binder the key node was written for.
+                    $nodeBinder = $binder;
+                    if ($vNode['t'] === 'var' && $vNode['name'] === '_K' && count($plan->groupBy) === 1) {
+                        $actualNode = $plan->groupBy[0]['node'];
+                        $nodeBinder = $plan->groupBy[0]['binder'];
+                    }
+                    $isSameField = $actualNode['t'] === 'index'
+                        && isset($actualNode['obj'])
+                        && $actualNode['obj']['t'] === 'var'
+                        && ($actualNode['obj']['name'] === '_' || $actualNode['obj']['name'] === $binder)
+                        && isset($actualNode['idx'])
+                        && $actualNode['idx']['t'] === 'text'
+                        && strtoupper($actualNode['idx']['v']) === strtoupper($alias);
+                    if (!$isSameField) {
+                        $plan->aggregateAliases[$alias] = $actualNode;
+                    }
+                    $projections[] = [
+                        'alias' => $alias,
+                        'binder' => $nodeBinder,
+                        'node' => $actualNode,
+                    ];
+                }
+                $plan->projections = $projections;
+            } else {
+                $plan->projections = [
+                    [
+                        'alias' => null,
+                        'binder' => $binder,
+                        'node' => $aggNode,
+                    ]
+                ];
+            }
+        } else {
+            $projections = [];
+            foreach ($plan->groupBy as $gb) {
+                $projections[] = [
+                    'alias' => $gb['alias'],
+                    'binder' => $gb['binder'],
+                    'node' => $gb['node'],
+                ];
+            }
+            $plan->projections = $projections;
+        }
+        $plan->selectCols = null;
     }
 
     /** @param array<string,mixed> $n */
@@ -2482,6 +2560,12 @@ final class Translator
             $name = $step['name'];
             $args = $step['args'];
 
+            // A FILTER after an open bucket is a HAVING and a MAP is the
+            // bucket's projection; anything else spends the members.
+            if ($plan->bucket === 'open' && $name !== 'FILTER' && $name !== 'MAP') {
+                $plan->bucket = 'sealed';
+            }
+
             switch ($name) {
                 case 'FILTER':
                     $plan = $this->ensureDerived($plan,
@@ -2516,7 +2600,6 @@ final class Translator
                     }
                     break;
 
-                case 'GROUP_BY':
                 case 'BUCKET':
                     $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     if (count($args) === 2) {
@@ -2529,13 +2612,13 @@ final class Translator
                         $aggNode = $args[2];
                     } elseif (count($args) === 4) {
                         if (!Constants::isBinderName($args[1])) {
-                            refuse('E_SQL_SHAPE', 'the binder of GROUP_BY must be a bare name', $args[1]['pos']);
+                            refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', $args[1]['pos']);
                         }
                         $binder = $args[1]['name'];
                         $keyNode = $args[2];
                         $aggNode = $args[3];
                     } else {
-                        refuse('E_ARITY', 'GROUP_BY takes 2 to 4 arguments', $step['pos']);
+                        refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', $step['pos']);
                     }
 
                     $groupBy = [];
@@ -2575,62 +2658,8 @@ final class Translator
                     }
                     $plan->groupBy = $groupBy;
 
-                    if ($aggNode !== null) {
-                        if ($aggNode['t'] === 'call' && $aggNode['name'] === 'RECORD') {
-                            $recArgs = $aggNode['args'];
-                            if (count($recArgs) % 2 !== 0) {
-                                refuse('E_ARITY', 'RECORD takes an even number of arguments', $aggNode['pos']);
-                            }
-                            $projections = [];
-                            for ($i = 0; $i < count($recArgs); $i += 2) {
-                                $kNode = $recArgs[$i];
-                                $vNode = $recArgs[$i + 1];
-                                if ($kNode['t'] !== 'text') {
-                                    refuse('E_BAD_ARG', 'RECORD field names must be string literals', $kNode['pos']);
-                                }
-                                $alias = $kNode['v'];
-                                $actualNode = $vNode;
-                                if ($vNode['t'] === 'var' && $vNode['name'] === '_K' && count($plan->groupBy) === 1) {
-                                    $actualNode = $plan->groupBy[0]['node'];
-                                }
-                                $isSameField = $actualNode['t'] === 'index'
-                                    && isset($actualNode['obj'])
-                                    && $actualNode['obj']['t'] === 'var'
-                                    && ($actualNode['obj']['name'] === '_' || $actualNode['obj']['name'] === $binder)
-                                    && isset($actualNode['idx'])
-                                    && $actualNode['idx']['t'] === 'text'
-                                    && strtoupper($actualNode['idx']['v']) === strtoupper($alias);
-                                if (!$isSameField) {
-                                    $plan->aggregateAliases[$alias] = $actualNode;
-                                }
-                                $projections[] = [
-                                    'alias' => $alias,
-                                    'binder' => $binder,
-                                    'node' => $actualNode,
-                                ];
-                            }
-                            $plan->projections = $projections;
-                        } else {
-                            $plan->projections = [
-                                [
-                                    'alias' => null,
-                                    'binder' => $binder,
-                                    'node' => $aggNode,
-                                ]
-                            ];
-                        }
-                    } else {
-                        $projections = [];
-                        foreach ($plan->groupBy as $gb) {
-                            $projections[] = [
-                                'alias' => $gb['alias'],
-                                'binder' => $gb['binder'],
-                                'node' => $gb['node'],
-                            ];
-                        }
-                        $plan->projections = $projections;
-                    }
-                    $plan->selectCols = null;
+                    $plan->bucket = $aggNode === null ? 'open' : null;
+                    $this->bucketProjection($plan, $binder, $aggNode);
                     break;
 
                 case 'SELECT_COLS':
@@ -2669,7 +2698,11 @@ final class Translator
                     break;
 
                 case 'MAP':
-                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
+                    if ($plan->bucket === 'sealed') {
+                        refuse('E_SQL_SHAPE', 'a MAP over buckets must follow the BUCKET, with at most a '
+                            . 'FILTER between: SQL keeps a bucket\'s members only for the projection '
+                            . 'that ends the grouping', $step['pos']);
+                    }
                     if (count($args) === 2) {
                         $binder = '_';
                         $expr = $args[1];
@@ -2682,6 +2715,15 @@ final class Translator
                     } else {
                         refuse('E_ARITY', 'MAP takes 2 or 3 arguments', $step['pos']);
                     }
+                    // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
+                    // MAP's body is evaluated once per group, so it is the bucket's
+                    // projection.
+                    if ($plan->bucket === 'open') {
+                        $plan->bucket = null;
+                        $this->bucketProjection($plan, $binder, $expr);
+                        break;
+                    }
+                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
 
                     if ($expr['t'] === 'call' && in_array($expr['name'], ['RECORD', 'LAZY_RECORD'], true)) {
                         $recArgs = $expr['args'];

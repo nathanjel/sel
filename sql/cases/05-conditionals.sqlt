@@ -65,6 +65,20 @@ IF("yes", 1, 2)
 --- error
 E_SQL_SHAPE 1:4
 ===
+### name: cond.refuse.constant-condition-mismatch-is-at-the-if
+--- note
+The translator never folds, so `IF(TRUE, "x", 1)` is still the IF when its two
+kinds are refused, at 1:1. That is also the column run() reports E_NOT_NUM at
+for the same source (ctl.if.constant-condition-result-keeps-the-if-position):
+one node, one column, in both lanes -- pinned because the in-memory optimiser
+once hoisted the literal and moved run()'s answer to 1:10.
+--- dialect
+mariadb
+--- source
+IF(TRUE, "x", 1) >= 1
+--- error
+E_SQL_SHAPE 1:1
+===
 ### name: cond.nested
 --- dialect
 mariadb

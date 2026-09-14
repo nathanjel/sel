@@ -1672,9 +1672,9 @@ SQL counterpart" (snode-pos e)))
 
 ;;; --- relational pipeline statement compiler -------------------------------
 
-(defparameter +pipeline-ops+
-  '("FILTER" "GROUP_BY" "BUCKET" "SELECT_COLS" "MAP" "DISTINCT" "DEDUPE" "TAKE" "DROP"
-    "SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY" "LINK" "LINK_LEFT"))
+(define-symbol-macro +pipeline-ops+ sel::+pipeline-ops+)
+;; The optimizer's list, not a second copy: one vocabulary of pipeline
+;; operators per host, or the planner and the translator drift apart.
 
 (defun eval-int-param (tr n op)
   (when (clist-p n)
@@ -1832,7 +1832,59 @@ SQL counterpart" (snode-pos e)))
      :source-relation sub-rel
      :source-table sub-alias
      :source-alias sub-alias
-     :source-subquery plan)))
+     :source-subquery plan
+     :bucket (and (relational-plan-bucket plan) :sealed))))
+
+(defun bucket-projection (plan binder agg-node)
+  "The projection of a bucket: the RECORD (or single expression) evaluated once
+per group, with BINDER bound to the group and _K to its key. Shared by the two
+spellings SEL has for it -- BUCKET(src, key, proj) and BUCKET(src, key) .>
+MAP(proj) -- which are one value in the evaluator and have to be one statement
+here. With no projection at all the keys are projected, which is the most SQL
+can say about a bucket on its own."
+  (if agg-node
+      (if (and (not (clist-p agg-node)) (eq (snode-kind agg-node) :call)
+               (member (sel::node-s agg-node) '("RECORD" "LAZY_RECORD") :test #'equal))
+          (let ((rec-args (sel::node-items agg-node))
+                (projs '()))
+            (unless (evenp (length rec-args))
+              (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos agg-node)))
+            (loop for (k-node v-node) on rec-args by #'cddr do
+              (unless (eq (snode-kind k-node) :text)
+                (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
+              (let* ((alias (sel::node-s k-node))
+                     ;; _K is the key, which was written against the KEY's
+                     ;; binder -- the MAP spelling may name the group
+                     ;; differently, so the projection keeps the binder the key
+                     ;; node was written for.
+                     (is-key (and (not (clist-p v-node))
+                                  (eq (snode-kind v-node) :var)
+                                  (equal (sel::node-s v-node) "_K")
+                                  (= (length (relational-plan-group-by plan)) 1)))
+                     (actual-node (if is-key
+                                      (third (first (relational-plan-group-by plan)))
+                                      v-node))
+                     (node-binder (if is-key
+                                      (second (first (relational-plan-group-by plan)))
+                                      binder))
+                     (is-same-field (and (not (clist-p actual-node))
+                                         (eq (snode-kind actual-node) :index)
+                                         (let ((l (sel::node-l actual-node))
+                                               (r (sel::node-r actual-node)))
+                                           (and l (not (clist-p l)) (eq (snode-kind l) :var)
+                                                (or (equal (sel::node-s l) "_") (equal (sel::node-s l) binder))
+                                                r (not (clist-p r)) (eq (snode-kind r) :text)
+                                                (string-equal (sel::node-s r) alias))))))
+                (unless is-same-field
+                  (push (cons alias actual-node) (relational-plan-aggregate-aliases plan)))
+                (push (list alias node-binder actual-node) projs)))
+            (setf (relational-plan-projections plan) (nreverse projs)))
+          (setf (relational-plan-projections plan) (list (list nil binder agg-node))))
+      (let ((projs '()))
+        (dolist (gb (relational-plan-group-by plan))
+          (push (list (first gb) (second gb) (third gb)) projs))
+        (setf (relational-plan-projections plan) (nreverse projs))))
+  (setf (relational-plan-select-cols plan) nil))
 
 (defun analyze-pipeline (tr ast)
   (let ((steps '())
@@ -1863,6 +1915,11 @@ SQL counterpart" (snode-pos e)))
             (let ((sname (sel::node-s step))
                   (args (sel::node-items step))
                   (pos (snode-pos step)))
+              ;; A FILTER after an open bucket is a HAVING and a MAP is the
+              ;; bucket's projection; anything else spends the members.
+              (when (and (eq (relational-plan-bucket plan) :open)
+                         (not (member sname '("FILTER" "MAP") :test #'equal)))
+                (setf (relational-plan-bucket plan) :sealed))
               (cond
                 ((equal sname "FILTER")
                  (when (or (relational-plan-limit plan)
@@ -1887,7 +1944,7 @@ SQL counterpart" (snode-pos e)))
                        (setf (relational-plan-filters plan)
                              (append (relational-plan-filters plan) (list (list binder pred pos)))))))
 
-                ((or (equal sname "GROUP_BY") (equal sname "BUCKET"))
+                ((equal sname "BUCKET")
                  (when (or (relational-plan-group-by plan)
                            (relational-plan-projections plan)
                            (relational-plan-select-cols plan)
@@ -1928,41 +1985,8 @@ SQL counterpart" (snode-pos e)))
                        (t
                         (push (list nil binder key-node (snode-pos key-node)) group-by)))
                      (setf (relational-plan-group-by plan) (nreverse group-by)))
-
-                   (if agg-node
-                       (if (and (not (clist-p agg-node)) (eq (snode-kind agg-node) :call) (equal (sel::node-s agg-node) "RECORD"))
-                           (let ((rec-args (sel::node-items agg-node))
-                                 (projs '()))
-                             (unless (evenp (length rec-args))
-                               (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos agg-node)))
-                             (loop for (k-node v-node) on rec-args by #'cddr do
-                               (unless (eq (snode-kind k-node) :text)
-                                 (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
-                               (let* ((alias (sel::node-s k-node))
-                                      (actual-node (if (and (not (clist-p v-node))
-                                                            (eq (snode-kind v-node) :var)
-                                                            (equal (sel::node-s v-node) "_K")
-                                                            (= (length (relational-plan-group-by plan)) 1))
-                                                       (third (first (relational-plan-group-by plan)))
-                                                       v-node))
-                                      (is-same-field (and (not (clist-p actual-node))
-                                                          (eq (snode-kind actual-node) :index)
-                                                          (let ((l (sel::node-l actual-node))
-                                                                (r (sel::node-r actual-node)))
-                                                            (and l (not (clist-p l)) (eq (snode-kind l) :var)
-                                                                 (or (equal (sel::node-s l) "_") (equal (sel::node-s l) binder))
-                                                                 r (not (clist-p r)) (eq (snode-kind r) :text)
-                                                                 (string-equal (sel::node-s r) alias))))))
-                                 (unless is-same-field
-                                   (push (cons alias actual-node) (relational-plan-aggregate-aliases plan)))
-                                 (push (list alias binder actual-node) projs)))
-                             (setf (relational-plan-projections plan) (nreverse projs)))
-                           (setf (relational-plan-projections plan) (list (list nil binder agg-node))))
-                       (let ((projs '()))
-                         (dolist (gb (relational-plan-group-by plan))
-                           (push (list (first gb) (second gb) (third gb)) projs))
-                         (setf (relational-plan-projections plan) (nreverse projs))))
-                   (setf (relational-plan-select-cols plan) nil)))
+                   (setf (relational-plan-bucket plan) (if agg-node nil :open))
+                   (bucket-projection plan binder agg-node)))
 
                 ((or (equal sname "LINK") (equal sname "LINK_LEFT"))
                  (when (or (relational-plan-group-by plan)
@@ -2050,12 +2074,10 @@ SQL counterpart" (snode-pos e)))
                          (relational-plan-projections plan) nil)))
 
                 ((equal sname "MAP")
-                 (when (or (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-group-by plan)
-                           (relational-plan-limit plan)
-                           (relational-plan-offset plan))
-                   (setf plan (wrap-plan-as-derived-table plan)))
+                 (block map-step
+                 (when (eq (relational-plan-bucket plan) :sealed)
+                   (refuse "E_SQL_SHAPE" "a MAP over buckets must follow the BUCKET, with at most a ~
+FILTER between: SQL keeps a bucket's members only for the projection that ends the grouping" pos))
                  (let (binder expr)
                    (cond
                      ((= (length args) 2)
@@ -2066,6 +2088,19 @@ SQL counterpart" (snode-pos e)))
                       (setf binder (sel::node-s (second args)) expr (third args)))
                      (t
                       (refuse "E_ARITY" "MAP takes 2 or 3 arguments" pos)))
+                   ;; BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
+                   ;; MAP's body is evaluated once per group, so it is the
+                   ;; bucket's projection.
+                   (when (eq (relational-plan-bucket plan) :open)
+                     (setf (relational-plan-bucket plan) nil)
+                     (bucket-projection plan binder expr)
+                     (return-from map-step))
+                   (when (or (relational-plan-projections plan)
+                             (relational-plan-select-cols plan)
+                             (relational-plan-group-by plan)
+                             (relational-plan-limit plan)
+                             (relational-plan-offset plan))
+                     (setf plan (wrap-plan-as-derived-table plan)))
                    (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
                             (member (sel::node-s expr) '("RECORD" "LAZY_RECORD") :test #'equal))
                        (let ((rec-args (sel::node-items expr))
@@ -2078,7 +2113,7 @@ SQL counterpart" (snode-pos e)))
                            (push (list (sel::node-s k-node) binder v-node) projs))
                          (setf (relational-plan-projections plan) (nreverse projs)))
                        (setf (relational-plan-projections plan) (list (list nil binder expr))))
-                   (setf (relational-plan-select-cols plan) nil)))
+                   (setf (relational-plan-select-cols plan) nil))))
 
                 ((or (equal sname "DISTINCT") (equal sname "DEDUPE"))
                  (when (or (relational-plan-limit plan)

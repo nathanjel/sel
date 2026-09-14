@@ -1,9 +1,19 @@
 // Maximal SQL-prefix planner for relational SEL pipelines.
+//
+// The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
+// and is pinned by sql/cases/25-hybrid-plans.sqlt. Two parts of it were wrong
+// here: the planner unwound the RAW tree, so `X = ORDERS; X .> TAKE(1)` -- a
+// seq, not a pipeline -- was classified as pure memory where the three hosts
+// that ran stage 1 first pushed it down; and it carried its own copy of the
+// pipeline vocabulary and the unwind/build pair, which sel.cpp now shares
+// through sel_ast.hpp so this host has one of each.
 
 #include "sel_sql.hpp"
 
 #include "sel_ast.hpp"
 #include "sel_sql_map.hpp"
+#include "sel_sql_node.hpp"
+#include "sel_sql_stage1.hpp"
 
 #include <algorithm>
 #include <set>
@@ -11,11 +21,6 @@
 
 namespace sel::sql {
 namespace {
-
-constexpr std::string_view PIPELINE_OPS[] = {
-    "FILTER", "GROUP_BY", "BUCKET", "SELECT_COLS", "MAP", "DISTINCT", "DEDUPE",
-    "TAKE", "DROP", "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY",
-    "LINK", "LINK_LEFT"};
 
 constexpr std::string_view SQL_SPECIAL_CALLS[] = {
     "IF", "COND", "COALESCE", "COUNT", "SUM", "AVG", "MIN", "MAX", "RECORD",
@@ -26,35 +31,6 @@ std::string upper_ascii(std::string value) {
     if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
   }
   return value;
-}
-
-bool pipeline_op(std::string_view name) {
-  return std::find(std::begin(PIPELINE_OPS), std::end(PIPELINE_OPS), name) !=
-         std::end(PIPELINE_OPS);
-}
-
-std::pair<NodePtr, std::vector<NodePtr>> unwind(const NodePtr& root) {
-  std::vector<NodePtr> steps;
-  NodePtr current = root;
-  while (current && current->t == NT::Call && pipeline_op(current->s) &&
-         !current->items.empty()) {
-    steps.push_back(current);
-    current = current->items.front();
-  }
-  std::reverse(steps.begin(), steps.end());
-  return {current, steps};
-}
-
-NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps) {
-  NodePtr current = std::move(source);
-  for (const NodePtr& step : steps) {
-    auto next = std::make_shared<Node>(*step);
-    next->items.clear();
-    next->items.push_back(current);
-    next->items.insert(next->items.end(), step->items.begin() + 1, step->items.end());
-    current = std::move(next);
-  }
-  return current;
 }
 
 std::shared_ptr<Node> copy_node(const NodePtr& node) {
@@ -81,6 +57,31 @@ NodePtr index_node(NodePtr object, NodePtr key, Pos pos) {
   node->r = std::move(key);
   node->pos = pos;
   return node;
+}
+
+// Whether the SQL rows for this step list are a bucket's KEYS rather than the
+// value SEL would have produced. A BUCKET without a projection is open: the
+// translator projects its keys, and SEL's value is a map of member rows. The
+// next MAP closes it -- it becomes the bucket's projection, one statement, one
+// value in both lanes -- and a FILTER between them is a HAVING. Any other step
+// seals it: the members are gone, and no continuation can get them back. So a
+// prefix that is open or sealed is not a split point, whatever the translator
+// says about it, and the MAP fall-through must not fire on a MAP that closes
+// one -- its custom half would be evaluated over key rows.
+bool bucket_rows_are_keys(const std::vector<NodePtr>& steps, std::size_t count) {
+  bool open = false;
+  for (std::size_t i = 0; i < count && i < steps.size(); ++i) {
+    const NodePtr& step = steps[i];
+    if (step->s == "BUCKET") {
+      if (open) return true;
+      open = step->items.size() == 2;
+    } else if (open && step->s == "MAP") {
+      open = false;
+    } else if (open && step->s != "FILTER") {
+      return true;
+    }
+  }
+  return open;
 }
 
 bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect) {
@@ -158,6 +159,10 @@ NodePtr var_node(std::string name, Pos pos) {
   return node;
 }
 
+// Every physical source the tree reads, first use first, each once. The
+// physical source is the relation's table, or for a relation query the query
+// text exactly as the application wrote it; keyed by that, so two bindings
+// over one table are one source.
 void collect_tables(const NodePtr& node, const Bindings& bindings,
                     std::vector<std::string>& out, std::set<std::string>& seen) {
   if (!node) return;
@@ -166,8 +171,8 @@ void collect_tables(const NodePtr& node, const Bindings& bindings,
     if (binding.kind() == Binding::Kind::Relation) {
       const std::string& table = binding.as_relation().from;
       if (seen.insert(table).second) out.push_back(table);
-      return;
     }
+    return;
   }
   if (node->l) collect_tables(node->l, bindings, out, seen);
   if (node->r) collect_tables(node->r, bindings, out, seen);
@@ -189,6 +194,7 @@ std::optional<HybridPlan> try_plan_fallthrough(
   });
   if (map_it == steps.end()) return std::nullopt;
   const std::size_t map_index = static_cast<std::size_t>(map_it - steps.begin());
+  if (bucket_rows_are_keys(steps, map_index)) return std::nullopt;
   const NodePtr& map_step = *map_it;
   const auto details = map_record_details(map_step);
   if (!details) return std::nullopt;
@@ -279,6 +285,9 @@ std::optional<HybridPlan> try_plan_fallthrough(
   return plan;
 }
 
+// The plan for a program nothing of which reaches the database. The
+// continuation is the program itself, and the AST it exposes is the program's
+// own, so a caller sees the same tree whichever way the plan went.
 HybridPlan pure_memory_plan(const Program& program, std::string dialect,
                             const Bindings& bindings) {
   HybridPlan plan;
@@ -298,8 +307,25 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
   Bindings checked = bindings;
   checked.check_aliases();
 
-  const NodePtr optimized = optimize_ast_logical(program.ast());
-  auto [source, steps] = unwind(optimized);
+  // Stage 1 first, exactly as the translator runs it, so the tree unwound
+  // below is the one a prefix will be translated from. A program stage 1
+  // refuses -- `A += 1; ...`, a bare statement before the result -- is a
+  // program no part of which can be pushed down, which is a pure-memory plan
+  // and not an exception: "none of it" is one of the planner's answers. So is
+  // a tree stage 1 can only express with a clist, which to_node() reports as
+  // null: the translator refuses that as a statement shape, and there is no
+  // prefix of a keyed list to try.
+  NodePtr normalized;
+  try {
+    ConstScope scope = const_scope(&checked);
+    normalized = normalise(program.ast(), scope.names, scope.root)->to_node();
+  } catch (const SqlError&) {
+    return pure_memory_plan(program, dialect, checked);
+  }
+  if (!normalized) return pure_memory_plan(program, dialect, checked);
+
+  const NodePtr optimized = optimize_ast_logical(normalized);
+  auto [source, steps] = unwind_pipeline(optimized);
   if (!source || source->t != NT::Var || steps.empty() ||
       !checked.has(source->s) ||
       checked.get(source->s, source->pos).kind() != Binding::Kind::Relation) {
@@ -328,6 +354,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
   // pipeline semantics exactly as written.
   for (std::size_t count = steps.size(); count-- > 0;) {
     if (count == 0) break;
+    if (bucket_rows_are_keys(steps, count)) continue;
     const std::vector<NodePtr> prefix_steps(steps.begin(), steps.begin() +
                                                      static_cast<std::ptrdiff_t>(count));
     const NodePtr prefix_ast = build_pipeline(source, prefix_steps);

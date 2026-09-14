@@ -570,6 +570,66 @@ like everything else.
 
 ---
 
+## Changing the optimiser or the planner
+
+The pipeline optimiser (`optimizer.*` in each host) and the hybrid planner
+(`sql/hybrid.*`) are the two pieces written five times without a shared data
+file to keep them honest — the dialect map is data every host loads, but a
+rewrite is a walk, and a walk is transcribed. `sql/cases/25-hybrid-plans.sqlt`
+is what stands in for the data file, and the cross-language review that
+produced it found every one of the items below broken in at least one host
+while all 801 language cases were green. So, for any change to either:
+
+- **Order.** The planner runs stage 1 (`normalise`) first, then the logical
+  optimiser, then unwinds. Never unwind the raw AST: a helper assignment is a
+  `seq`, and a `seq` is not a pipeline.
+- **Ownership.** Neither the optimiser nor the planner writes into the tree it
+  is handed. Copy the node, rewrite the copy, return it. A write-back is
+  invisible until a constant folds, which is why the immutability fixtures
+  fold one on purpose; if you add a rewrite, add a fixture whose input the
+  rewrite would change.
+- **Metadata meaning.** `source_tables` is physical names, first use first,
+  deduplicated by physical name. Every return path of the planner fills every
+  field of the plan — `continuation_ast` is the original AST on the
+  pure-memory path, not left empty.
+- **Options.** One options object, forwarded to both the optimiser and the
+  translator. A key must mean the same thing in every host that accepts it.
+- **Fallback.** Anything stage 1 or the translator refuses is a shorter prefix
+  or a pure-memory plan, never an exception out of `plan_hybrid`. The two
+  refusals that do escape — a base dialect, an alias collision — escape before
+  any classification is attempted.
+- **Shape.** A prefix is a split point only if its SQL rows are the value the
+  evaluator would have produced for it. A bare `BUCKET` breaks that (keys, not
+  groups); `bucketRowsAreKeys` in each planner is the list of such steps, and a
+  new step whose SQL result differs in shape from its SEL result belongs there.
+- **Vocabulary, again.** The externally facing verb is `BUCKET`; `GROUP_BY` is
+  a SQL clause and does not appear in SEL. Internal plan fields may be named
+  for the SQL they render.
+- **Vocabulary.** There is one list of pipeline operators per host, in the
+  optimiser; the translator and the planner read it from there. Do not add a
+  second.
+- **Positions.** The optimiser is invisible: an error a program raises after
+  optimisation carries the same code and position as before it (spec §6.3
+  names the node that actually failed, and the conformance suite asserts the
+  column). A fold that builds a new literal stamps it with the folded node's
+  position; a fold that would return a *child* must copy it and re-stamp it
+  the same way, which is only exact for a leaf literal — `IF(TRUE, 1 / 0, 2)`
+  is not folded, because the `/` inside has a column of its own. This is how
+  four hosts came to report `IF(TRUE, "x", 1) >= 1` at the `"x"` while C++,
+  whose IF arm never fired, reported the IF; the fuzzer compares positions,
+  and so must any fold you add.
+
+Then, for a cross-host rewrite: one language-neutral case in
+`sql/cases/25-hybrid-plans.sqlt` showing what it does, one showing the shape it
+refuses to touch where that is not obvious, and the immutability check the
+runner applies to every planner case. Host-local tests
+(`tools/check-js-optimizer.mjs`, `tools/check-php-optimizer.php`,
+`python/tests/test_unit.py`, `cpp/tests/sql_unit.cpp`, `lisp/tests/unit.lisp`)
+carry what the shared fixture cannot express — an optimiser option that only
+three hosts accept, the `run()` cache — and nothing else.
+
+---
+
 ## Running the checks
 
 ```

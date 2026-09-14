@@ -4,7 +4,31 @@
 
 (defstruct (program (:constructor %make-program (source ast)))
   (source "" :type string)
-  (ast nil))
+  ;; The parse tree, and the tree every other consumer reads: DEPENDENCIES, the
+  ;; SQL translator, the hybrid planner. It is IMMUTABLE once here -- the
+  ;; optimiser and the planner copy on the way down and never write into it
+  ;; (sql/cases/25-hybrid-plans.sqlt asserts so) -- and a caller who builds a
+  ;; program from an AST of their own is held to the same rule. Setting the
+  ;; slot to a new tree is fine and drops the cache below; writing into its
+  ;; nodes is not.
+  (ast nil)
+  ;; The physical tree RUN evaluates: AST after the in-memory optimiser, built
+  ;; on the first run and kept, because the rewrite and the copy it makes cost
+  ;; more than evaluating a small rule does. Keyed by the identity of AST so a
+  ;; new tree is noticed. Private; SQL translation never sees it, since a
+  ;; physical rewrite (LAZY_RECORD, join pushdown) is not something a database
+  ;; can be asked to run. Two threads racing to fill it compute the same
+  ;; immutable tree and one wins; that is benign.
+  (%physical nil)
+  (%physical-of nil))
+
+(defun program-physical-ast (program)
+  "The optimised tree RUN evaluates, built once per AST."
+  (let ((ast (program-ast program)))
+    (unless (eq (program-%physical-of program) ast)
+      (setf (program-%physical program) (optimize-ast ast)
+            (program-%physical-of program) ast))
+    (program-%physical program)))
 
 (defun compile-source (source)
   "Compile SOURCE, raising SEL-ERROR on any compile-time failure: syntax, an
@@ -18,7 +42,7 @@ is mutated in place by any assignment the program performs."
   (let ((root (cond ((null context) (make-none))
                     ((value-p context) context)
                     (t (from-native context)))))
-    (eval-node (optimize-ast (program-ast program)) (make-context root))))
+    (eval-node (program-physical-ast program) (make-context root))))
 
 (defun evaluate (source &optional context)
   (run (compile-source source) context))
@@ -100,7 +124,7 @@ computed is exactly a program that could not have been evaluated."
                    (collect-deps (second items) inner reads assigned (1+ depth))))
                 (t
                  (dolist (arg items) (collect-deps arg bound reads assigned (1+ depth)))))))
-           ((string= name "GROUP_BY")
+           ((string= name "BUCKET")
             (let ((n (length items)))
               (cond
                 ((and (= n 4) (eq (node-kind (second items)) :var))

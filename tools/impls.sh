@@ -301,7 +301,11 @@ impl_unit() {
       "$SEL_PY_WHEEL_BIN" -c 'import pytest' 2>/dev/null || {
         echo "python-wheel: pytest not installed in the venv, unit tests skipped"; return 0; }
       "$SEL_PY_WHEEL_BIN" -m pytest -q python/tests ;;
-    cpp)    [ -x cpp/build/unit ] && cpp/build/unit ;;
+    # Both unit binaries: the language core and the SQL layer's own checks
+    # (cpp/tests/sql_unit.cpp), which pin what the shared case runner cannot
+    # observe -- an executed plan, the shared physical tree.
+    cpp)    { [ -x cpp/build/unit ] && cpp/build/unit; } &&
+            { [ -x cpp/build/sqlunit ] && cpp/build/sqlunit; } ;;
     lisp)   lisp/bin/test ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
   esac

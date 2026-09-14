@@ -88,14 +88,20 @@
    #:dialects
 
    ;; Hybrid execution planner
+   ;; The plan's slots are the cross-host contract of docs/SQL-TRANSLATION.md
+   ;; §12.1: every host exposes the same nine, under its own spelling.
    #:hybrid-plan
    #:make-hybrid-plan
    #:hybrid-plan-p
+   #:hybrid-plan-dialect
    #:hybrid-plan-sql-statement
    #:hybrid-plan-sql-prefix-ast
+   #:hybrid-plan-continuation-ast
    #:hybrid-plan-continuation-program
    #:hybrid-plan-continuation-source-var
    #:hybrid-plan-pure-sql-p
    #:hybrid-plan-pure-memory-p
+   #:hybrid-plan-hybrid-p
+   #:hybrid-plan-source-tables
    #:plan-hybrid
    #:execute-hybrid))

@@ -11,14 +11,37 @@ import { optimizeAst, optimizeAstLogical, optimizeAstInMemory } from './optimize
 export class Program {
   constructor(source, ast) {
     this.source = source;
+    // The parse tree, and the tree every other consumer reads: dependencies(),
+    // the SQL translator, the hybrid planner. It is IMMUTABLE once here -- the
+    // optimiser and the planner copy on the way down and never write into it
+    // (sql/cases/25-hybrid-plans.sqlt asserts so) -- and a caller who builds a
+    // Program from an AST of their own is held to the same rule. Reassigning
+    // `ast` is fine and drops the cache below; writing into its nodes is not.
     this.ast = ast;
+    // The physical tree run() evaluates: `ast` after the in-memory optimiser,
+    // built on the first run and kept, because the rewrite and the copy it
+    // makes cost more than evaluating a small rule does. Keyed by the identity
+    // of `ast` so a reassignment is noticed. Private; SQL translation never
+    // sees it, since a physical rewrite (LAZY_RECORD, join pushdown) is not
+    // something a database can be asked to run.
+    this._physical = null;
+    this._physicalOf = null;
   }
 
   // `context` may be a Value, a plain object, or omitted. Returns a Value; the
   // context is mutated in place by any assignments the program performs.
   run(context) {
     const root = context instanceof Value ? context : Value.fromNative(context || {});
-    return evalNode(optimizeAst(this.ast), new Context(root));
+    return evalNode(this.physicalAst(), new Context(root));
+  }
+
+  // The optimised tree run() evaluates, built once per `ast`.
+  physicalAst() {
+    if (this._physicalOf !== this.ast) {
+      this._physical = optimizeAst(this.ast);
+      this._physicalOf = this.ast;
+    }
+    return this._physical;
   }
 
   // Every variable the program reads without having assigned it first, found
@@ -110,7 +133,7 @@ function collect(node, bound, reads, assigned, depth) {
           return;
         }
       }
-      if (name === 'GROUP_BY') {
+      if (name === 'BUCKET') {
         const n = node.args.length;
         if (n === 4 && node.args[1].t === 'var') {
           collect(node.args[0], bound, reads, assigned, depth + 1);

@@ -28,6 +28,7 @@
 import { compile } from '../src/sel.mjs';
 import { SelError } from '../src/errors.mjs';
 import { Sql, SqlError, map as sqlmap } from '../src/sql/index.mjs';
+import { optimizeAstInMemory } from '../src/optimizer.mjs';
 import { SQL_CASES } from './case-data.mjs';
 
 // A malformed suite. Not a failing case — a suite that cannot be run.
@@ -72,6 +73,99 @@ function applyRegistrations(ops) {
 
 const ERROR_RE = /^(\S+)(?:\s+(\d+):(\d+))?$/;
 const TILDE_RE = /~\d+~/g;
+
+// The tree as text, with the registry's Spec objects left out: they are looked
+// up by name and compared by identity, and a snapshot is compared by value.
+// Everything else that identifies a node -- kind, position, literal, name,
+// operator, grouping, children -- is in here, so two snapshots are equal
+// exactly when the caller would see the same tree.
+function snapshotAst(ast) {
+  return JSON.stringify(ast, (key, value) => (key === 'spec' ? undefined : value));
+}
+
+// Report what went wrong with a planner case, or null.
+//
+// A `--- plan` case asks the planner rather than the translator. It asserts the
+// classification, the physical sources, the SQL prefix, that the continuation
+// exists exactly when the classification says so, and that the caller's AST is
+// the same tree afterwards -- after planning, which runs stage 1 and the logical
+// optimiser, and after the physical optimiser Program.run() uses.
+function runPlanCase(c) {
+  const dialect = c.dialect;
+  const options = c.options || {};
+  const mode = c.mode || 'inline';
+  let plan = null;
+  let error = null;
+  let program = null;
+  let before = null;
+  try {
+    applyRegistrations(c.register);
+    const bindings = c.bindings();
+    program = compile(c.source);
+    before = snapshotAst(program.ast);
+    plan = Sql.planHybrid(program, dialect, bindings, options);
+  } catch (e) {
+    if (e instanceof SuiteError) throw e;
+    else if (e instanceof SqlError) error = e;
+    else if (e instanceof SelError) return `the source did not compile: ${e}`;
+    else throw new SuiteError(`${c.at}: unexpected ${e.constructor.name}: ${e.stack}`);
+  }
+
+  if (c.plan === 'refused') {
+    if (error === null) return `expected ${c.error}, got a ${classify(plan)} plan`;
+    const m = ERROR_RE.exec(c.error);
+    if (m === null) throw new SuiteError(`${c.at}: malformed error expectation`);
+    if (error.code !== m[1]) return `expected ${m[1]}, got ${error.code} (${error.message})`;
+    return null;
+  }
+  if (error !== null) return `expected a ${c.plan} plan, got ${error.code} (${error.message})`;
+
+  const got = classify(plan);
+  if (got !== c.plan) return `expected a ${c.plan} plan, got ${got}`;
+  if (c.tables !== null && c.tables !== undefined) {
+    const want = JSON.stringify(c.tables);
+    const have = JSON.stringify(plan.sourceTables);
+    if (want !== have) return `source tables got:  ${have}\n     want: ${want}`;
+  }
+  if (plan.dialect !== dialect) return `plan.dialect is ${plan.dialect}, not ${dialect}`;
+
+  if (c.plan === 'pure_memory') {
+    if (plan.sqlStatement !== null) return 'a pure-memory plan carries a SQL statement';
+    if (plan.continuationProgram !== program) {
+      return 'a pure-memory plan must run the original program';
+    }
+    if (plan.continuationAst !== program.ast) {
+      return 'a pure-memory plan must expose the original AST as its continuation';
+    }
+  } else {
+    if (plan.sqlStatement === null) return `a ${c.plan} plan has no SQL statement`;
+    if (plan.sqlPrefixAst === null) return `a ${c.plan} plan has no SQL prefix AST`;
+    const sql = plan.sqlStatement.asStatement(mode);
+    if (sql !== c.expect) return `got:  ${sql}\n     want: ${c.expect}`;
+    if (c.plan === 'pure_sql') {
+      if (plan.continuationProgram !== null || plan.continuationAst !== null) {
+        return 'a pure-SQL plan carries a continuation';
+      }
+    } else if (plan.continuationProgram === null || plan.continuationAst === null) {
+      return 'a hybrid plan has no continuation';
+    }
+  }
+
+  // Planning must not have touched the tree, and neither may the physical
+  // optimiser that every run() goes through.
+  if (snapshotAst(program.ast) !== before) return 'planning mutated the program AST';
+  optimizeAstInMemory(program.ast);
+  if (snapshotAst(program.ast) !== before) {
+    return 'the physical optimiser mutated the program AST';
+  }
+  return null;
+}
+
+function classify(plan) {
+  if (plan.pureSql) return 'pure_sql';
+  if (plan.pureMemory) return 'pure_memory';
+  return 'hybrid';
+}
 
 // null when the case passes, else what went wrong.
 function runCase(c) {
@@ -201,7 +295,7 @@ function main(argv) {
     sqlmap.reset();        // no case may leak a registration into another
     let problem;
     try {
-      problem = runCase(c);
+      problem = c.plan ? runPlanCase(c) : runCase(c);
     } catch (e) {
       if (!(e instanceof SuiteError)) throw e;
       process.stdout.write(`SUITE ERROR ${e.message}\n`);
@@ -229,7 +323,7 @@ function main(argv) {
       continue;
     }
     try {
-      problem = runCase(mirrorCase);
+      problem = mirrorCase.plan ? runPlanCase(mirrorCase) : runCase(mirrorCase);
     } catch (e) {
       if (!(e instanceof SuiteError)) throw e;
       process.stdout.write(`SUITE ERROR (mirrored to ${mirror}) ${e.message}\n`);

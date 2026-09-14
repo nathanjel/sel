@@ -41,6 +41,13 @@ struct SqlCase {
   const char* mode = nullptr;       // "inline" (default), "params" or "debug"
   bool strict = false;
 
+  // A planner case: "pure_sql", "hybrid", "pure_memory" or "refused", and the
+  // physical sources the plan must report. `has_tables` tells an empty claim
+  // ("reads nothing") from no claim, the way `expect` uses nullptr.
+  const char* plan = nullptr;
+  bool has_tables = false;
+  std::vector<std::string> tables;
+
   // Set when this case's bindings or registrations cannot be SPELLED with the
   // typed C++ constructors -- a JSON array where a name belongs, a section that
   // is not one of the three, a dialect declaration carrying `ops`. The dynamic

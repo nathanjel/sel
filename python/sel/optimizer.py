@@ -19,7 +19,7 @@ from .utf8 import encode_utf8
 
 
 PIPELINE_OPS = frozenset({
-    'FILTER', 'GROUP_BY', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
+    'FILTER', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
     'TAKE', 'DROP', 'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY',
     'LINK', 'LINK_LEFT',
 })
@@ -62,6 +62,25 @@ def literal_num(value: str, pos) -> Node:
     return Node('num', pos, v=value)
 
 
+# A fold that replaces a node by one of its children must not move the error
+# position an operator over the result reports: spec §6.3 names the node that
+# actually failed, and to the operator the operand IS the folded node, not the
+# literal inside it (ctl.if.constant-condition-result-keeps-the-if-position).
+# So a hoisted child is re-stamped with the folded node's position -- which is
+# only exact for a leaf literal, the one shape that carries no positions of
+# its own and cannot fail by itself. A variable is a leaf that can (E_UNDEF_VAR
+# at its own column), so it is not a literal here.
+LITERAL_TYPES = frozenset(('num', 'text', 'bool', 'null'))
+
+
+def is_literal(node: Node | None) -> bool:
+    return node is not None and node.t in LITERAL_TYPES
+
+
+def hoist_literal(child: Node, pos) -> Node:
+    return replace(child, pos=pos)
+
+
 def text_compare(a: str, b: str) -> int:
     return bytes_compare(encode_utf8(a), encode_utf8(b))
 
@@ -81,12 +100,12 @@ def fold(node: Node | None) -> Node | None:
     if node.t == 'bin' and node.l is not None and node.r is not None:
         if node.op == 'AND':
             if node.l.t == 'bool' and not node.l.v:
-                return node.l
+                return literal_bool(False, node.pos)
             if node.l.t == 'bool' and node.r.t == 'bool':
                 return literal_bool(node.l.v and node.r.v, node.pos)
         if node.op == 'OR':
             if node.l.t == 'bool' and node.l.v:
-                return node.l
+                return literal_bool(True, node.pos)
             if node.l.t == 'bool' and node.r.t == 'bool':
                 return literal_bool(node.l.v or node.r.v, node.pos)
         if (node.l.t == 'num' and node.r.t == 'num'
@@ -145,28 +164,9 @@ def fold(node: Node | None) -> Node | None:
         return node
     if (node.t == 'call' and node.name == 'IF' and len(node.args) == 3
             and node.args[0].t == 'bool'):
-        return node.args[1] if node.args[0].v else node.args[2]
+        branch = node.args[1] if node.args[0].v else node.args[2]
+        return hoist_literal(branch, node.pos) if is_literal(branch) else node
     return node
-
-
-def walk_node(node: Node | None, predicate) -> bool:
-    if node is None:
-        return False
-    if predicate(node):
-        return True
-    if any(walk_node(item, predicate) for item in node.args):
-        return True
-    if any(walk_node(item, predicate) for item in node.items):
-        return True
-    return (walk_node(node.l, predicate) or walk_node(node.r, predicate)
-            or walk_node(node.x, predicate) or walk_node(node.obj, predicate)
-            or walk_node(node.idx, predicate) or walk_node(node.target, predicate)
-            or walk_node(node.value, predicate))
-
-
-def node_has_var(node: Node | None, name: str) -> bool:
-    return walk_node(node, lambda item: item.t == 'var'
-                     and item.name.upper() == name.upper())
 
 
 def field_refs(node: Node | None, binder: str = '_') -> list[str]:

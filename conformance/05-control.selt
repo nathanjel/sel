@@ -53,6 +53,67 @@ IF(TRUE)
 --- expect
 error E_ARITY at 1:1
 ===
+### name: ctl.if.constant-condition-result-keeps-the-if-position
+--- note
+`IF(TRUE, "x", 1)` is the IF's value: when `>=` rejects it, the node that
+actually failed (spec §6.3) is the operand `>=` was handed -- the IF at 1:1 --
+not the literal the IF chose. An optimiser that folds a constant-condition IF
+to its branch must stamp the branch with the IF's position, and it can only do
+that for a leaf literal; C++ never folded IF and so reported 1:1 while the four
+hosts that did reported 1:10, which is the disagreement that pinned this.
+--- source
+IF(TRUE, "x", 1) >= 1
+--- expect
+error E_NOT_NUM at 1:1
+===
+### name: ctl.if.constant-false-condition-result-keeps-the-if-position
+--- source
+IF(FALSE, 1, "x") + 1
+--- expect
+error E_NOT_NUM at 1:1
+===
+### name: ctl.if.constant-condition-null-result-keeps-the-if-position
+--- note
+A NULL branch is a leaf too, and E_NULL is raised by `+` against its operand,
+the IF.
+--- source
+IF(TRUE, NULL, 1) + 1
+--- expect
+error E_NULL at 1:1
+===
+### name: ctl.if.nested-constant-conditions-keep-the-outer-if-position
+--- note
+The inner IF folds to `"x"` at the inner IF's column, and that literal is a
+leaf the outer IF may fold in turn -- to the outer IF's column, 1:1. Whatever
+the optimiser does, `>=` was handed the outer IF.
+--- source
+IF(TRUE, IF(TRUE, "x", 1), 2) >= 1
+--- expect
+error E_NOT_NUM at 1:1
+===
+### name: ctl.if.constant-condition-compound-branch-keeps-its-own-positions
+--- note
+The limit of the fold: a compound branch has positions of its own inside it,
+and the `/` that fails is at 1:12 whether or not the IF is still there. A fold
+that hoisted the whole branch and stamped it would report 1:1, so a branch
+that is not a leaf is left where it is.
+--- source
+IF(TRUE, 1 / 0, 2)
+--- expect
+error E_DIV_ZERO at 1:12
+===
+### name: ctl.if.constant-condition-variable-branch-is-the-if-value
+--- note
+A variable is a leaf that can fail on its own (E_UNDEF_VAR at its own column),
+so it is not folded either; the value it holds is still the IF's when `+`
+rejects it, and the IF is at 1:1.
+--- setup
+X = "x"
+--- source
+IF(TRUE, X, 1) + 1
+--- expect
+error E_NOT_NUM at 1:1
+===
 % COND — flat multi-branch selection, with IF's laziness and a mandatory default.
 
 ### name: ctl.cond.first-match

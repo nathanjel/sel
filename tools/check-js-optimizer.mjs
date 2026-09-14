@@ -8,6 +8,8 @@ import { parse } from '../js/src/parser.mjs';
 import {
   optimizeAstLogical, optimizeAstInMemory, unwindPipeline,
 } from '../js/src/optimizer.mjs';
+import { compile } from '../js/src/sel.mjs';
+import { Binding, Sql } from '../js/src/sql/index.mjs';
 
 let checks = 0;
 
@@ -112,5 +114,96 @@ same(names(optimizedSteps(
 const foldedNot = optimizeAstLogical(parse('NOT FALSE'));
 check(foldedNot.t === 'bool' && foldedNot.pos.col === 1,
   'unary NOT fold keeps operator position');
+
+// A hoisted child takes the folded node's position (spec §6.3: the operand an
+// operator rejects is the IF or the AND, not the literal inside it); a branch
+// with positions of its own is not hoisted at all. The run()-visible half of
+// this is ctl.if.constant-condition-* and op.logic.*-keeps-the-*-position.
+const foldedIf = optimizeAstLogical(parse('1 + IF(TRUE, "x", 2)'));
+check(foldedIf.r.t === 'text' && foldedIf.r.v === 'x' && foldedIf.r.pos.col === 5,
+  'IF fold stamps the literal with the IF position');
+const foldedAnd = optimizeAstLogical(parse('1 + (FALSE AND TRUE)'));
+check(foldedAnd.r.t === 'bool' && foldedAnd.r.v === false && foldedAnd.r.pos.col === 12,
+  'AND short-circuit fold keeps operator position');
+const foldedOr = optimizeAstLogical(parse('1 + (TRUE OR FALSE)'));
+check(foldedOr.r.t === 'bool' && foldedOr.r.v === true && foldedOr.r.pos.col === 11,
+  'OR short-circuit fold keeps operator position');
+const unfoldedIf = optimizeAstLogical(parse('IF(TRUE, 1 / 0, 2)'));
+check(unfoldedIf.t === 'call' && unfoldedIf.name === 'IF' && unfoldedIf.args[1].pos.col === 12,
+  'IF over a compound branch is not folded');
+const unfoldedVar = optimizeAstLogical(parse('IF(TRUE, X, 2)'));
+check(unfoldedVar.t === 'call' && unfoldedVar.name === 'IF',
+  'IF over a variable branch is not folded');
+
+// --- the hybrid planner's contract, the parts a host-local check can see ---
+//
+// sql/cases/25-hybrid-plans.sqlt holds the language-neutral version of these;
+// what is here is what the shared fixtures cannot express in JSON options or
+// cannot observe through the runner: an optimiser option reaching the
+// optimiser, the run() cache, and immutability across a real run().
+
+const snapshot = (ast) => JSON.stringify(ast, (k, v) => (k === 'spec' ? undefined : v));
+const orders = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', 'o', 'NUM') }) };
+
+const helper = compile('X = ORDERS; X .> TAKE(1)');
+const helperPlan = Sql.planHybrid(helper, 'postgresql', orders);
+check(helperPlan.pureSql, 'a helper assignment is normalised before planning');
+same(helperPlan.sourceTables, ['orders'], 'source tables are physical names');
+
+const twoFilters = 'ORDERS .> FILTER(_["id"] > 1) .> FILTER(_["id"] < 9)';
+const fused = Sql.planHybrid(compile(twoFilters), 'postgresql', orders);
+const unfused = Sql.planHybrid(compile(twoFilters), 'postgresql', orders, { fuseFilters: false });
+check(unwindPipeline(fused.sqlPrefixAst).steps.length === 1
+  && unwindPipeline(unfused.sqlPrefixAst).steps.length === 2,
+  'planner options reach the logical optimiser');
+check(fused.pureSql && unfused.pureSql, 'fusion does not change the classification');
+
+const refused = compile('A += 1; ORDERS .> TAKE(1)');
+const refusedPlan = Sql.planHybrid(refused, 'postgresql', orders);
+check(refusedPlan.pureMemory && refusedPlan.continuationProgram === refused
+  && refusedPlan.continuationAst === refused.ast,
+  'a program stage 1 refuses is a pure-memory plan over the original program');
+same(refusedPlan.sourceTables, ['orders'], 'a pure-memory plan still names its sources');
+
+const reusable = compile(
+  '(3, 1, 2) .> FILTER(NOT (_ < 1 + 1)) .> MAP(RECORD("x", _, "y", _ * 2, "z", _ + 1)) .> TAKE(2 * 1)');
+const before = snapshot(reusable.ast);
+const first = reusable.run().dump();
+optimizeAstLogical(reusable.ast);
+optimizeAstInMemory(reusable.ast);
+Sql.planHybrid(reusable, 'postgresql', orders);
+check(snapshot(reusable.ast) === before, 'run, both optimisers and planning leave the AST unchanged');
+check(reusable.run().dump() === first, 'repeated runs answer the same');
+check(reusable.physicalAst() === reusable.physicalAst(), 'the physical AST is built once');
+const physical = reusable.physicalAst();
+reusable.ast = parse('1 + 1');
+check(reusable.physicalAst() !== physical && reusable.run().asText() === '2',
+  'reassigning ast drops the cache');
+
+// --- a plan's continuation reports errors where run() does ---
+//
+// The planner folds one tree for both halves of a split, so a hoisted literal
+// in the continuation carries the position the in-memory half will report.
+// sql/cases/25-hybrid-plans.sqlt pins the SQL side of these; only executing
+// the plan can see the position the memory side reports.
+const rows = [{ id: '1' }, { id: '2' }];
+const runner = () => rows;
+function failure(fn) {
+  try { fn(); return 'no error'; } catch (e) { return `${e.code}@${e.line}:${e.col}`; }
+}
+for (const [source, kind, want] of [
+  ['ORDERS .> TAKE(2) .> MAP(IF(TRUE, "x", 1) >= _["id"])', 'hybrid', 'E_NOT_NUM@1:26'],
+  ['ORDERS .> TAKE(2) .> FILTER((FALSE AND TRUE) + _["id"] > 0)', 'hybrid', 'E_NOT_NUM@1:36'],
+  ['ORDERS .> FILTER(IF(TRUE, "x", 1) >= _["id"])', 'pure_memory', 'E_NOT_NUM@1:18'],
+]) {
+  const program = compile(source);
+  const plan = Sql.planHybrid(program, 'postgresql', orders);
+  const got = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+  check(got === kind, `${source}: expected a ${kind} plan, got ${got}`);
+  const inMemory = failure(() => program.run({ ORDERS: rows }));
+  const executed = failure(() => Sql.executeHybrid(plan, runner, { ORDERS: rows }));
+  check(inMemory === want, `${source}: run() reports ${inMemory}, want ${want}`);
+  check(executed === want, `${source}: the executed plan reports ${executed}, want ${want}`);
+}
 
 console.log(`JS optimizer checks: ${checks} passed`);

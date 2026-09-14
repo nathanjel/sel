@@ -38,7 +38,13 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SUITE = resolve(ROOT, 'sql/cases');
 
 const SECTIONS = ['dialect', 'register', 'bindings', 'options', 'as', 'mode',
-                  'source', 'expect', 'params', 'error', 'throws'];
+                  'source', 'expect', 'params', 'error', 'throws', 'plan', 'tables'];
+
+// `--- plan` turns a case into a PLANNER case: the runner calls plan_hybrid
+// instead of translate and asserts the classification, the physical source
+// tables, the SQL prefix and that the caller's AST survived planning. See
+// sql/cases/README.md.
+const PLANS = ['pure_sql', 'hybrid', 'pure_memory', 'refused'];
 
 const errors = [];
 const fail = (where, msg) => errors.push(`${where}: ${msg}`);
@@ -83,9 +89,38 @@ function parseSqlt(text, file) {
     }
     if (c.source === null) fail(c.at, `case ${c.name} has no --- source`);
     const outcomes = [c.expect, c.error, c.throws].filter((x) => x !== null);
-    if (outcomes.length !== 1) {
+    if (c.plan !== null) {
+      // A planner case. A pure-memory plan emits no SQL, so it has no
+      // `--- expect`; the other two carry the prefix statement. `--- error` is
+      // the one refusal planning itself can raise -- a base dialect, an alias
+      // collision -- and a plan is then not classified at all.
+      if (!PLANS.includes(c.plan)) {
+        fail(c.at, `case ${c.name}: --- plan must be one of ${PLANS.join(', ')}`);
+      }
+      if (c.throws !== null) fail(c.at, `case ${c.name}: a planner case cannot --- throws`);
+      if (c.plan === 'refused') {
+        if (c.error === null || c.expect !== null || c.tables !== null) {
+          fail(c.at, `case ${c.name}: a refused plan has --- error and nothing else`);
+        }
+      } else if (c.error !== null) {
+        fail(c.at, `case ${c.name}: a plan that raises is --- plan refused`);
+      } else if (c.plan === 'pure_memory' && c.expect !== null) {
+        fail(c.at, `case ${c.name}: a pure_memory plan emits no SQL, drop --- expect`);
+      } else if (c.plan !== 'pure_memory' && c.expect === null) {
+        fail(c.at, `case ${c.name}: a ${c.plan} plan needs --- expect, its SQL prefix`);
+      }
+      if (c.params !== null) fail(c.at, `case ${c.name}: --- params is not checked for a plan`);
+      if (c.as !== null) fail(c.at, `case ${c.name}: a plan is always a statement, drop --- as`);
+    } else if (outcomes.length !== 1) {
       fail(c.at, `case ${c.name} needs exactly one of --- expect, --- error and --- throws`);
     }
+    if (c.tables !== null && c.plan === null) {
+      fail(c.at, `case ${c.name}: --- tables only makes sense with --- plan`);
+    }
+    // One physical source per line, first-use order. An empty section is a
+    // claim that there are none, which is not the same as no claim.
+    c.tableList = c.tables === null ? null
+      : c.tables === '' ? [] : c.tables.split('\n').map((t) => t.trim()).filter((t) => t !== '');
     if (!c.dialect) fail(c.at, `case ${c.name} has no --- dialect`);
   }
   return cases;
@@ -309,6 +344,7 @@ function emitPhp(cases) {
       ['expect', c.expect], ['error', c.error], ['throws', c.throws],
       ['params', c.params], ['as', c.as], ['mode', c.mode],
       ['register', c.registerData], ['options', c.optionsData],
+      ['plan', c.plan], ['tables', c.tableList],
     ].map(([k, v]) => `            ${phpStr(k)} => ${emitPhpArg(v)},`).join('\n');
     const binds = Object.entries(c.bindingCalls)
       .map(([n, x]) => `${phpStr(n)} => ${emitPhpArg(x)}`).join(', ');
@@ -341,6 +377,7 @@ function emitPython(cases) {
       ['expect', c.expect], ['error', c.error], ['throws', c.throws],
       ['params', c.params], ['as', c.as], ['mode', c.mode],
       ['register', c.registerData], ['options', c.optionsData],
+      ['plan', c.plan], ['tables', c.tableList],
     ].map(([k, v]) => `        ${pyStr(k)}: ${emitPyArg(v)},`).join('\n');
     const binds = Object.entries(c.bindingCalls)
       .map(([n, x]) => `${pyStr(n)}: ${emitPyArg(x)}`).join(', ');
@@ -367,6 +404,7 @@ function emitJs(cases) {
       ['expect', c.expect], ['error', c.error], ['throws', c.throws],
       ['params', c.params], ['as', c.as], ['mode', c.mode],
       ['register', c.registerData], ['options', c.optionsData],
+      ['plan', c.plan], ['tables', c.tableList],
     ].map(([k, v]) => `    ${jsStr(k)}: ${emitJsArg(v)},`).join('\n');
     const binds = Object.entries(c.bindingCalls)
       .map(([n, x]) => `${jsStr(n)}: ${emitJsArg(x)}`).join(', ');
@@ -584,6 +622,8 @@ function emitLispCases(cases) {
    :as ${lispOpt(c.as)}
    :mode ${lispOpt(c.mode)}
    :strict ${c.optionsData && c.optionsData.strict ? 't' : 'nil'}
+   :plan ${lispOpt(c.plan)}
+   :tables ${c.tableList === null ? ':none' : '(list ' + c.tableList.map(lispStr).join(' ') + ')'}
    :register ${reg}
    :bindings (lambda () (list ${binds})))`;
   }).join('\n');
@@ -794,6 +834,9 @@ function emitCpp(cases) {
       `.as_ = ${c.as === null || c.as === undefined ? 'nullptr' : cppStr(c.as)}`,
       `.mode = ${c.mode === null || c.mode === undefined ? 'nullptr' : cppStr(c.mode)}`,
       `.strict = ${!!(c.optionsData && c.optionsData.strict)}`,
+      `.plan = ${c.plan === null ? 'nullptr' : cppStr(c.plan)}`,
+      `.has_tables = ${c.tableList !== null}`,
+      `.tables = {${(c.tableList ?? []).map(cppStr).join(', ')}}`,
       `.unrepresentable = ${unrep === null ? 'nullptr' : cppStr(unrep)}`,
       `.register_fn = ${unrep === null && reg ? `${fn}_reg` : 'nullptr'}`,
       `.bindings_fn = ${unrep === null ? `${fn}_bind` : 'nullptr'}`,

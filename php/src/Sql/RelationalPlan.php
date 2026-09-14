@@ -71,19 +71,29 @@ final class RelationalPlan
     public array $filters = [];
 
     /**
-     * Group by expressions from GROUP_BY(...).
+     * Group by expressions from BUCKET(...).
      * @var list<array{alias: ?string, binder: string, node: array<string,mixed>, pos: array{line:int,col:int,offset:int}}>|null
      */
     public ?array $groupBy = null;
 
     /**
-     * Post-group filter predicates (HAVING) from FILTER(...) after GROUP_BY.
+     * A BUCKET without a projection leaves the plan 'open': its SQL rows are
+     * the group keys, which is not what SEL's buckets are (a map of member
+     * rows), so the next MAP is folded into the bucket as its projection --
+     * the one SQL shape a bucket has. Any other step first turns it 'sealed':
+     * the members are gone for good, and a MAP after that is refused rather
+     * than evaluated over rows SEL would have called groups.
+     */
+    public ?string $bucket = null;
+
+    /**
+     * Post-group filter predicates (HAVING) from FILTER(...) after BUCKET.
      * @var list<array{binder: string, node: array<string,mixed>, pos: array{line:int,col:int,offset:int}}>
      */
     public array $having = [];
 
     /**
-     * Aggregate aliases defined in GROUP_BY's RECORD(...) projection.
+     * Aggregate aliases defined in BUCKET's RECORD(...) projection.
      * @var array<string, array<string,mixed>>
      */
     public array $aggregateAliases = [];

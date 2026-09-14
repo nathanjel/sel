@@ -23,7 +23,7 @@ import { Emit } from './emit.mjs';
 import { refuse } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
 import { JoinPlan, RelationalPlan } from './relational-plan.mjs';
-import { optimizeAstLogical } from '../optimizer.mjs';
+import { optimizeAstLogical, PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS } from '../optimizer.mjs';
 
 // SEL list keys are the canonical decimals "1", "2", … — so "01" is not a key and
 // neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer used
@@ -45,9 +45,9 @@ function listKey(k) {
 
 // Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
-const PIPELINE_OPS = ['FILTER', 'GROUP_BY', 'BUCKET', 'SORT', 'SORT_DESC', 'SORT_BY',
-  'TOP', 'TOP_DESC', 'TOP_BY', 'TAKE', 'DROP', 'DISTINCT', 'DEDUPE', 'SELECT_COLS',
-  'MAP', 'LINK', 'LINK_LEFT'];
+// The optimiser's list, not a second copy: one vocabulary of pipeline operators
+// per host, or the planner and the translator drift apart.
+const PIPELINE_OPS = OPTIMIZER_PIPELINE_OPS;
 
 const AGG_RETURNS = { ALL: 'BOOL', ANY: 'BOOL', SUM: 'NUM', JOIN: 'TEXT',
   MAP: 'LIST', FILTER: 'LIST' };
@@ -1740,6 +1740,7 @@ export class Translator {
     derived.sourceTable = '';
     derived.sourceAlias = alias;
     derived.sourceSubquery = plan;
+    if (plan.bucket !== null) derived.bucket = 'sealed';
     return derived;
   }
 
@@ -1747,10 +1748,80 @@ export class Translator {
     return predicate(plan) ? this.wrapPlanAsDerivedTable(plan) : plan;
   }
 
+  // The projection of a bucket: the RECORD (or single expression) evaluated
+  // once per group, with `binder` bound to the group and _K to its key. Shared
+  // by the two spellings SEL has for it -- BUCKET(src, key, proj) and
+  // BUCKET(src, key) .> MAP(proj) -- which are one value in the evaluator and
+  // have to be one statement here. With no projection at all the keys are
+  // projected, which is the most SQL can say about a bucket on its own.
+  bucketProjection(plan, binder, aggNode) {
+    if (aggNode !== null) {
+      if (aggNode.t === 'call' && (aggNode.name === 'RECORD' || aggNode.name === 'LAZY_RECORD')) {
+        const recArgs = aggNode.args;
+        if (recArgs.length % 2 !== 0) {
+          refuse('E_ARITY', 'RECORD takes an even number of arguments', aggNode.pos);
+        }
+        const projections = [];
+        for (let i = 0; i < recArgs.length; i += 2) {
+          const kNode = recArgs[i];
+          const vNode = recArgs[i + 1];
+          if (kNode.t !== 'text') {
+            refuse('E_BAD_ARG', 'RECORD field names must be string literals', kNode.pos);
+          }
+          const alias = kNode.v;
+          let actualNode = vNode;
+          // _K is the key, which was written against the KEY's binder -- the
+          // MAP spelling may name the group differently, so the projection
+          // keeps the binder the key node was written for.
+          let nodeBinder = binder;
+          if (vNode.t === 'var' && vNode.name === '_K' && plan.groupBy.length === 1) {
+            actualNode = plan.groupBy[0].node;
+            nodeBinder = plan.groupBy[0].binder;
+          }
+          const isSameField = actualNode.t === 'index'
+            && actualNode.obj
+            && actualNode.obj.t === 'var'
+            && (actualNode.obj.name === '_' || actualNode.obj.name === binder)
+            && actualNode.idx
+            && actualNode.idx.t === 'text'
+            && actualNode.idx.v.toUpperCase() === alias.toUpperCase();
+          if (!isSameField) {
+            plan.aggregateAliases[alias] = actualNode;
+          }
+          projections.push({
+            alias,
+            binder: nodeBinder,
+            node: actualNode,
+          });
+        }
+        plan.projections = projections;
+      } else {
+        plan.projections = [
+          {
+            alias: null,
+            binder,
+            node: aggNode,
+          },
+        ];
+      }
+    } else {
+      const projections = [];
+      for (const gb of plan.groupBy) {
+        projections.push({
+          alias: gb.alias,
+          binder: gb.binder,
+          node: gb.node,
+        });
+      }
+      plan.projections = projections;
+    }
+    plan.selectCols = null;
+  }
+
   analyzePipeline(n) {
     const steps = [];
     let curr = n;
-    while (curr.t === 'call' && PIPELINE_OPS.includes(curr.name)) {
+    while (curr.t === 'call' && PIPELINE_OPS.has(curr.name)) {
       if (!curr.args || curr.args.length === 0) break;
       steps.push(curr);
       curr = curr.args[0];
@@ -1776,6 +1847,10 @@ export class Translator {
     for (const step of steps) {
       const name = step.name;
       const args = step.args;
+
+      // A FILTER after an open bucket is a HAVING and a MAP is the bucket's
+      // projection; anything else spends the members. See RelationalPlan.
+      if (plan.bucket === 'open' && name !== 'FILTER' && name !== 'MAP') plan.bucket = 'sealed';
 
       switch (name) {
         case 'FILTER': {
@@ -1865,62 +1940,8 @@ export class Translator {
             });
           }
           plan.groupBy = groupBy;
-
-          if (aggNode !== null) {
-            if (aggNode.t === 'call' && (aggNode.name === 'RECORD' || aggNode.name === 'LAZY_RECORD')) {
-              const recArgs = aggNode.args;
-              if (recArgs.length % 2 !== 0) {
-                refuse('E_ARITY', 'RECORD takes an even number of arguments', aggNode.pos);
-              }
-              const projections = [];
-              for (let i = 0; i < recArgs.length; i += 2) {
-                const kNode = recArgs[i];
-                const vNode = recArgs[i + 1];
-                if (kNode.t !== 'text') {
-                  refuse('E_BAD_ARG', 'RECORD field names must be string literals', kNode.pos);
-                }
-                const alias = kNode.v;
-                let actualNode = vNode;
-                if (vNode.t === 'var' && vNode.name === '_K' && plan.groupBy.length === 1) {
-                  actualNode = plan.groupBy[0].node;
-                }
-                const isSameField = actualNode.t === 'index'
-                  && actualNode.obj
-                  && actualNode.obj.t === 'var'
-                  && (actualNode.obj.name === '_' || actualNode.obj.name === binder)
-                  && actualNode.idx
-                  && actualNode.idx.t === 'text'
-                  && actualNode.idx.v.toUpperCase() === alias.toUpperCase();
-                if (!isSameField) {
-                  plan.aggregateAliases[alias] = actualNode;
-                }
-                projections.push({
-                  alias,
-                  binder,
-                  node: actualNode,
-                });
-              }
-              plan.projections = projections;
-            } else {
-              plan.projections = [
-                {
-                  alias: null,
-                  binder,
-                  node: aggNode,
-                },
-              ];
-            }
-          } else {
-            const projections = [];
-            for (const gb of plan.groupBy) {
-              projections.push({
-                alias: gb.alias,
-                binder: gb.binder,
-                node: gb.node,
-              });
-            }
-            plan.projections = projections;
-          }
+          plan.bucket = aggNode === null ? 'open' : null;
+          this.bucketProjection(plan, binder, aggNode);
           plan.selectCols = null;
           break;
         }
@@ -1961,7 +1982,11 @@ export class Translator {
         }
 
         case 'MAP': {
-          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
+          if (plan.bucket === 'sealed') {
+            refuse('E_SQL_SHAPE', 'a MAP over buckets must follow the BUCKET, with at most a '
+              + 'FILTER between: SQL keeps a bucket\'s members only for the projection '
+              + 'that ends the grouping', step.pos);
+          }
           let binder;
           let expr;
           if (args.length === 2) {
@@ -1976,6 +2001,14 @@ export class Translator {
           } else {
             refuse('E_ARITY', 'MAP takes 2 or 3 arguments', step.pos);
           }
+          // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's
+          // body is evaluated once per group, so it is the bucket's projection.
+          if (plan.bucket === 'open') {
+            plan.bucket = null;
+            this.bucketProjection(plan, binder, expr);
+            break;
+          }
+          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
 
           if (expr.t === 'call' && (expr.name === 'RECORD' || expr.name === 'LAZY_RECORD')) {
             const recArgs = expr.args;

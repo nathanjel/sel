@@ -80,6 +80,117 @@ divided a regex fragment's odd tilde count by two."
                  (incf i)))
     n))
 
+(defun snapshot-ast (n)
+  "The tree as a list, with the registry's spec left out: it is looked up by
+name and compared by identity, and a snapshot is compared by value. Everything
+else that identifies a node -- kind, position, literal, name, operator,
+grouping, children -- is in here."
+  (cond ((null n) nil)
+        ((not (sel::node-p n)) (list :other))
+        (t (let ((pos (sel::node-pos n)))
+             (list (sel::node-kind n)
+                   (and pos (list (sel::pos-line pos) (sel::pos-col pos) (sel::pos-offset pos)))
+                   (sel::node-s n) (sel::node-b n) (sel::node-grouped n)
+                   (snapshot-ast (sel::node-l n)) (snapshot-ast (sel::node-r n))
+                   (mapcar #'snapshot-ast (sel::node-items n)))))))
+
+(defun classify (plan)
+  (cond ((hybrid-plan-pure-sql-p plan) "pure_sql")
+        ((hybrid-plan-pure-memory-p plan) "pure_memory")
+        (t "hybrid")))
+
+(defun run-plan-case (c dialect)
+  "NIL when the planner case passes, else a string saying what went wrong.
+
+A `--- plan` case asks the planner rather than the translator. It asserts the
+classification, the physical sources, the SQL prefix, that the continuation
+exists exactly when the classification says so, and that the caller's AST is
+the same tree afterwards -- after planning, which runs stage 1 and the logical
+optimiser, and after the physical optimiser RUN uses."
+  (let* ((mode (cond ((null (getf c :mode)) :inline)
+                     ((equal (getf c :mode) "inline") :inline)
+                     ((equal (getf c :mode) "params") :params)
+                     ((equal (getf c :mode) "debug") :debug)
+                     (t (suite-fail "~a: unknown mode ~a" (getf c :at) (getf c :mode)))))
+         (want (getf c :plan))
+         (plan nil) (err nil) (program nil) (before nil))
+    (handler-case
+        (progn
+          (when (getf c :register) (funcall (getf c :register)))
+          (let ((binds (funcall (getf c :bindings))))
+            (setf program (sel:compile-source (getf c :source))
+                  before (snapshot-ast (sel:program-ast program))
+                  plan (plan-hybrid program dialect binds (list :strict (getf c :strict))))))
+      (sql-error (e) (setf err e))
+      (sel:sel-error (e)
+        (return-from run-plan-case (format nil "the source did not compile: ~a" e)))
+      (suite-error (e) (error e))
+      (error (e) (suite-fail "~a: unexpected ~a: ~a" (getf c :at) (type-of e) e)))
+
+    (when (equal want "refused")
+      (unless err
+        (return-from run-plan-case
+          (format nil "expected ~a, got a ~a plan" (getf c :error) (classify plan))))
+      (destructuring-bind (code line col) (parse-expected (getf c :error) (getf c :at))
+        (declare (ignore line col))
+        (unless (equal (sql-error-code err) code)
+          (return-from run-plan-case
+            (format nil "expected ~a, got ~a (~a)" code (sql-error-code err)
+                    (sql-error-message err))))
+        (return-from run-plan-case nil)))
+    (when err
+      (return-from run-plan-case
+        (format nil "expected a ~a plan, got ~a (~a)" want (sql-error-code err)
+                (sql-error-message err))))
+
+    (let ((got (classify plan)))
+      (unless (equal got want)
+        (return-from run-plan-case (format nil "expected a ~a plan, got ~a" want got))))
+    (unless (eq (getf c :tables) :none)
+      (unless (equal (hybrid-plan-source-tables plan) (getf c :tables))
+        (return-from run-plan-case
+          (format nil "source tables got:  ~s~%     want: ~s"
+                  (hybrid-plan-source-tables plan) (getf c :tables)))))
+    (unless (equal (hybrid-plan-dialect plan) dialect)
+      (return-from run-plan-case
+        (format nil "plan dialect is ~a, not ~a" (hybrid-plan-dialect plan) dialect)))
+
+    (cond
+      ((equal want "pure_memory")
+       (when (hybrid-plan-sql-statement plan)
+         (return-from run-plan-case "a pure-memory plan carries a SQL statement"))
+       (unless (eq (hybrid-plan-continuation-program plan) program)
+         (return-from run-plan-case "a pure-memory plan must run the original program"))
+       (unless (eq (hybrid-plan-continuation-ast plan) (sel:program-ast program))
+         (return-from run-plan-case
+           "a pure-memory plan must expose the original AST as its continuation")))
+      (t
+       (unless (hybrid-plan-sql-statement plan)
+         (return-from run-plan-case (format nil "a ~a plan has no SQL statement" want)))
+       (unless (hybrid-plan-sql-prefix-ast plan)
+         (return-from run-plan-case (format nil "a ~a plan has no SQL prefix AST" want)))
+       (let ((sql (as-statement (hybrid-plan-sql-statement plan) mode)))
+         (unless (equal sql (getf c :expect))
+           (return-from run-plan-case
+             (format nil "got:  ~a~%     want: ~a" sql (getf c :expect)))))
+       (if (equal want "pure_sql")
+           (when (or (hybrid-plan-continuation-program plan)
+                     (hybrid-plan-continuation-ast plan))
+             (return-from run-plan-case "a pure-SQL plan carries a continuation"))
+           (unless (and (hybrid-plan-continuation-program plan)
+                        (hybrid-plan-continuation-ast plan)
+                        (hybrid-plan-hybrid-p plan))
+             (return-from run-plan-case "a hybrid plan has no continuation")))))
+
+    ;; Planning must not have touched the tree, and neither may the physical
+    ;; optimiser that every RUN goes through.
+    (unless (equal (snapshot-ast (sel:program-ast program)) before)
+      (return-from run-plan-case "planning mutated the program AST"))
+    (sel:optimize-ast-in-memory (sel:program-ast program))
+    (unless (equal (snapshot-ast (sel:program-ast program)) before)
+      (return-from run-plan-case "the physical optimiser mutated the program AST"))
+    nil))
+
 (defun run-case (c dialect)
   "NIL when the case passes, else a string saying what went wrong."
   (when (or (null dialect) (equal dialect ""))
@@ -184,7 +295,9 @@ fragment was rendered and discarded" orphans)))))
                 (some (lambda (f) (search f (getf c :name))) filters))
         (map-reset)                       ; no case may leak a registration
         (let ((problem (handler-case (let ((*print-base* *corpus-print-base*))
-                                          (run-case c (getf c :dialect)))
+                                          (if (getf c :plan)
+                                              (run-plan-case c (getf c :dialect))
+                                              (run-case c (getf c :dialect))))
                          (suite-error (e)
                            (format t "SUITE ERROR ~a~%" e) (incf suite-errors) :skip))))
           (cond
@@ -197,7 +310,9 @@ fragment was rendered and discarded" orphans)))))
                  (when (and m (null (getf c :register)))
                    (map-reset)
                    (let ((p2 (handler-case (let ((*print-base* *corpus-print-base*))
-                                       (run-case c m))
+                                       (if (getf c :plan)
+                                           (run-plan-case c m)
+                                           (run-case c m)))
                                (suite-error (e)
                                  (format t "SUITE ERROR (mirrored to ~a) ~a~%" m e)
                                  (incf suite-errors) :skip))))

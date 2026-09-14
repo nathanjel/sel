@@ -99,6 +99,26 @@ $notFold = Optimizer::optimize(Sel::compile('NOT FALSE')->ast, false);
 check($notFold['t'] === 'bool' && $notFold['pos']['col'] === 1,
     'unary NOT fold keeps operator position');
 
+// A hoisted child takes the folded node's position (spec §6.3: the operand an
+// operator rejects is the IF or the AND, not the literal inside it); a branch
+// with positions of its own is not hoisted at all. The run()-visible half of
+// this is ctl.if.constant-condition-* and op.logic.*-keeps-the-*-position.
+$ifFold = Optimizer::optimize(Sel::compile('1 + IF(TRUE, "x", 2)')->ast, false);
+check($ifFold['r']['t'] === 'text' && $ifFold['r']['v'] === 'x' && $ifFold['r']['pos']['col'] === 5,
+    'IF fold stamps the literal with the IF position');
+$andFold = Optimizer::optimize(Sel::compile('1 + (FALSE AND TRUE)')->ast, false);
+check($andFold['r']['t'] === 'bool' && $andFold['r']['v'] === false && $andFold['r']['pos']['col'] === 12,
+    'AND short-circuit fold keeps operator position');
+$orFold = Optimizer::optimize(Sel::compile('1 + (TRUE OR FALSE)')->ast, false);
+check($orFold['r']['t'] === 'bool' && $orFold['r']['v'] === true && $orFold['r']['pos']['col'] === 11,
+    'OR short-circuit fold keeps operator position');
+$unfoldedIf = Optimizer::optimize(Sel::compile('IF(TRUE, 1 / 0, 2)')->ast, false);
+check($unfoldedIf['t'] === 'call' && $unfoldedIf['name'] === 'IF' && $unfoldedIf['args'][1]['pos']['col'] === 12,
+    'IF over a compound branch is not folded');
+$unfoldedVar = Optimizer::optimize(Sel::compile('IF(TRUE, X, 2)')->ast, false);
+check($unfoldedVar['t'] === 'call' && $unfoldedVar['name'] === 'IF',
+    'IF over a variable branch is not folded');
+
 $mapFilterPush = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
     . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0)',
@@ -154,5 +174,89 @@ $hybrid = Sql::planHybrid(
 );
 check($hybrid->pureSql && $hybrid->sqlStatement !== null, 'hybrid normalization before planning');
 check(Dec::format(Dec::fromInt(PHP_INT_MIN)) === (string) PHP_INT_MIN, 'minimum native integer conversion');
+
+// --- the hybrid planner's contract, the parts a host-local check can see ---
+//
+// sql/cases/25-hybrid-plans.sqlt holds the language-neutral version of these;
+// what is here is what the shared fixtures cannot express in JSON options or
+// cannot observe through the runner: an optimiser option reaching the
+// optimiser, the run() cache, and immutability across a real run().
+
+/** @param array<string,mixed> $ast */
+function snapshot(array $ast): string
+{
+    $strip = static function (array $node) use (&$strip): array {
+        unset($node['spec']);
+        foreach ($node as $k => $v) {
+            if (is_array($v)) {
+                $node[$k] = array_is_list($v) ? array_map($strip, $v) : $strip($v);
+            }
+        }
+        return $node;
+    };
+    return serialize($strip($ast));
+}
+
+$orders = ['ORDERS' => Binding::relation('orders', 'o', ['ID' => Binding::column('id', 'o', 'NUM')])];
+
+$helper = Sql::planHybrid(Sel::compile('X = ORDERS; X .> TAKE(1)'), 'postgresql', $orders);
+check($helper->pureSql, 'a helper assignment is normalised before planning');
+check($helper->sourceTables === ['orders'], 'source tables are physical names');
+
+$twoFilters = 'ORDERS .> FILTER(_["id"] > 1) .> FILTER(_["id"] < 9)';
+$fused = Sql::planHybrid(Sel::compile($twoFilters), 'postgresql', $orders);
+$unfused = Sql::planHybrid(Sel::compile($twoFilters), 'postgresql', $orders, ['fuseFilters' => false]);
+check(count(Optimizer::unwindPipeline($fused->sqlPrefixAst)['steps']) === 1
+    && count(Optimizer::unwindPipeline($unfused->sqlPrefixAst)['steps']) === 2,
+    'planner options reach the logical optimiser');
+
+$refused = Sel::compile('A += 1; ORDERS .> TAKE(1)');
+$refusedPlan = Sql::planHybrid($refused, 'postgresql', $orders);
+check($refusedPlan->pureMemory && $refusedPlan->continuationProgram === $refused
+    && $refusedPlan->continuationAst === $refused->ast,
+    'a program stage 1 refuses is a pure-memory plan over the original program');
+check($refusedPlan->sourceTables === ['orders'], 'a pure-memory plan still names its sources');
+
+$reusable = Sel::compile(
+    '(3, 1, 2) .> FILTER(NOT (_ < 1 + 1)) .> MAP(RECORD("x", _, "y", _ * 2, "z", _ + 1)) .> TAKE(2 * 1)');
+$before = snapshot($reusable->ast);
+$first = $reusable->run()->dump();
+Optimizer::optimize($reusable->ast, false);
+Optimizer::optimize($reusable->ast, true);
+Sql::planHybrid($reusable, 'postgresql', $orders);
+check(snapshot($reusable->ast) === $before, 'run, both optimisers and planning leave the AST unchanged');
+check($reusable->run()->dump() === $first, 'repeated runs answer the same');
+check($reusable->physicalAst() === $reusable->physicalAst(), 'the physical AST is built once');
+
+// --- a plan's continuation reports errors where run() does ---
+//
+// The planner folds one tree for both halves of a split, so a hoisted literal
+// in the continuation carries the position the in-memory half will report.
+// sql/cases/25-hybrid-plans.sqlt pins the SQL side of these; only executing
+// the plan can see the position the memory side reports.
+$rows = [['id' => '1'], ['id' => '2']];
+$runner = static fn (string $sql, array $params): array => $rows;
+$failure = static function (callable $fn): string {
+    try {
+        $fn();
+        return 'no error';
+    } catch (\Sel\SelError $e) {
+        return "{$e->code}@{$e->line}:{$e->col}";
+    }
+};
+foreach ([
+    ['ORDERS .> TAKE(2) .> MAP(IF(TRUE, "x", 1) >= _["id"])', 'hybrid', 'E_NOT_NUM@1:26'],
+    ['ORDERS .> TAKE(2) .> FILTER((FALSE AND TRUE) + _["id"] > 0)', 'hybrid', 'E_NOT_NUM@1:36'],
+    ['ORDERS .> FILTER(IF(TRUE, "x", 1) >= _["id"])', 'pure_memory', 'E_NOT_NUM@1:18'],
+] as [$source, $kind, $want]) {
+    $program = Sel::compile($source);
+    $plan = Sql::planHybrid($program, 'postgresql', $orders);
+    $got = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+    check($got === $kind, "{$source}: expected a {$kind} plan, got {$got}");
+    $inMemory = $failure(static fn () => $program->run(['ORDERS' => $rows]));
+    $executed = $failure(static fn () => Sql::executeHybrid($plan, $runner, ['ORDERS' => $rows]));
+    check($inMemory === $want, "{$source}: run() reports {$inMemory}, want {$want}");
+    check($executed === $want, "{$source}: the executed plan reports {$executed}, want {$want}");
+}
 
 echo "PHP optimizer checks: {$checks} passed\n";

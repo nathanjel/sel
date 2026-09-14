@@ -398,7 +398,7 @@ define({
   fn: (args, ctx) => doTop(args, ctx, null),
 });
 
-function doGroupBy(args, ctx) {
+function doBucket(args, ctx) {
   const value = args.val(0);
   if (value.isNull() || value.size() === 0) return Value.list([]);
 
@@ -476,5 +476,4 @@ function doGroupBy(args, ctx) {
   return Value.listOwned(out);
 }
 
-define({ name: 'GROUP_BY', min: 2, max: 4, lazy: true, binds: true, fn: doGroupBy });
-define({ name: 'BUCKET', min: 2, max: 4, lazy: true, binds: true, fn: doGroupBy });
+define({ name: 'BUCKET', min: 2, max: 4, lazy: true, binds: true, fn: doBucket });

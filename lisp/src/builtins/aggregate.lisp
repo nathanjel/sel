@@ -484,7 +484,7 @@
       ((eq k :none) 0)
       (t (sxhash k)))))
 
-(defun do-group-by (a ctx)
+(defun do-bucket (a ctx)
   (let* ((val (args-val a 0)))
     (force-value val)
     (if (or (value-null-p val) (zerop (value-size val)))
@@ -569,12 +569,8 @@
                     (ctx-pop-frame ctx)))
                 (make-list-value (nreverse out))))))))
 
-(define-builtin "GROUP_BY" 2 4
-  (lambda (a ctx) (do-group-by a ctx))
-  :lazy t :binds t)
-
 (define-builtin "BUCKET" 2 4
-  (lambda (a ctx) (do-group-by a ctx))
+  (lambda (a ctx) (do-bucket a ctx))
   :lazy t :binds t)
 
 

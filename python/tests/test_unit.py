@@ -284,6 +284,55 @@ def test_optimizer_folded_unary_literals_keep_operator_position():
     assert neg_node.t == 'num' and neg_node.pos.col == 1
 
 
+def test_optimizer_hoisted_literals_take_the_folded_node_position():
+    """A hoisted child takes the folded node's position (spec §6.3: the operand
+    an operator rejects is the IF or the AND, not the literal inside it); a
+    branch with positions of its own is not hoisted at all. The run()-visible
+    half of this is ctl.if.constant-condition-* and
+    op.logic.*-keeps-the-*-position.
+    """
+    folded_if = optimize_ast_logical(sel_compile('1 + IF(TRUE, "x", 2)').ast)
+    assert folded_if.r.t == 'text' and folded_if.r.v == 'x' and folded_if.r.pos.col == 5
+    folded_and = optimize_ast_logical(sel_compile('1 + (FALSE AND TRUE)').ast)
+    assert folded_and.r.t == 'bool' and folded_and.r.v is False and folded_and.r.pos.col == 12
+    folded_or = optimize_ast_logical(sel_compile('1 + (TRUE OR FALSE)').ast)
+    assert folded_or.r.t == 'bool' and folded_or.r.v is True and folded_or.r.pos.col == 11
+    unfolded = optimize_ast_logical(sel_compile('IF(TRUE, 1 / 0, 2)').ast)
+    assert unfolded.t == 'call' and unfolded.name == 'IF' and unfolded.args[1].pos.col == 12
+    unfolded_var = optimize_ast_logical(sel_compile('IF(TRUE, X, 2)').ast)
+    assert unfolded_var.t == 'call' and unfolded_var.name == 'IF'
+
+
+@pytest.mark.parametrize(('source', 'kind', 'want'), [
+    ('ORDERS .> TAKE(2) .> MAP(IF(TRUE, "x", 1) >= _["id"])', 'hybrid', 'E_NOT_NUM@1:26'),
+    ('ORDERS .> TAKE(2) .> FILTER((FALSE AND TRUE) + _["id"] > 0)', 'hybrid', 'E_NOT_NUM@1:36'),
+    ('ORDERS .> FILTER(IF(TRUE, "x", 1) >= _["id"])', 'pure_memory', 'E_NOT_NUM@1:18'),
+])
+def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
+    """The planner folds one tree for both halves of a split, so a hoisted
+    literal in the continuation carries the position the in-memory half will
+    report. sql/cases/25-hybrid-plans.sqlt pins the SQL side of these; only
+    executing the plan can see the position the memory side reports.
+    """
+    from sel.sql import Sql
+    rows = [{'id': '1'}, {'id': '2'}]
+
+    def failure(fn):
+        try:
+            fn()
+        except SelError as e:
+            return f'{e.code}@{e.line}:{e.col}'
+        return 'no error'
+
+    program = sel_compile(source)
+    plan = Sql.plan_hybrid(program, 'postgresql', _orders())
+    got = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
+    assert got == kind
+    assert failure(lambda: program.run({'ORDERS': rows})) == want
+    assert failure(lambda: Sql.execute_hybrid(plan, lambda sql, params: rows,
+                                              {'ORDERS': rows})) == want
+
+
 @pytest.mark.parametrize(('source', 'expected'), [
     ('(3, 1, 2) .> TAKE(2) .> TAKE(1)', ['TAKE']),
     ('(3, 1, 2) .> DROP(1) .> DROP(1)', ['DROP']),
@@ -364,6 +413,125 @@ def test_optimizer_physical_join_pushdown_and_lazy_record():
     ).ast)
     _, steps = unwind_pipeline(group_key)
     assert [step.name for step in steps] == ['LINK', 'FILTER']
+
+
+# --- the hybrid planner's contract ------------------------------------------
+#
+# sql/cases/25-hybrid-plans.sqlt holds the language-neutral version; what is
+# here is what the shared fixtures cannot express in JSON options or cannot
+# observe through the runner: an optimiser option reaching the optimiser, the
+# run() cache, and immutability across a real run().
+
+def _snapshot(node):
+    if node is None:
+        return None
+    return (node.t, node.pos, node.v, node.name, node.op, node.grouped,
+            _snapshot(node.l), _snapshot(node.r), _snapshot(node.x),
+            _snapshot(node.obj), _snapshot(node.idx),
+            _snapshot(node.target), _snapshot(node.value),
+            tuple(_snapshot(i) for i in node.items),
+            tuple(_snapshot(a) for a in node.args))
+
+
+def _orders():
+    from sel.sql import Binding
+    return {'ORDERS': Binding.relation('orders', 'o',
+                                       {'ID': Binding.column('id', 'o', 'NUM')})}
+
+
+def test_planner_normalises_before_unwinding_and_names_physical_sources():
+    from sel.sql import Sql
+    plan = Sql.plan_hybrid(sel_compile('X = ORDERS; X .> TAKE(1)'), 'postgresql', _orders())
+    assert plan.pure_sql
+    assert plan.source_tables == ['orders']
+
+
+def test_planner_options_reach_the_logical_optimiser():
+    from sel.sql import Sql
+    source = 'ORDERS .> FILTER(_["id"] > 1) .> FILTER(_["id"] < 9)'
+    fused = Sql.plan_hybrid(sel_compile(source), 'postgresql', _orders())
+    unfused = Sql.plan_hybrid(sel_compile(source), 'postgresql', _orders(),
+                              {'fuseFilters': False})
+    assert len(unwind_pipeline(fused.sql_prefix_ast)[1]) == 1
+    assert len(unwind_pipeline(unfused.sql_prefix_ast)[1]) == 2
+    assert fused.pure_sql and unfused.pure_sql
+
+
+def test_planner_falls_back_to_memory_when_stage_1_refuses():
+    from sel.sql import Sql
+    program = sel_compile('A += 1; ORDERS .> TAKE(1)')
+    plan = Sql.plan_hybrid(program, 'postgresql', _orders())
+    assert plan.pure_memory
+    assert plan.continuation_program is program
+    assert plan.continuation_ast is program.ast
+    assert plan.source_tables == ['orders']
+
+
+def test_program_ast_survives_run_optimisation_and_planning():
+    from sel.optimizer import optimize_ast_in_memory
+    from sel.sql import Sql
+    program = sel_compile(
+        '(3, 1, 2) .> FILTER(NOT (_ < 1 + 1)) .> MAP(RECORD("x", _, "y", _ * 2, "z", _ + 1))'
+        ' .> TAKE(2 * 1)')
+    before = _snapshot(program.ast)
+    first = program.run().dump()
+    optimize_ast_logical(program.ast)
+    optimize_ast_in_memory(program.ast)
+    Sql.plan_hybrid(program, 'postgresql', _orders())
+    assert _snapshot(program.ast) == before
+    assert program.run().dump() == first
+
+
+def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
+    """Every string assertion in sql/cases was green while the planner split
+    `BUCKET(k) .> MAP(...)` after the bucket and counted one row per group --
+    the rows a SELECT ... GROUP BY returns are keys, not SEL's groups. Only an
+    executed plan can see that, and sqlite3 ships with Python, so this runs
+    each bucket shape both ways and compares.
+    """
+    import sqlite3
+    from sel.sql import Binding, Sql
+    bindings = {'ORDERS': Binding.relation('orders', 'o', {
+        'CUSTOMER_ID': Binding.column('customer_id', 'o', 'NUM'),
+        'AMOUNT': Binding.column('amount', 'o', 'NUM')})}
+    rows = [{'customer_id': '7', 'amount': '10'}, {'customer_id': '7', 'amount': '5'},
+            {'customer_id': '9', 'amount': '7'}]
+    db = sqlite3.connect(':memory:')
+    db.execute('create table orders(customer_id, amount)')
+    db.executemany('insert into orders values (?, ?)',
+                   [(r['customer_id'], r['amount']) for r in rows])
+
+    def runner(sql, params):
+        cur = db.execute(sql, [p.as_text() for p in params])
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, [str(v) for v in row])) for row in cur.fetchall()]
+
+    shapes = [
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_)))', 'pure_sql'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(g, RECORD("cid", _K, "total", SUM(g, x, x["amount"])))', 'pure_sql'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> FILTER(COUNT(_) > 1) .> MAP(RECORD("cid", _K))', 'pure_sql'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> MAP(RECORD("c", _["cid"], "big", _["n"] > 1))', 'hybrid'),
+        ('ORDERS .> FILTER(_["amount"] > 6) .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_)))', 'pure_sql'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1) .> MAP(RECORD("cid", _K, "n", COUNT(_)))', 'pure_memory'),
+    ]
+    for source, expected in shapes:
+        program = sel_compile(source)
+        want = program.run({'ORDERS': rows}).dump()
+        plan = Sql.plan_hybrid(program, 'sqlite', bindings)
+        got_kind = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
+        assert got_kind == expected, (source, got_kind)
+        got = Sql.execute_hybrid(plan, runner, {'ORDERS': rows})
+        got = got if isinstance(got, Value) else Value.from_native(got)
+        assert got.dump() == want, (source, got.dump(), want)
+
+
+def test_program_caches_the_physical_ast_per_source_tree():
+    program = sel_compile('1 + 1')
+    assert program.physical_ast() is program.physical_ast()
+    first = program.physical_ast()
+    program.ast = sel_compile('2 + 2').ast
+    assert program.physical_ast() is not first
+    assert program.run().as_text() == '4'
 
 
 # --- parser: the precedence-climbing pilot ----------------------------------

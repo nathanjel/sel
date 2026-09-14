@@ -128,6 +128,14 @@ struct RelationalPlan {
   std::optional<std::vector<RelationalProjection>> projections;
   std::vector<RelationalFilter> filters;
   std::optional<std::vector<RelationalGroup>> group_by;
+  // A BUCKET without a projection leaves the plan Open: its SQL rows are the
+  // group keys, which is not what SEL's buckets are (a map of member rows), so
+  // the next MAP is folded into the bucket as its projection -- the one SQL
+  // shape a bucket has. Any other step first turns it Sealed: the members are
+  // gone for good, and a MAP after that is refused rather than evaluated over
+  // rows SEL would have called groups.
+  enum class Bucket { None, Open, Sealed };
+  Bucket bucket = Bucket::None;
   std::vector<RelationalFilter> having;
   std::unordered_map<std::string, SNodePtr> aggregate_aliases;
   std::vector<RelationalOrder> order_by;
@@ -250,6 +258,14 @@ class Translator {
   Fragment with_join_binders(const RelationalPlan& plan, const RelationalJoin& join,
                              const std::function<Fragment()>& render);
   bool plan_has_rows_above(const RelationalPlan& plan) const;
+  // The projection of a bucket: the RECORD (or single expression) evaluated
+  // once per group, with `binder` bound to the group and _K to its key. Shared
+  // by the two spellings SEL has for it -- BUCKET(src, key, proj) and
+  // BUCKET(src, key) .> MAP(proj) -- which are one value in the evaluator and
+  // have to be one statement here. With no projection at all the keys are
+  // projected, which is the most SQL can say about a bucket on its own.
+  void bucket_projection(RelationalPlan& plan, const std::string& binder,
+                         const SNodePtr& agg_node);
   std::vector<std::string> output_field_names(const RelationalPlan& plan) const;
   RelationalPlan ensure_derived(RelationalPlan plan, bool needed);
   // The programmatic CASE builder, for SUM over an absorbed FILTER. Its kind

@@ -7,7 +7,7 @@ import { lookup } from './registry.mjs';
 import { MAX_DEPTH } from './errors.mjs';
 
 const PIPELINE_OPS = new Set([
-  'FILTER', 'GROUP_BY', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
+  'FILTER', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
   'TAKE', 'DROP', 'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY',
   'LINK', 'LINK_LEFT',
 ]);
@@ -49,6 +49,18 @@ function buildPipeline(source, steps) {
 function literalBool(value, pos) { return { t: 'bool', v: value, pos }; }
 function literalNum(value, pos) { return { t: 'num', v: value, pos }; }
 
+// A fold that replaces a node by one of its children must not move the error
+// position an operator over the result reports: spec §6.3 names the node that
+// actually failed, and to the operator the operand IS the folded node, not the
+// literal inside it (ctl.if.constant-condition-result-keeps-the-if-position).
+// So a hoisted child is re-stamped with the folded node's position -- which is
+// only exact for a leaf literal, the one shape that carries no positions of
+// its own and cannot fail by itself. A variable is a leaf that can (E_UNDEF_VAR
+// at its own column), so it is not a literal here.
+const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
+function isLiteral(node) { return node != null && LITERAL_TYPES.has(node.t); }
+function hoistLiteral(child, pos) { return { ...child, pos }; }
+
 function textCompare(a, b) {
   const aa = new TextEncoder().encode(a);
   const bb = new TextEncoder().encode(b);
@@ -68,11 +80,11 @@ function fold(node) {
   }
   if (node.t === 'bin' && node.l && node.r) {
     if (node.op === 'AND') {
-      if (node.l.t === 'bool' && !node.l.v) return node.l;
+      if (node.l.t === 'bool' && !node.l.v) return literalBool(false, node.pos);
       if (node.l.t === 'bool' && node.r.t === 'bool') return literalBool(node.l.v && node.r.v, node.pos);
     }
     if (node.op === 'OR') {
-      if (node.l.t === 'bool' && node.l.v) return node.l;
+      if (node.l.t === 'bool' && node.l.v) return literalBool(true, node.pos);
       if (node.l.t === 'bool' && node.r.t === 'bool') return literalBool(node.l.v || node.r.v, node.pos);
     }
     if (node.l.t === 'num' && node.r.t === 'num'
@@ -110,27 +122,10 @@ function fold(node) {
   }
   if (node.t === 'call' && node.name === 'IF' && node.args.length === 3
       && node.args[0].t === 'bool') {
-    return node.args[node.args[0].v ? 1 : 2];
+    const branch = node.args[node.args[0].v ? 1 : 2];
+    return isLiteral(branch) ? hoistLiteral(branch, node.pos) : node;
   }
   return node;
-}
-
-function walkNode(node, predicate) {
-  if (!node) return false;
-  if (predicate(node)) return true;
-  if (node.args && node.args.some((item) => walkNode(item, predicate))) return true;
-  if (node.items && node.items.some((item) => walkNode(item, predicate))) return true;
-  if (node.l && walkNode(node.l, predicate)) return true;
-  if (node.r && walkNode(node.r, predicate)) return true;
-  if (node.x && walkNode(node.x, predicate)) return true;
-  if (node.obj && walkNode(node.obj, predicate)) return true;
-  if (node.idx && walkNode(node.idx, predicate)) return true;
-  if (node.target && walkNode(node.target, predicate)) return true;
-  return !!(node.value && walkNode(node.value, predicate));
-}
-
-function nodeHasVar(node, name) {
-  return walkNode(node, (item) => item.t === 'var' && item.name.toUpperCase() === name.toUpperCase());
 }
 
 function fieldRefs(node, binder = '_') {

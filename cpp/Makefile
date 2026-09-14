@@ -130,6 +130,7 @@ $(BUILD):
 # reached build/api, build/batch, build/e2e or build/check-decimal first.
 test: $(BINS)
 	$(BUILD)/unit
+	$(BUILD)/sqlunit
 	cd .. && cpp/$(BUILD)/conformance
 
 # Value is a handle over a shared_ptr, and nothing behind that collects cycles:

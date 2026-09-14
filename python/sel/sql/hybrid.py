@@ -3,6 +3,13 @@
 The planner follows the Lisp reference implementation: normalize and logically
 optimize a relational pipeline, try the complete pipeline first, then try a
 safe mixed MAP fall-through, and finally choose the longest translatable prefix.
+
+The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
+and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at the tree
+the translator will see, ``source_tables`` names PHYSICAL sources (a relation's
+``from``, or a relation query's text verbatim), a program stage 1 refuses is a
+pure-memory plan rather than an exception, and ``options`` is one dict that
+reaches both the logical optimiser and the translator.
 """
 
 from __future__ import annotations
@@ -104,7 +111,19 @@ def _try_statement(ast: Node, dialect: str, bindings: Bindings,
         return None
 
 
+def _physical_source(binding: dict[str, Any]) -> str:
+    """The physical source a relation binding reads: its table, or for a
+    relation query the query text exactly as the application wrote it."""
+    from_ = binding.get('from')
+    if isinstance(from_, dict) and 'raw' in from_:
+        return str(from_['raw'])
+    return str(from_)
+
+
 def _source_tables(ast: Node | None, bindings: Bindings) -> list[str]:
+    """Every physical source the tree reads, first use first, each once.
+    Keyed by the physical name, so two bindings over one table are one
+    source."""
     out: list[str] = []
     seen: set[str] = set()
 
@@ -113,9 +132,11 @@ def _source_tables(ast: Node | None, bindings: Bindings) -> list[str]:
             return
         if node.t == 'var' and bindings.has(node.name):
             binding = bindings.get(node.name, node.pos)
-            if binding['kind'] == 'relation' and node.name.upper() not in seen:
-                seen.add(node.name.upper())
-                out.append(node.name)
+            if binding['kind'] == 'relation':
+                table = _physical_source(binding)
+                if table not in seen:
+                    seen.add(table)
+                    out.append(table)
             return
         for child in node.args:
             visit(child)
@@ -127,6 +148,31 @@ def _source_tables(ast: Node | None, bindings: Bindings) -> list[str]:
 
     visit(ast)
     return out
+
+
+def _bucket_rows_are_keys(steps: list[Node]) -> bool:
+    """Whether the SQL rows for this step list are a bucket's KEYS rather than
+    the value SEL would have produced. A BUCKET without a projection is open:
+    the translator projects its keys, and SEL's value is a map of member rows.
+    The next MAP closes it -- it becomes the bucket's projection, one
+    statement, one value in both lanes -- and a FILTER between them is a
+    HAVING. Any other step seals it: the members are gone, and no continuation
+    can get them back. So a prefix that is open or sealed is not a split
+    point, whatever the translator says about it, and the MAP fall-through
+    must not fire on a MAP that closes one -- its custom half would be
+    evaluated over key rows.
+    """
+    open_ = False
+    for step in steps:
+        if step.name == 'BUCKET':
+            if open_:
+                return True
+            open_ = len(step.args) == 2
+        elif open_ and step.name == 'MAP':
+            open_ = False
+        elif open_ and step.name != 'FILTER':
+            return True
+    return open_
 
 
 SQL_SPECIAL_CALLS = frozenset({
@@ -202,7 +248,7 @@ def _map_record_details(step: Node) -> dict[str, Any] | None:
 def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
                           catalog: Bindings, options: dict[str, Any]) -> HybridPlan | None:
     map_index = next((i for i, step in enumerate(steps) if step.name == 'MAP'), -1)
-    if map_index < 0:
+    if map_index < 0 or _bucket_rows_are_keys(steps[:map_index]):
         return None
     details = _map_record_details(steps[map_index])
     if details is None:
@@ -268,6 +314,15 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
     )
 
 
+def _pure_memory_plan(program: Program, dialect: str, catalog: Bindings) -> HybridPlan:
+    """The plan for a program nothing of which reaches the database. The
+    continuation is the program itself, and the AST it exposes is the program's
+    own, so a caller sees the same tree whichever way the plan went."""
+    return HybridPlan(dialect=dialect, pure_memory=True,
+                      continuation_program=program, continuation_ast=program.ast,
+                      source_tables=_source_tables(program.ast, catalog))
+
+
 def plan_hybrid(program: Program, dialect: str,
                 bindings: Bindings | dict[str, Any] | None = None,
                 options: dict[str, Any] | None = None) -> HybridPlan:
@@ -277,16 +332,22 @@ def plan_hybrid(program: Program, dialect: str,
     sqlmap.require_target(dialect)
     catalog.check_aliases()
 
-    const_names, const_context = sql_constants.scope(catalog)
-    normalized = sql_normalise.run(program.ast, const_names, const_context)
+    # Stage 1 first, exactly as the translator runs it, so the tree unwound
+    # below is the one a prefix will be translated from. A program stage 1
+    # refuses -- ``A += 1; ...``, a bare statement before the result -- is a
+    # program no part of which can be pushed down, which is a pure-memory plan
+    # and not an exception: "none of it" is one of the planner's answers.
+    try:
+        const_names, const_context = sql_constants.scope(catalog)
+        normalized = sql_normalise.run(program.ast, const_names, const_context)
+    except SqlError:
+        return _pure_memory_plan(program, dialect, catalog)
     optimized = optimize_ast_logical(normalized, opts)
     source, steps = unwind_pipeline(optimized)
     if (not steps or source is None or source.t != 'var'
             or not catalog.has(source.name)
             or catalog.get(source.name, source.pos)['kind'] != 'relation'):
-        return HybridPlan(dialect=dialect, pure_memory=True,
-                          continuation_program=program,
-                          source_tables=_source_tables(program.ast, catalog))
+        return _pure_memory_plan(program, dialect, catalog)
 
     full_ast = build_pipeline(source, steps)
     full_sql = _try_statement(full_ast, dialect, catalog, opts)
@@ -301,6 +362,8 @@ def plan_hybrid(program: Program, dialect: str,
 
     for count in range(len(steps) - 1, 0, -1):
         prefix_steps = steps[:count]
+        if _bucket_rows_are_keys(prefix_steps):
+            continue
         prefix_ast = build_pipeline(source, prefix_steps)
         sql = _try_statement(prefix_ast, dialect, catalog, opts)
         if sql is None:
@@ -314,9 +377,7 @@ def plan_hybrid(program: Program, dialect: str,
                           continuation_program=Program('', continuation_ast),
                           source_tables=_source_tables(prefix_ast, catalog))
 
-    return HybridPlan(dialect=dialect, pure_memory=True,
-                      continuation_program=program,
-                      source_tables=_source_tables(program.ast, catalog))
+    return _pure_memory_plan(program, dialect, catalog)
 
 
 def execute_hybrid(plan: HybridPlan, db_runner: Callable[[str, list[Value]], Any],

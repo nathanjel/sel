@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "../sel.hpp"
+#include "../sel_ast.hpp"
 #include "../sel_sql.hpp"
 #include "case_data.hpp"
 
@@ -95,6 +96,110 @@ std::string join_dumps(const std::vector<sel::Value>& vs) {
     out += vs[i].dump();
   }
   return out;
+}
+
+std::string classify(const sel::sql::HybridPlan& plan) {
+  if (plan.pure_sql) return "pure_sql";
+  if (plan.pure_memory) return "pure_memory";
+  return "hybrid";
+}
+
+std::string join_tables(const std::vector<std::string>& tables) {
+  std::string out = "[";
+  for (std::size_t i = 0; i < tables.size(); ++i) {
+    if (i) out += ", ";
+    out += tables[i];
+  }
+  return out + "]";
+}
+
+// Empty when the planner case passes, else what went wrong.
+//
+// A `--- plan` case asks the planner rather than the translator. It asserts
+// the classification, the physical sources, the SQL prefix, and that the
+// continuation exists exactly when the classification says so. The other four
+// hosts also snapshot the caller's AST and compare it after planning; here the
+// tree is `shared_ptr<const Node>` all the way down, so a planner that wrote to
+// it would not compile, and the check is the type.
+std::string run_plan_case(const SqlCase& c, const std::string& dialect) {
+  const std::string mode_name = c.mode ? c.mode : "inline";
+  const auto mode = sel::sql::mode_from_name(mode_name);
+  if (!mode) throw SuiteError(std::string(c.at) + ": unknown mode " + mode_name);
+
+  bool have_error = false;
+  SqlError error("", "");
+  std::optional<sel::sql::HybridPlan> plan;
+  std::optional<sel::Program> program;
+  try {
+    if (c.register_fn) c.register_fn();
+    sel::sql::Bindings bindings(c.bindings_fn());
+    program = sel::compile(c.source);
+    sel::sql::Options options;
+    options.strict = c.strict;
+    plan = Sql::plan_hybrid(*program, dialect, bindings, options);
+  } catch (const SqlError& e) {
+    error = e;
+    have_error = true;
+  } catch (const sel::SelError& e) {
+    return "the source did not compile: " + e.str();
+  } catch (const SuiteError&) {
+    throw;
+  } catch (const std::exception& e) {
+    throw SuiteError(std::string(c.at) + ": unexpected throw: " + e.what());
+  }
+
+  const std::string want_plan = c.plan;
+  if (want_plan == "refused") {
+    if (!have_error) return std::string("expected ") + c.error + ", got a " + classify(*plan) + " plan";
+    const Expected want = parse_expected(c.error, c.at);
+    if (error.code() != want.code) {
+      return "expected " + want.code + ", got " + error.code() + " (" + error.message() + ")";
+    }
+    return "";
+  }
+  if (have_error) {
+    return "expected a " + want_plan + " plan, got " + error.code() + " (" + error.message() + ")";
+  }
+
+  const std::string got = classify(*plan);
+  if (got != want_plan) return "expected a " + want_plan + " plan, got " + got;
+  if (c.has_tables && plan->source_tables != c.tables) {
+    return "source tables got:  " + join_tables(plan->source_tables) +
+           "\n     want: " + join_tables(c.tables);
+  }
+  if (plan->dialect != dialect) return "plan.dialect is " + plan->dialect + ", not " + dialect;
+
+  if (want_plan == "pure_memory") {
+    if (plan->sql_statement) return "a pure-memory plan carries a SQL statement";
+    if (!plan->continuation_program || plan->continuation_program->ast() != program->ast()) {
+      return "a pure-memory plan must run the original program";
+    }
+    if (plan->continuation_ast != program->ast()) {
+      return "a pure-memory plan must expose the original AST as its continuation";
+    }
+  } else {
+    if (!plan->sql_statement) return "a " + want_plan + " plan has no SQL statement";
+    if (!plan->sql_prefix_ast) return "a " + want_plan + " plan has no SQL prefix AST";
+    const std::string sql = plan->sql_statement->as_statement(*mode);
+    if (sql != std::string(c.expect ? c.expect : "")) {
+      return "got:  " + sql + "\n     want: " + std::string(c.expect ? c.expect : "");
+    }
+    if (want_plan == "pure_sql") {
+      if (plan->continuation_program || plan->continuation_ast) {
+        return "a pure-SQL plan carries a continuation";
+      }
+      if (plan->is_hybrid) return "a pure-SQL plan reports is_hybrid";
+    } else {
+      if (!plan->continuation_program || !plan->continuation_ast) {
+        return "a hybrid plan has no continuation";
+      }
+      if (!plan->is_hybrid) return "a hybrid plan does not report is_hybrid";
+    }
+  }
+  // The physical optimiser every run() goes through, for symmetry with the
+  // other runners; the type system is what says it left the tree alone.
+  sel::optimize_ast_in_memory(program->ast());
+  return "";
 }
 
 // Empty when the case passes, else what went wrong.
@@ -258,7 +363,7 @@ int main(int argc, char** argv) {
     Map::reset();   // no case may leak a registration into another
     std::string problem;
     try {
-      problem = run_case(c, c.dialect);
+      problem = c.plan ? run_plan_case(c, c.dialect) : run_case(c, c.dialect);
     } catch (const SuiteError& e) {
       std::printf("SUITE ERROR %s\n", e.what());
       ++suite_errors;
@@ -274,7 +379,7 @@ int main(int argc, char** argv) {
     if (m == MIRRORS.end() || c.register_fn) continue;
     Map::reset();
     try {
-      problem = run_case(c, m->second);
+      problem = c.plan ? run_plan_case(c, m->second) : run_case(c, m->second);
     } catch (const SuiteError& e) {
       std::printf("SUITE ERROR (mirrored to %s) %s\n", m->second.c_str(), e.what());
       ++suite_errors;

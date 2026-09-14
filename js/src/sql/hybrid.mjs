@@ -1,11 +1,30 @@
 // Hybrid SQL-prefix planning. A plan is deliberately small: SQL owns the
 // maximal translatable prefix, while the normal SEL Program remains the source
 // of truth for the in-memory continuation.
+//
+// The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
+// and is pinned by sql/cases/25-hybrid-plans.sqlt. Three parts of it are easy
+// to get wrong and were:
+//
+//   * The planner looks at the tree the TRANSLATOR will see -- stage 1 has run,
+//     helper assignments are inlined, value bindings are literals -- and then
+//     at the logical optimiser's rewrite of that. Unwinding the raw AST first
+//     classified `X = ORDERS; X .> TAKE(1)` as pure memory, because a `seq` is
+//     not a pipeline.
+//   * `sourceTables` names PHYSICAL sources: the relation's `from`, or the raw
+//     query text for a relation query. The SEL binding name is what the caller
+//     already has.
+//   * `options` is one object and it goes to BOTH the logical optimiser and the
+//     translator, the way Python and PHP do it: `strict` for the translator,
+//     `fuseFilters` and `foldConstants` for the optimiser. Dropping it on the
+//     way to the optimiser gave the same key two meanings across hosts.
 
 import { Program, Value } from '../sel.mjs';
 import { optimizeAstLogical, unwindPipeline, buildPipeline, PIPELINE_OPS } from '../optimizer.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import * as sqlmap from './map.mjs';
+import * as constants from './constants.mjs';
+import * as normalise from './normalise.mjs';
 import { Bindings } from './bindings.mjs';
 import { SqlError } from './errors.mjs';
 import { Translator } from './translator.mjs';
@@ -53,6 +72,16 @@ function tryStatement(ast, dialect, bindings, options) {
   }
 }
 
+// The physical source a relation binding reads: its table, or for a relation
+// query the query text exactly as the application wrote it.
+function physicalSource(binding) {
+  const from = binding.from;
+  return from !== null && typeof from === 'object' && from.raw !== undefined
+    ? String(from.raw) : String(from);
+}
+
+// Every physical source the tree reads, first use first, each once. Keyed by
+// the physical name, so two bindings over one table are one source.
 function sourceTables(ast, bindings) {
   const out = [];
   const seen = new Set();
@@ -60,9 +89,12 @@ function sourceTables(ast, bindings) {
     if (!node) return;
     if (node.t === 'var' && bindings.has(node.name)) {
       const binding = bindings.get(node.name, node.pos);
-      if (binding.kind === 'relation' && !seen.has(node.name)) {
-        seen.add(node.name);
-        out.push(node.name);
+      if (binding.kind === 'relation') {
+        const table = physicalSource(binding);
+        if (!seen.has(table)) {
+          seen.add(table);
+          out.push(table);
+        }
       }
       return;
     }
@@ -73,9 +105,35 @@ function sourceTables(ast, bindings) {
     if (node.x) visit(node.x);
     if (node.obj) visit(node.obj);
     if (node.idx) visit(node.idx);
+    if (node.target) visit(node.target);
+    if (node.value) visit(node.value);
   };
   visit(ast);
   return out;
+}
+
+// Whether the SQL rows for this step list are a bucket's KEYS rather than the
+// value SEL would have produced. A BUCKET without a projection is 'open': the
+// translator projects its keys, and SEL's value is a map of member rows. The
+// next MAP closes it -- it becomes the bucket's projection, one statement, one
+// value in both lanes -- and a FILTER between them is a HAVING. Any other step
+// seals it: the members are gone, and no continuation can get them back. So a
+// prefix that is open or sealed is not a split point, whatever the translator
+// says about it, and the MAP fall-through must not fire on a MAP that closes
+// one -- its custom half would be evaluated over key rows.
+function bucketRowsAreKeys(steps) {
+  let open = false;
+  for (const step of steps) {
+    if (step.name === 'BUCKET') {
+      if (open) return true;
+      open = step.args.length === 2;
+    } else if (open && step.name === 'MAP') {
+      open = false;
+    } else if (open && step.name !== 'FILTER') {
+      return true;
+    }
+  }
+  return open;
 }
 
 const SQL_SPECIAL_CALLS = new Set([
@@ -150,6 +208,7 @@ function mapRecordDetails(step) {
 function tryPlanFallthrough(source, steps, dialect, catalog, options) {
   const mapIndex = steps.findIndex((step) => step.name === 'MAP');
   if (mapIndex < 0) return null;
+  if (bucketRowsAreKeys(steps.slice(0, mapIndex))) return null;
   const mapStep = steps[mapIndex];
   const details = mapRecordDetails(mapStep);
   if (!details) return null;
@@ -216,37 +275,60 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options) {
   });
 }
 
+// The plan for a program nothing of which reaches the database. The
+// continuation is the program itself, and the AST it exposes is the program's
+// own, so a caller sees the same tree whichever way the plan went.
+function pureMemoryPlan(program, dialect, catalog) {
+  return new HybridPlan({ dialect, pureMemory: true, continuationProgram: program,
+    continuationAst: program.ast, sourceTables: sourceTables(program.ast, catalog) });
+}
+
 export function planHybrid(program, dialect, bindings = null, options = null) {
   const catalog = bindings instanceof Bindings ? bindings : new Bindings(bindings ?? {});
+  const opts = options ?? {};
   // Match the reference planner's upfront contract checks even when the
   // expression ultimately falls back to memory.  Otherwise an invalid target
   // or aliased catalog is silently accepted simply because no SQL prefix was
   // found.
   sqlmap.requireTarget(dialect);
   catalog.checkAliases();
-  const optimized = optimizeAstLogical(program.ast);
+
+  // Stage 1 first, exactly as the translator runs it, so the tree unwound
+  // below is the one a prefix will be translated from. A program stage 1
+  // refuses -- `A += 1; ...`, a bare statement before the result -- is a
+  // program no part of which can be pushed down, which is a pure-memory plan
+  // and not an exception: "none of it" is one of the planner's answers.
+  let normalized;
+  try {
+    const [constNames, constCtx] = constants.scope(catalog);
+    normalized = normalise.run(program.ast, constNames, constCtx);
+  } catch (error) {
+    if (error instanceof SqlError) return pureMemoryPlan(program, dialect, catalog);
+    throw error;
+  }
+  const optimized = optimizeAstLogical(normalized, opts);
   const { source, steps } = unwindPipeline(optimized);
-  if (!steps.length || source.t !== 'var' || !catalog.has(source.name)
+  if (!steps.length || !source || source.t !== 'var' || !catalog.has(source.name)
       || catalog.get(source.name, source.pos).kind !== 'relation') {
-    return new HybridPlan({ dialect, pureMemory: true, continuationProgram: program,
-      sourceTables: sourceTables(program.ast, catalog) });
+    return pureMemoryPlan(program, dialect, catalog);
   }
 
   const fullAst = buildPipeline(source, steps);
-  const fullSql = tryStatement(fullAst, dialect, catalog, options);
+  const fullSql = tryStatement(fullAst, dialect, catalog, opts);
   if (fullSql !== null) {
     return new HybridPlan({ dialect, sqlStatement: fullSql, sqlPrefixAst: fullAst,
       pureSql: true, sourceTables: sourceTables(fullAst, catalog) });
   }
 
-  const fallthrough = tryPlanFallthrough(source, steps, dialect, catalog, options);
+  const fallthrough = tryPlanFallthrough(source, steps, dialect, catalog, opts);
   if (fallthrough !== null) return fallthrough;
 
   const inputVar = '_INPUT';
   for (let count = steps.length - 1; count >= 1; count--) {
     const prefixSteps = steps.slice(0, count);
+    if (bucketRowsAreKeys(prefixSteps)) continue;
     const prefixAst = buildPipeline(source, prefixSteps);
-    const sql = tryStatement(prefixAst, dialect, catalog, options);
+    const sql = tryStatement(prefixAst, dialect, catalog, opts);
     if (sql === null) continue;
     const remaining = steps.slice(count);
     const input = { t: 'var', name: inputVar, pos: remaining[0].pos };
@@ -262,8 +344,7 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
     });
   }
 
-  return new HybridPlan({ dialect, pureMemory: true, continuationProgram: program,
-    sourceTables: sourceTables(program.ast, catalog) });
+  return pureMemoryPlan(program, dialect, catalog);
 }
 
 export function executeHybrid(plan, dbRunner, context = null) {

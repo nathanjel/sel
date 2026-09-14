@@ -29,6 +29,13 @@
   (projections nil)
   (filters '() :type list)
   (group-by nil)
+  ;; A BUCKET without a projection leaves the plan :open: its SQL rows are the
+  ;; group keys, which is not what SEL's buckets are (a map of member rows), so
+  ;; the next MAP is folded into the bucket as its projection -- the one SQL
+  ;; shape a bucket has. Any other step first turns it :sealed: the members
+  ;; are gone for good, and a MAP after that is refused rather than evaluated
+  ;; over rows SEL would have called groups.
+  (bucket nil)
   (having '() :type list)
   (aggregate-aliases nil)
   (order-by '() :type list)

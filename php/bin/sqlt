@@ -157,6 +157,138 @@ function apply_registrations(?array $ops): void
     }
 }
 
+/**
+ * The tree as text, with the registry's Spec objects left out: they are looked
+ * up by name and compared by identity, and a snapshot is compared by value.
+ * An array is a value in PHP, so the copy taken here is already a snapshot;
+ * serialising it is what makes the comparison say WHICH tree it is.
+ *
+ * @param array<string,mixed> $ast
+ */
+function snapshot_ast(array $ast): string
+{
+    $strip = static function (array $node) use (&$strip): array {
+        unset($node['spec']);
+        foreach ($node as $k => $v) {
+            if (is_array($v)) {
+                $node[$k] = array_is_list($v) ? array_map($strip, $v) : $strip($v);
+            }
+        }
+        return $node;
+    };
+    return serialize($strip($ast));
+}
+
+function classify_plan(\Sel\Sql\HybridPlan $plan): string
+{
+    if ($plan->pureSql) return 'pure_sql';
+    if ($plan->pureMemory) return 'pure_memory';
+    return 'hybrid';
+}
+
+/**
+ * null when the planner case passes, else what went wrong.
+ *
+ * A `--- plan` case asks the planner rather than the translator. It asserts
+ * the classification, the physical sources, the SQL prefix, that the
+ * continuation exists exactly when the classification says so, and that the
+ * caller's AST is the same tree afterwards -- after planning, which runs
+ * stage 1 and the logical optimiser, and after the physical optimiser
+ * Program::run() uses.
+ */
+function run_plan_case(array $c): ?string
+{
+    $dialect = $c['dialect'];
+    $options = $c['options'] ?? [];
+    $mode = $c['mode'] ?? 'inline';
+    $plan = null;
+    $error = null;
+    $program = null;
+    $before = null;
+    try {
+        apply_registrations($c['register']);
+        $bindings = ($c['bindings'])();
+        $program = Sel::compile($c['source']);
+        $before = snapshot_ast($program->ast);
+        $plan = Sql::planHybrid($program, $dialect, $bindings, $options);
+    } catch (SqlError $e) {
+        $error = $e;
+    } catch (SelError $e) {
+        return "the source did not compile: {$e}";
+    } catch (\Throwable $e) {
+        throw new RuntimeException("{$c['at']}: unexpected " . get_class($e) . ": {$e->getMessage()}");
+    }
+
+    if ($c['plan'] === 'refused') {
+        if ($error === null) {
+            return "expected {$c['error']}, got a " . classify_plan($plan) . ' plan';
+        }
+        if (preg_match('/^(\S+)(?:\s+(\d+):(\d+))?$/', $c['error'], $m) !== 1) {
+            throw new RuntimeException("{$c['at']}: malformed error expectation");
+        }
+        if ($error->code !== $m[1]) {
+            return "expected {$m[1]}, got {$error->code} ({$error->getMessage()})";
+        }
+        return null;
+    }
+    if ($error !== null) {
+        return "expected a {$c['plan']} plan, got {$error->code} ({$error->getMessage()})";
+    }
+
+    $got = classify_plan($plan);
+    if ($got !== $c['plan']) {
+        return "expected a {$c['plan']} plan, got {$got}";
+    }
+    if ($c['tables'] !== null && $plan->sourceTables !== $c['tables']) {
+        return 'source tables got:  ' . json_encode($plan->sourceTables)
+            . "\n     want: " . json_encode($c['tables']);
+    }
+    if ($plan->dialect !== $dialect) {
+        return "plan->dialect is {$plan->dialect}, not {$dialect}";
+    }
+
+    if ($c['plan'] === 'pure_memory') {
+        if ($plan->sqlStatement !== null) {
+            return 'a pure-memory plan carries a SQL statement';
+        }
+        if ($plan->continuationProgram !== $program) {
+            return 'a pure-memory plan must run the original program';
+        }
+        if ($plan->continuationAst !== $program->ast) {
+            return 'a pure-memory plan must expose the original AST as its continuation';
+        }
+    } else {
+        if ($plan->sqlStatement === null) {
+            return "a {$c['plan']} plan has no SQL statement";
+        }
+        if ($plan->sqlPrefixAst === null) {
+            return "a {$c['plan']} plan has no SQL prefix AST";
+        }
+        $sql = $plan->sqlStatement->asStatement($mode);
+        if ($sql !== $c['expect']) {
+            return "got:  {$sql}\n     want: {$c['expect']}";
+        }
+        if ($c['plan'] === 'pure_sql') {
+            if ($plan->continuationProgram !== null || $plan->continuationAst !== null) {
+                return 'a pure-SQL plan carries a continuation';
+            }
+        } elseif ($plan->continuationProgram === null || $plan->continuationAst === null) {
+            return 'a hybrid plan has no continuation';
+        }
+    }
+
+    // Planning must not have touched the tree, and neither may the physical
+    // optimiser that every run() goes through.
+    if (snapshot_ast($program->ast) !== $before) {
+        return 'planning mutated the program AST';
+    }
+    \Sel\Optimizer::optimize($program->ast, true);
+    if (snapshot_ast($program->ast) !== $before) {
+        return 'the physical optimiser mutated the program AST';
+    }
+    return null;
+}
+
 /** null when the case passes, else what went wrong. */
 function run_case(array $c): ?string
 {
@@ -336,7 +468,7 @@ foreach ($cases as $c) {
     }
     Map::reset();                 // no case may leak a registration into another
     try {
-        $problem = run_case($c);
+        $problem = $c['plan'] !== null ? run_plan_case($c) : run_case($c);
     } catch (RuntimeException $e) {
         echo "SUITE ERROR {$e->getMessage()}\n";
         $suiteErrors++;
@@ -368,7 +500,7 @@ foreach ($cases as $c) {
         continue;
     }
     try {
-        $problem = run_case($mirrorCase);
+        $problem = $mirrorCase['plan'] !== null ? run_plan_case($mirrorCase) : run_case($mirrorCase);
     } catch (RuntimeException $e) {
         echo "SUITE ERROR (mirrored to {$mirror}) {$e->getMessage()}\n";
         $suiteErrors++;

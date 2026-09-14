@@ -10,3 +10,13 @@
 NodePtr optimize_ast_logical(const NodePtr& ast) { return opt_tree(ast, false, 1); }
 NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_tree(ast, true, 1); }
 NodePtr optimize_ast(const NodePtr& ast) { return optimize_ast_in_memory(ast); }
+
+// The pipeline vocabulary the SQL planner shares with the optimizer. See
+// sel_ast.hpp.
+bool is_pipeline_op(std::string_view name) { return opt_pipeline_op(name); }
+std::pair<NodePtr, std::vector<NodePtr>> unwind_pipeline(const NodePtr& root) {
+  return opt_unwind(root);
+}
+NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps) {
+  return opt_build_pipeline(std::move(source), steps);
+}

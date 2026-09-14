@@ -32,6 +32,14 @@ class RelationalPlan:
         self.projections: list[dict[str, Any]] | None = None
         self.filters: list[dict[str, Any]] = []
         self.group_by: list[dict[str, Any]] | None = None
+        # A BUCKET without a projection leaves the plan 'open': its SQL rows
+        # are the group keys, which is not what SEL's buckets are (a map of
+        # member rows), so the next MAP is folded into the bucket as its
+        # projection -- the one SQL shape a bucket has. Any other step first
+        # turns it 'sealed': the members are gone for good, and a MAP after
+        # that is refused rather than evaluated over rows SEL would have
+        # called groups.
+        self.bucket: str | None = None
         self.having: list[dict[str, Any]] = []
         self.aggregate_aliases: dict[str, Any] = {}
         self.order_by: list[dict[str, Any]] = []

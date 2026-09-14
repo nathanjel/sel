@@ -2201,11 +2201,9 @@ Fragment Translator::join_aggregate(const SNode& n) {
 
 // --- relational pipeline statement compiler ---------------------------------
 
-constexpr std::string_view PIPELINE_OPS[] = {
-    "FILTER", "GROUP_BY", "BUCKET", "SELECT_COLS", "MAP", "DISTINCT", "DEDUPE",
-    "TAKE", "DROP", "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY",
-    "LINK", "LINK_LEFT"
-};
+// The optimizer's list (sel_ast.hpp), not a second copy: one vocabulary of
+// pipeline operators per host, or the planner and the translator drift apart.
+bool pipeline_op_name(std::string_view name) { return sel::is_pipeline_op(name); }
 
 bool Translator::plan_has_rows_above(const RelationalPlan& plan) const {
   return plan.projections.has_value() || plan.select_cols.has_value() ||
@@ -2262,6 +2260,9 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
   derived.source_relation.from = alias;
   derived.source_relation.alias = alias;
   derived.source_subquery = std::move(inner);
+  if (derived.source_subquery->bucket != RelationalPlan::Bucket::None) {
+    derived.bucket = RelationalPlan::Bucket::Sealed;
+  }
 
   for (const std::string& name : output_field_names(*derived.source_subquery)) {
     ColumnSpec field;
@@ -2273,11 +2274,63 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
   return derived;
 }
 
+void Translator::bucket_projection(RelationalPlan& plan, const std::string& binder,
+                                   const SNodePtr& agg_node) {
+  if (agg_node) {
+    if (agg_node->t() == SNode::T::Call &&
+        (agg_node->s() == "RECORD" || agg_node->s() == "LAZY_RECORD")) {
+      const auto& rec_args = agg_node->kids();
+      if (rec_args.size() % 2 != 0) {
+        refuse("E_ARITY", "RECORD takes an even number of arguments", agg_node->pos());
+      }
+      std::vector<RelationalProjection> projections;
+      for (std::size_t i = 0; i < rec_args.size(); i += 2) {
+        const auto& k_node = rec_args[i];
+        const auto& v_node = rec_args[i + 1];
+        if (k_node->t() != SNode::T::Text) {
+          refuse("E_BAD_ARG", "RECORD field names must be string literals", k_node->pos());
+        }
+        std::string alias = k_node->s();
+        SNodePtr actual_node = v_node;
+        // _K is the key, which was written against the KEY's binder -- the MAP
+        // spelling may name the group differently, so the projection keeps the
+        // binder the key node was written for.
+        std::string node_binder = binder;
+        if (v_node->t() == SNode::T::Var && v_node->s() == "_K" && plan.group_by->size() == 1) {
+          actual_node = (*plan.group_by)[0].node;
+          node_binder = (*plan.group_by)[0].binder;
+        }
+        bool is_same_field = actual_node->t() == SNode::T::Index
+          && actual_node->l() && actual_node->l()->t() == SNode::T::Var
+          && (actual_node->l()->s() == "_" || actual_node->l()->s() == binder)
+          && actual_node->r() && actual_node->r()->t() == SNode::T::Text
+          && ascii_upper(actual_node->r()->s()) == ascii_upper(alias);
+        if (!is_same_field) {
+          plan.aggregate_aliases[alias] = actual_node;
+        }
+        projections.push_back({alias, node_binder, actual_node});
+      }
+      plan.projections = std::move(projections);
+    } else {
+      std::vector<RelationalProjection> projections;
+      projections.push_back({std::nullopt, binder, agg_node});
+      plan.projections = std::move(projections);
+    }
+  } else {
+    std::vector<RelationalProjection> projections;
+    for (const auto& gb : *plan.group_by) {
+      projections.push_back({gb.alias, gb.binder, gb.node});
+    }
+    plan.projections = std::move(projections);
+  }
+  plan.select_cols = std::nullopt;
+}
+
 std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) {
   std::vector<SNodePtr> steps;
   SNodePtr curr = ast;
 
-  while (curr && curr->t() == SNode::T::Call && contains(PIPELINE_OPS, curr->s()) && !curr->kids().empty()) {
+  while (curr && curr->t() == SNode::T::Call && pipeline_op_name(curr->s()) && !curr->kids().empty()) {
     steps.push_back(curr);
     curr = curr->kids()[0];
   }
@@ -2310,6 +2363,12 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
     const std::string& name = step->s();
     const auto& args = step->kids();
 
+    // A FILTER after an open bucket is a HAVING and a MAP is the bucket's
+    // projection; anything else spends the members. See RelationalPlan.
+    if (plan.bucket == RelationalPlan::Bucket::Open && name != "FILTER" && name != "MAP") {
+      plan.bucket = RelationalPlan::Bucket::Sealed;
+    }
+
     if (name == "FILTER") {
       const bool need_derived =
           !plan.group_by.has_value() &&
@@ -2336,7 +2395,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       } else {
         plan.filters.push_back({binder, pred, step->pos()});
       }
-    } else if (name == "GROUP_BY" || name == "BUCKET") {
+    } else if (name == "BUCKET") {
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);
       std::string binder;
@@ -2351,13 +2410,13 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         agg_node = args[2];
       } else if (args.size() == 4) {
         if (!is_binder_name(*args[1])) {
-          refuse("E_SQL_SHAPE", "the binder of GROUP_BY must be a bare name", args[1]->pos());
+          refuse("E_SQL_SHAPE", "the binder of BUCKET must be a bare name", args[1]->pos());
         }
         binder = args[1]->s();
         key_node = args[2];
         agg_node = args[3];
       } else {
-        refuse("E_ARITY", "GROUP_BY takes 2 to 4 arguments", step->pos());
+        refuse("E_ARITY", "BUCKET takes 2 to 4 arguments", step->pos());
       }
 
       std::vector<RelationalGroup> group_by;
@@ -2380,50 +2439,8 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         group_by.push_back({std::nullopt, binder, key_node, key_node->pos()});
       }
       plan.group_by = std::move(group_by);
-
-      if (agg_node) {
-        if (agg_node->t() == SNode::T::Call &&
-            (agg_node->s() == "RECORD" || agg_node->s() == "LAZY_RECORD")) {
-          const auto& rec_args = agg_node->kids();
-          if (rec_args.size() % 2 != 0) {
-            refuse("E_ARITY", "RECORD takes an even number of arguments", agg_node->pos());
-          }
-          std::vector<RelationalProjection> projections;
-          for (std::size_t i = 0; i < rec_args.size(); i += 2) {
-            const auto& k_node = rec_args[i];
-            const auto& v_node = rec_args[i + 1];
-            if (k_node->t() != SNode::T::Text) {
-              refuse("E_BAD_ARG", "RECORD field names must be string literals", k_node->pos());
-            }
-            std::string alias = k_node->s();
-            SNodePtr actual_node = v_node;
-            if (v_node->t() == SNode::T::Var && v_node->s() == "_K" && plan.group_by->size() == 1) {
-              actual_node = (*plan.group_by)[0].node;
-            }
-            bool is_same_field = actual_node->t() == SNode::T::Index
-              && actual_node->l() && actual_node->l()->t() == SNode::T::Var
-              && (actual_node->l()->s() == "_" || actual_node->l()->s() == binder)
-              && actual_node->r() && actual_node->r()->t() == SNode::T::Text
-              && ascii_upper(actual_node->r()->s()) == ascii_upper(alias);
-            if (!is_same_field) {
-              plan.aggregate_aliases[alias] = actual_node;
-            }
-            projections.push_back({alias, binder, actual_node});
-          }
-          plan.projections = std::move(projections);
-        } else {
-          std::vector<RelationalProjection> projections;
-          projections.push_back({std::nullopt, binder, agg_node});
-          plan.projections = std::move(projections);
-        }
-      } else {
-        std::vector<RelationalProjection> projections;
-        for (const auto& gb : *plan.group_by) {
-          projections.push_back({gb.alias, gb.binder, gb.node});
-        }
-        plan.projections = std::move(projections);
-      }
-      plan.select_cols = std::nullopt;
+      plan.bucket = agg_node ? RelationalPlan::Bucket::None : RelationalPlan::Bucket::Open;
+      bucket_projection(plan, binder, agg_node);
     } else if (name == "SELECT_COLS") {
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);
@@ -2468,8 +2485,13 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       plan.select_cols = std::move(cols);
       plan.projections = std::nullopt;
     } else if (name == "MAP") {
-      const bool need_derived = plan_has_rows_above(plan);
-      plan = ensure_derived(std::move(plan), need_derived);
+      if (plan.bucket == RelationalPlan::Bucket::Sealed) {
+        refuse("E_SQL_SHAPE",
+               "a MAP over buckets must follow the BUCKET, with at most a FILTER "
+               "between: SQL keeps a bucket's members only for the projection that "
+               "ends the grouping",
+               step->pos());
+      }
       std::string binder;
       SNodePtr expr;
       if (args.size() == 2) {
@@ -2484,6 +2506,15 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       } else {
         refuse("E_ARITY", "MAP takes 2 or 3 arguments", step->pos());
       }
+      // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's body
+      // is evaluated once per group, so it is the bucket's projection.
+      if (plan.bucket == RelationalPlan::Bucket::Open) {
+        plan.bucket = RelationalPlan::Bucket::None;
+        bucket_projection(plan, binder, expr);
+        continue;
+      }
+      const bool need_derived = plan_has_rows_above(plan);
+      plan = ensure_derived(std::move(plan), need_derived);
 
       if (expr->t() == SNode::T::Call &&
           (expr->s() == "RECORD" || expr->s() == "LAZY_RECORD")) {

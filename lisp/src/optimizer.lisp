@@ -9,7 +9,7 @@
 (in-package #:sel)
 
 (defparameter +pipeline-ops+
-  '("FILTER" "GROUP_BY" "BUCKET" "SELECT_COLS" "MAP" "DISTINCT" "DEDUPE" "TAKE" "DROP"
+  '("FILTER" "BUCKET" "SELECT_COLS" "MAP" "DISTINCT" "DEDUPE" "TAKE" "DROP"
     "SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY" "LINK" "LINK_LEFT"))
 
 (defun copy-node-shallow (n)
@@ -22,6 +22,27 @@
           (node-items copy) (copy-list (node-items n))
           (node-spec copy) (node-spec n))
     copy))
+
+;; A fold that replaces a node by one of its children must not move the error
+;; position an operator over the result reports: spec §6.3 names the node that
+;; actually failed, and to the operator the operand IS the folded node, not the
+;; literal inside it (ctl.if.constant-condition-result-keeps-the-if-position).
+;; So a hoisted child is re-stamped with the folded node's position -- which is
+;; only exact for a leaf literal, the one shape that carries no positions of
+;; its own and cannot fail by itself. A variable is a leaf that can (E_UNDEF_VAR
+;; at its own column), so it is not a literal here.
+(defun literal-node-p (node)
+  (and node (member (node-kind node) '(:num :text :bool :null))))
+
+(defun hoist-literal (child pos)
+  (let ((copy (copy-node-shallow child)))
+    (setf (node-pos copy) pos)
+    copy))
+
+(defun literal-bool (value pos)
+  (let ((res (make-node :bool pos)))
+    (setf (node-b res) value)
+    res))
 
 (defun fold-node (node)
   "Folds scalar constants and eliminates dead branches according to strict SEL semantics."
@@ -51,7 +72,7 @@
            ((string= op "AND")
             (cond
               ;; FALSE AND x -> FALSE (left operand is literally FALSE, short-circuits without touching x)
-              ((and l (eq (node-kind l) :bool) (null (node-b l))) l)
+              ((and l (eq (node-kind l) :bool) (null (node-b l))) (literal-bool nil (node-pos node)))
               ;; Literal bool AND bool
               ((and l r (eq (node-kind l) :bool) (eq (node-kind r) :bool))
                (let ((res (make-node :bool (node-pos node))))
@@ -62,7 +83,7 @@
            ((string= op "OR")
             (cond
               ;; TRUE OR x -> TRUE (left operand is literally TRUE, short-circuits without touching x)
-              ((and l (eq (node-kind l) :bool) (node-b l)) l)
+              ((and l (eq (node-kind l) :bool) (node-b l)) (literal-bool t (node-pos node)))
               ;; Literal bool OR bool
               ((and l r (eq (node-kind l) :bool) (eq (node-kind r) :bool))
                (let ((res (make-node :bool (node-pos node))))
@@ -138,9 +159,10 @@
          (if (and (string= name "IF") (= (length items) 3))
              (let ((cond-node (first items)))
                (if (and cond-node (eq (node-kind cond-node) :bool))
-                   (if (node-b cond-node)
-                       (second items)
-                       (third items))
+                   (let ((branch (if (node-b cond-node) (second items) (third items))))
+                     (if (literal-node-p branch)
+                         (hoist-literal branch (node-pos node))
+                         node))
                    node))
              node)))
 
@@ -157,6 +179,7 @@
   (let ((steps '())
         (curr node))
     (loop while (and curr
+                     (node-p curr)
                      (eq (node-kind curr) :call)
                      (member (node-s curr) +pipeline-ops+ :test #'string=)
                      (node-items curr))
@@ -826,98 +849,88 @@
         (when pass8-changed
           (setf curr-steps next-steps
                 changed t)))))
-  ;; Convert RECORD to LAZY_RECORD in MAP
-  (dolist (s curr-steps)
-    (when (string= (node-s s) "MAP")
-      (let* ((args (node-items s))
-             (body-idx (if (= (length args) 3) 2 1))
-             (body (nth body-idx args)))
-        (when (and (eq (node-kind body) :call)
-                   (string= (node-s body) "RECORD")
-                   (>= (length (node-items body)) 4))
-          (let ((new-body (copy-node-shallow body)))
-            (setf (node-s new-body) "LAZY_RECORD"
-                  (node-spec new-body) (registry-lookup "LAZY_RECORD"))
-            (if (= (length args) 3)
-                (setf (node-items s) (list (first args) (second args) new-body))
-                (setf (node-items s) (list (first args) new-body))))))))
-  curr-steps)
+  ;; Convert RECORD to LAZY_RECORD in MAP. Into a copy of the step: the steps
+  ;; here are already this walk's own, but writing into one is the habit the
+  ;; other four hosts do not have, and it is cheap not to.
+  (mapcar (lambda (s)
+            (if (string= (node-s s) "MAP")
+                (let* ((args (node-items s))
+                       (body-idx (if (= (length args) 3) 2 1))
+                       (body (nth body-idx args)))
+                  (if (and (node-p body)
+                           (eq (node-kind body) :call)
+                           (string= (node-s body) "RECORD")
+                           (>= (length (node-items body)) 4))
+                      (let ((new-body (copy-node-shallow body))
+                            (new-step (copy-node-shallow s)))
+                        (setf (node-s new-body) "LAZY_RECORD"
+                              (node-spec new-body) (registry-lookup "LAZY_RECORD"))
+                        (setf (node-items new-step)
+                              (if (= (length args) 3)
+                                  (list (first args) (second args) new-body)
+                                  (list (first args) new-body)))
+                        new-step)
+                      s))
+                s))
+          curr-steps))
+
+(defun optimize-children (node physical depth)
+  "A shallow copy of NODE with every child optimised. NODE itself is never
+written: the tree a Program owns is the caller's, the other four hosts copy on
+the way down, and this one wrote into its input until the cross-language review
+-- so a second RUN saw a tree the first had already rewritten, and the SQL
+planner saw one the evaluator had rewritten for itself."
+  (let ((copy (copy-node-shallow node)))
+    (case (node-kind node)
+      ((:seq :list :call)
+       (setf (node-items copy)
+             (loop for item in (node-items node)
+                   collect (optimize-tree item physical (1+ depth)))))
+      ((:bin :index)
+       (setf (node-l copy) (optimize-tree (node-l node) physical (1+ depth))
+             (node-r copy) (optimize-tree (node-r node) physical (1+ depth))))
+      (:assign
+       (setf (node-r copy) (optimize-tree (node-r node) physical (1+ depth))))
+      (:un
+       (setf (node-l copy) (optimize-tree (node-l node) physical (1+ depth)))))
+    copy))
+
+(defun optimize-tree (node physical depth)
+  "Tier 1 logical rewrites, plus the Tier 2 physical ones when PHYSICAL.
+Anything that is not a node -- the SQL layer's clist, which stage 1 leaves in a
+child slot -- is returned as it is: it has no children this walk knows, and a
+copy would only be a second object the translator has to recognise."
+  (cond
+    ((null node) nil)
+    ((not (node-p node)) node)
+    ((> depth +max-depth+)
+     (fail "E_DEPTH" "evaluation nested too deeply" (node-pos node)))
+    ((and (eq (node-kind node) :call)
+          (member (node-s node) +pipeline-ops+ :test #'string=))
+     (multiple-value-bind (source steps) (unwind-pipeline node)
+       (let ((opt-source (optimize-tree source physical depth))
+             (opt-steps
+               (loop for s in steps
+                     collect
+                     (let ((copy (copy-node-shallow s)))
+                       (setf (node-items copy)
+                             (cons (first (node-items copy))
+                                   (loop for item in (rest (node-items copy))
+                                         collect (optimize-tree item physical (1+ depth)))))
+                       copy))))
+         (build-pipeline-ast opt-source
+                             (if physical
+                                 (optimize-inmemory-pipeline-steps opt-steps)
+                                 (optimize-logical-pipeline-steps opt-steps))))))
+    (t (fold-node (optimize-children node physical depth)))))
 
 (defun optimize-ast-logical (node &optional (depth 1))
-  "Applies Tier 1 engine-agnostic logical rewrites to an AST."
-  (when node
-    (when (> depth +max-depth+)
-      (fail "E_DEPTH" "evaluation nested too deeply" (node-pos node)))
-    (if (and (eq (node-kind node) :call)
-             (member (node-s node) +pipeline-ops+ :test #'string=))
-        (multiple-value-bind (source steps) (unwind-pipeline node)
-          (let ((opt-source (optimize-ast-logical source depth))
-                (opt-steps
-                  (loop for s in steps
-                        collect
-                        (let ((copy (copy-node-shallow s)))
-                          (setf (node-items copy)
-                                (cons (first (node-items copy))
-                                      (loop for item in (rest (node-items copy))
-                                            collect (optimize-ast-logical item (1+ depth)))))
-                          copy))))
-            (build-pipeline-ast opt-source (optimize-logical-pipeline-steps opt-steps))))
-        (progn
-          (case (node-kind node)
-            ((:seq :list)
-             (setf (node-items node)
-                   (loop for item in (node-items node)
-                         collect (optimize-ast-logical item (1+ depth)))))
-            ((:bin :index)
-             (setf (node-l node) (optimize-ast-logical (node-l node) (1+ depth))
-                   (node-r node) (optimize-ast-logical (node-r node) (1+ depth))))
-            (:assign
-             (setf (node-r node) (optimize-ast-logical (node-r node) (1+ depth))))
-            (:un
-             (setf (node-l node) (optimize-ast-logical (node-l node) (1+ depth))))
-            (:call
-             (setf (node-items node)
-                   (loop for item in (node-items node)
-                         collect (optimize-ast-logical item (1+ depth))))))
-          (fold-node node)))))
+  "Applies Tier 1 engine-agnostic logical rewrites to an AST. NODE is not written to."
+  (optimize-tree node nil depth))
 
 (defun optimize-ast-in-memory (node &optional (depth 1))
-  "Applies Tier 1 + Tier 2 in-memory physical rewrites to an AST."
-  (when node
-    (when (> depth +max-depth+)
-      (fail "E_DEPTH" "evaluation nested too deeply" (node-pos node)))
-    (if (and (eq (node-kind node) :call)
-             (member (node-s node) +pipeline-ops+ :test #'string=))
-        (multiple-value-bind (source steps) (unwind-pipeline node)
-          (let ((opt-source (optimize-ast-in-memory source depth))
-                (opt-steps
-                  (loop for s in steps
-                        collect
-                        (let ((copy (copy-node-shallow s)))
-                          (setf (node-items copy)
-                                (cons (first (node-items copy))
-                                      (loop for item in (rest (node-items copy))
-                                            collect (optimize-ast-in-memory item (1+ depth)))))
-                          copy))))
-            (build-pipeline-ast opt-source (optimize-inmemory-pipeline-steps opt-steps))))
-        (progn
-          (case (node-kind node)
-            ((:seq :list)
-             (setf (node-items node)
-                   (loop for item in (node-items node)
-                         collect (optimize-ast-in-memory item (1+ depth)))))
-            ((:bin :index)
-             (setf (node-l node) (optimize-ast-in-memory (node-l node) (1+ depth))
-                   (node-r node) (optimize-ast-in-memory (node-r node) (1+ depth))))
-            (:assign
-             (setf (node-r node) (optimize-ast-in-memory (node-r node) (1+ depth))))
-            (:un
-             (setf (node-l node) (optimize-ast-in-memory (node-l node) (1+ depth))))
-            (:call
-             (setf (node-items node)
-                   (loop for item in (node-items node)
-                         collect (optimize-ast-in-memory item (1+ depth))))))
-          (fold-node node)))))
+  "Applies Tier 1 + Tier 2 in-memory physical rewrites to an AST. NODE is not written to."
+  (optimize-tree node t depth))
 
 (defun optimize-ast (node)
   (optimize-ast-in-memory node))

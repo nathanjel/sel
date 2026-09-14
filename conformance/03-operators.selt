@@ -216,6 +216,36 @@ TRUE OR (1 / 0 == 0)
 --- expect
 bool TRUE
 ===
+### name: op.logic.and-short-circuit-result-keeps-the-and-position
+--- note
+`FALSE AND x` is a constant an optimiser may fold away, but the value it
+yields is the AND's, not the FALSE's: when `+` rejects it, spec §6.3 names the
+node that actually failed, and that is the operand `+` was given -- the AND at
+1:8. Four hosts once reported 1:2, the literal the fold had hoisted.
+--- source
+(FALSE AND TRUE) + 1
+--- expect
+error E_NOT_NUM at 1:8
+===
+### name: op.logic.or-short-circuit-result-keeps-the-or-position
+--- note
+The same through OR: `TRUE OR x` is the OR's value, at 1:7.
+--- source
+(TRUE OR FALSE) + 1
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: op.logic.not-over-a-folded-and-keeps-the-not-position
+--- note
+And one level up: NOT takes the AND's value and produces its own, at 1:1; the
+fold that replaced the AND must not leak its literal's column through NOT.
+`NOT` binds looser than `+`, so the parentheses are what make `+` the failing
+operator here.
+--- source
+(NOT (FALSE AND TRUE)) + 1
+--- expect
+error E_NOT_NUM at 1:2
+===
 ### name: op.logic.xor
 --- source
 TRUE XOR TRUE

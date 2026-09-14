@@ -367,7 +367,7 @@ define('TOP_DESC', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_top(args
 define('TOP_BY', 3, 5, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, None))
 
 
-def do_group_by(args, ctx):
+def do_bucket(args, ctx):
     val = args.val(0)
     if val.is_null() or val.size() == 0:
         return Value.list([])
@@ -445,5 +445,4 @@ def do_group_by(args, ctx):
     return Value.list(out)
 
 
-define('GROUP_BY', 2, 4, lazy=True, binds=True, fn=do_group_by)
-define('BUCKET', 2, 4, lazy=True, binds=True, fn=do_group_by)
+define('BUCKET', 2, 4, lazy=True, binds=True, fn=do_bucket)

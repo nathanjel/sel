@@ -1,56 +1,157 @@
 ;;;; hybrid.lisp - Hybrid execution planner for relational pipelines.
 ;;;; Slices a pipeline into a maximal SQL pushdown prefix and an in-memory continuation.
+;;;;
+;;;; The contract every host's planner meets is in docs/SQL-TRANSLATION.md
+;;;; §12.1 and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at
+;;;; the tree the translator will see, SOURCE-TABLES names PHYSICAL sources (a
+;;;; relation's :from, or a relation query's text verbatim), a program stage 1
+;;;; refuses is a pure-memory plan rather than an error, and every return path
+;;;; fills every slot. This host had no dialect, continuation-ast or
+;;;; source-tables slot at all until the cross-language review.
 
 (in-package #:sel.sql)
 
 (defstruct (hybrid-plan (:constructor make-hybrid-plan))
+  (dialect nil)
   (sql-statement nil)
   (sql-prefix-ast nil)
+  (continuation-ast nil)
   (continuation-program nil)
   (continuation-source-var "_INPUT" :type string)
   (pure-sql-p nil :type boolean)
-  (pure-memory-p nil :type boolean))
+  (pure-memory-p nil :type boolean)
+  (source-tables '() :type list))
 
-(defun build-pipeline-ast (root steps)
-  "Rebuilds a pipeline AST with ROOT as the initial source and chaining STEPS."
-  (let ((curr root))
-    (dolist (step steps curr)
-      (let ((new-node (sel::copy-node step)))
-        (setf (sel::node-items new-node) (cons curr (rest (sel::node-items step))))
-        (setf curr new-node)))))
+(defun hybrid-plan-hybrid-p (plan)
+  "Neither pure: a SQL prefix and an in-memory continuation."
+  (not (or (hybrid-plan-pure-sql-p plan) (hybrid-plan-pure-memory-p plan))))
+
+(defun physical-source (b)
+  "The physical source a relation binding reads: its table, or for a relation
+query the query text exactly as the application wrote it."
+  (getf (binding-spec b) :from))
+
+(defun source-tables (node bindings)
+  "Every physical source NODE reads, first use first, each once. Keyed by the
+physical name, so two bindings over one table are one source."
+  (let ((out '()))
+    (labels ((walk (n)
+               (when (and n (sel::node-p n))
+                 (if (and (eq (sel::node-kind n) :var)
+                          (bindings-has bindings (sel::node-s n)))
+                     (let ((b (bindings-get bindings (sel::node-s n) (sel::node-pos n))))
+                       (when (eq (binding-kind b) :relation)
+                         (let ((table (physical-source b)))
+                           (unless (member table out :test #'equal)
+                             (push table out)))))
+                     (progn
+                       (walk (sel::node-l n))
+                       (walk (sel::node-r n))
+                       (dolist (item (sel::node-items n)) (walk item)))))))
+      (walk node))
+    (nreverse out)))
+
+(defun pure-memory-plan (program dialect bindings)
+  "The plan for a program nothing of which reaches the database. The
+continuation is the program itself, and the AST it exposes is the program's
+own, so a caller sees the same tree whichever way the plan went."
+  (make-hybrid-plan :dialect dialect
+                    :pure-memory-p t
+                    :continuation-program program
+                    :continuation-ast (sel:program-ast program)
+                    :source-tables (source-tables (sel:program-ast program) bindings)))
 
 (defun plan-hybrid (program dialect &optional bindings options)
   "Analyzes PROGRAM and splits it into a maximal SQL pushdown prefix and an in-memory continuation.
-Returns a HYBRID-PLAN struct."
+Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator."
   (require-target dialect)
   (let* ((b (make-bindings (or bindings '())))
-         (tr (%translator dialect b (and (getf options :strict) t))))
-    (bindings-check-aliases (translator-bindings tr))
-    (multiple-value-bind (names root) (const-scope (translator-bindings tr))
+         (tr (%translator dialect b (and (getf options :strict) t)))
+         (bs (translator-bindings tr)))
+    (bindings-check-aliases bs)
+    (multiple-value-bind (names root) (const-scope bs)
       (setf (translator-const-names tr) names
             (translator-const-root tr) root)
-      (let* ((norm (sel:optimize-ast-logical (normalise (sel:program-ast program) names root)))
-             (steps '())
-             (curr norm))
-        (loop while (and curr
-                         (not (clist-p curr))
-                         (eq (snode-kind curr) :call)
-                         (member (sel::node-s curr) +pipeline-ops+ :test #'equal)
-                         (sel::node-items curr))
-              do (push curr steps)
-                 (setf curr (first (sel::node-items curr))))
-        ;; If no steps or source is not a bound relation, cannot push down anything
-        (unless (and steps curr (not (clist-p curr)) (eq (snode-kind curr) :var))
-          (return-from plan-hybrid
-            (make-hybrid-plan :pure-memory-p t :continuation-program program)))
-        (let ((name (sel::node-s curr)))
-          (unless (bindings-has (translator-bindings tr) name)
-            (return-from plan-hybrid
-              (make-hybrid-plan :pure-memory-p t :continuation-program program)))
-          (let ((rel-b (bindings-get (translator-bindings tr) name (snode-pos curr))))
-            (unless (eq (binding-kind rel-b) :relation)
-              (return-from plan-hybrid
-                (make-hybrid-plan :pure-memory-p t :continuation-program program)))))
+      ;; Stage 1 first, exactly as the translator runs it, so the tree unwound
+      ;; below is the one a prefix will be translated from. A program stage 1
+      ;; refuses -- `A += 1; ...`, a bare statement before the result -- is a
+      ;; program no part of which can be pushed down, which is a pure-memory
+      ;; plan and not an error: "none of it" is one of the planner's answers.
+      (let ((norm (handler-case (normalise (sel:program-ast program) names root)
+                    (sql-error () (return-from plan-hybrid (pure-memory-plan program dialect bs))))))
+        (when (clist-p norm)
+          (return-from plan-hybrid (pure-memory-plan program dialect bs)))
+        (multiple-value-bind (curr steps) (sel::unwind-pipeline (sel:optimize-ast-logical norm))
+          ;; No steps, or a source that is not a bound relation: nothing to push.
+          (unless (and steps curr (not (clist-p curr)) (eq (snode-kind curr) :var)
+                       (bindings-has bs (sel::node-s curr))
+                       (eq (binding-kind (bindings-get bs (sel::node-s curr) (snode-pos curr)))
+                           :relation))
+            (return-from plan-hybrid (pure-memory-plan program dialect bs)))
+          (let ((n-steps (length steps))
+                (source-node curr)
+                (input-var "_INPUT"))
+            ;; 1. The whole pipeline.
+            (let* ((full-ast (sel::build-pipeline-ast source-node steps))
+                   (full-prog (sel::%make-program "" full-ast))
+                   (full-frag (try-translate-statement full-prog dialect bindings options)))
+              (when full-frag
+                (return-from plan-hybrid
+                  (make-hybrid-plan :dialect dialect
+                                    :sql-statement full-frag
+                                    :sql-prefix-ast full-ast
+                                    :pure-sql-p t
+                                    :source-tables (source-tables full-ast bs)))))
+            ;; 2. The MAP fall-through.
+            (let ((ft-plan (try-plan-fallthrough source-node steps dialect bindings options input-var)))
+              (when ft-plan
+                (setf (hybrid-plan-dialect ft-plan) dialect
+                      (hybrid-plan-source-tables ft-plan)
+                      (source-tables (hybrid-plan-sql-prefix-ast ft-plan) bs))
+                (return-from plan-hybrid ft-plan)))
+            ;; 3. The longest translatable prefix, with the rest in memory.
+            (loop for k from (1- n-steps) downto 1 do
+              (let* ((prefix-steps (subseq steps 0 k))
+                     (prefix-ast (sel::build-pipeline-ast source-node prefix-steps))
+                     (prefix-prog (sel::%make-program "" prefix-ast))
+                     (frag (and (not (bucket-rows-are-keys-p prefix-steps))
+                                (try-translate-statement prefix-prog dialect bindings options))))
+                (when frag
+                  (let* ((rem-steps (subseq steps k))
+                         (cont-root (let ((v (sel::make-node :var (sel::node-pos (first rem-steps)))))
+                                      (setf (sel::node-s v) input-var)
+                                      v))
+                         (cont-ast (sel::build-pipeline-ast cont-root rem-steps))
+                         (cont-prog (sel::%make-program "" cont-ast)))
+                    (return-from plan-hybrid
+                      (make-hybrid-plan :dialect dialect
+                                        :sql-statement frag
+                                        :sql-prefix-ast prefix-ast
+                                        :continuation-ast cont-ast
+                                        :continuation-program cont-prog
+                                        :continuation-source-var input-var
+                                        :source-tables (source-tables prefix-ast bs)))))))
+            ;; 4. Nothing pushes down.
+            (pure-memory-plan program dialect bs)))))))
+
+(defun bucket-rows-are-keys-p (steps)
+  "Whether the SQL rows for STEPS are a bucket's KEYS rather than the value SEL
+would have produced. A BUCKET without a projection is open: the translator
+projects its keys, and SEL's value is a map of member rows. The next MAP closes
+it -- it becomes the bucket's projection, one statement, one value in both
+lanes -- and a FILTER between them is a HAVING. Any other step seals it: the
+members are gone, and no continuation can get them back. So a prefix that is
+open or sealed is not a split point, whatever the translator says about it,
+and the MAP fall-through must not fire on a MAP that closes one -- its custom
+half would be evaluated over key rows."
+  (let ((open nil))
+    (dolist (step steps open)
+      (let ((name (sel::node-s step)))
+        (cond ((equal name "BUCKET")
+               (when open (return t))
+               (setf open (= (length (sel::node-items step)) 2)))
+              ((and open (equal name "MAP")) (setf open nil))
+              ((and open (not (equal name "FILTER"))) (return t)))))))
 
 (defun collect-field-references (node &optional (binder "_"))
   "Collects all field names accessed via BINDER['field'] in NODE."
@@ -113,6 +214,8 @@ pass through the dependency columns, pushes down the remaining pipeline to SQL,
 and evaluates the custom function on the final DB rows in memory."
   (let ((map-idx (position "MAP" steps :key (lambda (s) (sel::node-s s)) :test #'equal)))
     (unless map-idx (return-from try-plan-fallthrough nil))
+    (when (bucket-rows-are-keys-p (subseq steps 0 map-idx))
+      (return-from try-plan-fallthrough nil))
     (let* ((map-step (nth map-idx steps))
            (args (sel::node-items map-step)))
       (multiple-value-bind (binder rec-node)
@@ -201,7 +304,7 @@ and evaluates the custom function on the final DB rows in memory."
                     (let* ((rewritten-steps (append (subseq steps 0 map-idx)
                                                     (list rewritten-map)
                                                     downstream-steps))
-                           (rewritten-ast (build-pipeline-ast source-node rewritten-steps))
+                           (rewritten-ast (sel::build-pipeline-ast source-node rewritten-steps))
                            (rewritten-prog (sel::%make-program "" rewritten-ast))
                            (sql-frag (try-translate-statement rewritten-prog dialect bindings options)))
                       (when sql-frag
@@ -217,56 +320,11 @@ and evaluates the custom function on the final DB rows in memory."
                             (make-hybrid-plan
                              :sql-statement sql-frag
                              :sql-prefix-ast rewritten-ast
+                             :continuation-ast cont-map
                              :continuation-program cont-prog
                              :continuation-source-var input-var
                              :pure-sql-p nil
                              :pure-memory-p nil)))))))))))))))
-
-        ;; Try prefixes of decreasing length from N down to 1
-        (let ((n-steps (length steps))
-              (source-node curr)
-              (input-var "_INPUT"))
-
-          ;; 1. Check for full pushdown
-          (let* ((full-ast (build-pipeline-ast source-node steps))
-                 (full-prog (sel::%make-program "" full-ast))
-                 (full-frag (try-translate-statement full-prog dialect bindings options)))
-            (when full-frag
-              (return-from plan-hybrid
-                (make-hybrid-plan
-                 :sql-statement full-frag
-                 :sql-prefix-ast full-ast
-                 :pure-sql-p t))))
-
-          ;; 2. Check for pass-through fallthrough optimization
-          (let ((ft-plan (try-plan-fallthrough source-node steps dialect bindings options input-var)))
-            (when ft-plan
-              (return-from plan-hybrid ft-plan)))
-
-          ;; 3. Check for prefix pushdown (mid-pipeline memory continuation)
-          (loop for k from (1- n-steps) downto 1 do
-            (let* ((prefix-steps (subseq steps 0 k))
-                   (prefix-ast (build-pipeline-ast source-node prefix-steps))
-                   (prefix-prog (sel::%make-program "" prefix-ast))
-                   (frag (try-translate-statement prefix-prog dialect bindings options)))
-              (when frag
-                (let* ((rem-steps (subseq steps k))
-                       (cont-root (let ((v (sel::make-node :var (sel::node-pos (first rem-steps)))))
-                                    (setf (sel::node-s v) input-var)
-                                    v))
-                       (cont-ast (build-pipeline-ast cont-root rem-steps))
-                       (cont-prog (sel::%make-program "" cont-ast)))
-                  (return-from plan-hybrid
-                    (make-hybrid-plan
-                     :sql-statement frag
-                     :sql-prefix-ast prefix-ast
-                     :continuation-program cont-prog
-                     :continuation-source-var input-var
-                     :pure-sql-p nil
-                     :pure-memory-p nil))))))
-
-          ;; If no prefix succeeded, pure in-memory execution
-          (make-hybrid-plan :pure-memory-p t :continuation-program program))))))
 
 (defun execute-hybrid (plan db-runner &optional context)
   "Execute a HYBRID-PLAN using DB-RUNNER for SQL execution and SEL:RUN for in-memory continuation.

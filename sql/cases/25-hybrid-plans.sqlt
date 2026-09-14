@@ -1,0 +1,602 @@
+# The hybrid planner's contract, held to by every host that has one.
+#
+# A `--- plan` case asks plan_hybrid rather than translate, and asserts four
+# things no ordinary case can see: how the pipeline was CLASSIFIED (pure_sql,
+# hybrid or pure_memory), which PHYSICAL sources the SQL side reads (`--- tables`,
+# first-use order, one entry per physical source), the SQL prefix (`--- expect`,
+# absent for a pure-memory plan), and that the caller's AST is the same tree
+# after planning and physical optimisation as before. The runner also checks the
+# continuation is present exactly when the classification says it is.
+#
+# These exist because the conformance suite could not see the findings of the
+# cross-language review: JS and C++ classified `X = ORDERS; X .> TAKE(1)` as
+# pure memory because they unwound the raw AST before normalising it, three
+# hosts reported the SEL binding NAME where the fourth reported the table, and
+# Lisp had no source-table field at all. All 801 language cases were green
+# throughout. docs/interim/sel_cross_language_code_review_remediation_plan.md
+# is the review; docs/SQL-TRANSLATION.md §12.1 is the contract these pin.
+
+### name: plan.pure-sql.direct
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 1
+===
+
+### name: plan.pure-sql.through-helper-assignment
+--- note
+The whole of finding F1. A helper variable is inlined by stage 1, and the
+planner must look at the tree stage 1 produces -- the one the translator will
+be handed -- not at the raw `seq`, which is not a pipeline and so was
+classified as pure memory by the two hosts that unwound it first.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+X = ORDERS; X .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 1
+===
+
+### name: plan.pure-sql.value-binding-is-inlined
+--- note
+Normalisation also inlines a `value` binding as a literal, so the prefix the
+planner probes carries the constant the translator would have used.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}},
+ "LIMIT": {"kind": "value", "value": "5", "type": "NUM"}}
+--- source
+ORDERS .> FILTER(_["id"] > LIMIT) .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 5) LIMIT 1
+===
+
+### name: plan.pure-memory.non-normalisable-falls-back
+--- note
+A program stage 1 refuses is a program that cannot be pushed down, which is a
+pure-memory plan and not an exception: the planner exists to answer "how much
+of this can the database do", and "none of it" is an answer. Three hosts let
+E_SQL_ASSIGN escape here; the continuation is the original program, and the
+source tables are still reported from it.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+A += 1; ORDERS .> TAKE(1)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.hybrid.unsupported-suffix
+--- note
+ABORT has no SQL spelling, so the MAP stays in memory and the TAKE goes to the
+database. The prefix is rendered as a derived table because the continuation's
+projection is pushed into it by the MAP fall-through: the `id` field is
+translatable and is projected, the `note` field is not and is computed on the
+rows that come back.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> TAKE(1) .> MAP(RECORD("id", _["id"], "note", ABORT("no")))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `_sub1`.`id` AS `id` FROM (SELECT `o`.* FROM `orders` `o` LIMIT 1) `_sub1`
+===
+
+### name: plan.hybrid.fallthrough-keeps-downstream-steps
+--- note
+The MAP fall-through: the pushable half of the RECORD is projected in SQL and
+every step AFTER the MAP goes with it, so the TAKE lands in the statement even
+though it is written after the step that stays in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> MAP(RECORD("id", _["id"], "tag", ABORT("x"))) .> TAKE(3)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`id` AS `id` FROM `orders` `o` LIMIT 3
+===
+
+### name: plan.hybrid.longest-prefix
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> SORT_DESC(_["id"]) .> TAKE(1) .> MAP(RECORD("id", _["id"], "tag", ABORT("x")))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT "_sub1"."id" AS "id" FROM (SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" DESC LIMIT 1) "_sub1"
+===
+
+### name: plan.pure-memory.bound-relation-in-source
+--- note
+Nothing pushes down -- the only step cannot be translated and there is no
+shorter prefix -- yet the relation is still named in the source tables, because
+the question "what does this rule read" does not depend on who answers it.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> MAP(RECORD("note", ABORT("no")))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.pure-memory.unbound-source
+--- dialect
+mariadb
+--- source
+ROWS .> TAKE(1)
+--- plan
+pure_memory
+--- tables
+===
+
+### name: plan.pure-memory.not-a-pipeline
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+COUNT(ORDERS) > 0
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.tables.physical-name-not-binding-name
+--- note
+The whole of finding F2. `source_tables` names what the database will be asked
+to read, so a caller can check grants or pick a connection; the SEL name is
+what the caller already has.
+--- dialect
+mariadb
+--- bindings
+{"SALES": {"kind": "relation", "from": "sales_orders", "alias": "s", "fields": {"ID": {"table": "s", "column": "id", "type": "NUM"}}}}
+--- source
+SALES .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+sales_orders
+--- expect
+SELECT `s`.* FROM `sales_orders` `s` LIMIT 1
+===
+
+### name: plan.tables.binding-name-is-case-insensitive
+--- note
+Identifiers are case-insensitive (spec §2.3), and a binding is looked up the
+same way. The physical name is reported exactly as the binding spelled it.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "Orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+orders .> take(1)
+--- plan
+pure_sql
+--- tables
+Orders
+--- expect
+SELECT `o`.* FROM `Orders` `o` LIMIT 1
+===
+
+### name: plan.tables.first-use-order
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> TAKE(2)
+--- plan
+pure_sql
+--- tables
+orders
+customers
+--- expect
+SELECT `o`.* FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`) LIMIT 2
+===
+
+### name: plan.tables.dedupe-by-physical-source
+--- note
+Two bindings over one table are one physical source. Deduplicated by the
+physical name, so a self-join reads `orders` once however it is bound.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}},
+ "O2": {"kind": "relation", "from": "orders", "alias": "o2", "fields": {"ID": {"table": "o2", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> LINK(O2, _1["id"] == _2["id"]) .> TAKE(2)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` INNER JOIN `orders` `o2` ON (`o`.`id` = `o2`.`id`) LIMIT 2
+===
+
+### name: plan.tables.relation-query-is-reported-verbatim
+--- note
+A relation whose `from` is a query has no table name to report; the query text
+is the physical source, and it is reported exactly as the application wrote
+it, parentheses and all.
+--- dialect
+mariadb
+--- bindings
+{"RECENT": {"kind": "relation", "from": {"raw": "(SELECT * FROM orders WHERE id > 10)"}, "alias": "r", "fields": {"ID": {"table": "r", "column": "id", "type": "NUM"}}}}
+--- source
+RECENT .> MAP(RECORD("note", ABORT("no")))
+--- plan
+pure_memory
+--- tables
+(SELECT * FROM orders WHERE id > 10)
+===
+
+### name: plan.hybrid.left-join-then-projection
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> LINK_LEFT(CUSTOMERS, _1["customer_id"] == _2["id"]) .> SELECT_COLS("id")
+--- plan
+hybrid
+--- tables
+orders
+customers
+--- expect
+SELECT "o".* FROM "orders" "o" LEFT JOIN "customers" "c" ON ("o"."customer_id" = "c"."id")
+===
+
+### name: plan.pure-sql.filters-fuse-before-planning
+--- note
+The logical optimiser runs before the prefix search, so two FILTERs are one
+WHERE. The planner's options object reaches that optimiser as well as the
+translator in every host that has optimiser options.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > 1) .> FILTER(_["id"] < 9)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE ((`o`.`id` > 1) AND (`o`.`id` < 9))
+===
+
+### name: plan.pure-sql.sort-take-fuses-to-top
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"]) .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 1
+===
+
+### name: plan.pure-sql.filter-drop-take
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > 1) .> DROP(1) .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT "o".* FROM "orders" "o" WHERE ("o"."id" > 1) LIMIT 1 OFFSET 1
+===
+
+### name: plan.pure-sql.distinct
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> DISTINCT()
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT DISTINCT "o".* FROM "orders" "o"
+===
+
+### name: plan.options.strict-off-caveat-pushes-down
+--- note
+The one planner option every host documents. UPPER carries a caveat; without
+strict it is translated and the whole pipeline is SQL.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> TAKE(2) .> FILTER(UPPER(_["name"]) $== "A")
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `_sub1`.* FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1` WHERE (CAST(UPPER(`_sub1`.`name`) AS CHAR) COLLATE utf8mb4_bin = CAST('A' AS CHAR) COLLATE utf8mb4_bin)
+===
+
+### name: plan.options.strict-on-caveat-stays-in-memory
+--- note
+The same pipeline under strict: the caveated FILTER is refused, so the plan
+splits after the TAKE. That the option reached the translator is what this
+asserts; it is the same option the runner passes to translate().
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- source
+ORDERS .> TAKE(2) .> FILTER(UPPER(_["name"]) $== "A")
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 2
+===
+
+### name: plan.fold.literal-branch-is-hoisted-into-the-prefix
+--- note
+The planner folds before it probes, unlike translate(): a constant-condition
+IF whose chosen branch is a leaf literal reaches the SQL as that literal, and
+the SQL says `2`, not `CASE WHEN TRUE`.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(IF(TRUE, 2, 1) >= _["id"])
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (2 >= `o`.`id`)
+===
+
+### name: plan.fold.compound-branch-stays-an-if
+--- note
+The limit of that fold, and a decision: a branch with positions of its own is
+not hoisted, because a continuation that runs it in memory must report errors
+where spec §6.3 says (ctl.if.constant-condition-compound-branch-keeps-its-own-
+positions), and the planner folds one tree for both halves. So the IF reaches
+the translator, which renders it the way translate() always has. The price is
+a `CASE WHEN TRUE` the database folds itself, for a shape -- a literal
+condition around a column expression -- that mostly arises from a value
+binding inlined by stage 1.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(IF(TRUE, _["id"] > 1, FALSE))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE CASE WHEN TRUE THEN (`o`.`id` > 1) ELSE FALSE END
+===
+
+### name: plan.fold.hoisted-literal-does-not-change-the-split
+--- note
+A hoisted literal the SQL side cannot use -- `"x"` is not a number -- leaves
+the MAP to the continuation, exactly as the unfolded IF would have. The
+position that continuation reports when it runs is the unit tests' half of
+this (each host executes the plan and compares with run()).
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> TAKE(2) .> MAP(IF(TRUE, "x", 1) >= _["id"])
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 2
+===
+
+### name: plan.refuse.base-dialect
+--- note
+Planning refuses what translate() refuses up front: a base is not a target,
+whatever the pipeline turns out to be, and an alias collision is a mistake in
+the bindings rather than in the rule. Neither is a classification.
+--- dialect
+ansi
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> TAKE(1)
+--- plan
+refused
+--- error
+E_SQL_DIALECT
+===
+
+### name: plan.immutable.folding-does-not-write-back
+--- note
+The whole of finding F3. The logical optimiser folds `1 + 1` and `2 * 2` on
+the way to the prefix, and the caller's tree must still say `1 + 1` and
+`2 * 2` afterwards: the Lisp optimiser wrote the folded literal back into the
+node it was handed, which every other host copies first. A fixture whose
+constants do not fold cannot see the difference, because writing a child back
+unchanged leaves the same tree.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > 1 + 1) .> TAKE(2 * 2)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) LIMIT 4
+===
+
+### name: plan.immutable.folding-inside-a-kept-step
+--- note
+The same, where the folded expression sits inside the step that stays in
+memory as well as the one that goes to SQL, so both the planner's copy and the
+continuation are built from a tree the caller still owns.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(NOT (_["id"] > 1 + 1)) .> MAP(RECORD("n", ABORT("x")))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (NOT (`o`.`id` > 2))
+===
+
+### name: plan.bucket.pipeline-map-pushes-down-whole
+--- note
+The pipeline spelling of a grouped projection is one statement, so the whole
+pipeline is SQL -- it used to split after the bucket and count one row per
+group.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_)))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+===
+
+### name: plan.bucket.open-prefix-is-not-a-split-point
+--- note
+The MAP cannot be translated, and the prefix before it is a bare bucket whose
+SQL rows are keys, not groups: no continuation could recover the members, so
+it is not a split point and the MAP fall-through does not fire either. Pure
+memory is the only right answer.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "note", ABORT("x")))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.bucket.split-before-the-bucket
+--- note
+The split lands before the bucket instead: the FILTER goes to the database,
+the grouping and its untranslatable projection stay in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(_["amount"] > 1) .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "note", ABORT("x")))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)
+===
+
+### name: plan.bucket.projected-then-custom-map
+--- note
+A bucket closed by its MAP is an ordinary row source again, so a later MAP
+that cannot be translated splits after the grouping.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> MAP(RECORD("c", _["cid"], "note", ABORT("x")))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+===
+
+### name: plan.bucket.sealed-prefix-is-not-a-split-point
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> TAKE(2) .> MAP(RECORD("cid", _K))
+--- plan
+pure_memory
+--- tables
+orders
+===

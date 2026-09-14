@@ -2224,6 +2224,87 @@ for byte the SQL shown for PHP. That is not a claim about care taken: it is
 `sql/cases/*.sqlt` run under two runners, from one generated table that
 `tools/check-sql-cases.sh` keeps current.
 
+### 12.1 Hybrid planning: the contract
+
+`translate` answers "can this rule run in the database". `plan_hybrid` answers
+the more useful question for a relational pipeline: *how much* of it can, and
+what stays behind. Given a program, a target dialect, bindings and options, it
+returns a **plan** that is one of three things:
+
+| Classification | SQL statement | Continuation | Meaning |
+|---|---|---|---|
+| `pure_sql` | the whole pipeline | none | the database answers |
+| `hybrid` | the longest translatable prefix | a program over `_INPUT` | the database answers the prefix, the evaluator runs the rest over its rows |
+| `pure_memory` | none | the original program | nothing pushes down |
+
+The plan carries the same nine fields in every host, under each host's own
+spelling (`sourceTables` / `source_tables` / `hybrid-plan-source-tables`):
+
+| Field | Holds |
+|---|---|
+| `dialect` | the target named in the call |
+| `sql_statement` | the `Fragment` for the prefix, or none for `pure_memory` |
+| `sql_prefix_ast` | the tree that fragment was translated from, or none |
+| `continuation_ast` | the tree the continuation runs; the original AST for `pure_memory`, none for `pure_sql` |
+| `continuation_program` | that tree as a `Program`; the original program for `pure_memory` |
+| `continuation_source_var` | the name the prefix's rows are bound to, `_INPUT` |
+| `pure_sql`, `pure_memory` | the classification; `is_hybrid` is neither |
+| `source_tables` | the **physical** sources the plan reads |
+
+What the planner promises, and what `sql/cases/25-hybrid-plans.sqlt` holds
+every host to:
+
+- **It plans the tree the translator will see.** Stage 1 runs first, so a
+  helper assignment is inlined and a value binding is a literal before the
+  pipeline is unwound; then the logical optimiser's rewrite of that. Unwinding
+  the raw AST classified `X = ORDERS; X .> TAKE(1)` — a `seq`, not a pipeline —
+  as pure memory in two hosts while three pushed it down.
+- **A program stage 1 refuses is a `pure_memory` plan, not an error.**
+  `A += 1; ORDERS .> TAKE(1)` cannot be pushed down, and "none of it" is one of
+  the planner's answers. What planning does refuse, up front and for every
+  classification, is what `translate` refuses up front: a base dialect
+  (`E_SQL_DIALECT`) and an alias collision (`E_SQL_BINDING`).
+- **`source_tables` names physical sources**: the relation's `from`, or for a
+  relation query the query text exactly as the application wrote it. First use
+  first, each once, keyed by the physical name — so a self-join over two
+  bindings of one table reads that table once. The binding name is what the
+  caller already has; the table is what a grant or a connection is chosen by.
+  A `pure_memory` plan still reports them, from the original tree, because
+  what a rule reads does not depend on who answers it.
+- **`options` is one object, and it reaches both the logical optimiser and the
+  translator.** `strict` is the translator's and is the one every host accepts;
+  the three dynamic hosts also accept the optimiser's `fuseFilters` and
+  `foldConstants`, and the planner forwards them rather than swallowing them.
+  C++ and Lisp take `strict` alone.
+- **A bucket is split only where SQL still has its members.** `BUCKET(src,
+  key)` on its own renders as the group *keys* — SQL has no nested row — while
+  SEL's value is a map of member rows. So `BUCKET(src, key) .> MAP(proj)` is
+  translated as `BUCKET(src, key, proj)`, one grouped statement (a `FILTER`
+  between them is its `HAVING`), and a prefix that ends in a bucket nobody has
+  projected — or in anything that followed one — is never a split point: the
+  planner backs up to the step before the bucket, or stays in memory. Before
+  this the split landed after the bucket and the continuation counted one row
+  per group.
+- **The caller's AST is never written to.** The optimiser and the planner copy
+  on the way down, in every host, and the fixtures snapshot the tree before
+  and compare after. A program is reusable: `run` it, plan it, `run` it again,
+  and it answers the same. What `run` evaluates is a *physical* rewrite of the
+  AST (LAZY_RECORD projections, join predicate pushdown) that is built once
+  per program and kept privately; the SQL layer never sees that tree, because
+  a physical rewrite is not something a database can be asked to run. The
+  price of that cache is the immutability rule above: a caller who constructs
+  a `Program` from an AST of their own must not write into its nodes afterwards
+  (reassigning the whole tree is fine, and noticed).
+- **The continuation reports errors where `run` would.** The planner folds
+  one tree and cuts it in two, so what the memory half carries is what the
+  in-memory optimiser would have built: a constant-condition `IF` folds only
+  when the chosen branch is a leaf literal, and that literal — like the
+  result of `FALSE AND x` — takes the folded node's position, because spec
+  §6.3 names the node the operator was handed. `IF(TRUE, 2, 1) >= _["id"]`
+  therefore reaches the SQL as `2 >= id`, while `IF(TRUE, _["id"] > 1, FALSE)`
+  reaches it as the IF, rendered as the `CASE WHEN TRUE …` `translate()` has
+  always produced for it (`plan.fold.*` in the fixtures).
+
 ---
 
 ## 13. Tests

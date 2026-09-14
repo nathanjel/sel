@@ -3909,7 +3909,7 @@ struct GroupEntry {
   std::vector<Value> rows;
 };
 
-Value do_group_by(Args& a, Context& ctx) {
+Value do_bucket(Args& a, Context& ctx) {
   const Value& val = a.val(0);
   if (val.is_null()) return Value::list({});
   const std::size_t source_size = collection_size(val);
@@ -4090,11 +4090,8 @@ void register_aggregates() {
                 return do_top(a, ctx, std::nullopt);
               }});
 
-  define(Spec{"GROUP_BY", 2, 4, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
-                return do_group_by(a, ctx);
-              }});
   define(Spec{"BUCKET", 2, 4, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
-                return do_group_by(a, ctx);
+                return do_bucket(a, ctx);
               }});
 }
 
@@ -5098,7 +5095,7 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
           return;
         }
       }
-      if (name == "GROUP_BY") {
+      if (name == "BUCKET") {
         const std::size_t n = node->items.size();
         if (n == 4 && node->items[1]->t == NT::Var) {
           collect(node->items[0].get(), bound, reads, assigned, depth + 1);
@@ -5186,7 +5183,7 @@ const Spec* lookup_builtin(const std::string& name) {
 namespace {
 
 constexpr std::string_view OPT_PIPELINE_OPS[] = {
-    "FILTER", "GROUP_BY", "BUCKET", "SELECT_COLS", "MAP", "DISTINCT", "DEDUPE",
+    "FILTER", "BUCKET", "SELECT_COLS", "MAP", "DISTINCT", "DEDUPE",
     "TAKE", "DROP", "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY",
     "LINK", "LINK_LEFT"};
 
@@ -5228,6 +5225,25 @@ NodePtr opt_num(std::string value, Pos pos) {
   node->pos = pos;
   node->s = std::move(value);
   return node;
+}
+
+// A fold that replaces a node by one of its children must not move the error
+// position an operator over the result reports: spec §6.3 names the node that
+// actually failed, and to the operator the operand IS the folded node, not the
+// literal inside it (ctl.if.constant-condition-result-keeps-the-if-position).
+// So a hoisted child is re-stamped with the folded node's position -- which is
+// only exact for a leaf literal, the one shape that carries no positions of
+// its own and cannot fail by itself. A variable is a leaf that can (E_UNDEF_VAR
+// at its own column), so it is not a literal here.
+bool opt_is_literal(const NodePtr& node) {
+  return node && (node->t == NT::Num || node->t == NT::Text || node->t == NT::Bool ||
+                  node->t == NT::Null);
+}
+
+NodePtr opt_hoist_literal(const NodePtr& child, Pos pos) {
+  auto copy = opt_copy(child);
+  copy->pos = pos;
+  return copy;
 }
 
 std::pair<NodePtr, std::vector<NodePtr>> opt_unwind(const NodePtr& root) {
@@ -5277,11 +5293,11 @@ NodePtr opt_fold(const NodePtr& node) {
     const NodePtr& left = node->l;
     const NodePtr& right = node->r;
     if (node->s == "AND") {
-      if (left->t == NT::Bool && !left->b) return left;
+      if (left->t == NT::Bool && !left->b) return opt_bool(false, node->pos);
       if (left->t == NT::Bool && right->t == NT::Bool) return opt_bool(left->b && right->b, node->pos);
     }
     if (node->s == "OR") {
-      if (left->t == NT::Bool && left->b) return left;
+      if (left->t == NT::Bool && left->b) return opt_bool(true, node->pos);
       if (left->t == NT::Bool && right->t == NT::Bool) return opt_bool(left->b || right->b, node->pos);
     }
     if (left->t == NT::Num && right->t == NT::Num &&
@@ -5326,19 +5342,16 @@ NodePtr opt_fold(const NodePtr& node) {
     }
     return node;
   }
-  if (node->t == NT::Call && node->s == "IF" && node->items.size() == 4 &&
-      node->items[1]->t == NT::Bool) {
-    return node->items[node->items[1]->b ? 2 : 3];
+  // items are the arguments themselves: the condition is items[0]. This arm
+  // once tested for four items and never fired, which is how C++ came to
+  // report the IF's position while the four hosts that folded reported the
+  // branch literal's.
+  if (node->t == NT::Call && node->s == "IF" && node->items.size() == 3 &&
+      node->items[0]->t == NT::Bool) {
+    const NodePtr& branch = node->items[node->items[0]->b ? 1 : 2];
+    return opt_is_literal(branch) ? opt_hoist_literal(branch, node->pos) : node;
   }
   return node;
-}
-
-bool opt_node_has_var(const Node& node, std::string_view name) {
-  if (node.t == NT::Var && upper_name(node.s) == upper_name(std::string(name))) return true;
-  if (node.l && opt_node_has_var(*node.l, name)) return true;
-  if (node.r && opt_node_has_var(*node.r, name)) return true;
-  for (const NodePtr& item : node.items) if (item && opt_node_has_var(*item, name)) return true;
-  return false;
 }
 
 std::vector<std::string> opt_field_refs(const Node& node, std::string binder = "_") {
@@ -5863,13 +5876,31 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth) {
 // --- host API. See spec/SPEC.md §8.
 // ============================================================================
 
+// The physical tree run() evaluates: ast_ after the in-memory optimiser, built
+// on the first run and kept, because the rewrite and the copy it makes cost
+// more than evaluating a small rule does. One cell per compiled tree, shared by
+// every copy of the Program; call_once makes the first run under concurrent
+// callers build it exactly once and lets a throwing build (E_DEPTH from the
+// optimiser's own guard) be retried rather than cached as absent. SQL
+// translation never sees it, since a physical rewrite (LAZY_RECORD, join
+// pushdown) is not something a database can be asked to run.
+struct Program::Physical {
+  std::once_flag once;
+  NodePtr tree;
+};
+
 Program::Program(std::string source, std::shared_ptr<const Node> ast)
-    : source_(std::move(source)), ast_(std::move(ast)) {}
+    : source_(std::move(source)), ast_(std::move(ast)),
+      physical_(std::make_shared<Physical>()) {}
+
+std::shared_ptr<const Node> Program::physical_ast() const {
+  std::call_once(physical_->once, [this] { physical_->tree = optimize_ast(ast_); });
+  return physical_->tree;
+}
 
 Value Program::run(Value& context) const {
   Context ctx(context);
-  const NodePtr optimized = optimize_ast(ast_);
-  return eval_node(*optimized, ctx);
+  return eval_node(*physical_ast(), ctx);
 }
 
 Value Program::run() const {

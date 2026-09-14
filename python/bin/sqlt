@@ -112,6 +112,115 @@ ERROR_RE = re.compile(r'^(\S+)(?:\s+(\d+):(\d+))?$')
 TILDE_RE = re.compile(r'~\d+~')
 
 
+def snapshot_ast(node) -> tuple | None:
+    """The tree as nested tuples, with the registry's Spec objects left out:
+    they are looked up by name and compared by identity, and a snapshot is
+    compared by value. Everything else that identifies a node -- kind, position,
+    literal, name, operator, grouping, children -- is in here.
+    """
+    if node is None:
+        return None
+    return (node.t, node.pos, node.v, node.name, node.op, node.grouped,
+            snapshot_ast(node.l), snapshot_ast(node.r), snapshot_ast(node.x),
+            snapshot_ast(node.obj), snapshot_ast(node.idx),
+            snapshot_ast(node.target), snapshot_ast(node.value),
+            tuple(snapshot_ast(i) for i in node.items),
+            tuple(snapshot_ast(a) for a in node.args))
+
+
+def classify(plan) -> str:
+    if plan.pure_sql:
+        return 'pure_sql'
+    if plan.pure_memory:
+        return 'pure_memory'
+    return 'hybrid'
+
+
+def run_plan_case(c: dict) -> str | None:
+    """None when the planner case passes, else what went wrong.
+
+    A `--- plan` case asks the planner rather than the translator. It asserts
+    the classification, the physical sources, the SQL prefix, that the
+    continuation exists exactly when the classification says so, and that the
+    caller's AST is the same tree afterwards -- after planning, which runs
+    stage 1 and the logical optimiser, and after the physical optimiser
+    Program.run() uses.
+    """
+    from sel.optimizer import optimize_ast_in_memory
+    dialect = c['dialect']
+    options = c['options'] or {}
+    mode = c['mode'] or 'inline'
+    plan = None
+    error = None
+    program = None
+    before = None
+    try:
+        apply_registrations(c['register'])
+        bindings = c['bindings']()
+        program = sel.compile(c['source'])
+        before = snapshot_ast(program.ast)
+        plan = Sql.plan_hybrid(program, dialect, bindings, options)
+    except SqlError as e:
+        error = e
+    except SelError as e:
+        return f'the source did not compile: {e}'
+    except SuiteError:
+        raise
+    except Exception as e:                                    # noqa: BLE001
+        raise SuiteError(f"{c['at']}: unexpected {type(e).__name__}: {e}")
+
+    if c['plan'] == 'refused':
+        if error is None:
+            return f"expected {c['error']}, got a {classify(plan)} plan"
+        m = ERROR_RE.match(c['error'])
+        if m is None:
+            raise SuiteError(f"{c['at']}: malformed error expectation")
+        if error.code != m.group(1):
+            return f'expected {m.group(1)}, got {error.code} ({error.message})'
+        return None
+    if error is not None:
+        return f"expected a {c['plan']} plan, got {error.code} ({error.message})"
+
+    got = classify(plan)
+    if got != c['plan']:
+        return f"expected a {c['plan']} plan, got {got}"
+    if c['tables'] is not None and list(plan.source_tables) != list(c['tables']):
+        return (f"source tables got:  {json.dumps(list(plan.source_tables))}\n"
+                f"     want: {json.dumps(c['tables'])}")
+    if plan.dialect != dialect:
+        return f'plan.dialect is {plan.dialect}, not {dialect}'
+
+    if c['plan'] == 'pure_memory':
+        if plan.sql_statement is not None:
+            return 'a pure-memory plan carries a SQL statement'
+        if plan.continuation_program is not program:
+            return 'a pure-memory plan must run the original program'
+        if plan.continuation_ast is not program.ast:
+            return 'a pure-memory plan must expose the original AST as its continuation'
+    else:
+        if plan.sql_statement is None:
+            return f"a {c['plan']} plan has no SQL statement"
+        if plan.sql_prefix_ast is None:
+            return f"a {c['plan']} plan has no SQL prefix AST"
+        sql = plan.sql_statement.as_statement(mode)
+        if sql != c['expect']:
+            return f"got:  {sql}\n     want: {c['expect']}"
+        if c['plan'] == 'pure_sql':
+            if plan.continuation_program is not None or plan.continuation_ast is not None:
+                return 'a pure-SQL plan carries a continuation'
+        elif plan.continuation_program is None or plan.continuation_ast is None:
+            return 'a hybrid plan has no continuation'
+
+    # Planning must not have touched the tree, and neither may the physical
+    # optimiser that every run() goes through.
+    if snapshot_ast(program.ast) != before:
+        return 'planning mutated the program AST'
+    optimize_ast_in_memory(program.ast)
+    if snapshot_ast(program.ast) != before:
+        return 'the physical optimiser mutated the program AST'
+    return None
+
+
 def run_case(c: dict) -> str | None:
     """None when the case passes, else what went wrong."""
     dialect = c['dialect']
@@ -247,7 +356,7 @@ def main(argv: list[str]) -> int:
             continue
         sqlmap.reset()        # no case may leak a registration into another
         try:
-            problem = run_case(c)
+            problem = run_plan_case(c) if c['plan'] else run_case(c)
         except SuiteError as e:
             print(f'SUITE ERROR {e}')
             suite_errors += 1
@@ -275,7 +384,7 @@ def main(argv: list[str]) -> int:
             suite_errors += 1
             continue
         try:
-            problem = run_case(mirror_case)
+            problem = run_plan_case(mirror_case) if mirror_case['plan'] else run_case(mirror_case)
         except SuiteError as e:
             print(f'SUITE ERROR (mirrored to {mirror}) {e}')
             suite_errors += 1

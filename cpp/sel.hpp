@@ -22,6 +22,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -308,12 +309,23 @@ class Program {
   // defines it, and only code that walks the tree needs that. Public because the
   // SEL→SQL translator is a separate translation unit and the tree is its input;
   // every other host exposes the same thing (`program.ast` in Python and JS,
-  // `$program->ast` in PHP, `program-ast` in Lisp).
+  // `$program->ast` in PHP, `program-ast` in Lisp). Immutable: it is a pointer
+  // to const all the way down, which is the same contract the other four hold
+  // by convention.
   std::shared_ptr<const Node> ast() const { return ast_; }
 
+  // The optimised tree run() evaluates, built once from ast() on the first
+  // run and shared by every copy of this Program. Public for the same reason
+  // ast() is; SQL translation never reads it.
+  std::shared_ptr<const Node> physical_ast() const;
+
  private:
+  struct Physical;   // the once-built physical tree; defined in sel.cpp
   std::string source_;
   std::shared_ptr<const Node> ast_;
+  // Copies share the cell, as they share ast_. A once_flag is not copyable,
+  // and there is nothing to copy: the cell holds one immutable tree.
+  std::shared_ptr<Physical> physical_;
 };
 
 // Throws SelError on any compile-time failure: syntax, an unknown function, a

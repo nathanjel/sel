@@ -932,3 +932,115 @@ b\"c\\d")))
     (let ((right-side (second (sel::node-items opt))))
       (is (string= "FILTER" (sel::node-s right-side)))
       (is (string= "PRODUCTS" (sel::node-s (first (sel::node-items right-side))))))))
+
+;;; --- the hybrid planner's contract --------------------------------------
+;;;
+;;; sql/cases/25-hybrid-plans.sqlt holds the language-neutral version; what is
+;;; here is what the shared fixtures cannot observe through the runner: the
+;;; RUN cache, and immutability across a real RUN.
+
+(defun snapshot-ast (n)
+  "The tree as a list, spec left out: it is looked up by name and compared by
+identity, and a snapshot is compared by value."
+  (cond ((null n) nil)
+        ((not (sel::node-p n)) (list :other))
+        (t (let ((pos (sel::node-pos n)))
+             (list (sel::node-kind n)
+                   (and pos (list (sel::pos-line pos) (sel::pos-col pos)))
+                   (sel::node-s n) (sel::node-b n) (sel::node-grouped n)
+                   (snapshot-ast (sel::node-l n)) (snapshot-ast (sel::node-r n))
+                   (mapcar #'snapshot-ast (sel::node-items n)))))))
+
+(test planner-contract
+  (let ((orders (list (cons "ORDERS"
+                            (sel.sql:binding-relation
+                             "orders" "o"
+                             (list (cons "ID" (sel.sql:binding-column "id" "o" :num))))))))
+    ;; A helper assignment is normalised before the prefix search, and the
+    ;; sources are physical names.
+    (let ((plan (sel.sql:plan-hybrid (sel:compile-source "X = ORDERS; X .> TAKE(1)")
+                                     "postgresql" orders)))
+      (is-true (sel.sql:hybrid-plan-pure-sql-p plan))
+      (is (equal '("orders") (sel.sql:hybrid-plan-source-tables plan)))
+      (is (equal "postgresql" (sel.sql:hybrid-plan-dialect plan))))
+    ;; A program stage 1 refuses is a pure-memory plan over the original.
+    (let* ((p (sel:compile-source "A += 1; ORDERS .> TAKE(1)"))
+           (plan (sel.sql:plan-hybrid p "postgresql" orders)))
+      (is-true (sel.sql:hybrid-plan-pure-memory-p plan))
+      (is (eq p (sel.sql:hybrid-plan-continuation-program plan)))
+      (is (eq (sel:program-ast p) (sel.sql:hybrid-plan-continuation-ast plan)))
+      (is (equal '("orders") (sel.sql:hybrid-plan-source-tables plan))))
+    ;; RUN, both optimisers and planning leave the caller's tree alone -- and
+    ;; the constants here fold, which is what makes a write-back visible.
+    (let* ((p (sel:compile-source
+               "(3, 1, 2) .> FILTER(NOT (_ < 1 + 1)) .> MAP(RECORD(\"x\", _, \"y\", _ * 2, \"z\", _ + 1)) .> TAKE(2 * 1)"))
+           (before (snapshot-ast (sel:program-ast p)))
+           (first (sel:value-dump (sel:run p))))
+      (sel:optimize-ast-logical (sel:program-ast p))
+      (sel:optimize-ast-in-memory (sel:program-ast p))
+      (sel.sql:plan-hybrid p "postgresql" orders)
+      (is (equal before (snapshot-ast (sel:program-ast p))))
+      (is (string= first (sel:value-dump (sel:run p))))
+      ;; The physical tree is built once per AST.
+      (is (eq (sel:program-physical-ast p) (sel:program-physical-ast p)))
+      (let ((physical (sel:program-physical-ast p)))
+        (setf (sel:program-ast p) (sel:program-ast (sel:compile-source "1 + 1")))
+        (is (not (eq physical (sel:program-physical-ast p))))
+        (is (string= "2" (sel:as-text (sel:run p))))))))
+
+(test fold-positions
+  ;; A hoisted child takes the folded node's position (spec §6.3: the operand
+  ;; an operator rejects is the IF or the AND, not the literal inside it); a
+  ;; branch with positions of its own is not hoisted at all. The run()-visible
+  ;; half of this is ctl.if.constant-condition-* and
+  ;; op.logic.*-keeps-the-*-position.
+  (flet ((folded (source) (sel:optimize-ast-logical (sel:program-ast (sel:compile-source source)))))
+    (let ((if-fold (sel::node-r (folded "1 + IF(TRUE, \"x\", 2)"))))
+      (is (eq :text (sel::node-kind if-fold)))
+      (is (string= "x" (sel::node-s if-fold)))
+      (is (= 5 (sel::pos-col (sel::node-pos if-fold)))))
+    (let ((and-fold (sel::node-r (folded "1 + (FALSE AND TRUE)"))))
+      (is (eq :bool (sel::node-kind and-fold)))
+      (is (null (sel::node-b and-fold)))
+      (is (= 12 (sel::pos-col (sel::node-pos and-fold)))))
+    (let ((or-fold (sel::node-r (folded "1 + (TRUE OR FALSE)"))))
+      (is (eq :bool (sel::node-kind or-fold)))
+      (is (eq t (sel::node-b or-fold)))
+      (is (= 11 (sel::pos-col (sel::node-pos or-fold)))))
+    (let ((unfolded (folded "IF(TRUE, 1 / 0, 2)")))
+      (is (eq :call (sel::node-kind unfolded)))
+      (is (string= "IF" (sel::node-s unfolded)))
+      (is (= 12 (sel::pos-col (sel::node-pos (second (sel::node-items unfolded)))))))
+    (let ((unfolded-var (folded "IF(TRUE, X, 2)")))
+      (is (eq :call (sel::node-kind unfolded-var)))
+      (is (string= "IF" (sel::node-s unfolded-var)))))
+  ;; A plan's continuation reports errors where run does. The planner folds
+  ;; one tree for both halves of a split, so a hoisted literal in the
+  ;; continuation carries the position the in-memory half will report.
+  ;; sql/cases/25-hybrid-plans.sqlt pins the SQL side of these; only executing
+  ;; the plan can see the position the memory side reports.
+  (let ((orders (list (cons "ORDERS"
+                            (sel.sql:binding-relation
+                             "orders" "o"
+                             (list (cons "ID" (sel.sql:binding-column "id" "o" :num)))))))
+        (rows (sel:evaluate "LIST(RECORD('id', '1'), RECORD('id', '2'))")))
+    (flet ((failure (thunk)
+             (handler-case (progn (funcall thunk) "no error")
+               (sel:sel-error (e)
+                 (format nil "~a@~d:~d" (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e))))))
+      (loop for (source kind want) in
+            '(("ORDERS .> TAKE(2) .> MAP(IF(TRUE, \"x\", 1) >= _[\"id\"])" :hybrid "E_NOT_NUM@1:26")
+              ("ORDERS .> TAKE(2) .> FILTER((FALSE AND TRUE) + _[\"id\"] > 0)" :hybrid "E_NOT_NUM@1:36")
+              ("ORDERS .> FILTER(IF(TRUE, \"x\", 1) >= _[\"id\"])" :pure-memory "E_NOT_NUM@1:18"))
+            do (let* ((program (sel:compile-source source))
+                      (plan (sel.sql:plan-hybrid program "postgresql" orders))
+                      (context (sel:make-none)))
+                 (sel:value-set context "ORDERS" rows)
+                 (is (eq kind (cond ((sel.sql:hybrid-plan-pure-sql-p plan) :pure-sql)
+                                    ((sel.sql:hybrid-plan-pure-memory-p plan) :pure-memory)
+                                    (t :hybrid))))
+                 (is (string= want (failure (lambda () (sel:run program context)))))
+                 (is (string= want (failure (lambda ()
+                                              (sel.sql:execute-hybrid
+                                               plan (lambda (sql params) (declare (ignore sql params)) rows)
+                                               context))))))))))

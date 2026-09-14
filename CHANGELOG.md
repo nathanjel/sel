@@ -12,6 +12,30 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Cross-language code review remediation for the hybrid planner and the optimisers (`docs/interim/sel_cross_language_code_review_remediation_plan.md`, all six parts).
+
+  - **Planner contract, pinned.** `sql/cases/*.sqlt` gains `--- plan` and `--- tables` sections; `sql/cases/25-hybrid-plans.sqlt` holds 25 planner cases every host runs without a database, asserting classification, physical source tables, the SQL prefix, continuation presence and that the caller's AST survives planning and physical optimisation. The contract is written down in docs/SQL-TRANSLATION.md §12.1.
+  - **JS and C++ plan the normalised tree.** Both unwound the raw AST, so `X = ORDERS; X .> TAKE(1)` was pure memory there and pure SQL in the other three. JS also dropped the planner's options on the way to the optimiser.
+  - **`source_tables` means physical sources** in JS, Python and PHP (they reported SEL binding names; C++ already reported tables); deduplicated by physical name, a relation query reported as its text. Lisp's plan gains `dialect`, `continuation-ast`, `source-tables` and `hybrid-plan-hybrid-p`, filled on every path.
+  - **A program stage 1 refuses is a pure-memory plan** in every host; Python, PHP and Lisp let `E_SQL_ASSIGN` escape `plan_hybrid`.
+  - **The Lisp optimiser no longer writes into its input.** `optimize-ast-logical` and `optimize-ast-in-memory` are one copy-on-write walk, and tolerate a stage-1 clist in a child slot.
+  - **`Program.run()` builds its physical tree once** (`physicalAst()` / `physical_ast()` / `physical-ast` / `physical_ast()`), keyed by the identity of the public AST, shared by copies in C++ under `call_once`. Measured against re-optimising every run: ×1.5 JS and ×3.5 Python on a small validation rule, ×1.15–1.36 on a 20-row pipeline; Lisp ×1.04. The public AST is documented immutable in every host.
+  - **Dead code.** `walkNode`/`nodeHasVar` (JS), `walk_node`/`node_has_var` (Python), `opt_node_has_var` (C++), an unused import and a doubled doc block (PHP). One pipeline vocabulary per host: the C++ planner and the Lisp and dynamic-host translators read the optimiser's list.
+  - **Guardrails.** A contributor checklist in docs/EXTENDING.md; host-local checks for what the shared fixtures cannot express.
+
+Bucket pipelines, and the grouping verb.
+
+  - **`GROUP_BY` is gone; the verb is `BUCKET`.** It was an alias of `BUCKET` in four hosts and a second implementation in PHP; SEL's vocabulary must not look like SQL, so the conformance and SQL case files, the registries, `dependencies()` and every translator now carry `BUCKET` alone (`conformance/16-bucket.selt`, `sql/cases/24-bucket.sqlt`). `dependencies()` had special-cased `GROUP_BY` and not `BUCKET` in four hosts, which the rename closes.
+  - **`BUCKET(k) .> MAP(proj)` translates as one grouped statement** in every host — it is `BUCKET(k, proj)` in the evaluator, and the translator now folds the MAP into the bucket's projection (a `FILTER` between them is the `HAVING`). Before, the bare bucket was rendered as its keys and the MAP laid over that as a derived table: wrong counts, and accepted for bodies SEL refuses. A MAP after anything else has followed a bare bucket is refused (`E_SQL_SHAPE`).
+  - **The hybrid planner never splits inside a bucket.** A prefix whose SQL rows would be keys rather than groups is not a split point and the MAP fall-through does not fire over one; `ORDERS .> BUCKET(k) .> MAP(RECORD("cid", _K, "n", COUNT(_)))` used to plan as `SELECT k … GROUP BY k` plus a continuation that answered `n = 1` for every group. Nine planner and statement cases pin the shapes; a Python unit test executes them against SQLite and compares with the evaluator.
+  - The Python translator carried a second, dead copy of `analyze_pipeline` and `compile_statement` (~700 lines, silently shadowed); removed.
+
+Constant folding keeps error positions.
+
+  - **A folded `IF` or short-circuit reports where the unoptimised program does.** `IF(TRUE, "x", 1) >= 1` raised `E_NOT_NUM` at the `"x"` (1:10) in JS, PHP, Python and Lisp, whose optimisers replaced the IF by its branch node, and at the IF (1:1) in C++, whose IF arm tested for four arguments and never fired; `(FALSE AND TRUE) + 1` reported the `FALSE` in all five. Spec §6.3 names the node that actually failed — the operand the operator was handed, which is the IF or the AND — so a hoisted literal is now stamped with the folded node's position in every host, an IF is folded only when the chosen branch is a leaf literal (a compound branch keeps its own positions by staying where it is), and the C++ arm fires. This was the one disagreement `tools/check.sh`'s default fuzz seed had been finding.
+  - Pinned three ways: nine conformance cases (`ctl.if.constant-condition-*`, `op.logic.*-keeps-the-*-position`), SQL cases showing translate() refuses the same source at the same column (`cond.refuse.constant-condition-mismatch-is-at-the-if`, `op.logic.short-circuit-constant-is-still-the-*`) and three planner cases (`plan.fold.*`), and a unit test per host that executes a hybrid and a pure-memory plan over the folded shapes and compares the error position with `run()`'s. The C++ SQL unit binary now runs under `make test` and `tools/check.sh`; it did not before.
+  - The planner folds the same way, so `ORDERS .> FILTER(IF(TRUE, _["id"] > 1, FALSE))` now pushes down as the `CASE WHEN TRUE …` translate() always produced for it, rather than as `WHERE (id > 1)`; `plan.fold.compound-branch-stays-an-if` records the decision.
+
 In-memory query engine optimizations, AST logical pipeline rewrites, and physical memory layout redesign. *(Note: Implemented in the Common Lisp / SBCL reference engine first; ports to PHP, JavaScript, Python, and C++ to follow per the porting roadmap.)*
 
   - **Group 1: Logical AST Pipeline Optimizer (`lisp/src/optimizer.lisp`).**

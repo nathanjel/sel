@@ -12,7 +12,7 @@ final class Optimizer
 {
     /** @var list<string> */
     public const PIPELINE_OPS = [
-        'FILTER', 'GROUP_BY', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
+        'FILTER', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
         'TAKE', 'DROP', 'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY',
         'LINK', 'LINK_LEFT',
     ];
@@ -150,6 +150,29 @@ final class Optimizer
         return ['t' => 'num', 'v' => $value, 'pos' => $pos];
     }
 
+    // A fold that replaces a node by one of its children must not move the error
+    // position an operator over the result reports: spec §6.3 names the node that
+    // actually failed, and to the operator the operand IS the folded node, not the
+    // literal inside it (ctl.if.constant-condition-result-keeps-the-if-position).
+    // So a hoisted child is re-stamped with the folded node's position -- which is
+    // only exact for a leaf literal, the one shape that carries no positions of
+    // its own and cannot fail by itself. A variable is a leaf that can (E_UNDEF_VAR
+    // at its own column), so it is not a literal here.
+    private const LITERAL_TYPES = ['num', 'text', 'bool', 'null'];
+
+    /** @param array<string,mixed>|null $node */
+    private static function isLiteral(?array $node): bool
+    {
+        return $node !== null && in_array($node['t'] ?? null, self::LITERAL_TYPES, true);
+    }
+
+    /** @param array<string,mixed> $child @param array<string,mixed> $pos @return array<string,mixed> */
+    private static function hoistLiteral(array $child, array $pos): array
+    {
+        $child['pos'] = $pos;
+        return $child;
+    }
+
     /** @return array<string,mixed> */
     private static function callNode(string $name, array $args, array $pos): array
     {
@@ -185,14 +208,14 @@ final class Optimizer
             $right = $node['r'] ?? null;
             $op = $node['op'] ?? null;
             if ($op === 'AND') {
-                if (($left['t'] ?? null) === 'bool' && !$left['v']) return $left;
+                if (($left['t'] ?? null) === 'bool' && !$left['v']) return self::boolNode(false, $node['pos']);
                 if (($left['t'] ?? null) === 'bool' && ($right['t'] ?? null) === 'bool') {
                     return self::boolNode((bool) $left['v'] && (bool) $right['v'], $node['pos']);
                 }
                 return $node;
             }
             if ($op === 'OR') {
-                if (($left['t'] ?? null) === 'bool' && $left['v']) return $left;
+                if (($left['t'] ?? null) === 'bool' && $left['v']) return self::boolNode(true, $node['pos']);
                 if (($left['t'] ?? null) === 'bool' && ($right['t'] ?? null) === 'bool') {
                     return self::boolNode((bool) $left['v'] || (bool) $right['v'], $node['pos']);
                 }
@@ -235,7 +258,8 @@ final class Optimizer
         if ($type === 'call' && ($node['name'] ?? null) === 'IF'
             && count($node['args'] ?? []) === 3
             && (($node['args'][0]['t'] ?? null) === 'bool')) {
-            return $node['args'][0]['v'] ? $node['args'][1] : $node['args'][2];
+            $branch = $node['args'][0]['v'] ? $node['args'][1] : $node['args'][2];
+            return self::isLiteral($branch) ? self::hoistLiteral($branch, $node['pos']) : $node;
         }
         return $node;
     }

@@ -14,10 +14,6 @@ final class Normalise
 {
     /**
      * @param array<string,mixed> $ast
-     * @return array<string,mixed>
-     */
-    /**
-     * @param array<string,mixed> $ast
      * @param array<string,bool>  $constNames value-binding names, Constants::scope
      * @return array<string,mixed>
      */

@@ -1,12 +1,12 @@
-# Statements: GROUP_BY and HAVING in relational pipelines.
+# Statements: BUCKET and HAVING in relational pipelines.
 #
-# Covers GROUP_BY key forms (single, LIST, RECORD),
+# Covers BUCKET key forms (single, LIST, RECORD),
 # aggregate projections (COUNT(*), SUM with COALESCE),
 # pre-filtering (WHERE) vs post-filtering (HAVING),
 # sorting by aggregate aliases in ORDER BY,
-# pagination with GROUP_BY, and dialect parity.
+# pagination with BUCKET, and dialect parity.
 
-### name: stmt.group-by.basic
+### name: stmt.bucket.basic
 --- dialect
 mariadb
 --- bindings
@@ -14,12 +14,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(_["dept"])
+ITEMS .> BUCKET(_["dept"])
 --- expect
 SELECT `dept` FROM `items` GROUP BY `dept`
 ===
 
-### name: stmt.group-by.multi-list
+### name: stmt.bucket.multi-list
 --- dialect
 mariadb
 --- bindings
@@ -27,12 +27,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY((_["dept"], _["category"]))
+ITEMS .> BUCKET((_["dept"], _["category"]))
 --- expect
 SELECT `dept`, `category` FROM `items` GROUP BY `dept`, `category`
 ===
 
-### name: stmt.group-by.multi-record
+### name: stmt.bucket.multi-record
 --- dialect
 mariadb
 --- bindings
@@ -40,12 +40,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(RECORD("dept", _["dept"], "category", _["category"]))
+ITEMS .> BUCKET(RECORD("dept", _["dept"], "category", _["category"]))
 --- expect
 SELECT `dept` AS `dept`, `category` AS `category` FROM `items` GROUP BY `dept`, `category`
 ===
 
-### name: stmt.group-by.aggregates
+### name: stmt.bucket.aggregates
 --- dialect
 mariadb
 --- bindings
@@ -53,12 +53,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(_["dept"], RECORD("dept", _K, "cnt", COUNT(_), "total", SUM(_, _["amount"])))
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "cnt", COUNT(_), "total", SUM(_, _["amount"])))
 --- expect
 SELECT `dept` AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`
 ===
 
-### name: stmt.group-by.custom-binder
+### name: stmt.bucket.custom-binder
 --- dialect
 mariadb
 --- bindings
@@ -66,12 +66,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(r, r["dept"], RECORD("dept", _K, "total", SUM(r, x, x["amount"])))
+ITEMS .> BUCKET(r, r["dept"], RECORD("dept", _K, "total", SUM(r, x, x["amount"])))
 --- expect
 SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`
 ===
 
-### name: stmt.group-by.where-and-having
+### name: stmt.bucket.where-and-having
 --- dialect
 mariadb
 --- bindings
@@ -79,12 +79,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> FILTER(_["active"] == 1) .> GROUP_BY(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100)
+ITEMS .> FILTER(_["active"] == 1) .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100)
 --- expect
 SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY `dept` HAVING (COALESCE(SUM(`amount`), 0) > 100)
 ===
 
-### name: stmt.group-by.order-by-agg
+### name: stmt.bucket.order-by-agg
 --- dialect
 mariadb
 --- bindings
@@ -92,12 +92,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> SORT_BY(_["total"], "DESC")
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> SORT_BY(_["total"], "DESC")
 --- expect
 SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` ORDER BY COALESCE(SUM(`amount`), 0) DESC
 ===
 
-### name: stmt.group-by.pagination
+### name: stmt.bucket.pagination
 --- dialect
 mariadb
 --- bindings
@@ -105,12 +105,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(_["dept"]) .> TAKE(10) .> DROP(5)
+ITEMS .> BUCKET(_["dept"]) .> TAKE(10) .> DROP(5)
 --- expect
 SELECT `dept` FROM `items` GROUP BY `dept` LIMIT 10 OFFSET 5
 ===
 
-### name: stmt.group-by.dialect-postgres
+### name: stmt.bucket.dialect-postgres
 --- dialect
 postgresql
 --- bindings
@@ -118,12 +118,12 @@ postgresql
 --- as
 statement
 --- source
-ITEMS .> FILTER(_["active"] == 1) .> GROUP_BY(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100) .> SORT_BY(_["total"], "DESC")
+ITEMS .> FILTER(_["active"] == 1) .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100) .> SORT_BY(_["total"], "DESC")
 --- expect
 SELECT "dept" AS "dept", COALESCE(SUM("amount"), 0) AS "total" FROM "items" WHERE ("active" = 1) GROUP BY "dept" HAVING (COALESCE(SUM("amount"), 0) > 100) ORDER BY COALESCE(SUM("amount"), 0) DESC
 ===
 
-### name: stmt.group-by.dialect-sqlite
+### name: stmt.bucket.dialect-sqlite
 --- dialect
 sqlite
 --- bindings
@@ -131,12 +131,12 @@ sqlite
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(_["dept"], RECORD("dept", _K, "cnt", COUNT(_))) .> DROP(5)
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "cnt", COUNT(_))) .> DROP(5)
 --- expect
 SELECT "dept" AS "dept", COUNT(*) AS "cnt" FROM "items" GROUP BY "dept" LIMIT -1 OFFSET 5
 ===
 
-### name: stmt.group-by.dialect-mysql
+### name: stmt.bucket.dialect-mysql
 --- dialect
 mysql
 --- bindings
@@ -144,12 +144,12 @@ mysql
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> DROP(5)
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> DROP(5)
 --- expect
 SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` LIMIT 18446744073709551615 OFFSET 5
 ===
 
-### name: stmt.group-by.refusal-binder
+### name: stmt.bucket.refusal-binder
 --- dialect
 mariadb
 --- bindings
@@ -157,12 +157,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(123, _["dept"], _["dept"])
+ITEMS .> BUCKET(123, _["dept"], _["dept"])
 --- error
-E_SQL_SHAPE 1:19
+E_SQL_SHAPE 1:17
 ===
 
-### name: stmt.group-by.refusal-having-bool
+### name: stmt.bucket.refusal-having-bool
 --- dialect
 mariadb
 --- bindings
@@ -170,12 +170,12 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(_["dept"]) .> FILTER("not a bool")
+ITEMS .> BUCKET(_["dept"]) .> FILTER("not a bool")
 --- error
-E_SQL_SHAPE 1:33
+E_SQL_SHAPE 1:31
 ===
 
-### name: stmt.group-by.refusal-unknown-field
+### name: stmt.bucket.refusal-unknown-field
 --- dialect
 mariadb
 --- bindings
@@ -183,7 +183,75 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> GROUP_BY(_["unknown_col"])
+ITEMS .> BUCKET(_["unknown_col"])
 --- error
-E_SQL_BINDING 1:20
+E_SQL_BINDING 1:18
+===
+
+### name: stmt.bucket.pipeline-map-is-the-projection
+--- note
+BUCKET(src, key) .> MAP(proj) and BUCKET(src, key, proj) are one value in the
+evaluator -- the MAP's body runs once per group with _ the group and _K its
+key -- so they are one statement here. Before this the bare bucket was
+rendered as its keys and the MAP was laid over that as a derived table, which
+counted one row per group and, worse, was accepted for a body SEL refuses.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "cnt", COUNT(_)))
+--- expect
+SELECT `dept` AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY `dept`
+===
+
+### name: stmt.bucket.pipeline-filter-then-map
+--- note
+A FILTER between the bucket and its MAP is a HAVING: it sees the group, and
+the MAP still closes the bucket.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> FILTER(COUNT(_) > 1) .> MAP(RECORD("dept", _K, "total", SUM(_, _["amount"])))
+--- expect
+SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` HAVING (COUNT(*) > 1)
+===
+
+### name: stmt.bucket.pipeline-map-names-the-group
+--- note
+The MAP may name the group; _K is still the key, written against the key's
+own binder.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(g, RECORD("dept", _K, "total", SUM(g, x, x["amount"])))
+--- expect
+SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`
+===
+
+### name: stmt.bucket.refuse-map-after-the-members-are-spent
+--- note
+Once anything but a FILTER follows a bare bucket, SQL has only the keys left;
+a MAP after that would run over rows SEL calls groups, so it is refused
+rather than translated into a different program.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> TAKE(2) .> MAP(RECORD("dept", _K))
+--- error
+E_SQL_SHAPE 1:42
 ===

@@ -47,6 +47,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -61,6 +63,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -75,6 +79,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -89,6 +95,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -103,6 +111,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -117,6 +127,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -131,6 +143,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -145,6 +159,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -159,6 +175,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -173,6 +191,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -187,6 +207,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TOTAL" (binding-column "total" "o" :num)))))
   (list
@@ -201,6 +223,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TOTAL" (binding-column "total" nil :num)))))
   (list
@@ -215,6 +239,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ODD" (binding-column "c`d" "a`b" :num)))))
   (list
@@ -229,6 +255,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "NOW" (binding-raw "CURRENT_TIMESTAMP" :unknown)))))
   (list
@@ -243,6 +271,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -257,6 +287,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -271,6 +303,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -285,6 +319,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -299,6 +335,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -313,6 +351,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -327,6 +367,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -341,6 +383,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -355,6 +399,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -369,6 +415,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -383,6 +431,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -397,6 +447,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -411,11 +463,45 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "op.logic.short-circuit-constant-is-still-the-and"
+   :at "02-operators.sqlt:70"
+   :dialect "mariadb"
+   :source "(FALSE AND TRUE) + 1"
+   :expect nil
+   :error "E_SQL_SHAPE 1:8"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "op.logic.short-circuit-constant-is-still-the-or"
+   :at "02-operators.sqlt:83"
+   :dialect "mariadb"
+   :source "(TRUE OR FALSE) + 1"
+   :expect nil
+   :error "E_SQL_SHAPE 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
    :name "op.compare.num-variant-when-both-sides-are-numeric"
-   :at "02-operators.sqlt:70"
+   :at "02-operators.sqlt:91"
    :dialect "mariadb"
    :source "1 < 2"
    :expect "(1 < 2)"
@@ -425,11 +511,13 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
    :name "op.compare.coerce-variant-when-a-side-is-not"
-   :at "02-operators.sqlt:78"
+   :at "02-operators.sqlt:99"
    :dialect "mariadb"
    :source "A == 5"
    :expect "(CASE WHEN (`a` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END = 5)"
@@ -439,11 +527,13 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :text)))))
   (list
    :name "op.compare.coerce-variant-for-unknown-columns"
-   :at "02-operators.sqlt:96"
+   :at "02-operators.sqlt:117"
    :dialect "mariadb"
    :source "A >= 10"
    :expect "(CASE WHEN (`a` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END >= 10)"
@@ -453,11 +543,13 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :unknown)))))
   (list
    :name "op.compare.text-family-forces-a-binary-collation"
-   :at "02-operators.sqlt:106"
+   :at "02-operators.sqlt:127"
    :dialect "mariadb"
    :source "\"A\" $== \"a\""
    :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
@@ -467,11 +559,13 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
    :name "op.compare.text-family-ordering"
-   :at "02-operators.sqlt:117"
+   :at "02-operators.sqlt:138"
    :dialect "mariadb"
    :source "\"a\" $< \"b\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin < CAST('b' AS CHAR) COLLATE utf8mb4_bin)"
@@ -481,11 +575,13 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
    :name "op.eql.scalars-are-a-text-compare"
-   :at "02-operators.sqlt:125"
+   :at "02-operators.sqlt:146"
    :dialect "mariadb"
    :source "\"a\" EQL \"a\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
@@ -495,11 +591,13 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
    :name "op.in.literal-list"
-   :at "02-operators.sqlt:133"
+   :at "02-operators.sqlt:154"
    :dialect "mariadb"
    :source "S IN (\"open\", \"held\")"
    :expect "((CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))"
@@ -509,11 +607,13 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "S" (binding-column "state" nil :text)))))
   (list
    :name "op.in.scalar-right-hand-side"
-   :at "02-operators.sqlt:149"
+   :at "02-operators.sqlt:170"
    :dialect "mariadb"
    :source "\"a\" IN \"a\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
@@ -523,11 +623,13 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
    :name "op.bitwise.refused-with-a-reason"
-   :at "02-operators.sqlt:159"
+   :at "02-operators.sqlt:180"
    :dialect "mariadb"
    :source "TO_UTF8(\"a\") BAND TO_UTF8(\"b\")"
    :expect nil
@@ -537,6 +639,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -551,6 +655,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -565,6 +671,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -579,6 +687,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -593,6 +703,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -607,6 +719,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -621,6 +735,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -635,6 +751,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -649,6 +767,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -663,6 +783,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -677,6 +799,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -691,6 +815,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -705,6 +831,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -719,6 +847,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -733,6 +863,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -747,6 +879,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -761,6 +895,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -775,6 +911,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -789,6 +927,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -803,6 +943,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -817,6 +959,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -831,6 +975,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -845,6 +991,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -859,6 +1007,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -873,6 +1023,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -887,6 +1039,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -901,6 +1055,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -915,6 +1071,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -929,6 +1087,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -943,6 +1103,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -957,6 +1119,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -971,6 +1135,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -985,6 +1151,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TOTAL" (binding-column "total" nil :num)))))
   (list
@@ -999,6 +1167,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1013,6 +1183,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1027,6 +1199,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "S" (binding-column "s" nil :text)))))
   (list
@@ -1041,6 +1215,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1055,6 +1231,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1069,6 +1247,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1083,6 +1263,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1097,6 +1279,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1111,6 +1295,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1125,6 +1311,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "K" (binding-column "k" nil :text)))))
   (list
@@ -1139,6 +1327,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1153,6 +1343,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "B" (binding-column "b" nil :num)))))
   (list
@@ -1167,6 +1359,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "LIM" (binding-value (sel:make-text "-5") :num)))))
   (list
@@ -1181,6 +1375,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -1195,6 +1391,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -1209,6 +1407,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "S" (binding-column "score" nil :num)))))
   (list
@@ -1223,6 +1423,8 @@
    :as "condition"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1237,6 +1439,8 @@
    :as "condition"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -1251,11 +1455,29 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "cond.refuse.constant-condition-mismatch-is-at-the-if"
+   :at "05-conditionals.sqlt:68"
+   :dialect "mariadb"
+   :source "IF(TRUE, \"x\", 1) >= 1"
+   :expect nil
+   :error "E_SQL_SHAPE 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
    :name "cond.nested"
-   :at "05-conditionals.sqlt:68"
+   :at "05-conditionals.sqlt:82"
    :dialect "mariadb"
    :source "IF(N > 0, IF(N > 10, \"big\", \"small\"), \"none\")"
    :expect "CASE WHEN (`n` > 0) THEN CASE WHEN (`n` > 10) THEN 'big' ELSE 'small' END ELSE 'none' END"
@@ -1265,6 +1487,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -1279,6 +1503,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -1293,6 +1519,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -1307,6 +1535,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -1321,6 +1551,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "B" (binding-value (sel:make-bin (bin-from-hex "00ff")) nil)))))
   (list
@@ -1335,6 +1567,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)) (cons "LIMIT" (binding-value (sel:make-text "2.50") :num)))))
   (list
@@ -1349,6 +1583,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -1363,6 +1599,8 @@
    :as nil
    :mode "debug"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -1377,6 +1615,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "S" (binding-column "s" nil :text)))))
   (list
@@ -1391,6 +1631,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "S" (binding-column "s" nil :text)))))
   (list
@@ -1405,6 +1647,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1419,6 +1663,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1433,6 +1679,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1447,6 +1695,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :unknown) (binding-column "b" nil :unknown) (binding-column "c" nil :unknown))))))
   (list
@@ -1461,6 +1711,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1475,6 +1727,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1489,6 +1743,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1503,6 +1759,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1517,6 +1775,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1531,6 +1791,8 @@
    :as nil
    :mode nil
    :strict t
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1545,6 +1807,8 @@
    :as nil
    :mode nil
    :strict t
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1559,6 +1823,8 @@
    :as nil
    :mode nil
    :strict t
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1573,6 +1839,8 @@
    :as nil
    :mode nil
    :strict t
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1587,6 +1855,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1601,6 +1871,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1615,6 +1887,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1629,6 +1903,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1643,6 +1919,8 @@
    :as "condition"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -1657,6 +1935,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -1671,6 +1951,8 @@
    :as "condition"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "F" (binding-column "flag" nil :unknown)))))
   (list
@@ -1685,6 +1967,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
@@ -1699,6 +1983,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :num) (binding-column "b" nil :num))))))
   (list
@@ -1713,6 +1999,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
@@ -1727,6 +2015,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-relation "x" "t" (list ) nil nil)) (cons "B" (binding-relation "y" "t" (list ) nil nil)))))
   (list
@@ -1741,6 +2031,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -1755,6 +2047,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "SKU" (binding-column "sku" "o" :text)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")))))
   (list
@@ -1769,6 +2063,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1783,6 +2079,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -1797,6 +2095,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "total" "o" :num)))))
   (list
@@ -1811,6 +2111,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "CODE" (binding-value (sel:make-text "00123") nil)))))
   (list
@@ -1825,6 +2127,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "LIMIT" (binding-value (sel:make-text "100") :num)))))
   (list
@@ -1839,6 +2143,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "L" (binding-value (value-tree (list (cons "1" (sel:make-text "a")) (cons "2" (sel:make-text "b")))) nil)))))
   (list
@@ -1853,6 +2159,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "L" (binding-value (value-tree (list (cons "1" (sel:make-text "a")) (cons "2" (sel:make-text "b")))) nil)))))
   (list
@@ -1867,6 +2175,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num) (binding-column "b" "x" :num))))))
   (list
@@ -1881,6 +2191,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num))))))
   (list
@@ -1895,6 +2207,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "I" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
@@ -1909,6 +2223,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "I" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
@@ -1923,6 +2239,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "007") :num)))))
   (list
@@ -1937,6 +2255,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "2.50") :num)))))
   (list
@@ -1951,6 +2271,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "-0") :num)))))
   (list
@@ -1965,6 +2287,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "007") nil)))))
   (list
@@ -1979,6 +2303,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (value-tree (list )) nil)))))
   (list
@@ -1993,6 +2319,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (value-tree (list )) nil)))))
   (list
@@ -2007,6 +2335,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-column "a b" nil :unknown)))))
   (list
@@ -2021,6 +2351,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-column (list "a" "b") nil :unknown)))))
   (list
@@ -2035,6 +2367,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-column "c" (list (cons "raw" "x")) :unknown)))))
   (list
@@ -2049,6 +2383,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "R" (binding-relation "t" (list "x") (list (cons "Q" (binding-column "q" nil :unknown))) nil nil)))))
   (list
@@ -2063,6 +2399,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "2.50") :num)))))
   (list
@@ -2077,6 +2415,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "R" (binding-relation "t" "r" (list (cons "A" (binding-column "a" "r" :num))) nil (list (cons "mariadb" "1=1")))))))
   (list
@@ -2091,6 +2431,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "R" (binding-relation-query (list (cons "query" "select 1")) "r" (list (cons "A" (binding-column "a" "r" :num))) nil nil)))))
   (list
@@ -2105,6 +2447,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "CRC32" (list :tpl "MY_CRC({0})" :ret "TEXT")))
    :bindings (lambda () (list )))
@@ -2120,6 +2464,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" "this deployment forbids case folding in SQL"))
    :bindings (lambda () (list )))
@@ -2135,6 +2481,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "ansi" :funcs "UPPER" (list :tpl "ANSI_UPPER({0})" :ret "TEXT")))
    :bindings (lambda () (list )))
@@ -2150,6 +2498,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "ansi" :funcs "UPPER" (list :tpl "ANSI_UPPER({0})" :ret "TEXT"))
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "LEAF_UPPER({0})" :ret "TEXT")))
@@ -2166,6 +2516,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :ops "&" (list :variants (list (cons "text" "({0} || {1})")) :ret "@concat")))
    :bindings (lambda () (list )))
@@ -2181,6 +2533,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "longest" (list :extends "mariadb" :version "10.5" :lexical (list (cons "textEscape" (list (cons "ab" "<AB>") (cons "a" "<A>")))))))
    :bindings (lambda () (list )))
@@ -2196,6 +2550,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "LEN" (list :tpl "LEN({0}{textCollate})" :ret "NUM")))
    :bindings (lambda () (list )))
@@ -2211,6 +2567,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "cms" (list :extends "mariadb" :version "11.8" :lexical (list (cons "textCollate" " COLLATE utf8mb3_bin") (cons "textCharset" "utf8mb3")))))
    :bindings (lambda () (list (cons "B" (binding-column "b" "o" :bin)))))
@@ -2226,6 +2584,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "norel" (list :extends "mariadb" :version "10.5"))
       (define-entry "norel" :skel "inRelation" nil))
@@ -2242,6 +2602,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "NEW_UPPER({0})" :ret "TEXT" :since "99.0")))
    :bindings (lambda () (list )))
@@ -2257,6 +2619,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8"))
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "NEW_UPPER({0})" :ret "TEXT" :since "11.0")))
@@ -2273,6 +2637,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8")))
    :bindings (lambda () (list )))
@@ -2288,6 +2654,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "mariadb-nocollate" (list :extends "mariadb" :version "10.5" :lexical (list (cons "textCollate" " COLLATE utf8mb4_0900_bin")))))
    :bindings (lambda () (list )))
@@ -2303,6 +2671,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "wishful" (list :extends "nosuchdialect" :version "1.0")))
    :bindings (lambda () (list )))
@@ -2318,6 +2688,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" "nonesuch" "UPPER" nil))
    :bindings (lambda () (list )))
@@ -2333,6 +2705,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2347,6 +2721,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2361,6 +2737,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2375,6 +2753,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2389,6 +2769,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2403,6 +2785,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2417,6 +2801,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2431,6 +2817,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2445,6 +2833,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2459,6 +2849,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2473,6 +2865,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TOTAL" (binding-column "total" "o" :num)))))
   (list
@@ -2487,6 +2881,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num) (binding-column "b" "x" :num) (binding-column "c" "x" :num))))))
   (list
@@ -2501,6 +2897,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num) (binding-column "b" "x" :num))))))
   (list
@@ -2515,6 +2913,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num))))))
   (list
@@ -2529,6 +2929,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :unknown) (binding-column "b" "x" :unknown))))))
   (list
@@ -2543,6 +2945,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")))))
   (list
@@ -2557,6 +2961,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil "`oi`.`order_id` = `o`.`id`")))))
   (list
@@ -2571,6 +2977,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "PRICE" (binding-column "price" "oi" :num))) nil "`oi`.`order_id` = `o`.`id`")))))
   (list
@@ -2585,6 +2993,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil "`oi`.`order_id` = `o`.`id`")))))
   (list
@@ -2599,6 +3009,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ALL_ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
@@ -2613,6 +3025,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-relation-query "(SELECT a, b FROM x)" "v" (list (cons "A" (binding-column "a" "v" :num))) nil nil)))))
   (list
@@ -2627,6 +3041,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "SKU" (binding-column "sku" "o" :text)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")))))
   (list
@@ -2641,6 +3057,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "LINES" (binding-relation "lines" "l" (list (cons "QTY" (binding-column "qty" "l" :num))) nil "`l`.`order_id` = `o`.`id`")))))
   (list
@@ -2655,6 +3073,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2669,6 +3089,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2683,6 +3105,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil "`oi`.`order_id` = `o`.`id`")))))
   (list
@@ -2697,6 +3121,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2711,6 +3137,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2725,6 +3153,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "L" (binding-value (value-tree (list (cons "1" (sel:make-text "a")) (cons "2" (sel:make-text "b")))) nil)))))
   (list
@@ -2739,6 +3169,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "E" (binding-value (value-tree (list )) nil)))))
   (list
@@ -2753,6 +3185,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "E" (binding-value (value-tree (list )) nil)))))
   (list
@@ -2767,6 +3201,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "E" (binding-value (value-tree (list )) nil)))))
   (list
@@ -2781,6 +3217,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2795,6 +3233,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
@@ -2809,6 +3249,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
@@ -2823,6 +3265,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2837,6 +3281,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
@@ -2851,6 +3297,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "SKU" (binding-column "sku" "oi" :text))) nil nil)))))
   (list
@@ -2865,6 +3313,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
@@ -2879,6 +3329,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2893,6 +3345,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2907,6 +3361,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2921,6 +3377,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" nil)))))
   (list
@@ -2935,6 +3393,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -2949,6 +3409,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "PRICE" (binding-column "price" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")) (cons "CREDIT_LIMIT" (binding-column "credit_limit" "o" :num)))))
   (list
@@ -2963,6 +3425,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "PRICE" (binding-column "price" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")) (cons "CREDIT_LIMIT" (binding-column "credit_limit" "o" :num)))))
   (list
@@ -2977,6 +3441,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "PRICE" (binding-column "price" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")) (cons "CREDIT_LIMIT" (binding-column "credit_limit" "o" :num)))))
   (list
@@ -2991,6 +3457,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num)) (cons "SKU" (binding-column "sku" nil :text))) "SKU" nil)))))
   (list
@@ -3005,6 +3473,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "SKUS" (binding-relation "order_items" "s2" (list (cons "SKU" (binding-column "sku" "s2" :text))) "SKU" nil)))))
   (list
@@ -3019,6 +3489,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num)) (cons "SKU" (binding-column "sku" nil :text))) "SKU" nil)))))
   (list
@@ -3033,6 +3505,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
@@ -3047,6 +3521,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "SKU" (binding-column "sku" "oi" :text))) nil nil)) (cons "SKUS" (binding-relation "skus" "s2" (list (cons "SKU" (binding-column "sku" "s2" :text))) "SKU" nil)))))
   (list
@@ -3061,6 +3537,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3075,6 +3553,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3089,6 +3569,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "NOTES" (binding-relation "order_items" "nt" (list (cons "NOTE" (binding-column "note" "nt" :text))) "NOTE" nil)))))
   (list
@@ -3103,6 +3585,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3117,6 +3601,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :text)))))
   (list
@@ -3131,6 +3617,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3145,6 +3633,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "t" "oi" (list (cons "qty" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
@@ -3159,6 +3649,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :num)) (cons "V" (binding-value (sel:make-text "1 OR 1=1 -- ") :num)))))
   (list
@@ -3173,6 +3665,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "L" (binding-value (value-tree (list (cons "1" (sel:make-text "1")) (cons "2" (sel:make-text "2) OR (1=1")))) :num)))))
   (list
@@ -3187,6 +3681,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :num)) (cons "V" (binding-value (sel:make-text "100") :num)))))
   (list
@@ -3201,6 +3697,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :text)))))
   (list
@@ -3215,6 +3713,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :text)))))
   (list
@@ -3229,6 +3729,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :text)))))
   (list
@@ -3243,6 +3745,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :text)))))
   (list
@@ -3257,6 +3761,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :skel "join" (list :tpl "(SELECT GROUP_CONCAT({body} ORDER BY {body} SEPARATOR {sep}) FROM {from} WHERE {corr})")))
    :bindings (lambda () (list (cons "R" (binding-relation "t" "r" (list (cons "S" (binding-column "s" "r" :text))) "S" nil)))))
@@ -3272,6 +3778,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-relation-query "(SELECT 1)" nil (list ) nil nil)) (cons "B" (binding-relation-query "(SELECT 2)" nil (list ) nil nil)))))
   (list
@@ -3286,6 +3794,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-relation-query "(SELECT 1)" nil (list ) nil nil)) (cons "B" (binding-relation-query "(SELECT 1)" nil (list ) nil nil)))))
   (list
@@ -3300,6 +3810,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "S" (binding-column "s" nil :text)) (cons "ALLOWED" (binding-value (value-tree (list (cons "1" (sel:make-text "open")) (cons "2" (sel:make-text "held")))) nil)))))
   (list
@@ -3314,6 +3826,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3328,6 +3842,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3342,6 +3858,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :unknown)))))
   (list
@@ -3356,6 +3874,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3370,6 +3890,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3384,6 +3906,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :unknown)))))
   (list
@@ -3398,6 +3922,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3412,6 +3938,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3426,6 +3954,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3440,6 +3970,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3454,6 +3986,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3468,6 +4002,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "C" (binding-column "c" nil :unknown)))))
   (list
@@ -3482,6 +4018,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3496,6 +4034,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3510,6 +4050,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3524,6 +4066,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3538,6 +4082,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "B" (binding-column "b" nil :bin)))))
   (list
@@ -3552,6 +4098,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "B" (binding-column "b" nil :bin)))))
   (list
@@ -3566,6 +4114,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :bool)) (cons "N" (binding-column "n" nil :text)))))
   (list
@@ -3580,6 +4130,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "B" (binding-column "b" nil :bin)) (cons "N" (binding-column "n" nil :text)))))
   (list
@@ -3594,6 +4146,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :bool)))))
   (list
@@ -3608,6 +4162,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "B" (binding-column "b" nil :bin)))))
   (list
@@ -3622,6 +4178,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "B" (binding-column "b" nil :bin)))))
   (list
@@ -3636,6 +4194,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :bool)))))
   (list
@@ -3650,6 +4210,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
   (list
@@ -3664,6 +4226,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3678,6 +4242,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3692,6 +4258,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "COL" (binding-column "active$' -- oops" nil :unknown)))))
   (list
@@ -3706,6 +4274,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "COL" (binding-column "c" nil :unknown)))))
   (list
@@ -3720,6 +4290,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "wrapped" (list :extends "sqlite" :lexical (list (cons "numericLiteral" "({0} || '' || {0})")))))
    :bindings (lambda () (list )))
@@ -3735,6 +4307,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "selfref" (list :extends "mariadb" :lexical (list (cons "textCast" "X({textCast:0})")))))
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :unknown)))))
@@ -3750,6 +4324,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3764,6 +4340,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "noquote" (list :extends "ansi" :lexical (list (cons "identQuote" "")))))
    :bindings (lambda () (list )))
@@ -3779,6 +4357,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num) (binding-column "b" "x" :num))))))
   (list
@@ -3793,6 +4373,8 @@
    :as "condition"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" "x" :num) (binding-column "b" "x" :num))))))
   (list
@@ -3807,6 +4389,8 @@
    :as "condition"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "R" (binding-relation "t" "r" (list (cons "straße" (binding-column "s" nil :text))) nil nil)))))
   (list
@@ -3821,6 +4405,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "scratch" (list :extends nil :version "1" :target t :lexical (list (cons "identQuote" "\"") (cons "identEscape" "\"\"") (cons "textQuote" "'") (cons "textEscape" (list (cons "'" "''"))) (cons "true" "TRUE") (cons "false" "FALSE") (cons "numericLiteral" "{0}") (cons "placeholder" "?"))))
       (define-entry "scratch" :ops "+" (list :tpl "({0} + {1})" :ret "NUM")))
@@ -3837,6 +4423,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "nameless" (list :version "1")))
    :bindings (lambda () (list )))
@@ -3852,6 +4440,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "d2" (list :extends "ansi" :ops (list (cons "+" (list (cons "tpl" "X") (cons "ret" "NUM")))))))
    :bindings (lambda () (list )))
@@ -3867,6 +4457,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3881,6 +4473,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3895,6 +4489,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3909,6 +4505,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3923,6 +4521,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3937,6 +4537,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3951,6 +4553,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3965,6 +4569,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3979,6 +4585,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -3993,6 +4601,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4007,6 +4617,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4021,6 +4633,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4035,6 +4649,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4049,6 +4665,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4063,6 +4681,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4077,6 +4697,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4091,6 +4713,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4105,6 +4729,8 @@
    :as nil
    :mode nil
    :strict t
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4119,6 +4745,8 @@
    :as nil
    :mode nil
    :strict t
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4133,6 +4761,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4147,6 +4777,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4161,6 +4793,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4175,6 +4809,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4189,6 +4825,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4203,6 +4841,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4217,6 +4857,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4231,6 +4873,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4245,6 +4889,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4259,6 +4905,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4273,6 +4921,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4287,6 +4937,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4301,6 +4953,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -4315,6 +4969,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "pg-numbered" (list :extends "postgresql" :version "15" :target t :lexical (list (cons "placeholder" "${n}")))))
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
@@ -4330,6 +4986,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4344,6 +5002,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "pg-numbered" (list :extends "postgresql" :version "15" :target t :lexical (list (cons "placeholder" "${n}")))))
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
@@ -4359,6 +5019,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4373,6 +5035,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4387,6 +5051,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4401,6 +5067,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4415,6 +5083,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4429,6 +5099,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4443,6 +5115,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4457,6 +5131,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4471,6 +5147,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4485,6 +5163,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4499,6 +5179,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4513,6 +5195,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4527,6 +5211,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4541,6 +5227,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4555,6 +5243,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4569,6 +5259,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4583,6 +5275,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4597,6 +5291,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4611,6 +5307,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4625,6 +5323,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4639,6 +5339,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4653,6 +5355,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4667,6 +5371,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4681,6 +5387,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4695,6 +5403,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4709,6 +5419,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4723,6 +5435,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4737,6 +5451,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4751,6 +5467,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4765,6 +5483,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4779,6 +5499,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -4793,6 +5515,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -4807,6 +5531,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4821,6 +5547,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4835,6 +5563,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4849,6 +5579,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4863,6 +5595,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :bool)))))
   (list
@@ -4877,6 +5611,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4891,6 +5627,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "-1") :num)))))
   (list
@@ -4905,6 +5643,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "Z" (binding-value (sel:make-text "0") :num)))))
   (list
@@ -4919,6 +5659,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "S" (binding-value (sel:make-text "abc") nil)))))
   (list
@@ -4933,6 +5675,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -4947,6 +5691,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4961,6 +5707,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4975,6 +5723,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -4989,6 +5739,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5003,6 +5755,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -5017,6 +5771,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -5031,6 +5787,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -5045,6 +5803,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -5059,6 +5819,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)) (cons "S" (binding-value (sel:make-text "abc") nil)))))
   (list
@@ -5073,6 +5835,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -5087,6 +5851,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :text)))))
   (list
@@ -5101,6 +5867,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
@@ -5115,6 +5883,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -5129,6 +5899,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5143,6 +5915,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5157,6 +5931,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5171,6 +5947,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5185,6 +5963,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5199,6 +5979,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5213,6 +5995,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5227,6 +6011,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5241,6 +6027,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5255,6 +6043,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5269,6 +6059,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5283,6 +6075,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5297,6 +6091,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5311,6 +6107,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5325,6 +6123,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5339,6 +6139,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5353,6 +6155,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5367,6 +6171,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5381,6 +6187,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5395,6 +6203,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5409,6 +6219,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5423,6 +6235,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "COLS" (binding-columns (binding-column "c1" nil :unknown) (binding-column "c2" nil :unknown) (binding-column "c3" nil :unknown) (binding-column "c4" nil :unknown) (binding-column "c5" nil :unknown) (binding-column "c6" nil :unknown) (binding-column "c7" nil :unknown) (binding-column "c8" nil :unknown) (binding-column "c9" nil :unknown) (binding-column "c10" nil :unknown) (binding-column "c11" nil :unknown) (binding-column "c12" nil :unknown) (binding-column "c13" nil :unknown))))))
   (list
@@ -5437,6 +6251,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :unknown) (binding-column "b" nil :unknown))))))
   (list
@@ -5451,6 +6267,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :unknown) (binding-column "b" nil :unknown))))))
   (list
@@ -5465,6 +6283,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :unknown) (binding-column "b" nil :unknown))))))
   (list
@@ -5479,6 +6299,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5493,6 +6315,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
@@ -5507,6 +6331,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "U({01})" :ret "TEXT")))
    :bindings (lambda () (list )))
@@ -5522,6 +6348,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "U({0
 })" :ret "TEXT")))
@@ -5538,6 +6366,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "U({0})" :ret "TEXT")))
    :bindings (lambda () (list )))
@@ -5553,6 +6383,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :num)))))
   (list
@@ -5567,6 +6399,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :num)))))
   (list
@@ -5581,6 +6415,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5595,6 +6431,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5609,6 +6447,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "U({0})")))
    :bindings (lambda () (list )))
@@ -5624,6 +6464,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl (list "a" "b") :ret "TEXT")))
    :bindings (lambda () (list )))
@@ -5639,6 +6481,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "U({0})" :ret "TEXT" :arity (cons "1" "1"))))
    :bindings (lambda () (list )))
@@ -5654,6 +6498,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "U({0})" :ret "TEXT" :since "abc")))
    :bindings (lambda () (list )))
@@ -5669,6 +6515,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "UPPER" (list :tpl "U({0})" :ret "TEXT" :caveat "made-up")))
    :bindings (lambda () (list )))
@@ -5684,6 +6532,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :ops "and" (list :tpl "({0} AND {1})" :ret "BOOL")))
    :bindings (lambda () (list )))
@@ -5699,6 +6549,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "COUNT" (list :tpl "X({0})" :ret "NUM")))
    :bindings (lambda () (list )))
@@ -5714,6 +6566,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :skel "case" (list :tpl "CASE {branchez} ELSE {else} END")))
    :bindings (lambda () (list )))
@@ -5729,6 +6583,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "mariadb" (list :extends "mysql")))
    :bindings (lambda () (list )))
@@ -5744,6 +6600,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "d1" (list :extends "mariadb" :target "0")))
    :bindings (lambda () (list )))
@@ -5759,6 +6617,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "d2" (list :extends "mariadb" :version "11.8.8-MariaDB")))
    :bindings (lambda () (list )))
@@ -5774,6 +6634,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "d3" (list :extends "mariadb" :lexical (list (cons "textEscape" "x")))))
    :bindings (lambda () (list )))
@@ -5789,6 +6651,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "d4" (list :extends "mariadb" :lexical (list (cons "true" t)))))
    :bindings (lambda () (list )))
@@ -5804,6 +6668,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "d5" (list :extends "mariadb" :lexical (list (cons "identQuot" "`")))))
    :bindings (lambda () (list )))
@@ -5819,6 +6685,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "MIN" (list :tpl (list (cons "1" nil) (cons "*" "LEAST({*})")) :ret "NUM")))
    :bindings (lambda () (list )))
@@ -5834,6 +6702,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "MIN" (list :tpl (list (cons "1" nil) (cons "*" "LEAST({*})")) :ret "NUM")))
    :bindings (lambda () (list )))
@@ -5849,6 +6719,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "COLS" (binding-columns (binding-column "c1" nil :unknown) (binding-column "c2" nil :unknown) (binding-column "c3" nil :unknown) (binding-column "c4" nil :unknown) (binding-column "c5" nil :unknown) (binding-column "c6" nil :unknown) (binding-column "c7" nil :unknown) (binding-column "c8" nil :unknown) (binding-column "c9" nil :unknown) (binding-column "c10" nil :unknown) (binding-column "c11" nil :unknown) (binding-column "c12" nil :unknown))))))
   (list
@@ -5863,6 +6735,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "COLS" (binding-columns (binding-column "c1" nil :unknown) (binding-column "c2" nil :unknown) (binding-column "c3" nil :unknown) (binding-column "c4" nil :unknown) (binding-column "c5" nil :unknown) (binding-column "c6" nil :unknown) (binding-column "c7" nil :unknown) (binding-column "c8" nil :unknown) (binding-column "c9" nil :unknown) (binding-column "c10" nil :unknown) (binding-column "c11" nil :unknown) (binding-column "c12" nil :unknown))))))
   (list
@@ -5877,6 +6751,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list )))
   (list
@@ -5891,6 +6767,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-entry "mariadb" :funcs "MIN" (list :tpl (list (cons "10" "TEN({*})") (cons "*" "LEAST({*})")) :ret "NUM")))
    :bindings (lambda () (list )))
@@ -5906,6 +6784,8 @@
    :as nil
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "pg-numbered" (list :extends "postgresql" :version "15" :target t :lexical (list (cons "placeholder" "${n}")))))
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
@@ -5921,6 +6801,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -5935,6 +6817,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -5949,6 +6833,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
   (list
@@ -5963,6 +6849,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -5977,6 +6865,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
   (list
@@ -5991,6 +6881,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6005,6 +6897,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
   (list
@@ -6019,6 +6913,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6033,6 +6929,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
   (list
@@ -6047,6 +6945,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "V" (binding-columns (binding-column "a" nil :unknown) (binding-column "b" nil :unknown))) (cons "U" (binding-column "u" nil :unknown)))))
   (list
@@ -6061,6 +6961,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)))))
   (list
@@ -6075,6 +6977,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :text))) nil "`oi`.`o`=`o`.`id`")))))
   (list
@@ -6089,6 +6993,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6103,6 +7009,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6117,6 +7025,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6131,6 +7041,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6145,6 +7057,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6159,6 +7073,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6173,6 +7089,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
@@ -6187,6 +7105,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :text))) nil "`oi`.`o`=`o`.`id`")))))
   (list
@@ -6201,6 +7121,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))
   (list
@@ -6215,6 +7137,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "`oi`.`o`=`o`.`id`")))))
   (list
@@ -6229,6 +7153,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-raw "nv.value" :unknown)))))
   (list
@@ -6243,6 +7169,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "T" (binding-raw "nv.value" :num)))))
   (list
@@ -6257,6 +7185,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6272,6 +7202,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6287,6 +7219,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6302,6 +7236,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6317,6 +7253,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6332,6 +7270,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6347,6 +7287,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6362,6 +7304,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list (cons "N" (binding-column "n" nil :num)))))
@@ -6377,6 +7321,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6392,6 +7338,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
@@ -6407,6 +7355,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6422,6 +7372,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6437,6 +7389,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6452,6 +7406,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
    :bindings (lambda () (list )))
@@ -6467,6 +7423,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "QTY" (binding-column "qty" nil :num)))))
   (list
@@ -6481,6 +7439,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :num)) (cons "B" (binding-column "b" nil :num)))))
   (list
@@ -6495,6 +7455,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "CODE" (binding-column "code" nil :text)))))
   (list
@@ -6509,6 +7471,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "DISCOUNT" (binding-column "discount" nil :num)))))
   (list
@@ -6523,6 +7487,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "DISCOUNT" (binding-column "discount" nil :num)))))
   (list
@@ -6537,6 +7503,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :num)) (cons "B" (binding-column "b" nil :num)))))
   (list
@@ -6551,6 +7519,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "POSTCODE" (binding-column "postcode" nil :text)))))
   (list
@@ -6565,6 +7535,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "POSTCODE" (binding-column "postcode" nil :text)))))
   (list
@@ -6579,6 +7551,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6593,6 +7567,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6607,6 +7583,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6621,6 +7599,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :text :exact t :sargable nil :guard nil)) (cons "B" (binding-column "b" nil :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6635,6 +7615,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6649,6 +7631,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
   (list
@@ -6663,6 +7647,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
   (list
@@ -6677,6 +7663,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
   (list
@@ -6691,6 +7679,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "STATUS" (binding-column "status" nil :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6705,6 +7695,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "STATUS" (binding-column "status" nil :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6719,6 +7711,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "STATUS" (binding-column "status" nil :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6733,6 +7727,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "VAL" (binding-column "val" nil :num :exact nil :sargable nil :guard t)))))
   (list
@@ -6747,6 +7743,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "VAL" (binding-column "val" nil :num :exact nil :sargable nil :guard t)))))
   (list
@@ -6761,6 +7759,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "VAL" (binding-column "val" nil :num :exact nil :sargable nil :guard t)))))
   (list
@@ -6775,6 +7775,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact t :sargable nil :guard nil)))))
   (list
@@ -6789,6 +7791,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
   (list
@@ -6803,6 +7807,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register (lambda ()
       (define-dialect "cms-mariadb" (list :extends "mariadb" :version "11.8")))
    :bindings (lambda () (list (cons "TYPEPATH" (binding-column "typepath" "cms_entry" :text :exact nil :sargable t :guard nil)))))
@@ -6818,6 +7824,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "`g`.`cmsid` = `cms_entry`.`cmsid`" :prefilter "separate")))))
   (list
@@ -6832,6 +7840,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil :prefilter "separate"))) nil "`g`.`cmsid` = `cms_entry`.`cmsid`")))))
   (list
@@ -6846,6 +7856,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "`g`.`cmsid` = `cms_entry`.`cmsid`" :prefilter "separate")))))
   (list
@@ -6860,6 +7872,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil :prefilter "separate"))) nil "`g`.`cmsid` = `cms_entry`.`cmsid`" :prefilter "inline")))))
   (list
@@ -6874,6 +7888,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\"" :prefilter "separate")))))
   (list
@@ -6888,6 +7904,8 @@
    :as nil
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "fname" (binding-column "fname" "g" :text :exact t :sargable nil :guard nil)) (cons "value" (binding-column "value" "g" :text :exact nil :sargable t :guard nil))) nil "\"g\".\"cmsid\" = \"cms_entry\".\"cmsid\"" :prefilter "separate")))))
   (list
@@ -6902,6 +7920,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -6916,6 +7936,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list ) nil nil)))))
   (list
@@ -6930,6 +7952,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))
   (list
@@ -6944,6 +7968,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown)) (cons "TOTAL" (binding-column "total" nil :unknown))) nil nil)))))
   (list
@@ -6958,6 +7984,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown)) (cons "TOTAL" (binding-column "total" nil :unknown))) nil nil)))))
   (list
@@ -6972,6 +8000,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "ID" (binding-column "id" nil :unknown)) (cons "TOTAL" (binding-column "total" nil :unknown))) nil nil)))))
   (list
@@ -6986,6 +8016,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7000,6 +8032,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7014,6 +8048,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7028,6 +8064,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7042,6 +8080,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown)) (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7056,6 +8096,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))
   (list
@@ -7070,6 +8112,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7084,6 +8128,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7098,6 +8144,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7112,6 +8160,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7126,6 +8176,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num))) nil nil)))))
   (list
@@ -7140,6 +8192,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -7154,6 +8208,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -7168,6 +8224,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -7182,6 +8240,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -7196,6 +8256,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -7210,6 +8272,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "TOTAL" (binding-column "total" "i" :num))) nil "i.order_id = o.id")))))
   (list
@@ -7224,6 +8288,8 @@
    :as "statement"
    :mode "params"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "TOTAL" (binding-column "total" nil :num)) (cons "NAME" (binding-column "name" nil :text :exact t :sargable nil :guard nil))) nil nil)))))
   (list
@@ -7238,6 +8304,8 @@
    :as "statement"
    :mode "debug"
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "NAME" (binding-column "name" nil :text :exact t :sargable nil :guard nil))) nil nil)))))
   (list
@@ -7252,6 +8320,8 @@
    :as "value"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -7266,6 +8336,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -7280,6 +8352,8 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
@@ -7294,13 +8368,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))
   (list
-   :name "stmt.group-by.basic"
-   :at "24-group-by.sqlt:9"
+   :name "stmt.bucket.basic"
+   :at "24-bucket.sqlt:9"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(_[\"dept\"])"
+   :source "ITEMS .> BUCKET(_[\"dept\"])"
    :expect "SELECT `dept` FROM `items` GROUP BY `dept`"
    :error nil
    :throws nil
@@ -7308,13 +8384,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
-   :name "stmt.group-by.multi-list"
-   :at "24-group-by.sqlt:22"
+   :name "stmt.bucket.multi-list"
+   :at "24-bucket.sqlt:22"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY((_[\"dept\"], _[\"category\"]))"
+   :source "ITEMS .> BUCKET((_[\"dept\"], _[\"category\"]))"
    :expect "SELECT `dept`, `category` FROM `items` GROUP BY `dept`, `category`"
    :error nil
    :throws nil
@@ -7322,13 +8400,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text))) nil nil)))))
   (list
-   :name "stmt.group-by.multi-record"
-   :at "24-group-by.sqlt:35"
+   :name "stmt.bucket.multi-record"
+   :at "24-bucket.sqlt:35"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(RECORD(\"dept\", _[\"dept\"], \"category\", _[\"category\"]))"
+   :source "ITEMS .> BUCKET(RECORD(\"dept\", _[\"dept\"], \"category\", _[\"category\"]))"
    :expect "SELECT `dept` AS `dept`, `category` AS `category` FROM `items` GROUP BY `dept`, `category`"
    :error nil
    :throws nil
@@ -7336,13 +8416,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text))) nil nil)))))
   (list
-   :name "stmt.group-by.aggregates"
-   :at "24-group-by.sqlt:48"
+   :name "stmt.bucket.aggregates"
+   :at "24-bucket.sqlt:48"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_), \"total\", SUM(_, _[\"amount\"])))"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_), \"total\", SUM(_, _[\"amount\"])))"
    :expect "SELECT `dept` AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`"
    :error nil
    :throws nil
@@ -7350,13 +8432,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
-   :name "stmt.group-by.custom-binder"
-   :at "24-group-by.sqlt:61"
+   :name "stmt.bucket.custom-binder"
+   :at "24-bucket.sqlt:61"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(r, r[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(r, x, x[\"amount\"])))"
+   :source "ITEMS .> BUCKET(r, r[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(r, x, x[\"amount\"])))"
    :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`"
    :error nil
    :throws nil
@@ -7364,13 +8448,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
-   :name "stmt.group-by.where-and-having"
-   :at "24-group-by.sqlt:74"
+   :name "stmt.bucket.where-and-having"
+   :at "24-bucket.sqlt:74"
    :dialect "mariadb"
-   :source "ITEMS .> FILTER(_[\"active\"] == 1) .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100)"
+   :source "ITEMS .> FILTER(_[\"active\"] == 1) .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100)"
    :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY `dept` HAVING (COALESCE(SUM(`amount`), 0) > 100)"
    :error nil
    :throws nil
@@ -7378,13 +8464,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num)) (cons "ACTIVE" (binding-column "active" nil :num))) nil nil)))))
   (list
-   :name "stmt.group-by.order-by-agg"
-   :at "24-group-by.sqlt:87"
+   :name "stmt.bucket.order-by-agg"
+   :at "24-bucket.sqlt:87"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> SORT_BY(_[\"total\"], \"DESC\")"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> SORT_BY(_[\"total\"], \"DESC\")"
    :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` ORDER BY COALESCE(SUM(`amount`), 0) DESC"
    :error nil
    :throws nil
@@ -7392,13 +8480,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
-   :name "stmt.group-by.pagination"
-   :at "24-group-by.sqlt:100"
+   :name "stmt.bucket.pagination"
+   :at "24-bucket.sqlt:100"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(_[\"dept\"]) .> TAKE(10) .> DROP(5)"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(10) .> DROP(5)"
    :expect "SELECT `dept` FROM `items` GROUP BY `dept` LIMIT 10 OFFSET 5"
    :error nil
    :throws nil
@@ -7406,13 +8496,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
-   :name "stmt.group-by.dialect-postgres"
-   :at "24-group-by.sqlt:113"
+   :name "stmt.bucket.dialect-postgres"
+   :at "24-bucket.sqlt:113"
    :dialect "postgresql"
-   :source "ITEMS .> FILTER(_[\"active\"] == 1) .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100) .> SORT_BY(_[\"total\"], \"DESC\")"
+   :source "ITEMS .> FILTER(_[\"active\"] == 1) .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100) .> SORT_BY(_[\"total\"], \"DESC\")"
    :expect "SELECT \"dept\" AS \"dept\", COALESCE(SUM(\"amount\"), 0) AS \"total\" FROM \"items\" WHERE (\"active\" = 1) GROUP BY \"dept\" HAVING (COALESCE(SUM(\"amount\"), 0) > 100) ORDER BY COALESCE(SUM(\"amount\"), 0) DESC"
    :error nil
    :throws nil
@@ -7420,13 +8512,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num)) (cons "ACTIVE" (binding-column "active" nil :num))) nil nil)))))
   (list
-   :name "stmt.group-by.dialect-sqlite"
-   :at "24-group-by.sqlt:126"
+   :name "stmt.bucket.dialect-sqlite"
+   :at "24-bucket.sqlt:126"
    :dialect "sqlite"
-   :source "ITEMS .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_))) .> DROP(5)"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_))) .> DROP(5)"
    :expect "SELECT \"dept\" AS \"dept\", COUNT(*) AS \"cnt\" FROM \"items\" GROUP BY \"dept\" LIMIT -1 OFFSET 5"
    :error nil
    :throws nil
@@ -7434,13 +8528,15 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
-   :name "stmt.group-by.dialect-mysql"
-   :at "24-group-by.sqlt:139"
+   :name "stmt.bucket.dialect-mysql"
+   :at "24-bucket.sqlt:139"
    :dialect "mysql"
-   :source "ITEMS .> GROUP_BY(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> DROP(5)"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> DROP(5)"
    :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` LIMIT 18446744073709551615 OFFSET 5"
    :error nil
    :throws nil
@@ -7448,47 +8544,647 @@
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
-   :name "stmt.group-by.refusal-binder"
-   :at "24-group-by.sqlt:152"
+   :name "stmt.bucket.refusal-binder"
+   :at "24-bucket.sqlt:152"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(123, _[\"dept\"], _[\"dept\"])"
+   :source "ITEMS .> BUCKET(123, _[\"dept\"], _[\"dept\"])"
    :expect nil
-   :error "E_SQL_SHAPE 1:19"
+   :error "E_SQL_SHAPE 1:17"
    :throws nil
    :params nil
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
-   :name "stmt.group-by.refusal-having-bool"
-   :at "24-group-by.sqlt:165"
+   :name "stmt.bucket.refusal-having-bool"
+   :at "24-bucket.sqlt:165"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(_[\"dept\"]) .> FILTER(\"not a bool\")"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(\"not a bool\")"
    :expect nil
-   :error "E_SQL_SHAPE 1:33"
+   :error "E_SQL_SHAPE 1:31"
    :throws nil
    :params nil
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
-   :name "stmt.group-by.refusal-unknown-field"
-   :at "24-group-by.sqlt:178"
+   :name "stmt.bucket.refusal-unknown-field"
+   :at "24-bucket.sqlt:178"
    :dialect "mariadb"
-   :source "ITEMS .> GROUP_BY(_[\"unknown_col\"])"
+   :source "ITEMS .> BUCKET(_[\"unknown_col\"])"
    :expect nil
-   :error "E_SQL_BINDING 1:20"
+   :error "E_SQL_BINDING 1:18"
    :throws nil
    :params nil
    :as "statement"
    :mode nil
    :strict nil
+   :plan nil
+   :tables :none
    :register nil
-   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
+  (list
+   :name "stmt.bucket.pipeline-map-is-the-projection"
+   :at "24-bucket.sqlt:191"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"cnt\", COUNT(_)))"
+   :expect "SELECT `dept` AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY `dept`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.pipeline-filter-then-map"
+   :at "24-bucket.sqlt:210"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(COUNT(_) > 1) .> MAP(RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"])))"
+   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` HAVING (COUNT(*) > 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.pipeline-map-names-the-group"
+   :at "24-bucket.sqlt:226"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(g, RECORD(\"dept\", _K, \"total\", SUM(g, x, x[\"amount\"])))"
+   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.refuse-map-after-the-members-are-spent"
+   :at "24-bucket.sqlt:242"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(2) .> MAP(RECORD(\"dept\", _K))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:42"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
+  (list
+   :name "plan.pure-sql.direct"
+   :at "25-hybrid-plans.sqlt:19"
+   :dialect "mariadb"
+   :source "ORDERS .> TAKE(1)"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.pure-sql.through-helper-assignment"
+   :at "25-hybrid-plans.sqlt:34"
+   :dialect "mariadb"
+   :source "X = ORDERS; X .> TAKE(1)"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.pure-sql.value-binding-is-inlined"
+   :at "25-hybrid-plans.sqlt:54"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(_[\"id\"] > LIMIT) .> TAKE(1)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 5) LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "LIMIT" (binding-value (sel:make-text "5") :num)))))
+  (list
+   :name "plan.pure-memory.non-normalisable-falls-back"
+   :at "25-hybrid-plans.sqlt:73"
+   :dialect "mariadb"
+   :source "A += 1; ORDERS .> TAKE(1)"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.hybrid.unsupported-suffix"
+   :at "25-hybrid-plans.sqlt:92"
+   :dialect "mariadb"
+   :source "ORDERS .> TAKE(1) .> MAP(RECORD(\"id\", _[\"id\"], \"note\", ABORT(\"no\")))"
+   :expect "SELECT `_sub1`.`id` AS `id` FROM (SELECT `o`.* FROM `orders` `o` LIMIT 1) `_sub1`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.hybrid.fallthrough-keeps-downstream-steps"
+   :at "25-hybrid-plans.sqlt:113"
+   :dialect "mariadb"
+   :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"tag\", ABORT(\"x\"))) .> TAKE(3)"
+   :expect "SELECT `o`.`id` AS `id` FROM `orders` `o` LIMIT 3"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.hybrid.longest-prefix"
+   :at "25-hybrid-plans.sqlt:132"
+   :dialect "postgresql"
+   :source "ORDERS .> SORT_DESC(_[\"id\"]) .> TAKE(1) .> MAP(RECORD(\"id\", _[\"id\"], \"tag\", ABORT(\"x\")))"
+   :expect "SELECT \"_sub1\".\"id\" AS \"id\" FROM (SELECT \"o\".* FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" DESC LIMIT 1) \"_sub1\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.pure-memory.bound-relation-in-source"
+   :at "25-hybrid-plans.sqlt:147"
+   :dialect "mariadb"
+   :source "ORDERS .> MAP(RECORD(\"note\", ABORT(\"no\")))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.pure-memory.unbound-source"
+   :at "25-hybrid-plans.sqlt:164"
+   :dialect "mariadb"
+   :source "ROWS .> TAKE(1)"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list )
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "plan.pure-memory.not-a-pipeline"
+   :at "25-hybrid-plans.sqlt:174"
+   :dialect "mariadb"
+   :source "COUNT(ORDERS) > 0"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.tables.physical-name-not-binding-name"
+   :at "25-hybrid-plans.sqlt:187"
+   :dialect "mariadb"
+   :source "SALES .> TAKE(1)"
+   :expect "SELECT `s`.* FROM `sales_orders` `s` LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "sales_orders")
+   :register nil
+   :bindings (lambda () (list (cons "SALES" (binding-relation "sales_orders" "s" (list (cons "ID" (binding-column "id" "s" :num))) nil nil)))))
+  (list
+   :name "plan.tables.binding-name-is-case-insensitive"
+   :at "25-hybrid-plans.sqlt:206"
+   :dialect "mariadb"
+   :source "orders .> take(1)"
+   :expect "SELECT `o`.* FROM `Orders` `o` LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "Orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "Orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.tables.first-use-order"
+   :at "25-hybrid-plans.sqlt:224"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> TAKE(2)"
+   :expect "SELECT `o`.* FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`) LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders" "customers")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num))) nil nil)))))
+  (list
+   :name "plan.tables.dedupe-by-physical-source"
+   :at "25-hybrid-plans.sqlt:241"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(O2, _1[\"id\"] == _2[\"id\"]) .> TAKE(2)"
+   :expect "SELECT `o`.* FROM `orders` `o` INNER JOIN `orders` `o2` ON (`o`.`id` = `o2`.`id`) LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "O2" (binding-relation "orders" "o2" (list (cons "ID" (binding-column "id" "o2" :num))) nil nil)))))
+  (list
+   :name "plan.tables.relation-query-is-reported-verbatim"
+   :at "25-hybrid-plans.sqlt:260"
+   :dialect "mariadb"
+   :source "RECENT .> MAP(RECORD(\"note\", ABORT(\"no\")))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "(SELECT * FROM orders WHERE id > 10)")
+   :register nil
+   :bindings (lambda () (list (cons "RECENT" (binding-relation-query "(SELECT * FROM orders WHERE id > 10)" "r" (list (cons "ID" (binding-column "id" "r" :num))) nil nil)))))
+  (list
+   :name "plan.hybrid.left-join-then-projection"
+   :at "25-hybrid-plans.sqlt:277"
+   :dialect "postgresql"
+   :source "ORDERS .> LINK_LEFT(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> SELECT_COLS(\"id\")"
+   :expect "SELECT \"o\".* FROM \"orders\" \"o\" LEFT JOIN \"customers\" \"c\" ON (\"o\".\"customer_id\" = \"c\".\"id\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders" "customers")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num))) nil nil)))))
+  (list
+   :name "plan.pure-sql.filters-fuse-before-planning"
+   :at "25-hybrid-plans.sqlt:294"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(_[\"id\"] > 1) .> FILTER(_[\"id\"] < 9)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE ((`o`.`id` > 1) AND (`o`.`id` < 9))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.pure-sql.sort-take-fuses-to-top"
+   :at "25-hybrid-plans.sqlt:313"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(1)"
+   :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.pure-sql.filter-drop-take"
+   :at "25-hybrid-plans.sqlt:328"
+   :dialect "postgresql"
+   :source "ORDERS .> FILTER(_[\"id\"] > 1) .> DROP(1) .> TAKE(1)"
+   :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE (\"o\".\"id\" > 1) LIMIT 1 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.pure-sql.distinct"
+   :at "25-hybrid-plans.sqlt:343"
+   :dialect "postgresql"
+   :source "ORDERS .> DISTINCT()"
+   :expect "SELECT DISTINCT \"o\".* FROM \"orders\" \"o\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.options.strict-off-caveat-pushes-down"
+   :at "25-hybrid-plans.sqlt:358"
+   :dialect "mariadb"
+   :source "ORDERS .> TAKE(2) .> FILTER(UPPER(_[\"name\"]) $== \"A\")"
+   :expect "SELECT `_sub1`.* FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1` WHERE (CAST(UPPER(`_sub1`.`name`) AS CHAR) COLLATE utf8mb4_bin = CAST('A' AS CHAR) COLLATE utf8mb4_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.options.strict-on-caveat-stays-in-memory"
+   :at "25-hybrid-plans.sqlt:376"
+   :dialect "mariadb"
+   :source "ORDERS .> TAKE(2) .> FILTER(UPPER(_[\"name\"]) $== \"A\")"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.fold.literal-branch-is-hoisted-into-the-prefix"
+   :at "25-hybrid-plans.sqlt:397"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(IF(TRUE, 2, 1) >= _[\"id\"])"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (2 >= `o`.`id`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.fold.compound-branch-stays-an-if"
+   :at "25-hybrid-plans.sqlt:416"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(IF(TRUE, _[\"id\"] > 1, FALSE))"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE CASE WHEN TRUE THEN (`o`.`id` > 1) ELSE FALSE END"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.fold.hoisted-literal-does-not-change-the-split"
+   :at "25-hybrid-plans.sqlt:440"
+   :dialect "mariadb"
+   :source "ORDERS .> TAKE(2) .> MAP(IF(TRUE, \"x\", 1) >= _[\"id\"])"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.refuse.base-dialect"
+   :at "25-hybrid-plans.sqlt:460"
+   :dialect "ansi"
+   :source "ORDERS .> TAKE(1)"
+   :expect nil
+   :error "E_SQL_DIALECT"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "refused"
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.immutable.folding-does-not-write-back"
+   :at "25-hybrid-plans.sqlt:477"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(_[\"id\"] > 1 + 1) .> TAKE(2 * 2)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) LIMIT 4"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.immutable.folding-inside-a-kept-step"
+   :at "25-hybrid-plans.sqlt:499"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(NOT (_[\"id\"] > 1 + 1)) .> MAP(RECORD(\"n\", ABORT(\"x\")))"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (NOT (`o`.`id` > 2))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.bucket.pipeline-map-pushes-down-whole"
+   :at "25-hybrid-plans.sqlt:518"
+   :dialect "mariadb"
+   :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.bucket.open-prefix-is-not-a-split-point"
+   :at "25-hybrid-plans.sqlt:537"
+   :dialect "mariadb"
+   :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.bucket.split-before-the-bucket"
+   :at "25-hybrid-plans.sqlt:555"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(_[\"amount\"] > 1) .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
+  (list
+   :name "plan.bucket.projected-then-custom-map"
+   :at "25-hybrid-plans.sqlt:573"
+   :dialect "mariadb"
+   :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_))) .> MAP(RECORD(\"c\", _[\"cid\"], \"note\", ABORT(\"x\")))"
+   :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.bucket.sealed-prefix-is-not-a-split-point"
+   :at "25-hybrid-plans.sqlt:591"
+   :dialect "mariadb"
+   :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(2) .> MAP(RECORD(\"cid\", _K))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))))
