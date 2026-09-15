@@ -293,7 +293,7 @@ matching the three iteration shapes of docs/SQL-TRANSLATION.md §7, plus one tha
 exists only to carry a refusal -- so that `_K` inside a relation body fails
 saying rows have no key, rather than falling through to the bindings map and
 being reported as an unbound variable."
-  (shape :none)          ; :node :column :row :none :key
+  (shape :none)          ; :node :column :row :none :key :group :projected
   (payload nil)
   (reason nil))
 
@@ -304,3 +304,9 @@ being reported as an unbound variable."
 (defun binder-column (spec) (%binder :column spec))
 (defun binder-row (rel) (%binder :row rel))
 (defun binder-none (reason) (%binder :none nil reason))
+;; A bucket's members, inside the bucket's own body: a list of rows that only
+;; COUNT and SUM can read.
+(defun binder-group (rel) (%binder :group rel))
+;; The record a bucket's projection built, after it: its fields are the
+;; projection's aliases and nothing else.
+(defun binder-projected (rel projections) (%binder :projected (list rel projections)))

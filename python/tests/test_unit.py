@@ -559,14 +559,40 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         ('ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_))) .> DROP(1) .> FILTER(_["n"] > 1)', 'hybrid'),
         ('ORDERS .> BUCKET(RECORD("c", _["customer_id"]), RECORD("n", COUNT(_)))', 'pure_sql'),
         ('ORDERS .> BUCKET(RECORD("c", _["customer_id"])) .> MAP(RECORD("n", COUNT(_)))', 'pure_memory'),
+        # Findings J, K and X: the bucket body's scope. The group binder is
+        # the member list (indexing it is E_NO_KEY; only COUNT and SUM read
+        # through it, and SUM's two-argument form binds `_` to the member),
+        # `_K` is the group key only inside that body (before the bucket and
+        # after the projection it is a list position), and after the
+        # projection the row has the projection's fields alone. Where SEL
+        # raises, the plan keeps the failing step in memory and raises too.
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(g, RECORD("cid", _K, "amt", g["amount"]))', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "amt", _["amount"]))', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> FILTER(_["total"] > 1) .> MAP(RECORD("cid", _K, "total", SUM(_, _["amount"])))', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> FILTER(_["amount"] > 1) .> MAP(RECORD("cid", _K))', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "mx", MAX(_, _["amount"])))', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(g, RECORD("cid", _K, "n", COUNT(g), "s", SUM(g, _["amount"]), "t", SUM(g, x, x["amount"])))', 'pure_sql'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(g, RECORD("cid", _K, "n", COUNT(_)))', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> FILTER(COUNT(_) > 1 AND SUM(_, _["amount"]) > 5 AND _K == 7) .> MAP(RECORD("cid", _K))', 'pure_sql'),
+        ('ORDERS .> FILTER(_K $== "2") .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_)))', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> FILTER(_K $== "2")', 'hybrid'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> SORT_BY(_K, "DESC")', 'hybrid'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> SORT_BY(_["customer_id"])', 'hybrid'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> FILTER(_["cid"] == 7)', 'pure_sql'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> SORT_BY(_["n"], "DESC")', 'pure_sql'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K)) .> FILTER(COUNT(_) > 0)', 'hybrid'),
+        ('ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(_)))', 'pure_memory'),
+        ('ORDERS .> MAP(g, RECORD("x", _["amount"]))', 'pure_memory'),
     ]
 
     def outcome(fn):
+        # The dump is inside the try: run() answers a LAZY_RECORD whose
+        # fields are evaluated when read, so a body that raises does so here.
         try:
             got = fn()
+            return (got if isinstance(got, Value) else Value.from_native(got)).dump()
         except SelError as e:
             return f'{e.code}@{e.line}:{e.col}'
-        return (got if isinstance(got, Value) else Value.from_native(got)).dump()
 
     for source, expected in shapes:
         program = sel_compile(source)

@@ -285,6 +285,13 @@ final class Translator
         $obj = $n['obj'];
         if ($this->statementPlan !== null && $obj['t'] === 'index'
             && ($obj['obj']['t'] ?? null) === 'var') {
+            // `_["orders"]["status"]` names a joined relation's field -- when
+            // the inner name is a row. Over a bucket's members or a projected
+            // row the inner index is itself the thing to refuse.
+            $inner = $this->binder($obj['obj']['name']);
+            if ($inner !== null && ($inner->shape === Binder::GROUP || $inner->shape === Binder::PROJECTED)) {
+                $this->node($obj);
+            }
             $qualifier = $this->constantIndex($obj['idx']);
             $field = $this->constantIndex($n['idx']);
             return $this->indexQualified($qualifier, $field, $n);
@@ -643,51 +650,27 @@ final class Translator
     private function call(array $n): Fragment
     {
         $name = $n['name'];
+        // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*)
+        // and SUM(g, [x,] body) is SUM over the grouped rows -- fire on the
+        // GROUP binder alone: over a relation row, COUNT(_) is the row's number
+        // of fields in SEL (review 2026-09-15 finding X), and SEL has no
+        // per-group MIN or MAX (finding J). The body binds the member row, as
+        // the evaluator's walk does: `_` for the two-argument form, the name
+        // given for the three-argument one.
         if ($this->statementPlan !== null) {
-            if ($name === 'COUNT') {
-                if (count($n['args']) === 1) {
-                    $arg0 = $n['args'][0];
-                    if ($arg0['t'] === 'var' && $this->binder($arg0['name'])?->shape === Binder::ROW) {
-                        return new Fragment(['COUNT(*)'], 'NUM', $this->dialect);
-                    }
+            $arg0 = $n['args'][0] ?? null;
+            $group = $arg0 !== null && $arg0['t'] === 'var' ? $this->binder($arg0['name']) : null;
+            if ($group !== null && $group->shape === Binder::GROUP) {
+                if ($name === 'COUNT' && count($n['args']) === 1) {
+                    return new Fragment(['COUNT(*)'], 'NUM', $this->dialect);
                 }
-            } elseif ($name === 'SUM') {
-                if (count($n['args']) >= 2) {
-                    $arg0 = $n['args'][0];
-                    if ($arg0['t'] === 'var' && $this->binder($arg0['name'])?->shape === Binder::ROW) {
-                        $hasCustomBinder = count($n['args']) === 3 && Constants::isBinderName($n['args'][1]);
-                        $bodyNode = $hasCustomBinder ? $n['args'][2] : $n['args'][1];
-                        if ($hasCustomBinder) {
-                            $this->frames[] = [$n['args'][1]['name'] => $this->binder($arg0['name'])];
-                            try {
-                                $inner = $this->node($bodyNode);
-                            } finally {
-                                array_pop($this->frames);
-                            }
-                        } else {
-                            $inner = $this->node($bodyNode);
-                        }
-                        return new Fragment(['COALESCE(SUM(' . implode('', $inner->parts) . '), 0)'], 'NUM', $this->dialect);
-                    }
-                }
-            } elseif (in_array($name, ['AVG', 'MIN', 'MAX'], true)) {
-                if (count($n['args']) >= 2) {
-                    $arg0 = $n['args'][0];
-                    if ($arg0['t'] === 'var' && $this->binder($arg0['name'])?->shape === Binder::ROW) {
-                        $hasCustomBinder = count($n['args']) === 3 && Constants::isBinderName($n['args'][1]);
-                        $bodyNode = $hasCustomBinder ? $n['args'][2] : $n['args'][1];
-                        if ($hasCustomBinder) {
-                            $this->frames[] = [$n['args'][1]['name'] => $this->binder($arg0['name'])];
-                            try {
-                                $inner = $this->node($bodyNode);
-                            } finally {
-                                array_pop($this->frames);
-                            }
-                        } else {
-                            $inner = $this->node($bodyNode);
-                        }
-                        return new Fragment([$name . '(' . implode('', $inner->parts) . ')'], $inner->kind, $this->dialect);
-                    }
+                if ($name === 'SUM' && count($n['args']) >= 2) {
+                    $hasCustomBinder = count($n['args']) === 3 && Constants::isBinderName($n['args'][1]);
+                    $bodyNode = $hasCustomBinder ? $n['args'][2] : $n['args'][1];
+                    $src = ['relation' => $group->payload, 'filters' => [], 'pos' => $n['pos']];
+                    $inner = $this->withRow($src, $hasCustomBinder ? $n['args'][1]['name'] : '_',
+                        fn (): Fragment => $this->node($bodyNode));
+                    return new Fragment(['COALESCE(SUM(' . implode('', $inner->parts) . '), 0)'], 'NUM', $this->dialect);
                 }
             }
         }
@@ -1151,6 +1134,17 @@ final class Translator
                 return $collated;
             case Binder::COLUMN:
                 return $this->columnRef($b->payload);
+            case Binder::GROUP:
+                refuse('E_SQL_SHAPE',
+                    "{$n['name']} is the list of a bucket's members, which is not a value "
+                    . 'SQL has; count it (COUNT), sum over it (SUM), or name the group key (_K)',
+                    $n['pos']);
+                // no break: refuse throws
+            case Binder::PROJECTED:
+                refuse('E_SQL_SHAPE',
+                    "{$n['name']} is the record the projection built, which is a map in SEL "
+                    . 'and not one value; name the field you mean', $n['pos']);
+                // no break: refuse throws
             case Binder::ROW:
                 $rel = $b->payload;
                 // The guard `IN` got and nothing else did. A row of a relation
@@ -1188,6 +1182,55 @@ final class Translator
     /** @param array<string,mixed> $n */
     private function indexBinder(Binder $b, string $name, string $key, array $n): Fragment
     {
+        if ($b->shape === Binder::GROUP) {
+            // The group is the list of its members: indexing it by a field name
+            // is E_NO_KEY in SEL, and by a position asks for a member SQL cannot
+            // single out. Either way the field is read inside an aggregate over
+            // the members, SUM(g, _["amount"]), and nowhere else.
+            refuse('E_SQL_SHAPE',
+                "{$name}[\"{$key}\"] indexes the list of a bucket's members, which SEL "
+                . "refuses (E_NO_KEY); read a member's field inside an aggregate over "
+                . "the group, SUM({$name}, _[\"{$key}\"])", $n['pos']);
+        }
+        if ($b->shape === Binder::PROJECTED) {
+            // After the projection a row is the record it built, and has the
+            // projection's fields under their aliases and nothing else -- not
+            // the source's columns, which SEL no longer has (E_NO_KEY).
+            $relation = $b->payload['relation'];
+            $projections = $b->payload['projections'];
+            $proj = null;
+            foreach ($projections as $candidate) {
+                if ($candidate['alias'] === $key) {
+                    $proj = $candidate;
+                    break;
+                }
+            }
+            if ($proj === null) {
+                foreach ($projections as $candidate) {
+                    if ($candidate['alias'] !== null && strtoupper($candidate['alias']) === strtoupper($key)) {
+                        $proj = $candidate;
+                        break;
+                    }
+                }
+            }
+            if ($proj === null) {
+                $known = [];
+                foreach ($projections as $candidate) {
+                    if ($candidate['alias'] !== null) {
+                        $known[] = $candidate['alias'];
+                    }
+                }
+                sort($known);
+                refuse('E_SQL_SHAPE',
+                    "{$name}[\"{$key}\"] is not a field of the projection"
+                    . ($known === [] ? '' : '; it has ' . implode(', ', $known)), $n['pos']);
+            }
+            $src = ['relation' => $relation, 'filters' => [], 'pos' => $n['pos']];
+            if (isset($proj['groupKey'])) {
+                return $this->fromBinder(Binder::key($proj['groupKey'], Binder::row($relation)), $n);
+            }
+            return $this->withGroup($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']));
+        }
         if ($b->shape === Binder::ROW) {
             if (self::listKey($key) !== null) {
                 refuse('E_SQL_SHAPE',
@@ -1196,14 +1239,6 @@ final class Translator
                     $n['pos']);
             }
             $field = strtoupper($key);
-            if (!$this->inWhere && $this->statementPlan !== null && $this->statementPlan->groupBy !== null) {
-                if (isset($this->statementPlan->aggregateAliases[$key])) {
-                    return $this->node($this->statementPlan->aggregateAliases[$key]);
-                }
-                if (isset($this->statementPlan->aggregateAliases[$field])) {
-                    return $this->node($this->statementPlan->aggregateAliases[$field]);
-                }
-            }
             if ($name === '_' && $this->statementPlan !== null && $this->statementPlan->joins !== []) {
                 $matches = [];
                 $sources = [[
@@ -1229,14 +1264,6 @@ final class Translator
                 }
             }
             if (!isset($b->payload['fields'][$field])) {
-                if ($this->statementPlan !== null) {
-                    if (isset($this->statementPlan->aggregateAliases[$key])) {
-                        return $this->node($this->statementPlan->aggregateAliases[$key]);
-                    }
-                    if (isset($this->statementPlan->aggregateAliases[$field])) {
-                        return $this->node($this->statementPlan->aggregateAliases[$field]);
-                    }
-                }
                 $known = array_keys($b->payload['fields']);
                 sort($known);
                 refuse('E_SQL_BINDING',
@@ -1339,6 +1366,21 @@ final class Translator
                 }
                 if ($bound->shape === Binder::NONE) {
                     refuse('E_SQL_SHAPE', (string) $bound->reason, $src['pos']);
+                }
+                // A bucket's members are iterated by COUNT and SUM alone
+                // (call()), as one aggregate over the grouped rows; ALL, ANY
+                // and the rest would each need a correlated subquery this
+                // layer does not build.
+                if ($bound->shape === Binder::GROUP) {
+                    refuse('E_SQL_SHAPE',
+                        "{$src['name']} is the list of a bucket's members, over which "
+                        . 'only COUNT and SUM are translated', $src['pos']);
+                }
+                if ($bound->shape === Binder::PROJECTED) {
+                    refuse('E_SQL_SHAPE',
+                        "{$src['name']} is the record the projection built, a map with "
+                        . 'one child per field; SQL has no way to iterate or count that',
+                        $src['pos']);
                 }
                 // A column is one value, so it is a one-element list containing
                 // itself — spec §7.3, the same rule the evaluator applies. This
@@ -1592,14 +1634,9 @@ final class Translator
         }
 
         $row = Binder::row($src['relation']);
-        $kBinder = null;
-        if ($this->statementPlan !== null && !empty($this->statementPlan->groupBy) && count($this->statementPlan->groupBy) === 1) {
-            $kBinder = Binder::key($this->statementPlan->groupBy[0], $row);
-        } else {
-            $kBinder = Binder::none('a row of a relation has no key: SQL rows are '
-                      . 'unordered and unkeyed unless the schema says otherwise, and '
-                      . 'guessing which column is the key is not something this layer does');
-        }
+        $kBinder = Binder::none('a row of a relation has no key: SQL rows are '
+                  . 'unordered and unkeyed unless the schema says otherwise, and '
+                  . 'guessing which column is the key is not something this layer does');
         $frame = [$binderName => $row, '_K' => $kBinder];
         foreach ($src['filters'] as $filter) {
             $frame[$filter['binder']] = $row;
@@ -2509,6 +2546,54 @@ final class Translator
     }
 
     /**
+     * The frame for a bucket's own body: the projection, and a FILTER or a
+     * sort over the groups before it. The binder is the group -- the list of
+     * its members, which only COUNT and SUM read (call()) -- and `_K` is the
+     * group key, when there is one key to be it. This is the one place `_K`
+     * is a group key: before the bucket it is a source row's position, after
+     * the projection the projected row's, and SQL has neither (review
+     * 2026-09-15 finding K).
+     *
+     * @param array<string,mixed> $src
+     */
+    private function withGroup(array $src, string $binderName, callable $render): Fragment
+    {
+        $groupBy = $this->statementPlan?->groupBy;
+        $kBinder = $groupBy !== null && count($groupBy) === 1
+            ? Binder::key($groupBy[0], Binder::row($src['relation']))
+            : Binder::none('the key of a bucket over several keys is a list, which SQL '
+                . 'has no value for; name one key');
+        $this->frames[] = [$binderName => Binder::group($src['relation']), '_K' => $kBinder];
+        try {
+            return $render();
+        } finally {
+            array_pop($this->frames);
+        }
+    }
+
+    /**
+     * The frame for a step after a bucket's projection: a FILTER (HAVING) or
+     * a sort over the projected rows. The binder is the record the projection
+     * built, whose fields are the projection's aliases; `_K` is its position
+     * in the renumbered list, which SQL does not have.
+     *
+     * @param array<string,mixed> $src
+     */
+    private function withProjected(array $src, string $binderName, callable $render): Fragment
+    {
+        $this->frames[] = [
+            $binderName => Binder::projected($src['relation'], $this->statementPlan->projections ?? []),
+            '_K' => Binder::none('after a projection the rows are a list renumbered from "1", '
+                . 'and SQL has no row position to compare against'),
+        ];
+        try {
+            return $render();
+        } finally {
+            array_pop($this->frames);
+        }
+    }
+
+    /**
      * The projection of a bucket: the RECORD (or single expression) evaluated
      * once per group, with $binder bound to the group and _K to its key.
      * Shared by the two spellings SEL has for it -- BUCKET(src, key, proj) and
@@ -2545,16 +2630,6 @@ final class Translator
                         $actualNode = $plan->groupBy[0]['node'];
                         $nodeBinder = $plan->groupBy[0]['binder'];
                         $groupKey = $plan->groupBy[0];
-                    }
-                    $isSameField = $actualNode['t'] === 'index'
-                        && isset($actualNode['obj'])
-                        && $actualNode['obj']['t'] === 'var'
-                        && ($actualNode['obj']['name'] === '_' || $actualNode['obj']['name'] === $binder)
-                        && isset($actualNode['idx'])
-                        && $actualNode['idx']['t'] === 'text'
-                        && strtoupper($actualNode['idx']['v']) === strtoupper($alias);
-                    if (!$isSameField) {
-                        $plan->aggregateAliases[$alias] = $actualNode;
                     }
                     $projections[] = [
                         'alias' => $alias,
@@ -2630,7 +2705,10 @@ final class Translator
             $args = $step['args'];
 
             // A FILTER after an open bucket is a HAVING and a MAP is the
-            // bucket's projection; anything else spends the members.
+            // bucket's projection; anything else spends the members. Either
+            // way a step written directly after the bare bucket runs over its
+            // groups, and is rendered in the bucket's own frame (withGroup).
+            $overGroups = $plan->bucket === 'open';
             if ($plan->bucket === 'open' && $name !== 'FILTER' && $name !== 'MAP') {
                 $plan->bucket = 'sealed';
             }
@@ -2671,6 +2749,7 @@ final class Translator
                             'binder' => $binder,
                             'node' => $pred,
                             'pos' => $step['pos'],
+                            'overGroups' => $overGroups,
                         ];
                     } else {
                         $plan->filters[] = [
@@ -2887,7 +2966,11 @@ final class Translator
                         && ($plan->projections !== null || $plan->selectCols !== null
                             || $plan->distinct || $plan->limit !== null || $plan->offset !== null
                             || $plan->orderBy !== []));
+                    $before = count($plan->orderBy);
                     $this->analyzeSortStep($step, $plan);
+                    for ($i = $before; $i < count($plan->orderBy); $i++) {
+                        $plan->orderBy[$i]['overGroups'] = $overGroups;
+                    }
                     break;
 
                 case 'LINK':
@@ -3097,7 +3180,9 @@ final class Translator
                     $first = false;
                     $pFrag = isset($proj['groupKey'])
                         ? $this->groupKey($src, $proj['groupKey'])
-                        : $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']));
+                        : ($plan->groupBy !== null
+                            ? $this->withGroup($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']))
+                            : $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node'])));
                     foreach ($pFrag->parts as $p) {
                         $parts[] = $p;
                     }
@@ -3231,8 +3316,10 @@ final class Translator
                 $this->inHaving = true;
                 try {
                     foreach ($plan->having as $hav) {
-                        $hFrag = $this->withRow($src, $hav['binder'],
-                            fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER'));
+                        $render = fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER');
+                        $hFrag = ($hav['overGroups'] ?? false)
+                            ? $this->withGroup($src, $hav['binder'], $render)
+                            : $this->withProjected($src, $hav['binder'], $render);
                         $hCondParts[] = $hFrag->parts;
                     }
                 } finally {
@@ -3259,7 +3346,12 @@ final class Translator
                     $first = false;
                     // A TEXT sort key is collated like a group key: SEL sorts text
                     // by its bytes, and a server's default collation would not.
-                    $oFrag = $this->collatedKey($this->withRow($src, $ord['binder'], fn (): Fragment => $this->node($ord['node'])));
+                    $render = fn (): Fragment => $this->node($ord['node']);
+                    $oFrag = $this->collatedKey(($ord['overGroups'] ?? false)
+                        ? $this->withGroup($src, $ord['binder'], $render)
+                        : ($plan->groupBy !== null
+                            ? $this->withProjected($src, $ord['binder'], $render)
+                            : $this->withRow($src, $ord['binder'], $render)));
                     foreach ($oFrag->parts as $p) {
                         $parts[] = $p;
                     }

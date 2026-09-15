@@ -1150,13 +1150,17 @@ correctly and are unaffected — §7.3 above is that case.
 
 A stack of frames, `name => binder`, consulted **before** the bindings map —
 the same precedence `Sel\Context::lookup` gives an aggregate binder over a
-variable. A binder is one of three things, matching the three shapes:
+variable. A binder is one of three things, matching the three shapes — plus
+the two a grouped statement adds (§12.1), for the bucket's own body and for
+what follows its projection:
 
 | Binder | `_` resolves to | `_["k"]` resolves to | `_K` |
 |---|---|---|---|
 | a static element | the element's AST node, re-entered | indexing that node | its key, as TEXT |
 | a column | that column reference | `E_SQL_SHAPE` | the ordinal, as TEXT |
 | a relation row | the relation's `scalar` field — but `E_SQL_SHAPE` if the relation declares more than one field, and `E_SQL_SHAPE` if it declares none | the named field | **`E_SQL_SHAPE`** |
+| a bucket's members (the group, inside the projection or a `FILTER`/sort written directly after the bare `BUCKET`) | `E_SQL_SHAPE` — a list of rows is no SQL value | `E_SQL_SHAPE` — `E_NO_KEY` in SEL; only `COUNT(g)` and `SUM(g, [x,] body)` read the members, and `SUM`'s body binds the member row | the group key, when the bucket has one key |
+| a projected row (after the projection: a `FILTER` as `HAVING`, a sort) | `E_SQL_SHAPE` — a record | the projection's alias, rendered as its value (a key alias as the key; in a `HAVING`, `MIN` of it); any other name is `E_SQL_SHAPE`, as `E_NO_KEY` in SEL | **`E_SQL_SHAPE`** — the position in the renumbered list |
 
 The **scalar** row of §7.0 binds as a static element whose node is the first
 argument itself and whose key is `"1"`, matching what `Core::elements` does in
@@ -2295,6 +2299,23 @@ every host to:
   by the key's exact bytes and MariaDB's default collation merged `'A'` and
   `'a'` into one group; a TEXT `ORDER BY` key likewise (review 2026-09-15
   finding L, witnessed by `sql/oracle/statements.json` on live servers).
+  **The bucket body's scope is the evaluator's** (findings J, K): inside the
+  projection, and in a `FILTER` or sort written directly after the bare
+  `BUCKET`, the binder is the group — the list of its members — and only
+  `COUNT(g)` and `SUM(g, [x,] body)` read through it (`SUM`'s two-argument
+  form binds `_` to the member, as spec §7.3 says); `g["amount"]`, the bare
+  `g`, `MAX(g, …)` and the other aggregates are refused (`E_SQL_SHAPE`), as
+  SEL raises for them. `_K` is the group key there and nowhere else: before
+  the bucket it is the source row's position and after the projection the
+  projected row's, which SQL has neither of, so `FILTER(_K …)` in either
+  place is refused rather than rendered as the key. After the projection a
+  row has the projection's fields alone — `FILTER(_["total"] > 1)` is a
+  `HAVING` over that alias, `_["dept"]` when the projection has no `dept`
+  is refused (`E_NO_KEY` in SEL), and `COUNT(_)` there counts the record's
+  fields, not the group, so it is not `COUNT(*)` either (finding X). The
+  planner keeps each refused step in memory, where it raises what `run()`
+  raises; `python/tests/test_unit.py` executes every shape against SQLite
+  and compares.
   And a prefix that ends in a bucket nobody has
   projected — or in anything that followed one — is never a split point: the
   planner backs up to the step before the bucket, or stays in memory. Before

@@ -336,6 +336,13 @@ export class Translator {
     const obj = n.obj;
     if (this.statementPlan !== null && obj && obj.t === 'index'
         && obj.obj && obj.obj.t === 'var') {
+      // `_["orders"]["status"]` names a joined relation's field -- when the
+      // inner name is a row. Over a bucket's members or a projected row
+      // the inner index is itself the thing to refuse.
+      const inner = this.binder(obj.obj.name);
+      if (inner !== null && (inner.shape === Binder.GROUP || inner.shape === Binder.PROJECTED)) {
+        this.node(obj);
+      }
       const qualifier = this.constantIndex(obj.idx);
       const field = this.constantIndex(n.idx);
       return this.indexQualified(qualifier, field, n);
@@ -684,55 +691,27 @@ export class Translator {
     let n = n0;
     const name = n.name;
 
+    // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
+    // SUM(g, [x,] body) is SUM over the grouped rows -- fire on the GROUP
+    // binder alone: over a relation row, COUNT(_) is the row's number of
+    // fields in SEL (review 2026-09-15 finding X), and SEL has no per-group
+    // MIN or MAX (finding J). The body binds the member row, as the
+    // evaluator's walk does: `_` for the two-argument form, the name given
+    // for the three-argument one.
     if (this.statementPlan !== null) {
-      if (name === 'COUNT') {
-        if (n.args.length === 1) {
-          const arg0 = n.args[0];
-          if (arg0.t === 'var' && this.binder(arg0.name)?.shape === Binder.ROW) {
-            return new Fragment(['COUNT(*)'], 'NUM', this.dialect);
-          }
+      const arg0 = n.args[0] ?? null;
+      const group = arg0 !== null && arg0.t === 'var' ? this.binder(arg0.name) : null;
+      if (group !== null && group.shape === Binder.GROUP) {
+        if (name === 'COUNT' && n.args.length === 1) {
+          return new Fragment(['COUNT(*)'], 'NUM', this.dialect);
         }
-      } else if (name === 'SUM') {
-        if (n.args.length >= 2) {
-          const arg0 = n.args[0];
-          if (arg0.t === 'var' && this.binder(arg0.name)?.shape === Binder.ROW) {
-            const hasCustomBinder = n.args.length === 3 && constants.isBinderName(n.args[1]);
-            const bodyNode = hasCustomBinder ? n.args[2] : n.args[1];
-            let inner;
-            if (hasCustomBinder) {
-              const frame = new Map([[n.args[1].name, this.binder(arg0.name)]]);
-              this.frames.push(frame);
-              try {
-                inner = this.node(bodyNode);
-              } finally {
-                this.frames.pop();
-              }
-            } else {
-              inner = this.node(bodyNode);
-            }
-            return new Fragment([`COALESCE(SUM(${inner.parts.join('')}), 0)`], 'NUM', this.dialect);
-          }
-        }
-      } else if (['AVG', 'MIN', 'MAX'].includes(name)) {
-        if (n.args.length >= 2) {
-          const arg0 = n.args[0];
-          if (arg0.t === 'var' && this.binder(arg0.name)?.shape === Binder.ROW) {
-            const hasCustomBinder = n.args.length === 3 && constants.isBinderName(n.args[1]);
-            const bodyNode = hasCustomBinder ? n.args[2] : n.args[1];
-            let inner;
-            if (hasCustomBinder) {
-              const frame = new Map([[n.args[1].name, this.binder(arg0.name)]]);
-              this.frames.push(frame);
-              try {
-                inner = this.node(bodyNode);
-              } finally {
-                this.frames.pop();
-              }
-            } else {
-              inner = this.node(bodyNode);
-            }
-            return new Fragment([`${name}(${inner.parts.join('')})`], inner.kind, this.dialect);
-          }
+        if (name === 'SUM' && n.args.length >= 2) {
+          const hasCustomBinder = n.args.length === 3 && constants.isBinderName(n.args[1]);
+          const bodyNode = hasCustomBinder ? n.args[2] : n.args[1];
+          const src = { relation: group.payload, filters: [], pos: n.pos };
+          const inner = this.withRow(src, hasCustomBinder ? n.args[1].name : '_',
+            () => this.node(bodyNode));
+          return new Fragment([`COALESCE(SUM(${inner.parts.join('')}), 0)`], 'NUM', this.dialect);
         }
       }
     }
@@ -971,6 +950,16 @@ export class Translator {
       return collated;
     }
     if (b.shape === Binder.COLUMN) return this.columnRef(b.payload);
+    if (b.shape === Binder.GROUP) {
+      refuse('E_SQL_SHAPE',
+        `${n.name} is the list of a bucket's members, which is not a value SQL has; `
+        + 'count it (COUNT), sum over it (SUM), or name the group key (_K)', n.pos);
+    }
+    if (b.shape === Binder.PROJECTED) {
+      refuse('E_SQL_SHAPE',
+        `${n.name} is the record the projection built, which is a map in SEL and not `
+        + 'one value; name the field you mean', n.pos);
+    }
     if (b.shape === Binder.ROW) {
       const rel = b.payload;
       // The guard `IN` got and nothing else did. A row of a relation with more
@@ -1001,6 +990,36 @@ export class Translator {
   }
 
   indexBinder(b, name, key, n) {
+    if (b.shape === Binder.GROUP) {
+      // The group is the list of its members: indexing it by a field name is
+      // E_NO_KEY in SEL, and by a position asks for a member SQL cannot
+      // single out. Either way the field is read inside an aggregate over
+      // the members, SUM(g, _["amount"]), and nowhere else.
+      refuse('E_SQL_SHAPE',
+        `${name}["${key}"] indexes the list of a bucket's members, which SEL refuses `
+        + '(E_NO_KEY); read a member\'s field inside an aggregate over the group, '
+        + `SUM(${name}, _["${key}"])`, n.pos);
+    }
+    if (b.shape === Binder.PROJECTED) {
+      // After the projection a row is the record it built, and has the
+      // projection's fields under their aliases and nothing else -- not the
+      // source's columns, which SEL no longer has (E_NO_KEY).
+      const { relation, projections } = b.payload;
+      const proj = projections.find((p) => p.alias === key)
+        ?? projections.find((p) => p.alias !== null && asciiUpper(p.alias) === asciiUpper(key))
+        ?? null;
+      if (proj === null) {
+        const known = projections.map((p) => p.alias).filter((a) => a !== null).sort();
+        refuse('E_SQL_SHAPE',
+          `${name}["${key}"] is not a field of the projection${known.length ? `; it has ${known.join(', ')}` : ''}`,
+          n.pos);
+      }
+      const src = { relation, filters: [], pos: n.pos };
+      if (proj.groupKey) {
+        return this.fromBinder(Binder.key({ group: proj.groupKey, row: Binder.row(relation) }), n);
+      }
+      return this.withGroup(src, proj.binder, () => this.node(proj.node));
+    }
     if (b.shape === Binder.ROW) {
       if (listKey(key) !== null) {
         refuse('E_SQL_SHAPE',
@@ -1008,14 +1027,6 @@ export class Translator {
           + 'row without an ORDER BY that nothing here can supply', n.pos);
       }
       const field = asciiUpper(key);
-      if (!this.inWhere && this.statementPlan !== null && this.statementPlan.groupBy !== null) {
-        if (Object.hasOwn(this.statementPlan.aggregateAliases, key)) {
-          return this.node(this.statementPlan.aggregateAliases[key]);
-        }
-        if (Object.hasOwn(this.statementPlan.aggregateAliases, field)) {
-          return this.node(this.statementPlan.aggregateAliases[field]);
-        }
-      }
       if (name === '_' && this.statementPlan !== null && this.statementPlan.joins?.length) {
         const matches = [];
         const sources = [{ relation: this.statementPlan.sourceRelation, label: this.statementPlan.sourceName },
@@ -1031,14 +1042,6 @@ export class Translator {
         if (matches.length === 1) return this.columnRef(matches[0]);
       }
       if (!Object.hasOwn(b.payload.fields, field)) {
-        if (this.statementPlan !== null) {
-          if (Object.hasOwn(this.statementPlan.aggregateAliases, key)) {
-            return this.node(this.statementPlan.aggregateAliases[key]);
-          }
-          if (Object.hasOwn(this.statementPlan.aggregateAliases, field)) {
-            return this.node(this.statementPlan.aggregateAliases[field]);
-          }
-        }
         const known = Object.keys(b.payload.fields).sort();
         const tail = known.length === 0 ? '; it declares none' : `; it has ${known.join(', ')}`;
         refuse('E_SQL_BINDING',
@@ -1100,6 +1103,19 @@ export class Translator {
       if (bound !== null) {
         if (bound.shape === Binder.NODE) return this.source(bound.payload, call);
         if (bound.shape === Binder.NONE) refuse('E_SQL_SHAPE', String(bound.reason), src.pos);
+        // A bucket's members are iterated by COUNT and SUM alone (call()),
+        // as one aggregate over the grouped rows; ALL, ANY and the rest
+        // would each need a correlated subquery this layer does not build.
+        if (bound.shape === Binder.GROUP) {
+          refuse('E_SQL_SHAPE',
+            `${src.name} is the list of a bucket's members, over which only COUNT and `
+            + 'SUM are translated', src.pos);
+        }
+        if (bound.shape === Binder.PROJECTED) {
+          refuse('E_SQL_SHAPE',
+            `${src.name} is the record the projection built, a map with one child per `
+            + 'field; SQL has no way to iterate or count that', src.pos);
+        }
         // A column is one value, so it is a one-element list containing itself —
         // spec §7.3, the same rule the evaluator applies. This is what makes
         // ALL(V, ALL(V, …)) work.
@@ -1286,17 +1302,11 @@ export class Translator {
     }
 
     const row = Binder.row(src.relation);
-    let kBinder;
-    if (this.statementPlan !== null && this.statementPlan.groupBy && this.statementPlan.groupBy.length === 1) {
-      kBinder = Binder.key({ group: this.statementPlan.groupBy[0], row });
-    } else {
-      kBinder = Binder.none('a row of a relation has no key: SQL rows are unordered '
-        + 'and unkeyed unless the schema says otherwise, and guessing which column '
-        + 'is the key is not something this layer does');
-    }
     const frame = new Map([
       [binderName, row],
-      ['_K', kBinder],
+      ['_K', Binder.none('a row of a relation has no key: SQL rows are unordered '
+        + 'and unkeyed unless the schema says otherwise, and guessing which column '
+        + 'is the key is not something this layer does')],
     ]);
     for (const f of src.filters) frame.set(f.binder, row);
     if (this.statementPlan !== null && this.statementPlan.joins?.length) {
@@ -1802,6 +1812,47 @@ export class Translator {
     return predicate(plan) ? this.wrapPlanAsDerivedTable(plan) : plan;
   }
 
+  // The frame for a bucket's own body: the projection, and a FILTER or a
+  // sort over the groups before it. The binder is the group -- the list of
+  // its members, which only COUNT and SUM read (call()) -- and `_K` is the
+  // group key, when there is one key to be it. This is the one place `_K`
+  // is a group key: before the bucket it is a source row's position, after
+  // the projection the projected row's, and SQL has neither (review
+  // 2026-09-15 finding K).
+  withGroup(src, binderName, render) {
+    const groupBy = this.statementPlan?.groupBy ?? null;
+    const kBinder = groupBy !== null && groupBy.length === 1
+      ? Binder.key({ group: groupBy[0], row: Binder.row(src.relation) })
+      : Binder.none('the key of a bucket over several keys is a list, which SQL has no '
+        + 'value for; name one key');
+    this.frames.push(new Map([
+      [binderName, Binder.group(src.relation)],
+      ['_K', kBinder],
+    ]));
+    try {
+      return render();
+    } finally {
+      this.frames.pop();
+    }
+  }
+
+  // The frame for a step after a bucket's projection: a FILTER (HAVING) or
+  // a sort over the projected rows. The binder is the record the projection
+  // built, whose fields are the projection's aliases; `_K` is its position
+  // in the renumbered list, which SQL does not have.
+  withProjected(src, binderName, render) {
+    this.frames.push(new Map([
+      [binderName, Binder.projected(src.relation, this.statementPlan.projections)],
+      ['_K', Binder.none('after a projection the rows are a list renumbered from "1", '
+        + 'and SQL has no row position to compare against')],
+    ]));
+    try {
+      return render();
+    } finally {
+      this.frames.pop();
+    }
+  }
+
   // The projection of a bucket: the RECORD (or single expression) evaluated
   // once per group, with `binder` bound to the group and _K to its key. Shared
   // by the two spellings SEL has for it -- BUCKET(src, key, proj) and
@@ -1832,16 +1883,6 @@ export class Translator {
           if (vNode.t === 'var' && vNode.name === '_K' && plan.groupBy.length === 1) {
             actualNode = plan.groupBy[0].node;
             groupKey = plan.groupBy[0];
-          }
-          const isSameField = actualNode.t === 'index'
-            && actualNode.obj
-            && actualNode.obj.t === 'var'
-            && (actualNode.obj.name === '_' || actualNode.obj.name === binder)
-            && actualNode.idx
-            && actualNode.idx.t === 'text'
-            && actualNode.idx.v.toUpperCase() === alias.toUpperCase();
-          if (!isSameField) {
-            plan.aggregateAliases[alias] = actualNode;
           }
           projections.push({
             alias,
@@ -1907,6 +1948,9 @@ export class Translator {
 
       // A FILTER after an open bucket is a HAVING and a MAP is the bucket's
       // projection; anything else spends the members. See RelationalPlan.
+      // Either way a step written directly after the bare bucket runs over
+      // its groups, and is rendered in the bucket's own frame (withGroup).
+      const overGroups = plan.bucket === 'open';
       if (plan.bucket === 'open' && name !== 'FILTER' && name !== 'MAP') plan.bucket = 'sealed';
 
       switch (name) {
@@ -1940,7 +1984,7 @@ export class Translator {
             refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos);
           }
           if (plan.groupBy !== null) {
-            plan.having.push({ binder, node: pred, pos: step.pos });
+            plan.having.push({ binder, node: pred, pos: step.pos, overGroups });
           } else {
             plan.filters.push({ binder, node: pred, pos: step.pos });
           }
@@ -2158,7 +2202,11 @@ export class Translator {
             candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
               || candidate.distinct || candidate.limit !== null || candidate.offset !== null
               || candidate.orderBy.length));
-          this.analyzeSortStep(step, plan);
+          {
+            const before = plan.orderBy.length;
+            this.analyzeSortStep(step, plan);
+            for (let i = before; i < plan.orderBy.length; i += 1) plan.orderBy[i].overGroups = overGroups;
+          }
           break;
 
         case 'LINK':
@@ -2366,7 +2414,9 @@ export class Translator {
           first = false;
           const pFrag = proj.groupKey
             ? this.groupKey(src, proj.groupKey)
-            : this.withRow(src, proj.binder, () => this.node(proj.node));
+            : plan.groupBy !== null
+              ? this.withGroup(src, proj.binder, () => this.node(proj.node))
+              : this.withRow(src, proj.binder, () => this.node(proj.node));
           for (const p of pFrag.parts) parts.push(p);
           if (proj.alias !== null) {
             parts.push(' AS ' + this.emit.ident(proj.alias));
@@ -2479,7 +2529,7 @@ export class Translator {
         this.inHaving = true;
         try {
           for (const hav of plan.having) {
-            const hFrag = this.withRow(src, hav.binder,
+            const hFrag = (hav.overGroups ? this.withGroup : this.withProjected).call(this, src, hav.binder,
               () => this.requireBool(this.node(hav.node), hav.pos, 'FILTER'));
             hCondParts.push(hFrag.parts);
           }
@@ -2501,7 +2551,9 @@ export class Translator {
           first = false;
           // A TEXT sort key is collated like a group key: SEL sorts text by
           // its bytes, and a server's default collation would not.
-          const oFrag = this.collatedKey(this.withRow(src, ord.binder, () => this.node(ord.node)));
+          const withFrame = ord.overGroups ? this.withGroup
+            : plan.groupBy !== null ? this.withProjected : this.withRow;
+          const oFrag = this.collatedKey(withFrame.call(this, src, ord.binder, () => this.node(ord.node)));
           for (const p of oFrag.parts) parts.push(p);
           parts.push(' ' + ord.dir);
         }

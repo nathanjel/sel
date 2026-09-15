@@ -518,3 +518,37 @@ ITEMS .> MAP(RECORD("q", 0 - _["qty"])) .> SORT()
 --- expect
 SELECT `_sub1`.* FROM (SELECT (0 - `qty`) AS `q` FROM `items`) `_sub1` ORDER BY `_sub1`.`q` ASC
 ===
+
+### name: stmt.map.explicit-binder-leaves-underscore-unbound
+--- note
+Naming the row `g` leaves `_` unbound (E_UNDEF_VAR at the `_` in the
+evaluator). One host's row frame bound `_` alongside the name and rendered
+this.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(g, RECORD("x", _["amount"]))
+--- error
+E_SQL_UNBOUND 1:29
+===
+### name: stmt.map.refuse-count-of-a-row-outside-a-bucket
+--- note
+Review 2026-09-15 finding X, first facet. COUNT(_) over a relation row is
+the row's number of fields in SEL, not the number of rows: COUNT(*) is only
+what COUNT of a bucket's members is. Every host rendered COUNT(*) here and
+answered one row where SEL answers one per row.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("id", _["dept"], "n", COUNT(_)))
+--- error
+E_SQL_SHAPE 1:49
+===

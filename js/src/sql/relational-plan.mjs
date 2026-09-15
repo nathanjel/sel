@@ -43,7 +43,6 @@ export class RelationalPlan {
     // boolean, binary, list or record key, so the translator must too.
     this.bareKey = false;
     this.having = [];
-    this.aggregateAliases = {};
     this.orderBy = [];
     this.limit = null;
     this.offset = null;

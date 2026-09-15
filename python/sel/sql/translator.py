@@ -337,6 +337,12 @@ class Translator:
         obj = n.obj
         if (self.statement_plan is not None and obj is not None
                 and obj.t == 'index' and obj.obj is not None and obj.obj.t == 'var'):
+            # `_["orders"]["status"]` names a joined relation's field -- when
+            # the inner name is a row. Over a bucket's members or a projected
+            # row the inner index is itself the thing to refuse.
+            inner = self._binder(obj.obj.name)
+            if inner is not None and inner.shape in (Binder.GROUP, Binder.PROJECTED):
+                self._node(obj)
             qualifier = self._constant_index(obj.idx)
             field = self._constant_index(n.idx)
             return self._index_qualified(qualifier, field, n)
@@ -664,45 +670,26 @@ class Translator:
     def _call(self, n: Node) -> Fragment:
         name = n.name
 
+        # The two aggregates over a bucket's members -- COUNT(g) is COUNT(*)
+        # and SUM(g, [x,] body) is SUM over the grouped rows -- fire on the
+        # GROUP binder alone: over a relation row, COUNT(_) is the row's
+        # number of fields in SEL (review 2026-09-15 finding X), and SEL has
+        # no per-group MIN or MAX (finding J). The body binds the member row,
+        # as the evaluator's walk does: `_` for the two-argument form, the
+        # name given for the three-argument one.
         if self.statement_plan is not None:
-            if name == 'COUNT':
-                if len(n.args) == 1:
-                    arg0 = n.args[0]
-                    bd = self._binder(arg0.name) if arg0.t == 'var' else None
-                    if bd is not None and bd.shape == Binder.ROW:
-                        return Fragment(['COUNT(*)'], 'NUM', self.dialect)
-            elif name == 'SUM':
-                if len(n.args) >= 2:
-                    arg0 = n.args[0]
-                    bd = self._binder(arg0.name) if arg0.t == 'var' else None
-                    if bd is not None and bd.shape == Binder.ROW:
-                        has_custom_binder = len(n.args) == 3 and _constants.is_binder_name(n.args[1])
-                        body_node = n.args[2] if has_custom_binder else n.args[1]
-                        if has_custom_binder:
-                            self.frames.append({n.args[1].name: bd})
-                            try:
-                                inner = self._node(body_node)
-                            finally:
-                                self.frames.pop()
-                        else:
-                            inner = self._node(body_node)
-                        return Fragment([f"COALESCE(SUM({''.join(inner.parts)}), 0)"], 'NUM', self.dialect)
-            elif name in ('AVG', 'MIN', 'MAX'):
-                if len(n.args) >= 2:
-                    arg0 = n.args[0]
-                    bd = self._binder(arg0.name) if arg0.t == 'var' else None
-                    if bd is not None and bd.shape == Binder.ROW:
-                        has_custom_binder = len(n.args) == 3 and _constants.is_binder_name(n.args[1])
-                        body_node = n.args[2] if has_custom_binder else n.args[1]
-                        if has_custom_binder:
-                            self.frames.append({n.args[1].name: bd})
-                            try:
-                                inner = self._node(body_node)
-                            finally:
-                                self.frames.pop()
-                        else:
-                            inner = self._node(body_node)
-                        return Fragment([f"{name}({''.join(inner.parts)})"], inner.kind, self.dialect)
+            arg0 = n.args[0] if n.args else None
+            group = self._binder(arg0.name) if arg0 is not None and arg0.t == 'var' else None
+            if group is not None and group.shape == Binder.GROUP:
+                if name == 'COUNT' and len(n.args) == 1:
+                    return Fragment(['COUNT(*)'], 'NUM', self.dialect)
+                if name == 'SUM' and len(n.args) >= 2:
+                    has_custom_binder = len(n.args) == 3 and _constants.is_binder_name(n.args[1])
+                    body_node = n.args[2] if has_custom_binder else n.args[1]
+                    src = {'relation': group.payload, 'filters': [], 'pos': n.pos}
+                    inner = self._with_row(src, n.args[1].name if has_custom_binder else '_',
+                                           lambda: self._node(body_node))
+                    return Fragment([f"COALESCE(SUM({''.join(inner.parts)}), 0)"], 'NUM', self.dialect)
 
         if name in AGGREGATES:
             return self._aggregate(n)
@@ -947,6 +934,15 @@ class Translator:
             return collated
         if b.shape == Binder.COLUMN:
             return self._column_ref(b.payload)
+        if b.shape == Binder.GROUP:
+            refuse('E_SQL_SHAPE',
+                   f"{n.name} is the list of a bucket's members, which is not a value "
+                   'SQL has; count it (COUNT), sum over it (SUM), or name the group key (_K)',
+                   n.pos)
+        if b.shape == Binder.PROJECTED:
+            refuse('E_SQL_SHAPE',
+                   f'{n.name} is the record the projection built, which is a map in SEL '
+                   'and not one value; name the field you mean', n.pos)
         if b.shape == Binder.ROW:
             rel = b.payload
             # The guard `IN` got and nothing else did. A row of a relation with
@@ -974,6 +970,33 @@ class Translator:
         refuse('E_SQL_SHAPE', str(b.reason), n.pos)
 
     def _index_binder(self, b: Binder, name: str, key: str, n: Node) -> Fragment:
+        if b.shape == Binder.GROUP:
+            # The group is the list of its members: indexing it by a field name
+            # is E_NO_KEY in SEL, and by a position asks for a member SQL cannot
+            # single out. Either way the field is read inside an aggregate over
+            # the members, SUM(g, _["amount"]), and nowhere else.
+            refuse('E_SQL_SHAPE',
+                   f'{name}["{key}"] indexes the list of a bucket\'s members, which SEL '
+                   'refuses (E_NO_KEY); read a member\'s field inside an aggregate over '
+                   f'the group, SUM({name}, _["{key}"])', n.pos)
+        if b.shape == Binder.PROJECTED:
+            # After the projection a row is the record it built, and has the
+            # projection's fields under their aliases and nothing else -- not
+            # the source's columns, which SEL no longer has (E_NO_KEY).
+            relation, projections = b.payload
+            proj = next((p for p in projections if p.get('alias') == key), None)
+            if proj is None:
+                proj = next((p for p in projections if p.get('alias') is not None
+                             and ascii_upper(p['alias']) == ascii_upper(key)), None)
+            if proj is None:
+                known = sorted(p['alias'] for p in projections if p.get('alias') is not None)
+                refuse('E_SQL_SHAPE',
+                       f'{name}["{key}"] is not a field of the projection'
+                       + ('; it has ' + ', '.join(known) if known else ''), n.pos)
+            src = {'relation': relation, 'filters': [], 'pos': n.pos}
+            if proj.get('group_key') is not None:
+                return self._from_binder(Binder.key((proj['group_key'], Binder.row(relation))), n)
+            return self._with_group(src, proj['binder'], lambda: self._node(proj['node']))
         if b.shape == Binder.ROW:
             if _list_key(key) is not None:
                 refuse('E_SQL_SHAPE',
@@ -981,11 +1004,6 @@ class Translator:
                        'no first row without an ORDER BY that nothing here can supply',
                        n.pos)
             field = ascii_upper(key)
-            if not self.in_where and self.statement_plan is not None and self.statement_plan.group_by is not None:
-                if key in self.statement_plan.aggregate_aliases:
-                    return self._node(self.statement_plan.aggregate_aliases[key])
-                if field in self.statement_plan.aggregate_aliases:
-                    return self._node(self.statement_plan.aggregate_aliases[field])
             if name == '_' and self.statement_plan is not None and self.statement_plan.joins:
                 matches = []
                 sources = [(self.statement_plan.source_relation, self.statement_plan.source_name)]
@@ -1001,11 +1019,6 @@ class Translator:
                 if len(matches) == 1:
                     return self._column_ref(matches[0])
             if field not in b.payload['fields']:
-                if self.statement_plan is not None:
-                    if key in self.statement_plan.aggregate_aliases:
-                        return self._node(self.statement_plan.aggregate_aliases[key])
-                    if field in self.statement_plan.aggregate_aliases:
-                        return self._node(self.statement_plan.aggregate_aliases[field])
                 known = sorted(b.payload['fields'])
                 tail = ('; it declares none' if not known
                         else '; it has ' + ', '.join(known))
@@ -1063,6 +1076,19 @@ class Translator:
                     return self._source(bound.payload, call)
                 if bound.shape == Binder.NONE:
                     refuse('E_SQL_SHAPE', str(bound.reason), src.pos)
+                # A bucket's members are iterated by COUNT and SUM alone
+                # (_call), as one aggregate over the grouped rows; ALL, ANY and
+                # the rest would each need a correlated subquery this layer
+                # does not build.
+                if bound.shape == Binder.GROUP:
+                    refuse('E_SQL_SHAPE',
+                           f"{src.name} is the list of a bucket's members, over which "
+                           'only COUNT and SUM are translated', src.pos)
+                if bound.shape == Binder.PROJECTED:
+                    refuse('E_SQL_SHAPE',
+                           f'{src.name} is the record the projection built, a map with '
+                           'one child per field; SQL has no way to iterate or count that',
+                           src.pos)
                 # A column is one value, so it is a one-element list containing
                 # itself -- spec §7.3, the same rule the evaluator applies. This
                 # is what makes ALL(V, ALL(V, …)) work.
@@ -1237,13 +1263,10 @@ class Translator:
                            src.get('pos'))
 
         row = Binder.row(src['relation'])
-        if self.statement_plan is not None and self.statement_plan.group_by and len(self.statement_plan.group_by) == 1:
-            k_binder = Binder.key((self.statement_plan.group_by[0], row))
-        else:
-            k_binder = Binder.none('a row of a relation has no key: SQL rows are '
-                                   'unordered and unkeyed unless the schema says '
-                                   'otherwise, and guessing which column is the key '
-                                   'is not something this layer does')
+        k_binder = Binder.none('a row of a relation has no key: SQL rows are '
+                               'unordered and unkeyed unless the schema says '
+                               'otherwise, and guessing which column is the key '
+                               'is not something this layer does')
         frame = {binder_name: row, '_K': k_binder}
         for f in src['filters']:
             frame[f['binder']] = row
@@ -1262,6 +1285,45 @@ class Translator:
                 if join.source_alias:
                     frame[join.source_alias] = right
         self.frames.append(frame)
+        try:
+            return render()
+        finally:
+            self.frames.pop()
+
+    def _with_group(self, src: dict[str, Any], binder_name: str,
+                    render: Callable[[], Fragment]) -> Fragment:
+        """The frame for a bucket's own body: the projection, and a FILTER or a
+        sort over the groups before it. The binder is the group -- the list of
+        its members, which only COUNT and SUM read (_call) -- and ``_K`` is the
+        group key, when there is one key to be it. This is the one place ``_K``
+        is a group key: before the bucket it is a source row's position, after
+        the projection the projected row's, and SQL has neither (review
+        2026-09-15 finding K).
+        """
+        group_by = self.statement_plan.group_by if self.statement_plan is not None else None
+        if group_by is not None and len(group_by) == 1:
+            k_binder = Binder.key((group_by[0], Binder.row(src['relation'])))
+        else:
+            k_binder = Binder.none('the key of a bucket over several keys is a list, '
+                                   'which SQL has no value for; name one key')
+        self.frames.append({binder_name: Binder.group(src['relation']), '_K': k_binder})
+        try:
+            return render()
+        finally:
+            self.frames.pop()
+
+    def _with_projected(self, src: dict[str, Any], binder_name: str,
+                        render: Callable[[], Fragment]) -> Fragment:
+        """The frame for a step after a bucket's projection: a FILTER (HAVING)
+        or a sort over the projected rows. The binder is the record the
+        projection built, whose fields are the projection's aliases; ``_K`` is
+        its position in the renumbered list, which SQL does not have.
+        """
+        self.frames.append({
+            binder_name: Binder.projected(src['relation'], self.statement_plan.projections or []),
+            '_K': Binder.none('after a projection the rows are a list renumbered from "1", '
+                              'and SQL has no row position to compare against'),
+        })
         try:
             return render()
         finally:
@@ -1800,13 +1862,6 @@ class Translator:
                         actual = plan.group_by[0]['node']
                         node_binder = plan.group_by[0]['binder']
                         group_key = plan.group_by[0]
-                    same_field = (actual.t == 'index' and actual.obj is not None
-                                  and actual.obj.t == 'var'
-                                  and actual.obj.name in ('_', binder)
-                                  and actual.idx is not None and actual.idx.t == 'text'
-                                  and ascii_upper(actual.idx.v) == ascii_upper(alias))
-                    if not same_field:
-                        plan.aggregate_aliases[alias] = actual
                     projections.append({'alias': alias, 'binder': node_binder, 'node': actual,
                                         'group_key': group_key})
                 plan.projections = projections
@@ -1846,7 +1901,10 @@ class Translator:
         for step in reversed(steps):
             name, args = step.name, step.args
             # A FILTER after an open bucket is a HAVING and a MAP is the
-            # bucket's projection; anything else spends the members.
+            # bucket's projection; anything else spends the members. Either
+            # way a step written directly after the bare bucket runs over its
+            # groups, and is rendered in the bucket's own frame (_with_group).
+            over_groups = plan.bucket == 'open'
             if plan.bucket == 'open' and name not in ('FILTER', 'MAP'):
                 plan.bucket = 'sealed'
             if name == 'FILTER':
@@ -1875,8 +1933,11 @@ class Translator:
                     binder, predicate = args[1].name, args[2]
                 else:
                     refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos)
-                target = plan.having if plan.group_by is not None else plan.filters
-                target.append({'binder': binder, 'node': predicate, 'pos': step.pos})
+                if plan.group_by is not None:
+                    plan.having.append({'binder': binder, 'node': predicate, 'pos': step.pos,
+                                        'over_groups': over_groups})
+                else:
+                    plan.filters.append({'binder': binder, 'node': predicate, 'pos': step.pos})
 
             elif name == 'BUCKET':
                 # A bucket over a bare bucket's rows: SQL has only the keys
@@ -2018,7 +2079,10 @@ class Translator:
                         candidate.projections is not None or candidate.select_cols is not None
                         or candidate.distinct or candidate.limit is not None
                         or candidate.offset is not None or candidate.order_by))
+                before = len(plan.order_by)
                 self._analyze_sort_step_extended(step, plan)
+                for order in plan.order_by[before:]:
+                    order['over_groups'] = over_groups
 
             elif name in ('LINK', 'LINK_LEFT'):
                 plan = self._ensure_derived(plan, self._plan_has_rows_above)
@@ -2129,6 +2193,9 @@ class Translator:
                         parts.append(', ')
                     if projection.get('group_key') is not None:
                         fragment = self._group_key(src, projection['group_key'])
+                    elif plan.group_by is not None:
+                        fragment = self._with_group(
+                            src, projection['binder'], lambda p=projection: self._node(p['node']))
                     else:
                         fragment = self._with_row(
                             src, projection['binder'], lambda p=projection: self._node(p['node']))
@@ -2227,7 +2294,8 @@ class Translator:
                     for index, having in enumerate(plan.having):
                         if index:
                             parts.append(' AND ')
-                        fragment = self._with_row(
+                        with_frame = self._with_group if having.get('over_groups') else self._with_projected
+                        fragment = with_frame(
                             src, having['binder'],
                             lambda h=having: self._require_bool(
                                 self._node(h['node']), h['pos'], 'FILTER'))
@@ -2242,7 +2310,10 @@ class Translator:
                         parts.append(', ')
                     # A TEXT sort key is collated like a group key: SEL sorts
                     # text by its bytes, and a server's default collation would not.
-                    fragment = self._collated_key(self._with_row(
+                    with_frame = (self._with_group if order.get('over_groups')
+                                  else self._with_projected if plan.group_by is not None
+                                  else self._with_row)
+                    fragment = self._collated_key(with_frame(
                         src, order['binder'], lambda o=order: self._node(o['node'])))
                     parts.extend(fragment.parts)
                     parts.append(' ' + order['dir'])

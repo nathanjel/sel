@@ -542,3 +542,322 @@ ITEMS .> SORT_BY(_["dept"]) .> MAP(RECORD("d", _["dept"], "q", _["qty"]))
 --- expect
 SELECT `dept` AS `d`, `qty` AS `q` FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ASC
 ===
+### name: stmt.bucket.refuse-member-field-through-the-group
+--- note
+Review 2026-09-15 finding J. Inside the projection the group binder is the
+list of the bucket's members, and indexing a list by a field name is
+E_NO_KEY in SEL (at the index, 1:65). The translator rendered `amount` as a
+bare column under GROUP BY -- one member's value, chosen by the server --
+so it now refuses at the same node. The members are read through an
+aggregate: SUM(g, _["amount"]), COUNT(g).
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(g, RECORD("dept", _K, "amt", g["amount"]))
+--- error
+E_SQL_SHAPE 1:65
+===
+### name: stmt.bucket.refuse-member-field-in-the-three-argument-spelling
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "amt", _["amount"]))
+--- error
+E_SQL_SHAPE 1:55
+===
+### name: stmt.bucket.refuse-the-bare-group-as-a-value
+--- note
+The group itself is a list of records, which no SQL value is.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "m", _))
+--- error
+E_SQL_SHAPE 1:56
+===
+### name: stmt.bucket.refuse-a-member-by-position
+--- note
+`_["1"]` is the first member -- a value SEL has and SQL, whose groups are
+unordered, does not.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "first", _["1"]["amount"]))
+--- error
+E_SQL_SHAPE 1:61
+===
+### name: stmt.bucket.refuse-having-alias-before-the-map
+--- note
+A FILTER between a bare BUCKET and its MAP runs over the groups, before the
+MAP has made a "total": `_["total"]` there is E_NO_KEY in SEL (1:39). The
+translator resolved it through the alias the later MAP defines and rendered
+the aggregate in the HAVING.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> FILTER(_["total"] > 1) .> MAP(RECORD("dept", _K, "total", SUM(_, _["amount"])))
+--- error
+E_SQL_SHAPE 1:39
+===
+### name: stmt.bucket.refuse-member-field-in-a-having-over-the-groups
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> FILTER(_["dept"] $== "A") .> MAP(RECORD("d", _K))
+--- error
+E_SQL_SHAPE 1:39
+===
+### name: stmt.bucket.refuse-max-over-the-group
+--- note
+MIN and MAX are variadic scalars in SEL (docs/LANGUAGE.md); `MAX(_, body)`
+over a group is not a form SEL has -- it indexes the list and raises -- and
+the per-group MIN/MAX/AVG arm that rendered it as `MAX(amount)` is gone.
+The refusal is at the group binder, the first thing the scalar MAX cannot
+take.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "mx", MAX(_, _["amount"])))
+--- error
+E_SQL_SHAPE 1:57
+===
+### name: stmt.bucket.two-argument-sum-binds-the-member
+--- note
+`SUM(g, body)` binds `_` to each member for the body, as the evaluator does
+(spec §7.3), whatever the group is called. Four hosts refused this as an
+unbound `_` while accepting only the three-argument `SUM(g, x, x["amount"])`.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(g, RECORD("dept", _K, "n", COUNT(g), "s", SUM(g, _["amount"]), "t", SUM(g, x, x["amount"])))
+--- expect
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n`, COALESCE(SUM(`amount`), 0) AS `s`, COALESCE(SUM(`amount`), 0) AS `t` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+===
+### name: stmt.bucket.refuse-the-member-key-inside-the-aggregate
+--- note
+Inside SUM's body `_K` is the member's position within its group, "1",
+"2", ... -- not the group key, and not anything SQL has.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "s", SUM(_, _K)))
+--- error
+E_SQL_SHAPE 1:63
+===
+### name: stmt.bucket.refuse-count-of-the-group-under-another-name
+--- note
+Naming the group `g` leaves `_` unbound in the projection, as in the
+evaluator (E_UNDEF_VAR at the `_`); COUNT(_) there is not COUNT(*).
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(g, RECORD("d", _K, "n", COUNT(_)))
+--- error
+E_SQL_UNBOUND 1:65
+===
+### name: stmt.bucket.refuse-source-key-before-the-bucket
+--- note
+Review 2026-09-15 finding K. Before the BUCKET, `_K` is the source row's
+key -- its position in the list -- which a relation's rows do not have
+(sql/errors.md: E_SQL_SHAPE). Every host bound `_K` to the group key
+wherever the statement had one, and rendered this as `WHERE dept = '2'`.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(_K $== "2") .> BUCKET(_["dept"], RECORD("k", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE 1:17
+===
+### name: stmt.bucket.refuse-list-key-after-the-projection
+--- note
+After the projection the rows are a list renumbered from "1", so `_K` is
+"1", "2", ... -- the position, again, not the group key (conformance
+rel.bucket.map-of-key-then-sort-by-key). Rendered as `HAVING dept = '2'`
+before this.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("k", _K, "n", COUNT(_))) .> FILTER(_K $== "2")
+--- error
+E_SQL_SHAPE 1:77
+===
+### name: stmt.bucket.refuse-list-key-in-a-sort-after-the-projection
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"], RECORD("k", _K, "n", COUNT(_))) .> SORT_BY(_K)
+--- error
+E_SQL_SHAPE 1:71
+===
+### name: stmt.bucket.refuse-source-key-as-the-bucket-key
+--- note
+`BUCKET(_K)` groups the source rows by their own keys, which a relation's
+rows do not have. It used to recurse until E_SQL_DEPTH.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_K)
+--- error
+E_SQL_SHAPE 1:17
+===
+### name: stmt.bucket.group-key-sorts-the-bare-bucket
+--- note
+Where `_K` IS the group key: a sort over the bare bucket's groups, and a
+FILTER between the bucket and its MAP (stmt.bucket.text-key-compared-in-having-is-the-same-expression).
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> SORT_BY(_K, "DESC")
+--- expect
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC
+===
+### name: stmt.bucket.refuse-member-field-in-a-sort-over-the-groups
+--- note
+Sorting the bare bucket's groups by a member field indexes the member list:
+E_NO_KEY in SEL.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> SORT_BY(_["dept"])
+--- error
+E_SQL_SHAPE 1:40
+===
+### name: stmt.bucket.projected-row-has-only-the-projection
+--- note
+After the projection a row is the record the MAP built, so a FILTER or a
+sort over it may name the projection's fields and nothing else: `dept` is
+not one of them here (E_NO_KEY in SEL), however much the source has it.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "n", COUNT(_))) .> SORT_BY(_["dept"])
+--- error
+E_SQL_SHAPE 1:79
+===
+### name: stmt.bucket.projected-key-alias-in-a-having
+--- note
+And when the projection does carry the key, under any name, a FILTER after
+it reads the projection: the key, rendered as it is in the GROUP BY and, in
+a HAVING, as MIN of it, which is what MariaDB and MySQL resolve.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "n", COUNT(_))) .> FILTER(_["d"] $== "A")
+--- expect
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) = 'A')
+===
+### name: stmt.bucket.projected-key-alias-in-a-sort
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "n", COUNT(_))) .> SORT_BY(_["d"], "DESC")
+--- expect
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC
+===
+### name: stmt.bucket.refuse-count-of-the-projected-row
+--- note
+After the projection `_` is the projected record and COUNT of it is its
+number of fields -- 1 here -- not the group's size: not COUNT(*), which is
+what every host rendered.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K)) .> FILTER(COUNT(_) > 0)
+--- error
+E_SQL_SHAPE 1:68
+===
+### name: stmt.bucket.refuse-all-over-the-groups
+--- note
+Only COUNT and SUM are rendered over a bucket's members; ALL and ANY would
+need a correlated subquery this layer does not build.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> FILTER(ALL(_, _["amount"] > 5)) .> MAP(RECORD("d", _K))
+--- error
+E_SQL_SHAPE 1:42
+===

@@ -46,7 +46,6 @@ class RelationalPlan:
         # must too.
         self.bare_key: bool = False
         self.having: list[dict[str, Any]] = []
-        self.aggregate_aliases: dict[str, Any] = {}
         self.order_by: list[dict[str, Any]] = []
         self.limit: int | None = None
         self.offset: int | None = None

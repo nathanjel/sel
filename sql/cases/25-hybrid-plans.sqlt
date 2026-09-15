@@ -1130,3 +1130,155 @@ orders
 --- expect
 SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC
 ===
+
+### name: plan.bucket.member-field-through-the-group-stays-in-memory
+--- note
+Finding J from the planner's side: the projection indexes the group, which
+SEL refuses (E_NO_KEY), so the MAP is not translated -- and the prefix
+before it is a bare bucket, which is not a split point. The whole pipeline
+stays in memory, where run() raises what the continuation raises. It used
+to be pure_sql, returning one member's amount per group.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(g, RECORD("cid", _K, "amt", g["amount"]))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.bucket.having-alias-before-the-map-stays-in-memory
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> FILTER(_["total"] > 1) .> MAP(RECORD("cid", _K, "total", SUM(_, _["amount"])))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.bucket.max-over-the-group-stays-in-memory
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "mx", MAX(_, _["amount"])))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.bucket.two-argument-sum-under-a-named-group-pushes-down
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(g, RECORD("cid", _K, "n", COUNT(g), "s", SUM(g, _["amount"])))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n`, COALESCE(SUM(`o`.`amount`), 0) AS `s` FROM `orders` `o` GROUP BY `o`.`customer_id`
+===
+
+### name: plan.bucket.source-key-before-the-bucket-stays-in-memory
+--- note
+Finding K from the planner's side: `_K` before the BUCKET is the source
+row's position, which SQL does not have, so the FILTER is refused and the
+bare relation before it is no prefix. Pure memory -- it used to be
+pure_sql with `WHERE customer_id = '2'`.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(_K $== "2") .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_)))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.bucket.list-key-after-the-projection-splits
+--- note
+After the projection `_K` is the position in the projected list, which the
+continuation has once the grouped rows come back: the projection is the
+prefix, the FILTER runs in memory over the renumbered rows. It used to be
+pure_sql with `HAVING customer_id = '2'`.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> FILTER(_K $== "2")
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+===
+
+### name: plan.bucket.sort-by-list-key-after-the-projection-splits
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> SORT_BY(_K)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+===
+
+### name: plan.bucket.projected-row-field-splits
+--- note
+A sort after the projection may name only what the projection built; the
+source's `customer_id` is not a field of the projected row (E_NO_KEY in
+SEL), so the sort stays in memory, where it raises as run() does.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> SORT_BY(_["customer_id"])
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+===
+
+### name: plan.map.count-of-a-row-stays-in-memory
+--- note
+Finding X, first facet, from the planner's side: COUNT(_) over a relation
+row is the row's number of fields, which the MAP fall-through cannot push
+(it reads the whole row), so the split lands before the MAP -- which
+leaves the bare relation, and nothing to push down: the whole pipeline
+runs in memory and counts what SEL counts. It used to be pure_sql with
+COUNT(*) and one row.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(_)))
+--- plan
+pure_memory
+--- tables
+orders
+===

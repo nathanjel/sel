@@ -100,12 +100,6 @@ final class RelationalPlan
     public array $having = [];
 
     /**
-     * Aggregate aliases defined in BUCKET's RECORD(...) projection.
-     * @var array<string, array<string,mixed>>
-     */
-    public array $aggregateAliases = [];
-
-    /**
      * Order items from SORT / SORT_DESC / SORT_BY.
      * @var list<array{binder: string, node: array<string,mixed>, dir: string, pos: array{line:int,col:int,offset:int}}>
      */

@@ -11,6 +11,10 @@ const ROW = 'row';         // a row of a relation: fields resolve to its columns
 const NONE = 'none';       // in scope, but using it is an error with this reason
 const KEY = 'key';         // the key of the group being rendered: a group-by entry,
                            // rendered as the GROUP BY expression itself
+const GROUP = 'group';     // a bucket's members, inside the bucket's own body: a list
+                           // of rows that only COUNT and SUM can read
+const PROJECTED = 'projected'; // the record a bucket's projection built, after it:
+                           // its fields are the projection's aliases and nothing else
 
 export class Binder {
   // Mirrored as static properties so `Binder.ROW` works the way `Value.BOOL`
@@ -20,6 +24,8 @@ export class Binder {
   static ROW = ROW;
   static NONE = NONE;
   static KEY = KEY;
+  static GROUP = GROUP;
+  static PROJECTED = PROJECTED;
 
   constructor(shape, payload, reason = null) {
     this.shape = shape;
@@ -36,4 +42,8 @@ export class Binder {
   static none(reason) { return new Binder(NONE, null, reason); }
 
   static key(group) { return new Binder(KEY, group); }
+
+  static group(relation) { return new Binder(GROUP, relation); }
+
+  static projected(relation, projections) { return new Binder(PROJECTED, { relation, projections }); }
 }

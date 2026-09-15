@@ -41,7 +41,6 @@
   ;; boolean, binary, list or record key, so the translator must too.
   (bare-key nil)
   (having '() :type list)
-  (aggregate-aliases nil)
   (order-by '() :type list)
   (limit nil)
   (offset nil))

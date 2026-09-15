@@ -211,6 +211,10 @@ known before the query runs" (snode-pos idx))))
                  (and sub-l (not (clist-p sub-l)) (eq (snode-kind sub-l) :var))))
       (let* ((row-var (sel::node-l obj))
              (bound (find-binder tr (sel::node-s row-var))))
+        ;; ... when the inner name is a row. Over a bucket's members or a
+        ;; projected row the inner index is itself the thing to refuse.
+        (when (and bound (member (binder-shape bound) '(:group :projected)))
+          (walk-node tr obj))
         (when (and bound (eq (binder-shape bound) :row))
           (let* ((table-alias (constant-index (sel::node-r obj)))
                  (col-name (constant-index (sel::node-r n)))
@@ -349,6 +353,16 @@ only as the identical expression."
                              (fragment-caveats collated) t nil nil)
                   collated))))
     (:column (column-ref tr (binder-payload b)))
+    (:group
+     (refuse "E_SQL_SHAPE"
+             (format nil "~a is the list of a bucket's members, which is not a value ~
+SQL has; count it (COUNT), sum over it (SUM), or name the group key (_K)" (sel::node-s n))
+             (snode-pos n)))
+    (:projected
+     (refuse "E_SQL_SHAPE"
+             (format nil "~a is the record the projection built, which is a map in SEL ~
+and not one value; name the field you mean" (sel::node-s n))
+             (snode-pos n)))
     (:row
      (let* ((rel (binder-payload b))
             (fields (getf rel :fields))
@@ -376,6 +390,35 @@ index the field you want" name)
 
 (defun index-binder (tr b name key n)
   (case (binder-shape b)
+    (:group
+     ;; The group is the list of its members: indexing it by a field name is
+     ;; E_NO_KEY in SEL, and by a position asks for a member SQL cannot single
+     ;; out. Either way the field is read inside an aggregate over the
+     ;; members, SUM(g, _["amount"]), and nowhere else.
+     (refuse "E_SQL_SHAPE"
+             (format nil "~a[~s] indexes the list of a bucket's members, which SEL ~
+refuses (E_NO_KEY); read a member's field inside an aggregate over the group, ~
+SUM(~a, _[~s])" name key name key)
+             (snode-pos n)))
+    (:projected
+     ;; After the projection a row is the record it built, and has the
+     ;; projection's fields under their aliases and nothing else -- not the
+     ;; source's columns, which SEL no longer has (E_NO_KEY).
+     (destructuring-bind (rel projections) (binder-payload b)
+       (let ((proj (or (find-if (lambda (p) (equal (first p) key)) projections)
+                       (find-if (lambda (p) (and (first p) (string= (sel::ascii-upcase (first p))
+                                                                    (sel::ascii-upcase key))))
+                                projections))))
+         (unless proj
+           (let ((known (sort (remove nil (mapcar #'first projections)) #'string<)))
+             (refuse "E_SQL_SHAPE"
+                     (format nil "~a[~s] is not a field of the projection~a" name key
+                             (if known (format nil "; it has ~{~a~^, ~}" known) ""))
+                     (snode-pos n))))
+         (if (fourth proj)
+             (from-binder tr (binder-key (fourth proj) (binder-row rel)) n)
+             (with-group tr (%source :relation nil rel '() nil) (second proj)
+               (lambda () (walk-node tr (third proj))))))))
     (:row
      ;; The positional check comes before the field lookup, so a relation field
      ;; literally named "1" is unreachable through I[1] and I["1"] alike.
@@ -386,11 +429,6 @@ no first row without an ORDER BY that nothing here can supply" name key)
                (snode-pos n)))
      (let* ((plan (translator-statement-plan tr))
             (uc-key (sel::ascii-upcase key)))
-       (when (and (not (translator-in-where tr)) plan (relational-plan-group-by plan))
-         (let ((alias-cell (or (assoc key (relational-plan-aggregate-aliases plan) :test #'equal)
-                               (assoc uc-key (relational-plan-aggregate-aliases plan) :test #'equal))))
-           (when alias-cell
-             (return-from index-binder (walk-node tr (cdr alias-cell))))))
        (let* ((fields (getf (binder-payload b) :fields))
               (cell (assoc uc-key fields :test #'equal)))
          (when (equal name "_")
@@ -416,11 +454,6 @@ no first row without an ORDER BY that nothing here can supply" name key)
                            (format nil "column '~a' is ambiguous across joined tables; qualify with table alias" key)
                            (snode-pos n)))))))
          (unless cell
-           (when plan
-             (let ((alias-cell (or (assoc key (relational-plan-aggregate-aliases plan) :test #'equal)
-                                   (assoc uc-key (relational-plan-aggregate-aliases plan) :test #'equal))))
-               (when alias-cell
-                 (return-from index-binder (walk-node tr (cdr alias-cell))))))
            (refuse "E_SQL_BINDING"
                    (format nil "~a[~s] is not a field of that relation~a" name key
                            (if fields
@@ -1094,53 +1127,31 @@ requires for the same reason and refuses here too"
 (defun translate-call (tr n)
   ;; Captured before the rewrite, which preserves the name but rebinds the node.
   (let ((name (sel::node-s n)))
+    ;; The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
+    ;; SUM(g, [x,] body) is SUM over the grouped rows -- fire on the :group
+    ;; binder alone: over a relation row, COUNT(_) is the row's number of
+    ;; fields in SEL (review 2026-09-15 finding X), and SEL has no per-group
+    ;; MIN or MAX (finding J). The body binds the member row, as the
+    ;; evaluator's walk does: `_` for the two-argument form, the name given
+    ;; for the three-argument one.
     (when (translator-statement-plan tr)
-      (cond
-        ((equal name "COUNT")
-         (let ((args (sel::node-items n)))
-           (when (= (length args) 1)
-             (let* ((arg0 (first args))
-                    (bd (when (and (not (clist-p arg0)) (eq (snode-kind arg0) :var))
-                          (find-binder tr (sel::node-s arg0)))))
-               (when (and bd (eq (binder-shape bd) :row))
-                 (return-from translate-call
-                   (%fragment (list "COUNT(*)") :num (translator-dialect tr))))))))
-        ((equal name "SUM")
-         (let ((args (sel::node-items n)))
-           (when (>= (length args) 2)
-             (let* ((arg0 (first args))
-                    (bd (when (and (not (clist-p arg0)) (eq (snode-kind arg0) :var))
-                          (find-binder tr (sel::node-s arg0)))))
-               (when (and bd (eq (binder-shape bd) :row))
-                 (let* ((has-custom-binder (and (= (length args) 3) (is-binder-name (second args))))
-                        (body-node (if has-custom-binder (third args) (second args)))
-                        (inner (if has-custom-binder
-                                   (let ((frame (list (cons (sel::node-s (second args)) bd))))
-                                     (push frame (translator-frames tr))
-                                     (unwind-protect (walk-node tr body-node)
-                                       (pop (translator-frames tr))))
-                                   (walk-node tr body-node))))
-                   (return-from translate-call
-                     (%fragment (append (list "COALESCE(SUM(") (fragment-parts inner) (list "), 0)"))
-                                :num (translator-dialect tr)))))))))
-        ((member name '("AVG" "MIN" "MAX") :test #'equal)
-         (let ((args (sel::node-items n)))
-           (when (>= (length args) 2)
-             (let* ((arg0 (first args))
-                    (bd (when (and (not (clist-p arg0)) (eq (snode-kind arg0) :var))
-                          (find-binder tr (sel::node-s arg0)))))
-               (when (and bd (eq (binder-shape bd) :row))
-                 (let* ((has-custom-binder (and (= (length args) 3) (is-binder-name (second args))))
-                        (body-node (if has-custom-binder (third args) (second args)))
-                        (inner (if has-custom-binder
-                                   (let ((frame (list (cons (sel::node-s (second args)) bd))))
-                                     (push frame (translator-frames tr))
-                                     (unwind-protect (walk-node tr body-node)
-                                       (pop (translator-frames tr))))
-                                   (walk-node tr body-node))))
-                   (return-from translate-call
-                     (%fragment (append (list (format nil "~a(" name)) (fragment-parts inner) (list ")"))
-                                (fragment-kind inner) (translator-dialect tr)))))))))))
+      (let* ((args (sel::node-items n))
+             (arg0 (first args))
+             (group (when (and arg0 (not (clist-p arg0)) (eq (snode-kind arg0) :var))
+                      (find-binder tr (sel::node-s arg0)))))
+        (when (and group (eq (binder-shape group) :group))
+          (when (and (equal name "COUNT") (= (length args) 1))
+            (return-from translate-call
+              (%fragment (list "COUNT(*)") :num (translator-dialect tr))))
+          (when (and (equal name "SUM") (>= (length args) 2))
+            (let* ((has-custom-binder (and (= (length args) 3) (is-binder-name (second args))))
+                   (body-node (if has-custom-binder (third args) (second args)))
+                   (src (%source :relation nil (binder-payload group) '() nil))
+                   (inner (with-row tr src (if has-custom-binder (sel::node-s (second args)) "_")
+                            (lambda () (walk-node tr body-node)))))
+              (return-from translate-call
+                (%fragment (append (list "COALESCE(SUM(") (fragment-parts inner) (list "), 0)"))
+                           :num (translator-dialect tr))))))))
     ;; Each of these short-circuits before the next, and none reaches the funcs
     ;; table: the generator rejects a dialect document that lists one.
     (when (member name +aggregates+ :test #'equal)
@@ -1283,6 +1294,18 @@ element is not enough. See docs/SQL-TRANSLATION.md 7.5"
          (case (binder-shape bound)
            (:node (return-from classify (classify tr (binder-payload bound))))
            (:none (refuse "E_SQL_SHAPE" (binder-reason bound) (snode-pos src)))
+           ;; A bucket's members are iterated by COUNT and SUM alone
+           ;; (translate-call), as one aggregate over the grouped rows; ALL,
+           ;; ANY and the rest would each need a correlated subquery this
+           ;; layer does not build.
+           (:group (refuse "E_SQL_SHAPE"
+                           (format nil "~a is the list of a bucket's members, over which ~
+only COUNT and SUM are translated" (sel::node-s src))
+                           (snode-pos src)))
+           (:projected (refuse "E_SQL_SHAPE"
+                               (format nil "~a is the record the projection built, a map ~
+with one child per field; SQL has no way to iterate or count that" (sel::node-s src))
+                               (snode-pos src)))
            (:row (when (> (length (getf (binder-payload bound) :fields)) 1)
                    (refuse "E_SQL_SHAPE"
                            (format nil "~a is a row of a multi-field relation, ~
@@ -1401,14 +1424,18 @@ against it; the correlation names the alias, so it cannot be renamed here" alias
           (plan (translator-statement-plan tr))
           (frame '()))
       (setf frame (frame-set frame binder-name row))
-      (setf frame (frame-set frame "_" row))
-      (setf frame (frame-set frame "_1" row))
-      (when (and plan (relational-plan-source-alias plan))
-        (setf frame (frame-set frame (relational-plan-source-alias plan) row)))
-      (when (and plan (relational-plan-source-subquery plan)
-                 (relational-plan-source-alias (relational-plan-source-subquery plan)))
-        (setf frame (frame-set frame (relational-plan-source-alias (relational-plan-source-subquery plan)) row)))
-      (when plan
+      ;; A joined statement has one SQL row but several SEL row binders; a
+      ;; statement without joins binds the name given and nothing else, as
+      ;; the evaluator does -- `MAP(g, _["x"])` leaves `_` undefined there
+      ;; (review 2026-09-15 finding J; this host bound `_` unconditionally).
+      (when (and plan (relational-plan-joins plan))
+        (setf frame (frame-set frame "_" row))
+        (setf frame (frame-set frame "_1" row))
+        (when (relational-plan-source-alias plan)
+          (setf frame (frame-set frame (relational-plan-source-alias plan) row)))
+        (when (and (relational-plan-source-subquery plan)
+                   (relational-plan-source-alias (relational-plan-source-subquery plan)))
+          (setf frame (frame-set frame (relational-plan-source-alias (relational-plan-source-subquery plan)) row)))
         (let ((idx 2))
           (dolist (j (relational-plan-joins plan))
             (let ((j-row (binder-row (join-plan-source-relation j))))
@@ -1421,14 +1448,47 @@ against it; the correlation names the alias, so it cannot be renamed here" alias
               (when (join-plan-left-binder j)
                 (setf frame (frame-set frame (join-plan-left-binder j) row)))))))
       (setf frame (frame-set frame "_K"
-                             (if (and plan (relational-plan-group-by plan) (= (length (relational-plan-group-by plan)) 1))
-                                 (binder-key (first (relational-plan-group-by plan)) row)
-                                 (binder-none "a row of a relation has no key: SQL rows ~
+                             (binder-none "a row of a relation has no key: SQL rows ~
 are unordered and unkeyed unless the schema says otherwise, and guessing which ~
-column is the key is not something this layer does"))))
+column is the key is not something this layer does")))
       (dolist (f (source-filters src)) (setf frame (frame-set frame (car f) row)))
       (push frame (translator-frames tr))
       (unwind-protect (funcall render) (pop (translator-frames tr))))))
+
+(defun with-group (tr src binder-name render)
+  "The frame for a bucket's own body: the projection, and a FILTER or a sort
+over the groups before it. The binder is the group -- the list of its members,
+which only COUNT and SUM read (translate-call) -- and _K is the group key, when
+there is one key to be it. This is the one place _K is a group key: before the
+bucket it is a source row's position, after the projection the projected row's,
+and SQL has neither (review 2026-09-15 finding K)."
+  (let* ((plan (translator-statement-plan tr))
+         (group-by (and plan (relational-plan-group-by plan)))
+         (frame '()))
+    (setf frame (frame-set frame binder-name (binder-group (source-relation src))))
+    (setf frame (frame-set frame "_K"
+                           (if (and group-by (= (length group-by) 1))
+                               (binder-key (first group-by) (binder-row (source-relation src)))
+                               (binder-none "the key of a bucket over several keys is a ~
+list, which SQL has no value for; name one key"))))
+    (push frame (translator-frames tr))
+    (unwind-protect (funcall render) (pop (translator-frames tr)))))
+
+(defun with-projected (tr src binder-name render)
+  "The frame for a step after a bucket's projection: a FILTER (HAVING) or a
+sort over the projected rows. The binder is the record the projection built,
+whose fields are the projection's aliases; _K is its position in the
+renumbered list, which SQL does not have."
+  (let* ((plan (translator-statement-plan tr))
+         (frame '()))
+    (setf frame (frame-set frame binder-name
+                           (binder-projected (source-relation src)
+                                             (and plan (relational-plan-projections plan)))))
+    (setf frame (frame-set frame "_K"
+                           (binder-none "after a projection the rows are a list renumbered ~
+from \"1\", and SQL has no row position to compare against")))
+    (push frame (translator-frames tr))
+    (unwind-protect (funcall render) (pop (translator-frames tr)))))
 
 (defun agg-body (tr name body src n)
   (let ((q (walk-node tr body)))
@@ -1910,17 +1970,7 @@ can say about a bucket on its own."
                                       v-node))
                      (node-binder (if is-key
                                       (second (first (relational-plan-group-by plan)))
-                                      binder))
-                     (is-same-field (and (not (clist-p actual-node))
-                                         (eq (snode-kind actual-node) :index)
-                                         (let ((l (sel::node-l actual-node))
-                                               (r (sel::node-r actual-node)))
-                                           (and l (not (clist-p l)) (eq (snode-kind l) :var)
-                                                (or (equal (sel::node-s l) "_") (equal (sel::node-s l) binder))
-                                                r (not (clist-p r)) (eq (snode-kind r) :text)
-                                                (string-equal (sel::node-s r) alias))))))
-                (unless is-same-field
-                  (push (cons alias actual-node) (relational-plan-aggregate-aliases plan)))
+                                      binder)))
                 ;; A fourth element names the group-by entry the projection IS:
                 ;; it is then rendered as the group key itself (group-key).
                 (push (list alias node-binder actual-node
@@ -1964,7 +2014,11 @@ can say about a bucket on its own."
                   (args (sel::node-items step))
                   (pos (snode-pos step)))
               ;; A FILTER after an open bucket is a HAVING and a MAP is the
-              ;; bucket's projection; anything else spends the members.
+              ;; bucket's projection; anything else spends the members. Either
+              ;; way a step written directly after the bare bucket runs over
+              ;; its groups, and is rendered in the bucket's own frame
+              ;; (with-group).
+              (let ((over-groups (eq (relational-plan-bucket plan) :open)))
               (when (and (eq (relational-plan-bucket plan) :open)
                          (not (member sname '("FILTER" "MAP") :test #'equal)))
                 (setf (relational-plan-bucket plan) :sealed))
@@ -2003,7 +2057,7 @@ can say about a bucket on its own."
                       (refuse "E_ARITY" "FILTER takes 2 or 3 arguments" pos)))
                    (if (relational-plan-group-by plan)
                        (setf (relational-plan-having plan)
-                             (append (relational-plan-having plan) (list (list binder pred pos))))
+                             (append (relational-plan-having plan) (list (list binder pred pos over-groups))))
                        (setf (relational-plan-filters plan)
                              (append (relational-plan-filters plan) (list (list binder pred pos)))))))
 
@@ -2235,7 +2289,12 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                            (and (relational-plan-projections plan)
                                 (not (relational-plan-group-by plan))))
                    (setf plan (wrap-plan-as-derived-table plan)))
-                 (analyze-sort-step tr step plan)))))
+                 (let ((before (length (relational-plan-order-by plan))))
+                   (analyze-sort-step tr step plan)
+                   (setf (relational-plan-order-by plan)
+                         (append (subseq (relational-plan-order-by plan) 0 before)
+                                 (mapcar (lambda (ord) (append (subseq ord 0 4) (list over-groups)))
+                                         (nthcdr before (relational-plan-order-by plan)))))))))))
           plan)))))
 
 (defun compile-statement (tr plan)
@@ -2260,9 +2319,11 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                    (let* ((alias (first proj))
                           (binder (second proj))
                           (node (third proj))
-                          (p-frag (if (fourth proj)
-                                      (group-key tr src (fourth proj))
-                                      (with-row tr src binder (lambda () (walk-node tr node))))))
+                          (p-frag (cond
+                                    ((fourth proj) (group-key tr src (fourth proj)))
+                                    ((relational-plan-group-by plan)
+                                     (with-group tr src binder (lambda () (walk-node tr node))))
+                                    (t (with-row tr src binder (lambda () (walk-node tr node)))))))
                      (dolist (p (fragment-parts p-frag))
                        (push p parts))
                      (when alias
@@ -2381,9 +2442,10 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                      (let* ((binder (first hav))
                             (node (second hav))
                             (pos (third hav))
-                            (h-frag (with-row tr src binder
-                                      (lambda ()
-                                        (require-bool (walk-node tr node) pos "FILTER")))))
+                            (render (lambda () (require-bool (walk-node tr node) pos "FILTER")))
+                            (h-frag (if (fourth hav)
+                                        (with-group tr src binder render)
+                                        (with-projected tr src binder render))))
                        (push (fragment-parts h-frag) h-cond-parts)))
                 (setf (translator-in-having tr) nil))
               (setf h-cond-parts (nreverse h-cond-parts))
@@ -2404,7 +2466,12 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                             ;; A TEXT sort key is collated like a group key: SEL
                             ;; sorts text by its bytes, and a server's default
                             ;; collation would not.
-                            (o-frag (collated-key tr (with-row tr src binder (lambda () (walk-node tr node))))))
+                            (render (lambda () (walk-node tr node)))
+                            (o-frag (collated-key tr (cond
+                                                       ((fifth ord) (with-group tr src binder render))
+                                                       ((relational-plan-group-by plan)
+                                                        (with-projected tr src binder render))
+                                                       (t (with-row tr src binder render))))))
                        (dolist (p (fragment-parts o-frag))
                          (push p parts))
                        (push (format nil " ~a" dir) parts))))

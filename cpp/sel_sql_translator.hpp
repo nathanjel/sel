@@ -26,6 +26,9 @@
 
 namespace sel::sql {
 
+struct RelationalProjection;
+struct RelationalGroup;
+
 // What an aggregate binder names for the duration of one element. Three shapes
 // matching the three iteration shapes of docs/SQL-TRANSLATION.md §7, plus one
 // that exists only to carry a refusal -- so that `_K` inside a relation body
@@ -40,6 +43,10 @@ class Binder {
     None,     // in scope, but using it is an error with this reason
     Key,      // the key of the group being rendered: a group-by entry and the
               // row binder, rendered as the GROUP BY expression itself
+    Group,    // a bucket's members, inside the bucket's own body: a list of
+              // rows that only COUNT and SUM can read
+    Projected,  // the record a bucket's projection built, after it: its
+              // fields are the projection's aliases and nothing else
   };
 
   static Binder node(SNodePtr n);
@@ -48,6 +55,9 @@ class Binder {
   static Binder none(std::string reason);
   static Binder key(std::string group_binder, SNodePtr group_node,
                     std::shared_ptr<const RelationSpec> row);
+  static Binder group(std::shared_ptr<const RelationSpec> r);
+  static Binder projected(std::shared_ptr<const RelationSpec> r,
+                          std::shared_ptr<const std::vector<RelationalProjection>> projections);
 
   Shape shape() const { return shape_; }
   const SNodePtr& as_node() const { return node_; }
@@ -56,6 +66,7 @@ class Binder {
   const RelationSpec& as_row() const { return *relation_; }
   const std::shared_ptr<const RelationSpec>& as_row_ptr() const { return relation_; }
   const std::string& reason() const { return reason_; }
+  const std::vector<RelationalProjection>& projections() const { return *projections_; }
 
  private:
   Binder() = default;
@@ -63,7 +74,17 @@ class Binder {
   SNodePtr node_;
   ColumnSpec column_;
   std::shared_ptr<const RelationSpec> relation_;
+  std::shared_ptr<const std::vector<RelationalProjection>> projections_;
   std::string reason_;
+};
+
+struct RelationalProjection {
+  std::optional<std::string> alias;
+  std::string binder;
+  SNodePtr node;
+  // Set when the projection IS a group key (a bare bucket's keys, `_K`): it
+  // is then rendered as the GROUP BY expression itself.
+  std::shared_ptr<const RelationalGroup> group_key;
 };
 
 // The 1-based list position a key names, or nothing when it names none.
@@ -81,21 +102,14 @@ class Binder {
 // in C++, where int64 would do, because it is part of the cross-host contract.
 std::optional<int> list_key(std::string_view k);
 
-struct RelationalGroup;
-
-struct RelationalProjection {
-  std::optional<std::string> alias;
-  std::string binder;
-  SNodePtr node;
-  // Set when the projection IS a group key (a bare bucket's keys, `_K`): it
-  // is then rendered as the GROUP BY expression itself.
-  std::shared_ptr<const RelationalGroup> group_key;
-};
-
 struct RelationalFilter {
   std::string binder;
   SNodePtr node;
   Pos pos;
+  // Whether the step was written directly after a bare BUCKET, over its
+  // groups (rendered in the bucket's own frame, with_group), rather than
+  // after its projection (with_projected).
+  bool over_groups = false;
 };
 
 struct RelationalOrder {
@@ -103,6 +117,7 @@ struct RelationalOrder {
   SNodePtr node;
   std::string dir;
   Pos pos;
+  bool over_groups = false;
 };
 
 struct RelationalGroup {
@@ -152,7 +167,6 @@ struct RelationalPlan {
   // boolean, binary, list or record key, so the translator must too.
   bool bare_key = false;
   std::vector<RelationalFilter> having;
-  std::unordered_map<std::string, SNodePtr> aggregate_aliases;
   std::vector<RelationalOrder> order_by;
   std::optional<int64_t> limit;
   std::optional<int64_t> offset;
@@ -265,6 +279,10 @@ class Translator {
                         const Binder& elem, const std::string& key, const SNode& n,
                         const std::function<Fragment()>& render);
   Fragment group_key(const Source& src, const RelationalGroup& gb);
+  Fragment with_group(const Source& src, const std::string& binder_name,
+                      const std::function<Fragment()>& render);
+  Fragment with_projected(const Source& src, const std::string& binder_name,
+                          const std::function<Fragment()>& render);
   Fragment with_row(const Source& src, const std::string& binder_name,
                     const std::function<Fragment()>& render);
   Fragment relation_aggregate(const std::string& name, const RelationSpec& rel,

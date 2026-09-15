@@ -22,6 +22,10 @@ final class Binder
     public const NONE = 'none';
     /** The key of the group being rendered: a group-by entry and the row binder, rendered as the GROUP BY expression itself. */
     public const KEY = 'key';
+    /** A bucket's members, inside the bucket's own body: a list of rows that only COUNT and SUM can read. */
+    public const GROUP = 'group';
+    /** The record a bucket's projection built, after it: its fields are the projection's aliases and nothing else. */
+    public const PROJECTED = 'projected';
 
     public string $shape;
     /** @var array<string,mixed>|null */
@@ -63,5 +67,17 @@ final class Binder
     public static function key(array $group, Binder $row): self
     {
         return new self(self::KEY, ['group' => $group, 'row' => $row]);
+    }
+
+    /** @param array<string,mixed> $relation */
+    public static function group(array $relation): self
+    {
+        return new self(self::GROUP, $relation);
+    }
+
+    /** @param array<string,mixed> $relation @param list<array<string,mixed>> $projections */
+    public static function projected(array $relation, array $projections): self
+    {
+        return new self(self::PROJECTED, ['relation' => $relation, 'projections' => $projections]);
     }
 }

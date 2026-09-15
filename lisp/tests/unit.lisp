@@ -670,8 +670,7 @@ b\"c\\d")))
                     .> BUCKET(_['categories']['name'],
                               RECORD('cat_name', _K,
                                      'lines', COUNT(_),
-                                     'total_net', SUM(_, _['line_net']),
-                                     'max_net', MAX(_, _['line_net'])))
+                                     'total_net', SUM(_, _['line_net'])))
                     .> FILTER(_['total_net'] >= 500)
                     .> SORT_BY(_['total_net'], 'DESC')
                     .> TAKE(10)")

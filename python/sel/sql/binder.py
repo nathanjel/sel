@@ -16,6 +16,10 @@ ROW = 'row'         # a row of a relation: fields resolve to that relation's col
 NONE = 'none'       # in scope, but using it is an error with this reason
 KEY = 'key'         # the key of the group being rendered: a group-by entry,
                     # rendered as the GROUP BY expression itself
+GROUP = 'group'     # a bucket's members, inside the bucket's own body: a list
+                    # of rows that only COUNT and SUM can read
+PROJECTED = 'projected'  # the record a bucket's projection built, after it:
+                    # its fields are the projection's aliases and nothing else
 
 
 class Binder:
@@ -28,6 +32,8 @@ class Binder:
     ROW = ROW
     NONE = NONE
     KEY = KEY
+    GROUP = GROUP
+    PROJECTED = PROJECTED
 
     def __init__(self, shape: str, payload: Any, reason: str | None = None) -> None:
         self.shape = shape
@@ -53,3 +59,11 @@ class Binder:
     @staticmethod
     def key(group: Any) -> 'Binder':
         return Binder(KEY, group)
+
+    @staticmethod
+    def group(relation: dict[str, Any]) -> 'Binder':
+        return Binder(GROUP, relation)
+
+    @staticmethod
+    def projected(relation: dict[str, Any], projections: list[dict[str, Any]]) -> 'Binder':
+        return Binder(PROJECTED, (relation, projections))

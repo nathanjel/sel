@@ -102,6 +102,20 @@ Binder Binder::key(std::string group_binder, SNodePtr group_node,
   b.relation_ = std::move(row);
   return b;
 }
+Binder Binder::group(std::shared_ptr<const RelationSpec> r) {
+  Binder b;
+  b.shape_ = Shape::Group;
+  b.relation_ = std::move(r);
+  return b;
+}
+Binder Binder::projected(std::shared_ptr<const RelationSpec> r,
+                         std::shared_ptr<const std::vector<RelationalProjection>> projections) {
+  Binder b;
+  b.shape_ = Shape::Projected;
+  b.relation_ = std::move(r);
+  b.projections_ = std::move(projections);
+  return b;
+}
 
 std::optional<int> list_key(std::string_view k) {
   if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;
@@ -360,6 +374,13 @@ Fragment Translator::index(const SNode& n) {
   // multi-table projection.
   if (obj.t() == SNode::T::Index && obj.l() && obj.l()->t() == SNode::T::Var &&
       obj.r() && obj.r()->t() == SNode::T::Text && statement_plan_) {
+    // ... when the inner name is a row. Over a bucket's members or a
+    // projected row the inner index is itself the thing to refuse.
+    if (const Binder* inner = binder(obj.l()->s())) {
+      if (inner->shape() == Binder::Shape::Group || inner->shape() == Binder::Shape::Projected) {
+        node(n.l());
+      }
+    }
     const std::string qualifier = obj.r()->s();
     const auto same_name = [&](std::string_view candidate) {
       return ascii_upper(qualifier) == ascii_upper(candidate);
@@ -517,6 +538,16 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
     }
     case Binder::Shape::Column:
       return column_ref(b.as_column());
+    case Binder::Shape::Group:
+      refuse("E_SQL_SHAPE",
+             n.s() + " is the list of a bucket's members, which is not a value SQL "
+                     "has; count it (COUNT), sum over it (SUM), or name the group key (_K)",
+             n.pos());
+    case Binder::Shape::Projected:
+      refuse("E_SQL_SHAPE",
+             n.s() + " is the record the projection built, which is a map in SEL and "
+                     "not one value; name the field you mean",
+             n.pos());
     case Binder::Shape::Row: {
       const RelationSpec& rel = b.as_row();
       // The multi-field check comes FIRST, so a two-field relation that
@@ -550,6 +581,48 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
 
 Fragment Translator::index_binder(const Binder& b, const std::string& name,
                                   const std::string& key, const SNode& n) {
+  if (b.shape() == Binder::Shape::Group) {
+    // The group is the list of its members: indexing it by a field name is
+    // E_NO_KEY in SEL, and by a position asks for a member SQL cannot single
+    // out. Either way the field is read inside an aggregate over the
+    // members, SUM(g, _["amount"]), and nowhere else.
+    refuse("E_SQL_SHAPE",
+           name + "[\"" + key + "\"] indexes the list of a bucket's members, which "
+                  "SEL refuses (E_NO_KEY); read a member's field inside an "
+                  "aggregate over the group, SUM(" + name + ", _[\"" + key + "\"])",
+           n.pos());
+  }
+  if (b.shape() == Binder::Shape::Projected) {
+    // After the projection a row is the record it built, and has the
+    // projection's fields under their aliases and nothing else -- not the
+    // source's columns, which SEL no longer has (E_NO_KEY).
+    const RelationalProjection* proj = nullptr;
+    for (const auto& candidate : b.projections()) {
+      if (candidate.alias && *candidate.alias == key) { proj = &candidate; break; }
+    }
+    if (!proj) {
+      for (const auto& candidate : b.projections()) {
+        if (candidate.alias && ascii_upper(*candidate.alias) == ascii_upper(key)) { proj = &candidate; break; }
+      }
+    }
+    if (!proj) {
+      std::vector<std::string> known;
+      for (const auto& candidate : b.projections()) {
+        if (candidate.alias) known.push_back(*candidate.alias);
+      }
+      std::sort(known.begin(), known.end());
+      std::string tail;
+      for (std::size_t i = 0; i < known.size(); ++i) tail += (i ? ", " : "; it has ") + known[i];
+      refuse("E_SQL_SHAPE", name + "[\"" + key + "\"] is not a field of the projection" + tail, n.pos());
+    }
+    Source src;
+    src.shape = Source::Shape::Relation;
+    src.relation = b.as_row_ptr();
+    if (proj->group_key) {
+      return from_binder(Binder::key(proj->group_key->binder, proj->group_key->node, b.as_row_ptr()), n);
+    }
+    return with_group(src, proj->binder, [&]() { return node(proj->node); });
+  }
   if (b.shape() == Binder::Shape::Row) {
     // The positional check comes before the field lookup, so a relation field
     // literally named "1" is unreachable through I[1] and I["1"] alike.
@@ -562,12 +635,6 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
     }
     const RelationSpec& rel = b.as_row();
     std::string field = ascii_upper(key);
-    if (!in_where_ && statement_plan_ && statement_plan_->group_by) {
-      auto it = statement_plan_->aggregate_aliases.find(key);
-      if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
-      it = statement_plan_->aggregate_aliases.find(field);
-      if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
-    }
     // A derived table's fields carry the alias the projection gave them
     // (ensure_derived), so a read through any spelling of the name renders
     // that column, as in the other hosts -- not the spelling itself.
@@ -596,12 +663,6 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
         }
       }
       if (match && owner) return relation_column(*owner, *match);
-    }
-    if (statement_plan_) {
-      auto it = statement_plan_->aggregate_aliases.find(key);
-      if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
-      it = statement_plan_->aggregate_aliases.find(field);
-      if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
     }
     std::vector<std::string> known;
     for (const auto& [k, spec] : rel.fields) {
@@ -1633,78 +1694,35 @@ Fragment Translator::call(const SNodePtr& n) {
   // Captured before the rewrite, which preserves the name but rebinds the node.
   const std::string name = n->s();
 
-  if (statement_plan_) {
-    if (name == "COUNT") {
-      if (n->kids().size() == 1) {
-        const auto& arg0 = n->kids()[0];
-        if (arg0->t() == SNode::T::Var) {
-          const Binder* bd = binder(arg0->s());
-          if (bd && bd->shape() == Binder::Shape::Row) {
-            std::vector<Fragment::Part> p;
-            p.push_back({false, "COUNT(*)"});
-            return Fragment(p, SqlKind::Num, dialect_);
-          }
-        }
+  // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
+  // SUM(g, [x,] body) is SUM over the grouped rows -- fire on the Group
+  // binder alone: over a relation row, COUNT(_) is the row's number of
+  // fields in SEL (review 2026-09-15 finding X), and SEL has no per-group
+  // MIN or MAX (finding J). The body binds the member row, as the
+  // evaluator's walk does: `_` for the two-argument form, the name given
+  // for the three-argument one.
+  if (statement_plan_ && !n->kids().empty() && n->kids()[0]->t() == SNode::T::Var) {
+    const Binder* group = binder(n->kids()[0]->s());
+    if (group && group->shape() == Binder::Shape::Group) {
+      if (name == "COUNT" && n->kids().size() == 1) {
+        std::vector<Fragment::Part> p;
+        p.push_back({false, "COUNT(*)"});
+        return Fragment(p, SqlKind::Num, dialect_);
       }
-    } else if (name == "SUM") {
-      if (n->kids().size() >= 2) {
-        const auto& arg0 = n->kids()[0];
-        if (arg0->t() == SNode::T::Var) {
-          const Binder* bd = binder(arg0->s());
-          if (bd && bd->shape() == Binder::Shape::Row) {
-            bool has_custom_binder = n->kids().size() == 3 && is_binder_name(*n->kids()[1]);
-            const auto& body_node = has_custom_binder ? n->kids()[2] : n->kids()[1];
-            Fragment inner;
-            if (has_custom_binder) {
-              std::vector<std::pair<std::string, Binder>> frame;
-              frame_set(frame, n->kids()[1]->s(), *bd);
-              frames_.push_back(std::move(frame));
-              struct Pop {
-                std::vector<Frame>* f;
-                ~Pop() { f->pop_back(); }
-              } pop{&frames_};
-              inner = node(body_node);
-            } else {
-              inner = node(body_node);
-            }
-            std::string sql = "COALESCE(SUM(";
-            for (const auto& pt : inner.parts()) sql += pt.sql;
-            sql += "), 0)";
-            std::vector<Fragment::Part> p;
-            p.push_back({false, std::move(sql)});
-            return Fragment(p, SqlKind::Num, dialect_);
-          }
-        }
-      }
-    } else if (name == "AVG" || name == "MIN" || name == "MAX") {
-      if (n->kids().size() >= 2) {
-        const auto& arg0 = n->kids()[0];
-        if (arg0->t() == SNode::T::Var) {
-          const Binder* bd = binder(arg0->s());
-          if (bd && bd->shape() == Binder::Shape::Row) {
-            bool has_custom_binder = n->kids().size() == 3 && is_binder_name(*n->kids()[1]);
-            const auto& body_node = has_custom_binder ? n->kids()[2] : n->kids()[1];
-            Fragment inner;
-            if (has_custom_binder) {
-              std::vector<std::pair<std::string, Binder>> frame;
-              frame_set(frame, n->kids()[1]->s(), *bd);
-              frames_.push_back(std::move(frame));
-              struct Pop {
-                std::vector<Frame>* f;
-                ~Pop() { f->pop_back(); }
-              } pop{&frames_};
-              inner = node(body_node);
-            } else {
-              inner = node(body_node);
-            }
-            std::string sql = name + "(";
-            for (const auto& pt : inner.parts()) sql += pt.sql;
-            sql += ")";
-            std::vector<Fragment::Part> p;
-            p.push_back({false, std::move(sql)});
-            return Fragment(p, inner.kind(), dialect_);
-          }
-        }
+      if (name == "SUM" && n->kids().size() >= 2) {
+        const bool has_custom_binder = n->kids().size() == 3 && is_binder_name(*n->kids()[1]);
+        const auto& body_node = has_custom_binder ? n->kids()[2] : n->kids()[1];
+        Source src;
+        src.shape = Source::Shape::Relation;
+        src.relation = group->as_row_ptr();
+        const Fragment inner = with_row(src, has_custom_binder ? n->kids()[1]->s() : "_",
+                                        [&]() { return node(body_node); });
+        std::string sql = "COALESCE(SUM(";
+        for (const auto& pt : inner.parts()) sql += pt.sql;
+        sql += "), 0)";
+        std::vector<Fragment::Part> p;
+        p.push_back({false, std::move(sql)});
+        return Fragment(p, SqlKind::Num, dialect_);
       }
     }
   }
@@ -1874,6 +1892,19 @@ Translator::Source Translator::classify(const SNodePtr& src) {
           return classify(bound->as_node());
         case Binder::Shape::None:
           refuse("E_SQL_SHAPE", bound->reason(), src->pos());
+        // A bucket's members are iterated by COUNT and SUM alone (call()), as
+        // one aggregate over the grouped rows; ALL, ANY and the rest would
+        // each need a correlated subquery this layer does not build.
+        case Binder::Shape::Group:
+          refuse("E_SQL_SHAPE",
+                 src->s() + " is the list of a bucket's members, over which only "
+                            "COUNT and SUM are translated",
+                 src->pos());
+        case Binder::Shape::Projected:
+          refuse("E_SQL_SHAPE",
+                 src->s() + " is the record the projection built, a map with one "
+                            "child per field; SQL has no way to iterate or count that",
+                 src->pos());
         case Binder::Shape::Row:
           if (bound->as_row().fields.size() > 1) {
             refuse("E_SQL_SHAPE",
@@ -1975,16 +2006,11 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
   const Binder row = Binder::row(src.relation);
   std::vector<std::pair<std::string, Binder>> frame;
   frame_set(frame, binder_name, row);
-  if (statement_plan_ && statement_plan_->group_by && statement_plan_->group_by->size() == 1) {
-    const RelationalGroup& gb = (*statement_plan_->group_by)[0];
-    frame_set(frame, "_K", Binder::key(gb.binder, gb.node, src.relation));
-  } else {
-    frame_set(frame, "_K",
-              Binder::none("a row of a relation has no key: SQL rows are "
-                           "unordered and unkeyed unless the schema says "
-                           "otherwise, and guessing which column is the key is "
-                           "not something this layer does"));
-  }
+  frame_set(frame, "_K",
+            Binder::none("a row of a relation has no key: SQL rows are "
+                         "unordered and unkeyed unless the schema says "
+                         "otherwise, and guessing which column is the key is "
+                         "not something this layer does"));
   for (const Filter& f : src.filters) frame_set(frame, f.binder, row);
 
   // A joined statement has one SQL row but several SEL row binders.  Keep all
@@ -2008,6 +2034,54 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
     }
   }
 
+  frames_.push_back(std::move(frame));
+  struct Pop {
+    std::vector<Frame>* f;
+    ~Pop() { f->pop_back(); }
+  } pop{&frames_};
+  return render();
+}
+
+// The frame for a bucket's own body: the projection, and a FILTER or a sort
+// over the groups before it. The binder is the group -- the list of its
+// members, which only COUNT and SUM read (call()) -- and `_K` is the group
+// key, when there is one key to be it. This is the one place `_K` is a group
+// key: before the bucket it is a source row's position, after the projection
+// the projected row's, and SQL has neither (review 2026-09-15 finding K).
+Fragment Translator::with_group(const Source& src, const std::string& binder_name,
+                                const std::function<Fragment()>& render) {
+  std::vector<std::pair<std::string, Binder>> frame;
+  frame_set(frame, binder_name, Binder::group(src.relation));
+  if (statement_plan_ && statement_plan_->group_by && statement_plan_->group_by->size() == 1) {
+    const RelationalGroup& gb = (*statement_plan_->group_by)[0];
+    frame_set(frame, "_K", Binder::key(gb.binder, gb.node, src.relation));
+  } else {
+    frame_set(frame, "_K",
+              Binder::none("the key of a bucket over several keys is a list, which "
+                           "SQL has no value for; name one key"));
+  }
+  frames_.push_back(std::move(frame));
+  struct Pop {
+    std::vector<Frame>* f;
+    ~Pop() { f->pop_back(); }
+  } pop{&frames_};
+  return render();
+}
+
+// The frame for a step after a bucket's projection: a FILTER (HAVING) or a
+// sort over the projected rows. The binder is the record the projection
+// built, whose fields are the projection's aliases; `_K` is its position in
+// the renumbered list, which SQL does not have.
+Fragment Translator::with_projected(const Source& src, const std::string& binder_name,
+                                    const std::function<Fragment()>& render) {
+  auto projections = std::make_shared<const std::vector<RelationalProjection>>(
+      statement_plan_ && statement_plan_->projections ? *statement_plan_->projections
+                                                        : std::vector<RelationalProjection>{});
+  std::vector<std::pair<std::string, Binder>> frame;
+  frame_set(frame, binder_name, Binder::projected(src.relation, std::move(projections)));
+  frame_set(frame, "_K",
+            Binder::none("after a projection the rows are a list renumbered from \"1\", "
+                         "and SQL has no row position to compare against"));
   frames_.push_back(std::move(frame));
   struct Pop {
     std::vector<Frame>* f;
@@ -2383,14 +2457,6 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
           node_binder = (*plan.group_by)[0].binder;
           group_key = std::make_shared<const RelationalGroup>((*plan.group_by)[0]);
         }
-        bool is_same_field = actual_node->t() == SNode::T::Index
-          && actual_node->l() && actual_node->l()->t() == SNode::T::Var
-          && (actual_node->l()->s() == "_" || actual_node->l()->s() == binder)
-          && actual_node->r() && actual_node->r()->t() == SNode::T::Text
-          && ascii_upper(actual_node->r()->s()) == ascii_upper(alias);
-        if (!is_same_field) {
-          plan.aggregate_aliases[alias] = actual_node;
-        }
         projections.push_back({alias, node_binder, actual_node, group_key});
       }
       plan.projections = std::move(projections);
@@ -2449,6 +2515,9 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
 
     // A FILTER after an open bucket is a HAVING and a MAP is the bucket's
     // projection; anything else spends the members. See RelationalPlan.
+    // Either way a step written directly after the bare bucket runs over its
+    // groups, and is rendered in the bucket's own frame (with_group).
+    const bool over_groups = plan.bucket == RelationalPlan::Bucket::Open;
     if (plan.bucket == RelationalPlan::Bucket::Open && name != "FILTER" && name != "MAP") {
       plan.bucket = RelationalPlan::Bucket::Sealed;
     }
@@ -2488,7 +2557,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         refuse("E_ARITY", "FILTER takes 2 or 3 arguments", step->pos());
       }
       if (plan.group_by.has_value()) {
-        plan.having.push_back({binder, pred, step->pos()});
+        plan.having.push_back({binder, pred, step->pos(), over_groups});
       } else {
         plan.filters.push_back({binder, pred, step->pos()});
       }
@@ -2681,7 +2750,9 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
            plan.distinct || plan.limit.has_value() || plan.offset.has_value() ||
            !plan.order_by.empty());
       plan = ensure_derived(std::move(plan), need_derived);
+      const std::size_t before = plan.order_by.size();
       analyze_sort_step(step, plan);
+      for (std::size_t i = before; i < plan.order_by.size(); ++i) plan.order_by[i].over_groups = over_groups;
     } else if (name == "LINK" || name == "LINK_LEFT") {
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);
@@ -2895,7 +2966,9 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       first = false;
       Fragment p_frag = proj.group_key
           ? group_key(src, *proj.group_key)
-          : with_row(src, proj.binder, [&]() { return node(proj.node); });
+          : plan.group_by
+              ? with_group(src, proj.binder, [&]() { return node(proj.node); })
+              : with_row(src, proj.binder, [&]() { return node(proj.node); });
       for (const auto& p : p_frag.parts()) {
         parts.push_back(p);
       }
@@ -3030,9 +3103,9 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       ~ResetHaving() { *h = false; }
     } reset_having{&in_having_};
     for (const auto& hav : plan.having) {
-      Fragment h_frag = with_row(src, hav.binder, [&]() {
-        return require_bool(node(hav.node), hav.pos, "FILTER");
-      });
+      const auto render = [&]() { return require_bool(node(hav.node), hav.pos, "FILTER"); };
+      Fragment h_frag = hav.over_groups ? with_group(src, hav.binder, render)
+                                        : with_projected(src, hav.binder, render);
       h_cond_parts.push_back(h_frag.parts());
     }
     for (std::size_t i = 0; i < h_cond_parts.size(); ++i) {
@@ -3052,7 +3125,10 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       first = false;
       // A TEXT sort key is collated like a group key: SEL sorts text by its
       // bytes, and a server's default collation would not.
-      Fragment o_frag = collated_key(with_row(src, ord.binder, [&]() { return node(ord.node); }));
+      const auto render = [&]() { return node(ord.node); };
+      Fragment o_frag = collated_key(ord.over_groups ? with_group(src, ord.binder, render)
+                                     : plan.group_by ? with_projected(src, ord.binder, render)
+                                                     : with_row(src, ord.binder, render));
       for (const auto& p : o_frag.parts()) {
         parts.push_back(p);
       }

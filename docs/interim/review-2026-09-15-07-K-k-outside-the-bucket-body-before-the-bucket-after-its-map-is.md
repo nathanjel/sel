@@ -1,5 +1,7 @@
 # K. _K outside the bucket body (before the BUCKET, after its MAP) is rendered as the group key where SEL binds the list index
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "The bucket body's scope is the evaluator's".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** mixed · **hosts:** js, php, python, cpp, lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Introduced or promised by ed16df2.
