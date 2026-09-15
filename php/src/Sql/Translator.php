@@ -746,9 +746,16 @@ final class Translator
     private const YIELDS_LIST = ['BTL' => 0, 'INDEXES' => 0, 'RGROUPS' => 0,
                                  'SPLIT' => 0];
 
+    /**
+     * The four text functions above, the constructors, and every pipeline
+     * step -- the optimiser's vocabulary, so a new step is covered by being
+     * one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
+     */
     private static function yieldsList(string $name): bool
     {
-        return isset(self::YIELDS_LIST[$name]);
+        return isset(self::YIELDS_LIST[$name])
+            || in_array($name, ['LIST', 'RECORD', 'LAZY_RECORD'], true)
+            || in_array($name, self::PIPELINE_OPS, true);
     }
 
     /**
@@ -1435,6 +1442,12 @@ final class Translator
                 "{$src['name']} yields a list, and the scalar rule does not apply "
                 . 'to it; SQL has no way to count or index what it produces',
                 $src['pos']);
+        }
+        // And a call is one value only once it has rendered as one: COUNT
+        // folds a scalar to 0 without rendering it, and IF(TRUE, LIST(1, 2),
+        // 3) is a list SEL counts as 2 -- a refusal, not a 0.
+        if ($src['t'] === 'call') {
+            $this->node($src);
         }
         return self::staticSource(['1' => Binder::node($src)], true);
     }

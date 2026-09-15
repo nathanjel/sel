@@ -3574,6 +3574,102 @@
    :register nil
    :bindings (lambda () (list (cons "NOTES" (binding-relation "order_items" "nt" (list (cons "NOTE" (binding-column "note" "nt" :text))) "NOTE" nil)))))
   (list
+   :name "agg.count.structure-yielding-call-is-not-a-scalar"
+   :at "12-aggregates.sqlt:617"
+   :dialect "mariadb"
+   :source "COUNT(LIST(1, 2, 3))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "agg.count.record-is-not-a-scalar"
+   :at "12-aggregates.sqlt:632"
+   :dialect "mariadb"
+   :source "COUNT(RECORD(\"a\", 1, \"b\", 2))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "agg.count.bucket-is-not-a-scalar"
+   :at "12-aggregates.sqlt:640"
+   :dialect "mariadb"
+   :source "COUNT(BUCKET((1, 2), _))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "agg.count.take-is-not-a-scalar"
+   :at "12-aggregates.sqlt:648"
+   :dialect "mariadb"
+   :source "COUNT(TAKE((1, 2, 3), 2))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "agg.has.structure-yielding-call-is-not-a-scalar"
+   :at "12-aggregates.sqlt:656"
+   :dialect "sqlite"
+   :source "HAS(DISTINCT((1, 1, 2)), 1)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:5"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "agg.count.scalar-call-must-translate"
+   :at "12-aggregates.sqlt:664"
+   :dialect "mariadb"
+   :source "COUNT(IF(TRUE, LIST(1, 2), 3))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
    :name "review.count.scalar-has-no-children"
    :at "13-review.sqlt:5"
    :dialect "mariadb"
@@ -9445,6 +9541,22 @@
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
+   :name "stmt.bucket.refuse-count-of-a-bucket-in-the-projection"
+   :at "24-bucket.sqlt:864"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K, \"by_status\", COUNT(BUCKET(_, _[\"status\"]))))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:70"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "STATUS" (binding-column "status" nil :text))) nil nil)))))
+  (list
    :name "plan.pure-sql.direct"
    :at "25-hybrid-plans.sqlt:19"
    :dialect "mariadb"
@@ -10579,4 +10691,36 @@
    :plan "pure_memory"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
+  (list
+   :name "plan.bucket.count-of-a-bucket-in-the-projection-stays-in-memory"
+   :at "25-hybrid-plans.sqlt:1286"
+   :dialect "mariadb"
+   :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"by_status\", COUNT(BUCKET(_, _[\"status\"]))))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "STATUS" (binding-column "status" "o" :text))) nil nil)))))
+  (list
+   :name "plan.map.count-of-a-list-stays-in-memory"
+   :at "25-hybrid-plans.sqlt:1304"
+   :dialect "mariadb"
+   :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"n\", COUNT(LIST(1, 2, 3)))) .> TAKE(2)"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "STATUS" (binding-column "status" "o" :text))) nil nil)))))))

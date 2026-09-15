@@ -1282,3 +1282,40 @@ pure_memory
 --- tables
 orders
 ===
+
+### name: plan.bucket.count-of-a-bucket-in-the-projection-stays-in-memory
+--- note
+Finding X, second facet, from the planner's side: the projection is refused
+and the bare bucket before it is no split point, so the whole pipeline runs
+in memory and counts the groups' distinct statuses as SEL does. It used to
+be pure_sql with `0 AS by_status`.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "STATUS": {"table": "o", "column": "status", "type": "TEXT"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "by_status", COUNT(BUCKET(_, _["status"]))))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.map.count-of-a-list-stays-in-memory
+--- note
+And in an ordinary MAP: the statement is refused, and the fall-through's
+static classifier counts a LIST as SQL it knows (a literal list is one, in
+an IN), so the pair is not split off either -- the pipeline runs in memory,
+where COUNT(LIST(1, 2, 3)) is 3 as SEL says, and not the 0 the statement
+used to carry.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "STATUS": {"table": "o", "column": "status", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(LIST(1, 2, 3)))) .> TAKE(2)
+--- plan
+pure_memory
+--- tables
+orders
+===

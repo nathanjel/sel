@@ -1946,12 +1946,21 @@ Translator::Source Translator::classify(const SNodePtr& src) {
     }
     // A plain `column` binding falls through, exactly as in Python.
   }
-  if (src->t() == SNode::T::Call && contains(YIELDS_LIST, src->s())) {
+  // The four text functions that yield a list, the constructors, and every
+  // pipeline step -- the optimiser's vocabulary, so a new step is covered by
+  // being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
+  if (src->t() == SNode::T::Call &&
+      (contains(YIELDS_LIST, src->s()) || src->s() == "LIST" || src->s() == "RECORD" ||
+       src->s() == "LAZY_RECORD" || sel::is_pipeline_op(src->s()))) {
     refuse("E_SQL_SHAPE",
            src->s() + " yields a list, and the scalar rule does not apply to "
                       "it; SQL has no way to count or index what it produces",
            src->pos());
   }
+  // And a call is one value only once it has rendered as one: COUNT folds a
+  // scalar to 0 without rendering it, and IF(TRUE, LIST(1, 2), 3) is a list
+  // SEL counts as 2 -- a refusal, not a 0.
+  if (src->t() == SNode::T::Call) node(src);
   // The scalar rule for any other expression node.
   out.elements.emplace_back("1", Binder::node(src));
   out.scalar_rule = true;

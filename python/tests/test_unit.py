@@ -583,6 +583,12 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K)) .> FILTER(COUNT(_) > 0)', 'hybrid'),
         ('ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(_)))', 'pure_memory'),
         ('ORDERS .> MAP(g, RECORD("x", _["amount"]))', 'pure_memory'),
+        # Finding X, second facet: COUNT of a structure-yielding call is its
+        # number of children, never the literal 0 the scalar fallback wrote.
+        ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "by_name", COUNT(BUCKET(_, _["name"]))))', 'pure_memory'),
+        ('ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(LIST(1, 2, 3)))) .> TAKE(2)', 'pure_memory'),
+        ('ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(IF(TRUE, LIST(1, 2), 3)))) .> TAKE(2)', 'pure_memory'),
+        ('ORDERS .> FILTER(COUNT(_) > 2) .> MAP(RECORD("id", _["id"]))', 'pure_memory'),
     ]
 
     def outcome(fn):

@@ -861,3 +861,19 @@ ITEMS .> BUCKET(_["dept"]) .> FILTER(ALL(_, _["amount"] > 5)) .> MAP(RECORD("d",
 --- error
 E_SQL_SHAPE 1:42
 ===
+### name: stmt.bucket.refuse-count-of-a-bucket-in-the-projection
+--- note
+Finding X, second facet, inside a projection: `COUNT(BUCKET(_, key))` is
+the number of distinct statuses in the group, which SQL could spell as
+COUNT(DISTINCT status) but this layer does not; it rendered the literal 0.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "STATUS": {"kind": "column", "column": "status", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "by_status", COUNT(BUCKET(_, _["status"]))))
+--- error
+E_SQL_SHAPE 1:70
+===

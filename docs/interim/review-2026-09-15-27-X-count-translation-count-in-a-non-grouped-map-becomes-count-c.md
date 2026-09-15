@@ -1,6 +1,6 @@
 # X. COUNT translation: COUNT(_) in a non-grouped MAP becomes COUNT(*); COUNT over a BUCKET/LIST/RECORD/DISTINCT/SORT_BY/TAKE result folds to literal 0
 
-**Status:** PARTIALLY FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "The bucket body's scope is the evaluator's". First facet only (COUNT of a row is not COUNT(*)); the second facet, `COUNT(LIST(…))` and the other structure-yielding calls folding to 0 through source()'s scalar rule, stays open.
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "The bucket body's scope is the evaluator's" (first facet with J/K; second facet, the scalar fallback, in the same entry).
 
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** js, php, python, cpp, lisp
 

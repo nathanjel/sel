@@ -614,3 +614,62 @@ NOT("flag" IN NOTES)
 --- expect
 (NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))
 ===
+### name: agg.count.structure-yielding-call-is-not-a-scalar
+--- note
+Review 2026-09-15 finding X, second facet. LIST, RECORD and every pipeline
+step yield a structure, and COUNT of one is its number of children -- 3 here
+-- but source()'s scalar fallback knew only the four list-yielding text
+functions, so this folded to the literal 0 in every host (and every other
+position refuses the same calls). The list is the optimiser's pipeline
+vocabulary plus the constructors, so a new step is covered by being one.
+--- dialect
+mariadb
+--- source
+COUNT(LIST(1, 2, 3))
+--- error
+E_SQL_SHAPE 1:7
+===
+### name: agg.count.record-is-not-a-scalar
+--- dialect
+mariadb
+--- source
+COUNT(RECORD("a", 1, "b", 2))
+--- error
+E_SQL_SHAPE 1:7
+===
+### name: agg.count.bucket-is-not-a-scalar
+--- dialect
+mariadb
+--- source
+COUNT(BUCKET((1, 2), _))
+--- error
+E_SQL_SHAPE 1:7
+===
+### name: agg.count.take-is-not-a-scalar
+--- dialect
+mariadb
+--- source
+COUNT(TAKE((1, 2, 3), 2))
+--- error
+E_SQL_SHAPE 1:7
+===
+### name: agg.has.structure-yielding-call-is-not-a-scalar
+--- dialect
+sqlite
+--- source
+HAS(DISTINCT((1, 1, 2)), 1)
+--- error
+E_SQL_SHAPE 1:5
+===
+### name: agg.count.scalar-call-must-translate
+--- note
+A call that is one value is counted as one (0 children) only once it has
+been rendered: a branch SQL cannot spell is a refusal, not a 0. SEL answers
+2 here.
+--- dialect
+mariadb
+--- source
+COUNT(IF(TRUE, LIST(1, 2), 3))
+--- error
+E_SQL_UNSUPPORTED
+===

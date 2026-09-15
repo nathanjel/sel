@@ -55,12 +55,16 @@ const AGG_SKELETON = { ALL: 'all', ANY: 'any', SUM: 'sum', JOIN: 'join' };
 const AGG_FOLD = { ALL: 'AND', ANY: 'OR', SUM: '+' };
 
 // The functions whose result has children, so the scalar rule does not apply to
-// them. Measured rather than written: every non-lazy name in registry names was
-// called and the results with size() > 0 kept. Every one is already refused by
-// the dialect documents; the point of the list is that source() used to reach its
-// scalar fallback without ever consulting the map, so COUNT and HAS folded to 0
-// and FALSE instead.
-const YIELDS_LIST = ['BTL', 'INDEXES', 'RGROUPS', 'SPLIT'];
+// them: the four text functions that yield a list (measured: every non-lazy
+// name in the registry was called and the results with size() > 0 kept), the
+// constructors, and every pipeline step -- the optimiser's vocabulary, so a
+// new step is covered by being one. Every one is already refused by the
+// dialect documents; the point of the list is that source() used to reach
+// its scalar fallback without ever consulting the map, so COUNT and HAS
+// folded to 0 and FALSE instead (review 2026-09-15 finding X: COUNT(LIST(1,
+// 2, 3)) was 0).
+const YIELDS_LIST = ['BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD', 'LAZY_RECORD',
+  ...OPTIMIZER_PIPELINE_OPS];
 
 // The functions that read their argument as bytes, and the one that takes a
 // BOOL. Both lists were measured rather than written: every name in the registry
@@ -1161,6 +1165,10 @@ export class Translator {
         `${src.name} yields a list, and the scalar rule does not apply to it; SQL has `
         + 'no way to count or index what it produces', src.pos);
     }
+    // And a call is one value only once it has rendered as one: COUNT folds
+    // a scalar to 0 without rendering it, and IF(TRUE, LIST(1, 2), 3) is a
+    // list SEL counts as 2 -- a refusal, not a 0.
+    if (src.t === 'call') this.node(src);
     return staticSource(new Map([['1', Binder.node(src)]]), true);
   }
 

@@ -2312,10 +2312,15 @@ every host to:
   row has the projection's fields alone — `FILTER(_["total"] > 1)` is a
   `HAVING` over that alias, `_["dept"]` when the projection has no `dept`
   is refused (`E_NO_KEY` in SEL), and `COUNT(_)` there counts the record's
-  fields, not the group, so it is not `COUNT(*)` either (finding X). The
-  planner keeps each refused step in memory, where it raises what `run()`
-  raises; `python/tests/test_unit.py` executes every shape against SQLite
-  and compares.
+  fields, not the group, so it is not `COUNT(*)` either (finding X). Nor is
+  `COUNT` of a structure ever the literal 0 the scalar rule gives a scalar:
+  `LIST`, `RECORD` and every pipeline step yield children, and `COUNT(LIST(1,
+  2, 3))` or `COUNT(BUCKET(_, _["status"]))` in a projection is refused
+  (`E_SQL_SHAPE`) rather than rendered as `0`; a scalar call is counted as
+  one only once it has rendered as one, so `COUNT(IF(TRUE, LIST(1, 2), 3))`
+  is a refusal too. The planner keeps each refused step in memory, where it
+  raises what `run()` raises; `python/tests/test_unit.py` executes every
+  shape against SQLite and compares.
   And a prefix that ends in a bucket nobody has
   projected — or in anything that followed one — is never a split point: the
   planner backs up to the step before the bucket, or stays in memory. Before

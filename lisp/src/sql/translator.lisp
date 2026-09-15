@@ -1334,12 +1334,21 @@ which is a map with one child per field; SQL has no way to iterate or count that
            ;; A plain `column` binding falls through, exactly as in Python.
            (t nil)))))
     (t nil))
+  ;; The four text functions that yield a list, the constructors, and every
+  ;; pipeline step -- the optimiser's vocabulary, so a new step is covered by
+  ;; being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
   (when (and (eq (snode-kind src) :call)
-             (member (sel::node-s src) +yields-list+ :test #'equal))
+             (or (member (sel::node-s src) +yields-list+ :test #'equal)
+                 (member (sel::node-s src) '("LIST" "RECORD" "LAZY_RECORD") :test #'equal)
+                 (member (sel::node-s src) sel::+pipeline-ops+ :test #'equal)))
     (refuse "E_SQL_SHAPE"
             (format nil "~a yields a list, and the scalar rule does not apply to ~
 it; SQL has no way to count or index what it produces" (sel::node-s src))
             (snode-pos src)))
+  ;; And a call is one value only once it has rendered as one: COUNT folds a
+  ;; scalar to 0 without rendering it, and IF(TRUE, LIST(1, 2), 3) is a list
+  ;; SEL counts as 2 -- a refusal, not a 0.
+  (when (eq (snode-kind src) :call) (walk-node tr src))
   ;; The scalar rule for any other expression node.
   (%source :static (list (cons "1" (binder-node src))) nil '() t))
 
