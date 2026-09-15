@@ -63,7 +63,7 @@ const AGG_FOLD = { ALL: 'AND', ANY: 'OR', SUM: '+' };
 // its scalar fallback without ever consulting the map, so COUNT and HAS
 // folded to 0 and FALSE instead (review 2026-09-15 finding X: COUNT(LIST(1,
 // 2, 3)) was 0).
-const YIELDS_LIST = ['BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD', 'LAZY_RECORD',
+const YIELDS_LIST = ['BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD',
   ...OPTIMIZER_PIPELINE_OPS];
 
 // The functions that read their argument as bytes, and the one that takes a
@@ -1865,7 +1865,7 @@ export class Translator {
   // projected, which is the most SQL can say about a bucket on its own.
   bucketProjection(plan, binder, aggNode) {
     if (aggNode !== null) {
-      if (aggNode.t === 'call' && (aggNode.name === 'RECORD' || aggNode.name === 'LAZY_RECORD')) {
+      if (aggNode.t === 'call' && aggNode.name === 'RECORD') {
         const recArgs = aggNode.args;
         if (recArgs.length % 2 !== 0) {
           refuse('E_ARITY', 'RECORD takes an even number of arguments', aggNode.pos);
@@ -2139,7 +2139,7 @@ export class Translator {
           }
           plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
 
-          if (expr.t === 'call' && (expr.name === 'RECORD' || expr.name === 'LAZY_RECORD')) {
+          if (expr.t === 'call' && expr.name === 'RECORD') {
             const recArgs = expr.args;
             if (recArgs.length % 2 !== 0) {
               refuse('E_ARITY', 'RECORD takes an even number of arguments', expr.pos);

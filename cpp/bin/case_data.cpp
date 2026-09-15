@@ -4244,6 +4244,43 @@ static std::vector<std::pair<std::string, Binding>> c674_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c675_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c676_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c677_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c678_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c679_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"USERS", Binding::relation("users", "u", {{"ID", Binding::column("id", "u", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c680_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -15720,6 +15757,108 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c674_bind},
+    {.name = "plan.helper.literal-helper-is-inlined-at-its-read",
+     .at = "25-hybrid-plans.sqlt:1400",
+     .dialect = "mariadb",
+     .source = "Y = \"x\"; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + Y)",
+     .expect = "SELECT `o`.* FROM `orders` `o` LIMIT 2",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c675_bind},
+    {.name = "plan.helper.folded-helper-is-a-literal",
+     .at = "25-hybrid-plans.sqlt:1426",
+     .dialect = "mariadb",
+     .source = "N = 1 + 1; ORDERS .> TAKE(N)",
+     .expect = "SELECT `o`.* FROM `orders` `o` LIMIT 2",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_sql",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c676_bind},
+    {.name = "plan.helper.relation-helper-is-the-pipeline-source",
+     .at = "25-hybrid-plans.sqlt:1445",
+     .dialect = "mariadb",
+     .source = "X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _[\"id\"])",
+     .expect = "SELECT `o`.* FROM `orders` `o` LIMIT 2",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c677_bind},
+    {.name = "plan.helper.non-literal-helper-is-carried-as-written",
+     .at = "25-hybrid-plans.sqlt:1466",
+     .dialect = "mariadb",
+     .source = "C = COUNT(ORDERS); ORDERS .> FILTER(_[\"id\"] > C)",
+     .expect = "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > (SELECT COUNT(*) FROM `orders` `o` WHERE TRUE))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_sql",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c678_bind},
+    {.name = "plan.helper.unread-helper-reads-no-table",
+     .at = "25-hybrid-plans.sqlt:1488",
+     .dialect = "mariadb",
+     .source = "U = USERS .> TAKE(1); ORDERS .> TAKE(2) .> MAP(_[\"id\"] + \"x\")",
+     .expect = "SELECT `o`.* FROM `orders` `o` LIMIT 2",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c679_bind},
+    {.name = "plan.helper.indexed-helper-is-carried-as-written",
+     .at = "25-hybrid-plans.sqlt:1509",
+     .dialect = "mariadb",
+     .source = "R[1] = 5; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + R[1])",
+     .expect = "SELECT `o`.* FROM `orders` `o` LIMIT 2",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c680_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

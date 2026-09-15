@@ -754,7 +754,7 @@ final class Translator
     private static function yieldsList(string $name): bool
     {
         return isset(self::YIELDS_LIST[$name])
-            || in_array($name, ['LIST', 'RECORD', 'LAZY_RECORD'], true)
+            || in_array($name, ['LIST', 'RECORD'], true)
             || in_array($name, self::PIPELINE_OPS, true);
     }
 
@@ -2619,7 +2619,7 @@ final class Translator
     private function bucketProjection(RelationalPlan $plan, string $binder, ?array $aggNode): void
     {
         if ($aggNode !== null) {
-            if ($aggNode['t'] === 'call' && in_array($aggNode['name'], ['RECORD', 'LAZY_RECORD'], true)) {
+            if ($aggNode['t'] === 'call' && $aggNode['name'] === 'RECORD') {
                 $recArgs = $aggNode['args'];
                 if (count($recArgs) % 2 !== 0) {
                     refuse('E_ARITY', 'RECORD takes an even number of arguments', $aggNode['pos']);
@@ -2915,7 +2915,7 @@ final class Translator
                     }
                     $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
 
-                    if ($expr['t'] === 'call' && in_array($expr['name'], ['RECORD', 'LAZY_RECORD'], true)) {
+                    if ($expr['t'] === 'call' && $expr['name'] === 'RECORD') {
                         $recArgs = $expr['args'];
                         if (count($recArgs) % 2 !== 0) {
                             refuse('E_ARITY', 'RECORD takes an even number of arguments', $expr['pos']);

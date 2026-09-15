@@ -2258,11 +2258,23 @@ spelling (`sourceTables` / `source_tables` / `hybrid-plan-source-tables`):
 What the planner promises, and what `sql/cases/25-hybrid-plans.sqlt` holds
 every host to:
 
-- **It plans the tree the translator will see.** Stage 1 runs first, so a
-  helper assignment is inlined and a value binding is a literal before the
-  pipeline is unwound; then the logical optimiser's rewrite of that. Unwinding
-  the raw AST classified `X = ORDERS; X .> TAKE(1)` — a `seq`, not a pipeline —
-  as pure memory in two hosts while three pushed it down.
+- **It plans the program as written, through its helpers.** Stage 1 runs
+  first for its verdict alone: a program it refuses is `pure_memory`. What is
+  planned is the pipeline the result expression is written through — a helper
+  read as the pipeline's *source* is unwound into it, so `X = ORDERS; X .>
+  TAKE(1)` and `X = ORDERS .> TAKE(2); X .> MAP(…)` are pipelines over
+  ORDERS — and then the logical optimiser's rewrite of that. A helper whose
+  definition is a literal, after folding (`N = 1 + 1` as much as `N = 2`), is
+  inlined at its reads, stamped with the read's position; any other helper
+  stays a read, and every tree the planner hands to the translator or keeps
+  as the continuation carries the assignments it still reads in front of it,
+  as the program wrote them — for the translator's own stage 1 to inline, and
+  for the continuation to evaluate once, before its steps. Unwinding the raw
+  AST classified `X = ORDERS; X .> TAKE(1)` — a `seq`, not a pipeline — as
+  pure memory in two hosts while three pushed it down; planning stage 1's
+  tree, in which every helper is inlined at its definition-site position,
+  made the continuation report an error where the helper was *defined* rather
+  than where `run` reads it (finding AJ, below).
 - **A program stage 1 refuses is a `pure_memory` plan, not an error.**
   `A += 1; ORDERS .> TAKE(1)` cannot be pushed down, and "none of it" is one of
   the planner's answers. What planning does refuse, up front and for every
@@ -2364,7 +2376,7 @@ every host to:
   on the way down, in every host, and the fixtures snapshot the tree before
   and compare after. A program is reusable: `run` it, plan it, `run` it again,
   and it answers the same. What `run` evaluates is a *physical* rewrite of the
-  AST (LAZY_RECORD projections, join predicate pushdown) that is built once
+  AST (join predicate pushdown) that is built once
   per program and kept privately; the SQL layer never sees that tree, because
   a physical rewrite is not something a database can be asked to run. The
   price of that cache is the immutability rule above: a caller who constructs
@@ -2396,7 +2408,18 @@ every host to:
   §6.3 names the node the operator was handed. `IF(TRUE, 2, 1) >= _["id"]`
   therefore reaches the SQL as `2 >= id`, while `IF(TRUE, _["id"] > 1, FALSE)`
   reaches it as the IF, rendered as the `CASE WHEN TRUE …` `translate()` has
-  always produced for it (`plan.fold.*` in the fixtures).
+  always produced for it (`plan.fold.*` in the fixtures). A helper assignment
+  is the other way a position could move: stage 1 inlines `Y = "x"` with its
+  definition-site column, which is what `translate()`'s refusal messages
+  want, and a continuation built from that tree reported `_["id"] + Y` at
+  1:5 where `run` reports the read at 1:45 — in every host — and evaluated
+  the helper once per row where `run` evaluates it once (finding AJ). The
+  continuation is therefore built from the program as written: a literal
+  helper inlined at the read's position, any other kept as an assignment in
+  front of the steps and evaluated once. The one departure is that an
+  assignment nothing after the split reads is not evaluated, exactly as stage
+  1 drops it for `translate()` (`plan.helper.*`; each host's unit probes
+  execute these plans and compare the position with `run`).
 
 ---
 

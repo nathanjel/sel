@@ -1045,6 +1045,19 @@ nosuch(1)
 --- expect
 error E_UNKNOWN_FUNC at 1:1
 ===
+
+### name: mis.compile.lazy-record-is-not-a-function
+--- note
+Review 2026-09-15 finding R. LAZY_RECORD was a builtin in all five hosts and
+in no spec: a RECORD whose fields were evaluated on first read, which the
+strict evaluation rule (§6) has no room for, and which C++ forced on
+collection while four hosts did not. It is gone, so the name is an unknown
+function like any other.
+--- source
+LAZY_RECORD("a", 1)
+--- expect
+error E_UNKNOWN_FUNC at 1:1
+===
 ### name: mis.reserved.not-in-a-tight-position
 --- note
 NOT is a prefix operator at binding power 7, looser than comparison at 8, so it

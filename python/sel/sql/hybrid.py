@@ -5,15 +5,22 @@ optimize a relational pipeline, try the complete pipeline first, then try a
 safe mixed MAP fall-through, and finally choose the longest translatable prefix.
 
 The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
-and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at the tree
-the translator will see, ``source_tables`` names PHYSICAL sources (a relation's
-``from``, or a relation query's text verbatim), a program stage 1 refuses is a
-pure-memory plan rather than an exception, and ``options`` is one dict that
-reaches both the logical optimiser and the translator.
+and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at the
+PIPELINE, whichever helper assignments it is written through, and then at the
+logical optimiser's rewrite of that (unwinding the raw AST first classified
+``X = ORDERS; X .> TAKE(1)`` as pure memory, because a ``seq`` is not a
+pipeline; inlining every helper the way stage 1 does for translate() made the
+continuation report an error at the helper's definition where run() reports
+its use -- see "helper assignments" below for what is done instead),
+``source_tables`` names PHYSICAL sources (a relation's ``from``, or a relation
+query's text verbatim), a program stage 1 refuses is a pure-memory plan rather
+than an exception, and ``options`` is one dict that reaches both the logical
+optimiser and the translator.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Callable
 
 from .. import Program, Value
@@ -180,22 +187,34 @@ SQL_SPECIAL_CALLS = frozenset({
 })
 
 
-def _contains_unsupported_sql(node: Node | None, dialect: str) -> bool:
+def _contains_unsupported_sql(node: Node | None, dialect: str,
+                              defs: dict[str, Node] | None = None,
+                              seen: frozenset[str] = frozenset()) -> bool:
+    """``defs`` are the helper definitions: a read of one is as unsupported as
+    its definition, since the translator will inline it."""
     if node is None:
         return False
+    if (node.t == 'var' and defs is not None and node.name in defs
+            and node.name not in seen):
+        return _contains_unsupported_sql(defs[node.name], dialect, defs,
+                                         seen | {node.name})
     if node.t == 'call':
         if node.name not in SQL_SPECIAL_CALLS:
             entry = sqlmap.entry(dialect, 'funcs', ascii_upper(node.name))
             if entry == sqlmap.MISSING or entry is None or isinstance(entry, str):
                 return True
-        return any(_contains_unsupported_sql(item, dialect) for item in node.args)
-    if any(_contains_unsupported_sql(item, dialect) for item in node.args):
+        return any(_contains_unsupported_sql(item, dialect, defs, seen)
+                   for item in node.args)
+
+    def inner(item: Node | None) -> bool:
+        return _contains_unsupported_sql(item, dialect, defs, seen)
+
+    if any(inner(item) for item in node.args):
         return True
-    if any(_contains_unsupported_sql(item, dialect) for item in node.items):
+    if any(inner(item) for item in node.items):
         return True
-    return any(_contains_unsupported_sql(item, dialect)
-               for item in (node.l, node.r, node.x, node.obj, node.idx,
-                            node.target, node.value))
+    return any(inner(item) for item in (node.l, node.r, node.x, node.obj, node.idx,
+                                        node.target, node.value))
 
 
 def _field_references(node: Node | None, binder: str | None = '_') -> list[str]:
@@ -278,7 +297,7 @@ def _map_record_details(step: Node) -> dict[str, Any] | None:
                 and not args[1].grouped)
     body = args[2] if explicit else (args[1] if len(args) > 1 else None)
     if (body is None or body.t != 'call'
-            or body.name not in ('RECORD', 'LAZY_RECORD')
+            or body.name != 'RECORD'
             or len(body.args) % 2 != 0):
         return None
     pairs = []
@@ -292,7 +311,8 @@ def _map_record_details(step: Node) -> dict[str, Any] | None:
 
 
 def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
-                          catalog: Bindings, options: dict[str, Any]) -> HybridPlan | None:
+                          catalog: Bindings, options: dict[str, Any],
+                          helpers: _Helpers) -> HybridPlan | None:
     map_index = next((i for i, step in enumerate(steps) if step.name == 'MAP'), -1)
     if map_index < 0 or _bucket_rows_are_keys(steps[:map_index]):
         return None
@@ -302,7 +322,8 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
 
     pushable, custom = [], []
     for pair in details['pairs']:
-        (custom if _contains_unsupported_sql(pair[1], dialect) else pushable).append(pair)
+        (custom if _contains_unsupported_sql(pair[1], dialect, helpers.defs)
+         else pushable).append(pair)
     if not custom or not pushable:
         return None
     # The custom half runs over the rows the SQL returns; a read of the row
@@ -368,7 +389,7 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
                           if details['explicit']
                           else [steps[map_index].args[0], rewritten_record])
     rewritten_steps = [*steps[:map_index], rewritten_map, *steps[map_index + 1:]]
-    rewritten_ast = build_pipeline(source, rewritten_steps)
+    rewritten_ast = helpers.wrap(build_pipeline(source, rewritten_steps))
     sql = _try_statement(rewritten_ast, dialect, catalog, options)
     if sql is None:
         return None
@@ -391,14 +412,210 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
     continuation_map.args = ([input_node, steps[map_index].args[1], continuation_record]
                              if details['explicit']
                              else [input_node, continuation_record])
+    continuation_ast = helpers.wrap(continuation_map)
     return HybridPlan(
         dialect=dialect,
         sql_statement=sql,
         sql_prefix_ast=rewritten_ast,
-        continuation_ast=continuation_map,
-        continuation_program=Program('', continuation_map),
-        source_tables=_source_tables(rewritten_ast, catalog),
+        continuation_ast=continuation_ast,
+        continuation_program=Program('', continuation_ast),
+        source_tables=helpers.tables(rewritten_ast),
     )
+
+
+# --- helper assignments -------------------------------------------------------
+#
+# Stage 1 inlines a helper assignment for translate(): ``Y = "x"; ... + Y`` is
+# rendered as ``... + "x"``, the literal keeping its definition-site position,
+# which is right for a refusal message. It is wrong for the memory half of a
+# plan, because that half is a program run() evaluates and §12.1 promises it
+# reports errors where run() would: run() evaluates the READ of Y at the use
+# site and reports ``+``'s operand there, and it evaluates the definition once,
+# before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+# the planner does not inline. It plans the program as written, three ways:
+#
+#   * A helper that IS a literal -- after inlining earlier such helpers and
+#     folding, ``N = 1 + 1`` as much as ``N = 2`` -- is inlined at its reads,
+#     stamped with the read's position. That is invisible: a leaf literal
+#     cannot fail, and neither can the read, since the definition exists. It
+#     keeps ``TAKE(N)`` a ``LIMIT 2`` rather than a helper the SQL has to carry.
+#   * A helper read as the pipeline's SOURCE is unwound through: ``X = ORDERS
+#     .> TAKE(2); X .> MAP(...)`` is one pipeline over ORDERS, so the prefix
+#     search sees every step. Only the source position looks through a
+#     helper; a read anywhere else stays a read.
+#   * What is handed to the translator, and what is kept for the
+#     continuation, carries in front of it the assignments it still reads and
+#     the ones those read, in program order, as the program wrote them. The
+#     translator runs its own stage 1 over that seq and inlines; the
+#     continuation evaluates them once, before its steps, as run() does. An
+#     assignment nothing after the split reads is dropped, as stage 1 drops
+#     it for translate() -- the one departure, and the same one.
+
+LITERAL_TYPES = frozenset({'num', 'text', 'bool', 'null'})
+
+
+def _statements(ast: Node) -> tuple[list[Node], Node]:
+    """The leading statements and the result expression of a program."""
+    if ast.t != 'seq':
+        return [], ast
+    return ast.items[:-1], ast.items[-1]
+
+
+def _assigned_name(statement: Node) -> str:
+    """The name a leading statement assigns. Stage 1 has accepted every
+    statement by the time this runs, so each is an assignment whose target is
+    a name, or a name indexed by constants."""
+    target = statement.target
+    while target.t == 'index':
+        target = target.obj
+    return target.name
+
+
+def _definitions(leading: list[Node]) -> dict[str, Node]:
+    """The whole-name definitions, by name. Stage 1 refuses a name assigned
+    twice, or both whole and by index, so each name here has exactly one."""
+    defs: dict[str, Node] = {}
+    for s in leading:
+        if s.target.t == 'var':
+            defs[s.target.name] = s.value
+    return defs
+
+
+def _inline_literals(node: Node | None, literals: dict[str, Node],
+                     bound: list[str] | None = None) -> Node | None:
+    """``node`` with every read of a literal helper replaced by the literal,
+    stamped with the read's position. Binder scoping is stage 1's: a binder
+    shadows a same-named helper inside its body. Copies on the way down,
+    never writes."""
+    if node is None:
+        return node
+    if bound is None:
+        bound = []
+    t = node.t
+    if t == 'var':
+        if node.name in bound or node.name not in literals:
+            return node
+        return replace(literals[node.name], pos=node.pos)
+    if t in LITERAL_TYPES:
+        return node
+
+    def inline(child: Node | None, scope: list[str] = bound) -> Node | None:
+        return _inline_literals(child, literals, scope)
+
+    if t == 'un':
+        return replace(node, x=inline(node.x))
+    if t == 'bin':
+        return replace(node, l=inline(node.l), r=inline(node.r))
+    if t == 'index':
+        return replace(node, obj=inline(node.obj), idx=inline(node.idx))
+    if t in ('list', 'seq'):
+        return replace(node, items=[inline(item) for item in node.items])
+    if t == 'assign':
+        return replace(node, value=inline(node.value))
+    if t == 'call':
+        inner = list(bound)
+        binds = node.spec is not None and node.spec.binds
+        if binds:
+            inner.append('_K')
+            inner.append(node.args[1].name
+                         if len(node.args) == 3 and sql_constants.is_binder_name(node.args[1])
+                         else '_')
+        args: list[Node] = []
+        for i, arg in enumerate(node.args):
+            if (binds and i == 1 and len(node.args) == 3
+                    and sql_constants.is_binder_name(arg)):
+                args.append(arg)
+            else:
+                args.append(inline(arg, bound if i == 0 else inner))
+        return replace(node, args=args)
+    return node
+
+
+def _literal_helpers(leading: list[Node], options: dict[str, Any]) -> dict[str, Node]:
+    """The literal helpers: each whole-name definition, after the earlier
+    literal helpers are inlined into it and it is folded, when what is left
+    is a leaf."""
+    literals: dict[str, Node] = {}
+    for s in leading:
+        if s.target.t != 'var':
+            continue
+        folded = optimize_ast_logical(_inline_literals(s.value, literals), options)
+        if folded.t in LITERAL_TYPES:
+            literals[s.target.name] = folded
+    return literals
+
+
+def _unwind_through_helpers(result: Node, defs: dict[str, Node],
+                            literals: dict[str, Node]) -> tuple[Node | None, list[Node]]:
+    """The pipeline the planner probes: the result unwound, and where its
+    source is a helper, that helper's definition unwound in turn."""
+    source, steps = unwind_pipeline(_inline_literals(result, literals))
+    seen: set[str] = set()
+    while (source is not None and source.t == 'var' and source.name in defs
+           and source.name not in seen):
+        seen.add(source.name)
+        inner_source, inner_steps = unwind_pipeline(
+            _inline_literals(defs[source.name], literals))
+        source = inner_source
+        steps = [*inner_steps, *steps]
+    return source, steps
+
+
+def _read_names(node: Node | None, out: set[str] | None = None) -> set[str]:
+    """The names a tree reads, binders included: an over-approximation that
+    can only keep an assignment the tree does not need, never drop one it
+    does."""
+    if out is None:
+        out = set()
+    if node is None:
+        return out
+    if node.t == 'var':
+        out.add(node.name)
+        return out
+    for item in node.args:
+        _read_names(item, out)
+    for item in node.items:
+        _read_names(item, out)
+    for child in (node.l, node.r, node.x, node.obj, node.idx, node.target, node.value):
+        _read_names(child, out)
+    return out
+
+
+def _referenced_assignments(leading: list[Node], node: Node) -> list[Node]:
+    """The leading assignments ``node`` depends on, in program order: those
+    whose name it reads, and those THEY read, transitively."""
+    needed = _read_names(node)
+    grew = True
+    while grew:
+        grew = False
+        for s in leading:
+            if _assigned_name(s) not in needed:
+                continue
+            for name in _read_names(s.value):
+                if name not in needed:
+                    needed.add(name)
+                    grew = True
+    return [s for s in leading if _assigned_name(s) in needed]
+
+
+def _with_helpers(leading: list[Node], node: Node) -> Node:
+    """``node`` behind the assignments it depends on, as the program wrote
+    them -- a seq the translator's stage 1 inlines and the evaluator runs in
+    order -- or ``node`` itself when it depends on none."""
+    kept = _referenced_assignments(leading, node)
+    return Node('seq', kept[0].pos, items=[*kept, node]) if kept else node
+
+
+class _Helpers:
+    """What the split points need of the helper assignments: the definitions
+    (for the MAP fall-through's classification), the wrap, and the physical
+    sources of a wrapped tree."""
+
+    def __init__(self, defs: dict[str, Node], wrap: Callable[[Node], Node],
+                 tables: Callable[[Node], list[str]]) -> None:
+        self.defs = defs
+        self.wrap = wrap
+        self.tables = tables
 
 
 def _pure_memory_plan(program: Program, dialect: str, catalog: Bindings) -> HybridPlan:
@@ -419,35 +636,55 @@ def plan_hybrid(program: Program, dialect: str,
     sqlmap.require_target(dialect)
     catalog.check_aliases()
 
-    # Stage 1 first, exactly as the translator runs it, so the tree unwound
-    # below is the one a prefix will be translated from. A program stage 1
-    # refuses -- ``A += 1; ...``, a bare statement before the result -- is a
-    # program no part of which can be pushed down, which is a pure-memory plan
-    # and not an exception: "none of it" is one of the planner's answers.
+    # Stage 1 first, exactly as the translator runs it, for its verdict. A
+    # program stage 1 refuses -- ``A += 1; ...``, a bare statement before the
+    # result -- is a program no part of which can be pushed down, which is a
+    # pure-memory plan and not an exception: "none of it" is one of the
+    # planner's answers. Its TREE is not what is planned, though: see "helper
+    # assignments" above.
+    const_names, const_context = sql_constants.scope(catalog)
     try:
-        const_names, const_context = sql_constants.scope(catalog)
-        normalized = sql_normalise.run(program.ast, const_names, const_context)
+        sql_normalise.run(program.ast, const_names, const_context)
     except SqlError:
         return _pure_memory_plan(program, dialect, catalog)
-    optimized = optimize_ast_logical(normalized, opts)
-    source, steps = unwind_pipeline(optimized)
-    if (not steps or source is None or source.t != 'var'
-            or not catalog.has(source.name)
-            or catalog.get(source.name, source.pos)['kind'] != 'relation'):
+    leading, result = _statements(program.ast)
+    literals = _literal_helpers(leading, opts)
+    defs = _definitions(leading)
+
+    def is_relation(node: Node | None) -> bool:
+        return (node is not None and node.t == 'var' and catalog.has(node.name)
+                and catalog.get(node.name, node.pos)['kind'] == 'relation')
+
+    unwound_source, unwound_steps = _unwind_through_helpers(result, defs, literals)
+    if not unwound_steps or not is_relation(unwound_source):
         return _pure_memory_plan(program, dialect, catalog)
+    optimized = optimize_ast_logical(build_pipeline(unwound_source, unwound_steps), opts)
+    source, steps = unwind_pipeline(optimized)
+    if not steps or not is_relation(source):
+        return _pure_memory_plan(program, dialect, catalog)
+
+    helpers = _Helpers(
+        defs,
+        lambda node: _with_helpers(leading, node),
+        # The physical sources of a wrapped tree are read off what the
+        # translator renders: stage 1's tree, where an assignment a binder
+        # shadows is gone.
+        lambda wrapped: _source_tables(
+            sql_normalise.run(wrapped, const_names, const_context), catalog),
+    )
 
     # The whole pipeline, unless its rows would be a bucket's keys: the
     # translator renders a bare bucket as its keys, and a plan that pushes the
     # whole of ``... .> BUCKET(k)`` would hand them back as the answer.
-    full_ast = build_pipeline(source, steps)
+    full_ast = helpers.wrap(build_pipeline(source, steps))
     full_sql = (None if _bucket_rows_are_keys(steps)
                 else _try_statement(full_ast, dialect, catalog, opts))
     if full_sql is not None:
         return HybridPlan(dialect=dialect, sql_statement=full_sql,
                           sql_prefix_ast=full_ast, pure_sql=True,
-                          source_tables=_source_tables(full_ast, catalog))
+                          source_tables=helpers.tables(full_ast))
 
-    fallthrough = _try_plan_fallthrough(source, steps, dialect, catalog, opts)
+    fallthrough = _try_plan_fallthrough(source, steps, dialect, catalog, opts, helpers)
     if fallthrough is not None:
         return fallthrough
 
@@ -455,18 +692,18 @@ def plan_hybrid(program: Program, dialect: str,
         prefix_steps = steps[:count]
         if _bucket_rows_are_keys(prefix_steps):
             continue
-        prefix_ast = build_pipeline(source, prefix_steps)
+        prefix_ast = helpers.wrap(build_pipeline(source, prefix_steps))
         sql = _try_statement(prefix_ast, dialect, catalog, opts)
         if sql is None:
             continue
         remaining = steps[count:]
         input_node = Node('var', remaining[0].pos, name='_INPUT')
-        continuation_ast = build_pipeline(input_node, remaining)
+        continuation_ast = helpers.wrap(build_pipeline(input_node, remaining))
         return HybridPlan(dialect=dialect, sql_statement=sql,
                           sql_prefix_ast=prefix_ast,
                           continuation_ast=continuation_ast,
                           continuation_program=Program('', continuation_ast),
-                          source_tables=_source_tables(prefix_ast, catalog))
+                          source_tables=helpers.tables(prefix_ast))
 
     return _pure_memory_plan(program, dialect, catalog)
 

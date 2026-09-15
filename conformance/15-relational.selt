@@ -406,3 +406,47 @@ LIST(RECORD("a", 2, "b", 1), RECORD("a", 1, "b", 1)) .> SORT_BY(_["a"]) .> SORT_
 --- expect
 tree -{"1"=t"1", "2"=t"2"}
 ===
+
+### name: rel.map.record-field-nothing-reads-is-still-evaluated
+--- note
+Review 2026-09-15 finding R. RECORD is strict and MAP evaluates its body for
+every element (spec §6, §7.3), so a field that fails fails the program even
+when nothing ever reads it. Four hosts rewrote a MAP's RECORD into a lazy
+record whose unread fields were thunks, and answered 1 here where C++ -- whose
+MAP clones what it collects, forcing them -- raised. A physical rewrite must
+not change which errors a program raises; the rewrite is gone.
+--- source
+COUNT(LIST(1) .> MAP(RECORD("a", 1/0, "b", "k", "c", 3)))
+--- expect
+error E_DIV_ZERO at 1:35
+===
+
+### name: rel.map.record-field-fails-before-a-later-read-can
+--- note
+The same defect seen from a later step: the failing field is evaluated when
+the record is built, so its error comes before the E_NO_KEY the index would
+raise. Four hosts reported E_NO_KEY at 1:53.
+--- source
+(LIST(1) .> MAP(RECORD("a", 1/0, "b", "k", "c", 3)))[0]["b"]
+--- expect
+error E_DIV_ZERO at 1:30
+===
+
+### name: rel.map.record-field-nothing-reads-then-filter
+--- note
+With a FILTER after the MAP the hosts split three ways: JS, Python and Lisp
+answered 1, PHP raised only because its FILTER copies the element (which
+forces), C++ raised at the MAP. The position is the ABORT's argument, as it is
+for any ABORT.
+--- source
+LIST(RECORD("id", 1), RECORD("id", 2)) .> MAP(RECORD("v", _["id"], "bad", ABORT("x"))) .> FILTER(_["v"] > 1) .> COUNT()
+--- expect
+error E_ABORT at 1:81
+===
+
+### name: rel.map.record-field-nothing-reads-then-sum
+--- source
+LIST(RECORD("id", 1), RECORD("id", 2)) .> MAP(RECORD("v", _["id"], "bad", ABORT("x"))) .> SUM(_["v"])
+--- expect
+error E_ABORT at 1:81
+===

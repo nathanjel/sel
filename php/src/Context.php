@@ -28,11 +28,11 @@ final class Context
     {
         for ($i = count($this->frames) - 1; $i >= 0; $i--) {
             if (isset($this->frames[$i][$name])) {
-                return $this->frames[$i][$name]->force();
+                return $this->frames[$i][$name];
             }
         }
         $value = $this->root->get($name);
-        return $value?->force();
+        return $value;
     }
 
     public function isBound(string $name): bool
@@ -62,13 +62,5 @@ final class Context
             return;
         }
         $this->frames[count($this->frames) - 1][$name] = $value;
-    }
-
-    public function copyCurrent(): self
-    {
-        $copy = new self($this->root);
-        $copy->frames = $this->frames;
-        $copy->depth = $this->depth;
-        return $copy;
     }
 }

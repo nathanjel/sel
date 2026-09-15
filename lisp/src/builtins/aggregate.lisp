@@ -27,7 +27,6 @@
          (binder (if three (args-symbol a 1) "_"))
          (body (args-node a (if three 2 1)))
          (val (args-val a 0)))
-    (force-value val)
     (unless (or (value-null-p val)
                 (and (eq (value-kind val) :none) (zerop (value-size val))))
       (let* ((needs-k (node-contains-var-p body "_K"))
@@ -135,7 +134,6 @@
     (let ((sep (args-text a 1))
           (at (args-pos-of a 0))
           (val (args-val a 0)))
-      (force-value val)
       (%text (with-output-to-string (out)
                (cond
                  ((and (value-is-list val) (value-storage val))
@@ -152,8 +150,6 @@
                            (write-string (as-text item at) out)))))))))
 
 (defun compare-values (a b)
-  (force-value a)
-  (force-value b)
   (let ((a-null (value-null-p a))
         (b-null (value-null-p b)))
     (cond
@@ -225,7 +221,6 @@
 
 (defun do-sort (a ctx forced-dir)
   (let ((val (args-val a 0)))
-    (force-value val)
     (if (or (value-null-p val) (zerop (value-size val)))
         (make-list-value nil)
         (let* ((count (args-count a))
@@ -335,7 +330,6 @@
     (if (zerop limit)
         (make-list-value nil)
         (let ((val (args-val a 0)))
-          (force-value val)
           (if (or (value-null-p val) (zerop (value-size val)))
               (make-list-value nil)
               (let* ((sort-count (1- count))
@@ -475,7 +469,6 @@
   (rows '() :type list))
 
 (defun eval-key-hash (v)
-  (force-value v)
   (let ((k (value-kind v))
         (s (value-scalar v)))
     (cond
@@ -485,7 +478,7 @@
       (t (sxhash k)))))
 
 (defun bucket-key-text (key pos)
-  (let ((v (force-value key)))
+  (let ((v key))
     (when (eq (value-kind v) :none)
       (when (value-null-p v) (fail "E_NULL" "value is NULL" pos))
       (fail "E_NOT_TEXT" "a bucket key must be text or a number, got a list or record" pos))
@@ -493,7 +486,6 @@
 
 (defun do-bucket (a ctx)
   (let* ((val (args-val a 0)))
-    (force-value val)
     (if (or (value-null-p val) (zerop (value-size val)))
         (make-list-value nil)
         (let* ((count (args-count a))

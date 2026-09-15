@@ -346,13 +346,13 @@ final class Core
         if ($value->isNull()) return;
         if ($value->isList && $value->storage !== null) {
             foreach ($value->storage as $i => $item) {
-                $callback((string) ($i + 1), $item->force());
+                $callback((string) ($i + 1), $item);
             }
             return;
         }
         if ($value->shape !== null && $value->storage !== null) {
             foreach ($value->shape->keys as $i => $key) {
-                $callback($key, $value->storage[$i]->force());
+                $callback($key, $value->storage[$i]);
             }
             return;
         }
@@ -381,7 +381,6 @@ final class Core
                 foreach ($value->storage as $i => $item) {
                     if ($result !== null) break;
                     $key = (string) ($i + 1);
-                    $item = $item->force();
                     $ctx->setFrameValue($binder, $item);
                     if ($needsK) $ctx->setFrameValue('_K', Value::text($key));
                     $result = $visit($a->evalNode($body), $key, $item, $body);
@@ -389,7 +388,7 @@ final class Core
             } elseif ($value->shape !== null && $value->storage !== null) {
                 foreach ($value->shape->keys as $i => $key) {
                     if ($result !== null) break;
-                    $item = $value->storage[$i]->force();
+                    $item = $value->storage[$i];
                     $ctx->setFrameValue($binder, $item);
                     if ($needsK) $ctx->setFrameValue('_K', Value::text($key));
                     $result = $visit($a->evalNode($body), $key, $item, $body);

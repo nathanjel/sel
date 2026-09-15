@@ -747,16 +747,7 @@ struct Internals {
 
 Value::Value() : p_(std::make_shared<Impl>()) {}
 
-void Value::force() const {
-  if (!p_->thunk) return;
-  std::function<Value()> fn = std::move(p_->thunk);
-  p_->thunk = {};
-  Value result = fn();
-  *p_ = *result.p_;
-}
-
 Kind Value::kind() const {
-  force();
   return p_->kind;
 }
 
@@ -765,11 +756,9 @@ bool Value::is_text() const { return kind() == Kind::Text; }
 bool Value::is_bin() const { return kind() == Kind::Bin; }
 bool Value::is_bool() const { return kind() == Kind::Bool; }
 bool Value::is_list() const {
-  force();
   return p_->is_list;
 }
 void Value::set_is_list(bool b) {
-  force();
   if (!b && p_->is_list && !p_->storage.empty()) {
     ensure_children();
     p_->storage.clear();
@@ -802,7 +791,6 @@ void Value::set_is_list(bool b) {
 // file names a position. A call from host code has no node to name and passes
 // the empty Pos, the way Value::num already does.
 Value Value::clone_at(int depth, Pos pos) const {
-  force();
   if (depth > MAX_DEPTH) {
     fail("E_DEPTH", "value nested too deeply", pos);
   }
@@ -953,15 +941,7 @@ Value Value::shaped(std::shared_ptr<const RecordShape> shape, std::vector<Value>
   return v;
 }
 
-Value Value::thunk(std::function<Value()> fn) {
-  if (!fn) throw std::invalid_argument("SEL thunk needs a callable");
-  Value v = none();
-  v.p_->thunk = std::move(fn);
-  return v;
-}
-
 void Value::ensure_children() const {
-  force();
   if (p_->shape) {
     if (p_->children.size() == p_->shape->keys.size()) return;
     p_->children.clear();
@@ -989,7 +969,6 @@ void Value::build_index() const {
 }
 
 std::vector<Value::Entry>::iterator Value::find(const std::string& key) {
-  force();
   ensure_children();
   if (!p_->index.empty()) {
     auto it = p_->index.find(key);
@@ -1001,7 +980,6 @@ std::vector<Value::Entry>::iterator Value::find(const std::string& key) {
 }
 
 std::vector<Value::Entry>::const_iterator Value::find(const std::string& key) const {
-  force();
   ensure_children();
   if (!p_->index.empty()) {
     auto it = p_->index.find(key);
@@ -1013,35 +991,29 @@ std::vector<Value::Entry>::const_iterator Value::find(const std::string& key) co
 }
 
 std::size_t Value::size() const {
-  force();
   if (p_->shape) return p_->shape->keys.size();
   if (p_->is_list && !p_->storage.empty()) return p_->storage.size();
   return p_->children.size();
 }
 
 const std::vector<Value::Entry>& Value::entries() const {
-  force();
   ensure_children();
   return p_->children;
 }
 
 const std::shared_ptr<const RecordShape>& Value::shape() const {
-  force();
   return p_->shape;
 }
 
 const std::vector<Value>& Value::storage() const {
-  force();
   return p_->storage;
 }
 
 const Value* Value::slot(std::size_t index) const {
-  force();
   return index < p_->storage.size() ? &p_->storage[index] : nullptr;
 }
 
 bool Value::has(const std::string& key) const {
-  force();
   if (p_->shape) return p_->shape->key_map.find(key) != p_->shape->key_map.end();
   if (p_->is_list && !p_->storage.empty()) {
     const auto index = parse_list_slot(key);
@@ -1051,7 +1023,6 @@ bool Value::has(const std::string& key) const {
 }
 
 const Value* Value::get(const std::string& key) const {
-  force();
   if (p_->shape) {
     const auto it = p_->shape->key_map.find(key);
     return it == p_->shape->key_map.end() ? nullptr : &p_->storage[it->second];
@@ -1065,7 +1036,6 @@ const Value* Value::get(const std::string& key) const {
 }
 
 Value* Value::get(const std::string& key) {
-  force();
   if (p_->shape) {
     const auto it = p_->shape->key_map.find(key);
     return it == p_->shape->key_map.end() ? nullptr : &p_->storage[it->second];
@@ -1079,7 +1049,6 @@ Value* Value::get(const std::string& key) {
 }
 
 std::vector<std::string> Value::keys() const {
-  force();
   if (p_->shape) return p_->shape->keys;
   if (p_->is_list && !p_->storage.empty()) {
     std::vector<std::string> out;
@@ -1097,7 +1066,6 @@ std::vector<std::string> Value::keys() const {
 
 // Re-assigning an existing key keeps its original position — order is normative.
 Value& Value::set(std::string key, Value value) {
-  force();
   if (p_->shape) {
     const auto shape_it = p_->shape->key_map.find(key);
     if (shape_it != p_->shape->key_map.end()) {
@@ -1143,12 +1111,10 @@ Value& Value::set(std::string key, Value value) {
 }
 
 bool Value::is_null() const {
-  force();
   return p_->kind == Kind::None && size() == 0 && !p_->is_list;
 }
 
 bool Value::is_vacuous() const {
-  force();
   if (is_null()) return true;
   if (p_->kind == Kind::None && size() == 0) return true;
   if (p_->kind == Kind::Text && size() == 0) {
@@ -1166,7 +1132,6 @@ const Value& Value::scalar_source(Pos pos) const {
   const Value* v = this;
   int guard = 0;
   while (true) {
-    v->force();
     if (v->p_->kind != Kind::None) break;
     if (v->is_null()) {
       throw SelError("E_NULL", "value is NULL", pos);
@@ -1211,17 +1176,14 @@ bool Value::as_bool(Pos pos) const {
 }
 
 const std::string& Value::scalar() const {
-  force();
   return p_->scalar;
 }
 
 bool Value::boolean_scalar() const {
-  force();
   return p_->boolean;
 }
 
 bool Value::looks_numeric() const {
-  force();
   if (p_->kind == Kind::None && size() == 0) return false;
   // A well-formed numeral too big to hold raises E_RANGE out of dec_parse. The
   // probe answers no rather than raising, so ISNUM is true exactly when the
@@ -1241,8 +1203,6 @@ bool Value::looks_numeric() const {
 bool Value::eql(const Value& other, Pos pos) const { return eql_at(other, 1, pos); }
 
 bool Value::eql_at(const Value& other, int depth, Pos pos) const {
-  force();
-  other.force();
   if (depth > MAX_DEPTH) {
     fail("E_DEPTH", "value nested too deeply", pos);
   }
@@ -1279,7 +1239,6 @@ bool Value::eql_at(const Value& other, int depth, Pos pos) const {
 std::string Value::dump() const { return dump_at(1); }
 
 std::string Value::dump_at(int depth) const {
-  force();
   if (depth > MAX_DEPTH) {
     fail("E_DEPTH", "value nested too deeply", {});
   }
@@ -1327,7 +1286,6 @@ std::uint64_t Value::structural_hash(Pos pos) const {
   const std::function<std::uint64_t(const Value&, int)> walk =
       [&](const Value& value, int depth) -> std::uint64_t {
     if (depth > MAX_DEPTH) fail("E_DEPTH", "value nested too deeply", pos);
-    value.force();
     std::uint64_t h = mix(UINT64_C(0xcbf29ce484222325), static_cast<std::uint64_t>(value.p_->kind));
     h = mix(h, value.p_->boolean ? 1 : 0);
     h = mix(h, std::hash<std::string>{}(value.p_->scalar));
@@ -3476,42 +3434,6 @@ void register_structure() {
                 return shape_record(rec);
               }});
 
-  define(Spec{"LAZY_RECORD", 0, VARIADIC, true, true,
-              [](int n) -> std::string {
-                if (n % 2 != 0) {
-                  return "LAZY_RECORD takes an even number of arguments (key-value pairs), got " +
-                         std::to_string(n);
-                }
-                return "";
-              },
-              [](Args& a, Context& ctx) -> Value {
-                Value rec = Value::none();
-                for (int i = 0; i < a.count(); i += 2) {
-                  const std::string key = a.text(i);
-                  const Node& value_node = a.node(i + 1);
-                  Value value;
-                  if (value_node.t == NT::Num || value_node.t == NT::Text ||
-                      value_node.t == NT::Bool || value_node.t == NT::Null) {
-                    value = a.eval(value_node);
-                  } else {
-                    // Capture the current root and aggregate frames.  The
-                    // caller may force the field after the surrounding MAP
-                    // frame has been popped, so retaining Context& itself
-                    // would be a use-after-scope.
-                    Value root = *ctx.root;
-                    const auto frames = ctx.frames;
-                    const NodePtr node = a.node_ptr(i + 1);
-                    value = Value::thunk([root = std::move(root), frames, node]() mutable {
-                      Context captured(root);
-                      captured.frames = frames;
-                      return eval_node(*node, captured);
-                    });
-                  }
-                  rec.set(key, std::move(value));
-                }
-                return shape_record(rec);
-              }});
-
   define(Spec{"TAKE", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const Value& val = a.val(0);
                 const long long count = a.non_neg_int(1);
@@ -3958,7 +3880,6 @@ Value do_bucket(Args& a, Context& ctx) {
     // no map to key and groups by identity instead.
     std::string key_str;
     if (!agg_node) {
-      eval_key.force();
       if (eval_key.kind() == Kind::None) {
         if (eval_key.is_null()) fail("E_NULL", "value is NULL", key_node->pos);
         fail("E_NOT_TEXT", "a bucket key must be text or a number, got a list or record",
@@ -5460,7 +5381,7 @@ OptFilterInfo opt_filter_info(const Node& step) {
 std::vector<std::string> opt_map_passthroughs(const Node& step) {
   const OptMapInfo info = opt_map_info(step);
   if (!info.body || info.body->t != NT::Call ||
-      (info.body->s != "RECORD" && info.body->s != "LAZY_RECORD")) return {};
+      info.body->s != "RECORD") return {};
   std::vector<std::string> fields;
   for (std::size_t i = 0; i + 1 < info.body->items.size(); i += 2) {
     const NodePtr& key = info.body->items[i];
@@ -5477,7 +5398,7 @@ std::vector<std::string> opt_map_passthroughs(const Node& step) {
 bool opt_map_has_computed(const Node& step) {
   const OptMapInfo info = opt_map_info(step);
   if (!info.body || info.body->t != NT::Call ||
-      (info.body->s != "RECORD" && info.body->s != "LAZY_RECORD")) return true;
+      info.body->s != "RECORD") return true;
   return opt_map_passthroughs(step).size() * 2 != info.body->items.size();
 }
 
@@ -5894,22 +5815,7 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
   }
   std::vector<NodePtr> rewritten;
   rewritten.reserve(steps.size());
-  for (const NodePtr& step : steps) {
-    auto copy = opt_copy(step);
-    if (copy->s == "MAP") {
-      const OptMapInfo info = opt_map_info(*copy);
-      if (info.body && info.body->t == NT::Call && info.body->s == "RECORD" &&
-          info.body->items.size() >= 4) {
-        auto body = opt_copy(info.body);
-        body->s = "LAZY_RECORD";
-        body->spec = registry_lookup("LAZY_RECORD");
-        copy->items = info.explicit_binder
-            ? std::vector<NodePtr>{copy->items[0], copy->items[1], body}
-            : std::vector<NodePtr>{copy->items[0], body};
-      }
-    }
-    rewritten.push_back(std::move(copy));
-  }
+  for (const NodePtr& step : steps) rewritten.push_back(opt_copy(step));
   return rewritten;
 }
 
@@ -5958,8 +5864,8 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
 // every copy of the Program; call_once makes the first run under concurrent
 // callers build it exactly once and lets a throwing build (E_DEPTH from the
 // optimiser's own guard) be retried rather than cached as absent. SQL
-// translation never sees it, since a physical rewrite (LAZY_RECORD, join
-// pushdown) is not something a database can be asked to run.
+// translation never sees it, since a physical rewrite (join pushdown) is not
+// something a database can be asked to run.
 struct Program::Physical {
   std::once_flag once;
   NodePtr tree;

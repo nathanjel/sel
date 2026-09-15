@@ -27,7 +27,7 @@ final class Program
      * The physical tree run() evaluates: $ast after the in-memory optimiser,
      * built on the first run and kept, because the rewrite and the copy it
      * makes cost more than evaluating a small rule does. SQL translation never
-     * sees it, since a physical rewrite (LAZY_RECORD, join pushdown) is not
+     * sees it, since a physical rewrite (join pushdown) is not
      * something a database can be asked to run.
      *
      * @var array<string,mixed>|null

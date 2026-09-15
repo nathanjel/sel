@@ -1226,7 +1226,6 @@ constexpr Arity FUNC_ARITY[] = {
     {.key = "IS_NOT_NULL", .min = 1, .max = 1},
     {.key = "IS_NULL", .min = 1, .max = 1},
     {.key = "IS_PRESENT", .min = 1, .max = 1},
-    {.key = "LAZY_RECORD", .min = 0, .unbounded = true},
     {.key = "LEFT", .min = 2, .max = 2},
     {.key = "LEN", .min = 1, .max = 1},
     {.key = "LINK", .min = 3, .max = 5},

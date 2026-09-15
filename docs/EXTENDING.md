@@ -477,11 +477,17 @@ local first; `eval_binary` says so in a comment for the next person.
 **A value is not a snapshot.** Evaluating an expression yields the value itself,
 so a mutation made by a later sub-expression is visible through a reference
 obtained earlier (§3.4) — `A[A["k"] = "k"]` finds the key its own index
-expression just created. Every host aliases by default and copies at exactly
-five places: `,` collecting a child, `,` collecting a value, the assignment
-store, `MAP` collecting a result, and `FILTER` collecting an element. If you add
-a built-in that stores one value inside another, it belongs on that list, and if
-you add a copy anywhere else you have invented a divergence.
+expression just created. Every host aliases by default and copies where the
+spec says (§3.4): `,` collecting a child, `,` collecting a value, and the
+assignment store. The spec also has the aggregates copy what they collect; C++
+does (`MAP` and `FILTER` clone), PHP's `FILTER` does, and the other hosts alias
+there — which no program can tell apart, because a binder cannot be assigned
+(`E_BAD_ASSIGN`), so nothing can write through the alias. That is exactly why
+`LAZY_RECORD` had to go (review 2026-09-15 finding R): a record whose fields
+were evaluated on first read made that copy observable, and the hosts split on
+it. There are no lazy values. If you add a built-in that stores one value inside
+another, it belongs on that list, and if you add a copy anywhere else you have
+invented a divergence.
 
 C++ is the host where this is easy to get wrong, because `Value` is a handle
 over a `shared_ptr` and copying it *looks* like a deep copy. It is not: use
@@ -580,9 +586,18 @@ is what stands in for the data file, and the cross-language review that
 produced it found every one of the items below broken in at least one host
 while all 801 language cases were green. So, for any change to either:
 
-- **Order.** The planner runs stage 1 (`normalise`) first, then the logical
-  optimiser, then unwinds. Never unwind the raw AST: a helper assignment is a
-  `seq`, and a `seq` is not a pipeline. And the planner is the *only* caller
+- **Order.** The planner runs stage 1 (`normalise`) first, for its verdict;
+  then it unwinds the result expression *through* its helpers — a helper read
+  as the pipeline's source is unwound into the pipeline, a literal helper is
+  inlined at its reads at the read's position, any other helper stays a read
+  and travels as an assignment in front of whatever the translator or the
+  continuation is handed; then the logical optimiser; then the split. Never
+  unwind the raw AST as if it were an expression: a helper assignment is a
+  `seq`, and a `seq` is not a pipeline. And never plan stage 1's *tree*: it
+  inlines every helper at its definition-site position, which is right for a
+  refusal message and wrong for a continuation (finding AJ: `Y = "x"; … + Y`
+  reported at the `"x"` in the memory half and at the `Y` from `run()`, in
+  all five hosts). And the planner is the *only* caller
   of the optimiser in the SQL layer: `translate()` and `translate_statement()`
   run stage 1 alone, in every host, and the `.sqlt` runners check the two
   entry points against each other on every statement case. An optimiser
@@ -633,7 +648,8 @@ while all 801 language cases were green. So, for any change to either:
   is not folded, because the `/` inside has a column of its own. This is how
   four hosts came to report `IF(TRUE, "x", 1) >= 1` at the `"x"` while C++,
   whose IF arm never fired, reported the IF; the fuzzer compares positions,
-  and so must any fold you add.
+  and so must any fold you add. A helper is the other way to move a position
+  (see **Order**): inline only what is a literal, and at the read's position.
 
 - **Values.** A rewrite that moves a step is only sound when the moved step
   cannot see the difference, and "reads only pass-through fields" is not the

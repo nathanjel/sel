@@ -6,11 +6,13 @@
 // and is pinned by sql/cases/25-hybrid-plans.sqlt. Three parts of it are easy
 // to get wrong and were:
 //
-//   * The planner looks at the tree the TRANSLATOR will see -- stage 1 has run,
-//     helper assignments are inlined, value bindings are literals -- and then
-//     at the logical optimiser's rewrite of that. Unwinding the raw AST first
-//     classified `X = ORDERS; X .> TAKE(1)` as pure memory, because a `seq` is
-//     not a pipeline.
+//   * The planner looks at the PIPELINE, whichever helper assignments it is
+//     written through, and then at the logical optimiser's rewrite of that.
+//     Unwinding the raw AST first classified `X = ORDERS; X .> TAKE(1)` as
+//     pure memory, because a `seq` is not a pipeline; inlining every helper
+//     the way stage 1 does for translate() made the continuation report an
+//     error at the helper's definition where run() reports its use. See
+//     "helper assignments" below for what is done instead.
 //   * `sourceTables` names PHYSICAL sources: the relation's `from`, or the raw
 //     query text for a relation query. The SEL binding name is what the caller
 //     already has.
@@ -140,24 +142,30 @@ const SQL_SPECIAL_CALLS = new Set([
   'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'RECORD', 'LIST',
 ]);
 
-function containsUnsupportedSql(node, dialect) {
+// `defs` are the helper definitions: a read of one is as unsupported as its
+// definition, since the translator will inline it.
+function containsUnsupportedSql(node, dialect, defs = null, seen = new Set()) {
   if (!node) return false;
+  if (node.t === 'var' && defs !== null && defs.has(node.name) && !seen.has(node.name)) {
+    return containsUnsupportedSql(defs.get(node.name), dialect, defs, new Set([...seen, node.name]));
+  }
   if (node.t === 'call') {
     if (!SQL_SPECIAL_CALLS.has(node.name)) {
       const entry = sqlmap.entry(dialect, 'funcs', asciiUpper(node.name));
       if (entry === sqlmap.MISSING || entry === null || typeof entry === 'string') return true;
     }
-    return node.args.some((item) => containsUnsupportedSql(item, dialect));
+    return node.args.some((item) => containsUnsupportedSql(item, dialect, defs, seen));
   }
-  if (node.args && node.args.some((item) => containsUnsupportedSql(item, dialect))) return true;
-  if (node.items && node.items.some((item) => containsUnsupportedSql(item, dialect))) return true;
-  if (node.l && containsUnsupportedSql(node.l, dialect)) return true;
-  if (node.r && containsUnsupportedSql(node.r, dialect)) return true;
-  if (node.x && containsUnsupportedSql(node.x, dialect)) return true;
-  if (node.obj && containsUnsupportedSql(node.obj, dialect)) return true;
-  if (node.idx && containsUnsupportedSql(node.idx, dialect)) return true;
-  if (node.target && containsUnsupportedSql(node.target, dialect)) return true;
-  return Boolean(node.value && containsUnsupportedSql(node.value, dialect));
+  const inner = (item) => containsUnsupportedSql(item, dialect, defs, seen);
+  if (node.args && node.args.some(inner)) return true;
+  if (node.items && node.items.some(inner)) return true;
+  if (node.l && inner(node.l)) return true;
+  if (node.r && inner(node.r)) return true;
+  if (node.x && inner(node.x)) return true;
+  if (node.obj && inner(node.obj)) return true;
+  if (node.idx && inner(node.idx)) return true;
+  if (node.target && inner(node.target)) return true;
+  return Boolean(node.value && inner(node.value));
 }
 
 // The field names read as `binder["field"]` in `node`, first seen first and
@@ -242,7 +250,7 @@ function mapRecordDetails(step) {
   const explicit = args.length === 3 && args[1].t === 'var' && !args[1].grouped;
   const binder = explicit ? args[1].name : '_';
   const body = explicit ? args[2] : args[1];
-  if (!body || body.t !== 'call' || !['RECORD', 'LAZY_RECORD'].includes(body.name)
+  if (!body || body.t !== 'call' || body.name !== 'RECORD'
       || body.args.length % 2 !== 0) return null;
   const pairs = [];
   for (let i = 0; i < body.args.length; i += 2) {
@@ -253,7 +261,7 @@ function mapRecordDetails(step) {
   return { explicit, binder, body, pairs };
 }
 
-function tryPlanFallthrough(source, steps, dialect, catalog, options) {
+function tryPlanFallthrough(source, steps, dialect, catalog, options, helpers) {
   const mapIndex = steps.findIndex((step) => step.name === 'MAP');
   if (mapIndex < 0) return null;
   if (bucketRowsAreKeys(steps.slice(0, mapIndex))) return null;
@@ -264,7 +272,7 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options) {
   const pushable = [];
   const custom = [];
   for (const pair of details.pairs) {
-    if (containsUnsupportedSql(pair.value, dialect)) custom.push(pair);
+    if (containsUnsupportedSql(pair.value, dialect, helpers.defs)) custom.push(pair);
     else pushable.push(pair);
   }
   if (custom.length === 0 || pushable.length === 0) return null;
@@ -332,7 +340,7 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options) {
   const rewrittenSteps = [
     ...steps.slice(0, mapIndex), rewrittenMap, ...steps.slice(mapIndex + 1),
   ];
-  const rewrittenAst = buildPipeline(source, rewrittenSteps);
+  const rewrittenAst = helpers.wrap(buildPipeline(source, rewrittenSteps));
   const sql = tryStatement(rewrittenAst, dialect, catalog, options);
   if (sql === null) return null;
 
@@ -351,18 +359,177 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options) {
     }
   }
   const continuationRecord = { ...details.body, args: continuationArgs };
-  const continuationMap = { ...mapStep,
+  const continuationAst = helpers.wrap({ ...mapStep,
     args: details.explicit
       ? [input, mapStep.args[1], continuationRecord]
-      : [input, continuationRecord] };
+      : [input, continuationRecord] });
   return new HybridPlan({
     dialect,
     sqlStatement: sql,
     sqlPrefixAst: rewrittenAst,
-    continuationAst: continuationMap,
-    continuationProgram: new Program('', continuationMap),
-    sourceTables: sourceTables(rewrittenAst, catalog),
+    continuationAst,
+    continuationProgram: new Program('', continuationAst),
+    sourceTables: helpers.tables(rewrittenAst),
   });
+}
+
+// --- helper assignments -----------------------------------------------------
+//
+// Stage 1 inlines a helper assignment for translate(): `Y = "x"; ... + Y` is
+// rendered as `... + "x"`, the literal keeping its definition-site position,
+// which is right for a refusal message. It is wrong for the memory half of a
+// plan, because that half is a program run() evaluates and §12.1 promises it
+// reports errors where run() would: run() evaluates the READ of Y at the use
+// site and reports `+`'s operand there, and it evaluates the definition once,
+// before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+// the planner does not inline. It plans the program as written, three ways:
+//
+//   * A helper that IS a literal -- after inlining earlier such helpers and
+//     folding, `N = 1 + 1` as much as `N = 2` -- is inlined at its reads,
+//     stamped with the read's position. That is invisible: a leaf literal
+//     cannot fail, and neither can the read, since the definition exists. It
+//     keeps `TAKE(N)` a `LIMIT 2` rather than a helper the SQL has to carry.
+//   * A helper read as the pipeline's SOURCE is unwound through: `X = ORDERS
+//     .> TAKE(2); X .> MAP(...)` is one pipeline over ORDERS, so the prefix
+//     search sees every step. Only the source position looks through a
+//     helper; a read anywhere else stays a read.
+//   * What is handed to the translator, and what is kept for the
+//     continuation, carries in front of it the assignments it still reads and
+//     the ones those read, in program order, as the program wrote them. The
+//     translator runs its own stage 1 over that seq and inlines; the
+//     continuation evaluates them once, before its steps, as run() does. An
+//     assignment nothing after the split reads is dropped, as stage 1 drops
+//     it for translate() -- the one departure, and the same one.
+
+const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
+
+// The leading statements and the result expression of a program.
+function statements(ast) {
+  if (ast.t !== 'seq') return { leading: [], result: ast };
+  return { leading: ast.items.slice(0, -1), result: ast.items[ast.items.length - 1] };
+}
+
+// The name a leading statement assigns. Stage 1 has accepted every statement
+// by the time this runs, so each is an assignment whose target is a name, or
+// a name indexed by constants.
+function assignedName(statement) {
+  let target = statement.target;
+  while (target.t === 'index') target = target.obj;
+  return target.name;
+}
+
+// The whole-name definitions, by name. Stage 1 refuses a name assigned twice,
+// or both whole and by index, so each name here has exactly one.
+function definitions(leading) {
+  const defs = new Map();
+  for (const s of leading) {
+    if (s.target.t === 'var') defs.set(s.target.name, s.value);
+  }
+  return defs;
+}
+
+// `node` with every read of a literal helper replaced by the literal, stamped
+// with the read's position. Binder scoping is stage 1's: a binder shadows a
+// same-named helper inside its body. Copies on the way down, never writes.
+function inlineLiterals(node, literals, bound = []) {
+  if (!node) return node;
+  const t = node.t;
+  if (t === 'var') {
+    if (bound.includes(node.name) || !literals.has(node.name)) return node;
+    return { ...literals.get(node.name), pos: node.pos };
+  }
+  if (LITERAL_TYPES.has(t)) return node;
+  const inline = (child, scope = bound) => inlineLiterals(child, literals, scope);
+  if (t === 'un') return { ...node, x: inline(node.x) };
+  if (t === 'bin') return { ...node, l: inline(node.l), r: inline(node.r) };
+  if (t === 'index') return { ...node, obj: inline(node.obj), idx: inline(node.idx) };
+  if (t === 'list' || t === 'seq') return { ...node, items: node.items.map((item) => inline(item)) };
+  if (t === 'assign') return { ...node, value: inline(node.value) };
+  if (t === 'call') {
+    const inner = [...bound];
+    const binds = node.spec != null && node.spec.binds;
+    if (binds) {
+      inner.push('_K');
+      inner.push(node.args.length === 3 && constants.isBinderName(node.args[1])
+        ? node.args[1].name : '_');
+    }
+    const args = node.args.map((arg, i) => {
+      if (binds && i === 1 && node.args.length === 3 && constants.isBinderName(arg)) return arg;
+      return inline(arg, i === 0 ? bound : inner);
+    });
+    return { ...node, args };
+  }
+  return node;
+}
+
+// The literal helpers: each whole-name definition, after the earlier literal
+// helpers are inlined into it and it is folded, when what is left is a leaf.
+function literalHelpers(leading, options) {
+  const literals = new Map();
+  for (const s of leading) {
+    if (s.target.t !== 'var') continue;
+    const folded = optimizeAstLogical(inlineLiterals(s.value, literals), options);
+    if (LITERAL_TYPES.has(folded.t)) literals.set(s.target.name, folded);
+  }
+  return literals;
+}
+
+// The pipeline the planner probes: the result unwound, and where its source
+// is a helper, that helper's definition unwound in turn.
+function unwindThroughHelpers(result, defs, literals) {
+  let { source, steps } = unwindPipeline(inlineLiterals(result, literals));
+  const seen = new Set();
+  while (source && source.t === 'var' && defs.has(source.name) && !seen.has(source.name)) {
+    seen.add(source.name);
+    const inner = unwindPipeline(inlineLiterals(defs.get(source.name), literals));
+    source = inner.source;
+    steps = [...inner.steps, ...steps];
+  }
+  return { source, steps };
+}
+
+// The names a tree reads, binders included: an over-approximation that can
+// only keep an assignment the tree does not need, never drop one it does.
+function readNames(node, out = new Set()) {
+  if (!node) return out;
+  if (node.t === 'var') {
+    out.add(node.name);
+    return out;
+  }
+  if (node.args) node.args.forEach((item) => readNames(item, out));
+  if (node.items) node.items.forEach((item) => readNames(item, out));
+  for (const child of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
+    readNames(child, out);
+  }
+  return out;
+}
+
+// The leading assignments `node` depends on, in program order: those whose
+// name it reads, and those THEY read, transitively.
+function referencedAssignments(leading, node) {
+  const needed = readNames(node);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const s of leading) {
+      if (!needed.has(assignedName(s))) continue;
+      for (const name of readNames(s.value)) {
+        if (!needed.has(name)) {
+          needed.add(name);
+          grew = true;
+        }
+      }
+    }
+  }
+  return leading.filter((s) => needed.has(assignedName(s)));
+}
+
+// `node` behind the assignments it depends on, as the program wrote them -- a
+// seq the translator's stage 1 inlines and the evaluator runs in order -- or
+// `node` itself when it depends on none.
+function withHelpers(leading, node) {
+  const kept = referencedAssignments(leading, node);
+  return kept.length ? { t: 'seq', items: [...kept, node], pos: kept[0].pos } : node;
 }
 
 // The plan for a program nothing of which reaches the database. The
@@ -383,49 +550,63 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
   sqlmap.requireTarget(dialect);
   catalog.checkAliases();
 
-  // Stage 1 first, exactly as the translator runs it, so the tree unwound
-  // below is the one a prefix will be translated from. A program stage 1
-  // refuses -- `A += 1; ...`, a bare statement before the result -- is a
-  // program no part of which can be pushed down, which is a pure-memory plan
-  // and not an exception: "none of it" is one of the planner's answers.
-  let normalized;
+  // Stage 1 first, exactly as the translator runs it, for its verdict. A
+  // program stage 1 refuses -- `A += 1; ...`, a bare statement before the
+  // result -- is a program no part of which can be pushed down, which is a
+  // pure-memory plan and not an exception: "none of it" is one of the
+  // planner's answers. Its TREE is not what is planned, though: see "helper
+  // assignments" above.
+  const [constNames, constCtx] = constants.scope(catalog);
   try {
-    const [constNames, constCtx] = constants.scope(catalog);
-    normalized = normalise.run(program.ast, constNames, constCtx);
+    normalise.run(program.ast, constNames, constCtx);
   } catch (error) {
     if (error instanceof SqlError) return pureMemoryPlan(program, dialect, catalog);
     throw error;
   }
-  const optimized = optimizeAstLogical(normalized, opts);
-  const { source, steps } = unwindPipeline(optimized);
-  if (!steps.length || !source || source.t !== 'var' || !catalog.has(source.name)
-      || catalog.get(source.name, source.pos).kind !== 'relation') {
+  const { leading, result } = statements(program.ast);
+  const literals = literalHelpers(leading, opts);
+  const defs = definitions(leading);
+  const isRelation = (node) => node && node.t === 'var' && catalog.has(node.name)
+    && catalog.get(node.name, node.pos).kind === 'relation';
+  const unwound = unwindThroughHelpers(result, defs, literals);
+  if (!unwound.steps.length || !isRelation(unwound.source)) {
     return pureMemoryPlan(program, dialect, catalog);
   }
+  const optimized = optimizeAstLogical(buildPipeline(unwound.source, unwound.steps), opts);
+  const { source, steps } = unwindPipeline(optimized);
+  if (!steps.length || !isRelation(source)) return pureMemoryPlan(program, dialect, catalog);
+
+  const helpers = {
+    defs,
+    wrap: (node) => withHelpers(leading, node),
+    // The physical sources of a wrapped tree are read off what the translator
+    // renders: stage 1's tree, where an assignment a binder shadows is gone.
+    tables: (wrapped) => sourceTables(normalise.run(wrapped, constNames, constCtx), catalog),
+  };
 
   // The whole pipeline, unless its rows would be a bucket's keys: the
   // translator renders a bare bucket as its keys, and a plan that pushes the
   // whole of `... .> BUCKET(k)` would hand them back as the answer.
-  const fullAst = buildPipeline(source, steps);
+  const fullAst = helpers.wrap(buildPipeline(source, steps));
   const fullSql = bucketRowsAreKeys(steps) ? null : tryStatement(fullAst, dialect, catalog, opts);
   if (fullSql !== null) {
     return new HybridPlan({ dialect, sqlStatement: fullSql, sqlPrefixAst: fullAst,
-      pureSql: true, sourceTables: sourceTables(fullAst, catalog) });
+      pureSql: true, sourceTables: helpers.tables(fullAst) });
   }
 
-  const fallthrough = tryPlanFallthrough(source, steps, dialect, catalog, opts);
+  const fallthrough = tryPlanFallthrough(source, steps, dialect, catalog, opts, helpers);
   if (fallthrough !== null) return fallthrough;
 
   const inputVar = '_INPUT';
   for (let count = steps.length - 1; count >= 1; count--) {
     const prefixSteps = steps.slice(0, count);
     if (bucketRowsAreKeys(prefixSteps)) continue;
-    const prefixAst = buildPipeline(source, prefixSteps);
+    const prefixAst = helpers.wrap(buildPipeline(source, prefixSteps));
     const sql = tryStatement(prefixAst, dialect, catalog, opts);
     if (sql === null) continue;
     const remaining = steps.slice(count);
     const input = { t: 'var', name: inputVar, pos: remaining[0].pos };
-    const continuationAst = buildPipeline(input, remaining);
+    const continuationAst = helpers.wrap(buildPipeline(input, remaining));
     return new HybridPlan({
       dialect,
       sqlStatement: sql,
@@ -433,7 +614,7 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
       continuationAst,
       continuationProgram: new Program('', continuationAst),
       continuationSourceVar: inputVar,
-      sourceTables: sourceTables(prefixAst, catalog),
+      sourceTables: helpers.tables(prefixAst),
     });
   }
 

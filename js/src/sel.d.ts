@@ -70,9 +70,6 @@ export class Value {
   static list(values: Value[]): Value;
   static shaped(keys: readonly string[], values: Value[]): Value;
   static fromEntries(entries: [string, Value][], isList?: boolean): Value;
-  static thunk(fn: () => Value): Value;
-
-  force(): this;
 
   size(): number;
   has(key: string): boolean;

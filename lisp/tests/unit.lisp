@@ -722,33 +722,6 @@ b\"c\\d")))
       (is (string= "90" (sel:as-text (sel:value-get (sel:value-get top-desc2 "1") "val"))))
       (is (string= "50" (sel:as-text (sel:value-get (sel:value-get top-desc2 "2") "val")))))))
 
-(test lazy-record-evaluation
-  (let ((eval-count 0))
-    (sel:register-builtin "TEST_HEAVY_OP" 1 1
-      (lambda (a ctx)
-        (declare (ignore ctx))
-        (incf eval-count)
-        (sel:make-num (format nil "~d" (* (parse-integer (sel:as-text (sel::args-val a 0))) 10)))))
-    ;; Generate 10 records, map with LAZY_RECORD, take 2.
-    ;; Only 2 rows should ever trigger TEST_HEAVY_OP.
-    (let* ((q "LIST(RECORD('id', 1), RECORD('id', 2), RECORD('id', 3), RECORD('id', 4), RECORD('id', 5))
-              .> MAP(r, LAZY_RECORD('id', r['id'], 'heavy', TEST_HEAVY_OP(r['id'])))
-              .> TAKE(2)")
-           (res (sel:evaluate q)))
-      (is (= 0 eval-count)) ;; No field accessed yet!
-      (is (= 2 (sel:value-size res)))
-      (is (= 0 eval-count)) ;; value-size doesn't access fields!
-      (let ((row1 (sel:value-get res "1")))
-        ;; Access only 'id', 'heavy' still not evaluated!
-        (is (string= "1" (sel:as-text (sel:value-get row1 "id"))))
-        (is (= 0 eval-count))
-        ;; Now access 'heavy' on row 1
-        (is (string= "10" (sel:as-text (sel:value-get row1 "heavy"))))
-        (is (= 1 eval-count))
-        ;; Access again, thunk is memoized!
-        (is (string= "10" (sel:as-text (sel:value-get row1 "heavy"))))
-        (is (= 1 eval-count))))))
-
 (test ast-pipeline-optimizer
   ;; 1. SORT_BY + TAKE -> TOP_BY
   (let* ((prog (sel:compile-source "DATA .> SORT_BY(_['x'], 'DESC') .> TAKE(5)"))
@@ -851,9 +824,10 @@ b\"c\\d")))
     ;; Logical optimizer keeps RECORD
     (let ((rec-log (second (sel::node-items opt-logical))))
       (is (string= "RECORD" (sel::node-s rec-log))))
-    ;; In-memory optimizer rewrites RECORD to LAZY_RECORD
+    ;; In-memory optimizer keeps RECORD too: MAP evaluates its body for
+    ;; every element, so there is no physical rewrite of the projection.
     (let ((rec-mem (second (sel::node-items opt-memory))))
-      (is (string= "LAZY_RECORD" (sel::node-s rec-mem))))))
+      (is (string= "RECORD" (sel::node-s rec-mem))))))
 
   ;; 9. Constant Folding and Dead Branch Elimination
   (let* ((prog1 (sel:compile-source "(10 + 20) * 3 - 5"))
@@ -1035,18 +1009,33 @@ identity, and a snapshot is compared by value."
                              "orders" "o"
                              (list (cons "ID" (sel.sql:binding-column "id" "o" :num)))))))
         (rows (sel:evaluate "LIST(RECORD('id', '1'), RECORD('id', '2'))")))
-    (flet ((failure (thunk)
-             (handler-case (progn (funcall thunk) "no error")
+    (flet ((failure (fn)
+             (handler-case (progn (funcall fn) "no error")
                (sel:sel-error (e)
                  (format nil "~a@~d:~d" (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e))))))
+      ;; The helper rows are review 2026-09-15 finding AJ: a helper read in
+      ;; the continuation is reported at its READ, not at its definition, and
+      ;; a helper's definition is evaluated once, before the pipeline, not per
+      ;; row. LABEL is a context variable, so a helper can be something no
+      ;; fold turns into a literal.
       (loop for (source kind want) in
             '(("ORDERS .> TAKE(2) .> MAP(IF(TRUE, \"x\", 1) >= _[\"id\"])" :hybrid "E_NOT_NUM@1:26")
               ("ORDERS .> TAKE(2) .> FILTER((FALSE AND TRUE) + _[\"id\"] > 0)" :hybrid "E_NOT_NUM@1:36")
-              ("ORDERS .> FILTER(IF(TRUE, \"x\", 1) >= _[\"id\"])" :pure-memory "E_NOT_NUM@1:18"))
+              ("ORDERS .> FILTER(IF(TRUE, \"x\", 1) >= _[\"id\"])" :pure-memory "E_NOT_NUM@1:18")
+              ("Y = \"x\"; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + Y)" :hybrid "E_NOT_NUM@1:45")
+              ("X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _[\"id\"])" :hybrid "E_NOT_NUM@1:55")
+              ("Y = \"a\" & \"b\"; ORDERS .> TAKE(2) .> MAP(1 + Y)" :hybrid "E_NOT_NUM@1:45")
+              ("Z = \"abc\"; ORDERS .> TAKE(1) .> FILTER(_[\"id\"] > Z)" :hybrid "E_NOT_NUM@1:50")
+              ("Y = \"x\"; (ORDERS .> TAKE(2)) .> MAP(_[\"id\"] + Y)" :hybrid "E_NOT_NUM@1:47")
+              ("Y = LABEL; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + Y)" :hybrid "E_NOT_NUM@1:47")
+              ("C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + C)" :hybrid "E_NOT_NUM@1:21")
+              ("X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _[\"id\"] + \"x\")" :hybrid "E_NOT_NUM@1:54")
+              ("Y = ABORT(\"x\"); ORDERS .> TAKE(2) .> MAP(Y)" :pure-memory "E_ABORT@1:11"))
             do (let* ((program (sel:compile-source source))
                       (plan (sel.sql:plan-hybrid program "postgresql" orders))
                       (context (sel:make-none)))
                  (sel:value-set context "ORDERS" rows)
+                 (sel:value-set context "LABEL" (sel:make-text "x"))
                  (is (eq kind (cond ((sel.sql:hybrid-plan-pure-sql-p plan) :pure-sql)
                                     ((sel.sql:hybrid-plan-pure-memory-p plan) :pure-memory)
                                     (t :hybrid))))
@@ -1071,8 +1060,8 @@ identity, and a snapshot is compared by value."
                                     (cons "AMOUNT" (sel.sql:binding-column "amount" "o" :num))
                                     (cons "NAME" (sel.sql:binding-column "name" "o" :text)))))))
          (rows (sel:evaluate "LIST(RECORD('id', '1', 'customer_id', '7', 'amount', '10', 'name', 'a'), RECORD('id', '2', 'customer_id', '7', 'amount', '5', 'name', 'b'), RECORD('id', '3', 'customer_id', '9', 'amount', '7', 'name', 'c'))")))
-    (flet ((outcome (thunk)
-             (handler-case (sel:value-dump (funcall thunk))
+    (flet ((outcome (fn)
+             (handler-case (sel:value-dump (funcall fn))
                (sel:sel-error (e)
                  (format nil "~a@~d:~d" (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e)))))
            (context ()
@@ -1098,7 +1087,10 @@ identity, and a snapshot is compared by value."
               ("ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_))) .> TAKE(1) .> FILTER(_[\"n\"] > 1)" :hybrid)
               ("ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_))) .> DROP(1) .> FILTER(_[\"n\"] > 1)" :hybrid)
               ("ORDERS .> BUCKET(RECORD(\"c\", _[\"customer_id\"]), RECORD(\"n\", COUNT(_)))" :pure-sql)
-              ("ORDERS .> BUCKET(RECORD(\"c\", _[\"customer_id\"])) .> MAP(RECORD(\"n\", COUNT(_)))" :pure-memory))
+              ("ORDERS .> BUCKET(RECORD(\"c\", _[\"customer_id\"])) .> MAP(RECORD(\"n\", COUNT(_)))" :pure-memory)
+              ("N = 1 + 1; X = ORDERS .> TAKE(N) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2))); X .> FILTER(_[\"id\"] > 1) .> TAKE(5)" :hybrid)
+              ("LIMIT = 2; ORDERS .> TAKE(LIMIT) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], LIMIT)))" :hybrid)
+              ("C = COUNT(ORDERS); ORDERS .> FILTER(_[\"amount\"] > C) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2)))" :hybrid))
             do (let* ((program (sel:compile-source source))
                       (plan (sel.sql:plan-hybrid program "sqlite" orders))
                       (prefix-in-memory

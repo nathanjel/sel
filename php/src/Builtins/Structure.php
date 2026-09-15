@@ -18,29 +18,6 @@ final class Structure
 {
     public static function register(): void
     {
-        Registry::define(['name' => 'LAZY_RECORD', 'min' => 0, 'max' => PHP_INT_MAX,
-            'lazy' => true, 'binds' => true,
-            'arityError' => static fn (int $count): ?string => $count % 2 !== 0
-                ? "LAZY_RECORD takes an even number of arguments (key-value pairs), got {$count}"
-                : null,
-            'fn' => static function (Args $a, Context $ctx): Value {
-                $entries = [];
-                for ($i = 0; $i < $a->count(); $i += 2) {
-                    $key = $a->text($i);
-                    $node = $a->node($i + 1);
-                    if (in_array($node['t'], ['num', 'text', 'bool', 'null'], true)) {
-                        $value = $a->evalNode($node);
-                    } else {
-                        $captured = $ctx->copyCurrent();
-                        $value = Value::thunk(static function () use ($a, $node, $captured): Value {
-                            return $a->evalNode($node, $captured);
-                        });
-                    }
-                    $entries[] = [$key, $value];
-                }
-                return Value::fromEntries($entries);
-            }]);
-
         Registry::define(['name' => 'DEDUPE', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $value = $a->val(0);
@@ -88,19 +65,19 @@ final class Structure
         if ($value->isNull()) return;
         if ($value->isList && $value->storage !== null) {
             foreach ($value->storage as $i => $item) {
-                $callback((string) ($i + 1), $item->force());
+                $callback((string) ($i + 1), $item);
             }
             return;
         }
         if ($value->shape !== null && $value->storage !== null) {
             foreach ($value->shape->keys as $i => $key) {
-                $callback($key, $value->storage[$i]->force());
+                $callback($key, $value->storage[$i]);
             }
             return;
         }
         if ($value->size() > 0) {
             foreach ($value->children as $key => $item) {
-                $callback((string) $key, $item->force());
+                $callback((string) $key, $item);
             }
             return;
         }
@@ -113,13 +90,13 @@ final class Structure
             return null;
         }
         if ($value->isList && $value->storage !== null && $value->storage !== []) {
-            return $value->storage[0]->force();
+            return $value->storage[0];
         }
         if ($value->shape !== null && $value->storage !== null && $value->storage !== []) {
-            return $value->storage[0]->force();
+            return $value->storage[0];
         }
         if ($value->size() > 0) {
-            foreach ($value->children as $item) return $item->force();
+            foreach ($value->children as $item) return $item;
         }
         return $value;
     }
@@ -466,18 +443,18 @@ final class Structure
         $output = [];
         $each = static function (Value $value, callable $callback): void {
             if ($value->isList && $value->storage !== null) {
-                foreach ($value->storage as $item) $callback($item->force());
+                foreach ($value->storage as $item) $callback($item);
                 return;
             }
             if ($value->shape !== null && $value->storage !== null) {
-                foreach ($value->storage as $item) $callback($item->force());
+                foreach ($value->storage as $item) $callback($item);
                 return;
             }
             if ($value->size() > 0) {
-                foreach ($value->children as $item) $callback($item->force());
+                foreach ($value->children as $item) $callback($item);
                 return;
             }
-            if ($value->kind !== Value::NONE) $callback($value->force());
+            if ($value->kind !== Value::NONE) $callback($value);
         };
 
         if ($equi !== null && $sampleRight !== null) {
@@ -680,7 +657,7 @@ final class Structure
                 }
             };
             if ($value->isList && $value->storage !== null) {
-                foreach ($value->storage as $i => $item) $consume((string) ($i + 1), $item->force());
+                foreach ($value->storage as $i => $item) $consume((string) ($i + 1), $item);
             } else {
                 self::forEachElement($value, $consume);
             }
@@ -694,7 +671,7 @@ final class Structure
     /** @param array{line:int,col:int,offset:int}|null $pos */
     private static function bucketKeyText(Value $key, ?array $pos): string
     {
-        $v = $key->force();
+        $v = $key;
         if ($v->kind === Value::NONE) {
             if ($v->isNull()) fail('E_NULL', 'value is NULL', $pos);
             fail('E_NOT_TEXT', 'a bucket key must be text or a number, got a list or record', $pos);

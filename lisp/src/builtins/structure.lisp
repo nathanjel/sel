@@ -52,34 +52,6 @@
                  (when (oddp count)
                    (format nil "RECORD takes an even number of arguments (key-value pairs), got ~d" count))))
 
-(define-builtin "LAZY_RECORD" 0 +variadic+
-  (lambda (a ctx)
-    (let ((n (args-count a)))
-      (when (oddp n)
-        (fail "E_BAD_ARG" (format nil "LAZY_RECORD takes an even number of arguments (key-value pairs), got ~d" n)
-              (args-pos-of a 0)))
-      (let ((rec (make-none)))
-        (loop for i from 0 below n by 2
-              for key-node = (args-node a i)
-              for val-node = (args-node a (1+ i))
-              for key = (as-text (eval-node key-node ctx) (node-pos key-node))
-              do (let ((val-val
-                         (case (node-kind val-node)
-                           ((:num :text :bool :null)
-                            (eval-node val-node ctx))
-                           (t
-                            (let ((captured-ctx (ctx-copy-current ctx))
-                                  (captured-node val-node))
-                              (make-thunk-value
-                               (lambda ()
-                                 (eval-node captured-node captured-ctx))))))))
-                   (value-set rec key val-val)))
-        rec)))
-  :lazy t :binds t
-  :arity-error (lambda (count)
-                 (when (oddp count)
-                   (format nil "LAZY_RECORD takes an even number of arguments (key-value pairs), got ~d" count))))
-
 (define-builtin "TAKE" 2 2
   (lambda (a ctx)
     (declare (ignore ctx))
@@ -127,7 +99,6 @@
         (i-g (gensym "I"))
         (c-g (gensym "C")))
     `(let ((,v-g ,coll))
-       (force-value ,v-g)
        (cond
          ((and (value-is-list ,v-g) (value-storage ,v-g))
           (let ((,st-g (value-storage ,v-g)))
@@ -140,7 +111,6 @@
               ,@body)))))))
 
 (defun first-collection-item (v)
-  (force-value v)
   (cond
     ((or (value-null-p v) (and (eq (value-kind v) :none) (zerop (value-size v))))
      nil)

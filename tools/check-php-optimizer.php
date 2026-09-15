@@ -147,8 +147,8 @@ $lateMaterialization = optimized_steps(
     . ' .> SORT_BY(_["x"], "DESC")',
 );
 check(step_names($lateMaterialization) === ['SORT_BY', 'MAP'], 'SORT_BY late materialization');
-check(($lateMaterialization[1]['args'][1]['name'] ?? null) === 'LAZY_RECORD',
-    'MAP projection lazy-record conversion');
+check(($lateMaterialization[1]['args'][1]['name'] ?? null) === 'RECORD',
+    'MAP projection body stays RECORD after physical optimisation');
 
 $filterFusion = optimized_steps('(1, 2) .> FILTER(_ > 0) .> FILTER(_ < 3)');
 check(step_names($filterFusion) === ['FILTER']
@@ -262,17 +262,34 @@ $failure = static function (callable $fn): string {
         return "{$e->code}@{$e->line}:{$e->col}";
     }
 };
+//
+// Review 2026-09-15 finding AJ: a helper assignment stage 1 inlines carried
+// its definition-site position into the continuation, so `Y = "x"; ... + Y`
+// reported 1:5 there and 1:45 from run(). The planner now inlines a helper
+// only when it is a literal (stamped at the read), unwinds through a helper
+// only at the pipeline's source, and keeps every other assignment the
+// continuation reads in front of it, as written. LABEL is a context variable
+// so that a helper can be something no fold turns into a literal.
 foreach ([
     ['ORDERS .> TAKE(2) .> MAP(IF(TRUE, "x", 1) >= _["id"])', 'hybrid', 'E_NOT_NUM@1:26'],
     ['ORDERS .> TAKE(2) .> FILTER((FALSE AND TRUE) + _["id"] > 0)', 'hybrid', 'E_NOT_NUM@1:36'],
     ['ORDERS .> FILTER(IF(TRUE, "x", 1) >= _["id"])', 'pure_memory', 'E_NOT_NUM@1:18'],
+    ['Y = "x"; ORDERS .> TAKE(2) .> MAP(_["id"] + Y)', 'hybrid', 'E_NOT_NUM@1:45'],
+    ['X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _["id"])', 'hybrid', 'E_NOT_NUM@1:55'],
+    ['Y = "a" & "b"; ORDERS .> TAKE(2) .> MAP(1 + Y)', 'hybrid', 'E_NOT_NUM@1:45'],
+    ['Z = "abc"; ORDERS .> TAKE(1) .> FILTER(_["id"] > Z)', 'hybrid', 'E_NOT_NUM@1:50'],
+    ['Y = "x"; (ORDERS .> TAKE(2)) .> MAP(_["id"] + Y)', 'hybrid', 'E_NOT_NUM@1:47'],
+    ['Y = LABEL; ORDERS .> TAKE(2) .> MAP(_["id"] + Y)', 'hybrid', 'E_NOT_NUM@1:47'],
+    ['C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_["id"] + C)', 'hybrid', 'E_NOT_NUM@1:21'],
+    ['X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _["id"] + "x")', 'hybrid', 'E_NOT_NUM@1:54'],
+    ['Y = ABORT("x"); ORDERS .> TAKE(2) .> MAP(Y)', 'pure_memory', 'E_ABORT@1:11'],
 ] as [$source, $kind, $want]) {
     $program = Sel::compile($source);
     $plan = Sql::planHybrid($program, 'postgresql', $orders);
     $got = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
     check($got === $kind, "{$source}: expected a {$kind} plan, got {$got}");
-    $inMemory = $failure(static fn () => $program->run(['ORDERS' => $rows]));
-    $executed = $failure(static fn () => Sql::executeHybrid($plan, $runner, ['ORDERS' => $rows]));
+    $inMemory = $failure(static fn () => $program->run(['ORDERS' => $rows, 'LABEL' => 'x']));
+    $executed = $failure(static fn () => Sql::executeHybrid($plan, $runner, ['ORDERS' => $rows, 'LABEL' => 'x']));
     check($inMemory === $want, "{$source}: run() reports {$inMemory}, want {$want}");
     check($executed === $want, "{$source}: the executed plan reports {$executed}, want {$want}");
 }
@@ -312,6 +329,9 @@ foreach ([
   ['ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_))) .> DROP(1) .> FILTER(_["n"] > 1)', 'hybrid'],
   ['ORDERS .> BUCKET(RECORD("c", _["customer_id"]), RECORD("n", COUNT(_)))', 'pure_sql'],
   ['ORDERS .> BUCKET(RECORD("c", _["customer_id"])) .> MAP(RECORD("n", COUNT(_)))', 'pure_memory'],
+  ['N = 1 + 1; X = ORDERS .> TAKE(N) .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], 2))); X .> FILTER(_["id"] > 1) .> TAKE(5)', 'hybrid'],
+  ['LIMIT = 2; ORDERS .> TAKE(LIMIT) .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], LIMIT)))', 'hybrid'],
+  ['C = COUNT(ORDERS); ORDERS .> FILTER(_["amount"] > C) .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], 2)))', 'hybrid'],
 ] as [$source, $kind]) {
     $program = Sel::compile($source);
     $plan = Sql::planHybrid($program, 'sqlite', $fullOrders);

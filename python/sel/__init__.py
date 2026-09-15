@@ -51,8 +51,8 @@ class Program:
         # optimiser, built on the first run and kept, because the rewrite and
         # the copy it makes cost more than evaluating a small rule does. Keyed
         # by the identity of `ast` so a reassignment is noticed. Private; SQL
-        # translation never sees it, since a physical rewrite (LAZY_RECORD,
-        # join pushdown) is not something a database can be asked to run.
+        # translation never sees it, since a physical rewrite (join
+        # pushdown) is not something a database can be asked to run.
         self._physical: Node | None = None
         self._physical_of: Node | None = None
 

@@ -79,24 +79,6 @@ final class Optimizer
                     if (!$pushed['changed']) break;
                     $steps = self::logicalSteps($source, $steps, $options);
                 }
-                foreach ($steps as &$step) {
-                    if (($step['name'] ?? '') !== 'MAP') {
-                        continue;
-                    }
-                    $details = self::mapDetails($step);
-                    if ($details === null || ($details['body']['t'] ?? null) !== 'call'
-                        || ($details['body']['name'] ?? '') !== 'RECORD'
-                        || count($details['body']['args']) < 4) {
-                        continue;
-                    }
-                    $body = self::copyNode($details['body']);
-                    $body['name'] = 'LAZY_RECORD';
-                    $body['spec'] = Registry::lookup('LAZY_RECORD');
-                    $step['args'] = $details['explicit']
-                        ? [$step['args'][0], $step['args'][1], $body]
-                        : [$step['args'][0], $body];
-                }
-                unset($step);
             }
             return self::buildPipeline($source, $steps);
         }
@@ -505,7 +487,7 @@ final class Optimizer
     {
         $details = self::mapDetails($step);
         $body = $details['body'] ?? null;
-        if (($body['t'] ?? null) !== 'call' || !in_array($body['name'], ['RECORD', 'LAZY_RECORD'], true)) return [];
+        if (($body['t'] ?? null) !== 'call' || $body['name'] !== 'RECORD') return [];
         $fields = [];
         for ($i = 0; $i + 1 < count($body['args']); $i += 2) {
             $key = $body['args'][$i];
@@ -526,7 +508,7 @@ final class Optimizer
         $details = self::mapDetails($step);
         $body = $details['body'] ?? null;
         return ($body['t'] ?? null) !== 'call'
-            || !in_array($body['name'], ['RECORD', 'LAZY_RECORD'], true)
+            || $body['name'] !== 'RECORD'
             || count(self::mapPassthroughs($step)) * 2 !== count($body['args']);
     }
 

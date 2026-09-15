@@ -264,7 +264,7 @@ def map_details(step: Node) -> dict[str, Any]:
 def map_passthroughs(step: Node) -> list[str]:
     details = map_details(step)
     body = details['body']
-    if body is None or body.t != 'call' or body.name not in ('RECORD', 'LAZY_RECORD'):
+    if body is None or body.t != 'call' or body.name != 'RECORD':
         return []
     fields = []
     for i in range(0, len(body.args) - 1, 2):
@@ -278,7 +278,7 @@ def map_passthroughs(step: Node) -> list[str]:
 
 def map_has_computed_fields(step: Node) -> bool:
     body = map_details(step)['body']
-    if body is None or body.t != 'call' or body.name not in ('RECORD', 'LAZY_RECORD'):
+    if body is None or body.t != 'call' or body.name != 'RECORD':
         return True
     return len(map_passthroughs(step)) * 2 != len(body.args)
 
@@ -728,21 +728,6 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
                 if not pushed:
                     break
                 final_steps = logical_steps(optimized_source, final_steps, options)
-            rewritten = []
-            for step in final_steps:
-                copy = copy_node(step)
-                details = map_details(copy) if copy.name == 'MAP' else None
-                if (details is not None and details['body'] is not None
-                        and details['body'].t == 'call'
-                        and details['body'].name == 'RECORD'
-                        and len(details['body'].args) >= 4):
-                    body = copy_node(details['body'])
-                    body.name = 'LAZY_RECORD'
-                    body.spec = lookup('LAZY_RECORD')
-                    copy.args = ([copy.args[0], copy.args[1], body]
-                                 if details['explicit'] else [copy.args[0], body])
-                rewritten.append(copy)
-            final_steps = rewritten
         return build_pipeline(optimized_source, final_steps)
 
     copy = copy_node(node)

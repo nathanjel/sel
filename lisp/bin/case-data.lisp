@@ -10899,4 +10899,100 @@
    :plan "pure_sql"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.helper.literal-helper-is-inlined-at-its-read"
+   :at "25-hybrid-plans.sqlt:1400"
+   :dialect "mariadb"
+   :source "Y = \"x\"; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + Y)"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.helper.folded-helper-is-a-literal"
+   :at "25-hybrid-plans.sqlt:1426"
+   :dialect "mariadb"
+   :source "N = 1 + 1; ORDERS .> TAKE(N)"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.helper.relation-helper-is-the-pipeline-source"
+   :at "25-hybrid-plans.sqlt:1445"
+   :dialect "mariadb"
+   :source "X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _[\"id\"])"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.helper.non-literal-helper-is-carried-as-written"
+   :at "25-hybrid-plans.sqlt:1466"
+   :dialect "mariadb"
+   :source "C = COUNT(ORDERS); ORDERS .> FILTER(_[\"id\"] > C)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > (SELECT COUNT(*) FROM `orders` `o` WHERE TRUE))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.helper.unread-helper-reads-no-table"
+   :at "25-hybrid-plans.sqlt:1488"
+   :dialect "mariadb"
+   :source "U = USERS .> TAKE(1); ORDERS .> TAKE(2) .> MAP(_[\"id\"] + \"x\")"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "USERS" (binding-relation "users" "u" (list (cons "ID" (binding-column "id" "u" :num))) nil nil)))))
+  (list
+   :name "plan.helper.indexed-helper-is-carried-as-written"
+   :at "25-hybrid-plans.sqlt:1509"
+   :dialect "mariadb"
+   :source "R[1] = 5; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + R[1])"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))))

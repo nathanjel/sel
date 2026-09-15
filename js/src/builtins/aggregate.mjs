@@ -20,7 +20,6 @@ function shape(args) {
 // empty — that is what FILTER returns when nothing matched, and ALL over it must
 // be TRUE rather than a scalar-context failure.
 function elements(value) {
-  value.force();
   if (value.size() > 0) return value.entries();
   return value.kind === NONE ? [] : [['1', value]];
 }
@@ -62,24 +61,24 @@ function walk(args, ctx, visit) {
     if (collection.storage !== null) {
       if (collection.isList) {
         for (let i = 0; i < collection.storage.length; i++) {
-          const result = visitItem(String(i + 1), collection.storage[i].force());
+          const result = visitItem(String(i + 1), collection.storage[i]);
           if (result !== undefined) return result;
         }
       } else {
         const keys = collection.shape.keys;
         for (let i = 0; i < collection.storage.length; i++) {
-          const result = visitItem(keys[i], collection.storage[i].force());
+          const result = visitItem(keys[i], collection.storage[i]);
           if (result !== undefined) return result;
         }
       }
     } else if (collection.children) {
       for (const [key, item] of collection.children) {
-        const result = visitItem(key, item.force());
+        const result = visitItem(key, item);
         if (result !== undefined) return result;
       }
     } else if (collection._entries !== null) {
       for (const [key, item] of collection._entries) {
-        const result = visitItem(key, item.force());
+        const result = visitItem(key, item);
         if (result !== undefined) return result;
       }
     } else if (collection.kind !== NONE) {
@@ -265,7 +264,6 @@ function doTop(args, ctx, forcedDir) {
   const value = args.val(0);
   const limit = args.nonNegInt(args.count() - 1);
   if (limit === 0 || value.isNull()) return Value.list([]);
-  value.force();
   if (value.kind === NONE && value.size() === 0) return Value.list([]);
 
   const sortCount = args.count() - 1;
@@ -399,7 +397,7 @@ define({
 });
 
 function bucketKeyText(key, pos) {
-  const v = key.force();
+  const v = key;
   if (v.kind === 'NONE') {
     if (v.isNull()) fail('E_NULL', 'value is NULL', pos);
     fail('E_NOT_TEXT', 'a bucket key must be text or a number, got a list or record', pos);

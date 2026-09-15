@@ -3,10 +3,14 @@
 //
 // The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
 // and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at the
-// tree the translator will see, `sourceTables` names PHYSICAL sources (a
-// relation's `from`, or a relation query's text verbatim), a program stage 1
-// refuses is a pure-memory plan rather than an exception, and `$options` is
-// one array that reaches both the logical optimiser and the translator.
+// PIPELINE, whichever helper assignments it is written through (see "helper
+// assignments" below -- inlining every helper the way stage 1 does for
+// translate() made the continuation report an error at the helper's
+// definition where run() reports its use), `sourceTables` names PHYSICAL
+// sources (a relation's `from`, or a relation query's text verbatim), a
+// program stage 1 refuses is a pure-memory plan rather than an exception, and
+// `$options` is one array that reaches both the logical optimiser and the
+// translator.
 
 declare(strict_types=1);
 
@@ -107,33 +111,49 @@ final class Hybrid
         $catalog = $bindings instanceof Bindings ? $bindings : new Bindings($bindings);
         Map::requireTarget($dialect);
         $catalog->checkAliases();
-        // Stage 1 first, exactly as the translator runs it, so the tree unwound
-        // below is the one a prefix will be translated from. A program stage 1
-        // refuses -- `A += 1; ...`, a bare statement before the result -- is a
-        // program no part of which can be pushed down, which is a pure-memory
-        // plan and not an exception: "none of it" is one of the planner's
-        // answers.
+        // Stage 1 first, exactly as the translator runs it, for its verdict. A
+        // program stage 1 refuses -- `A += 1; ...`, a bare statement before the
+        // result -- is a program no part of which can be pushed down, which is
+        // a pure-memory plan and not an exception: "none of it" is one of the
+        // planner's answers. Its TREE is not what is planned, though: see
+        // "helper assignments" below.
+        [$constNames, $constContext] = Constants::scope($catalog);
         try {
-            [$constNames, $constContext] = Constants::scope($catalog);
-            $normalized = Normalise::run($program->ast, $constNames, $constContext);
+            Normalise::run($program->ast, $constNames, $constContext);
         } catch (SqlError) {
             return self::pureMemoryPlan($program, $dialect, $catalog);
         }
-        $optimized = Optimizer::optimize($normalized, false, $options);
+        ['leading' => $leading, 'result' => $result] = self::statements($program->ast);
+        $literals = self::literalHelpers($leading, $options);
+        $defs = self::definitions($leading);
+        $isRelation = static fn (?array $node): bool => $node !== null && ($node['t'] ?? null) === 'var'
+            && $catalog->has($node['name'])
+            && ($catalog->get($node['name'], $node['pos'])['kind'] ?? null) === 'relation';
+        $unwound = self::unwindThroughHelpers($result, $defs, $literals);
+        if ($unwound['steps'] === [] || !$isRelation($unwound['source'])) {
+            return self::pureMemoryPlan($program, $dialect, $catalog);
+        }
+        $optimized = Optimizer::optimize(
+            Optimizer::buildPipeline($unwound['source'], $unwound['steps']), false, $options);
         $unwound = Optimizer::unwindPipeline($optimized);
         $source = $unwound['source'];
         $steps = $unwound['steps'];
+        if ($steps === [] || !$isRelation($source)) return self::pureMemoryPlan($program, $dialect, $catalog);
 
-        if ($steps === [] || ($source['t'] ?? null) !== 'var'
-            || !$catalog->has($source['name'])
-            || ($catalog->get($source['name'], $source['pos'])['kind'] ?? null) !== 'relation') {
-            return self::pureMemoryPlan($program, $dialect, $catalog);
-        }
+        $helpers = [
+            'defs' => $defs,
+            'wrap' => static fn (array $node): array => self::withHelpers($leading, $node),
+            // The physical sources of a wrapped tree are read off what the
+            // translator renders: stage 1's tree, where an assignment a binder
+            // shadows is gone.
+            'tables' => static fn (array $wrapped): array => self::sourceTables(
+                Normalise::run($wrapped, $constNames, $constContext), $catalog),
+        ];
 
         // The whole pipeline, unless its rows would be a bucket's keys: the
         // translator renders a bare bucket as its keys, and a plan that pushes
         // the whole of `... .> BUCKET(k)` would hand them back as the answer.
-        $fullAst = Optimizer::buildPipeline($source, $steps);
+        $fullAst = $helpers['wrap'](Optimizer::buildPipeline($source, $steps));
         $fullSql = self::bucketRowsAreKeys($steps) ? null : self::tryStatement($fullAst, $dialect, $catalog, $options);
         if ($fullSql !== null) {
             return new HybridPlan([
@@ -141,29 +161,29 @@ final class Hybrid
                 'sqlStatement' => $fullSql,
                 'sqlPrefixAst' => $fullAst,
                 'pureSql' => true,
-                'sourceTables' => self::sourceTables($fullAst, $catalog),
+                'sourceTables' => $helpers['tables']($fullAst),
             ]);
         }
 
-        $fallthrough = self::tryPlanFallthrough($source, $steps, $dialect, $catalog, $options);
+        $fallthrough = self::tryPlanFallthrough($source, $steps, $dialect, $catalog, $options, $helpers);
         if ($fallthrough !== null) return $fallthrough;
 
         for ($count = count($steps) - 1; $count >= 1; $count--) {
             $prefixSteps = array_slice($steps, 0, $count);
             if (self::bucketRowsAreKeys($prefixSteps)) continue;
-            $prefixAst = Optimizer::buildPipeline($source, $prefixSteps);
+            $prefixAst = $helpers['wrap'](Optimizer::buildPipeline($source, $prefixSteps));
             $sql = self::tryStatement($prefixAst, $dialect, $catalog, $options);
             if ($sql === null) continue;
             $remaining = array_slice($steps, $count);
             $input = ['t' => 'var', 'name' => '_INPUT', 'pos' => $remaining[0]['pos']];
-            $continuationAst = Optimizer::buildPipeline($input, $remaining);
+            $continuationAst = $helpers['wrap'](Optimizer::buildPipeline($input, $remaining));
             return new HybridPlan([
                 'dialect' => $dialect,
                 'sqlStatement' => $sql,
                 'sqlPrefixAst' => $prefixAst,
                 'continuationAst' => $continuationAst,
                 'continuationProgram' => new Program('', $continuationAst),
-                'sourceTables' => self::sourceTables($prefixAst, $catalog),
+                'sourceTables' => $helpers['tables']($prefixAst),
             ]);
         }
 
@@ -271,9 +291,21 @@ final class Hybrid
         return $open;
     }
 
-    private static function containsUnsupportedSql(?array $node, string $dialect): bool
+    /**
+     * `$defs` are the helper definitions: a read of one is as unsupported as
+     * its definition, since the translator will inline it.
+     *
+     * @param array<string,array<string,mixed>>|null $defs @param array<string,bool> $seen
+     */
+    private static function containsUnsupportedSql(?array $node, string $dialect,
+                                                   ?array $defs = null, array $seen = []): bool
     {
         if ($node === null) return false;
+        if (($node['t'] ?? null) === 'var' && $defs !== null && isset($defs[$node['name']])
+            && !isset($seen[$node['name']])) {
+            return self::containsUnsupportedSql($defs[$node['name']], $dialect, $defs,
+                $seen + [$node['name'] => true]);
+        }
         if (($node['t'] ?? null) === 'call') {
             $special = ['IF' => true, 'COND' => true, 'COALESCE' => true, 'COUNT' => true,
                         'SUM' => true, 'AVG' => true, 'MIN' => true, 'MAX' => true,
@@ -282,15 +314,17 @@ final class Hybrid
                 $entry = Map::entry($dialect, 'funcs', strtoupper($node['name']));
                 if ($entry === Map::MISSING || $entry === null || is_string($entry)) return true;
             }
-            foreach ($node['args'] ?? [] as $item) if (self::containsUnsupportedSql($item, $dialect)) return true;
+            foreach ($node['args'] ?? [] as $item) {
+                if (self::containsUnsupportedSql($item, $dialect, $defs, $seen)) return true;
+            }
             return false;
         }
         foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) {
-            if (self::containsUnsupportedSql($item, $dialect)) return true;
+            if (self::containsUnsupportedSql($item, $dialect, $defs, $seen)) return true;
         }
         foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
             if (isset($node[$key]) && is_array($node[$key])
-                && self::containsUnsupportedSql($node[$key], $dialect)) return true;
+                && self::containsUnsupportedSql($node[$key], $dialect, $defs, $seen)) return true;
         }
         return false;
     }
@@ -385,7 +419,7 @@ final class Hybrid
             && !($args[1]['grouped'] ?? false);
         $body = $explicit ? ($args[2] ?? null) : ($args[1] ?? null);
         if ($body === null || ($body['t'] ?? null) !== 'call'
-            || !in_array($body['name'], ['RECORD', 'LAZY_RECORD'], true)
+            || $body['name'] !== 'RECORD'
             || count($body['args']) % 2 !== 0) return null;
         $pairs = [];
         for ($i = 0; $i < count($body['args']); $i += 2) {
@@ -396,8 +430,9 @@ final class Hybrid
                 'body' => $body, 'pairs' => $pairs];
     }
 
+    /** @param array{defs:array<string,array<string,mixed>>,wrap:callable,tables:callable} $helpers */
     private static function tryPlanFallthrough(array $source, array $steps, string $dialect,
-                                                Bindings $catalog, array $options): ?HybridPlan
+                                                Bindings $catalog, array $options, array $helpers): ?HybridPlan
     {
         $mapIndex = null;
         foreach ($steps as $i => $step) if (($step['name'] ?? '') === 'MAP') {
@@ -413,7 +448,7 @@ final class Hybrid
         $custom = [];
         $pushableAt = [];
         foreach ($details['pairs'] as $i => $pair) {
-            if (self::containsUnsupportedSql($pair['value'], $dialect)) {
+            if (self::containsUnsupportedSql($pair['value'], $dialect, $helpers['defs'])) {
                 $custom[] = $pair;
             } else {
                 $pushable[] = $pair;
@@ -487,7 +522,7 @@ final class Hybrid
             ? [$map['args'][0], $map['args'][1], $record]
             : [$map['args'][0], $record];
         $rewrittenSteps = array_merge(array_slice($steps, 0, $mapIndex), [$map], array_slice($steps, $mapIndex + 1));
-        $rewrittenAst = Optimizer::buildPipeline($source, $rewrittenSteps);
+        $rewrittenAst = $helpers['wrap'](Optimizer::buildPipeline($source, $rewrittenSteps));
         $sql = self::tryStatement($rewrittenAst, $dialect, $catalog, $options);
         if ($sql === null) return null;
         // The continuation re-applies the projection to the rows that come back:
@@ -511,14 +546,262 @@ final class Hybrid
         $continuationMap['args'] = $details['explicit']
             ? [$input, $continuationMap['args'][1], $continuationRecord]
             : [$input, $continuationRecord];
+        $continuationAst = $helpers['wrap']($continuationMap);
         return new HybridPlan([
             'dialect' => $dialect,
             'sqlStatement' => $sql,
             'sqlPrefixAst' => $rewrittenAst,
-            'continuationAst' => $continuationMap,
-            'continuationProgram' => new Program('', $continuationMap),
-            'sourceTables' => self::sourceTables($rewrittenAst, $catalog),
+            'continuationAst' => $continuationAst,
+            'continuationProgram' => new Program('', $continuationAst),
+            'sourceTables' => $helpers['tables']($rewrittenAst),
         ]);
+    }
+
+    // --- helper assignments -------------------------------------------------
+    //
+    // Stage 1 inlines a helper assignment for translate(): `Y = "x"; ... + Y`
+    // is rendered as `... + "x"`, the literal keeping its definition-site
+    // position, which is right for a refusal message. It is wrong for the
+    // memory half of a plan, because that half is a program run() evaluates
+    // and §12.1 promises it reports errors where run() would: run() evaluates
+    // the READ of Y at the use site and reports `+`'s operand there, and it
+    // evaluates the definition once, before the pipeline, not once per row
+    // (review 2026-09-15 finding AJ). So the planner does not inline. It plans
+    // the program as written, three ways:
+    //
+    //   * A helper that IS a literal -- after inlining earlier such helpers
+    //     and folding, `N = 1 + 1` as much as `N = 2` -- is inlined at its
+    //     reads, stamped with the read's position. That is invisible: a leaf
+    //     literal cannot fail, and neither can the read, since the definition
+    //     exists. It keeps `TAKE(N)` a `LIMIT 2` rather than a helper the SQL
+    //     has to carry.
+    //   * A helper read as the pipeline's SOURCE is unwound through: `X =
+    //     ORDERS .> TAKE(2); X .> MAP(...)` is one pipeline over ORDERS, so
+    //     the prefix search sees every step. Only the source position looks
+    //     through a helper; a read anywhere else stays a read.
+    //   * What is handed to the translator, and what is kept for the
+    //     continuation, carries in front of it the assignments it still reads
+    //     and the ones those read, in program order, as the program wrote
+    //     them. The translator runs its own stage 1 over that seq and inlines;
+    //     the continuation evaluates them once, before its steps, as run()
+    //     does. An assignment nothing after the split reads is dropped, as
+    //     stage 1 drops it for translate() -- the one departure, and the same
+    //     one.
+
+    private const LITERAL_TYPES = ['num' => true, 'text' => true, 'bool' => true, 'null' => true];
+
+    /**
+     * The leading statements and the result expression of a program.
+     *
+     * @param array<string,mixed> $ast
+     * @return array{leading:list<array<string,mixed>>,result:array<string,mixed>}
+     */
+    private static function statements(array $ast): array
+    {
+        if (($ast['t'] ?? null) !== 'seq') return ['leading' => [], 'result' => $ast];
+        $items = $ast['items'];
+        return ['leading' => array_slice($items, 0, -1), 'result' => $items[count($items) - 1]];
+    }
+
+    /**
+     * The name a leading statement assigns. Stage 1 has accepted every
+     * statement by the time this runs, so each is an assignment whose target
+     * is a name, or a name indexed by constants.
+     *
+     * @param array<string,mixed> $statement
+     */
+    private static function assignedName(array $statement): string
+    {
+        $target = $statement['target'];
+        while (($target['t'] ?? null) === 'index') $target = $target['obj'];
+        return $target['name'];
+    }
+
+    /**
+     * The whole-name definitions, by name. Stage 1 refuses a name assigned
+     * twice, or both whole and by index, so each name here has exactly one.
+     *
+     * @param list<array<string,mixed>> $leading @return array<string,array<string,mixed>>
+     */
+    private static function definitions(array $leading): array
+    {
+        $defs = [];
+        foreach ($leading as $s) {
+            if (($s['target']['t'] ?? null) === 'var') $defs[$s['target']['name']] = $s['value'];
+        }
+        return $defs;
+    }
+
+    /**
+     * `$node` with every read of a literal helper replaced by the literal,
+     * stamped with the read's position. Binder scoping is stage 1's: a binder
+     * shadows a same-named helper inside its body. PHP arrays are values, so
+     * this copies on the way down and never writes into the caller's tree.
+     *
+     * @param array<string,mixed>|null $node
+     * @param array<string,array<string,mixed>> $literals @param list<string> $bound
+     */
+    private static function inlineLiterals(?array $node, array $literals, array $bound = []): ?array
+    {
+        if ($node === null) return null;
+        $t = $node['t'] ?? null;
+        if ($t === 'var') {
+            if (in_array($node['name'], $bound, true) || !isset($literals[$node['name']])) return $node;
+            $literal = $literals[$node['name']];
+            $literal['pos'] = $node['pos'];
+            return $literal;
+        }
+        if (isset(self::LITERAL_TYPES[$t])) return $node;
+        if ($t === 'un') {
+            $node['x'] = self::inlineLiterals($node['x'], $literals, $bound);
+            return $node;
+        }
+        if ($t === 'bin') {
+            $node['l'] = self::inlineLiterals($node['l'], $literals, $bound);
+            $node['r'] = self::inlineLiterals($node['r'], $literals, $bound);
+            return $node;
+        }
+        if ($t === 'index') {
+            $node['obj'] = self::inlineLiterals($node['obj'], $literals, $bound);
+            $node['idx'] = self::inlineLiterals($node['idx'], $literals, $bound);
+            return $node;
+        }
+        if ($t === 'list' || $t === 'seq') {
+            $node['items'] = array_map(
+                static fn (array $item): array => self::inlineLiterals($item, $literals, $bound), $node['items']);
+            return $node;
+        }
+        if ($t === 'assign') {
+            $node['value'] = self::inlineLiterals($node['value'], $literals, $bound);
+            return $node;
+        }
+        if ($t === 'call') {
+            $inner = $bound;
+            $binds = !empty($node['spec']['binds']);
+            $argc = count($node['args']);
+            if ($binds) {
+                $inner[] = '_K';
+                $inner[] = $argc === 3 && Constants::isBinderName($node['args'][1])
+                    ? $node['args'][1]['name'] : '_';
+            }
+            $args = [];
+            foreach ($node['args'] as $i => $arg) {
+                if ($binds && $i === 1 && $argc === 3 && Constants::isBinderName($arg)) {
+                    $args[] = $arg;
+                    continue;
+                }
+                $args[] = self::inlineLiterals($arg, $literals, $i === 0 ? $bound : $inner);
+            }
+            $node['args'] = $args;
+            return $node;
+        }
+        return $node;
+    }
+
+    /**
+     * The literal helpers: each whole-name definition, after the earlier
+     * literal helpers are inlined into it and it is folded, when what is left
+     * is a leaf.
+     *
+     * @param list<array<string,mixed>> $leading @param array<string,mixed> $options
+     * @return array<string,array<string,mixed>>
+     */
+    private static function literalHelpers(array $leading, array $options): array
+    {
+        $literals = [];
+        foreach ($leading as $s) {
+            if (($s['target']['t'] ?? null) !== 'var') continue;
+            $folded = Optimizer::optimize(self::inlineLiterals($s['value'], $literals), false, $options);
+            if (isset(self::LITERAL_TYPES[$folded['t'] ?? ''])) $literals[$s['target']['name']] = $folded;
+        }
+        return $literals;
+    }
+
+    /**
+     * The pipeline the planner probes: the result unwound, and where its
+     * source is a helper, that helper's definition unwound in turn.
+     *
+     * @param array<string,mixed> $result
+     * @param array<string,array<string,mixed>> $defs @param array<string,array<string,mixed>> $literals
+     * @return array{source:array<string,mixed>,steps:list<array<string,mixed>>}
+     */
+    private static function unwindThroughHelpers(array $result, array $defs, array $literals): array
+    {
+        $unwound = Optimizer::unwindPipeline(self::inlineLiterals($result, $literals));
+        $source = $unwound['source'];
+        $steps = $unwound['steps'];
+        $seen = [];
+        while (($source['t'] ?? null) === 'var' && isset($defs[$source['name']]) && !isset($seen[$source['name']])) {
+            $seen[$source['name']] = true;
+            $inner = Optimizer::unwindPipeline(self::inlineLiterals($defs[$source['name']], $literals));
+            $source = $inner['source'];
+            $steps = array_merge($inner['steps'], $steps);
+        }
+        return ['source' => $source, 'steps' => $steps];
+    }
+
+    /**
+     * The names a tree reads, binders included: an over-approximation that
+     * can only keep an assignment the tree does not need, never drop one it
+     * does.
+     *
+     * @param array<string,mixed>|null $node @param array<string,bool> $out
+     * @return array<string,bool>
+     */
+    private static function readNames(?array $node, array $out = []): array
+    {
+        if ($node === null) return $out;
+        if (($node['t'] ?? null) === 'var') {
+            $out[$node['name']] = true;
+            return $out;
+        }
+        foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) $out = self::readNames($item, $out);
+        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
+            if (isset($node[$key]) && is_array($node[$key])) $out = self::readNames($node[$key], $out);
+        }
+        return $out;
+    }
+
+    /**
+     * The leading assignments `$node` depends on, in program order: those
+     * whose name it reads, and those THEY read, transitively.
+     *
+     * @param list<array<string,mixed>> $leading @param array<string,mixed> $node
+     * @return list<array<string,mixed>>
+     */
+    private static function referencedAssignments(array $leading, array $node): array
+    {
+        $needed = self::readNames($node);
+        $grew = true;
+        while ($grew) {
+            $grew = false;
+            foreach ($leading as $s) {
+                if (!isset($needed[self::assignedName($s)])) continue;
+                foreach (self::readNames($s['value']) as $name => $_) {
+                    if (!isset($needed[$name])) {
+                        $needed[$name] = true;
+                        $grew = true;
+                    }
+                }
+            }
+        }
+        return array_values(array_filter($leading,
+            static fn (array $s): bool => isset($needed[self::assignedName($s)])));
+    }
+
+    /**
+     * `$node` behind the assignments it depends on, as the program wrote them
+     * -- a seq the translator's stage 1 inlines and the evaluator runs in
+     * order -- or `$node` itself when it depends on none.
+     *
+     * @param list<array<string,mixed>> $leading @param array<string,mixed> $node
+     * @return array<string,mixed>
+     */
+    private static function withHelpers(array $leading, array $node): array
+    {
+        $kept = self::referencedAssignments($leading, $node);
+        return $kept === [] ? $node
+            : ['t' => 'seq', 'items' => array_merge($kept, [$node]), 'pos' => $kept[0]['pos']];
     }
 
     /**

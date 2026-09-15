@@ -28,16 +28,8 @@ class Context:
         for frame in reversed(self.frames):
             v = frame.get(name)
             if v is not None:
-                return v.force()
-        value = self.root.get(name)
-        return None if value is None else value.force()
-
-    def copy_current(self) -> Context:
-        """Capture the current root and binder frames for a lazy field."""
-        out = Context(self.root)
-        out.frames = [dict(frame) for frame in self.frames]
-        out.depth = self.depth
-        return out
+                return v
+        return self.root.get(name)
 
     def is_bound(self, name: str) -> bool:
         return any(name in frame for frame in self.frames)
@@ -81,9 +73,9 @@ class Args:
             self._vals[i] = eval_node(self.nodes[i], self.ctx)
         return self._vals[i]
 
-    def eval_node(self, node: Node, context: Context | None = None) -> Value:
+    def eval_node(self, node: Node) -> Value:
         """For lazy functions re-evaluating a body node under changed bindings."""
-        return eval_node(node, self.ctx if context is None else context)
+        return eval_node(node, self.ctx)
 
     def text(self, i: int) -> str:
         return self.val(i).as_text(self.pos_of(i))
@@ -155,7 +147,7 @@ def _dispatch(node: Node, ctx: Context) -> Value:
         v = ctx.lookup(node.name)
         if v is None:
             fail('E_UNDEF_VAR', f'undefined variable {node.name}', node.pos)
-        return v.force()
+        return v
 
     if t == 'index':
         obj = eval_node(node.obj, ctx)
@@ -163,7 +155,7 @@ def _dispatch(node: Node, ctx: Context) -> Value:
         child = obj.get(key)
         if child is None:
             fail('E_NO_KEY', f'no key "{key}"', node.pos)
-        return child.force()
+        return child
 
     if t == 'seq':
         last = None
@@ -198,7 +190,6 @@ def _eval_list(node: Node, ctx: Context) -> Value:
     values = []
     for item in node.items:
         v = eval_node(item, ctx)
-        v.force()
         if v.kind == NONE and v.size() > 0:
             # Keep list literals on the flat storage path.  Calling set() for
             # each element first creates numeric keys and then has to retain an

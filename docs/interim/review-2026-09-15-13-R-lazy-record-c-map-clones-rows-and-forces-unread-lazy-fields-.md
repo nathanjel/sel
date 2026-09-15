@@ -1,5 +1,7 @@
 # R. LAZY_RECORD: C++ MAP clones rows and forces unread lazy fields; the other four never evaluate an unread MAP field
 
+**Status:** FIXED 2026-09-15 by removing LAZY_RECORD from every host — the physical rewrite, the builtin (which no spec named) and the thunk/force plumbing in every value layer. `rel.map.record-field-*` (conformance/15-relational.selt) and `mis.compile.lazy-record-is-not-a-function` (12-misuse.selt) pin it; docs/EXTENDING.md's copy-sites paragraph, CLAUDE.md and README now say what the hosts actually do. See CHANGELOG.
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** cpp, js, php, python, lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing, but contradicting a promise ed16df2 wrote.

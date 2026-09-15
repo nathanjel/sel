@@ -21,11 +21,10 @@ def iter_collection_items(value):
 
 
 def first_collection_item(value):
-    value.force()
     if value.is_null() or (value.kind == NONE and value.size() == 0):
         return None
     if value.is_list and value.storage is not None and value.storage:
-        return value.storage[0].force()
+        return value.storage[0]
     entries = elements(value)
     return entries[0][1] if entries else value
 
@@ -51,26 +50,6 @@ def _record(args, ctx):
 define('RECORD', 0, INF,
        arity_error=lambda count: f"RECORD takes an even number of arguments (key-value pairs), got {count}" if count % 2 != 0 else None,
        fn=_record)
-
-
-def _lazy_record(args, ctx):
-    entries = []
-    for i in range(0, args.count(), 2):
-        key = args.text(i)
-        node = args.node(i + 1)
-        if node.t in ('num', 'text', 'bool', 'null'):
-            value = args.eval_node(node)
-        else:
-            captured = ctx.copy_current()
-            value = Value.thunk(lambda node=node, captured=captured:
-                                args.eval_node(node, captured))
-        entries.append((key, value))
-    return Value.from_entries(entries)
-
-
-define('LAZY_RECORD', 0, INF, lazy=True, binds=True,
-       arity_error=lambda count: f"LAZY_RECORD takes an even number of arguments (key-value pairs), got {count}" if count % 2 != 0 else None,
-       fn=_lazy_record)
 
 
 def _take(args, ctx):

@@ -293,9 +293,6 @@ void test_relational_optimizations() {
   selt::eq(Value::num(wide_integer).as_text(), wide_integer,
            "wide decimals bypass the int128 small-value probe safely");
 
-  const Value lazy = evaluate("LAZY_RECORD(\"a\", 1 + 2)");
-  selt::eq(lazy.get("a")->as_text(), std::string("3"), "LAZY_RECORD forces a field on access");
-
   selt::eq(
       dump_of("LIST(RECORD(\"x\", 1), RECORD(\"x\", 5), RECORD(\"x\", 3), "
               "RECORD(\"x\", 4), RECORD(\"x\", 2)) .> TOP_BY(_[\"x\"], \"DESC\", 3)"),
@@ -377,8 +374,8 @@ void test_relational_optimizations() {
   selt::ok(physical->t == NT::Call && physical->s == "MAP" &&
                physical->items.size() == 2 &&
                physical->items[1]->t == NT::Call &&
-               physical->items[1]->s == "LAZY_RECORD",
-           "physical optimizer converts multi-field MAP records to LAZY_RECORD");
+               physical->items[1]->s == "RECORD",
+           "physical optimizer leaves a multi-field MAP record as RECORD");
 
   auto optimized_steps = [](const std::string& source) {
     const NodePtr ast = optimize_ast_in_memory(compile(source).ast());

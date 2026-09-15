@@ -1,0 +1,842 @@
+[
+  {
+    "i": 0,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=t\"a\", \"n\"=t\"1\"}, \"2\"=-{\"cat\"=t\"a \", \"n\"=t\"1\"}}"
+  },
+  {
+    "i": 0,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=t\"a\", \"n\"=t\"1\"}, \"2\"=-{\"cat\"=t\"a \", \"n\"=t\"1\"}}"
+  },
+  {
+    "i": 0,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=t\"a \", \"n\"=t\"1\"}, \"2\"=-{\"cat\"=t\"a\", \"n\"=t\"1\"}}"
+  },
+  {
+    "i": 0,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=t\"a \", \"n\"=t\"1\"}, \"2\"=-{\"cat\"=t\"a\", \"n\"=t\"1\"}}"
+  },
+  {
+    "i": 0,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=t\"a\", \"n\"=t\"2\"}}"
+  },
+  {
+    "i": 0,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=t\"a\", \"n\"=t\"2\"}}"
+  },
+  {
+    "i": 1,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 1,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 1,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 1,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 1,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}, \"2\"=-{\"id\"=t\"2\"}}"
+  },
+  {
+    "i": 1,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}, \"2\"=-{\"id\"=t\"2\"}}"
+  },
+  {
+    "i": 2,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.33333333333333\"}}"
+  },
+  {
+    "i": 2,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.3333333333\"}}"
+  },
+  {
+    "i": 2,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.33333333333333333333\"}}"
+  },
+  {
+    "i": 2,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.3333333333\"}}"
+  },
+  {
+    "i": 2,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.3333\"}}"
+  },
+  {
+    "i": 2,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.3333333333\"}}"
+  },
+  {
+    "i": 3,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.33333333333333\"}}"
+  },
+  {
+    "i": 3,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.3333333333\"}}"
+  },
+  {
+    "i": 3,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.33333333333333333333\"}}"
+  },
+  {
+    "i": 3,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.3333333333\"}}"
+  },
+  {
+    "i": 3,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.33333333333333\"}}"
+  },
+  {
+    "i": 3,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"ratio\"=t\"0.3333333333\"}}"
+  },
+  {
+    "i": 4,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=-}}"
+  },
+  {
+    "i": 4,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"cat\"=-}}"
+  },
+  {
+    "i": 4,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=-}}"
+  },
+  {
+    "i": 4,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=-}}"
+  },
+  {
+    "i": 4,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=-}}"
+  },
+  {
+    "i": 4,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"cat\"=-}}"
+  },
+  {
+    "i": 5,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"n\"=t\"1\"}, \"2\"=-{\"n\"=t\"1\"}}"
+  },
+  {
+    "i": 5,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"n\"=t\"1\"}, \"2\"=-{\"n\"=t\"1\"}}"
+  },
+  {
+    "i": 5,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"n\"=t\"1\"}, \"2\"=-{\"n\"=t\"1\"}}"
+  },
+  {
+    "i": 5,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"n\"=t\"1\"}, \"2\"=-{\"n\"=t\"1\"}}"
+  },
+  {
+    "i": 5,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"n\"=t\"1\"}, \"2\"=-{\"n\"=t\"1\"}}"
+  },
+  {
+    "i": 5,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"n\"=t\"1\"}, \"2\"=-{\"n\"=t\"1\"}}"
+  },
+  {
+    "i": 6,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"key\"=t\"1\", \"n\"=t\"1\"}, \"2\"=-{\"key\"=t\"1.0\", \"n\"=t\"1\"}}"
+  },
+  {
+    "i": 6,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"key\"=t\"1\", \"n\"=t\"1\"}, \"2\"=-{\"key\"=t\"1.0\", \"n\"=t\"1\"}}"
+  },
+  {
+    "i": 6,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"key\"=t\"1\", \"n\"=t\"2\"}}"
+  },
+  {
+    "i": 6,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"key\"=t\"1\", \"n\"=t\"2\"}}"
+  },
+  {
+    "i": 6,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"key\"=t\"1.0000000000\", \"n\"=t\"2\"}}"
+  },
+  {
+    "i": 6,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"key\"=t\"1.0000000000\", \"n\"=t\"2\"}}"
+  },
+  {
+    "i": 7,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 7,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 7,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 7,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 7,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 7,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 8,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}, \"2\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 8,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}, \"2\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 8,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}, \"2\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 8,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}, \"2\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 8,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}, \"2\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 8,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}, \"2\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 9,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 9,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 9,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 9,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 9,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 9,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"1\"}}"
+  },
+  {
+    "i": 10,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_memory",
+    "error": "E_NOT_NUM at 1:14: not a number: 'bad'"
+  },
+  {
+    "i": 10,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "error": "E_NOT_NUM at 1:14: not a number: 'bad'"
+  },
+  {
+    "i": 10,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}}"
+  },
+  {
+    "i": 10,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}}"
+  },
+  {
+    "i": 10,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}}"
+  },
+  {
+    "i": 10,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\"}}"
+  },
+  {
+    "i": 11,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"v\"=-}}"
+  },
+  {
+    "i": 11,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "error": "E_DIV_ZERO at 1:29: division by zero"
+  },
+  {
+    "i": 11,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[22012]: Division by zero: 7 ERROR:  division by zero"
+  },
+  {
+    "i": 11,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_memory",
+    "error": "E_DIV_ZERO at 1:29: division by zero"
+  },
+  {
+    "i": 11,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"v\"=-}}"
+  },
+  {
+    "i": 11,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_memory",
+    "error": "E_DIV_ZERO at 1:29: division by zero"
+  },
+  {
+    "i": 12,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "hybrid",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 12,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "hybrid",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 12,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[42702]: Ambiguous column: 7 ERROR:  column reference \"x\" is ambiguous\nLINE 1: ... \"x\" FROM \"r\" \"r\") \"_sub1\" WHERE (CASE WHEN (CAST(\"_sub1\".\"x...\n                                                             ^"
+  },
+  {
+    "i": 12,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[42702]: Ambiguous column: 7 ERROR:  column reference \"x\" is ambiguous\nLINE 1: ... \"x\" FROM \"r\" \"r\") \"_sub1\" WHERE (CASE WHEN (CAST(\"_sub1\".\"x...\n                                                             ^"
+  },
+  {
+    "i": 12,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[42S21]: Column already exists: 1060 Duplicate column name 'x'"
+  },
+  {
+    "i": 12,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[42S21]: Column already exists: 1060 Duplicate column name 'x'"
+  },
+  {
+    "i": 13,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "hybrid",
+    "error": "E_NO_KEY at 1:104: no key \"R\""
+  },
+  {
+    "i": 13,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"id\"=t\"2\", \"dimension\"=t\"dimension\"}}"
+  },
+  {
+    "i": 13,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "hybrid",
+    "error": "E_NO_KEY at 1:104: no key \"R\""
+  },
+  {
+    "i": 13,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "hybrid",
+    "error": "E_NO_KEY at 1:104: no key \"R\""
+  },
+  {
+    "i": 13,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "hybrid",
+    "error": "E_NO_KEY at 1:104: no key \"R\""
+  },
+  {
+    "i": 13,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "hybrid",
+    "error": "E_NO_KEY at 1:104: no key \"R\""
+  },
+  {
+    "i": 14,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\"}}"
+  },
+  {
+    "i": 14,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\"}}"
+  },
+  {
+    "i": 14,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\"}}"
+  },
+  {
+    "i": 14,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\"}}"
+  },
+  {
+    "i": 14,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\"}, \"2\"=-{\"entity\"=t\"1\"}}"
+  },
+  {
+    "i": 14,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\"}, \"2\"=-{\"entity\"=t\"1\"}}"
+  },
+  {
+    "i": 15,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "hybrid",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 15,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "hybrid",
+    "value": "-{\"1\"=-{\"x\"=t\"9\"}}"
+  },
+  {
+    "i": 15,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[42702]: Ambiguous column: 7 ERROR:  column reference \"x\" is ambiguous\nLINE 1: ...M \"r\" \"r\" LIMIT 1) \"_sub1\" WHERE (CASE WHEN (CAST(\"_sub1\".\"x...\n                                                             ^"
+  },
+  {
+    "i": 15,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[42702]: Ambiguous column: 7 ERROR:  column reference \"x\" is ambiguous\nLINE 1: ...M \"r\" \"r\" LIMIT 1) \"_sub1\" WHERE (CASE WHEN (CAST(\"_sub1\".\"x...\n                                                             ^"
+  },
+  {
+    "i": 15,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[42S21]: Column already exists: 1060 Duplicate column name 'x'"
+  },
+  {
+    "i": 15,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "error": "SQLSTATE[42S21]: Column already exists: 1060 Duplicate column name 'x'"
+  },
+  {
+    "i": 16,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 16,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 16,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 16,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 16,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 16,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 17,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 17,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 17,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 17,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 17,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 17,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"3\"}}"
+  },
+  {
+    "i": 18,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"a\", \"v\"=t\"1\", \"fk\"=t\"1\"}}"
+  },
+  {
+    "i": 18,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"a\", \"v\"=t\"1\", \"fk\"=t\"1\"}}"
+  },
+  {
+    "i": 18,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"a\", \"v\"=t\"1.0000000000\", \"fk\"=t\"1\"}}"
+  },
+  {
+    "i": 18,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"a\", \"v\"=t\"1.0000000000\", \"fk\"=t\"1\"}}"
+  },
+  {
+    "i": 18,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"a\", \"v\"=t\"1.0000000000\", \"fk\"=t\"1\"}}"
+  },
+  {
+    "i": 18,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_sql",
+    "value": "-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"a\", \"v\"=t\"1.0000000000\", \"fk\"=t\"1\"}}"
+  },
+  {
+    "i": 19,
+    "d": "sqlite",
+    "strict": false,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\", \"latest\"=-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"weight\", \"v\"=t\"65\", \"fk\"=t\"1\"}}}, \"2\"=-{\"entity\"=t\"2\", \"latest\"=-{\"1\"=-{\"id\"=t\"3\", \"cat\"=t\"weight\", \"v\"=t\"70\", \"fk\"=t\"2\"}}}}"
+  },
+  {
+    "i": 19,
+    "d": "sqlite",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\", \"latest\"=-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"weight\", \"v\"=t\"65\", \"fk\"=t\"1\"}}}, \"2\"=-{\"entity\"=t\"2\", \"latest\"=-{\"1\"=-{\"id\"=t\"3\", \"cat\"=t\"weight\", \"v\"=t\"70\", \"fk\"=t\"2\"}}}}"
+  },
+  {
+    "i": 19,
+    "d": "postgresql",
+    "strict": false,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\", \"latest\"=-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"weight\", \"v\"=t\"65\", \"fk\"=t\"1\"}}}, \"2\"=-{\"entity\"=t\"2\", \"latest\"=-{\"1\"=-{\"id\"=t\"3\", \"cat\"=t\"weight\", \"v\"=t\"70\", \"fk\"=t\"2\"}}}}"
+  },
+  {
+    "i": 19,
+    "d": "postgresql",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\", \"latest\"=-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"weight\", \"v\"=t\"65\", \"fk\"=t\"1\"}}}, \"2\"=-{\"entity\"=t\"2\", \"latest\"=-{\"1\"=-{\"id\"=t\"3\", \"cat\"=t\"weight\", \"v\"=t\"70\", \"fk\"=t\"2\"}}}}"
+  },
+  {
+    "i": 19,
+    "d": "mariadb",
+    "strict": false,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\", \"latest\"=-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"weight\", \"v\"=t\"65\", \"fk\"=t\"1\"}}}, \"2\"=-{\"entity\"=t\"2\", \"latest\"=-{\"1\"=-{\"id\"=t\"3\", \"cat\"=t\"weight\", \"v\"=t\"70\", \"fk\"=t\"2\"}}}}"
+  },
+  {
+    "i": 19,
+    "d": "mariadb",
+    "strict": true,
+    "plan": "pure_memory",
+    "value": "-{\"1\"=-{\"entity\"=t\"1\", \"latest\"=-{\"1\"=-{\"id\"=t\"2\", \"cat\"=t\"weight\", \"v\"=t\"65\", \"fk\"=t\"1\"}}}, \"2\"=-{\"entity\"=t\"2\", \"latest\"=-{\"1\"=-{\"id\"=t\"3\", \"cat\"=t\"weight\", \"v\"=t\"70\", \"fk\"=t\"2\"}}}}"
+  }
+]

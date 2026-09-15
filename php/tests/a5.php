@@ -41,10 +41,6 @@ check_a5($record->toNative() === ['id' => '1', 'name' => 'one'], 'shaped direct 
 $scalarWithChild = Value::int(7);
 $scalarWithChild->set('label', Value::text('seven'));
 check_a5($scalarWithChild->toNative() === ['_' => '7', 'label' => 'seven'], 'scalar-with-child materialization');
-$lazy = Value::thunk(static fn (): Value => Value::record(
-    ['lazy_key'], [Value::text('lazy_value')],
-));
-check_a5($lazy->toNative() === ['lazy_key' => 'lazy_value'], 'lazy direct materialization');
 $duplicate = Value::record(['same', 'same'], [Value::text('first'), Value::text('last')]);
 check_a5($duplicate->toNative() === ['same' => 'last'], 'fallback duplicate-key materialization');
 

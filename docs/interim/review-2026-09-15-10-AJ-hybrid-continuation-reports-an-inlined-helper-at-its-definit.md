@@ -1,5 +1,7 @@
 # AJ. Hybrid continuation reports an inlined helper at its definition-site column while run() reports the use site
 
+**Status:** FIXED 2026-09-15. The planner no longer plans stage 1's tree: a helper that is a literal (after folding) is inlined at its reads stamped with the read's position, a helper read as the pipeline's source is unwound through, and any other helper is kept as an assignment in front of the SQL prefix (for the translator's own stage 1) and of the continuation (evaluated once, as `run()` does). All five hosts; `plan.helper.*` in sql/cases/25-hybrid-plans.sqlt; the per-host unit probes now execute the shapes below and compare positions with `run()`. See docs/SQL-TRANSLATION.md §12.1 and CHANGELOG.
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** mixed · **hosts:** js, python, php, cpp, lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Introduced or promised by ed16df2.

@@ -1,0 +1,32 @@
+[
+  {
+    "n": 1000,
+    "groups": 100,
+    "sql_ms": 0.28688181191682816,
+    "fetch_ms": 2.00492050498724,
+    "ingest_ms": 10.620425455272198,
+    "eval_ms": 26.40366181731224,
+    "transfer_amplification": 10.0,
+    "source": "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+  },
+  {
+    "n": 10000,
+    "groups": 100,
+    "sql_ms": 2.1107643842697144,
+    "fetch_ms": 22.500453516840935,
+    "ingest_ms": 80.67786786705256,
+    "eval_ms": 214.64784257113934,
+    "transfer_amplification": 100.0,
+    "source": "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+  },
+  {
+    "n": 100000,
+    "groups": 100,
+    "sql_ms": 10.043826885521412,
+    "fetch_ms": 243.3892823755741,
+    "ingest_ms": 1004.7278394922614,
+    "eval_ms": 2570.713099092245,
+    "transfer_amplification": 1000.0,
+    "source": "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+  }
+]

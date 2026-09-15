@@ -465,8 +465,8 @@ U+0661 ARABIC-INDIC DIGIT ONE and Python's `int()` accepts both that and
 a mutation made by a later sub-expression is visible through a reference taken
 earlier — `A[A["k"] = "k"]` finds the key its own index expression just created.
 Assignment is the only thing that copies. Every host aliases by default and
-deep-copies at exactly five places, which is a rule rather than an accident of
-each language's object model: the C++ `Value` was a deep-copying type until
+deep-copies only where the spec says — `,` and `=` — which is a rule rather
+than an accident of each language's object model: the C++ `Value` was a deep-copying type until
 0.3.0 and disagreed with the other four in six different ways, one of which
 returned a wrong number rather than an error. It is a handle now, with an
 explicit `clone()`, like the other four (§3.4).

@@ -62,7 +62,7 @@ final class Args
      */
     public function evalNode(array $node, ?Context $context = null): Value
     {
-        return Evaluator::evalNode($node, $context ?? $this->ctx)->force();
+        return Evaluator::evalNode($node, $context ?? $this->ctx);
     }
 
     public function text(int $i): string

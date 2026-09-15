@@ -307,12 +307,30 @@ def test_optimizer_hoisted_literals_take_the_folded_node_position():
     ('ORDERS .> TAKE(2) .> MAP(IF(TRUE, "x", 1) >= _["id"])', 'hybrid', 'E_NOT_NUM@1:26'),
     ('ORDERS .> TAKE(2) .> FILTER((FALSE AND TRUE) + _["id"] > 0)', 'hybrid', 'E_NOT_NUM@1:36'),
     ('ORDERS .> FILTER(IF(TRUE, "x", 1) >= _["id"])', 'pure_memory', 'E_NOT_NUM@1:18'),
+    # Finding AJ: a helper is read where the program reads it, and evaluated
+    # once, before the pipeline -- not inlined at its definition's position
+    # and re-evaluated per row. LABEL is a context variable, so a helper
+    # defined from it is one no fold turns into a literal.
+    ('Y = "x"; ORDERS .> TAKE(2) .> MAP(_["id"] + Y)', 'hybrid', 'E_NOT_NUM@1:45'),
+    ('X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _["id"])', 'hybrid', 'E_NOT_NUM@1:55'),
+    ('Y = "a" & "b"; ORDERS .> TAKE(2) .> MAP(1 + Y)', 'hybrid', 'E_NOT_NUM@1:45'),
+    ('Z = "abc"; ORDERS .> TAKE(1) .> FILTER(_["id"] > Z)', 'hybrid', 'E_NOT_NUM@1:50'),
+    ('Y = "x"; (ORDERS .> TAKE(2)) .> MAP(_["id"] + Y)', 'hybrid', 'E_NOT_NUM@1:47'),
+    ('Y = LABEL; ORDERS .> TAKE(2) .> MAP(_["id"] + Y)', 'hybrid', 'E_NOT_NUM@1:47'),
+    ('C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_["id"] + C)', 'hybrid', 'E_NOT_NUM@1:21'),
+    ('X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _["id"] + "x")', 'hybrid', 'E_NOT_NUM@1:54'),
+    ('Y = ABORT("x"); ORDERS .> TAKE(2) .> MAP(Y)', 'pure_memory', 'E_ABORT@1:11'),
 ])
 def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
     """The planner folds one tree for both halves of a split, so a hoisted
     literal in the continuation carries the position the in-memory half will
     report. sql/cases/25-hybrid-plans.sqlt pins the SQL side of these; only
-    executing the plan can see the position the memory side reports.
+    executing the plan can see the position the memory side reports. The
+    helper rows are review finding AJ: the planner plans the program as
+    written, so a helper read in the continuation fails at the read's
+    position, as run() reports it, and its definition is evaluated once before
+    the steps rather than once per row; LABEL is a context variable, so a
+    helper built from it is something no fold turns into a literal.
     """
     from sel.sql import Sql
     rows = [{'id': '1'}, {'id': '2'}]
@@ -328,9 +346,10 @@ def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
     plan = Sql.plan_hybrid(program, 'postgresql', _orders())
     got = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
     assert got == kind
-    assert failure(lambda: program.run({'ORDERS': rows})) == want
+    context = {'ORDERS': rows, 'LABEL': 'x'}
+    assert failure(lambda: program.run(context)) == want
     assert failure(lambda: Sql.execute_hybrid(plan, lambda sql, params: rows,
-                                              {'ORDERS': rows})) == want
+                                              context)) == want
 
 
 @pytest.mark.parametrize(('source', 'expected'), [
@@ -362,7 +381,7 @@ def test_optimizer_logical_rules_fire(source, expected):
     assert [step.name for step in steps] == expected
 
 
-def test_optimizer_physical_join_pushdown_and_lazy_record():
+def test_optimizer_physical_join_pushdown_keeps_record():
     source = (
         'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
         ' .> FILTER(_["orders"]["status"] $== "ACTIVE"'
@@ -382,7 +401,9 @@ def test_optimizer_physical_join_pushdown_and_lazy_record():
         ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
     ).ast)
     _, steps = unwind_pipeline(physical)
-    assert steps[0].args[1].name == 'LAZY_RECORD'
+    # MAP(RECORD(...)) is strict: the physical optimiser leaves the body alone.
+    assert steps[0].name == 'MAP'
+    assert steps[0].args[1].name == 'RECORD'
 
     physical = optimize_ast_in_memory(sel_compile(source).ast)
     _, steps = unwind_pipeline(physical)
@@ -597,11 +618,18 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         ('ORDERS .> SORT_BY(_["id"], "DESC") .> SORT_BY(_["customer_id"], "DESC")', 'pure_sql'),
         ('ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_))) .> TAKE(1) .> SORT_BY(_["n"])', 'pure_sql'),
         ('ORDERS .> MAP(RECORD("id", _["id"], "n", _["id"] + 1)) .> SORT_BY(_["id"], "DESC") .> TAKE(2)', 'pure_sql'),
+        # Finding AJ: helper assignments. A literal helper (after folding) is
+        # inlined at its reads; a helper that is the source is unwound
+        # through; a helper the continuation still reads is carried in front
+        # of it and evaluated once, as run() does.
+        ('N = 1 + 1; X = ORDERS .> TAKE(N) .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], 2))); X .> FILTER(_["id"] > 1) .> TAKE(5)', 'hybrid'),
+        ('LIMIT = 2; ORDERS .> TAKE(LIMIT) .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], LIMIT)))', 'hybrid'),
+        ('C = COUNT(ORDERS); ORDERS .> FILTER(_["amount"] > C) .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], 2)))', 'hybrid'),
     ]
 
     def outcome(fn):
-        # The dump is inside the try: run() answers a LAZY_RECORD whose
-        # fields are evaluated when read, so a body that raises does so here.
+        # The dump is inside the try for the ordinary reason: run() itself
+        # may raise, and the outcome is compared as a code@position either way.
         try:
             got = fn()
             return (got if isinstance(got, Value) else Value.from_native(got)).dump()

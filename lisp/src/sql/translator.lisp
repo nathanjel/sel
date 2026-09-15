@@ -1339,7 +1339,7 @@ which is a map with one child per field; SQL has no way to iterate or count that
   ;; being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
   (when (and (eq (snode-kind src) :call)
              (or (member (sel::node-s src) +yields-list+ :test #'equal)
-                 (member (sel::node-s src) '("LIST" "RECORD" "LAZY_RECORD") :test #'equal)
+                 (member (sel::node-s src) '("LIST" "RECORD") :test #'equal)
                  (member (sel::node-s src) sel::+pipeline-ops+ :test #'equal)))
     (refuse "E_SQL_SHAPE"
             (format nil "~a yields a list, and the scalar rule does not apply to ~
@@ -1961,7 +1961,7 @@ here. With no projection at all the keys are projected, which is the most SQL
 can say about a bucket on its own."
   (if agg-node
       (if (and (not (clist-p agg-node)) (eq (snode-kind agg-node) :call)
-               (member (sel::node-s agg-node) '("RECORD" "LAZY_RECORD") :test #'equal))
+               (equal (sel::node-s agg-node) "RECORD"))
           (let ((rec-args (sel::node-items agg-node))
                 (projs '()))
             (unless (evenp (length rec-args))
@@ -2261,7 +2261,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                              (relational-plan-offset plan))
                      (setf plan (wrap-plan-as-derived-table plan)))
                    (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
-                            (member (sel::node-s expr) '("RECORD" "LAZY_RECORD") :test #'equal))
+                            (equal (sel::node-s expr) "RECORD"))
                        (let ((rec-args (sel::node-items expr))
                              (projs '()))
                          (unless (evenp (length rec-args))

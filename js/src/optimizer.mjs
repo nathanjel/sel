@@ -207,7 +207,7 @@ function mapDetails(step) {
 
 function mapPassthroughs(step) {
   const { binder, body } = mapDetails(step);
-  if (!body || body.t !== 'call' || (body.name !== 'RECORD' && body.name !== 'LAZY_RECORD')) return [];
+  if (!body || body.t !== 'call' || body.name !== 'RECORD') return [];
   const fields = [];
   for (let i = 0; i + 1 < body.args.length; i += 2) {
     const key = body.args[i], value = body.args[i + 1];
@@ -220,7 +220,7 @@ function mapPassthroughs(step) {
 
 function mapHasComputedFields(step) {
   const { body } = mapDetails(step);
-  if (!body || body.t !== 'call' || (body.name !== 'RECORD' && body.name !== 'LAZY_RECORD')) return true;
+  if (!body || body.t !== 'call' || body.name !== 'RECORD') return true;
   return mapPassthroughs(step).length * 2 !== body.args.length;
 }
 
@@ -650,21 +650,6 @@ function optimizeTree(node, physical, depth = 1, options = {}) {
         if (!pushed.changed) break;
         finalSteps = logicalSteps(optimizedSource, finalSteps, options);
       }
-    }
-    if (physical) {
-      finalSteps = finalSteps.map((step) => {
-        const copy = copyNode(step);
-        const details = copy.name === 'MAP' ? mapDetails(copy) : null;
-        if (details && details.body && details.body.t === 'call'
-            && details.body.name === 'RECORD' && details.body.args.length >= 4) {
-          const body = copyNode(details.body);
-          body.name = 'LAZY_RECORD';
-          body.spec = lookup('LAZY_RECORD');
-          copy.args = details.explicit
-            ? [copy.args[0], copy.args[1], body] : [copy.args[0], body];
-        }
-        return copy;
-      });
     }
     return buildPipeline(optimizedSource, finalSteps);
   }

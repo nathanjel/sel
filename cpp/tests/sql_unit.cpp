@@ -127,11 +127,28 @@ int main() {
       return e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
     }
   };
+  // The rows with a helper assignment are review 2026-09-15 finding AJ: the
+  // planner used to plan stage 1's tree, in which a helper is inlined at its
+  // definition-site position, so the continuation reported `Y = "x"; ... + Y`
+  // at 1:5 where run() reports the read at 1:45, and evaluated the helper per
+  // row instead of once. LABEL is a context variable, so a helper defined from
+  // it is something no fold turns into a literal and the assignment has to be
+  // carried as written; the ABORT helper is evaluated once, before the
+  // pipeline, which only a pure-memory plan over the original can honour.
   struct Probe { const char* source; const char* kind; const char* want; };
   const Probe probes[] = {
       {"ORDERS .> TAKE(2) .> MAP(IF(TRUE, \"x\", 1) >= _[\"id\"])", "hybrid", "E_NOT_NUM@1:26"},
       {"ORDERS .> TAKE(2) .> FILTER((FALSE AND TRUE) + _[\"id\"] > 0)", "hybrid", "E_NOT_NUM@1:36"},
       {"ORDERS .> FILTER(IF(TRUE, \"x\", 1) >= _[\"id\"])", "pure_memory", "E_NOT_NUM@1:18"},
+      {"Y = \"x\"; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + Y)", "hybrid", "E_NOT_NUM@1:45"},
+      {"X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _[\"id\"])", "hybrid", "E_NOT_NUM@1:55"},
+      {"Y = \"a\" & \"b\"; ORDERS .> TAKE(2) .> MAP(1 + Y)", "hybrid", "E_NOT_NUM@1:45"},
+      {"Z = \"abc\"; ORDERS .> TAKE(1) .> FILTER(_[\"id\"] > Z)", "hybrid", "E_NOT_NUM@1:50"},
+      {"Y = \"x\"; (ORDERS .> TAKE(2)) .> MAP(_[\"id\"] + Y)", "hybrid", "E_NOT_NUM@1:47"},
+      {"Y = LABEL; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + Y)", "hybrid", "E_NOT_NUM@1:47"},
+      {"C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + C)", "hybrid", "E_NOT_NUM@1:21"},
+      {"X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _[\"id\"] + \"x\")", "hybrid", "E_NOT_NUM@1:54"},
+      {"Y = ABORT(\"x\"); ORDERS .> TAKE(2) .> MAP(Y)", "pure_memory", "E_ABORT@1:11"},
   };
   for (const Probe& probe : probes) {
     const sel::Program program = sel::compile(probe.source);
@@ -143,6 +160,7 @@ int main() {
     }
     sel::Value context = sel::Value::none();
     context.set("ORDERS", rows);
+    context.set("LABEL", sel::Value::text("x"));
     const std::string in_memory = failure([&] { sel::Value c = context.clone(); program.run(c); });
     const std::string executed = failure([&] {
       Sql::execute_hybrid(plan, [&](const std::string&, const std::vector<sel::Value>&) { return rows; },
@@ -201,6 +219,12 @@ int main() {
       {"ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_))) .> DROP(1) .> FILTER(_[\"n\"] > 1)", "hybrid"},
       {"ORDERS .> BUCKET(RECORD(\"c\", _[\"customer_id\"]), RECORD(\"n\", COUNT(_)))", "pure_sql"},
       {"ORDERS .> BUCKET(RECORD(\"c\", _[\"customer_id\"])) .> MAP(RECORD(\"n\", COUNT(_)))", "pure_memory"},
+      // Finding AJ again, on the value side: a folded helper as a TAKE count
+      // and as a REPEAT count, a helper as the pipeline's source, and a
+      // non-literal helper carried in front of both halves.
+      {"N = 1 + 1; X = ORDERS .> TAKE(N) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2))); X .> FILTER(_[\"id\"] > 1) .> TAKE(5)", "hybrid"},
+      {"LIMIT = 2; ORDERS .> TAKE(LIMIT) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], LIMIT)))", "hybrid"},
+      {"C = COUNT(ORDERS); ORDERS .> FILTER(_[\"amount\"] > C) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2)))", "hybrid"},
   };
   for (const Shape& shape : shapes) {
     const sel::Program program = sel::compile(shape.source);
@@ -227,6 +251,6 @@ int main() {
     }
   }
 
-  std::cout << "cpp SQL advanced: 54/54 checks passed\n";
+  std::cout << "cpp SQL advanced: 78/78 checks passed\n";
   return 0;
 }

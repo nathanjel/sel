@@ -49,7 +49,7 @@
             shape)))))
 
 (defstruct (value (:constructor %make-value-raw (kind scalar children-internal tail count index is-list shape storage dec-val)))
-  (kind :none :type keyword)     ; :none :text :bin :bool :thunk
+  (kind :none :type keyword)     ; :none :text :bin :bool
   (scalar nil)
   (children-internal nil :type list)      ; list of (key . value), insertion-ordered
   (tail nil :type list)          ; last cons of CHILDREN
@@ -98,32 +98,12 @@
         (%build-index v)))))
 
 (defun value-children (v)
-  (force-value v)
   (ensure-shaped-children v)
   (ensure-list-children v)
   (value-children-internal v))
 
 (defun (setf value-children) (val v)
   (setf (value-children-internal v) val))
-
-(defun force-value (v)
-  (when (and (value-p v) (eq (value-kind v) :thunk))
-    (let ((real (funcall (value-scalar v))))
-      (force-value real)
-      (setf (value-kind v) (value-kind real)
-            (value-scalar v) (value-scalar real)
-            (value-children-internal v) (value-children-internal real)
-            (value-tail v) (value-tail real)
-            (value-count v) (value-count real)
-            (value-index v) (value-index real)
-            (value-is-list v) (value-is-list real)
-            (value-shape v) (value-shape real)
-            (value-storage v) (value-storage real)
-            (value-dec-val v) (value-dec-val real))))
-  v)
-
-(defun make-thunk-value (fn)
-  (%make-value :thunk fn nil))
 
 (defun %value-with-children (kind scalar entries &optional is-list)
   "Build a value from an ordered list of (key . value) conses, wiring up the
@@ -143,7 +123,6 @@ tail, count and index that keep lookup and append O(1)."
 
 (defun %value-cell (v key)
   "The cons cell for KEY, or NIL."
-  (force-value v)
   (ensure-shaped-children v)
   (ensure-list-children v)
   (let ((idx (value-index v)))
@@ -211,17 +190,14 @@ tail, count and index that keep lookup and append O(1)."
 ;;; enum in C++, so only a predicate can be documented uniformly. These test the
 ;;; value's own kind and do not apply scalar context.
 (defun value-none-p (v)
-  (force-value v)
   (eq (value-kind v) :none))
 
 (defun value-null-p (v)
-  (force-value v)
   (and (eq (value-kind v) :none)
        (zerop (value-size v))
        (not (value-is-list v))))
 
 (defun value-vacuous-p (v)
-  (force-value v)
   (cond
     ((value-null-p v) t)
     ((and (eq (value-kind v) :none) (zerop (value-size v))) t)
@@ -232,23 +208,18 @@ tail, count and index that keep lookup and append O(1)."
     (t nil)))
 
 (defun value-text-p (v)
-  (force-value v)
   (eq (value-kind v) :text))
 
 (defun value-bin-p (v)
-  (force-value v)
   (eq (value-kind v) :bin))
 
 (defun value-bool-p (v)
-  (force-value v)
   (eq (value-kind v) :bool))
 
 (defun value-size (v)
-  (force-value v)
   (value-count v))
 
 (defun value-has (v key)
-  (force-value v)
   (cond
     ((value-shape v)
      (not (null (gethash key (record-shape-key-map (value-shape v))))))
@@ -259,23 +230,21 @@ tail, count and index that keep lookup and append O(1)."
      (and (%value-cell v key) t))))
 
 (defun value-get (v key)
-  (force-value v)
   (cond
     ((value-shape v)
      (let ((idx (gethash key (record-shape-key-map (value-shape v)))))
        (when idx
-         (force-value (svref (value-storage v) idx)))))
+         (svref (value-storage v) idx))))
     ((and (value-is-list v) (value-storage v))
      (let ((idx (parse-list-key key)))
        (when (and idx (<= 1 idx (length (value-storage v))))
-         (force-value (svref (value-storage v) (1- idx))))))
+         (svref (value-storage v) (1- idx)))))
     (t
      (let ((cell (%value-cell v key)))
        (when cell
-         (force-value (cdr cell)))))))
+         (cdr cell))))))
 
 (defun value-keys (v)
-  (force-value v)
   (cond
     ((value-shape v)
      (record-shape-keys (value-shape v)))
@@ -286,30 +255,25 @@ tail, count and index that keep lookup and append O(1)."
      (mapcar #'car (value-children v)))))
 
 (defun value-values (v)
-  (force-value v)
   (cond
     ((value-shape v)
      (let ((storage (value-storage v)))
        (loop for i from 0 below (length storage)
-             collect (force-value (svref storage i)))))
+             collect (svref storage i))))
     ((and (value-is-list v) (value-storage v))
      (let ((storage (value-storage v)))
        (loop for i from 0 below (length storage)
-             collect (force-value (svref storage i)))))
+             collect (svref storage i))))
     (t
-     (mapcar (lambda (cell) (force-value (cdr cell))) (value-children v)))))
+     (mapcar #'cdr (value-children v)))))
 
 (defun value-entries (v)
-  (force-value v)
   (ensure-shaped-children v)
   (ensure-list-children v)
-  (dolist (cell (value-children-internal v))
-    (force-value (cdr cell)))
   (value-children-internal v))
 
 (defun value-set (v key child)
   "Re-assigning an existing key keeps its original position."
-  (force-value v)
   (cond
     ((value-shape v)
      (let ((idx (gethash key (record-shape-key-map (value-shape v)))))
@@ -350,7 +314,6 @@ tail, count and index that keep lookup and append O(1)."
   "The value that supplies the scalar: V itself, or its first child, recursively."
   (let ((cur v)
         (guard 0))
-    (force-value cur)
     (loop while (eq (value-kind cur) :none)
           do (when (value-null-p cur)
                (fail "E_NULL" "value is NULL" at))
@@ -363,7 +326,7 @@ tail, count and index that keep lookup and append O(1)."
                                  (svref (value-storage cur) 0))
                                 (t
                                  (cdr (first (value-children-internal cur)))))))
-               (setf cur (force-value first-val)))
+               (setf cur first-val))
              (incf guard)
              (when (> guard 1000)
                (fail "E_DEPTH" "scalar context nested too deeply" at)))
@@ -403,7 +366,6 @@ tail, count and index that keep lookup and append O(1)."
 
 ;;; The non-throwing probe, as ISNUM uses.
 (defun looks-numeric (v)
-  (force-value v)
   (if (and (eq (value-kind v) :none) (zerop (value-size v)))
       nil
       (handler-case
@@ -423,10 +385,7 @@ tail, count and index that keep lookup and append O(1)."
 (defun value-copy-at (v depth pos)
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" pos))
-  (force-value v)
   (cond
-    ((eq (value-kind v) :thunk)
-     (%make-value :thunk (value-scalar v) nil))
     ((value-shape v)
      (let* ((shape (value-shape v))
             (n (record-shape-size shape))
@@ -464,8 +423,6 @@ same keys in the same order, pairwise EQL."
 (defun value-eql-at (a b depth pos)
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" pos))
-  (force-value a)
-  (force-value b)
   (and (eq (value-kind a) (value-kind b))
        (case (value-kind a)
          (:text (string= (value-scalar a) (value-scalar b)))
@@ -498,7 +455,6 @@ same keys in the same order, pairwise EQL."
   "Computes a fast structural hash for a SEL value."
   (when (> depth +max-depth+)
     (return-from value-hash 0))
-  (force-value v)
   (let ((h (sxhash (value-kind v))))
     (case (value-kind v)
       (:text
@@ -563,7 +519,6 @@ same keys in the same order, pairwise EQL."
 (defun value-dump-at (v depth)
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" nil))
-  (force-value v)
   (let ((s (case (value-kind v)
              (:none "-")
              (:text (concatenate 'string "t" (quote-dump (value-scalar v))))
@@ -638,7 +593,6 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
 (defun to-native-at (v depth)
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" nil))
-  (force-value v)
   (let ((scalar (case (value-kind v)
                   ((:text :bin :bool) (value-scalar v))
                   (t nil))))

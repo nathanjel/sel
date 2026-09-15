@@ -139,8 +139,6 @@ define('JOIN', 2, 2, fn=_join)
 
 
 def compare_values(a: Value, b: Value) -> int:
-    a.force()
-    b.force()
     a_null = a.is_null()
     b_null = b.is_null()
     if a_null and b_null:
@@ -253,7 +251,6 @@ def do_top(args, ctx, forced_dir):
     limit = args.non_neg_int(args.count() - 1)
     if limit == 0 or value.is_null():
         return Value.list([])
-    value.force()
     if value.kind == NONE and value.size() == 0:
         return Value.list([])
 
@@ -368,12 +365,11 @@ define('TOP_BY', 3, 5, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, 
 
 
 def _bucket_key_text(key: Value, pos) -> str:
-    v = key.force()
-    if v.kind == Value.NONE:
-        if v.is_null():
+    if key.kind == Value.NONE:
+        if key.is_null():
             fail('E_NULL', 'value is NULL', pos)
         fail('E_NOT_TEXT', 'a bucket key must be text or a number, got a list or record', pos)
-    return v.as_text(pos)
+    return key.as_text(pos)
 
 
 def do_bucket(args, ctx):

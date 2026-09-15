@@ -1,12 +1,15 @@
 // Maximal SQL-prefix planner for relational SEL pipelines.
 //
 // The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
-// and is pinned by sql/cases/25-hybrid-plans.sqlt. Two parts of it were wrong
+// and is pinned by sql/cases/25-hybrid-plans.sqlt. Three parts of it were wrong
 // here: the planner unwound the RAW tree, so `X = ORDERS; X .> TAKE(1)` -- a
 // seq, not a pipeline -- was classified as pure memory where the three hosts
-// that ran stage 1 first pushed it down; and it carried its own copy of the
-// pipeline vocabulary and the unwind/build pair, which sel.cpp now shares
-// through sel_ast.hpp so this host has one of each.
+// that ran stage 1 first pushed it down; it then planned stage 1's tree, in
+// which every helper is inlined the way translate() wants it, so a
+// continuation reported an error at a helper's definition where run() reports
+// its use -- see "helper assignments" below for what is done instead; and it
+// carried its own copy of the pipeline vocabulary and the unwind/build pair,
+// which sel.cpp now shares through sel_ast.hpp so this host has one of each.
 
 #include "sel_sql.hpp"
 
@@ -16,6 +19,7 @@
 #include "sel_sql_stage1.hpp"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <stdexcept>
 
@@ -83,8 +87,21 @@ bool bucket_rows_are_keys(const std::vector<NodePtr>& steps, std::size_t count) 
   return open;
 }
 
-bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect) {
+// The whole-name helper definitions of a program, by name.
+using Definitions = std::map<std::string, NodePtr>;
+
+// `defs` are the helper definitions: a read of one is as unsupported as its
+// definition, since the translator will inline it.
+bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect,
+                              const Definitions* defs = nullptr,
+                              const std::set<std::string>& seen = {}) {
   if (!node) return false;
+  if (node->t == NT::Var && defs != nullptr && defs->count(node->s) != 0 &&
+      seen.count(node->s) == 0) {
+    std::set<std::string> inner_seen = seen;
+    inner_seen.insert(node->s);
+    return contains_unsupported_sql(defs->at(node->s), dialect, defs, inner_seen);
+  }
   if (node->t == NT::Call) {
     const bool special = std::find(std::begin(SQL_SPECIAL_CALLS),
                                    std::end(SQL_SPECIAL_CALLS), node->s) !=
@@ -94,10 +111,13 @@ bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect) {
       if (!entry || entry->kind == EntryKind::Refusal) return true;
     }
   }
-  if (node->l && contains_unsupported_sql(node->l, dialect)) return true;
-  if (node->r && contains_unsupported_sql(node->r, dialect)) return true;
+  const auto inner = [&](const NodePtr& item) {
+    return contains_unsupported_sql(item, dialect, defs, seen);
+  };
+  if (node->l && inner(node->l)) return true;
+  if (node->r && inner(node->r)) return true;
   for (const NodePtr& item : node->items) {
-    if (contains_unsupported_sql(item, dialect)) return true;
+    if (inner(item)) return true;
   }
   return false;
 }
@@ -180,8 +200,7 @@ std::optional<MapRecordDetails> map_record_details(const NodePtr& step) {
   if (out.explicit_binder) out.body = args[2];
   else if (args.size() == 2) out.body = args[1];
   else return std::nullopt;
-  if (!out.body || out.body->t != NT::Call ||
-      (out.body->s != "RECORD" && out.body->s != "LAZY_RECORD") ||
+  if (!out.body || out.body->t != NT::Call || out.body->s != "RECORD" ||
       out.body->items.size() % 2 != 0) {
     return std::nullopt;
   }
@@ -227,9 +246,239 @@ std::vector<std::string> source_tables(const NodePtr& ast, const Bindings& bindi
   return out;
 }
 
+
+// --- helper assignments -----------------------------------------------------
+//
+// Stage 1 inlines a helper assignment for translate(): `Y = "x"; ... + Y` is
+// rendered as `... + "x"`, the literal keeping its definition-site position,
+// which is right for a refusal message. It is wrong for the memory half of a
+// plan, because that half is a program run() evaluates and §12.1 promises it
+// reports errors where run() would: run() evaluates the READ of Y at the use
+// site and reports `+`'s operand there, and it evaluates the definition once,
+// before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+// the planner does not inline. It plans the program as written, three ways:
+//
+//   * A helper that IS a literal -- after inlining earlier such helpers and
+//     folding, `N = 1 + 1` as much as `N = 2` -- is inlined at its reads,
+//     stamped with the read's position. That is invisible: a leaf literal
+//     cannot fail, and neither can the read, since the definition exists. It
+//     keeps `TAKE(N)` a `LIMIT 2` rather than a helper the SQL has to carry.
+//   * A helper read as the pipeline's SOURCE is unwound through: `X = ORDERS
+//     .> TAKE(2); X .> MAP(...)` is one pipeline over ORDERS, so the prefix
+//     search sees every step. Only the source position looks through a
+//     helper; a read anywhere else stays a read.
+//   * What is handed to the translator, and what is kept for the
+//     continuation, carries in front of it the assignments it still reads and
+//     the ones those read, in program order, as the program wrote them. The
+//     translator runs its own stage 1 over that seq and inlines; the
+//     continuation evaluates them once, before its steps, as run() does. An
+//     assignment nothing after the split reads is dropped, as stage 1 drops
+//     it for translate() -- the one departure, and the same one.
+//
+// This section sits before the fall-through rather than after it, as the
+// other hosts have it, only because C++ does not hoist.
+
+bool is_literal_type(NT t) {
+  return t == NT::Num || t == NT::Text || t == NT::Bool || t == NT::Null;
+}
+
+// The leading statements and the result expression of a program.
+struct Statements {
+  std::vector<NodePtr> leading;
+  NodePtr result;
+};
+
+Statements statements(const NodePtr& ast) {
+  if (ast->t != NT::Seq || ast->items.empty()) return {{}, ast};
+  return {std::vector<NodePtr>(ast->items.begin(), ast->items.end() - 1), ast->items.back()};
+}
+
+// The name a leading statement assigns. Stage 1 has accepted every statement
+// by the time this runs, so each is an assignment whose target is a name, or
+// a name indexed by constants.
+std::string assigned_name(const NodePtr& statement) {
+  NodePtr target = statement->l;
+  while (target && target->t == NT::Index) target = target->l;
+  return target ? target->s : std::string();
+}
+
+// The whole-name definitions, by name. Stage 1 refuses a name assigned twice,
+// or both whole and by index, so each name here has exactly one.
+Definitions definitions(const std::vector<NodePtr>& leading) {
+  Definitions defs;
+  for (const NodePtr& s : leading) {
+    if (s->t == NT::Assign && s->l && s->l->t == NT::Var) defs[s->l->s] = s->r;
+  }
+  return defs;
+}
+
+// `node` with every read of a literal helper replaced by the literal, stamped
+// with the read's position. Binder scoping is stage 1's: a binder shadows a
+// same-named helper inside its body. Copies on the way down, never writes.
+NodePtr inline_literals(const NodePtr& node, const Definitions& literals,
+                        const std::vector<std::string>& bound = {}) {
+  if (!node) return node;
+  const NT t = node->t;
+  if (t == NT::Var) {
+    if (std::find(bound.begin(), bound.end(), node->s) != bound.end() ||
+        literals.count(node->s) == 0) {
+      return node;
+    }
+    auto stamped = copy_node(literals.at(node->s));
+    stamped->pos = node->pos;
+    return stamped;
+  }
+  if (is_literal_type(t)) return node;
+  const auto inline_child = [&](const NodePtr& child, const std::vector<std::string>& scope) {
+    return inline_literals(child, literals, scope);
+  };
+  if (t == NT::Un) {
+    auto copy = copy_node(node);
+    copy->l = inline_child(node->l, bound);
+    return copy;
+  }
+  if (t == NT::Bin || t == NT::Index) {
+    auto copy = copy_node(node);
+    copy->l = inline_child(node->l, bound);
+    copy->r = inline_child(node->r, bound);
+    return copy;
+  }
+  if (t == NT::List || t == NT::Seq) {
+    auto copy = copy_node(node);
+    for (NodePtr& item : copy->items) item = inline_child(item, bound);
+    return copy;
+  }
+  if (t == NT::Assign) {
+    auto copy = copy_node(node);
+    copy->r = inline_child(node->r, bound);
+    return copy;
+  }
+  if (t == NT::Call) {
+    std::vector<std::string> inner = bound;
+    const bool binds = node->spec != nullptr && node->spec->binds;
+    const bool named_binder = node->items.size() == 3 && node->items[1] &&
+                              is_binder_name(*node->items[1]);
+    if (binds) {
+      inner.push_back("_K");
+      inner.push_back(named_binder ? node->items[1]->s : "_");
+    }
+    auto copy = copy_node(node);
+    for (std::size_t i = 0; i < copy->items.size(); ++i) {
+      if (binds && i == 1 && named_binder) continue;
+      copy->items[i] = inline_child(node->items[i], i == 0 ? bound : inner);
+    }
+    return copy;
+  }
+  return node;
+}
+
+// The literal helpers: each whole-name definition, after the earlier literal
+// helpers are inlined into it and it is folded, when what is left is a leaf.
+Definitions literal_helpers(const std::vector<NodePtr>& leading) {
+  Definitions literals;
+  for (const NodePtr& s : leading) {
+    if (s->t != NT::Assign || !s->l || s->l->t != NT::Var) continue;
+    const NodePtr folded = optimize_ast_logical(inline_literals(s->r, literals));
+    if (folded && is_literal_type(folded->t)) literals[s->l->s] = folded;
+  }
+  return literals;
+}
+
+// The pipeline the planner probes: the result unwound, and where its source
+// is a helper, that helper's definition unwound in turn.
+std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
+    const NodePtr& result, const Definitions& defs, const Definitions& literals) {
+  auto [source, steps] = unwind_pipeline(inline_literals(result, literals));
+  std::set<std::string> seen;
+  while (source && source->t == NT::Var && defs.count(source->s) != 0 &&
+         seen.count(source->s) == 0) {
+    seen.insert(source->s);
+    auto inner = unwind_pipeline(inline_literals(defs.at(source->s), literals));
+    source = inner.first;
+    steps.insert(steps.begin(), inner.second.begin(), inner.second.end());
+  }
+  return {source, steps};
+}
+
+// The names a tree reads, binders included: an over-approximation that can
+// only keep an assignment the tree does not need, never drop one it does.
+void read_names(const NodePtr& node, std::set<std::string>& out) {
+  if (!node) return;
+  if (node->t == NT::Var) {
+    out.insert(node->s);
+    return;
+  }
+  read_names(node->l, out);
+  read_names(node->r, out);
+  for (const NodePtr& item : node->items) read_names(item, out);
+}
+
+// The leading assignments `node` depends on, in program order: those whose
+// name it reads, and those THEY read, transitively.
+std::vector<NodePtr> referenced_assignments(const std::vector<NodePtr>& leading,
+                                            const NodePtr& node) {
+  std::set<std::string> needed;
+  read_names(node, needed);
+  bool grew = true;
+  while (grew) {
+    grew = false;
+    for (const NodePtr& s : leading) {
+      if (needed.count(assigned_name(s)) == 0) continue;
+      std::set<std::string> reads;
+      read_names(s->r, reads);
+      for (const std::string& name : reads) {
+        if (needed.insert(name).second) grew = true;
+      }
+    }
+  }
+  std::vector<NodePtr> kept;
+  for (const NodePtr& s : leading) {
+    if (needed.count(assigned_name(s)) != 0) kept.push_back(s);
+  }
+  return kept;
+}
+
+// `node` behind the assignments it depends on, as the program wrote them -- a
+// seq the translator's stage 1 inlines and the evaluator runs in order -- or
+// `node` itself when it depends on none.
+NodePtr with_helpers(const std::vector<NodePtr>& leading, const NodePtr& node) {
+  const std::vector<NodePtr> kept = referenced_assignments(leading, node);
+  if (kept.empty()) return node;
+  auto seq = std::make_shared<Node>();
+  seq->t = NT::Seq;
+  seq->items = kept;
+  seq->items.push_back(node);
+  seq->pos = kept.front()->pos;
+  return seq;
+}
+
+// What the prefix search carries about the program's helpers: the definitions
+// the fall-through classifies a read by, the wrap every tree handed to the
+// translator or kept for the continuation goes through, and the source tables
+// of a wrapped tree.
+struct Helpers {
+  const std::vector<NodePtr>& leading;
+  const Definitions& defs;
+  const Bindings& bindings;
+  ConstScope& scope;
+
+  NodePtr wrap(const NodePtr& node) const { return with_helpers(leading, node); }
+
+  // The physical sources of a wrapped tree are read off what the translator
+  // renders: stage 1's tree, where an assignment a binder shadows is gone.
+  // Only called once the translator has accepted `wrapped`, so stage 1 cannot
+  // refuse it here; a clist result (to_node() null) is not a statement the
+  // translator accepts either, and the wrapped tree itself stands in for it.
+  std::vector<std::string> tables(const NodePtr& wrapped) const {
+    const NodePtr normalized = normalise(wrapped, scope.names, scope.root)->to_node();
+    return source_tables(normalized ? normalized : wrapped, bindings);
+  }
+};
+
 std::optional<HybridPlan> try_plan_fallthrough(
     const NodePtr& source, const std::vector<NodePtr>& steps,
-    const std::string& dialect, const Bindings& bindings, const Options& options) {
+    const std::string& dialect, const Bindings& bindings, const Options& options,
+    const Helpers& helpers) {
   const auto map_it = std::find_if(steps.begin(), steps.end(), [](const NodePtr& step) {
     return step && step->s == "MAP";
   });
@@ -243,7 +492,7 @@ std::optional<HybridPlan> try_plan_fallthrough(
   std::vector<std::pair<NodePtr, NodePtr>> pushable;
   std::vector<std::pair<NodePtr, NodePtr>> custom;
   for (const auto& pair : details->pairs) {
-    if (contains_unsupported_sql(pair.second, dialect)) custom.push_back(pair);
+    if (contains_unsupported_sql(pair.second, dialect, &helpers.defs)) custom.push_back(pair);
     else pushable.push_back(pair);
   }
   if (pushable.empty() || custom.empty()) return std::nullopt;
@@ -331,7 +580,7 @@ std::optional<HybridPlan> try_plan_fallthrough(
   rewritten_steps.insert(rewritten_steps.end(), steps.begin(), map_it);
   rewritten_steps.push_back(std::move(rewritten_map));
   rewritten_steps.insert(rewritten_steps.end(), map_it + 1, steps.end());
-  const NodePtr rewritten_ast = build_pipeline(source, rewritten_steps);
+  const NodePtr rewritten_ast = helpers.wrap(build_pipeline(source, rewritten_steps));
   const Program rewritten_program("", rewritten_ast);
   auto sql = Sql::try_translate_statement(rewritten_program, dialect, bindings, options);
   if (!sql) return std::nullopt;
@@ -359,15 +608,16 @@ std::optional<HybridPlan> try_plan_fallthrough(
   continuation_map->items.push_back(var_node("_INPUT", map_step->pos));
   if (details->explicit_binder) continuation_map->items.push_back(map_step->items[1]);
   continuation_map->items.push_back(std::move(continuation_record));
+  const NodePtr continuation_ast = helpers.wrap(continuation_map);
 
   HybridPlan plan;
   plan.dialect = dialect;
   plan.sql_statement = std::move(*sql);
   plan.sql_prefix_ast = rewritten_ast;
-  plan.continuation_ast = continuation_map;
-  plan.continuation_program = Program("", continuation_map);
+  plan.continuation_ast = continuation_ast;
+  plan.continuation_program = Program("", continuation_ast);
   plan.is_hybrid = true;
-  plan.source_tables = source_tables(rewritten_ast, bindings);
+  plan.source_tables = helpers.tables(rewritten_ast);
   return plan;
 }
 
@@ -393,35 +643,46 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
   Bindings checked = bindings;
   checked.check_aliases();
 
-  // Stage 1 first, exactly as the translator runs it, so the tree unwound
-  // below is the one a prefix will be translated from. A program stage 1
-  // refuses -- `A += 1; ...`, a bare statement before the result -- is a
-  // program no part of which can be pushed down, which is a pure-memory plan
-  // and not an exception: "none of it" is one of the planner's answers. So is
-  // a tree stage 1 can only express with a clist, which to_node() reports as
-  // null: the translator refuses that as a statement shape, and there is no
-  // prefix of a keyed list to try.
-  NodePtr normalized;
+  // Stage 1 first, exactly as the translator runs it, for its verdict. A
+  // program stage 1 refuses -- `A += 1; ...`, a bare statement before the
+  // result -- is a program no part of which can be pushed down, which is a
+  // pure-memory plan and not an exception: "none of it" is one of the
+  // planner's answers. Its TREE is not what is planned, though: see "helper
+  // assignments" above -- and a tree stage 1 can only express with a clist
+  // (`R[1] = 5; ORDERS .> ... .> MAP(_["id"] + R[1])`) is no longer read as
+  // a refusal of the whole program: the other four hosts push the prefix
+  // before the MAP down, and the translator refuses the keyed list only where
+  // it is rendered (plan.helper.indexed-helper-is-carried-as-written).
+  ConstScope scope;
   try {
-    ConstScope scope = const_scope(&checked);
-    normalized = normalise(program.ast(), scope.names, scope.root)->to_node();
+    scope = const_scope(&checked);
+    normalise(program.ast(), scope.names, scope.root);
   } catch (const SqlError&) {
     return pure_memory_plan(program, dialect, checked);
   }
-  if (!normalized) return pure_memory_plan(program, dialect, checked);
 
-  const NodePtr optimized = optimize_ast_logical(normalized);
-  auto [source, steps] = unwind_pipeline(optimized);
-  if (!source || source->t != NT::Var || steps.empty() ||
-      !checked.has(source->s) ||
-      checked.get(source->s, source->pos).kind() != Binding::Kind::Relation) {
+  const Statements parts = statements(program.ast());
+  const Definitions literals = literal_helpers(parts.leading);
+  const Definitions defs = definitions(parts.leading);
+  const auto is_relation = [&](const NodePtr& node) {
+    return node && node->t == NT::Var && checked.has(node->s) &&
+           checked.get(node->s, node->pos).kind() == Binding::Kind::Relation;
+  };
+  const auto unwound = unwind_through_helpers(parts.result, defs, literals);
+  if (unwound.second.empty() || !is_relation(unwound.first)) {
     return pure_memory_plan(program, dialect, checked);
   }
+  const NodePtr optimized =
+      optimize_ast_logical(build_pipeline(unwound.first, unwound.second));
+  auto [source, steps] = unwind_pipeline(optimized);
+  if (steps.empty() || !is_relation(source)) return pure_memory_plan(program, dialect, checked);
+
+  const Helpers helpers{parts.leading, defs, checked, scope};
 
   // The whole pipeline, unless its rows would be a bucket's keys: the
   // translator renders a bare bucket as its keys, and a plan that pushes the
   // whole of `... .> BUCKET(k)` would hand them back as the answer.
-  const NodePtr full_ast = build_pipeline(source, steps);
+  const NodePtr full_ast = helpers.wrap(build_pipeline(source, steps));
   const Program full_program("", full_ast);
   auto full_sql = bucket_rows_are_keys(steps, steps.size())
       ? std::nullopt
@@ -432,12 +693,12 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
     plan.sql_statement = std::move(*full_sql);
     plan.sql_prefix_ast = full_ast;
     plan.pure_sql = true;
-    plan.source_tables = source_tables(full_ast, checked);
+    plan.source_tables = helpers.tables(full_ast);
     return plan;
   }
 
   if (auto fallthrough =
-          try_plan_fallthrough(source, steps, dialect, checked, options)) {
+          try_plan_fallthrough(source, steps, dialect, checked, options, helpers)) {
     return std::move(*fallthrough);
   }
 
@@ -449,7 +710,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
     if (bucket_rows_are_keys(steps, count)) continue;
     const std::vector<NodePtr> prefix_steps(steps.begin(), steps.begin() +
                                                      static_cast<std::ptrdiff_t>(count));
-    const NodePtr prefix_ast = build_pipeline(source, prefix_steps);
+    const NodePtr prefix_ast = helpers.wrap(build_pipeline(source, prefix_steps));
     const Program prefix_program("", prefix_ast);
     auto sql = Sql::try_translate_statement(prefix_program, dialect, checked, options);
     if (!sql) continue;
@@ -458,7 +719,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
                                    steps.end());
     const Pos continuation_pos = remaining.front()->pos;
     const NodePtr continuation_ast =
-        build_pipeline(var_node("_INPUT", continuation_pos), remaining);
+        helpers.wrap(build_pipeline(var_node("_INPUT", continuation_pos), remaining));
     HybridPlan plan;
     plan.dialect = dialect;
     plan.sql_statement = std::move(*sql);
@@ -466,7 +727,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
     plan.continuation_ast = continuation_ast;
     plan.continuation_program = Program("", continuation_ast);
     plan.is_hybrid = true;
-    plan.source_tables = source_tables(prefix_ast, checked);
+    plan.source_tables = helpers.tables(prefix_ast);
     return plan;
   }
 

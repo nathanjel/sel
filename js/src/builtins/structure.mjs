@@ -4,17 +4,15 @@ import { define } from '../registry.mjs';
 import { fail } from '../errors.mjs';
 
 function elements(value) {
-  value.force();
   if (value.size() > 0) return value.entries();
   return value.kind === NONE ? [] : [['1', value]];
 }
 
 function firstCollectionItem(value) {
-  value.force();
   if (value.isNull() || (value.kind === NONE && value.size() === 0)) return null;
   if (value.storage !== null) return value.storage.length > 0 ? value.storage[0] : null;
   if (value.children) return value.children.values().next().value || null;
-  if (value._entries !== null) return value._entries.length > 0 ? value._entries[0][1].force() : null;
+  if (value._entries !== null) return value._entries.length > 0 ? value._entries[0][1] : null;
   return value.kind === NONE ? null : value;
 }
 
@@ -23,17 +21,16 @@ function firstCollectionItem(value) {
 // the relational lane only needs each row. Flat storage therefore stays a
 // packed V8 array and no per-row pair arrays or list-key strings are created.
 function forEachCollectionItem(value, callback) {
-  value.force();
   if (value.storage !== null) {
-    for (let i = 0; i < value.storage.length; i++) callback(value.storage[i].force());
+    for (let i = 0; i < value.storage.length; i++) callback(value.storage[i]);
     return;
   }
   if (value.children) {
-    for (const item of value.children.values()) callback(item.force());
+    for (const item of value.children.values()) callback(item);
     return;
   }
   if (value._entries !== null) {
-    for (const [, item] of value._entries) callback(item.force());
+    for (const [, item] of value._entries) callback(item);
     return;
   }
   if (value.kind !== NONE) callback(value);
@@ -69,28 +66,6 @@ define({
   arityError: (count) => count % 2 !== 0
     ? `RECORD takes an even number of arguments (key-value pairs), got ${count}` : null,
   fn: recordFromArgs,
-});
-
-define({
-  name: 'LAZY_RECORD', min: 0, max: Infinity, lazy: true, binds: true,
-  arityError: (count) => count % 2 !== 0
-    ? `LAZY_RECORD takes an even number of arguments (key-value pairs), got ${count}` : null,
-  fn: (args, ctx) => {
-    const entries = [];
-    for (let i = 0; i < args.count(); i += 2) {
-      const key = args.text(i);
-      const node = args.node(i + 1);
-      let value;
-      if (node.t === 'num' || node.t === 'text' || node.t === 'bool' || node.t === 'null') {
-        value = args.evalNode(node);
-      } else {
-        const captured = ctx.copyCurrent();
-        value = Value.thunk(() => args.evalNode(node, captured));
-      }
-      entries.push([key, value]);
-    }
-    return Value.fromEntries(entries);
-  },
 });
 
 define({

@@ -72,7 +72,7 @@ AGG_FOLD = {'ALL': 'AND', 'ANY': 'OR', 'SUM': '+'}
 # and every pipeline step -- the optimiser's vocabulary, so a new step is
 # covered by being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3))
 # was 0).
-YIELDS_LIST = ('BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD', 'LAZY_RECORD',
+YIELDS_LIST = ('BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD',
                *OPTIMIZER_PIPELINE_OPS)
 
 # The functions that read their argument as bytes, and the one that takes a
@@ -1848,7 +1848,7 @@ class Translator:
         """
         if aggregate_node is not None:
             if (aggregate_node.t == 'call'
-                    and aggregate_node.name in ('RECORD', 'LAZY_RECORD')):
+                    and aggregate_node.name == 'RECORD'):
                 if len(aggregate_node.args) % 2:
                     refuse('E_ARITY', 'RECORD takes an even number of arguments', aggregate_node.pos)
                 projections = []
@@ -2049,7 +2049,7 @@ class Translator:
                     self._bucket_projection(plan, binder, expr)
                     continue
                 plan = self._ensure_derived(plan, self._plan_needs_wrap_before_map)
-                if expr.t == 'call' and expr.name in ('RECORD', 'LAZY_RECORD'):
+                if expr.t == 'call' and expr.name == 'RECORD':
                     if len(expr.args) % 2:
                         refuse('E_ARITY', 'RECORD takes an even number of arguments', expr.pos)
                     projections = []

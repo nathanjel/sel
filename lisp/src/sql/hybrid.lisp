@@ -3,11 +3,17 @@
 ;;;;
 ;;;; The contract every host's planner meets is in docs/SQL-TRANSLATION.md
 ;;;; §12.1 and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at
-;;;; the tree the translator will see, SOURCE-TABLES names PHYSICAL sources (a
-;;;; relation's :from, or a relation query's text verbatim), a program stage 1
-;;;; refuses is a pure-memory plan rather than an error, and every return path
-;;;; fills every slot. This host had no dialect, continuation-ast or
-;;;; source-tables slot at all until the cross-language review.
+;;;; the PIPELINE, whichever helper assignments it is written through, and then
+;;;; at the logical optimiser's rewrite of that (unwinding the raw AST first
+;;;; classified `X = ORDERS; X .> TAKE(1)` as pure memory, because a `seq` is
+;;;; not a pipeline; inlining every helper the way stage 1 does for translate
+;;;; made the continuation report an error at the helper's definition where
+;;;; run reports its use -- see "helper assignments" below for what is done
+;;;; instead), SOURCE-TABLES names PHYSICAL sources (a relation's :from, or a
+;;;; relation query's text verbatim), a program stage 1 refuses is a
+;;;; pure-memory plan rather than an error, and every return path fills every
+;;;; slot. This host had no dialect, continuation-ast or source-tables slot at
+;;;; all until the cross-language review.
 
 (in-package #:sel.sql)
 
@@ -51,6 +57,183 @@ physical name, so two bindings over one table are one source."
       (walk node))
     (nreverse out)))
 
+;;; --- helper assignments ----------------------------------------------------
+;;;
+;;; Stage 1 inlines a helper assignment for translate: `Y = "x"; ... + Y` is
+;;; rendered as `... + "x"`, the literal keeping its definition-site position,
+;;; which is right for a refusal message. It is wrong for the memory half of a
+;;; plan, because that half is a program run evaluates and §12.1 promises it
+;;; reports errors where run would: run evaluates the READ of Y at the use
+;;; site and reports `+`'s operand there, and it evaluates the definition once,
+;;; before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+;;; the planner does not inline. It plans the program as written, three ways:
+;;;
+;;;   * A helper that IS a literal -- after inlining earlier such helpers and
+;;;     folding, `N = 1 + 1` as much as `N = 2` -- is inlined at its reads,
+;;;     stamped with the read's position. That is invisible: a leaf literal
+;;;     cannot fail, and neither can the read, since the definition exists. It
+;;;     keeps `TAKE(N)` a `LIMIT 2` rather than a helper the SQL has to carry.
+;;;   * A helper read as the pipeline's SOURCE is unwound through: `X = ORDERS
+;;;     .> TAKE(2); X .> MAP(...)` is one pipeline over ORDERS, so the prefix
+;;;     search sees every step. Only the source position looks through a
+;;;     helper; a read anywhere else stays a read.
+;;;   * What is handed to the translator, and what is kept for the
+;;;     continuation, carries in front of it the assignments it still reads and
+;;;     the ones those read, in program order, as the program wrote them. The
+;;;     translator runs its own stage 1 over that seq and inlines; the
+;;;     continuation evaluates them once, before its steps, as run does. An
+;;;     assignment nothing after the split reads is dropped, as stage 1 drops
+;;;     it for translate -- the one departure, and the same one.
+
+(defparameter +literal-kinds+ '(:num :text :bool :null))
+
+(defun literal-kind-p (node)
+  (and node (sel::node-p node) (member (sel::node-kind node) +literal-kinds+) t))
+
+(defun statements (ast)
+  "The leading statements and the result expression of a program, as two values."
+  (if (eq (sel::node-kind ast) :seq)
+      (let ((items (sel::node-items ast)))
+        (values (butlast items) (car (last items))))
+      (values '() ast)))
+
+(defun assigned-name (statement)
+  "The name a leading statement assigns. Stage 1 has accepted every statement
+by the time this runs, so each is an assignment whose target is a name, or a
+name indexed by constants."
+  (let ((target (sel::node-l statement)))
+    (loop while (eq (sel::node-kind target) :index)
+          do (setf target (sel::node-l target)))
+    (sel::node-s target)))
+
+(defun definitions (leading)
+  "The whole-name definitions, an alist of name to value node. Stage 1 refuses
+a name assigned twice, or both whole and by index, so each name here has
+exactly one."
+  (let ((defs '()))
+    (dolist (s leading (nreverse defs))
+      (when (eq (sel::node-kind (sel::node-l s)) :var)
+        (push (cons (sel::node-s (sel::node-l s)) (sel::node-r s)) defs)))))
+
+(defun inline-literals (node literals &optional bound)
+  "NODE with every read of a literal helper replaced by the literal, stamped
+with the read's position. Binder scoping is stage 1's: a binder shadows a
+same-named helper inside its body. Copies on the way down, never writes."
+  (unless node (return-from inline-literals node))
+  (flet ((inline-child (child &optional (scope bound))
+           (inline-literals child literals scope)))
+    (case (sel::node-kind node)
+      (:var
+       (let ((cell (and (not (member (sel::node-s node) bound :test #'equal))
+                        (assoc (sel::node-s node) literals :test #'equal))))
+         (if cell
+             (let ((c (sel::copy-node (cdr cell))))
+               (setf (sel::node-pos c) (sel::node-pos node))
+               c)
+             node)))
+      ((:num :text :bool :null) node)
+      (:un (let ((c (sel::copy-node node)))
+             (setf (sel::node-l c) (inline-child (sel::node-l node)))
+             c))
+      ((:bin :index)
+       (let ((c (sel::copy-node node)))
+         (setf (sel::node-l c) (inline-child (sel::node-l node))
+               (sel::node-r c) (inline-child (sel::node-r node)))
+         c))
+      ((:list :seq)
+       (let ((c (sel::copy-node node)))
+         (setf (sel::node-items c) (mapcar #'inline-child (sel::node-items node)))
+         c))
+      (:assign (let ((c (sel::copy-node node)))
+                 (setf (sel::node-r c) (inline-child (sel::node-r node)))
+                 c))
+      (:call
+       (let* ((args (sel::node-items node))
+              (spec (sel::node-spec node))
+              (binds (and spec (sel::spec-binds spec)))
+              (inner (copy-list bound)))
+         (when binds
+           (push "_K" inner)
+           (push (if (and (= (length args) 3) (is-binder-name (second args)))
+                     (sel::node-s (second args))
+                     "_")
+                 inner))
+         (let ((c (sel::copy-node node)))
+           (setf (sel::node-items c)
+                 (loop for arg in args
+                       for i from 0
+                       collect (if (and binds (= i 1) (= (length args) 3) (is-binder-name arg))
+                                   arg
+                                   (inline-child arg (if (= i 0) bound inner)))))
+           c)))
+      (t node))))
+
+(defun literal-helpers (leading)
+  "The literal helpers, an alist of name to literal: each whole-name definition,
+after the earlier literal helpers are inlined into it and it is folded, when
+what is left is a leaf."
+  (let ((literals '()))
+    (dolist (s leading literals)
+      (when (eq (sel::node-kind (sel::node-l s)) :var)
+        (let ((folded (sel:optimize-ast-logical (inline-literals (sel::node-r s) literals))))
+          (when (literal-kind-p folded)
+            (push (cons (sel::node-s (sel::node-l s)) folded) literals)))))))
+
+(defun unwind-through-helpers (result defs literals)
+  "The pipeline the planner probes, as two values (source, steps): the result
+unwound, and where its source is a helper, that helper's definition unwound in
+turn."
+  (multiple-value-bind (source steps) (sel::unwind-pipeline (inline-literals result literals))
+    (let ((seen '()))
+      (loop while (and source (sel::node-p source) (eq (sel::node-kind source) :var)
+                       (assoc (sel::node-s source) defs :test #'equal)
+                       (not (member (sel::node-s source) seen :test #'equal)))
+            do (push (sel::node-s source) seen)
+               (multiple-value-bind (inner-source inner-steps)
+                   (sel::unwind-pipeline
+                    (inline-literals (cdr (assoc (sel::node-s source) defs :test #'equal)) literals))
+                 (setf source inner-source
+                       steps (append inner-steps steps)))))
+    (values source steps)))
+
+(defun read-names (node)
+  "The names a tree reads, binders included: an over-approximation that can
+only keep an assignment the tree does not need, never drop one it does."
+  (let ((out '()))
+    (labels ((walk (n)
+               (when (and n (sel::node-p n))
+                 (if (eq (sel::node-kind n) :var)
+                     (pushnew (sel::node-s n) out :test #'equal)
+                     (walk-node-children n #'walk)))))
+      (walk node))
+    out))
+
+(defun referenced-assignments (leading node)
+  "The leading assignments NODE depends on, in program order: those whose name
+it reads, and those THEY read, transitively."
+  (let ((needed (read-names node))
+        (grew t))
+    (loop while grew
+          do (setf grew nil)
+             (dolist (s leading)
+               (when (member (assigned-name s) needed :test #'equal)
+                 (dolist (name (read-names (sel::node-r s)))
+                   (unless (member name needed :test #'equal)
+                     (push name needed)
+                     (setf grew t))))))
+    (remove-if-not (lambda (s) (member (assigned-name s) needed :test #'equal)) leading)))
+
+(defun with-helpers (leading node)
+  "NODE behind the assignments it depends on, as the program wrote them -- a
+seq the translator's stage 1 inlines and the evaluator runs in order -- or
+NODE itself when it depends on none."
+  (let ((kept (referenced-assignments leading node)))
+    (if kept
+        (let ((seq (sel::make-node :seq (sel::node-pos (first kept)))))
+          (setf (sel::node-items seq) (append kept (list node)))
+          seq)
+        node)))
+
 (defun pure-memory-plan (program dialect bindings)
   "The plan for a program nothing of which reaches the database. The
 continuation is the program itself, and the AST it exposes is the program's
@@ -72,70 +255,87 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
     (multiple-value-bind (names root) (const-scope bs)
       (setf (translator-const-names tr) names
             (translator-const-root tr) root)
-      ;; Stage 1 first, exactly as the translator runs it, so the tree unwound
-      ;; below is the one a prefix will be translated from. A program stage 1
-      ;; refuses -- `A += 1; ...`, a bare statement before the result -- is a
-      ;; program no part of which can be pushed down, which is a pure-memory
-      ;; plan and not an error: "none of it" is one of the planner's answers.
+      ;; Stage 1 first, exactly as the translator runs it, for its verdict. A
+      ;; program stage 1 refuses -- `A += 1; ...`, a bare statement before the
+      ;; result -- is a program no part of which can be pushed down, which is a
+      ;; pure-memory plan and not an error: "none of it" is one of the
+      ;; planner's answers. Its TREE is not what is planned, though: see
+      ;; "helper assignments" below.
       (let ((norm (handler-case (normalise (sel:program-ast program) names root)
                     (sql-error () (return-from plan-hybrid (pure-memory-plan program dialect bs))))))
         (when (clist-p norm)
-          (return-from plan-hybrid (pure-memory-plan program dialect bs)))
-        (multiple-value-bind (curr steps) (sel::unwind-pipeline (sel:optimize-ast-logical norm))
-          ;; No steps, or a source that is not a bound relation: nothing to push.
-          (unless (and steps curr (not (clist-p curr)) (eq (snode-kind curr) :var)
-                       (bindings-has bs (sel::node-s curr))
-                       (eq (binding-kind (bindings-get bs (sel::node-s curr) (snode-pos curr)))
-                           :relation))
-            (return-from plan-hybrid (pure-memory-plan program dialect bs)))
-          (let ((n-steps (length steps))
-                (source-node curr)
-                (input-var "_INPUT"))
-            ;; 1. The whole pipeline, unless its rows would be a bucket's keys: the
-            ;; translator renders a bare bucket as its keys, and a plan that
-            ;; pushes the whole of `... .> BUCKET(k)` would hand them back.
-            (let* ((full-ast (sel::build-pipeline-ast source-node steps))
-                   (full-prog (sel::%make-program "" full-ast))
-                   (full-frag (and (not (bucket-rows-are-keys-p steps))
-                                   (try-translate-statement full-prog dialect bindings options))))
-              (when full-frag
-                (return-from plan-hybrid
-                  (make-hybrid-plan :dialect dialect
-                                    :sql-statement full-frag
-                                    :sql-prefix-ast full-ast
-                                    :pure-sql-p t
-                                    :source-tables (source-tables full-ast bs)))))
-            ;; 2. The MAP fall-through.
-            (let ((ft-plan (try-plan-fallthrough source-node steps dialect bindings options input-var)))
-              (when ft-plan
-                (setf (hybrid-plan-dialect ft-plan) dialect
-                      (hybrid-plan-source-tables ft-plan)
-                      (source-tables (hybrid-plan-sql-prefix-ast ft-plan) bs))
-                (return-from plan-hybrid ft-plan)))
-            ;; 3. The longest translatable prefix, with the rest in memory.
-            (loop for k from (1- n-steps) downto 1 do
-              (let* ((prefix-steps (subseq steps 0 k))
-                     (prefix-ast (sel::build-pipeline-ast source-node prefix-steps))
-                     (prefix-prog (sel::%make-program "" prefix-ast))
-                     (frag (and (not (bucket-rows-are-keys-p prefix-steps))
-                                (try-translate-statement prefix-prog dialect bindings options))))
-                (when frag
-                  (let* ((rem-steps (subseq steps k))
-                         (cont-root (let ((v (sel::make-node :var (sel::node-pos (first rem-steps)))))
-                                      (setf (sel::node-s v) input-var)
-                                      v))
-                         (cont-ast (sel::build-pipeline-ast cont-root rem-steps))
-                         (cont-prog (sel::%make-program "" cont-ast)))
-                    (return-from plan-hybrid
-                      (make-hybrid-plan :dialect dialect
-                                        :sql-statement frag
-                                        :sql-prefix-ast prefix-ast
-                                        :continuation-ast cont-ast
-                                        :continuation-program cont-prog
-                                        :continuation-source-var input-var
-                                        :source-tables (source-tables prefix-ast bs)))))))
-            ;; 4. Nothing pushes down.
-            (pure-memory-plan program dialect bs)))))))
+          (return-from plan-hybrid (pure-memory-plan program dialect bs))))
+      (multiple-value-bind (leading result) (statements (sel:program-ast program))
+        (let ((literals (literal-helpers leading))
+              (defs (definitions leading)))
+          (flet ((relation-p (node)
+                   (and node (sel::node-p node) (eq (sel::node-kind node) :var)
+                        (bindings-has bs (sel::node-s node))
+                        (eq (binding-kind (bindings-get bs (sel::node-s node) (sel::node-pos node)))
+                            :relation)))
+                 (wrap (node) (with-helpers leading node))
+                 ;; The physical sources of a wrapped tree are read off what the
+                 ;; translator renders: stage 1's tree, where an assignment a
+                 ;; binder shadows is gone.
+                 (tables (wrapped) (source-tables (normalise wrapped names root) bs)))
+            (multiple-value-bind (unwound-source unwound-steps)
+                (unwind-through-helpers result defs literals)
+              ;; No steps, or a source that is not a bound relation: nothing to push.
+              (unless (and unwound-steps (relation-p unwound-source))
+                (return-from plan-hybrid (pure-memory-plan program dialect bs)))
+              (multiple-value-bind (source-node steps)
+                  (sel::unwind-pipeline
+                   (sel:optimize-ast-logical (sel::build-pipeline-ast unwound-source unwound-steps)))
+                (unless (and steps (relation-p source-node))
+                  (return-from plan-hybrid (pure-memory-plan program dialect bs)))
+                (let ((n-steps (length steps))
+                      (input-var "_INPUT"))
+                  ;; 1. The whole pipeline, unless its rows would be a bucket's keys: the
+                  ;; translator renders a bare bucket as its keys, and a plan that
+                  ;; pushes the whole of `... .> BUCKET(k)` would hand them back.
+                  (let* ((full-ast (wrap (sel::build-pipeline-ast source-node steps)))
+                         (full-prog (sel::%make-program "" full-ast))
+                         (full-frag (and (not (bucket-rows-are-keys-p steps))
+                                         (try-translate-statement full-prog dialect bindings options))))
+                    (when full-frag
+                      (return-from plan-hybrid
+                        (make-hybrid-plan :dialect dialect
+                                          :sql-statement full-frag
+                                          :sql-prefix-ast full-ast
+                                          :pure-sql-p t
+                                          :source-tables (tables full-ast)))))
+                  ;; 2. The MAP fall-through.
+                  (let ((ft-plan (try-plan-fallthrough source-node steps dialect bindings options
+                                                       input-var defs #'wrap)))
+                    (when ft-plan
+                      (setf (hybrid-plan-dialect ft-plan) dialect
+                            (hybrid-plan-source-tables ft-plan)
+                            (tables (hybrid-plan-sql-prefix-ast ft-plan)))
+                      (return-from plan-hybrid ft-plan)))
+                  ;; 3. The longest translatable prefix, with the rest in memory.
+                  (loop for k from (1- n-steps) downto 1 do
+                    (let* ((prefix-steps (subseq steps 0 k))
+                           (prefix-ast (wrap (sel::build-pipeline-ast source-node prefix-steps)))
+                           (prefix-prog (sel::%make-program "" prefix-ast))
+                           (frag (and (not (bucket-rows-are-keys-p prefix-steps))
+                                      (try-translate-statement prefix-prog dialect bindings options))))
+                      (when frag
+                        (let* ((rem-steps (subseq steps k))
+                               (cont-root (let ((v (sel::make-node :var (sel::node-pos (first rem-steps)))))
+                                            (setf (sel::node-s v) input-var)
+                                            v))
+                               (cont-ast (wrap (sel::build-pipeline-ast cont-root rem-steps)))
+                               (cont-prog (sel::%make-program "" cont-ast)))
+                          (return-from plan-hybrid
+                            (make-hybrid-plan :dialect dialect
+                                              :sql-statement frag
+                                              :sql-prefix-ast prefix-ast
+                                              :continuation-ast cont-ast
+                                              :continuation-program cont-prog
+                                              :continuation-source-var input-var
+                                              :source-tables (tables prefix-ast)))))))
+                  ;; 4. Nothing pushes down.
+                  (pure-memory-plan program dialect bs))))))))))
 
 (defun bucket-rows-are-keys-p (steps)
   "Whether the SQL rows for STEPS are a bucket's KEYS rather than the value SEL
@@ -202,21 +402,29 @@ Name are two fields. A null BINDER counts a read under any name."
 (defparameter +sql-special-calls+
   '("IF" "COND" "COALESCE" "COUNT" "SUM" "AVG" "MIN" "MAX" "RECORD" "LIST"))
 
-(defun contains-unsupported-sql-p (node dialect)
-  "Returns T if NODE contains any function call not supported by DIALECT."
-  (let ((unsupported nil))
-    (labels ((walk (n)
-               (when (and n (sel::node-p n) (not unsupported))
-                 (when (eq (sel::node-kind n) :call)
-                   (let ((name (sel::node-s n)))
-                     (unless (member name +sql-special-calls+ :test #'equal)
-                       (multiple-value-bind (entry found) (dialect-entry dialect :funcs name)
-                         (when (or (not found) (null entry) (stringp entry))
-                           (setf unsupported t))))))
-                 ;; Every child, whatever the kind: a list literal holds calls too.
-                 (walk-node-children n #'walk))))
-      (walk node))
-    unsupported))
+(defun contains-unsupported-sql-p (node dialect &optional defs seen)
+  "Returns T if NODE contains any function call not supported by DIALECT.
+DEFS are the helper definitions (an alist of name to node): a read of one is as
+unsupported as its definition, since the translator will inline it. SEEN is the
+list of helper names already looked through on this path."
+  (labels ((walk (n seen)
+             (when (and n (sel::node-p n))
+               (when (eq (sel::node-kind n) :var)
+                 (let ((cell (and defs (assoc (sel::node-s n) defs :test #'equal))))
+                   (when (and cell (not (member (sel::node-s n) seen :test #'equal)))
+                     (return-from walk (walk (cdr cell) (cons (sel::node-s n) seen))))))
+               (when (eq (sel::node-kind n) :call)
+                 (let ((name (sel::node-s n)))
+                   (unless (member name +sql-special-calls+ :test #'equal)
+                     (multiple-value-bind (entry found) (dialect-entry dialect :funcs name)
+                       (when (or (not found) (null entry) (stringp entry))
+                         (return-from walk t))))))
+               ;; Every child, whatever the kind: a list literal holds calls too.
+               (let ((unsupported nil))
+                 (walk-node-children n (lambda (c) (unless unsupported
+                                                     (when (walk c seen) (setf unsupported t)))))
+                 unsupported))))
+    (walk node seen)))
 
 ;; The steps the MAP fall-through may push past the MAP. Each keeps the rows as
 ;; they are -- the same records, fewer or reordered -- so the custom half of the
@@ -257,11 +465,12 @@ so that a dependency of the same name may share its column."
           (sel::node-r idx) txt)
     idx))
 
-(defun try-plan-fallthrough (source-node steps dialect bindings options input-var)
+(defun try-plan-fallthrough (source-node steps dialect bindings options input-var defs wrap)
   "Detects an early MAP whose RECORD mixes translatable pairs with custom ones.
 Rewrites the SQL prefix to project the translatable pairs plus the columns the
 custom pairs depend on, pushes the remaining pipeline to SQL, and evaluates the
-custom pairs on the rows that come back."
+custom pairs on the rows that come back. DEFS are the helper definitions a pair
+may read; WRAP puts a tree behind the assignments it depends on."
   (let ((map-idx (position "MAP" steps :key (lambda (s) (sel::node-s s)) :test #'equal)))
     (unless map-idx (return-from try-plan-fallthrough nil))
     (when (bucket-rows-are-keys-p (subseq steps 0 map-idx))
@@ -278,14 +487,14 @@ custom pairs on the rows that come back."
                            (t nil))))
       (unless (and rec-node (sel::node-p rec-node)
                    (eq (sel::node-kind rec-node) :call)
-                   (member (sel::node-s rec-node) '("RECORD" "LAZY_RECORD") :test #'equal)
+                   (equal (sel::node-s rec-node) "RECORD")
                    (evenp (length (sel::node-items rec-node)))
                    (loop for (k nil) on (sel::node-items rec-node) by #'cddr
                          always (and (sel::node-p k) (eq (sel::node-kind k) :text))))
         (return-from try-plan-fallthrough nil))
       ;; Each pair is (key-node value-node pushable-p).
       (let* ((pairs (loop for (k v) on (sel::node-items rec-node) by #'cddr
-                          collect (list k v (not (contains-unsupported-sql-p v dialect)))))
+                          collect (list k v (not (contains-unsupported-sql-p v dialect defs)))))
              (pushable (remove-if-not #'third pairs))
              (custom (remove-if #'third pairs)))
         (when (or (null custom) (null pushable))
@@ -356,7 +565,7 @@ custom pairs on the rows that come back."
                 (let* ((rewritten-steps (append (subseq steps 0 map-idx)
                                                 (list rewritten-map)
                                                 downstream))
-                       (rewritten-ast (sel::build-pipeline-ast source-node rewritten-steps))
+                       (rewritten-ast (funcall wrap (sel::build-pipeline-ast source-node rewritten-steps)))
                        (rewritten-prog (sel::%make-program "" rewritten-ast))
                        (sql-frag (try-translate-statement rewritten-prog dialect bindings options)))
                   (unless sql-frag (return-from try-plan-fallthrough nil))
@@ -383,14 +592,15 @@ custom pairs on the rows that come back."
                                 (list cont-root (second args) cont-rec)
                                 (list cont-root cont-rec)))
                       ;; The caller fills dialect and source-tables.
-                      (make-hybrid-plan
-                       :sql-statement sql-frag
-                       :sql-prefix-ast rewritten-ast
-                       :continuation-ast cont-map
-                       :continuation-program (sel::%make-program "" cont-map)
-                       :continuation-source-var input-var
-                       :pure-sql-p nil
-                       :pure-memory-p nil))))))))))))
+                      (let ((cont-ast (funcall wrap cont-map)))
+                        (make-hybrid-plan
+                         :sql-statement sql-frag
+                         :sql-prefix-ast rewritten-ast
+                         :continuation-ast cont-ast
+                         :continuation-program (sel::%make-program "" cont-ast)
+                         :continuation-source-var input-var
+                         :pure-sql-p nil
+                         :pure-memory-p nil)))))))))))))
 
 (defun execute-hybrid (plan db-runner &optional context)
   "Execute a HYBRID-PLAN using DB-RUNNER for SQL execution and SEL:RUN for in-memory continuation.

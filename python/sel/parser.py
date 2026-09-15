@@ -3,7 +3,7 @@
 **This is the precedence-climbing pilot.** The other four hosts transcribe
 spec/grammar.md one method per production — `parse_sequence` -> `parse_list` ->
 `parse_assignment` -> `parse_or` -> ... -> `parse_primary`, sixteen deep, plus a
-thunk frame per binary helper. That shape is a deliberate choice there and it
+helper frame per binary operator. That shape is a deliberate choice there and it
 costs those hosts nothing, but it is **35 stack frames per level of parenthesis
 nesting** (measured against the JS host: 44 frames at one paren, 1409 at forty,
 linear at 35.0). E_DEPTH trips at 100 nested parens, so transcribing it here

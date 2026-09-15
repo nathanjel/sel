@@ -1396,3 +1396,133 @@ orders
 --- expect
 SELECT "o"."id" AS "id", (CAST("o"."id" AS NUMERIC) + CAST(1 AS NUMERIC)) AS "n" FROM "orders" "o" ORDER BY "o"."id" DESC LIMIT 2
 ===
+
+### name: plan.helper.literal-helper-is-inlined-at-its-read
+--- note
+Review 2026-09-15 finding AJ. Stage 1 inlines a helper for translate() with
+the literal keeping its definition-site position, which is right for a
+refusal message and wrong for a continuation: that is a program run()
+evaluates, and run() reports `+`'s operand at the READ of Y (1:45), not at
+its definition (1:5). The planner therefore no longer plans stage 1's tree.
+A helper that is a literal is inlined at its reads, stamped with the read's
+position -- which no error can tell from the read, since a leaf cannot fail
+and a defined name cannot be undefined -- and every host's unit probe
+executes this plan and compares the position with run(). The SQL side is
+what it was: the prefix stops before the MAP, because "x" is not a number.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+Y = "x"; ORDERS .> TAKE(2) .> MAP(_["id"] + Y)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 2
+===
+
+### name: plan.helper.folded-helper-is-a-literal
+--- note
+A helper that FOLDS to a literal is one: `N = 1 + 1` still reaches the SQL
+as `LIMIT 2`, as it did when stage 1 inlined it and the optimiser folded
+the result, so the change costs the SQL side nothing here.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+N = 1 + 1; ORDERS .> TAKE(N)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 2
+===
+
+### name: plan.helper.relation-helper-is-the-pipeline-source
+--- note
+A helper read as the pipeline's SOURCE is unwound through, so the prefix
+search sees every step: this is one two-step pipeline over ORDERS whose
+first step is the prefix. Only the source position looks through a helper;
+a read anywhere else stays a read. The second helper folds to FALSE and is
+inlined at its read (1:55), where run() reports it.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _["id"])
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 2
+===
+
+### name: plan.helper.non-literal-helper-is-carried-as-written
+--- note
+A helper that is not a literal stays a read, and the tree handed to the
+translator carries its assignment in front of the pipeline, for the
+translator's own stage 1 to inline: the SQL is what it always was. A
+continuation carries the same assignment and evaluates it once, before its
+steps, as run() does -- once, not per row, and at the positions the author
+wrote.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+C = COUNT(ORDERS); ORDERS .> FILTER(_["id"] > C)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > (SELECT COUNT(*) FROM `orders` `o` WHERE TRUE))
+===
+
+### name: plan.helper.unread-helper-reads-no-table
+--- note
+An assignment nothing after the split reads is dropped, as stage 1 drops it
+for translate(), so the table it names is not one the plan reads. This is
+the one place the continuation departs from run(), and it is the same place
+translate() does.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}},
+ "USERS": {"kind": "relation", "from": "users", "alias": "u", "fields": {"ID": {"table": "u", "column": "id", "type": "NUM"}}}}
+--- source
+U = USERS .> TAKE(1); ORDERS .> TAKE(2) .> MAP(_["id"] + "x")
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 2
+===
+
+### name: plan.helper.indexed-helper-is-carried-as-written
+--- note
+An indexed assignment is a helper too: stage 1 folds `R[1] = 5` into a keyed
+list the translator refuses inside a MAP, so the MAP stays in memory and the
+prefix before it is pushed down. C++ used to read stage 1's keyed-list result
+as a refusal of the whole program and planned pure memory where the other
+four planned this.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+R[1] = 5; ORDERS .> TAKE(2) .> MAP(_["id"] + R[1])
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 2
+===

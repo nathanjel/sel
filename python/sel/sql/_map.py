@@ -2370,7 +2370,6 @@ RULES: dict[str, Any] = {
         "IS_NOT_NULL": [1, 1],
         "IS_NULL": [1, 1],
         "IS_PRESENT": [1, 1],
-        "LAZY_RECORD": [0, None],
         "LEFT": [2, 2],
         "LEN": [1, 1],
         "LINK": [3, 5],

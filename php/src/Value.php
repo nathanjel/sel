@@ -135,8 +135,6 @@ final class Value
     public ?RecordShape $shape = null;
     /** @var list<Value>|null */
     public ?array $storage = null;
-    /** @var (callable():Value)|null */
-    private $thunk = null;
     /** @var array{neg:bool,digits:string,scale:int}|null */
     private ?array $decVal = null;
 
@@ -352,34 +350,6 @@ final class Value
         return self::list($out);
     }
 
-    /** @param callable():Value $fn */
-    public static function thunk(callable $fn): self
-    {
-        $v = new self(self::NONE, null);
-        $v->thunk = $fn;
-        return $v;
-    }
-
-    public function force(): self
-    {
-        if ($this->thunk === null) {
-            return $this;
-        }
-        $fn = $this->thunk;
-        $real = $fn();
-        $real->force();
-        // Commit only after successful evaluation so a caught exception can retry.
-        $this->thunk = null;
-        $this->kind = $real->kind;
-        $this->scalar = $real->scalar;
-        $this->children = $real->children;
-        $this->isList = $real->isList;
-        $this->shape = $real->shape;
-        $this->storage = $real->storage;
-        $this->decVal = $real->decVal;
-        return $this;
-    }
-
     // --- children -----------------------------------------------------------
 
     /**
@@ -389,13 +359,11 @@ final class Value
      */
     public function isNone(): bool
     {
-        $this->force();
         return $this->kind === self::NONE;
     }
 
     public function isNull(): bool
     {
-        $this->force();
         return $this->kind === self::NONE && $this->size() === 0 && !$this->isList;
     }
 
@@ -415,31 +383,26 @@ final class Value
 
     public function isText(): bool
     {
-        $this->force();
         return $this->kind === self::TEXT;
     }
 
     public function isBin(): bool
     {
-        $this->force();
         return $this->kind === self::BIN;
     }
 
     public function isBool(): bool
     {
-        $this->force();
         return $this->kind === self::BOOL;
     }
 
     public function size(): int
     {
-        $this->force();
         return $this->storage !== null ? count($this->storage) : count($this->children);
     }
 
     public function has(string $key): bool
     {
-        $this->force();
         if ($this->shape !== null) {
             return array_key_exists($key, $this->shape->keyMap);
         }
@@ -452,25 +415,23 @@ final class Value
 
     public function get(string $key): ?Value
     {
-        $this->force();
         if ($this->shape !== null) {
             $index = $this->shape->keyMap[$key] ?? null;
-            return $index === null ? null : $this->storage[$index]->force();
+            return $index === null ? null : $this->storage[$index];
         }
         if ($this->isList && $this->storage !== null) {
             $index = self::listIndex($key, count($this->storage));
-            return $index < 0 ? null : $this->storage[$index]->force();
+            return $index < 0 ? null : $this->storage[$index];
         }
         if (!array_key_exists($key, $this->children)) {
             return null;
         }
-        return $this->children[$key]->force();
+        return $this->children[$key];
     }
 
     /** @return list<string> */
     public function keys(): array
     {
-        $this->force();
         if ($this->shape !== null) {
             return $this->shape->keys;
         }
@@ -483,32 +444,30 @@ final class Value
     /** @return list<Value> */
     public function values(): array
     {
-        $this->force();
         if ($this->storage !== null) {
-            return array_map(static fn (Value $value): Value => $value->force(), $this->storage);
+            return $this->storage;
         }
-        return array_map(static fn (Value $value): Value => $value->force(), array_values($this->children));
+        return array_values($this->children);
     }
 
     /** @return list<array{0:string,1:Value}> */
     public function entries(): array
     {
-        $this->force();
         $out = [];
         if ($this->shape !== null) {
             foreach ($this->shape->keys as $i => $key) {
-                $out[] = [$key, $this->storage[$i]->force()];
+                $out[] = [$key, $this->storage[$i]];
             }
             return $out;
         }
         if ($this->isList && $this->storage !== null) {
             foreach ($this->storage as $i => $value) {
-                $out[] = [(string) ($i + 1), $value->force()];
+                $out[] = [(string) ($i + 1), $value];
             }
             return $out;
         }
         foreach ($this->children as $k => $v) {
-            $out[] = [(string) $k, $v->force()];
+            $out[] = [(string) $k, $v];
         }
         return $out;
     }
@@ -516,7 +475,6 @@ final class Value
     /** Re-assigning an existing key keeps its original position. */
     public function set(string $key, Value $value): self
     {
-        $this->force();
         if ($this->shape !== null) {
             $index = $this->shape->keyMap[$key] ?? null;
             if ($index !== null) {
@@ -559,7 +517,7 @@ final class Value
     /** @param array{line:int,col:int,offset:int}|null $pos */
     public function scalarSource(?array $pos = null): Value
     {
-        $v = $this->force();
+        $v = $this;
         $guard = 0;
         while ($v->kind === self::NONE) {
             if ($v->isNull()) {
@@ -568,7 +526,7 @@ final class Value
             if ($v->size() === 0) {
                 fail('E_NO_SCALAR', 'value has no scalar and no children', $pos);
             }
-            $v = $v->values()[0]->force();
+            $v = $v->values()[0];
             if (++$guard > 1000) {
                 fail('E_DEPTH', 'scalar context nested too deeply', $pos);
             }
@@ -634,7 +592,6 @@ final class Value
     /** Non-throwing probe for ISNUM. */
     public function looksNumeric(): bool
     {
-        $this->force();
         if ($this->kind === self::NONE && $this->size() === 0) {
             return false;
         }
@@ -681,7 +638,6 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $pos);
         }
-        $this->force();
         if ($this->shape !== null) {
             $values = [];
             foreach ($this->storage as $value) {
@@ -725,7 +681,6 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', null);
         }
-        $this->force();
         $scalar = match ($this->kind) {
             self::NONE => '',
             self::TEXT, self::BIN => (string) $this->scalar,
@@ -764,8 +719,6 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $pos);
         }
-        $this->force();
-        $other->force();
         if ($this->kind !== $other->kind) {
             return false;
         }
@@ -812,7 +765,6 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', null);
         }
-        $this->force();
         $s = match ($this->kind) {
             self::NONE => '-',
             self::TEXT => 't' . self::quoteDump((string) $this->scalar),
@@ -950,7 +902,6 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', null);
         }
-        $this->force();
         $scalar = $this->kind === self::NONE ? null : $this->scalar;
         if ($this->size() === 0) {
             return $scalar;

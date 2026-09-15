@@ -145,12 +145,6 @@ class Value {
   static Value record(std::vector<std::string> keys, std::vector<Value> values);
   static Value shaped(std::shared_ptr<const RecordShape> shape,
                       std::vector<Value> storage);
-  static Value thunk(std::function<Value()> fn);
-
-  // Materialise a LAZY_RECORD field tree.  It is const because Value is a
-  // shared handle: forcing one handle must be visible through the aliases that
-  // SEL deliberately preserves.
-  void force() const;
 
   Kind kind() const;
 
@@ -242,7 +236,6 @@ class Value {
     std::unordered_map<std::string, std::size_t> index;
     std::shared_ptr<const RecordShape> shape;
     std::vector<Value> storage;
-    std::function<Value()> thunk;
 
     // Torn down iteratively, for the reason Node is: destroying a child is
     // usually the last reference to it, so freeing a deep tree recursed once per

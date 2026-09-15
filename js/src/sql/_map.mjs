@@ -2585,10 +2585,6 @@ export const RULES = {
       1,
       1
     ],
-    "LAZY_RECORD": [
-      0,
-      null
-    ],
     "LEFT": [
       2,
       2

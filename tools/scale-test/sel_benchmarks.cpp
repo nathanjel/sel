@@ -399,7 +399,6 @@ struct RepresentationCounts {
 };
 
 void count_representation(const Value& value, RepresentationCounts& counts) {
-  value.force();
   if (value.is_list()) {
     ++counts.lists;
   } else if (value.shape()) {

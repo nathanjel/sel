@@ -55,7 +55,6 @@ export class Value {
     this.isList = isList;
     this.shape = null;      // shared RecordShape for flat records
     this.storage = null;    // flat array for records and lists
-    this._thunk = null;     // memoised lazy field, deliberately not public API
     this._decimal = null;   // parsed decimal cache for numeric TEXT values
   }
 
@@ -73,7 +72,7 @@ export class Value {
   // *values* are a string here, a class constant in PHP, an enum in C++ and a
   // keyword in Lisp, so only a predicate can be documented uniformly.
   // These test the value's own kind and do not apply scalar context.
-  isNone() { this.force(); return this.kind === NONE; }
+  isNone() { this; return this.kind === NONE; }
   isNull() { return this.kind === NONE && this.size() === 0 && !this.isList; }
   isVacuous() {
     if (this.isNull()) return true;
@@ -83,9 +82,9 @@ export class Value {
     }
     return false;
   }
-  isText() { this.force(); return this.kind === TEXT; }
-  isBin() { this.force(); return this.kind === BIN; }
-  isBool() { this.force(); return this.kind === BOOL; }
+  isText() { this; return this.kind === TEXT; }
+  isBin() { this; return this.kind === BIN; }
+  isBool() { this; return this.kind === BOOL; }
 
   static none() { return new Value(NONE, null); }
   static null() { return new Value(NONE, null, false); }
@@ -158,12 +157,6 @@ export class Value {
     return v;
   }
 
-  static thunk(fn) {
-    const v = new Value(NONE, null);
-    v._thunk = fn;
-    return v;
-  }
-
   // A string is canonicalised and validated: "007" becomes "7", and anything
   // that is not a number is E_NOT_NUM here rather than a TEXT value that fails
   // later somewhere else. Internal callers pass a decimal record, not a string.
@@ -195,42 +188,18 @@ export class Value {
     return v;
   }
 
-  // Resolve a LAZY_RECORD field in place.  Keeping the resolved payload on the
-  // same Value means repeated reads are cheap and preserves reference identity
-  // for rows retained by MAP/TAKE.
-  force() {
-    if (this._thunk === null) return this;
-    const fn = this._thunk;
-    const real = fn();
-    real.force();
-    // Keep the thunk if evaluation raised, matching the reference value's
-    // commit-after-force behavior for callers that catch and retry.
-    this._thunk = null;
-    this.kind = real.kind;
-    this.scalar = real.scalar;
-    this.children = real.children;
-    this.isList = real.isList;
-    this.shape = real.shape;
-    this.storage = real.storage;
-    this._entries = real._entries;
-    this._decimal = real._decimal;
-    return this;
-  }
-
   // --- children -------------------------------------------------------------
 
   // A method, not a getter, so it reads the same as $v->size(), v.size() and
   // (sel:value-size v) in the other three hosts. tools/check-api.sh keeps it
   // that way.
   size() {
-    this.force();
     if (this.storage !== null) return this.storage.length;
     if (this._entries !== null) return this._entries.length;
     return this.children ? this.children.size : 0;
   }
 
   has(key) {
-    this.force();
     if (this.shape) return this.shape.keyMap.has(key);
     if (this.isList && this.storage !== null) return listIndex(key, this.storage.length) >= 0;
     if (this._entries !== null) return this._entries.some(([entryKey]) => entryKey === key);
@@ -238,27 +207,25 @@ export class Value {
   }
 
   get(key) {
-    this.force();
     if (this.shape) {
       const i = this.shape.keyMap.get(key);
-      return i === undefined ? undefined : this.storage[i].force();
+      return i === undefined ? undefined : this.storage[i];
     }
     if (this.isList && this.storage !== null) {
       const i = listIndex(key, this.storage.length);
-      return i < 0 ? undefined : this.storage[i].force();
+      return i < 0 ? undefined : this.storage[i];
     }
     if (this._entries !== null) {
       for (const [entryKey, value] of this._entries) {
-        if (entryKey === key) return value.force();
+        if (entryKey === key) return value;
       }
       return undefined;
     }
     const value = this.children ? this.children.get(key) : undefined;
-    return value === undefined ? undefined : value.force();
+    return value === undefined ? undefined : value;
   }
 
   keys() {
-    this.force();
     // RecordShape.keys is frozen, so returning it is safe and avoids a fresh
     // key array on every row inspected by a relational operator.
     if (this.shape) return this.shape.keys;
@@ -270,31 +237,28 @@ export class Value {
   }
 
   values() {
-    this.force();
-    if (this.storage !== null) return this.storage.map((value) => value.force());
-    if (this._entries !== null) return this._entries.map(([, value]) => value.force());
-    return this.children ? Array.from(this.children.values(), (value) => value.force()) : [];
+    if (this.storage !== null) return this.storage.map((value) => value);
+    if (this._entries !== null) return this._entries.map(([, value]) => value);
+    return this.children ? Array.from(this.children.values(), (value) => value) : [];
   }
 
   entries() {
-    this.force();
     if (this.shape) {
-      return this.shape.keys.map((key, i) => [key, this.storage[i].force()]);
+      return this.shape.keys.map((key, i) => [key, this.storage[i]]);
     }
     if (this.isList && this.storage !== null) {
-      return this.storage.map((value, i) => [String(i + 1), value.force()]);
+      return this.storage.map((value, i) => [String(i + 1), value]);
     }
     if (this._entries !== null) {
-      return this._entries.map(([key, value]) => [key, value.force()]);
+      return this._entries.map(([key, value]) => [key, value]);
     }
     return this.children
-      ? Array.from(this.children.entries(), ([key, value]) => [key, value.force()])
+      ? Array.from(this.children.entries(), ([key, value]) => [key, value])
       : [];
   }
 
   // Re-assigning an existing key keeps its original position — Map does this.
   set(key, value) {
-    this.force();
     if (this.shape) {
       const index = this.shape.keyMap.get(key);
       if (index !== undefined) {
@@ -337,7 +301,7 @@ export class Value {
 
   // The value that supplies the scalar: itself, or its first child, recursively.
   scalarSource(pos) {
-    let v = this.force();
+    let v = this;
     let guard = 0;
     while (v.kind === NONE) {
       if (v.isNull()) {
@@ -351,7 +315,6 @@ export class Value {
         : v._entries !== null
           ? v._entries[0][1]
         : v.storage[0];
-      v.force();
       if (++guard > 1000) fail('E_DEPTH', 'scalar context nested too deeply', pos);
     }
     return v;
@@ -428,7 +391,6 @@ export class Value {
 
   cloneAt(depth, pos) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
-    this.force();
     if (this.shape) {
       return Value.shapedFromShape(this.shape,
         this.storage.map((value) => value.cloneAt(depth + 1, pos)));
@@ -455,8 +417,6 @@ export class Value {
 
   eqlAt(other, depth, pos) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
-    this.force();
-    other.force();
     if (this.kind !== other.kind) return false;
     if (this.kind === TEXT || this.kind === BOOL) {
       if (this.scalar !== other.scalar) return false;
@@ -491,7 +451,6 @@ export class Value {
 
   dumpAt(depth) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
-    this.force();
     let s;
     switch (this.kind) {
       case NONE: s = '-'; break;
@@ -532,7 +491,6 @@ export class Value {
 
   toNativeAt(depth) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
-    this.force();
     const scalar =
       this.kind === TEXT ? this.scalar :
       this.kind === BIN ? this.scalar :
@@ -549,7 +507,6 @@ export class Value {
 // storage directly so DEDUPE does not serialize every row just to find a bucket.
 export function structuralHash(value, depth = 1) {
   if (depth > MAX_DEPTH) return 0;
-  value.force();
   let h = value.kind === TEXT ? 17 : value.kind === BIN ? 31 : value.kind === BOOL ? 47 : 61;
   if (value.kind === TEXT) h = mixHash(h, stringHash(value.scalar));
   else if (value.kind === BOOL) h = mixHash(h, value.scalar ? 12345 : 67890);

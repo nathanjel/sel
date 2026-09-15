@@ -85,31 +85,29 @@ def iter_entries(value: Any):
     snapshot.  Evaluator hot paths use this iterator so packed list/shape
     storage does not become a stream of temporary ``(key, value)`` tuples.
     """
-    value.force()
     if value.shape is not None:
         for index, key in enumerate(value.shape.keys):
-            yield key, value.storage[index].force()
+            yield key, value.storage[index]
         return
     if value.is_list and value.storage is not None:
         for index, item in enumerate(value.storage):
-            yield str(index + 1), item.force()
+            yield str(index + 1), item
         return
     if value.children:
         for key, item in value.children.items():
-            yield key, item.force()
+            yield key, item
         return
 
 
 def iter_values(value: Any):
     """Iterate collection values directly, omitting synthetic keys."""
-    value.force()
     if value.storage is not None:
         for item in value.storage:
-            yield item.force()
+            yield item
         return
     if value.children:
         for item in value.children.values():
-            yield item.force()
+            yield item
         return
     if value.kind != NONE:
         yield value
@@ -117,18 +115,17 @@ def iter_values(value: Any):
 
 def iter_elements(value: Any):
     """Iterate aggregate elements, including a scalar as synthetic key ``1``."""
-    value.force()
     if value.shape is not None:
         for index, key in enumerate(value.shape.keys):
-            yield key, value.storage[index].force()
+            yield key, value.storage[index]
         return
     if value.is_list and value.storage is not None:
         for index, item in enumerate(value.storage):
-            yield str(index + 1), item.force()
+            yield str(index + 1), item
         return
     if value.children:
         for key, item in value.children.items():
-            yield key, item.force()
+            yield key, item
         return
     if value.kind != NONE:
         yield '1', value
@@ -136,7 +133,7 @@ def iter_elements(value: Any):
 
 class Value:
     __slots__ = ('kind', 'scalar', 'children', 'is_list', 'shape', 'storage',
-                 '_thunk', '_dec_val')
+                 '_dec_val')
 
     # The kind constants, mirrored as class attributes so `Value.BOOL` works the
     # way `Value::BOOL` does in PHP. They are also exported from sel/__init__.py.
@@ -156,7 +153,6 @@ class Value:
         self.children: dict[str, Value] | None = None
         self.shape: RecordShape | None = None
         self.storage: list[Value] | None = None
-        self._thunk: Any = None
         # Lisp's VALUE-DEC-VAL is the same useful cache in Python: the text
         # representation remains normative, while repeated numeric coercions
         # reuse the immutable parsed decimal rather than allocating another Dec.
@@ -171,14 +167,12 @@ class Value:
     # value's own kind and do not apply scalar context.
 
     def is_none(self) -> bool:
-        self.force()
         return self.kind == NONE
 
     def is_null(self) -> bool:
         return self.kind == NONE and self.size() == 0 and not self.is_list
 
     def is_vacuous(self) -> bool:
-        self.force()
         if self.is_null():
             return True
         if self.kind == NONE and self.size() == 0:
@@ -188,15 +182,12 @@ class Value:
         return False
 
     def is_text(self) -> bool:
-        self.force()
         return self.kind == TEXT
 
     def is_bin(self) -> bool:
-        self.force()
         return self.kind == BIN
 
     def is_bool(self) -> bool:
-        self.force()
         return self.kind == BOOL
 
     # --- constructors ---------------------------------------------------------
@@ -260,12 +251,6 @@ class Value:
         return v
 
     @staticmethod
-    def thunk(fn: Any) -> Value:
-        v = Value(NONE, None)
-        v._thunk = fn
-        return v
-
-    @staticmethod
     def bool(b: bool) -> Value:  # noqa: A003
         return Value(BOOL, bool(b))
 
@@ -299,23 +284,6 @@ class Value:
         v.storage = values if isinstance(values, list) else list(values)
         return v
 
-    def force(self) -> Value:
-        """Materialise a LAZY_RECORD value once, in place."""
-        if self._thunk is None:
-            return self
-        fn = self._thunk
-        real = fn()
-        real.force()
-        self._thunk = None
-        self.kind = real.kind
-        self.scalar = real.scalar
-        self.children = real.children
-        self.is_list = real.is_list
-        self.shape = real.shape
-        self.storage = real.storage
-        self._dec_val = real._dec_val
-        return self
-
     # --- children -------------------------------------------------------------
 
     def size(self) -> int:
@@ -323,13 +291,11 @@ class Value:
         v.size() and (sel:value-size v) in the other four hosts.
         tools/check-api.sh keeps it that way.
         """
-        self.force()
         if self.storage is not None:
             return len(self.storage)
         return len(self.children) if self.children else 0
 
     def has(self, key: str) -> bool:
-        self.force()
         if self.shape is not None:
             return key in self.shape.key_map
         if self.is_list and self.storage is not None:
@@ -337,18 +303,15 @@ class Value:
         return bool(self.children) and key in self.children
 
     def get(self, key: str) -> Value | None:
-        self.force()
         if self.shape is not None:
             index = self.shape.key_map.get(key)
-            return None if index is None else self.storage[index].force()
+            return None if index is None else self.storage[index]
         if self.is_list and self.storage is not None:
             index = _list_index(key, len(self.storage))
-            return None if index < 0 else self.storage[index].force()
-        value = self.children.get(key) if self.children else None
-        return None if value is None else value.force()
+            return None if index < 0 else self.storage[index]
+        return self.children.get(key) if self.children else None
 
     def keys(self) -> list[str]:
-        self.force()
         if self.shape is not None:
             return list(self.shape.keys)
         if self.is_list and self.storage is not None:
@@ -364,7 +327,6 @@ class Value:
     def set(self, key: str, value: Value) -> Value:
         # Re-assigning an existing key keeps its original position — dict does
         # this, as long as the key is not deleted first.
-        self.force()
         if self.shape is not None:
             index = self.shape.key_map.get(key)
             if index is not None:
@@ -393,7 +355,7 @@ class Value:
         """The value that supplies the scalar: itself, or its first child,
         recursively.
         """
-        v = self.force()
+        v = self
         guard = 0
         while v.kind == NONE:
             if v.is_null():
@@ -401,7 +363,7 @@ class Value:
             children = v.values()
             if not children:
                 fail('E_NO_SCALAR', 'value has no scalar and no children', pos)
-            v = children[0].force()
+            v = children[0]
             guard += 1
             if guard > 1000:
                 fail('E_DEPTH', 'scalar context nested too deeply', pos)
@@ -488,7 +450,6 @@ as as_text().
     def _clone_at(self, depth: int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
-        self.force()
         out = Value(self.kind, self.scalar, self.is_list)
         out._dec_val = self._dec_val
         if self.shape is not None:
@@ -513,8 +474,6 @@ as as_text().
     def _eql_at(self, other: Value, depth: int, pos: Pos | None) -> bool:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
-        self.force()
-        other.force()
         if self.kind != other.kind:
             return False
         if self.kind in (TEXT, BOOL, BIN):
@@ -540,7 +499,6 @@ as as_text().
     def _dump_at(self, depth: int) -> str:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
-        self.force()
         if self.kind == NONE:
             s = '-'
         elif self.kind == TEXT:
@@ -599,7 +557,6 @@ as as_text().
     def _to_native_at(self, depth: int) -> Any:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
-        self.force()
         if self.kind == TEXT or self.kind == BIN or self.kind == BOOL:
             scalar = self.scalar
         else:
@@ -640,7 +597,6 @@ def structural_hash(value: Value) -> int:
 def _structural_hash_at(value: Value, depth: int) -> int:
     if depth > MAX_DEPTH:
         fail('E_DEPTH', 'value nested too deeply', None)
-    value.force()
     h = 1469598103934665603
 
     def add(part: bytes) -> None:

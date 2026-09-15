@@ -4,7 +4,6 @@
 ;;;; 1. Top-N Fusion: Fuses SORT / SORT_DESC / SORT_BY + TAKE into TOP / TOP_DESC / TOP_BY
 ;;;; 2. Filter Pushdown: Pushes FILTER before MAP when filter predicate depends only on pass-through columns
 ;;;; 3. Top-N Pushdown (Late Materialization): Pushes TOP_BY / SORT_BY before MAP when sort key depends only on pass-through columns
-;;;; 4. Lazy Record Conversion: Replaces RECORD with LAZY_RECORD in MAP projections to avoid computing unused fields on non-selected rows
 
 (in-package #:sel)
 
@@ -224,7 +223,7 @@
          (binder (if (= count 3) (node-s (second args)) "_"))
          (body (if (= count 3) (third args) (second args))))
     (when (and (eq (node-kind body) :call)
-               (member (node-s body) '("RECORD" "LAZY_RECORD") :test #'string=))
+               (string= (node-s body) "RECORD"))
       (let ((items (node-items body))
             (passthroughs '()))
         (loop for (k-node v-node) on items by #'cddr
@@ -246,7 +245,7 @@
          (binder (if (= count 3) (node-s (second args)) "_"))
          (body (if (= count 3) (third args) (second args))))
     (if (and (eq (node-kind body) :call)
-             (member (node-s body) '("RECORD" "LAZY_RECORD") :test #'string=))
+             (string= (node-s body) "RECORD"))
         (let ((items (node-items body)))
           (loop for (k-node v-node) on items by #'cddr
                 thereis (not (and (eq (node-kind k-node) :text)
@@ -792,30 +791,7 @@ needs."
         (when pass8-changed
           (setf curr-steps next-steps
                 changed t)))))
-  ;; Convert RECORD to LAZY_RECORD in MAP. Into a copy of the step: the steps
-  ;; here are already this walk's own, but writing into one is the habit the
-  ;; other four hosts do not have, and it is cheap not to.
-  (mapcar (lambda (s)
-            (if (string= (node-s s) "MAP")
-                (let* ((args (node-items s))
-                       (body-idx (if (= (length args) 3) 2 1))
-                       (body (nth body-idx args)))
-                  (if (and (node-p body)
-                           (eq (node-kind body) :call)
-                           (string= (node-s body) "RECORD")
-                           (>= (length (node-items body)) 4))
-                      (let ((new-body (copy-node-shallow body))
-                            (new-step (copy-node-shallow s)))
-                        (setf (node-s new-body) "LAZY_RECORD"
-                              (node-spec new-body) (registry-lookup "LAZY_RECORD"))
-                        (setf (node-items new-step)
-                              (if (= (length args) 3)
-                                  (list (first args) (second args) new-body)
-                                  (list (first args) new-body)))
-                        new-step)
-                      s))
-                s))
-          curr-steps))
+  curr-steps)
 
 (defun optimize-children (node physical depth)
   "A shallow copy of NODE with every child optimised. NODE itself is never

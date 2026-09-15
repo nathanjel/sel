@@ -16,7 +16,7 @@
   ;; on the first run and kept, because the rewrite and the copy it makes cost
   ;; more than evaluating a small rule does. Keyed by the identity of AST so a
   ;; new tree is noticed. Private; SQL translation never sees it, since a
-  ;; physical rewrite (LAZY_RECORD, join pushdown) is not something a database
+  ;; physical rewrite (join pushdown) is not something a database
   ;; can be asked to run. Two threads racing to fill it compute the same
   ;; immutable tree and one wins; that is benign.
   (%physical nil)

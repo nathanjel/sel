@@ -1951,7 +1951,7 @@ Translator::Source Translator::classify(const SNodePtr& src) {
   // being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
   if (src->t() == SNode::T::Call &&
       (contains(YIELDS_LIST, src->s()) || src->s() == "LIST" || src->s() == "RECORD" ||
-       src->s() == "LAZY_RECORD" || sel::is_pipeline_op(src->s()))) {
+       sel::is_pipeline_op(src->s()))) {
     refuse("E_SQL_SHAPE",
            src->s() + " yields a list, and the scalar rule does not apply to "
                       "it; SQL has no way to count or index what it produces",
@@ -2440,8 +2440,7 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
 void Translator::bucket_projection(RelationalPlan& plan, const std::string& binder,
                                    const SNodePtr& agg_node) {
   if (agg_node) {
-    if (agg_node->t() == SNode::T::Call &&
-        (agg_node->s() == "RECORD" || agg_node->s() == "LAZY_RECORD")) {
+    if (agg_node->t() == SNode::T::Call && agg_node->s() == "RECORD") {
       const auto& rec_args = agg_node->kids();
       if (rec_args.size() % 2 != 0) {
         refuse("E_ARITY", "RECORD takes an even number of arguments", agg_node->pos());
@@ -2713,8 +2712,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       const bool need_derived = plan_needs_wrap_before_map(plan);
       plan = ensure_derived(std::move(plan), need_derived);
 
-      if (expr->t() == SNode::T::Call &&
-          (expr->s() == "RECORD" || expr->s() == "LAZY_RECORD")) {
+      if (expr->t() == SNode::T::Call && expr->s() == "RECORD") {
         const auto& rec_args = expr->kids();
         if (rec_args.size() % 2 != 0) {
           refuse("E_ARITY", "RECORD takes an even number of arguments", expr->pos());
