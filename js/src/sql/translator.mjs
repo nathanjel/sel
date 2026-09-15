@@ -1880,8 +1880,13 @@ export class Translator {
           break;
         }
 
-        case 'GROUP_BY':
         case 'BUCKET': {
+          // A bucket over a bare bucket's rows: SQL has only the keys (open)
+          // or has spent the members (sealed); either way SEL's value is a
+          // map of groups and re-grouping it is a different program.
+          if (plan.bucket !== null) {
+            refuse('E_SQL_SHAPE', 'a BUCKET over buckets: SQL keeps a bucket\'s members only for the projection that ends the grouping', step.pos);
+          }
           plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
           let binder;
           let keyNode;
@@ -1895,13 +1900,13 @@ export class Translator {
             aggNode = args[2];
           } else if (args.length === 4) {
             if (!constants.isBinderName(args[1])) {
-              refuse('E_SQL_SHAPE', 'the binder of GROUP_BY must be a bare name', args[1].pos);
+              refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', args[1].pos);
             }
             binder = args[1].name;
             keyNode = args[2];
             aggNode = args[3];
           } else {
-            refuse('E_ARITY', 'GROUP_BY takes 2 to 4 arguments', step.pos);
+            refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', step.pos);
           }
 
           const groupBy = [];

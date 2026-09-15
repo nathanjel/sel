@@ -155,6 +155,74 @@ int main() {
     }
   }
 
-  std::cout << "cpp SQL advanced: 12/12 checks passed\n";
+  // An executed plan answers what run() answers. Review 2026-09-15 findings
+  // I, AI and P: plans that pushed a bare bucket to the end, re-grouped a
+  // bucket, or re-applied a MAP's RECORD over rows the SQL had already
+  // projected, all answered something else than run(). The database is stood
+  // in for by SEL itself: the SQL prefix's own AST evaluated over the same
+  // rows is what the SQL would return, which is the planner's premise.
+  const Bindings full_orders({{"ORDERS", Binding::relation(
+      "orders", "o",
+      {{"ID", Binding::column("id", "o", SqlKind::Num)},
+       {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)},
+       {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)},
+       {"NAME", Binding::column("name", "o", SqlKind::Text)}})}});
+  const sel::Value order_rows = sel::evaluate(
+      "LIST(RECORD('id', '1', 'customer_id', '7', 'amount', '10', 'name', 'a'), "
+      "RECORD('id', '2', 'customer_id', '7', 'amount', '5', 'name', 'b'), "
+      "RECORD('id', '3', 'customer_id', '9', 'amount', '7', 'name', 'c'))");
+  const auto outcome = [](const auto& fn) -> std::string {
+    try {
+      return fn().dump();
+    } catch (const sel::SelError& e) {
+      return e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
+    }
+  };
+  struct Shape { const char* source; const char* kind; };
+  const Shape shapes[] = {
+      {"ORDERS .> MAP(RECORD(\"cid\", _[\"customer_id\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "hybrid"},
+      {"ORDERS .> MAP(RECORD(\"plus\", _[\"amount\"] + 1, \"shout\", REPEAT(_[\"name\"], 2))) .> SORT_BY(_[\"plus\"])", "hybrid"},
+      {"ORDERS .> MAP(RECORD(\"customer_id\", _[\"customer_id\"], \"shout\", REPEAT(_[\"name\"], 2))) .> BUCKET(_[\"customer_id\"])", "pure_memory"},
+      {"ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2))) .> FILTER(_[\"name\"] $== \"a\")", "pure_memory"},
+      {"ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"row\", REPEAT(GET(_, \"name\"), 2))) .> TAKE(3)", "pure_memory"},
+      {"ORDERS .> MAP(RECORD(\"customer_id\", _[\"amount\"], \"tag\", REPEAT(_[\"customer_id\"], 2))) .> TAKE(3)", "pure_memory"},
+      {"ORDERS .> TAKE(5) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2))) .> DEDUPE()", "hybrid"},
+      {"ORDERS .> FILTER(_[\"amount\"] > 6) .> BUCKET(_[\"customer_id\"])", "hybrid"},
+      {"ORDERS .> BUCKET(_[\"customer_id\"])", "pure_memory"},
+      {"ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(1)", "pure_memory"},
+      {"ORDERS .> BUCKET(_[\"customer_id\"]) .> FILTER(COUNT(_) > 1)", "pure_memory"},
+      {"ORDERS .> BUCKET(_[\"customer_id\"]) .> BUCKET(COUNT(_)) .> MAP(RECORD(\"size\", _K, \"n\", COUNT(_)))", "pure_memory"},
+      {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> SORT_BY(s, s[\"name\"])", "pure_memory"},
+      {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)", "hybrid"},
+      {"ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "pure_memory"},
+      {"ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "hybrid"},
+      {"ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", (REPEAT(_[\"name\"], 2), 1))) .> TAKE(2)", "hybrid"},
+  };
+  for (const Shape& shape : shapes) {
+    const sel::Program program = sel::compile(shape.source);
+    const sel::sql::HybridPlan plan = Sql::plan_hybrid(program, "sqlite", full_orders);
+    const std::string kind = plan.pure_sql ? "pure_sql" : plan.pure_memory ? "pure_memory" : "hybrid";
+    if (kind != shape.kind) {
+      std::cerr << shape.source << ": expected a " << shape.kind << " plan, got " << kind << "\n";
+      return 1;
+    }
+    const auto context = [&] {
+      sel::Value c = sel::Value::none();
+      c.set("ORDERS", order_rows);
+      return c;
+    };
+    const auto prefix_in_memory = [&](const std::string&, const std::vector<sel::Value>&) {
+      sel::Value c = context();
+      return sel::Program("", plan.sql_prefix_ast).run(c);
+    };
+    const std::string want = outcome([&] { sel::Value c = context(); return program.run(c); });
+    const std::string got = outcome([&] { return Sql::execute_hybrid(plan, prefix_in_memory, context()); });
+    if (got != want) {
+      std::cerr << shape.source << ": the executed plan answers " << got << ", run() " << want << "\n";
+      return 1;
+    }
+  }
+
+  std::cout << "cpp SQL advanced: 46/46 checks passed\n";
   return 0;
 }

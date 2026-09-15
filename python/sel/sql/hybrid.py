@@ -198,8 +198,13 @@ def _contains_unsupported_sql(node: Node | None, dialect: str) -> bool:
                             node.target, node.value))
 
 
-def _field_references(node: Node | None, binder: str = '_') -> list[str]:
-    wanted = {binder.upper(), '_', '_1', '_2'}
+def _field_references(node: Node | None, binder: str | None = '_') -> list[str]:
+    """The field names read as ``binder["field"]`` in ``node``, first seen
+    first and compared exactly: SEL's record keys are case-sensitive, so
+    ``name`` and ``Name`` are two fields. ``binder`` None means a read under
+    ANY name counts -- a downstream step binds the row however it likes
+    (``SORT_BY(s, s["name"])``)."""
+    wanted = None if binder is None else {binder.upper(), '_', '_1', '_2'}
     out: list[str] = []
     seen: set[str] = set()
 
@@ -208,11 +213,10 @@ def _field_references(node: Node | None, binder: str = '_') -> list[str]:
             return
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
                 and item.idx is not None and item.idx.t == 'text'
-                and item.obj.name.upper() in wanted):
+                and (wanted is None or item.obj.name.upper() in wanted)):
             key = str(item.idx.v)
-            upper = key.upper()
-            if upper not in seen:
-                seen.add(upper)
+            if key not in seen:
+                seen.add(key)
                 out.append(key)
         for child in item.args:
             visit(child)
@@ -224,6 +228,48 @@ def _field_references(node: Node | None, binder: str = '_') -> list[str]:
 
     visit(node)
     return out
+
+
+# The steps the MAP fall-through may push past the MAP. Each keeps the rows as
+# they are -- the same records, fewer or reordered -- so the custom half of the
+# projection still runs over its own input. A step that changes the row shape
+# (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and the
+# whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare the
+# dependency columns SQL carries where SEL compares the custom values.
+FALLTHROUGH_DOWNSTREAM = frozenset({'FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP'})
+
+
+def _reads_whole_row(node: Node | None, binder: str) -> bool:
+    """Whether ``node`` reads the row itself -- the binder outside an index
+    with a text key, as in ``GET(_, "name")`` or ``COUNT(_)`` -- which no
+    projected column can stand in for."""
+    wanted = {binder.upper(), '_', '_1', '_2'}
+
+    def visit(item: Node | None) -> bool:
+        if item is None:
+            return False
+        if item.t == 'var' and item.name.upper() in wanted:
+            return True
+        if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
+                and item.idx is not None and item.idx.t == 'text'):
+            # A field read; the object is not a whole-row read.
+            return visit(item.idx)
+        return (any(visit(child) for child in item.args)
+                or any(visit(child) for child in item.items)
+                or any(visit(child) for child in (item.l, item.r, item.x, item.obj,
+                                                   item.idx, item.target, item.value)))
+
+    return visit(node)
+
+
+def _is_own_field_read(pair: tuple[Node, Node], binder: str) -> bool:
+    """Whether a pushable pair is the plain field read ``binder[key]`` of its
+    own key, so that a dependency of the same name may share its column."""
+    key, value = pair
+    return (value.t == 'index' and value.obj is not None and value.obj.t == 'var'
+            and value.idx is not None and value.idx.t == 'text'
+            and value.obj.name.upper() == binder.upper()
+            and str(value.idx.v) == str(key.v))
 
 
 def _map_record_details(step: Node) -> dict[str, Any] | None:
@@ -259,23 +305,51 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
         (custom if _contains_unsupported_sql(pair[1], dialect) else pushable).append(pair)
     if not custom or not pushable:
         return None
-
-    downstream_refs = {
-        field.upper()
-        for step in steps[map_index + 1:]
-        for field in _field_references(step)
-    }
-    if any(str(pair[0].v).upper() in downstream_refs for pair in custom):
+    # The custom half runs over the rows the SQL returns; a read of the row
+    # itself cannot be served by any column.
+    if any(_reads_whole_row(pair[1], details['binder']) for pair in custom):
         return None
 
-    projected = {str(pair[0].v).upper() for pair in pushable}
+    # Every step after the MAP goes into the SQL, so each must keep the rows
+    # as they are, and may read only what SEL's rows have after the MAP: the
+    # pushable keys. The custom keys are not in the SQL; a dependency column
+    # is in the SQL but not in SEL's row.
+    downstream = steps[map_index + 1:]
+    if any(step.name not in FALLTHROUGH_DOWNSTREAM for step in downstream):
+        return None
+    projected = {str(pair[0].v) for pair in pushable}
+    for step in downstream:
+        # args[0] is the step's input -- the pipeline so far -- not its own
+        # text; the step binds the row under a name of its own, so any read
+        # counts.
+        for arg in step.args[1:]:
+            if any(field not in projected for field in _field_references(arg, None)):
+                return None
+
+    # A dependency may share a projected column only when that column IS the
+    # field: `"customer_id", _["amount"]` projects amount under the name the
+    # custom half would read customer_id by. Names are compared exactly, as
+    # SEL compares them; and a dependency that differs from a projected key
+    # only by case is not projected beside it, because SQL aliases are not
+    # case-sensitive everywhere.
+    own = {str(pair[0].v) for pair in pushable
+           if _is_own_field_read(pair, details['binder'])}
+    # "Case" here is ASCII case, as everywhere in SEL -- never the host's.
+    projected_folded = {ascii_upper(key) for key in projected}
     dependencies: list[str] = []
-    dependency_set: set[str] = set()
+    dependencies_folded: set[str] = set()
     for pair in custom:
         for field in _field_references(pair[1], details['binder']):
-            upper = field.upper()
-            if upper not in projected and upper not in dependency_set:
-                dependency_set.add(upper)
+            if field in projected:
+                if field not in own:
+                    return None
+            elif ascii_upper(field) in projected_folded:
+                return None
+            elif field not in dependencies:
+                # Two dependencies must not differ only by case either.
+                if ascii_upper(field) in dependencies_folded:
+                    return None
+                dependencies_folded.add(ascii_upper(field))
                 dependencies.append(field)
 
     rewritten_args: list[Node] = []
@@ -299,11 +373,24 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
     if sql is None:
         return None
 
+    # The continuation re-applies the projection to the rows that come back:
+    # a pushable pair is passed through BY KEY -- the SQL already computed it,
+    # under that name -- and a custom pair is evaluated as written, over the
+    # dependency columns projected beside it.
     input_node = Node('var', steps[map_index].pos, name='_INPUT')
+    continuation_args: list[Node] = []
+    for key, value in details['pairs']:
+        if any(pair[0] is key for pair in pushable):
+            obj = Node('var', value.pos, name=details['binder'])
+            continuation_args.extend((key, Node('index', value.pos, obj=obj, idx=key)))
+        else:
+            continuation_args.extend((key, value))
+    continuation_record = copy_node(details['body'])
+    continuation_record.args = continuation_args
     continuation_map = copy_node(steps[map_index])
-    continuation_map.args = ([input_node, steps[map_index].args[1], details['body']]
+    continuation_map.args = ([input_node, steps[map_index].args[1], continuation_record]
                              if details['explicit']
-                             else [input_node, details['body']])
+                             else [input_node, continuation_record])
     return HybridPlan(
         dialect=dialect,
         sql_statement=sql,
@@ -349,8 +436,12 @@ def plan_hybrid(program: Program, dialect: str,
             or catalog.get(source.name, source.pos)['kind'] != 'relation'):
         return _pure_memory_plan(program, dialect, catalog)
 
+    # The whole pipeline, unless its rows would be a bucket's keys: the
+    # translator renders a bare bucket as its keys, and a plan that pushes the
+    # whole of ``... .> BUCKET(k)`` would hand them back as the answer.
     full_ast = build_pipeline(source, steps)
-    full_sql = _try_statement(full_ast, dialect, catalog, opts)
+    full_sql = (None if _bucket_rows_are_keys(steps)
+                else _try_statement(full_ast, dialect, catalog, opts))
     if full_sql is not None:
         return HybridPlan(dialect=dialect, sql_statement=full_sql,
                           sql_prefix_ast=full_ast, pure_sql=True,

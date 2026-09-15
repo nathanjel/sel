@@ -255,3 +255,65 @@ ITEMS .> BUCKET(_["dept"]) .> TAKE(2) .> MAP(RECORD("dept", _K))
 --- error
 E_SQL_SHAPE 1:42
 ===
+### name: stmt.bucket.refuse-bucket-over-an-open-bucket
+--- note
+Review 2026-09-15 finding AI. A second BUCKET over a bare bucket used to
+discard the plan's bucket state and group the key rows again -- `GROUP BY
+COUNT(*)`, which the database rejects, or a re-grouping of keys SEL calls
+groups. Either way a different program; refused at the second BUCKET.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> BUCKET(COUNT(_)) .> MAP(RECORD("size", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE 1:31
+===
+### name: stmt.bucket.refuse-projected-bucket-over-an-open-bucket
+--- note
+The three-argument spelling is the same second bucket.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> BUCKET(COUNT(_), RECORD("size", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE 1:31
+===
+### name: stmt.bucket.refuse-bucket-over-a-sealed-bucket
+--- note
+And once the members are spent (a TAKE followed the bare bucket) a BUCKET is
+refused like the MAP in refuse-map-after-the-members-are-spent.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> TAKE(2) .> BUCKET(_["dept"])
+--- error
+E_SQL_SHAPE 1:42
+===
+### name: stmt.bucket.bucket-over-a-projected-bucket
+--- note
+A bucket whose projection closed it is a list of records again, and a second
+BUCKET over that list is ordinary re-grouping: the grouped statement becomes
+a derived table.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "n", COUNT(_))) .> BUCKET(_["n"]) .> MAP(RECORD("n", _K, "depts", COUNT(_)))
+--- expect
+SELECT `_sub1`.`n` AS `n`, COUNT(*) AS `depts` FROM (SELECT `dept` AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY `dept`) `_sub1` GROUP BY `_sub1`.`n`
+===

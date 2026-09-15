@@ -1945,6 +1945,14 @@ can say about a bucket on its own."
                              (append (relational-plan-filters plan) (list (list binder pred pos)))))))
 
                 ((equal sname "BUCKET")
+                 ;; A bucket over a bare bucket's rows: SQL has only the keys
+                 ;; (open) or has spent the members (sealed); either way SEL's
+                 ;; value is a map of groups and re-grouping it is a different
+                 ;; program.
+                 (when (relational-plan-bucket plan)
+                   (refuse "E_SQL_SHAPE"
+                           "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping"
+                           pos))
                  (when (or (relational-plan-group-by plan)
                            (relational-plan-projections plan)
                            (relational-plan-select-cols plan)

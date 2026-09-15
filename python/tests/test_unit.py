@@ -492,14 +492,17 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
     import sqlite3
     from sel.sql import Binding, Sql
     bindings = {'ORDERS': Binding.relation('orders', 'o', {
+        'ID': Binding.column('id', 'o', 'NUM'),
         'CUSTOMER_ID': Binding.column('customer_id', 'o', 'NUM'),
-        'AMOUNT': Binding.column('amount', 'o', 'NUM')})}
-    rows = [{'customer_id': '7', 'amount': '10'}, {'customer_id': '7', 'amount': '5'},
-            {'customer_id': '9', 'amount': '7'}]
+        'AMOUNT': Binding.column('amount', 'o', 'NUM'),
+        'NAME': Binding.column('name', 'o', 'TEXT')})}
+    rows = [{'id': '1', 'customer_id': '7', 'amount': '10', 'name': 'a'},
+            {'id': '2', 'customer_id': '7', 'amount': '5', 'name': 'b'},
+            {'id': '3', 'customer_id': '9', 'amount': '7', 'name': 'c'}]
     db = sqlite3.connect(':memory:')
-    db.execute('create table orders(customer_id, amount)')
-    db.executemany('insert into orders values (?, ?)',
-                   [(r['customer_id'], r['amount']) for r in rows])
+    db.execute('create table orders(id, customer_id, amount, name)')
+    db.executemany('insert into orders values (?, ?, ?, ?)',
+                   [(r['id'], r['customer_id'], r['amount'], r['name']) for r in rows])
 
     def runner(sql, params):
         cur = db.execute(sql, [p.as_text() for p in params])
@@ -513,16 +516,46 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> MAP(RECORD("c", _["cid"], "big", _["n"] > 1))', 'hybrid'),
         ('ORDERS .> FILTER(_["amount"] > 6) .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_)))', 'pure_sql'),
         ('ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1) .> MAP(RECORD("cid", _K, "n", COUNT(_)))', 'pure_memory'),
+        # Review 2026-09-15 findings I, AI and P: a bare bucket at the end of
+        # the pipeline, a bucket over a bucket, and the MAP fall-through over
+        # an aliased or computed pair, a whole-row read, a colliding
+        # dependency, a downstream read of a dependency, a downstream BUCKET.
+        ('ORDERS .> BUCKET(_["customer_id"])', 'pure_memory'),
+        ('ORDERS .> FILTER(_["amount"] > 6) .> BUCKET(_["customer_id"])', 'hybrid'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1)', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> FILTER(COUNT(_) > 1)', 'pure_memory'),
+        ('ORDERS .> BUCKET(_["customer_id"]) .> BUCKET(COUNT(_)) .> MAP(RECORD("size", _K, "n", COUNT(_)))', 'pure_memory'),
+        ('ORDERS .> MAP(RECORD("cid", _["customer_id"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'),
+        ('ORDERS .> MAP(RECORD("plus", _["amount"] + 1, "shout", REPEAT(_["name"], 2))) .> SORT_BY(_["plus"])', 'hybrid'),
+        ('ORDERS .> MAP(RECORD("customer_id", _["customer_id"], "shout", REPEAT(_["name"], 2))) .> BUCKET(_["customer_id"])', 'pure_memory'),
+        ('ORDERS .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], 2))) .> FILTER(_["name"] $== "a")', 'pure_memory'),
+        ('ORDERS .> MAP(RECORD("id", _["id"], "row", REPEAT(GET(_, "name"), 2))) .> TAKE(3)', 'pure_memory'),
+        ('ORDERS .> MAP(RECORD("customer_id", _["amount"], "tag", REPEAT(_["customer_id"], 2))) .> TAKE(3)', 'pure_memory'),
+        ('ORDERS .> TAKE(5) .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], 2))) .> DEDUPE()', 'hybrid'),
+        # Cross-validation of that fix: a downstream step's own binder, keys
+        # differing only by case, a list literal around the custom call.
+        ('ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> SORT_BY(s, s["name"])', 'pure_memory'),
+        ('ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'hybrid'),
+        ('ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'),
+        ('ORDERS .> MAP(RECORD("x", _["id"], "X", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'),
+        ('ORDERS .> MAP(RECORD("id", _["id"], "shout", (REPEAT(_["name"], 2), 1))) .> TAKE(2)', 'hybrid'),
     ]
+
+    def outcome(fn):
+        try:
+            got = fn()
+        except SelError as e:
+            return f'{e.code}@{e.line}:{e.col}'
+        return (got if isinstance(got, Value) else Value.from_native(got)).dump()
+
     for source, expected in shapes:
         program = sel_compile(source)
-        want = program.run({'ORDERS': rows}).dump()
+        want = outcome(lambda: program.run({'ORDERS': rows}))
         plan = Sql.plan_hybrid(program, 'sqlite', bindings)
         got_kind = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
         assert got_kind == expected, (source, got_kind)
-        got = Sql.execute_hybrid(plan, runner, {'ORDERS': rows})
-        got = got if isinstance(got, Value) else Value.from_native(got)
-        assert got.dump() == want, (source, got.dump(), want)
+        got = outcome(lambda: Sql.execute_hybrid(plan, runner, {'ORDERS': rows}))
+        assert got == want, (source, got, want)
 
 
 def test_program_caches_the_physical_ast_per_source_tree():

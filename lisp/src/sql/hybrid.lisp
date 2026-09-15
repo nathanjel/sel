@@ -91,10 +91,13 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
           (let ((n-steps (length steps))
                 (source-node curr)
                 (input-var "_INPUT"))
-            ;; 1. The whole pipeline.
+            ;; 1. The whole pipeline, unless its rows would be a bucket's keys: the
+            ;; translator renders a bare bucket as its keys, and a plan that
+            ;; pushes the whole of `... .> BUCKET(k)` would hand them back.
             (let* ((full-ast (sel::build-pipeline-ast source-node steps))
                    (full-prog (sel::%make-program "" full-ast))
-                   (full-frag (try-translate-statement full-prog dialect bindings options)))
+                   (full-frag (and (not (bucket-rows-are-keys-p steps))
+                                   (try-translate-statement full-prog dialect bindings options))))
               (when full-frag
                 (return-from plan-hybrid
                   (make-hybrid-plan :dialect dialect
@@ -153,29 +156,41 @@ half would be evaluated over key rows."
               ((and open (equal name "MAP")) (setf open nil))
               ((and open (not (equal name "FILTER"))) (return t)))))))
 
+(defun walk-node-children (n fn)
+  "Calls FN on every child node of N -- l, r and items -- whatever its kind."
+  (when (and n (sel::node-p n))
+    (let ((l (sel::node-l n)) (r (sel::node-r n)))
+      (when (and l (sel::node-p l)) (funcall fn l))
+      (when (and r (sel::node-p r)) (funcall fn r))
+      (dolist (item (sel::node-items n))
+        (when (and item (sel::node-p item)) (funcall fn item))))))
+
+(defun binder-name-p (name binder)
+  "Whether NAME binds the row: BINDER, or one of the implicit names. A null
+BINDER means any name does -- a downstream step binds the row however it likes."
+  (or (null binder)
+      (string-equal name binder) (string-equal name "_")
+      (string-equal name "_1") (string-equal name "_2")))
+
+(defun field-read-p (n)
+  "Whether N is BINDER['field']: an index whose object is a var and whose key is text."
+  (and n (sel::node-p n) (eq (sel::node-kind n) :index)
+       (let ((l (sel::node-l n)) (r (sel::node-r n)))
+         (and l (sel::node-p l) (eq (sel::node-kind l) :var)
+              r (sel::node-p r) (eq (sel::node-kind r) :text)))))
+
 (defun collect-field-references (node &optional (binder "_"))
-  "Collects all field names accessed via BINDER['field'] in NODE."
+  "Collects all field names accessed via BINDER['field'] in NODE, first seen
+first and compared exactly: SEL's record keys are case-sensitive, so name and
+Name are two fields. A null BINDER counts a read under any name."
   (let ((refs '()))
     (labels ((walk (n)
                (when (and n (sel::node-p n))
-                 (if (and (eq (sel::node-kind n) :index)
-                          (let ((l (sel::node-l n))
-                                (r (sel::node-r n)))
-                            (and l (not (clist-p l)) (eq (sel::node-kind l) :var)
-                                 (or (string-equal (sel::node-s l) binder)
-                                     (string-equal (sel::node-s l) "_")
-                                     (string-equal (sel::node-s l) "_1")
-                                     (string-equal (sel::node-s l) "_2"))
-                                 r (not (clist-p r)) (eq (sel::node-kind r) :text))))
-                     (pushnew (sel::node-s (sel::node-r n)) refs :test #'string-equal)
-                     (case (sel::node-kind n)
-                       (:index (walk (sel::node-l n)) (walk (sel::node-r n)))
-                       (:call (dolist (item (sel::node-items n)) (walk item)))
-                       (:bin (walk (sel::node-l n)) (walk (sel::node-r n)))
-                       (:un (walk (sel::node-l n)))
-                       (:group (walk (sel::node-l n))))))))
+                 (when (and (field-read-p n) (binder-name-p (sel::node-s (sel::node-l n)) binder))
+                   (pushnew (sel::node-s (sel::node-r n)) refs :test #'string=))
+                 (walk-node-children n #'walk))))
       (walk node))
-    refs))
+    (nreverse refs)))
 
 (defun collect-all-step-field-references (steps)
   (let ((all-refs '()))
@@ -192,139 +207,190 @@ half would be evaluated over key rows."
   (let ((unsupported nil))
     (labels ((walk (n)
                (when (and n (sel::node-p n) (not unsupported))
-                 (case (sel::node-kind n)
-                   (:call
-                    (let ((name (sel::node-s n)))
-                      (unless (member name +sql-special-calls+ :test #'equal)
-                        (multiple-value-bind (entry found) (dialect-entry dialect :funcs name)
-                          (when (or (not found) (null entry) (stringp entry))
-                            (setf unsupported t))))
-                      (dolist (item (sel::node-items n)) (walk item))))
-                   (:bin (walk (sel::node-l n)) (walk (sel::node-r n)))
-                   (:un (walk (sel::node-l n)))
-                   (:index (walk (sel::node-l n)) (walk (sel::node-r n)))
-                   (:group (walk (sel::node-l n)))))))
+                 (when (eq (sel::node-kind n) :call)
+                   (let ((name (sel::node-s n)))
+                     (unless (member name +sql-special-calls+ :test #'equal)
+                       (multiple-value-bind (entry found) (dialect-entry dialect :funcs name)
+                         (when (or (not found) (null entry) (stringp entry))
+                           (setf unsupported t))))))
+                 ;; Every child, whatever the kind: a list literal holds calls too.
+                 (walk-node-children n #'walk))))
       (walk node))
     unsupported))
 
+;; The steps the MAP fall-through may push past the MAP. Each keeps the rows as
+;; they are -- the same records, fewer or reordered -- so the custom half of the
+;; projection still runs over its own input. A step that changes the row shape
+;; (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and the
+;; whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare the
+;; dependency columns SQL carries where SEL compares the custom values.
+(defparameter +fallthrough-downstream+ '("FILTER" "SORT_BY" "TOP_BY" "TAKE" "DROP"))
+
+(defun reads-whole-row-p (node binder)
+  "Whether NODE reads the row itself -- the binder outside an index with a text
+key, as in GET(_, \"name\") or COUNT(_) -- which no projected column can stand in for."
+  (labels ((walk (n)
+             (when (and n (sel::node-p n))
+               (cond ((eq (sel::node-kind n) :var) (binder-name-p (sel::node-s n) binder))
+                     ;; A field read; the object is not a whole-row read.
+                     ((field-read-p n) (walk (sel::node-r n)))
+                     (t (let ((found nil))
+                          (walk-node-children n (lambda (c) (when (walk c) (setf found t))))
+                          found))))))
+    (walk node)))
+
+(defun own-field-read-p (key-node value-node binder)
+  "Whether a pushable pair is the plain field read BINDER[key] of its own key,
+so that a dependency of the same name may share its column."
+  (and (field-read-p value-node)
+       (string-equal (sel::node-s (sel::node-l value-node)) binder)
+       (string= (sel::node-s (sel::node-r value-node)) (sel::node-s key-node))))
+
+(defun make-field-read (binder field pos)
+  "The node BINDER[field] at POS."
+  (let ((idx (sel::make-node :index pos))
+        (var (sel::make-node :var pos))
+        (txt (sel::make-node :text pos)))
+    (setf (sel::node-s var) binder
+          (sel::node-s txt) field
+          (sel::node-l idx) var
+          (sel::node-r idx) txt)
+    idx))
+
 (defun try-plan-fallthrough (source-node steps dialect bindings options input-var)
-  "Detects if an early MAP contains custom/unsupported functions whose output
-fields are NOT referenced in downstream operations. Rewrites the SQL prefix to
-pass through the dependency columns, pushes down the remaining pipeline to SQL,
-and evaluates the custom function on the final DB rows in memory."
+  "Detects an early MAP whose RECORD mixes translatable pairs with custom ones.
+Rewrites the SQL prefix to project the translatable pairs plus the columns the
+custom pairs depend on, pushes the remaining pipeline to SQL, and evaluates the
+custom pairs on the rows that come back."
   (let ((map-idx (position "MAP" steps :key (lambda (s) (sel::node-s s)) :test #'equal)))
     (unless map-idx (return-from try-plan-fallthrough nil))
     (when (bucket-rows-are-keys-p (subseq steps 0 map-idx))
       (return-from try-plan-fallthrough nil))
     (let* ((map-step (nth map-idx steps))
-           (args (sel::node-items map-step)))
-      (multiple-value-bind (binder rec-node)
-          (if (= (length args) 2)
-              (values "_" (second args))
-              (if (= (length args) 3)
-                  (values (sel::node-s (second args)) (third args))
-                  (return-from try-plan-fallthrough nil)))
-        (unless (and rec-node (not (clist-p rec-node))
-                     (eq (sel::node-kind rec-node) :call)
-                     (equal (sel::node-s rec-node) "RECORD"))
+           (args (sel::node-items map-step))
+           (explicit (and (= (length args) 3)
+                          (sel::node-p (second args))
+                          (eq (sel::node-kind (second args)) :var)
+                          (not (sel::node-grouped (second args)))))
+           (binder (if explicit (sel::node-s (second args)) "_"))
+           (rec-node (cond (explicit (third args))
+                           ((= (length args) 2) (second args))
+                           (t nil))))
+      (unless (and rec-node (sel::node-p rec-node)
+                   (eq (sel::node-kind rec-node) :call)
+                   (member (sel::node-s rec-node) '("RECORD" "LAZY_RECORD") :test #'equal)
+                   (evenp (length (sel::node-items rec-node)))
+                   (loop for (k nil) on (sel::node-items rec-node) by #'cddr
+                         always (and (sel::node-p k) (eq (sel::node-kind k) :text))))
+        (return-from try-plan-fallthrough nil))
+      ;; Each pair is (key-node value-node pushable-p).
+      (let* ((pairs (loop for (k v) on (sel::node-items rec-node) by #'cddr
+                          collect (list k v (not (contains-unsupported-sql-p v dialect)))))
+             (pushable (remove-if-not #'third pairs))
+             (custom (remove-if #'third pairs)))
+        (when (or (null custom) (null pushable))
           (return-from try-plan-fallthrough nil))
-        (let* ((items (sel::node-items rec-node)))
-          (unless (evenp (length items))
-            (return-from try-plan-fallthrough nil))
-          (let ((pushable-pairs '())
-                (custom-pairs '()))
-            (loop for (k-node v-node) on items by #'cddr do
-              (let ((k-name (sel::node-s k-node)))
-                (if (contains-unsupported-sql-p v-node dialect)
-                    (push (cons k-name (list k-node v-node)) custom-pairs)
-                    (push (cons k-name (list k-node v-node)) pushable-pairs))))
-            (setf pushable-pairs (nreverse pushable-pairs)
-                  custom-pairs (nreverse custom-pairs))
-            ;; If all are pushable or none are pushable, nothing to fall through here
-            (when (or (null custom-pairs) (null pushable-pairs))
+        ;; The custom half runs over the rows the SQL returns; a read of the row
+        ;; itself cannot be served by any column.
+        (when (some (lambda (p) (reads-whole-row-p (second p) binder)) custom)
+          (return-from try-plan-fallthrough nil))
+        ;; Every step after the MAP goes into the SQL, so each must keep the rows
+        ;; as they are, and may read only what SEL's rows have after the MAP: the
+        ;; pushable keys. The custom keys are not in the SQL; a dependency column
+        ;; is in the SQL but not in SEL's row.
+        (let ((downstream (subseq steps (1+ map-idx)))
+              (projected (mapcar (lambda (p) (sel::node-s (first p))) pushable)))
+          (dolist (step downstream)
+            (unless (member (sel::node-s step) +fallthrough-downstream+ :test #'equal)
               (return-from try-plan-fallthrough nil))
-
-
-            ;; Check if any custom key is referenced in downstream steps
-            (let* ((downstream-steps (subseq steps (1+ map-idx)))
-                   (downstream-refs (collect-all-step-field-references downstream-steps)))
-              (when (some (lambda (cp) (member (car cp) downstream-refs :test #'string-equal))
-                          custom-pairs)
-                (return-from try-plan-fallthrough nil))
-
-              ;; Collect dependencies needed by custom expressions
-              (let ((all-deps '()))
-                (dolist (cp custom-pairs)
-                  (let ((deps (collect-field-references (second (cdr cp)) binder)))
-                    (dolist (d deps)
-                      (pushnew d all-deps :test #'string-equal))))
-
-                ;; Build rewritten RECORD node for SQL
-                (let ((new-items '()))
-                  ;; Keep pushable pairs
-                  (dolist (pp pushable-pairs)
-                    (push (first (cdr pp)) new-items)
-                    (push (second (cdr pp)) new-items))
-                  ;; Add dependency columns if not already projected
-                  (dolist (d all-deps)
-                    (unless (assoc d pushable-pairs :test #'string-equal)
-                      (let ((k-n (let ((n (sel::copy-node rec-node)))
-                                   (setf (sel::node-kind n) :text
-                                         (sel::node-s n) d
-                                         (sel::node-items n) nil)
-                                   n))
-                            (v-n (let ((idx-n (sel::copy-node rec-node))
-                                       (var-n (sel::copy-node rec-node))
-                                       (txt-n (sel::copy-node rec-node)))
-                                   (setf (sel::node-kind var-n) :var
-                                         (sel::node-s var-n) binder
-                                         (sel::node-items var-n) nil)
-                                   (setf (sel::node-kind txt-n) :text
-                                         (sel::node-s txt-n) d
-                                         (sel::node-items txt-n) nil)
-                                   (setf (sel::node-kind idx-n) :index
-                                         (sel::node-l idx-n) var-n
-                                         (sel::node-r idx-n) txt-n
-                                         (sel::node-items idx-n) nil)
-                                   idx-n)))
-                        (push k-n new-items)
-                        (push v-n new-items))))
-                  (setf new-items (nreverse new-items))
-
-                  (let* ((rewritten-rec (sel::copy-node rec-node))
-                         (rewritten-map (sel::copy-node map-step)))
-                    (setf (sel::node-items rewritten-rec) new-items)
-                    (if (= (length args) 2)
-                        (setf (sel::node-items rewritten-map)
-                              (list (first args) rewritten-rec))
-                        (setf (sel::node-items rewritten-map)
-                              (list (first args) (second args) rewritten-rec)))
-
-                    ;; Construct the rewritten pipeline steps
-                    (let* ((rewritten-steps (append (subseq steps 0 map-idx)
-                                                    (list rewritten-map)
-                                                    downstream-steps))
-                           (rewritten-ast (sel::build-pipeline-ast source-node rewritten-steps))
-                           (rewritten-prog (sel::%make-program "" rewritten-ast))
-                           (sql-frag (try-translate-statement rewritten-prog dialect bindings options)))
-                      (when sql-frag
-                        ;; Build continuation program on _INPUT
-                        (let* ((cont-root (let ((v (sel::make-node :var (sel::node-pos map-step))))
-                                            (setf (sel::node-s v) input-var)
-                                            v))
-                               (cont-map (sel::copy-node map-step)))
-                          (if (= (length args) 2)
-                              (setf (sel::node-items cont-map) (list cont-root rec-node))
-                              (setf (sel::node-items cont-map) (list cont-root (second args) rec-node)))
-                          (let ((cont-prog (sel::%make-program "" cont-map)))
-                            (make-hybrid-plan
-                             :sql-statement sql-frag
-                             :sql-prefix-ast rewritten-ast
-                             :continuation-ast cont-map
-                             :continuation-program cont-prog
-                             :continuation-source-var input-var
-                             :pure-sql-p nil
-                             :pure-memory-p nil)))))))))))))))
+            ;; items[0] is the step's input -- the pipeline so far -- not its
+            ;; own text; the step binds the row under a name of its own, so any
+            ;; read counts.
+            (dolist (arg (rest (sel::node-items step)))
+              (dolist (field (collect-field-references arg nil))
+                (unless (member field projected :test #'string=)
+                  (return-from try-plan-fallthrough nil)))))
+          ;; A dependency may share a projected column only when that column IS
+          ;; the field: "customer_id", _["amount"] projects amount under the name
+          ;; the custom half would read customer_id by. Names are compared
+          ;; exactly, as SEL compares them; and a dependency that differs from a
+          ;; projected key only by case is not projected beside it, because SQL
+          ;; aliases are not case-sensitive everywhere.
+          (let ((own (loop for p in pushable
+                           when (own-field-read-p (first p) (second p) binder)
+                             collect (sel::node-s (first p))))
+                (dependencies '()))
+            ;; "Case" here is ASCII case, as everywhere in SEL -- never the host's.
+            (flet ((same-folded (a b) (string= (sel::ascii-upcase a) (sel::ascii-upcase b))))
+              (dolist (p custom)
+                (dolist (field (collect-field-references (second p) binder))
+                  (cond ((member field projected :test #'string=)
+                         (unless (member field own :test #'string=)
+                           (return-from try-plan-fallthrough nil)))
+                        ((member field projected :test #'same-folded)
+                         (return-from try-plan-fallthrough nil))
+                        ((not (member field dependencies :test #'string=))
+                         ;; Two dependencies must not differ only by case either.
+                         (when (member field dependencies :test #'same-folded)
+                           (return-from try-plan-fallthrough nil))
+                         (push field dependencies))))))
+            (setf dependencies (nreverse dependencies))
+            ;; The rewritten RECORD for SQL: the pushable pairs, then a column
+            ;; per dependency.
+            (let ((new-items '()))
+              (dolist (p pushable)
+                (push (first p) new-items)
+                (push (second p) new-items))
+              (dolist (d dependencies)
+                (let ((k (sel::make-node :text (sel::node-pos map-step))))
+                  (setf (sel::node-s k) d)
+                  (push k new-items)
+                  (push (make-field-read binder d (sel::node-pos map-step)) new-items)))
+              (let* ((rewritten-rec (sel::copy-node rec-node))
+                     (rewritten-map (sel::copy-node map-step)))
+                (setf (sel::node-items rewritten-rec) (nreverse new-items))
+                (setf (sel::node-items rewritten-map)
+                      (if explicit
+                          (list (first args) (second args) rewritten-rec)
+                          (list (first args) rewritten-rec)))
+                (let* ((rewritten-steps (append (subseq steps 0 map-idx)
+                                                (list rewritten-map)
+                                                downstream))
+                       (rewritten-ast (sel::build-pipeline-ast source-node rewritten-steps))
+                       (rewritten-prog (sel::%make-program "" rewritten-ast))
+                       (sql-frag (try-translate-statement rewritten-prog dialect bindings options)))
+                  (unless sql-frag (return-from try-plan-fallthrough nil))
+                  ;; The continuation re-applies the projection to the rows that
+                  ;; come back: a pushable pair is passed through BY KEY -- the SQL
+                  ;; already computed it, under that name -- and a custom pair is
+                  ;; evaluated as written, over the dependency columns projected
+                  ;; beside it.
+                  (let ((cont-items '()))
+                    (dolist (p pairs)
+                      (push (first p) cont-items)
+                      (push (if (third p)
+                                (make-field-read binder (sel::node-s (first p))
+                                                 (sel::node-pos (second p)))
+                                (second p))
+                            cont-items))
+                    (let* ((cont-rec (sel::copy-node rec-node))
+                           (cont-root (sel::make-node :var (sel::node-pos map-step)))
+                           (cont-map (sel::copy-node map-step)))
+                      (setf (sel::node-items cont-rec) (nreverse cont-items))
+                      (setf (sel::node-s cont-root) input-var)
+                      (setf (sel::node-items cont-map)
+                            (if explicit
+                                (list cont-root (second args) cont-rec)
+                                (list cont-root cont-rec)))
+                      ;; The caller fills dialect and source-tables.
+                      (make-hybrid-plan
+                       :sql-statement sql-frag
+                       :sql-prefix-ast rewritten-ast
+                       :continuation-ast cont-map
+                       :continuation-program (sel::%make-program "" cont-map)
+                       :continuation-source-var input-var
+                       :pure-sql-p nil
+                       :pure-memory-p nil))))))))))))
 
 (defun execute-hybrid (plan db-runner &optional context)
   "Execute a HYBRID-PLAN using DB-RUNNER for SQL execution and SEL:RUN for in-memory continuation.

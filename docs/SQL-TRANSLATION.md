@@ -2284,7 +2284,23 @@ every host to:
   projected — or in anything that followed one — is never a split point: the
   planner backs up to the step before the bucket, or stays in memory. Before
   this the split landed after the bucket and the continuation counted one row
-  per group.
+  per group. The same guard covers the *whole* pipeline: `… .> BUCKET(k)` at
+  the end is not `pure_sql` either, however willingly the translator renders
+  its keys, and a `BUCKET` over an open or sealed bucket is refused
+  (`E_SQL_SHAPE`) rather than re-grouped.
+- **The MAP fall-through keeps the rows it splits over.** When a `MAP`'s
+  `RECORD` mixes translatable pairs with pairs SQL has no spelling for, the
+  translatable pairs are projected in SQL and the rest is computed on the rows
+  that come back — provided every step after the `MAP` keeps those rows as they
+  are (`FILTER`, `SORT_BY`, `TOP_BY`, `TAKE`, `DROP`) and reads only the
+  projected keys. A step that changes the row shape (`MAP`, `SELECT_COLS`,
+  `LINK`, `BUCKET`), a whole-row comparison (`DEDUPE`, `DISTINCT`, the keyless
+  sorts), a downstream read of a dependency column SEL's row no longer has, a
+  custom pair that reads the row itself (`GET(_, "name")`, `COUNT(_)`), or a
+  dependency whose name a projected pair already uses for something else, all
+  move the split before the `MAP` instead. The continuation passes a
+  projected pair through *by key* — `"cid", _["customer_id"]` comes back as
+  `cid` and is read as `cid`, `_["amount"] + 1` is not added twice.
 - **The caller's AST is never written to.** The optimiser and the planner copy
   on the way down, in every host, and the fixtures snapshot the tree before
   and compare after. A program is reusable: `run` it, plan it, `run` it again,

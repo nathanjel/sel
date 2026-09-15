@@ -2601,6 +2601,13 @@ final class Translator
                     break;
 
                 case 'BUCKET':
+                    // A bucket over a bare bucket's rows: SQL has only the keys
+                    // (open) or has spent the members (sealed); either way SEL's
+                    // value is a map of groups and re-grouping it is a different
+                    // program.
+                    if ($plan->bucket !== null) {
+                        refuse('E_SQL_SHAPE', "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
+                    }
                     $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     if (count($args) === 2) {
                         $binder = '_';

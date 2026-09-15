@@ -457,6 +457,342 @@ orders
 SELECT `o`.* FROM `orders` `o` LIMIT 2
 ===
 
+### name: plan.bucket.bare-bucket-at-the-end-is-pure-memory
+--- note
+Review 2026-09-15 finding I. The whole-pipeline probe consulted the
+translator alone, which happily renders a bare bucket as its keys, so a
+pipeline that ENDS in an open bucket was pure_sql and execute_hybrid handed
+back key rows where run() answers a map of member lists. The shape guard now
+covers the whole pipeline, not only the prefixes.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"])
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.bucket.open-bucket-at-the-end-splits-before-it
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["amount"] > 1) .> BUCKET(_["customer_id"])
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)
+===
+
+### name: plan.bucket.sealed-bucket-at-the-end-is-pure-memory
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.bucket.having-at-the-end-is-pure-memory
+--- note
+A FILTER after a bare bucket is its HAVING, but the bucket is still open at
+the end: the rows would be keys.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> FILTER(COUNT(_) > 1)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.bucket.bucket-over-buckets-is-pure-memory
+--- note
+Finding AI from the planner's side: the translator refuses the second
+bucket, every prefix ends in an open bucket, so nothing is pushed.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"]) .> BUCKET(COUNT(_)) .> MAP(RECORD("size", _K, "n", COUNT(_)))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.fallthrough.aliased-pair-passes-through-by-key
+--- note
+Review 2026-09-15 finding P. The MAP fall-through projects the pushable pairs
+in SQL and computes the custom ones in memory -- but the continuation used to
+be the ORIGINAL record body re-applied to the rows that came back, so a pair
+whose key is not its column name (`"cid", _["customer_id"]`) was re-read as
+`_["customer_id"]` over a row that only has `cid`: E_NO_KEY. The
+continuation now passes a pushable pair through by key; the SQL is unchanged
+and that is what this case pins -- the executed half is a unit test per host.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("cid", _["customer_id"], "tag", ABORT("x"))) .> TAKE(3)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`customer_id` AS `cid` FROM `orders` `o` LIMIT 3
+===
+
+### name: plan.fallthrough.expression-pair-passes-through-by-key
+--- note
+The same for a computed pair: `_["amount"] + 1` is evaluated once, in SQL,
+not again in memory over a row that already holds the sum.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("plus", _["amount"] + 1, "tag", ABORT("x"))) .> TAKE(3)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT (`o`.`amount` + 1) AS `plus` FROM `orders` `o` LIMIT 3
+===
+
+### name: plan.fallthrough.downstream-bucket-stays-in-memory
+--- note
+Every step after the MAP goes into the SQL, so a step that changes the row
+shape -- BUCKET, another MAP, SELECT_COLS, LINK -- would put the custom half
+over rows that are no longer the MAP's input. The fall-through fires only
+when every downstream step keeps the rows as they are (FILTER, SORT_BY,
+TOP_BY, TAKE, DROP); otherwise the split moves before the MAP, or the plan
+stays in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("customer_id", _["customer_id"], "tag", ABORT("x"))) .> BUCKET(_["customer_id"])
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.fallthrough.downstream-map-splits-before-the-map
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> TAKE(5) .> MAP(RECORD("id", _["id"], "tag", ABORT("x"))) .> MAP(RECORD("i", _["id"]))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 5
+===
+
+### name: plan.fallthrough.downstream-dedupe-splits-before-the-map
+--- note
+DEDUPE, DISTINCT and the keyless sorts compare whole rows, and the SQL rows
+carry the custom half's dependencies where SEL's carry the custom values:
+not the same comparison, so they are not pushed past the MAP either.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> TAKE(5) .> MAP(RECORD("id", _["id"], "tag", ABORT(_["name"]))) .> DEDUPE()
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 5
+===
+
+### name: plan.fallthrough.downstream-read-of-a-dependency-stays-in-memory
+--- note
+After the MAP, SEL's row has `id` and `tag`; a FILTER on `name` is E_NO_KEY.
+The rewritten MAP projects `name` for the custom half, so the same FILTER
+would have translated and answered. Downstream steps may read only the
+pushable keys.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("id", _["id"], "tag", ABORT(_["name"]))) .> FILTER(_["name"] $== "x")
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.fallthrough.whole-row-read-stays-in-memory
+--- note
+`GET(_, "name")` reads the row itself, not a field the planner can see, so
+the custom half needs the whole row and the MAP cannot be split.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("id", _["id"], "row", ABORT(GET(_, "name")))) .> TAKE(3)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.fallthrough.dependency-colliding-with-a-pushable-key-stays-in-memory
+--- note
+The custom half reads `customer_id`, and the pushable half already projects
+a column under that name -- holding `amount`. Projecting the dependency
+would give the continuation the wrong value under the right name.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("customer_id", _["amount"], "tag", ABORT(_["customer_id"]))) .> TAKE(3)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.fallthrough.downstream-read-under-its-own-binder-stays-in-memory
+--- note
+Cross-validation of the 2026-09-15 fix: the downstream check looked for
+reads of `_` only, so a step with its own binder (`SORT_BY(s, s["name"])`)
+read a dependency column unnoticed and the plan answered rows where run()
+is E_NO_KEY. A field read under ANY name counts.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(r, RECORD("id", r["id"], "tag", ABORT(r["name"]))) .> SORT_BY(s, s["name"])
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key
+--- note
+The control: the same spelling reading a projected key is pushed down.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(r, RECORD("id", r["id"], "tag", ABORT(r["name"]))) .> FILTER(s, s["id"] > 1)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`id` AS `id`, `o`.`name` AS `name` FROM `orders` `o` WHERE (`o`.`id` > 1)
+===
+
+### name: plan.fallthrough.dependency-differing-from-a-key-only-by-case-stays-in-memory
+--- note
+SEL's record keys are case-sensitive: after `MAP(RECORD("Name", _["name"],
+...))` the row has `Name`, and the custom half's `_["name"]` is a dependency
+that must be projected as well. The planner compared names case-folded,
+dropped the dependency as "already projected", and the continuation raised
+E_NO_KEY. Names are compared exactly; and because SQL aliases are not
+case-sensitive everywhere, a dependency that differs from a projected key
+only by case is not projected beside it but keeps the MAP in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("Name", _["name"], "tag", ABORT(_["name"]))) .> TAKE(2)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.fallthrough.custom-key-differing-from-a-pushable-key-only-by-case
+--- note
+And the continuation must tell the two apart by identity, not by folded
+name: `x` is passed through by key, `X` is computed. One host decided by
+upper-cased name and computed neither.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("x", _["id"], "X", ABORT("x"))) .> TAKE(2)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`id` AS `x` FROM `orders` `o` LIMIT 2
+===
+
+### name: plan.fallthrough.two-dependencies-differing-only-by-case-stay-in-memory
+--- note
+The same rule between two dependencies: `name` and `Name` would be projected
+side by side under aliases some databases cannot tell apart.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("id", _["id"], "a", ABORT(_["name"]), "b", ABORT(_["Name"]))) .> TAKE(2)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.fallthrough.case-is-ascii-case
+--- note
+"Not case-sensitive everywhere" is an ASCII statement, like every case rule
+in SEL (UPPER, identifiers): `namé` and `NAMÉ` are two names to the planner,
+not one, so the dependency is projected and the plan is hybrid. Three hosts
+folded with their native upper-casing and stayed in memory while two did not.
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAMé": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("NAMÉ", _["id"], "tag", ABORT(_["namé"]))) .> TAKE(2)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT "o"."id" AS "NAMÉ", "o"."name" AS "namé" FROM "orders" "o" LIMIT 2
+===
+
 ### name: plan.refuse.base-dialect
 --- note
 Planning refuses what translate() refuses up front: a base is not a target,

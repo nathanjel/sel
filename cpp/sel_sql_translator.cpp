@@ -2396,6 +2396,15 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         plan.filters.push_back({binder, pred, step->pos()});
       }
     } else if (name == "BUCKET") {
+      // A bucket over a bare bucket's rows: SQL has only the keys (open) or
+      // has spent the members (sealed); either way SEL's value is a map of
+      // groups and re-grouping it is a different program.
+      if (plan.bucket != RelationalPlan::Bucket::None) {
+        refuse("E_SQL_SHAPE",
+               "a BUCKET over buckets: SQL keeps a bucket's members only for the "
+               "projection that ends the grouping",
+               step->pos());
+      }
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);
       std::string binder;

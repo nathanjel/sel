@@ -160,18 +160,21 @@ function containsUnsupportedSql(node, dialect) {
   return Boolean(node.value && containsUnsupportedSql(node.value, dialect));
 }
 
+// The field names read as `binder["field"]` in `node`, first seen first and
+// compared exactly: SEL's record keys are case-sensitive, so `name` and
+// `Name` are two fields. `binder` null means a read under ANY name counts --
+// a downstream step binds the row however it likes (`SORT_BY(s, s["name"])`).
 function collectFieldReferences(node, binder = '_') {
-  const wanted = new Set([binder, '_', '_1', '_2'].map((name) => name.toUpperCase()));
+  const wanted = binder === null ? null : new Set([binder, '_', '_1', '_2'].map((name) => name.toUpperCase()));
   const refs = [];
   const seen = new Set();
   const visit = (item) => {
     if (!item) return;
     if (item.t === 'index' && item.obj?.t === 'var' && item.idx?.t === 'text'
-        && wanted.has(item.obj.name.toUpperCase())) {
+        && (wanted === null || wanted.has(item.obj.name.toUpperCase()))) {
       const key = String(item.idx.v);
-      const upper = key.toUpperCase();
-      if (!seen.has(upper)) {
-        seen.add(upper);
+      if (!seen.has(key)) {
+        seen.add(key);
         refs.push(key);
       }
     }
@@ -187,6 +190,51 @@ function collectFieldReferences(node, binder = '_') {
   };
   visit(node);
   return refs;
+}
+
+// The steps the MAP fall-through may push past the MAP. Each keeps the rows
+// as they are -- the same records, fewer or reordered -- so the custom half of
+// the projection still runs over its own input. A step that changes the row
+// shape (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and
+// the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare
+// the dependency columns SQL carries where SEL compares the custom values.
+const FALLTHROUGH_DOWNSTREAM = new Set(['FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);
+
+// Whether `node` reads the row itself -- the binder outside an index with a
+// text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected column
+// can stand in for.
+function readsWholeRow(node, binder) {
+  const wanted = new Set([binder, '_', '_1', '_2'].map((name) => name.toUpperCase()));
+  let found = false;
+  const visit = (item) => {
+    if (!item || found) return;
+    if (item.t === 'var' && wanted.has(item.name.toUpperCase())) { found = true; return; }
+    if (item.t === 'index' && item.obj?.t === 'var' && item.idx?.t === 'text') {
+      // A field read; the object is not a whole-row read.
+      visit(item.idx);
+      return;
+    }
+    if (item.args) item.args.forEach(visit);
+    if (item.items) item.items.forEach(visit);
+    visit(item.l);
+    visit(item.r);
+    visit(item.x);
+    visit(item.obj);
+    visit(item.idx);
+    visit(item.target);
+    visit(item.value);
+  };
+  visit(node);
+  return found;
+}
+
+// Whether a pushable pair is the plain field read `binder[key]` of its own key,
+// so that a dependency of the same name may share its column.
+function isOwnFieldRead(pair, binder) {
+  const value = pair.value;
+  return value.t === 'index' && value.obj?.t === 'var' && value.idx?.t === 'text'
+    && value.obj.name.toUpperCase() === binder.toUpperCase()
+    && String(value.idx.v) === String(pair.key.v);
 }
 
 function mapRecordDetails(step) {
@@ -220,21 +268,49 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options) {
     else pushable.push(pair);
   }
   if (custom.length === 0 || pushable.length === 0) return null;
+  // The custom half runs over the rows the SQL returns; a read of the row
+  // itself cannot be served by any column.
+  if (custom.some((pair) => readsWholeRow(pair.value, details.binder))) return null;
 
-  const downstreamRefs = new Set();
-  for (const step of steps.slice(mapIndex + 1)) {
-    for (const field of collectFieldReferences(step)) downstreamRefs.add(field.toUpperCase());
+  // Every step after the MAP goes into the SQL, so each must keep the rows as
+  // they are, and may read only what SEL's rows have after the MAP: the
+  // pushable keys. The custom keys are not in the SQL; a dependency column is
+  // in the SQL but not in SEL's row.
+  const downstream = steps.slice(mapIndex + 1);
+  if (downstream.some((step) => !FALLTHROUGH_DOWNSTREAM.has(step.name))) return null;
+  const projected = new Set(pushable.map((pair) => String(pair.key.v)));
+  for (const step of downstream) {
+    // args[0] is the step's input -- the pipeline so far -- not its own text;
+    // the step binds the row under a name of its own, so any read counts.
+    for (const arg of step.args.slice(1)) {
+      for (const field of collectFieldReferences(arg, null)) {
+        if (!projected.has(field)) return null;
+      }
+    }
   }
-  if (custom.some((pair) => downstreamRefs.has(String(pair.key.v).toUpperCase()))) return null;
 
-  const projected = new Set(pushable.map((pair) => String(pair.key.v).toUpperCase()));
+  // A dependency may share a projected column only when that column IS the
+  // field: `"customer_id", _["amount"]` projects amount under the name the
+  // custom half would read customer_id by. Names are compared exactly, as
+  // SEL compares them; and a dependency that differs from a projected key
+  // only by case is not projected beside it, because SQL aliases are not
+  // case-sensitive everywhere.
+  const own = new Set(pushable.filter((pair) => isOwnFieldRead(pair, details.binder))
+    .map((pair) => String(pair.key.v)));
+  // "Case" here is ASCII case, as everywhere in SEL -- never the host's.
+  const projectedFolded = new Set([...projected].map(asciiUpper));
   const dependencies = [];
-  const dependencySet = new Set();
+  const dependenciesFolded = new Set();
   for (const pair of custom) {
     for (const field of collectFieldReferences(pair.value, details.binder)) {
-      const upper = field.toUpperCase();
-      if (!projected.has(upper) && !dependencySet.has(upper)) {
-        dependencySet.add(upper);
+      if (projected.has(field)) {
+        if (!own.has(field)) return null;
+      } else if (projectedFolded.has(asciiUpper(field))) {
+        return null;
+      } else if (!dependencies.includes(field)) {
+        // Two dependencies must not differ only by case either.
+        if (dependenciesFolded.has(asciiUpper(field))) return null;
+        dependenciesFolded.add(asciiUpper(field));
         dependencies.push(field);
       }
     }
@@ -260,11 +336,25 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options) {
   const sql = tryStatement(rewrittenAst, dialect, catalog, options);
   if (sql === null) return null;
 
+  // The continuation re-applies the projection to the rows that come back:
+  // a pushable pair is passed through BY KEY -- the SQL already computed it,
+  // under that name -- and a custom pair is evaluated as written, over the
+  // dependency columns projected beside it.
   const input = { t: 'var', name: '_INPUT', pos: mapStep.pos };
+  const continuationArgs = [];
+  for (const pair of details.pairs) {
+    if (pushable.includes(pair)) {
+      const obj = { t: 'var', name: details.binder, pos: pair.value.pos };
+      continuationArgs.push(pair.key, { t: 'index', obj, idx: pair.key, pos: pair.value.pos });
+    } else {
+      continuationArgs.push(pair.key, pair.value);
+    }
+  }
+  const continuationRecord = { ...details.body, args: continuationArgs };
   const continuationMap = { ...mapStep,
     args: details.explicit
-      ? [input, mapStep.args[1], details.body]
-      : [input, details.body] };
+      ? [input, mapStep.args[1], continuationRecord]
+      : [input, continuationRecord] };
   return new HybridPlan({
     dialect,
     sqlStatement: sql,
@@ -313,8 +403,11 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
     return pureMemoryPlan(program, dialect, catalog);
   }
 
+  // The whole pipeline, unless its rows would be a bucket's keys: the
+  // translator renders a bare bucket as its keys, and a plan that pushes the
+  // whole of `... .> BUCKET(k)` would hand them back as the answer.
   const fullAst = buildPipeline(source, steps);
-  const fullSql = tryStatement(fullAst, dialect, catalog, opts);
+  const fullSql = bucketRowsAreKeys(steps) ? null : tryStatement(fullAst, dialect, catalog, opts);
   if (fullSql !== null) {
     return new HybridPlan({ dialect, sqlStatement: fullSql, sqlPrefixAst: fullAst,
       pureSql: true, sourceTables: sourceTables(fullAst, catalog) });

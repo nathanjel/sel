@@ -130,8 +130,11 @@ final class Hybrid
             return self::pureMemoryPlan($program, $dialect, $catalog);
         }
 
+        // The whole pipeline, unless its rows would be a bucket's keys: the
+        // translator renders a bare bucket as its keys, and a plan that pushes
+        // the whole of `... .> BUCKET(k)` would hand them back as the answer.
         $fullAst = Optimizer::buildPipeline($source, $steps);
-        $fullSql = self::tryStatement($fullAst, $dialect, $catalog, $options);
+        $fullSql = self::bucketRowsAreKeys($steps) ? null : self::tryStatement($fullAst, $dialect, $catalog, $options);
         if ($fullSql !== null) {
             return new HybridPlan([
                 'dialect' => $dialect,
@@ -274,7 +277,7 @@ final class Hybrid
         if (($node['t'] ?? null) === 'call') {
             $special = ['IF' => true, 'COND' => true, 'COALESCE' => true, 'COUNT' => true,
                         'SUM' => true, 'AVG' => true, 'MIN' => true, 'MAX' => true,
-                        'RECORD' => true, 'LIST' => true, 'LAZY_RECORD' => true];
+                        'RECORD' => true, 'LIST' => true];
             if (!isset($special[$node['name']])) {
                 $entry = Map::entry($dialect, 'funcs', strtoupper($node['name']));
                 if ($entry === Map::MISSING || $entry === null || is_string($entry)) return true;
@@ -293,20 +296,24 @@ final class Hybrid
     }
 
     /** @return list<string> */
-    private static function fieldReferences(?array $node, string $binder = '_'): array
+    // The field names read as `binder["field"]` in `$node`, first seen first
+    // and compared exactly: SEL's record keys are case-sensitive, so `name`
+    // and `Name` are two fields. A null binder means a read under ANY name
+    // counts -- a downstream step binds the row however it likes
+    // (`SORT_BY(s, s["name"])`).
+    private static function fieldReferences(?array $node, ?string $binder = '_'): array
     {
-        $wanted = array_map('strtoupper', [$binder, '_', '_1', '_2']);
+        $wanted = $binder === null ? null : array_map('strtoupper', [$binder, '_', '_1', '_2']);
         $out = [];
         $seen = [];
         $visit = function (?array $item) use (&$visit, &$out, &$seen, $wanted): void {
             if ($item === null) return;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text'
-                && in_array(strtoupper($item['obj']['name']), $wanted, true)) {
+                && ($wanted === null || in_array(strtoupper($item['obj']['name']), $wanted, true))) {
                 $key = (string) $item['idx']['v'];
-                $upper = strtoupper($key);
-                if (!isset($seen[$upper])) {
-                    $seen[$upper] = true;
+                if (!isset($seen[$key])) {
+                    $seen[$key] = true;
                     $out[] = $key;
                 }
             }
@@ -317,6 +324,57 @@ final class Hybrid
         };
         $visit($node);
         return $out;
+    }
+
+    // The steps the MAP fall-through may push past the MAP. Each keeps the rows
+    // as they are -- the same records, fewer or reordered -- so the custom half
+    // of the projection still runs over its own input. A step that changes the
+    // row shape (MAP, SELECT_COLS, LINK, BUCKET) would put it over something
+    // else, and the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts)
+    // would compare the dependency columns SQL carries where SEL compares the
+    // custom values.
+    private const FALLTHROUGH_DOWNSTREAM = ['FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP'];
+
+    /**
+     * Whether `$node` reads the row itself -- the binder outside an index with
+     * a text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected
+     * column can stand in for.
+     *
+     * @param array<string,mixed>|null $node
+     */
+    private static function readsWholeRow(?array $node, string $binder): bool
+    {
+        $wanted = array_map('strtoupper', [$binder, '_', '_1', '_2']);
+        $visit = function (?array $item) use (&$visit, $wanted): bool {
+            if ($item === null) return false;
+            if (($item['t'] ?? null) === 'var' && in_array(strtoupper($item['name']), $wanted, true)) return true;
+            if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
+                && ($item['idx']['t'] ?? null) === 'text') {
+                // A field read; the object is not a whole-row read.
+                return $visit($item['idx']);
+            }
+            foreach (['args', 'items'] as $key) foreach ($item[$key] ?? [] as $child) if ($visit($child)) return true;
+            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
+                if (isset($item[$key]) && is_array($item[$key]) && $visit($item[$key])) return true;
+            }
+            return false;
+        };
+        return $visit($node);
+    }
+
+    /**
+     * Whether a pushable pair is the plain field read `binder[key]` of its own
+     * key, so that a dependency of the same name may share its column.
+     *
+     * @param array{key:array<string,mixed>,value:array<string,mixed>} $pair
+     */
+    private static function isOwnFieldRead(array $pair, string $binder): bool
+    {
+        $value = $pair['value'];
+        return ($value['t'] ?? null) === 'index' && ($value['obj']['t'] ?? null) === 'var'
+            && ($value['idx']['t'] ?? null) === 'text'
+            && strtoupper($value['obj']['name']) === strtoupper($binder)
+            && (string) $value['idx']['v'] === (string) $pair['key']['v'];
     }
 
     /** @return array{explicit:bool,binder:string,body:array<string,mixed>,pairs:list<array{key:array<string,mixed>,value:array<string,mixed>}>}|null */
@@ -349,24 +407,65 @@ final class Hybrid
         if ($mapIndex === null || self::bucketRowsAreKeys(array_slice($steps, 0, $mapIndex))) return null;
         $details = self::mapRecordDetails($steps[$mapIndex]);
         if ($details === null) return null;
+        // Pairs are told apart by their INDEX in the record, never by name: keys
+        // that differ only by case are two fields to SEL.
         $pushable = [];
         $custom = [];
-        foreach ($details['pairs'] as $pair) {
-            if (self::containsUnsupportedSql($pair['value'], $dialect)) $custom[] = $pair;
-            else $pushable[] = $pair;
+        $pushableAt = [];
+        foreach ($details['pairs'] as $i => $pair) {
+            if (self::containsUnsupportedSql($pair['value'], $dialect)) {
+                $custom[] = $pair;
+            } else {
+                $pushable[] = $pair;
+                $pushableAt[$i] = true;
+            }
         }
         if ($custom === [] || $pushable === []) return null;
+        // The custom half runs over the rows the SQL returns; a read of the row
+        // itself cannot be served by any column.
+        foreach ($custom as $pair) if (self::readsWholeRow($pair['value'], $details['binder'])) return null;
 
-        $downstream = [];
-        foreach (array_slice($steps, $mapIndex + 1) as $step) {
-            foreach (self::fieldReferences($step, '_') as $field) $downstream[] = strtoupper($field);
+        // Every step after the MAP goes into the SQL, so each must keep the rows
+        // as they are, and may read only what SEL's rows have after the MAP: the
+        // pushable keys. The custom keys are not in the SQL; a dependency column
+        // is in the SQL but not in SEL's row.
+        $downstream = array_slice($steps, $mapIndex + 1);
+        foreach ($downstream as $step) if (!in_array($step['name'], self::FALLTHROUGH_DOWNSTREAM, true)) return null;
+        $projected = array_map(static fn (array $pair): string => (string) $pair['key']['v'], $pushable);
+        foreach ($downstream as $step) {
+            // args[0] is the step's input -- the pipeline so far -- not its own
+            // text; the step binds the row under a name of its own, so any read
+            // counts.
+            foreach (array_slice($step['args'], 1) as $arg) {
+                foreach (self::fieldReferences($arg, null) as $field) {
+                    if (!in_array($field, $projected, true)) return null;
+                }
+            }
         }
-        foreach ($custom as $pair) if (in_array(strtoupper((string) $pair['key']['v']), $downstream, true)) return null;
 
-        $projected = array_map(static fn (array $pair): string => strtoupper((string) $pair['key']['v']), $pushable);
+        // A dependency may share a projected column only when that column IS
+        // the field: `"customer_id", _["amount"]` projects amount under the name
+        // the custom half would read customer_id by. Names are compared exactly,
+        // as SEL compares them; and a dependency that differs from a projected
+        // key only by case is not projected beside it, because SQL aliases are
+        // not case-sensitive everywhere.
+        $own = [];
+        foreach ($pushable as $pair) {
+            if (self::isOwnFieldRead($pair, $details['binder'])) $own[] = (string) $pair['key']['v'];
+        }
+        // "Case" here is ASCII case, as everywhere in SEL -- strtoupper is.
+        $projectedFolded = array_map('strtoupper', $projected);
         $dependencies = [];
+        $dependenciesFolded = [];
         foreach ($custom as $pair) foreach (self::fieldReferences($pair['value'], $details['binder']) as $field) {
-            if (!in_array(strtoupper($field), $projected, true) && !in_array(strtoupper($field), array_map('strtoupper', $dependencies), true)) {
+            if (in_array($field, $projected, true)) {
+                if (!in_array($field, $own, true)) return null;
+            } elseif (in_array(strtoupper($field), $projectedFolded, true)) {
+                return null;
+            } elseif (!in_array($field, $dependencies, true)) {
+                // Two dependencies must not differ only by case either.
+                if (in_array(strtoupper($field), $dependenciesFolded, true)) return null;
+                $dependenciesFolded[] = strtoupper($field);
                 $dependencies[] = $field;
             }
         }
@@ -391,11 +490,27 @@ final class Hybrid
         $rewrittenAst = Optimizer::buildPipeline($source, $rewrittenSteps);
         $sql = self::tryStatement($rewrittenAst, $dialect, $catalog, $options);
         if ($sql === null) return null;
+        // The continuation re-applies the projection to the rows that come back:
+        // a pushable pair is passed through BY KEY -- the SQL already computed it,
+        // under that name -- and a custom pair is evaluated as written, over the
+        // dependency columns projected beside it.
         $input = ['t' => 'var', 'name' => '_INPUT', 'pos' => $steps[$mapIndex]['pos']];
+        $continuationArgs = [];
+        foreach ($details['pairs'] as $i => $pair) {
+            $continuationArgs[] = $pair['key'];
+            if (isset($pushableAt[$i])) {
+                $obj = ['t' => 'var', 'name' => $details['binder'], 'pos' => $pair['value']['pos']];
+                $continuationArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $pair['key'], 'pos' => $pair['value']['pos']];
+            } else {
+                $continuationArgs[] = $pair['value'];
+            }
+        }
+        $continuationRecord = $details['body'];
+        $continuationRecord['args'] = $continuationArgs;
         $continuationMap = $steps[$mapIndex];
         $continuationMap['args'] = $details['explicit']
-            ? [$input, $continuationMap['args'][1], $details['body']]
-            : [$input, $details['body']];
+            ? [$input, $continuationMap['args'][1], $continuationRecord]
+            : [$input, $continuationRecord];
         return new HybridPlan([
             'dialect' => $dialect,
             'sqlStatement' => $sql,

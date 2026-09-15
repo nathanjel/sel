@@ -1044,3 +1044,57 @@ identity, and a snapshot is compared by value."
                                               (sel.sql:execute-hybrid
                                                plan (lambda (sql params) (declare (ignore sql params)) rows)
                                                context))))))))))
+
+(test executed-plans-answer-what-run-answers
+  ;; Review 2026-09-15 findings I, AI and P: plans that pushed a bare bucket
+  ;; to the end, re-grouped a bucket, or re-applied a MAP's RECORD over rows
+  ;; the SQL had already projected, all answered something else than run.
+  ;; The database is stood in for by SEL itself: the SQL prefix's own AST
+  ;; evaluated over the same rows is what the SQL would return, which is the
+  ;; planner's premise.
+  (let* ((orders (list (cons "ORDERS"
+                             (sel.sql:binding-relation
+                              "orders" "o"
+                              (list (cons "ID" (sel.sql:binding-column "id" "o" :num))
+                                    (cons "CUSTOMER_ID" (sel.sql:binding-column "customer_id" "o" :num))
+                                    (cons "AMOUNT" (sel.sql:binding-column "amount" "o" :num))
+                                    (cons "NAME" (sel.sql:binding-column "name" "o" :text)))))))
+         (rows (sel:evaluate "LIST(RECORD('id', '1', 'customer_id', '7', 'amount', '10', 'name', 'a'), RECORD('id', '2', 'customer_id', '7', 'amount', '5', 'name', 'b'), RECORD('id', '3', 'customer_id', '9', 'amount', '7', 'name', 'c'))")))
+    (flet ((outcome (thunk)
+             (handler-case (sel:value-dump (funcall thunk))
+               (sel:sel-error (e)
+                 (format nil "~a@~d:~d" (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e)))))
+           (context ()
+             (let ((c (sel:make-none))) (sel:value-set c "ORDERS" rows) c)))
+      (loop for (source kind) in
+            '(("ORDERS .> MAP(RECORD(\"cid\", _[\"customer_id\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)" :hybrid)
+              ("ORDERS .> MAP(RECORD(\"plus\", _[\"amount\"] + 1, \"shout\", REPEAT(_[\"name\"], 2))) .> SORT_BY(_[\"plus\"])" :hybrid)
+              ("ORDERS .> MAP(RECORD(\"customer_id\", _[\"customer_id\"], \"shout\", REPEAT(_[\"name\"], 2))) .> BUCKET(_[\"customer_id\"])" :pure-memory)
+              ("ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2))) .> FILTER(_[\"name\"] $== \"a\")" :pure-memory)
+              ("ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"row\", REPEAT(GET(_, \"name\"), 2))) .> TAKE(3)" :pure-memory)
+              ("ORDERS .> MAP(RECORD(\"customer_id\", _[\"amount\"], \"tag\", REPEAT(_[\"customer_id\"], 2))) .> TAKE(3)" :pure-memory)
+              ("ORDERS .> TAKE(5) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2))) .> DEDUPE()" :hybrid)
+              ("ORDERS .> FILTER(_[\"amount\"] > 6) .> BUCKET(_[\"customer_id\"])" :hybrid)
+              ("ORDERS .> BUCKET(_[\"customer_id\"])" :pure-memory)
+              ("ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(1)" :pure-memory)
+              ("ORDERS .> BUCKET(_[\"customer_id\"]) .> FILTER(COUNT(_) > 1)" :pure-memory)
+              ("ORDERS .> BUCKET(_[\"customer_id\"]) .> BUCKET(COUNT(_)) .> MAP(RECORD(\"size\", _K, \"n\", COUNT(_)))" :pure-memory)
+              ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> SORT_BY(s, s[\"name\"])" :pure-memory)
+              ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)" :hybrid)
+              ("ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)" :pure-memory)
+              ("ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", REPEAT(_[\"name\"], 2))) .> TAKE(2)" :hybrid)
+              ("ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", (REPEAT(_[\"name\"], 2), 1))) .> TAKE(2)" :hybrid))
+            do (let* ((program (sel:compile-source source))
+                      (plan (sel.sql:plan-hybrid program "sqlite" orders))
+                      (prefix-in-memory
+                        (lambda (sql params)
+                          (declare (ignore sql params))
+                          (sel:run (sel::%make-program "" (sel.sql:hybrid-plan-sql-prefix-ast plan))
+                                   (context)))))
+                 (is (eq kind (cond ((sel.sql:hybrid-plan-pure-sql-p plan) :pure-sql)
+                                    ((sel.sql:hybrid-plan-pure-memory-p plan) :pure-memory)
+                                    (t :hybrid)))
+                     "~a: expected a ~a plan" source kind)
+                 (let ((want (outcome (lambda () (sel:run program (context)))))
+                       (got (outcome (lambda () (sel.sql:execute-hybrid plan prefix-in-memory (context))))))
+                   (is (string= want got) "~a: the executed plan answers ~a, run ~a" source got want)))))))

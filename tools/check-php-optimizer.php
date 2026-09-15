@@ -7,6 +7,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../php/src/Sql/bootstrap.php';
 
 use Sel\Optimizer;
+use Sel\Program;
 use Sel\Sel;
 use Sel\Dec;
 use Sel\Sql\Binding;
@@ -257,6 +258,56 @@ foreach ([
     $executed = $failure(static fn () => Sql::executeHybrid($plan, $runner, ['ORDERS' => $rows]));
     check($inMemory === $want, "{$source}: run() reports {$inMemory}, want {$want}");
     check($executed === $want, "{$source}: the executed plan reports {$executed}, want {$want}");
+}
+
+// --- an executed plan answers what run() answers ---
+//
+// Review 2026-09-15 findings I, AI and P: plans that pushed a bare bucket to
+// the end, re-grouped a bucket, or re-applied a MAP's RECORD over rows the SQL
+// had already projected, all answered something else than run(). The database
+// is stood in for by SEL itself: the SQL prefix's own AST evaluated over the
+// same rows is what the SQL would return, which is the planner's premise.
+$fullOrders = ['ORDERS' => Binding::relation('orders', 'o', [
+    'ID' => Binding::column('id', 'o', 'NUM'), 'CUSTOMER_ID' => Binding::column('customer_id', 'o', 'NUM'),
+    'AMOUNT' => Binding::column('amount', 'o', 'NUM'), 'NAME' => Binding::column('name', 'o', 'TEXT')])];
+$orderRows = [
+    ['id' => '1', 'customer_id' => '7', 'amount' => '10', 'name' => 'a'],
+    ['id' => '2', 'customer_id' => '7', 'amount' => '5', 'name' => 'b'],
+    ['id' => '3', 'customer_id' => '9', 'amount' => '7', 'name' => 'c'],
+];
+foreach ([
+  ['ORDERS .> MAP(RECORD("cid", _["customer_id"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'],
+  ['ORDERS .> MAP(RECORD("plus", _["amount"] + 1, "shout", REPEAT(_["name"], 2))) .> SORT_BY(_["plus"])', 'hybrid'],
+  ['ORDERS .> MAP(RECORD("customer_id", _["customer_id"], "shout", REPEAT(_["name"], 2))) .> BUCKET(_["customer_id"])', 'pure_memory'],
+  ['ORDERS .> MAP(RECORD("id", _["id"], "shout", REPEAT(_["name"], 2))) .> FILTER(_["name"] $== "a")', 'pure_memory'],
+  ['ORDERS .> MAP(RECORD("id", _["id"], "row", REPEAT(GET(_, "name"), 2))) .> TAKE(3)', 'pure_memory'],
+  ['ORDERS .> MAP(RECORD("customer_id", _["amount"], "tag", REPEAT(_["customer_id"], 2))) .> TAKE(3)', 'pure_memory'],
+  ['ORDERS .> FILTER(_["amount"] > 6) .> BUCKET(_["customer_id"])', 'hybrid'],
+  ['ORDERS .> BUCKET(_["customer_id"])', 'pure_memory'],
+  ['ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1)', 'pure_memory'],
+  ['ORDERS .> BUCKET(_["customer_id"]) .> BUCKET(COUNT(_)) .> MAP(RECORD("size", _K, "n", COUNT(_)))', 'pure_memory'],
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> SORT_BY(s, s["name"])', 'pure_memory'],
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'hybrid'],
+  ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],
+  ['ORDERS .> MAP(RECORD("x", _["id"], "X", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'],
+  ['ORDERS .> MAP(RECORD("id", _["id"], "shout", (REPEAT(_["name"], 2), 1))) .> TAKE(2)', 'hybrid'],
+] as [$source, $kind]) {
+    $program = Sel::compile($source);
+    $plan = Sql::planHybrid($program, 'sqlite', $fullOrders);
+    $got = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+    check($got === $kind, "{$source}: expected a {$kind} plan, got {$got}");
+    $prefixInMemory = static fn (string $sql, array $params) => (new Program('', $plan->sqlPrefixAst))->run(['ORDERS' => $orderRows]);
+    $outcome = static function (callable $fn): string {
+        try {
+            $value = $fn();
+            return ($value instanceof \Sel\Value ? $value : \Sel\Value::fromNative($value))->dump();
+        } catch (\Sel\SelError $e) {
+            return "{$e->code}@{$e->line}:{$e->col}";
+        }
+    };
+    $want = $outcome(static fn () => $program->run(['ORDERS' => $orderRows]));
+    $executed = $outcome(static fn () => Sql::executeHybrid($plan, $prefixInMemory, ['ORDERS' => $orderRows]));
+    check($executed === $want, "{$source}: the executed plan answers {$executed}, run() {$want}");
 }
 
 echo "PHP optimizer checks: {$checks} passed\n";

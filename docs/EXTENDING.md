@@ -599,9 +599,14 @@ while all 801 language cases were green. So, for any change to either:
   refusals that do escape — a base dialect, an alias collision — escape before
   any classification is attempted.
 - **Shape.** A prefix is a split point only if its SQL rows are the value the
-  evaluator would have produced for it. A bare `BUCKET` breaks that (keys, not
-  groups); `bucketRowsAreKeys` in each planner is the list of such steps, and a
-  new step whose SQL result differs in shape from its SEL result belongs there.
+  evaluator would have produced for it — and "prefix" includes the whole
+  pipeline: the full-pushdown probe is guarded like the prefix loop. A bare
+  `BUCKET` breaks that (keys, not groups); `bucketRowsAreKeys` in each planner
+  is the list of such steps, and a new step whose SQL result differs in shape
+  from its SEL result belongs there. The MAP fall-through has its own list,
+  `FALLTHROUGH_DOWNSTREAM`: the steps that may follow a split MAP into the SQL
+  because they keep its rows as they are. A new pipeline step is *not* in that
+  list until you have shown the continuation still sees the MAP's input.
 - **Vocabulary, again.** The externally facing verb is `BUCKET`; `GROUP_BY` is
   a SQL clause and does not appear in SEL. Internal plan fields may be named
   for the SQL they render.

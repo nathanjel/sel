@@ -3402,26 +3402,25 @@ static std::vector<std::pair<std::string, Binding>> c534_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c535_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"DEPT", Binding::column("dept", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c536_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"DEPT", Binding::column("dept", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c537_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
-      {"LIMIT", Binding::value(Value::text("5"), SqlKind::Num)},
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"DEPT", Binding::column("dept", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c538_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("items", std::nullopt, {{"DEPT", Binding::column("dept", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -3440,6 +3439,7 @@ static std::vector<std::pair<std::string, Binding>> c540_bind() {
 static std::vector<std::pair<std::string, Binding>> c541_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"LIMIT", Binding::value(Value::text("5"), SqlKind::Num)},
   };
 }
 
@@ -3451,7 +3451,7 @@ static std::vector<std::pair<std::string, Binding>> c542_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c543_bind() {
   return {
-
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -3463,76 +3463,76 @@ static std::vector<std::pair<std::string, Binding>> c544_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c545_bind() {
   return {
-      {"SALES", Binding::relation("sales_orders", "s", {{"ID", Binding::column("id", "s", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c546_bind() {
   return {
-      {"ORDERS", Binding::relation("Orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c547_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
-      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c548_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
-      {"O2", Binding::relation("orders", "o2", {{"ID", Binding::column("id", "o2", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c549_bind() {
   return {
-      {"RECENT", Binding::relation_query("(SELECT * FROM orders WHERE id > 10)", "r", {{"ID", Binding::column("id", "r", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"SALES", Binding::relation("sales_orders", "s", {{"ID", Binding::column("id", "s", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c550_bind() {
+  return {
+      {"ORDERS", Binding::relation("Orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c551_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
       {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c551_bind() {
-  return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
-  };
-}
-
 static std::vector<std::pair<std::string, Binding>> c552_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"O2", Binding::relation("orders", "o2", {{"ID", Binding::column("id", "o2", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c553_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"RECENT", Binding::relation_query("(SELECT * FROM orders WHERE id > 10)", "r", {{"ID", Binding::column("id", "r", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c554_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c555_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c556_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -3550,13 +3550,13 @@ static std::vector<std::pair<std::string, Binding>> c558_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c559_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c560_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -3574,29 +3574,167 @@ static std::vector<std::pair<std::string, Binding>> c562_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c563_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c564_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c565_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c566_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c567_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c568_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c569_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c570_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c571_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c572_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c573_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c574_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c575_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c576_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c577_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c578_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c579_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c580_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c581_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c582_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"NAM\303\251", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c583_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c584_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c585_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c586_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c587_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c588_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c589_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c590_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
@@ -12698,6 +12836,74 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c534_bind},
+    {.name = "stmt.bucket.refuse-bucket-over-an-open-bucket",
+     .at = "24-bucket.sqlt:258",
+     .dialect = "mariadb",
+     .source = "ITEMS .> BUCKET(_[\"dept\"]) .> BUCKET(COUNT(_)) .> MAP(RECORD(\"size\", _K, \"n\", COUNT(_)))",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:31",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c535_bind},
+    {.name = "stmt.bucket.refuse-projected-bucket-over-an-open-bucket",
+     .at = "24-bucket.sqlt:275",
+     .dialect = "mariadb",
+     .source = "ITEMS .> BUCKET(_[\"dept\"]) .> BUCKET(COUNT(_), RECORD(\"size\", _K, \"n\", COUNT(_)))",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:31",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c536_bind},
+    {.name = "stmt.bucket.refuse-bucket-over-a-sealed-bucket",
+     .at = "24-bucket.sqlt:289",
+     .dialect = "mariadb",
+     .source = "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(2) .> BUCKET(_[\"dept\"])",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:42",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c537_bind},
+    {.name = "stmt.bucket.bucket-over-a-projected-bucket",
+     .at = "24-bucket.sqlt:304",
+     .dialect = "mariadb",
+     .source = "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_))) .> BUCKET(_[\"n\"]) .> MAP(RECORD(\"n\", _K, \"depts\", COUNT(_)))",
+     .expect = "SELECT `_sub1`.`n` AS `n`, COUNT(*) AS `depts` FROM (SELECT `dept` AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY `dept`) `_sub1` GROUP BY `_sub1`.`n`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c538_bind},
     {.name = "plan.pure-sql.direct",
      .at = "25-hybrid-plans.sqlt:19",
      .dialect = "mariadb",
@@ -12714,7 +12920,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c535_bind},
+     .bindings_fn = c539_bind},
     {.name = "plan.pure-sql.through-helper-assignment",
      .at = "25-hybrid-plans.sqlt:34",
      .dialect = "mariadb",
@@ -12731,7 +12937,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c536_bind},
+     .bindings_fn = c540_bind},
     {.name = "plan.pure-sql.value-binding-is-inlined",
      .at = "25-hybrid-plans.sqlt:54",
      .dialect = "mariadb",
@@ -12748,7 +12954,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c537_bind},
+     .bindings_fn = c541_bind},
     {.name = "plan.pure-memory.non-normalisable-falls-back",
      .at = "25-hybrid-plans.sqlt:73",
      .dialect = "mariadb",
@@ -12765,7 +12971,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c538_bind},
+     .bindings_fn = c542_bind},
     {.name = "plan.hybrid.unsupported-suffix",
      .at = "25-hybrid-plans.sqlt:92",
      .dialect = "mariadb",
@@ -12782,7 +12988,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c539_bind},
+     .bindings_fn = c543_bind},
     {.name = "plan.hybrid.fallthrough-keeps-downstream-steps",
      .at = "25-hybrid-plans.sqlt:113",
      .dialect = "mariadb",
@@ -12799,7 +13005,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c540_bind},
+     .bindings_fn = c544_bind},
     {.name = "plan.hybrid.longest-prefix",
      .at = "25-hybrid-plans.sqlt:132",
      .dialect = "postgresql",
@@ -12816,7 +13022,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c541_bind},
+     .bindings_fn = c545_bind},
     {.name = "plan.pure-memory.bound-relation-in-source",
      .at = "25-hybrid-plans.sqlt:147",
      .dialect = "mariadb",
@@ -12833,7 +13039,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c542_bind},
+     .bindings_fn = c546_bind},
     {.name = "plan.pure-memory.unbound-source",
      .at = "25-hybrid-plans.sqlt:164",
      .dialect = "mariadb",
@@ -12850,7 +13056,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c543_bind},
+     .bindings_fn = c547_bind},
     {.name = "plan.pure-memory.not-a-pipeline",
      .at = "25-hybrid-plans.sqlt:174",
      .dialect = "mariadb",
@@ -12867,7 +13073,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c544_bind},
+     .bindings_fn = c548_bind},
     {.name = "plan.tables.physical-name-not-binding-name",
      .at = "25-hybrid-plans.sqlt:187",
      .dialect = "mariadb",
@@ -12884,7 +13090,7 @@ static const SqlCase CASES[] = {
      .tables = {"sales_orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c545_bind},
+     .bindings_fn = c549_bind},
     {.name = "plan.tables.binding-name-is-case-insensitive",
      .at = "25-hybrid-plans.sqlt:206",
      .dialect = "mariadb",
@@ -12901,7 +13107,7 @@ static const SqlCase CASES[] = {
      .tables = {"Orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c546_bind},
+     .bindings_fn = c550_bind},
     {.name = "plan.tables.first-use-order",
      .at = "25-hybrid-plans.sqlt:224",
      .dialect = "mariadb",
@@ -12918,7 +13124,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders", "customers"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c547_bind},
+     .bindings_fn = c551_bind},
     {.name = "plan.tables.dedupe-by-physical-source",
      .at = "25-hybrid-plans.sqlt:241",
      .dialect = "mariadb",
@@ -12935,7 +13141,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c548_bind},
+     .bindings_fn = c552_bind},
     {.name = "plan.tables.relation-query-is-reported-verbatim",
      .at = "25-hybrid-plans.sqlt:260",
      .dialect = "mariadb",
@@ -12952,7 +13158,7 @@ static const SqlCase CASES[] = {
      .tables = {"(SELECT * FROM orders WHERE id > 10)"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c549_bind},
+     .bindings_fn = c553_bind},
     {.name = "plan.hybrid.left-join-then-projection",
      .at = "25-hybrid-plans.sqlt:277",
      .dialect = "postgresql",
@@ -12969,7 +13175,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders", "customers"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c550_bind},
+     .bindings_fn = c554_bind},
     {.name = "plan.pure-sql.filters-fuse-before-planning",
      .at = "25-hybrid-plans.sqlt:294",
      .dialect = "mariadb",
@@ -12986,7 +13192,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c551_bind},
+     .bindings_fn = c555_bind},
     {.name = "plan.pure-sql.sort-take-fuses-to-top",
      .at = "25-hybrid-plans.sqlt:313",
      .dialect = "mariadb",
@@ -13003,7 +13209,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c552_bind},
+     .bindings_fn = c556_bind},
     {.name = "plan.pure-sql.filter-drop-take",
      .at = "25-hybrid-plans.sqlt:328",
      .dialect = "postgresql",
@@ -13020,7 +13226,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c553_bind},
+     .bindings_fn = c557_bind},
     {.name = "plan.pure-sql.distinct",
      .at = "25-hybrid-plans.sqlt:343",
      .dialect = "postgresql",
@@ -13037,7 +13243,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c554_bind},
+     .bindings_fn = c558_bind},
     {.name = "plan.options.strict-off-caveat-pushes-down",
      .at = "25-hybrid-plans.sqlt:358",
      .dialect = "mariadb",
@@ -13054,7 +13260,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c555_bind},
+     .bindings_fn = c559_bind},
     {.name = "plan.options.strict-on-caveat-stays-in-memory",
      .at = "25-hybrid-plans.sqlt:376",
      .dialect = "mariadb",
@@ -13071,7 +13277,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c556_bind},
+     .bindings_fn = c560_bind},
     {.name = "plan.fold.literal-branch-is-hoisted-into-the-prefix",
      .at = "25-hybrid-plans.sqlt:397",
      .dialect = "mariadb",
@@ -13088,7 +13294,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c557_bind},
+     .bindings_fn = c561_bind},
     {.name = "plan.fold.compound-branch-stays-an-if",
      .at = "25-hybrid-plans.sqlt:416",
      .dialect = "mariadb",
@@ -13105,7 +13311,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c558_bind},
+     .bindings_fn = c562_bind},
     {.name = "plan.fold.hoisted-literal-does-not-change-the-split",
      .at = "25-hybrid-plans.sqlt:440",
      .dialect = "mariadb",
@@ -13122,9 +13328,332 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c559_bind},
-    {.name = "plan.refuse.base-dialect",
+     .bindings_fn = c563_bind},
+    {.name = "plan.bucket.bare-bucket-at-the-end-is-pure-memory",
      .at = "25-hybrid-plans.sqlt:460",
+     .dialect = "mariadb",
+     .source = "ORDERS .> BUCKET(_[\"customer_id\"])",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c564_bind},
+    {.name = "plan.bucket.open-bucket-at-the-end-splits-before-it",
+     .at = "25-hybrid-plans.sqlt:479",
+     .dialect = "mariadb",
+     .source = "ORDERS .> FILTER(_[\"amount\"] > 1) .> BUCKET(_[\"customer_id\"])",
+     .expect = "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c565_bind},
+    {.name = "plan.bucket.sealed-bucket-at-the-end-is-pure-memory",
+     .at = "25-hybrid-plans.sqlt:494",
+     .dialect = "mariadb",
+     .source = "ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(1)",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c566_bind},
+    {.name = "plan.bucket.having-at-the-end-is-pure-memory",
+     .at = "25-hybrid-plans.sqlt:507",
+     .dialect = "mariadb",
+     .source = "ORDERS .> BUCKET(_[\"customer_id\"]) .> FILTER(COUNT(_) > 1)",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c567_bind},
+    {.name = "plan.bucket.bucket-over-buckets-is-pure-memory",
+     .at = "25-hybrid-plans.sqlt:523",
+     .dialect = "mariadb",
+     .source = "ORDERS .> BUCKET(_[\"customer_id\"]) .> BUCKET(COUNT(_)) .> MAP(RECORD(\"size\", _K, \"n\", COUNT(_)))",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c568_bind},
+    {.name = "plan.fallthrough.aliased-pair-passes-through-by-key",
+     .at = "25-hybrid-plans.sqlt:539",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"cid\", _[\"customer_id\"], \"tag\", ABORT(\"x\"))) .> TAKE(3)",
+     .expect = "SELECT `o`.`customer_id` AS `cid` FROM `orders` `o` LIMIT 3",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c569_bind},
+    {.name = "plan.fallthrough.expression-pair-passes-through-by-key",
+     .at = "25-hybrid-plans.sqlt:562",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"plus\", _[\"amount\"] + 1, \"tag\", ABORT(\"x\"))) .> TAKE(3)",
+     .expect = "SELECT (`o`.`amount` + 1) AS `plus` FROM `orders` `o` LIMIT 3",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c570_bind},
+    {.name = "plan.fallthrough.downstream-bucket-stays-in-memory",
+     .at = "25-hybrid-plans.sqlt:580",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"customer_id\", _[\"customer_id\"], \"tag\", ABORT(\"x\"))) .> BUCKET(_[\"customer_id\"])",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c571_bind},
+    {.name = "plan.fallthrough.downstream-map-splits-before-the-map",
+     .at = "25-hybrid-plans.sqlt:600",
+     .dialect = "mariadb",
+     .source = "ORDERS .> TAKE(5) .> MAP(RECORD(\"id\", _[\"id\"], \"tag\", ABORT(\"x\"))) .> MAP(RECORD(\"i\", _[\"id\"]))",
+     .expect = "SELECT `o`.* FROM `orders` `o` LIMIT 5",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c572_bind},
+    {.name = "plan.fallthrough.downstream-dedupe-splits-before-the-map",
+     .at = "25-hybrid-plans.sqlt:615",
+     .dialect = "mariadb",
+     .source = "ORDERS .> TAKE(5) .> MAP(RECORD(\"id\", _[\"id\"], \"tag\", ABORT(_[\"name\"]))) .> DEDUPE()",
+     .expect = "SELECT `o`.* FROM `orders` `o` LIMIT 5",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c573_bind},
+    {.name = "plan.fallthrough.downstream-read-of-a-dependency-stays-in-memory",
+     .at = "25-hybrid-plans.sqlt:634",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"tag\", ABORT(_[\"name\"]))) .> FILTER(_[\"name\"] $== \"x\")",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c574_bind},
+    {.name = "plan.fallthrough.whole-row-read-stays-in-memory",
+     .at = "25-hybrid-plans.sqlt:652",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"row\", ABORT(GET(_, \"name\")))) .> TAKE(3)",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c575_bind},
+    {.name = "plan.fallthrough.dependency-colliding-with-a-pushable-key-stays-in-memory",
+     .at = "25-hybrid-plans.sqlt:668",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"customer_id\", _[\"amount\"], \"tag\", ABORT(_[\"customer_id\"]))) .> TAKE(3)",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c576_bind},
+    {.name = "plan.fallthrough.downstream-read-under-its-own-binder-stays-in-memory",
+     .at = "25-hybrid-plans.sqlt:685",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"tag\", ABORT(r[\"name\"]))) .> SORT_BY(s, s[\"name\"])",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c577_bind},
+    {.name = "plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key",
+     .at = "25-hybrid-plans.sqlt:703",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"tag\", ABORT(r[\"name\"]))) .> FILTER(s, s[\"id\"] > 1)",
+     .expect = "SELECT `o`.`id` AS `id`, `o`.`name` AS `name` FROM `orders` `o` WHERE (`o`.`id` > 1)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c578_bind},
+    {.name = "plan.fallthrough.dependency-differing-from-a-key-only-by-case-stays-in-memory",
+     .at = "25-hybrid-plans.sqlt:720",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"tag\", ABORT(_[\"name\"]))) .> TAKE(2)",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c579_bind},
+    {.name = "plan.fallthrough.custom-key-differing-from-a-pushable-key-only-by-case",
+     .at = "25-hybrid-plans.sqlt:741",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", ABORT(\"x\"))) .> TAKE(2)",
+     .expect = "SELECT `o`.`id` AS `x` FROM `orders` `o` LIMIT 2",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c580_bind},
+    {.name = "plan.fallthrough.two-dependencies-differing-only-by-case-stay-in-memory",
+     .at = "25-hybrid-plans.sqlt:760",
+     .dialect = "mariadb",
+     .source = "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"a\", ABORT(_[\"name\"]), \"b\", ABORT(_[\"Name\"]))) .> TAKE(2)",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c581_bind},
+    {.name = "plan.fallthrough.case-is-ascii-case",
+     .at = "25-hybrid-plans.sqlt:776",
+     .dialect = "postgresql",
+     .source = "ORDERS .> MAP(RECORD(\"NAM\303\211\", _[\"id\"], \"tag\", ABORT(_[\"nam\303\251\"]))) .> TAKE(2)",
+     .expect = "SELECT \"o\".\"id\" AS \"NAM\303\211\", \"o\".\"name\" AS \"nam\303\251\" FROM \"orders\" \"o\" LIMIT 2",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c582_bind},
+    {.name = "plan.refuse.base-dialect",
+     .at = "25-hybrid-plans.sqlt:796",
      .dialect = "ansi",
      .source = "ORDERS .> TAKE(1)",
      .expect = nullptr,
@@ -13139,9 +13668,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c560_bind},
+     .bindings_fn = c583_bind},
     {.name = "plan.immutable.folding-does-not-write-back",
-     .at = "25-hybrid-plans.sqlt:477",
+     .at = "25-hybrid-plans.sqlt:813",
      .dialect = "mariadb",
      .source = "ORDERS .> FILTER(_[\"id\"] > 1 + 1) .> TAKE(2 * 2)",
      .expect = "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) LIMIT 4",
@@ -13156,9 +13685,9 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c561_bind},
+     .bindings_fn = c584_bind},
     {.name = "plan.immutable.folding-inside-a-kept-step",
-     .at = "25-hybrid-plans.sqlt:499",
+     .at = "25-hybrid-plans.sqlt:835",
      .dialect = "mariadb",
      .source = "ORDERS .> FILTER(NOT (_[\"id\"] > 1 + 1)) .> MAP(RECORD(\"n\", ABORT(\"x\")))",
      .expect = "SELECT `o`.* FROM `orders` `o` WHERE (NOT (`o`.`id` > 2))",
@@ -13173,9 +13702,9 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c562_bind},
+     .bindings_fn = c585_bind},
     {.name = "plan.bucket.pipeline-map-pushes-down-whole",
-     .at = "25-hybrid-plans.sqlt:518",
+     .at = "25-hybrid-plans.sqlt:854",
      .dialect = "mariadb",
      .source = "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_)))",
      .expect = "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`",
@@ -13190,9 +13719,9 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c563_bind},
+     .bindings_fn = c586_bind},
     {.name = "plan.bucket.open-prefix-is-not-a-split-point",
-     .at = "25-hybrid-plans.sqlt:537",
+     .at = "25-hybrid-plans.sqlt:873",
      .dialect = "mariadb",
      .source = "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))",
      .expect = nullptr,
@@ -13207,9 +13736,9 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c564_bind},
+     .bindings_fn = c587_bind},
     {.name = "plan.bucket.split-before-the-bucket",
-     .at = "25-hybrid-plans.sqlt:555",
+     .at = "25-hybrid-plans.sqlt:891",
      .dialect = "mariadb",
      .source = "ORDERS .> FILTER(_[\"amount\"] > 1) .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))",
      .expect = "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)",
@@ -13224,9 +13753,9 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c565_bind},
+     .bindings_fn = c588_bind},
     {.name = "plan.bucket.projected-then-custom-map",
-     .at = "25-hybrid-plans.sqlt:573",
+     .at = "25-hybrid-plans.sqlt:909",
      .dialect = "mariadb",
      .source = "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_))) .> MAP(RECORD(\"c\", _[\"cid\"], \"note\", ABORT(\"x\")))",
      .expect = "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`",
@@ -13241,9 +13770,9 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c566_bind},
+     .bindings_fn = c589_bind},
     {.name = "plan.bucket.sealed-prefix-is-not-a-split-point",
-     .at = "25-hybrid-plans.sqlt:591",
+     .at = "25-hybrid-plans.sqlt:927",
      .dialect = "mariadb",
      .source = "ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(2) .> MAP(RECORD(\"cid\", _K))",
      .expect = nullptr,
@@ -13258,7 +13787,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c567_bind},
+     .bindings_fn = c590_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

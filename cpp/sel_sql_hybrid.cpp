@@ -23,8 +23,7 @@ namespace sel::sql {
 namespace {
 
 constexpr std::string_view SQL_SPECIAL_CALLS[] = {
-    "IF", "COND", "COALESCE", "COUNT", "SUM", "AVG", "MIN", "MAX", "RECORD",
-    "LAZY_RECORD", "LIST"};
+    "IF", "COND", "COALESCE", "COUNT", "SUM", "AVG", "MIN", "MAX", "RECORD", "LIST"};
 
 std::string upper_ascii(std::string value) {
   for (char& ch : value) {
@@ -103,24 +102,66 @@ bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect) {
   return false;
 }
 
+// The field names read as `binder["field"]` in `node`, first seen first and
+// compared exactly: SEL's record keys are case-sensitive, so `name` and `Name`
+// are two fields. An empty `binder` means a read under ANY name counts -- a
+// downstream step binds the row however it likes (`SORT_BY(s, s["name"])`).
 void collect_field_references(const NodePtr& node, const std::string& binder,
                               std::vector<std::string>& out) {
   if (!node) return;
   if (node->t == NT::Index && node->l && node->l->t == NT::Var &&
       node->r && node->r->t == NT::Text) {
     const std::string object = upper_ascii(node->l->s);
-    if (object == upper_ascii(binder) || object == "_" || object == "_1" ||
-        object == "_2") {
+    if (binder.empty() || object == upper_ascii(binder) || object == "_" ||
+        object == "_1" || object == "_2") {
       const std::string key = node->r->s;
-      const bool seen = std::any_of(out.begin(), out.end(), [&](const std::string& value) {
-        return upper_ascii(value) == upper_ascii(key);
-      });
-      if (!seen) out.push_back(key);
+      if (std::find(out.begin(), out.end(), key) == out.end()) out.push_back(key);
     }
   }
   if (node->l) collect_field_references(node->l, binder, out);
   if (node->r) collect_field_references(node->r, binder, out);
   for (const NodePtr& item : node->items) collect_field_references(item, binder, out);
+}
+
+// The steps the MAP fall-through may push past the MAP. Each keeps the rows as
+// they are -- the same records, fewer or reordered -- so the custom half of the
+// projection still runs over its own input. A step that changes the row shape
+// (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and the
+// whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare the
+// dependency columns SQL carries where SEL compares the custom values.
+bool fallthrough_downstream(const std::string& name) {
+  return name == "FILTER" || name == "SORT_BY" || name == "TOP_BY" || name == "TAKE" ||
+         name == "DROP";
+}
+
+// Whether `node` reads the row itself -- the binder outside an index with a
+// text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected column
+// can stand in for.
+bool reads_whole_row(const NodePtr& node, const std::string& binder) {
+  if (!node) return false;
+  if (node->t == NT::Var) {
+    const std::string name = upper_ascii(node->s);
+    return name == upper_ascii(binder) || name == "_" || name == "_1" || name == "_2";
+  }
+  if (node->t == NT::Index && node->l && node->l->t == NT::Var && node->r &&
+      node->r->t == NT::Text) {
+    // A field read; the object is not a whole-row read.
+    return reads_whole_row(node->r, binder);
+  }
+  if (reads_whole_row(node->l, binder) || reads_whole_row(node->r, binder)) return true;
+  for (const NodePtr& item : node->items) {
+    if (reads_whole_row(item, binder)) return true;
+  }
+  return false;
+}
+
+// Whether a pushable pair is the plain field read `binder[key]` of its own key,
+// so that a dependency of the same name may share its column.
+bool is_own_field_read(const std::pair<NodePtr, NodePtr>& pair, const std::string& binder) {
+  const NodePtr& value = pair.second;
+  return value && value->t == NT::Index && value->l && value->l->t == NT::Var && value->r &&
+         value->r->t == NT::Text && upper_ascii(value->l->s) == upper_ascii(binder) &&
+         value->r->s == pair.first->s;
 }
 
 struct MapRecordDetails {
@@ -206,36 +247,63 @@ std::optional<HybridPlan> try_plan_fallthrough(
     else pushable.push_back(pair);
   }
   if (pushable.empty() || custom.empty()) return std::nullopt;
-
-  std::vector<std::string> downstream_refs;
-  for (std::size_t i = map_index + 1; i < steps.size(); ++i) {
-    collect_field_references(steps[i], "_", downstream_refs);
-  }
+  // The custom half runs over the rows the SQL returns; a read of the row
+  // itself cannot be served by any column.
   for (const auto& pair : custom) {
-    if (std::any_of(downstream_refs.begin(), downstream_refs.end(),
-                    [&](const std::string& ref) {
-                      return upper_ascii(ref) == upper_ascii(pair.first->s);
-                    })) {
-      return std::nullopt;
+    if (reads_whole_row(pair.second, details->binder)) return std::nullopt;
+  }
+
+  // Every step after the MAP goes into the SQL, so each must keep the rows as
+  // they are, and may read only what SEL's rows have after the MAP: the
+  // pushable keys. The custom keys are not in the SQL; a dependency column is
+  // in the SQL but not in SEL's row.
+  const auto has_name = [](const std::vector<std::string>& names, const std::string& name) {
+    return std::find(names.begin(), names.end(), name) != names.end();
+  };
+  const auto has_name_folded = [](const std::vector<std::string>& names, const std::string& name) {
+    return std::any_of(names.begin(), names.end(), [&](const std::string& value) {
+      return upper_ascii(value) == upper_ascii(name);
+    });
+  };
+  std::vector<std::string> projected;
+  for (const auto& pair : pushable) projected.push_back(pair.first->s);
+  for (std::size_t i = map_index + 1; i < steps.size(); ++i) {
+    if (!steps[i] || !fallthrough_downstream(steps[i]->s)) return std::nullopt;
+    // items[0] is the step's input -- the pipeline so far -- not its own text;
+    // the step binds the row under a name of its own, so any read counts.
+    std::vector<std::string> refs;
+    for (std::size_t a = 1; a < steps[i]->items.size(); ++a) {
+      collect_field_references(steps[i]->items[a], "", refs);
+    }
+    for (const std::string& ref : refs) {
+      if (!has_name(projected, ref)) return std::nullopt;
     }
   }
 
-  std::vector<std::string> projected;
-  for (const auto& pair : pushable) projected.push_back(pair.first->s);
+  // A dependency may share a projected column only when that column IS the
+  // field: `"customer_id", _["amount"]` projects amount under the name the
+  // custom half would read customer_id by. Names are compared exactly, as SEL
+  // compares them; and a dependency that differs from a projected key only by
+  // case is not projected beside it, because SQL aliases are not
+  // case-sensitive everywhere.
+  std::vector<std::string> own;
+  for (const auto& pair : pushable) {
+    if (is_own_field_read(pair, details->binder)) own.push_back(pair.first->s);
+  }
   std::vector<std::string> dependencies;
   for (const auto& pair : custom) {
     std::vector<std::string> refs;
     collect_field_references(pair.second, details->binder, refs);
     for (const std::string& ref : refs) {
-      const bool already_projected = std::any_of(
-          projected.begin(), projected.end(), [&](const std::string& value) {
-            return upper_ascii(value) == upper_ascii(ref);
-          });
-      const bool already_dependency = std::any_of(
-          dependencies.begin(), dependencies.end(), [&](const std::string& value) {
-            return upper_ascii(value) == upper_ascii(ref);
-          });
-      if (!already_projected && !already_dependency) dependencies.push_back(ref);
+      if (has_name(projected, ref)) {
+        if (!has_name(own, ref)) return std::nullopt;
+      } else if (has_name_folded(projected, ref)) {
+        return std::nullopt;
+      } else if (!has_name(dependencies, ref)) {
+        // Two dependencies must not differ only by case either.
+        if (has_name_folded(dependencies, ref)) return std::nullopt;
+        dependencies.push_back(ref);
+      }
     }
   }
 
@@ -268,11 +336,29 @@ std::optional<HybridPlan> try_plan_fallthrough(
   auto sql = Sql::try_translate_statement(rewritten_program, dialect, bindings, options);
   if (!sql) return std::nullopt;
 
+  // The continuation re-applies the projection to the rows that come back: a
+  // pushable pair is passed through BY KEY -- the SQL already computed it,
+  // under that name -- and a custom pair is evaluated as written, over the
+  // dependency columns projected beside it.
+  auto continuation_record = copy_node(details->body);
+  continuation_record->items.clear();
+  for (const auto& pair : details->pairs) {
+    continuation_record->items.push_back(pair.first);
+    const bool is_pushable = std::any_of(pushable.begin(), pushable.end(), [&](const auto& p) {
+      return p.first == pair.first;
+    });
+    if (is_pushable) {
+      continuation_record->items.push_back(index_node(
+          var_node(details->binder, pair.second->pos), pair.first, pair.second->pos));
+    } else {
+      continuation_record->items.push_back(pair.second);
+    }
+  }
   auto continuation_map = copy_node(map_step);
   continuation_map->items.clear();
   continuation_map->items.push_back(var_node("_INPUT", map_step->pos));
   if (details->explicit_binder) continuation_map->items.push_back(map_step->items[1]);
-  continuation_map->items.push_back(details->body);
+  continuation_map->items.push_back(std::move(continuation_record));
 
   HybridPlan plan;
   plan.dialect = dialect;
@@ -332,9 +418,15 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
     return pure_memory_plan(program, dialect, checked);
   }
 
+  // The whole pipeline, unless its rows would be a bucket's keys: the
+  // translator renders a bare bucket as its keys, and a plan that pushes the
+  // whole of `... .> BUCKET(k)` would hand them back as the answer.
   const NodePtr full_ast = build_pipeline(source, steps);
   const Program full_program("", full_ast);
-  if (auto full_sql = Sql::try_translate_statement(full_program, dialect, checked, options)) {
+  auto full_sql = bucket_rows_are_keys(steps, steps.size())
+      ? std::nullopt
+      : Sql::try_translate_statement(full_program, dialect, checked, options);
+  if (full_sql) {
     HybridPlan plan;
     plan.dialect = dialect;
     plan.sql_statement = std::move(*full_sql);
