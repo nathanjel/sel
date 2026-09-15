@@ -180,7 +180,7 @@ export function requireNumeric(n, ctx = null) {
 // one this was entered at — because that is the character the author has to
 // change. Anything that is not a SelError did not come from SEL and is not this
 // layer's to reword, so it leaves the way it arrived.
-function refuseAsSel(e, n) {
+export function refuseAsSel(e, n) {
   if (!(e instanceof SelError)) throw e;
   // pos in this host IS the token object, so an equivalent literal is what a
   // reconstructed Pos would be elsewhere.

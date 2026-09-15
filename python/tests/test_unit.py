@@ -353,6 +353,8 @@ def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
     ('(1, 2) .> SORT() .> SORT_DESC()', ['SORT_DESC']),
     ('(1, 2) .> DEDUPE() .> DISTINCT()', ['DEDUPE']),
     ('(1, 2) .> FILTER(TRUE)', []),
+    # A first step over a variable is kept: the source may be a scalar.
+    ('DATA .> FILTER(TRUE)', ['FILTER']),
 ])
 def test_optimizer_logical_rules_fire(source, expected):
     _, steps = unwind_pipeline(optimize_ast_logical(sel_compile(source).ast))
@@ -465,6 +467,16 @@ def test_planner_falls_back_to_memory_when_stage_1_refuses():
     assert plan.continuation_program is program
     assert plan.continuation_ast is program.ast
     assert plan.source_tables == ['orders']
+
+
+def test_fold_constants_option_reaches_the_logical_optimiser():
+    from sel.sql import Sql
+    foldable = 'ORDERS .> FILTER(_["id"] > 1 + 1)'
+    folded = Sql.plan_hybrid(sel_compile(foldable), 'postgresql', _orders())
+    unfolded = Sql.plan_hybrid(sel_compile(foldable), 'postgresql', _orders(),
+                               {'foldConstants': False})
+    assert '> 2' in folded.sql_statement.as_statement()
+    assert '> 2' not in unfolded.sql_statement.as_statement()
 
 
 def test_program_ast_survives_run_optimisation_and_planning():

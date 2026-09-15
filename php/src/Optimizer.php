@@ -66,18 +66,18 @@ final class Optimizer
             foreach ($unwound['steps'] as $step) {
                 $copy = self::copyNode($step);
                 $copy['args'] = [$copy['args'][0]];
-                foreach (array_slice($step['args'], 1) as $arg) {
-                    $copy['args'][] = self::optimizeTree($arg, $physical, $depth + 1, $options);
+                foreach (array_slice($step['args'], 1, null, true) as $index => $arg) {
+                    $copy['args'][] = self::optimizeTree($arg, $physical, $depth + 1, self::stepArgOptions($step, $index, $options));
                 }
                 $steps[] = $copy;
             }
-            $steps = self::logicalSteps($steps, $options);
+            $steps = self::logicalSteps($source, $steps, $options);
             if ($physical) {
                 while (true) {
                     $pushed = self::pushdownJoinFilters($steps);
                     $steps = $pushed['steps'];
                     if (!$pushed['changed']) break;
-                    $steps = self::logicalSteps($steps, $options);
+                    $steps = self::logicalSteps($source, $steps, $options);
                 }
                 foreach ($steps as &$step) {
                     if (($step['name'] ?? '') !== 'MAP') {
@@ -126,7 +126,8 @@ final class Optimizer
                 }
             }
         }
-        return self::foldNode($copy);
+        // Only an explicit false disables folding, as in JS and Python.
+        return (($options['foldConstants'] ?? true) === false) ? $copy : self::foldNode($copy);
     }
 
     /** @param array<string,mixed> $node */
@@ -289,8 +290,37 @@ final class Optimizer
         return (int) $d['digits'];
     }
 
-    /** @param list<array<string,mixed>> $steps @return list<array<string,mixed>> */
-    private static function logicalSteps(array $steps, array $options): array
+    /**
+     * The evaluator resolves the three-argument SORT_BY / TOP_BY form by shape
+     * (spec §7.3): a text literal in the third slot is the direction, otherwise
+     * a bare name in the second slot is the binder and the third slot is its
+     * key. A fold that hoists a text literal into that slot -- `IF(TRUE,
+     * "DESC", "ASC")` -- would change the form, so the slot is walked without
+     * folding.
+     *
+     * @param array<string,mixed> $step
+     * @param array<string,mixed> $options
+     * @return array<string,mixed>
+     */
+    private static function stepArgOptions(array $step, int $index, array $options): array
+    {
+        $name = $step['name'] ?? '';
+        $sortCount = $name === 'SORT_BY' ? count($step['args'])
+            : ($name === 'TOP_BY' ? count($step['args']) - 1 : 0);
+        if ($sortCount === 3 && $index === 2 && ($step['args'][1]['t'] ?? null) === 'var'
+            && !($step['args'][1]['grouped'] ?? false)) {
+            $options['foldConstants'] = false;
+        }
+        return $options;
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     * @param list<array<string,mixed>> $steps
+     * @param array<string,mixed> $options
+     * @return list<array<string,mixed>>
+     */
+    private static function logicalSteps(array $source, array $steps, array $options): array
     {
         $changed = true;
         while ($changed) {
@@ -347,7 +377,8 @@ final class Optimizer
                     $passes = self::mapPassthroughs($first);
                     $details = self::filterDetails($second);
                     $refs = self::fieldRefs($details['predicate'], $details['binder']);
-                    if ($details['valid'] && $refs !== [] && self::allIn($refs, $passes)) {
+                    if ($details['valid'] && $refs !== [] && self::allIn($refs, $passes)
+                        && !self::readsRowOrKey($details['predicate'], $details['binder'])) {
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -356,7 +387,7 @@ final class Optimizer
                     }
                 }
                 if ($second !== null && in_array($firstName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
-                    && $secondName === 'FILTER') {
+                    && $secondName === 'FILTER' && !self::stepReadsKey($second)) {
                     $next[] = $second;
                     $next[] = $first;
                     $i++;
@@ -366,7 +397,8 @@ final class Optimizer
                 if ($second !== null && $firstName === 'SELECT_COLS' && $secondName === 'FILTER') {
                     $details = self::filterDetails($second);
                     $refs = self::fieldRefs($details['predicate'], $details['binder']);
-                    if ($details['valid'] && $refs !== [] && self::allIn($refs, self::selectFields($first))) {
+                    if ($details['valid'] && $refs !== [] && self::allIn($refs, self::selectFields($first))
+                        && !self::readsRowOrKey($details['predicate'], $details['binder'])) {
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -377,9 +409,13 @@ final class Optimizer
                 if ($second !== null && $firstName === 'MAP'
                     && in_array($secondName, ['TOP', 'TOP_DESC', 'TOP_BY', 'SORT', 'SORT_DESC', 'SORT_BY'], true)
                     && self::mapHasComputedFields($first)) {
+                    // Only a key over pass-through fields is the same value before
+                    // the MAP: a keyless sort compares the MAP's outputs, and a key
+                    // that reads the whole row or `_K` reads what the MAP changes.
                     $details = self::sortDetails($second);
                     $refs = $details['key'] === null ? [] : self::fieldRefs($details['key'], $details['binder'] ?? '_');
-                    if ($refs === [] || self::allIn($refs, self::mapPassthroughs($first))) {
+                    if ($details['key'] !== null && $refs !== [] && self::allIn($refs, self::mapPassthroughs($first))
+                        && !self::readsRowOrKey($details['key'], $details['binder'] ?? '_')) {
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -408,7 +444,8 @@ final class Optimizer
                     }
                 }
                 if ($second !== null && in_array($firstName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
-                    && in_array($secondName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)) {
+                    && in_array($secondName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
+                    && !self::stepReadsKey($second)) {
                     $next[] = $second;
                     $i++;
                     $changed = true;
@@ -424,7 +461,8 @@ final class Optimizer
                 $filter = $firstName === 'FILTER' ? self::filterDetails($first) : null;
                 if ($filter !== null && $filter['valid']
                     && ($filter['predicate']['t'] ?? null) === 'bool'
-                    && $filter['predicate']['v'] === true) {
+                    && $filter['predicate']['v'] === true
+                    && ($next !== [] || $i > 0 || self::sourceIsList($source))) {
                     $changed = true;
                     continue;
                 }
@@ -516,6 +554,81 @@ final class Optimizer
         };
         $visit($node);
         return array_values(array_unique($result));
+    }
+
+    /**
+     * Whether `$node` reads one of `$names` as a variable -- other than as
+     * `name["field"]`, which is a field read. Case-insensitively, like the
+     * evaluator's frames.
+     *
+     * @param array<string,mixed>|null $node
+     * @param list<string> $names
+     */
+    private static function readsVar(?array $node, array $names): bool
+    {
+        $wanted = array_map('strtoupper', $names);
+        $found = false;
+        $visit = function (?array $item) use (&$visit, &$found, $wanted): void {
+            if ($item === null || $found) return;
+            if (($item['t'] ?? null) === 'var' && in_array(strtoupper($item['name']), $wanted, true)) {
+                $found = true;
+                return;
+            }
+            if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
+                && ($item['idx']['t'] ?? null) === 'text') {
+                return;
+            }
+            foreach (['args', 'items'] as $key) {
+                foreach ($item[$key] ?? [] as $child) $visit($child);
+            }
+            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
+                if (isset($item[$key]) && is_array($item[$key])) $visit($item[$key]);
+            }
+        };
+        $visit($node);
+        return $found;
+    }
+
+    /**
+     * Whether a body reads the element as a whole (its binder, or any of the
+     * pipeline's implicit names) or its key `_K`. The field set says what a
+     * rewrite may rely on; this says when it may not: a body that reads either
+     * cannot move across a step that changes the rows' shape (MAP, SELECT_COLS)
+     * or renumbers them (MAP, SELECT_COLS, the sorts).
+     *
+     * @param array<string,mixed>|null $node
+     */
+    private static function readsRowOrKey(?array $node, string $binder = '_'): bool
+    {
+        return self::readsVar($node, [$binder, '_', '_1', '_2', '_K']);
+    }
+
+    /**
+     * Whether a step's own arguments (not its input) read `_K`: the keys a
+     * sort renumbers, so such a step keeps its place relative to one.
+     *
+     * @param array<string,mixed> $step
+     */
+    private static function stepReadsKey(array $step): bool
+    {
+        foreach (array_slice($step['args'], 1) as $arg) {
+            if (self::readsVar($arg, ['_K'])) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether the source a pipeline starts from is a list already, so a FILTER
+     * whose predicate is a constant TRUE over it is the identity. Over a scalar
+     * it is not: FILTER wraps a scalar into a one-element list (spec §7.3), and
+     * only a later step, a list literal or a constructor is known not to be one.
+     *
+     * @param array<string,mixed> $source
+     */
+    private static function sourceIsList(array $source): bool
+    {
+        return ($source['t'] ?? null) === 'list'
+            || (($source['t'] ?? null) === 'call' && in_array($source['name'] ?? '', ['LIST', 'RECORD'], true));
     }
 
     /** @return list<string> */

@@ -1,5 +1,7 @@
 # Critic. tools/check.sh never runs the PHP optimiser check under the default roster (first-match `case`)
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "Five quick wins".
+
 **Verdict:** UNVERIFIED (completeness critic; not sent to a second agent) · **severity:** medium · **category:** test-gap · **hosts:** php
 
 Locations: `tools/check.sh:55-58`; `tools/check-php-optimizer.php:99-228`; `docs/EXTENDING.md:624-628`; `docs/EXTENDING.md:636`; `CHANGELOG.md:23`; `CLAUDE.md:47`

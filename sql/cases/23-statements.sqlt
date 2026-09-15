@@ -386,3 +386,135 @@ ITEMS .> SELECT_COLS("nonexistent")
 --- error
 E_SQL_SHAPE 1:22
 ===
+
+### name: stmt.take.count-sel-refuses-is-a-refusal
+--- note
+Review 2026-09-15 finding U. A TAKE count SEL itself rejects -- `1/0` -- is
+E_SQL_INVALID, the refusal every constant SEL rejects gets. Three hosts
+threw their own TypeError out of translate_statement and plan_hybrid
+instead, because the helper that turns a SEL error into that refusal was
+private to the constants module.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(1 / 0)
+--- error
+E_SQL_INVALID 1:17
+===
+### name: stmt.drop.count-sel-refuses-is-a-refusal
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(1 / 0)
+--- error
+E_SQL_INVALID 1:17
+===
+
+### name: stmt.filter.constant-true-is-a-where
+--- note
+A FILTER whose predicate is a constant TRUE over the bare relation is still a
+FILTER: SEL keeps it because the source might be a scalar (conformance
+agg.filter.scalar-source-with-constant-predicate), and the translator renders
+what it is handed. One host's translator dropped it and rendered no WHERE.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(TRUE)
+--- expect
+SELECT * FROM `items` WHERE TRUE
+===
+
+### name: stmt.order-by.direction-that-is-not-a-literal-is-refused
+--- note
+The three-argument SORT_BY resolves like the evaluator's (spec §7.3): a text
+literal third is the direction, otherwise a bare name second is the binder.
+Neither here, so the third argument is a direction SQL cannot read -- the
+same refusal, at the same slot, as the four-argument form gives. Three hosts
+raised a host TypeError here; the fourth refused at the key.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["qty"], IF(TRUE, "DESC", "ASC"))
+--- error
+E_BAD_ARG 1:28
+===
+
+### name: stmt.order-by.four-argument-direction-that-is-not-a-literal-is-refused
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(r, r["qty"], IF(TRUE, "DESC", "ASC"))
+--- error
+E_BAD_ARG 1:31
+===
+
+### name: stmt.order-by.binder-form-with-a-computed-key
+--- note
+The binder form with a key that is not a field: `O` is the binder and the IF
+is its key, a constant, so every row sorts equal. The direction is not the
+IF's value, and no optimiser may fold the IF into the direction slot.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> FILTER(_["qty"] > 0) .> SORT_BY(O, IF(TRUE, "DESC", "ASC"))
+--- expect
+SELECT * FROM `items` WHERE (`qty` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_bin ASC
+===
+
+### name: stmt.order-by.direction-is-case-insensitive
+--- note
+As in memory, where the direction is ASCII-upcased before it is checked.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["qty"], "desc")
+--- expect
+SELECT * FROM `items` ORDER BY `qty` DESC
+===
+
+### name: stmt.map.computed-field-then-keyless-sort
+--- note
+A keyless SORT after a MAP compares the MAP's outputs, so it must sort the
+projection, not the source: the sign is flipped, and sorting `qty` first
+would put the rows in the opposite order (conformance
+rel.map.negation-then-keyless-sort). Two hosts' translators ran the
+optimiser's MAP/SORT swap and rendered the source sorted.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("q", 0 - _["qty"])) .> SORT()
+--- expect
+SELECT `_sub1`.* FROM (SELECT (0 - `qty`) AS `q` FROM `items`) `_sub1` ORDER BY `_sub1`.`q` ASC
+===

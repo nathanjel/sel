@@ -299,3 +299,99 @@ LIST(RECORD("cat", "A", "val", 10), RECORD("cat", "B", "val", 50), RECORD("cat",
 --- expect
 tree -{"1"=-{"val"=t"30"}, "2"=-{"val"=t"10"}}
 ===
+
+### name: rel.map.negation-then-keyless-sort
+--- note
+A keyless SORT compares the MAP's outputs, so it cannot run before the MAP.
+An optimiser may move a sort ahead of a MAP only when the sort key reads
+nothing but fields the MAP passes through unchanged -- never for a keyless
+sort, a key that reads `_K`, or a key that reads the whole row. Every host
+answered -1, -2, -3 here until this pinned it.
+--- source
+LIST(3, 1, 2) .> MAP(0 - _) .> SORT()
+--- expect
+tree -{"1"=t"-3", "2"=t"-2", "3"=t"-1"}
+===
+
+### name: rel.map.negation-then-top
+--- source
+LIST(3, 1, 2) .> MAP(0 - _) .> TOP(1)
+--- expect
+tree -{"1"=t"-3"}
+===
+
+### name: rel.map.computed-record-then-sort-by-whole-row
+--- note
+The key reads a pass-through field and the whole row: COUNT(_) is 2 after
+the MAP and 1 before it, which flips the key's sign, so the sort must stay
+after the MAP.
+--- source
+LIST(RECORD("x", 1), RECORD("x", 2)) .> MAP(RECORD("x", _["x"], "s", 0 - _["x"])) .> SORT_BY((COUNT(_) - 1.5) * _["x"]) .> MAP(_["x"])
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: rel.map.computed-record-then-filter-on-whole-row
+--- note
+The same rule for a FILTER after a MAP: the predicate reads a pass-through
+field, but also the whole row, whose shape the MAP changed.
+--- source
+LIST(RECORD("x", 1)) .> MAP(RECORD("x", _["x"], "y", 0)) .> FILTER(_["x"] > 0 AND COUNT(_) == 2)
+--- expect
+tree -{"1"=-{"x"=t"1", "y"=t"0"}}
+===
+
+### name: rel.map.computed-record-then-filter-on-key
+--- note
+MAP renumbers from "1"; a FILTER that reads `_K` after the MAP sees the new
+keys, and must not be moved in front of it.
+--- source
+LIST(RECORD("x", 1), RECORD("x", 2)) .> FILTER(_["x"] > 1) .> MAP(RECORD("x", _["x"], "y", 1)) .> FILTER(_["x"] > 0 AND _K == "1")
+--- expect
+tree -{"1"=-{"x"=t"2", "y"=t"1"}}
+===
+
+### name: rel.select-cols.then-filter-on-whole-row
+--- source
+LIST(RECORD("x", 1, "z", 2)) .> SELECT_COLS("x") .> FILTER(_["x"] > 0 AND COUNT(_) == 1)
+--- expect
+tree -{"1"=-{"x"=t"1"}}
+===
+
+### name: rel.select-cols.then-filter-on-key
+--- source
+LIST(RECORD("x", 1), RECORD("x", 2)) .> FILTER(_["x"] > 1) .> SELECT_COLS("x") .> FILTER(_["x"] > 0 AND _K == "1")
+--- expect
+tree -{"1"=-{"x"=t"2"}}
+===
+
+### name: rel.map.pass-through-key-may-sort-early
+--- note
+The shape the rewrite is for: the key reads only a field the MAP passes
+through, so sorting first is the same value, and what the late
+materialisation check in each host's optimiser test asserts.
+--- source
+LIST(RECORD("x", 2), RECORD("x", 1)) .> MAP(RECORD("x", _["x"], "y", _["x"] + 1)) .> SORT_BY(_["x"], "DESC")
+--- expect
+tree -{"1"=-{"x"=t"2", "y"=t"3"}, "2"=-{"x"=t"1", "y"=t"2"}}
+===
+
+### name: rel.sort.then-filter-on-key
+--- note
+A sort renumbers from "1"; a FILTER that reads `_K` after it reads the
+sorted position, and must not be moved in front of the sort.
+--- source
+LIST(RECORD("x", 2), RECORD("x", 1)) .> SORT_BY(_["x"]) .> FILTER(_K == "1")
+--- expect
+tree -{"1"=-{"x"=t"1"}}
+===
+
+### name: rel.sort.then-sort-by-key
+--- note
+The second sort keys on the positions the first sort assigned, so the first
+sort is not redundant.
+--- source
+LIST(3, 1, 2) .> SORT() .> SORT_BY(_K, "DESC")
+--- expect
+tree -{"1"=t"3", "2"=t"2", "3"=t"1"}
+===

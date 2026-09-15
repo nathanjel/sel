@@ -149,6 +149,54 @@ function fieldRefs(node, binder = '_') {
   return [...new Set(result)];
 }
 
+// Whether `node` reads one of `names` as a variable -- other than as
+// `name["field"]`, which is a field read. Case-insensitively, like the
+// evaluator's frames.
+function readsVar(node, names) {
+  const wanted = new Set(names.map((name) => name.toUpperCase()));
+  let found = false;
+  const visit = (item) => {
+    if (!item || found) return;
+    if (item.t === 'var' && wanted.has(item.name.toUpperCase())) { found = true; return; }
+    if (item.t === 'index' && item.obj.t === 'var' && item.idx.t === 'text') return;
+    if (item.args) item.args.forEach(visit);
+    if (item.items) item.items.forEach(visit);
+    visit(item.l);
+    visit(item.r);
+    visit(item.x);
+    visit(item.obj);
+    visit(item.idx);
+    visit(item.target);
+    visit(item.value);
+  };
+  visit(node);
+  return found;
+}
+
+// Whether a body reads the element as a whole (its binder, or any of the
+// pipeline's implicit names) or its key `_K`. The field set says what a
+// rewrite may rely on; this says when it may not: a body that reads either
+// cannot move across a step that changes the rows' shape (MAP, SELECT_COLS)
+// or renumbers them (MAP, SELECT_COLS, the sorts).
+function readsRowOrKey(node, binder = '_') {
+  return readsVar(node, [binder, '_', '_1', '_2', '_K']);
+}
+
+// Whether a step's own arguments (not its input) read `_K`: the keys a sort
+// renumbers, so such a step keeps its place relative to one.
+function stepReadsKey(step) {
+  return step.args.slice(1).some((arg) => readsVar(arg, ['_K']));
+}
+
+// Whether the source a pipeline starts from is a list already, so a FILTER
+// whose predicate is a constant TRUE over it is the identity. Over a scalar
+// it is not: FILTER wraps a scalar into a one-element list (spec §7.3), and
+// only a later step, a list literal or a constructor is known not to be one.
+function sourceIsList(source) {
+  return source.t === 'list'
+    || (source.t === 'call' && (source.name === 'LIST' || source.name === 'RECORD'));
+}
+
 function mapDetails(step) {
   const args = step.args;
   const explicit = args.length === 3 && args[1].t === 'var' && !args[1].grouped;
@@ -265,7 +313,7 @@ function renameVar(node, oldName, newName) {
   return copy;
 }
 
-function logicalSteps(steps, options = {}) {
+function logicalSteps(source, steps, options = {}) {
   let current = steps;
   let changed = true;
   while (changed) {
@@ -312,14 +360,16 @@ function logicalSteps(steps, options = {}) {
         const passes = mapPassthroughs(first);
         const details = filterDetails(second);
         const refs = fieldRefs(details.predicate, details.binder);
-        if (details.valid && refs.length > 0 && refs.every((field) => passes.includes(field))) {
+        if (details.valid && refs.length > 0 && refs.every((field) => passes.includes(field))
+            && !readsRowOrKey(details.predicate, details.binder)) {
           next.push(second, first);
           i++;
           changed = true;
           continue;
         }
       }
-      if (second && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name) && second.name === 'FILTER') {
+      if (second && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name) && second.name === 'FILTER'
+          && !stepReadsKey(second)) {
         next.push(second, first);
         i++;
         changed = true;
@@ -328,7 +378,8 @@ function logicalSteps(steps, options = {}) {
       if (second && first.name === 'SELECT_COLS' && second.name === 'FILTER') {
         const details = filterDetails(second);
         const refs = fieldRefs(details.predicate, details.binder);
-        if (details.valid && refs.length > 0 && refs.every((field) => selectFields(first).includes(field))) {
+        if (details.valid && refs.length > 0 && refs.every((field) => selectFields(first).includes(field))
+            && !readsRowOrKey(details.predicate, details.binder)) {
           next.push(second, first);
           i++;
           changed = true;
@@ -338,9 +389,13 @@ function logicalSteps(steps, options = {}) {
       if (second && first.name === 'MAP'
           && ['TOP', 'TOP_DESC', 'TOP_BY', 'SORT', 'SORT_DESC', 'SORT_BY'].includes(second.name)
           && mapHasComputedFields(first)) {
+        // Only a key over pass-through fields is the same value before the
+        // MAP: a keyless sort compares the MAP's outputs, and a key that
+        // reads the whole row or `_K` reads what the MAP changes.
         const details = sortDetails(second);
         const refs = details.key ? fieldRefs(details.key, details.binder || '_') : [];
-        if (refs.length === 0 || refs.every((field) => mapPassthroughs(first).includes(field))) {
+        if (details.key && refs.length > 0 && refs.every((field) => mapPassthroughs(first).includes(field))
+            && !readsRowOrKey(details.key, details.binder || '_')) {
           next.push(second, first);
           i++;
           changed = true;
@@ -365,7 +420,8 @@ function logicalSteps(steps, options = {}) {
         continue;
       }
       if (second && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name)
-          && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(second.name)) {
+          && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(second.name)
+          && !stepReadsKey(second)) {
         next.push(second);
         i++;
         changed = true;
@@ -379,7 +435,8 @@ function logicalSteps(steps, options = {}) {
         continue;
       }
       const firstFilter = first.name === 'FILTER' ? filterDetails(first) : null;
-      if (firstFilter?.valid && firstFilter.predicate.t === 'bool' && firstFilter.predicate.v) {
+      if (firstFilter?.valid && firstFilter.predicate.t === 'bool' && firstFilter.predicate.v
+          && (next.length > 0 || i > 0 || sourceIsList(source))) {
         changed = true;
         continue;
       }
@@ -560,6 +617,20 @@ function collectPipelineSourceNames(node) {
   return names;
 }
 
+// The evaluator resolves the three-argument SORT_BY / TOP_BY form by shape
+// (spec §7.3): a text literal in the third slot is the direction, otherwise a
+// bare name in the second slot is the binder and the third slot is its key.
+// A fold that hoists a text literal into that slot -- `IF(TRUE, "DESC",
+// "ASC")` -- would change the form, so the slot is walked without folding.
+function stepArgOptions(step, index, options) {
+  const sortCount = step.name === 'SORT_BY' ? step.args.length
+    : step.name === 'TOP_BY' ? step.args.length - 1 : 0;
+  if (sortCount === 3 && index === 2 && step.args[1].t === 'var' && !step.args[1].grouped) {
+    return { ...options, foldConstants: false };
+  }
+  return options;
+}
+
 function optimizeTree(node, physical, depth = 1, options = {}) {
   if (!node) return node;
   // The evaluator/SQL normaliser owns the public depth error and its source
@@ -572,16 +643,17 @@ function optimizeTree(node, physical, depth = 1, options = {}) {
     const optimizedSource = optimizeTree(source, physical, depth + 1, options);
     const optimizedSteps = steps.map((step) => {
       const copy = copyNode(step);
-      copy.args = [copy.args[0], ...copy.args.slice(1).map((item) => optimizeTree(item, physical, depth + 1, options))];
+      copy.args = [copy.args[0], ...copy.args.slice(1).map((item, offset) =>
+        optimizeTree(item, physical, depth + 1, stepArgOptions(step, offset + 1, options)))];
       return copy;
     });
-    let finalSteps = logicalSteps(optimizedSteps, options);
+    let finalSteps = logicalSteps(optimizedSource, optimizedSteps, options);
     if (physical) {
       while (true) {
         const pushed = pushdownJoinFilters(finalSteps);
         finalSteps = pushed.steps;
         if (!pushed.changed) break;
-        finalSteps = logicalSteps(finalSteps, options);
+        finalSteps = logicalSteps(optimizedSource, finalSteps, options);
       }
     }
     if (physical) {

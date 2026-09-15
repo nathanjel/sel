@@ -2096,7 +2096,10 @@ class Translator:
             elif _constants.is_binder_name(args[1]):
                 binder, key, direction = args[1].name, args[2], 'ASC'
             else:
-                binder, key, direction = '_', args[1], ascii_upper(args[2].v)
+                # Neither form: the third slot is a direction the evaluator
+                # would compute, and SQL cannot -- the four-argument form's
+                # refusal.
+                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[2].pos)
         elif count == 4:
             if not _constants.is_binder_name(args[1]):
                 refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos)

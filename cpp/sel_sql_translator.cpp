@@ -568,16 +568,10 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
       it = statement_plan_->aggregate_aliases.find(field);
       if (it != statement_plan_->aggregate_aliases.end()) return node(it->second);
     }
-    if (const ColumnSpec* f = rel.field(field)) {
-      if (statement_plan_ && statement_plan_->source_subquery &&
-          rel.from == statement_plan_->source_relation.from &&
-          rel.alias == statement_plan_->source_relation.alias) {
-        ColumnSpec derived = *f;
-        derived.column = key;
-        return relation_column(rel, derived);
-      }
-      return relation_column(rel, *f);
-    }
+    // A derived table's fields carry the alias the projection gave them
+    // (ensure_derived), so a read through any spelling of the name renders
+    // that column, as in the other hosts -- not the spelling itself.
+    if (const ColumnSpec* f = rel.field(field)) return relation_column(rel, *f);
     // Joined SEL rows promote unambiguous fields from the other relations.
     // Resolve that same shape here instead of refusing a field that is absent
     // from the left relation but present on exactly one joined relation.
@@ -2340,9 +2334,19 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
     derived.bucket = RelationalPlan::Bucket::Sealed;
   }
 
-  for (const std::string& name : output_field_names(*derived.source_subquery)) {
+  const RelationalPlan& subquery = *derived.source_subquery;
+  for (const std::string& name : output_field_names(subquery)) {
+    // A `SELECT *` passes the source's columns through under their own
+    // names; a projection names its columns by alias.
+    const ColumnSpec* source_field = nullptr;
+    if (!subquery.projections && !subquery.select_cols) {
+      source_field = subquery.source_relation.field(ascii_upper(name));
+      for (std::size_t i = 0; !source_field && i < subquery.joins.size(); ++i) {
+        source_field = subquery.joins[i].source_relation.field(ascii_upper(name));
+      }
+    }
     ColumnSpec field;
-    field.column = name;
+    field.column = source_field ? source_field->column : name;
     field.table = alias;
     field.type = SqlKind::Unknown;
     derived.source_relation.fields.emplace_back(ascii_upper(name), std::move(field));
@@ -2829,10 +2833,9 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
       key = args[2];
       dir = "ASC";
     } else {
-      binder = "_";
-      key = args[1];
-      dir = ascii_upper(args[2]->s());
-      dir_pos = args[2]->pos();
+      // Neither form: the third slot is a direction the evaluator would
+      // compute, and SQL cannot -- the four-argument form's refusal.
+      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2]->pos());
     }
   } else if (count == 4) {
     if (!is_binder_name(*args[1])) {

@@ -197,6 +197,63 @@ def field_refs(node: Node | None, binder: str = '_') -> list[str]:
     return list(dict.fromkeys(result))
 
 
+def reads_var(node: Node | None, names: tuple[str, ...]) -> bool:
+    """Whether ``node`` reads one of ``names`` as a variable -- other than as
+    ``name["field"]``, which is a field read. Case-insensitively, like the
+    evaluator's frames."""
+    wanted = {name.upper() for name in names}
+    found = False
+
+    def visit(item: Node | None) -> None:
+        nonlocal found
+        if item is None or found:
+            return
+        if item.t == 'var' and item.name.upper() in wanted:
+            found = True
+            return
+        if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
+                and item.idx is not None and item.idx.t == 'text'):
+            return
+        for child in item.args:
+            visit(child)
+        for child in item.items:
+            visit(child)
+        visit(item.l)
+        visit(item.r)
+        visit(item.x)
+        visit(item.obj)
+        visit(item.idx)
+        visit(item.target)
+        visit(item.value)
+
+    visit(node)
+    return found
+
+
+def reads_row_or_key(node: Node | None, binder: str = '_') -> bool:
+    """Whether a body reads the element as a whole (its binder, or any of the
+    pipeline's implicit names) or its key ``_K``. The field set says what a
+    rewrite may rely on; this says when it may not: a body that reads either
+    cannot move across a step that changes the rows' shape (MAP, SELECT_COLS)
+    or renumbers them (MAP, SELECT_COLS, the sorts)."""
+    return reads_var(node, (binder, '_', '_1', '_2', '_K'))
+
+
+def step_reads_key(step: Node) -> bool:
+    """Whether a step's own arguments (not its input) read ``_K``: the keys a
+    sort renumbers, so such a step keeps its place relative to one."""
+    return any(reads_var(arg, ('_K',)) for arg in step.args[1:])
+
+
+def source_is_list(source: Node | None) -> bool:
+    """Whether the source a pipeline starts from is a list already, so a FILTER
+    whose predicate is a constant TRUE over it is the identity. Over a scalar
+    it is not: FILTER wraps a scalar into a one-element list (spec §7.3), and
+    only a later step, a list literal or a constructor is known not to be one."""
+    return source is not None and (
+        source.t == 'list' or (source.t == 'call' and source.name in ('LIST', 'RECORD')))
+
+
 def map_details(step: Node) -> dict[str, Any]:
     args = step.args
     explicit = len(args) == 3 and args[1].t == 'var' and not args[1].grouped
@@ -324,7 +381,22 @@ def rename_var(node: Node | None, old_name: str, new_name: str) -> Node | None:
     return copy
 
 
-def logical_steps(steps: list[Node], options: dict[str, Any] | None = None) -> list[Node]:
+def step_arg_options(step: Node, index: int, options: dict[str, Any]) -> dict[str, Any]:
+    """The evaluator resolves the three-argument SORT_BY / TOP_BY form by shape
+    (spec §7.3): a text literal in the third slot is the direction, otherwise a
+    bare name in the second slot is the binder and the third slot is its key.
+    A fold that hoists a text literal into that slot -- ``IF(TRUE, "DESC",
+    "ASC")`` -- would change the form, so the slot is walked without folding."""
+    sort_count = (len(step.args) if step.name == 'SORT_BY'
+                  else len(step.args) - 1 if step.name == 'TOP_BY' else 0)
+    if (sort_count == 3 and index == 2 and step.args[1].t == 'var'
+            and not step.args[1].grouped):
+        return {**options, 'foldConstants': False}
+    return options
+
+
+def logical_steps(source: Node | None, steps: list[Node],
+                  options: dict[str, Any] | None = None) -> list[Node]:
     options = options or {}
     current = steps
     changed = True
@@ -371,13 +443,14 @@ def logical_steps(steps: list[Node], options: dict[str, Any] | None = None) -> l
                 passes = map_passthroughs(first)
                 details = filter_details(second)
                 refs = field_refs(details['predicate'], details['binder'])
-                if details['valid'] and refs and all(field in passes for field in refs):
+                if (details['valid'] and refs and all(field in passes for field in refs)
+                        and not reads_row_or_key(details['predicate'], details['binder'])):
                     next_steps.extend((second, first))
                     i += 2
                     changed = True
                     continue
             if (second is not None and first.name in ('SORT', 'SORT_DESC', 'SORT_BY')
-                    and second.name == 'FILTER'):
+                    and second.name == 'FILTER' and not step_reads_key(second)):
                 next_steps.extend((second, first))
                 i += 2
                 changed = True
@@ -385,7 +458,8 @@ def logical_steps(steps: list[Node], options: dict[str, Any] | None = None) -> l
             if second is not None and first.name == 'SELECT_COLS' and second.name == 'FILTER':
                 details = filter_details(second)
                 refs = field_refs(details['predicate'], details['binder'])
-                if details['valid'] and refs and all(field in select_fields(first) for field in refs):
+                if (details['valid'] and refs and all(field in select_fields(first) for field in refs)
+                        and not reads_row_or_key(details['predicate'], details['binder'])):
                     next_steps.extend((second, first))
                     i += 2
                     changed = True
@@ -393,9 +467,13 @@ def logical_steps(steps: list[Node], options: dict[str, Any] | None = None) -> l
             if (second is not None and first.name == 'MAP'
                     and second.name in ('TOP', 'TOP_DESC', 'TOP_BY', 'SORT', 'SORT_DESC', 'SORT_BY')
                     and map_has_computed_fields(first)):
+                # Only a key over pass-through fields is the same value before the
+                # MAP: a keyless sort compares the MAP's outputs, and a key that
+                # reads the whole row or `_K` reads what the MAP changes.
                 details = sort_details(second)
                 refs = field_refs(details['key'], details['binder'] or '_') if details['key'] else []
-                if not refs or all(field in map_passthroughs(first) for field in refs):
+                if (details['key'] and refs and all(field in map_passthroughs(first) for field in refs)
+                        and not reads_row_or_key(details['key'], details['binder'] or '_')):
                     next_steps.extend((second, first))
                     i += 2
                     changed = True
@@ -419,7 +497,8 @@ def logical_steps(steps: list[Node], options: dict[str, Any] | None = None) -> l
                 changed = True
                 continue
             if (second is not None and first.name in ('SORT', 'SORT_DESC', 'SORT_BY')
-                    and second.name in ('SORT', 'SORT_DESC', 'SORT_BY')):
+                    and second.name in ('SORT', 'SORT_DESC', 'SORT_BY')
+                    and not step_reads_key(second)):
                 next_steps.append(second)
                 i += 2
                 changed = True
@@ -432,7 +511,8 @@ def logical_steps(steps: list[Node], options: dict[str, Any] | None = None) -> l
                 continue
             first_filter = filter_details(first) if first.name == 'FILTER' else None
             if (first_filter is not None and first_filter['valid']
-                    and first_filter['predicate'].t == 'bool' and first_filter['predicate'].v):
+                    and first_filter['predicate'].t == 'bool' and first_filter['predicate'].v
+                    and (next_steps or i > 0 or source_is_list(source))):
                 changed = True
                 i += 1
                 continue
@@ -640,17 +720,17 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
         for step in steps:
             copy = copy_node(step)
             copy.args = [copy.args[0], *[
-                optimize_tree(item, physical, depth + 1, options)
-                for item in copy.args[1:]
+                optimize_tree(item, physical, depth + 1, step_arg_options(step, index, options))
+                for index, item in enumerate(copy.args[1:], 1)
             ]]
             optimized_steps.append(copy)
-        final_steps = logical_steps(optimized_steps, options)
+        final_steps = logical_steps(optimized_source, optimized_steps, options)
         if physical:
             while True:
                 final_steps, pushed = pushdown_join_filters(final_steps)
                 if not pushed:
                     break
-                final_steps = logical_steps(final_steps, options)
+                final_steps = logical_steps(optimized_source, final_steps, options)
             rewritten = []
             for step in final_steps:
                 copy = copy_node(step)

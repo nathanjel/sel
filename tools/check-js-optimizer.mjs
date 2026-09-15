@@ -86,6 +86,8 @@ same(names(optimizedSteps('(1, 2) .> DEDUPE() .> DISTINCT()', false)), ['DEDUPE'
   'redundant dedupe elimination');
 same(names(optimizedSteps('(1, 2) .> FILTER(TRUE)', false)), [],
   'trivial TRUE filter elimination');
+same(names(optimizedSteps('DATA .> FILTER(TRUE)', false)), ['FILTER'],
+  'a first-step TRUE filter over a variable is kept (the source may be a scalar)');
 
 same(names(optimizedSteps(
   'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
@@ -157,6 +159,12 @@ check(unwindPipeline(fused.sqlPrefixAst).steps.length === 1
   && unwindPipeline(unfused.sqlPrefixAst).steps.length === 2,
   'planner options reach the logical optimiser');
 check(fused.pureSql && unfused.pureSql, 'fusion does not change the classification');
+const foldable = 'ORDERS .> FILTER(_["id"] > 1 + 1)';
+const folded = Sql.planHybrid(compile(foldable), 'postgresql', orders);
+const unfolded = Sql.planHybrid(compile(foldable), 'postgresql', orders, { foldConstants: false });
+check(folded.sqlStatement.asStatement().includes('> 2')
+  && !unfolded.sqlStatement.asStatement().includes('> 2'),
+  'foldConstants:false reaches the logical optimiser');
 
 const refused = compile('A += 1; ORDERS .> TAKE(1)');
 const refusedPlan = Sql.planHybrid(refused, 'postgresql', orders);

@@ -624,6 +624,29 @@ while all 801 language cases were green. So, for any change to either:
   whose IF arm never fired, reported the IF; the fuzzer compares positions,
   and so must any fold you add.
 
+- **Values.** A rewrite that moves a step is only sound when the moved step
+  cannot see the difference, and "reads only pass-through fields" is not the
+  whole of that: `COUNT(_)` reads the row the `MAP` reshaped, `_K` reads the
+  key the `MAP` (or a sort) renumbered, and a keyless `SORT()` compares the
+  `MAP`'s outputs. `readsRowOrKey` / `stepReadsKey` in each optimiser are
+  the guards, next to the field-set check, and every rule that crosses a
+  `MAP`, a `SELECT_COLS` or a sort uses them; a new rule that crosses one of
+  those must too. This is how five hosts agreed that `LIST(3, 1, 2) .>
+  MAP(0 - _) .> SORT()` is `-1, -2, -3` while the unoptimised evaluator said
+  `-3, -2, -1` — the fuzzer compares hosts, not lanes, so it never saw it.
+- **Sources.** A step's input is a list after any step, but the *first* step
+  reads the source, which may be a scalar: `FILTER(5, TRUE)` is `(5)`, and
+  dropping the FILTER made it `5`. A rewrite that removes a first step must
+  know what the source is (`sourceIsList`), and a bound relation is not known
+  to be a list — which is also what keeps `ORDERS .> FILTER(TRUE)` a pipeline
+  the planner can push down.
+- **Forms.** The evaluator resolves the three-argument `SORT_BY`/`TOP_BY` by
+  the *shape* of its arguments (a text literal third is the direction, else
+  a bare name second is the binder), so a fold that puts a literal where a
+  computed value was changes which form runs. `stepArgOptions` /
+  `opt_step_arg_folds` / `step-arg-folds-p` walk that one slot with folding
+  off; a new shape-resolved argument belongs in the same place.
+
 Then, for a cross-host rewrite: one language-neutral case in
 `sql/cases/25-hybrid-plans.sqlt` showing what it does, one showing the shape it
 refuses to touch where that is not obvious, and the immutability check the

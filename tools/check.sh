@@ -35,7 +35,7 @@ done
 
 for impl in $IMPLS; do
   case "$impl" in
-    js|js-bundle|php) continue ;;   # no separate unit tests; the suite is the test
+    js|js-bundle|php) continue ;;   # their host-local checks run below, after the SQL cases
   esac
   step "unit tests ($impl)" impl_unit "$impl"
 done
@@ -52,10 +52,10 @@ for impl in $IMPLS; do
   step "sql translation ($impl)" impl_sql "$impl"
 done
 
-case " $IMPLS " in
-  *" js "*) step "JS optimizer" node tools/check-js-optimizer.mjs ;;
-  *" php "*) step "PHP optimizer" php tools/check-php-optimizer.php ;;
-esac
+# Two independent checks, not a `case`: a case takes its first matching arm,
+# and with js on the roster the PHP check never ran (review 2026-09-15).
+case " $IMPLS " in *" js "*) step "JS optimizer" node tools/check-js-optimizer.mjs ;; esac
+case " $IMPLS " in *" php "*) step "PHP optimizer" php tools/check-php-optimizer.php ;; esac
 
 # Before the cases, because it is cheaper and because it asks a more basic
 # question: can this host's own API build the map it ships? If it cannot, the

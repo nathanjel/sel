@@ -914,11 +914,21 @@ b\"c\\d")))
     (is (string= "DEDUPE" (sel::node-s opt)))
     (is (string= "DATA" (sel::node-s (first (sel::node-items opt))))))
 
-  ;; 13. Trivial FILTER(TRUE) elimination
-  (let* ((prog (sel:compile-source "DATA .> FILTER(TRUE) .> TAKE(10)"))
+  ;; 13. Trivial FILTER(TRUE) elimination: over a list literal, and after a
+  ;; step; not as the first step over a variable, which may hold a scalar
+  ;; (conformance agg.filter.scalar-source-with-constant-predicate).
+  (let* ((prog (sel:compile-source "(1, 2) .> FILTER(TRUE) .> TAKE(10)"))
+         (opt (sel:optimize-ast-logical (sel:program-ast prog))))
+    (is (string= "TAKE" (sel::node-s opt)))
+    (is (eq :list (sel::node-kind (first (sel::node-items opt))))))
+  (let* ((prog (sel:compile-source "DATA .> TAKE(10) .> FILTER(TRUE)"))
          (opt (sel:optimize-ast-logical (sel:program-ast prog))))
     (is (string= "TAKE" (sel::node-s opt)))
     (is (string= "DATA" (sel::node-s (first (sel::node-items opt))))))
+  (let* ((prog (sel:compile-source "DATA .> FILTER(TRUE) .> TAKE(10)"))
+         (opt (sel:optimize-ast-logical (sel:program-ast prog))))
+    (is (string= "TAKE" (sel::node-s opt)))
+    (is (string= "FILTER" (sel::node-s (first (sel::node-items opt))))))
 
   ;; 14. In-Memory LINK Predicate Pushdown (Left and Right)
   (let* ((prog (sel:compile-source "ORDERS .> LINK(PRODUCTS, _['p_id'] == _2['id']) .> FILTER(_['orders']['status'] $== 'ACTIVE' AND _['products']['is_active'] == 1)"))

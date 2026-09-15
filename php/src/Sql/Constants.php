@@ -267,7 +267,7 @@ final class Constants
      *
      * @param array<string,mixed> $n
      */
-    private static function refuseAsSel(SelError $e, array $n): void
+    public static function refuseAsSel(SelError $e, array $n): void
     {
         refuse('E_SQL_INVALID',
             "SEL rejects this expression ({$e->code}: {$e->getMessage()}), so "

@@ -1802,11 +1802,14 @@ SQL counterpart" (snode-pos e)))
                   (a2 (third args)))
               (cond
                 ((and (not (clist-p a2)) (eq (snode-kind a2) :text))
-                 (setf binder "_" key a1 dir (sel::node-s a2) dir-pos (snode-pos a2)))
+                 (setf binder "_" key a1 dir (sel::ascii-upcase (sel::node-s a2)) dir-pos (snode-pos a2)))
+                ((is-binder-name a1)
+                 (setf binder (sel::node-s a1) key a2 dir "ASC" dir-pos (snode-pos a2)))
                 (t
-                 (unless (is-binder-name a1)
-                   (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name) (snode-pos a1)))
-                 (setf binder (sel::node-s a1) key a2 dir "ASC" dir-pos (snode-pos a2))))))
+                 ;; Neither form: the third slot is a direction the evaluator
+                 ;; would compute, and SQL cannot -- the four-argument form's
+                 ;; refusal.
+                 (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos a2))))))
            ((= count 4)
             (unless (is-binder-name (second args))
               (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name) (snode-pos (second args))))
@@ -1814,7 +1817,7 @@ SQL counterpart" (snode-pos e)))
               (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos (fourth args))))
             (setf binder (sel::node-s (second args))
                   key (third args)
-                  dir (sel::node-s (fourth args))
+                  dir (sel::ascii-upcase (sel::node-s (fourth args)))
                   dir-pos (snode-pos (fourth args))))
            (t
             (refuse "E_ARITY" (format nil "~a takes ~a arguments" name (if is-top "3 to 5" "2 to 4")) pos)))

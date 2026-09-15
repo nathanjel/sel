@@ -1,5 +1,7 @@
 # Critic. JS translator still carries a GROUP_BY arm and GROUP_BY-worded refusals after the rename
 
+**Status:** FIXED 2026-09-15: the dead GROUP_BY case label and wording are gone from the JS translator.
+
 **Verdict:** UNVERIFIED (completeness critic; not sent to a second agent) · **severity:** low · **category:** doc-claim · **hosts:** js
 
 Locations: `js/src/sql/translator.mjs:1883`; `js/src/sql/translator.mjs:1898`; `js/src/sql/translator.mjs:1904`; `CHANGELOG.md:28`

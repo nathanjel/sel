@@ -1,5 +1,7 @@
 # E. FILTER(TRUE) elimination is observable: FILTER over a scalar returns the scalar; a pipeline reduced to its bare source plans as pure_memory
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "The optimiser keeps the program's value".
+
 **Verdict:** CONFIRMED · **severity:** medium · **introduced:** pre-existing · **hosts:** js, php, python, cpp, lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing, but contradicting a promise ed16df2 wrote.

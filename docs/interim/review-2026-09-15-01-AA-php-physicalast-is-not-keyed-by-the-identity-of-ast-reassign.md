@@ -1,5 +1,7 @@
 # AA. PHP physicalAst() is not keyed by the identity of $ast: reassigning $program->ast is not noticed
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "Five quick wins".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** by-this-commit · **hosts:** php, js, python, lisp, cpp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Introduced or promised by ed16df2.

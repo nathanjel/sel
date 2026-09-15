@@ -848,6 +848,22 @@ pure_memory
 orders
 ===
 
+### name: plan.take.count-sel-refuses-stays-in-memory
+--- note
+Finding U from the planner's side: the refusal is a SqlError like any other,
+so the plan is pure memory -- never a host exception out of plan_hybrid.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> TAKE(1 / 0)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
 ### name: plan.refuse.base-dialect
 --- note
 Planning refuses what translate() refuses up front: a base is not a target,
@@ -990,4 +1006,127 @@ ORDERS .> BUCKET(_["customer_id"]) .> TAKE(2) .> MAP(RECORD("cid", _K))
 pure_memory
 --- tables
 orders
+===
+
+### name: plan.pure-sql.constant-true-filter
+--- note
+Finding E from the planner's side. A FILTER whose predicate is a constant
+TRUE is kept when it is the first step over a source that might be a scalar
+(conformance agg.filter.scalar-source-with-constant-predicate), and a
+relation is such a source: the pipeline still has a step, and it pushes
+down. Every planner used to fold the step away and classify the bare
+relation as pure memory -- then execute_hybrid raised E_UNDEF_VAR for the
+relation the database was supposed to answer for.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(TRUE)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE TRUE
+===
+
+### name: plan.sort.binder-form-keeps-its-form-when-the-key-folds
+--- note
+Finding A from the planner's side. `O` is the binder and the IF is its key;
+the planner folds constants, and a fold that hoisted "DESC" into the third
+slot would turn the call into the direction form, with O an undefined
+variable in the continuation. The prefix is the binder form the translator
+was always handed: a constant key, ascending.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > 0) .> SORT_BY(O, IF(TRUE, "DESC", "ASC"))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_bin ASC
+===
+
+### name: plan.sort.direction-form-folds-to-a-literal
+--- note
+The other form: the second slot is a field, so the third is the direction
+whatever its shape, and the planner's fold makes it the literal the
+translator can read. (translate_statement, which does not fold, refuses it:
+stmt.order-by.direction-that-is-not-a-literal-is-refused.)
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"], IF(TRUE, "DESC", "ASC"))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` DESC
+===
+
+### name: plan.map.computed-field-then-keyless-sort-stays-after-the-map
+--- note
+Finding C2 from the planner's side: the MAP/SORT swap may fire only for a
+key over fields the MAP passes through. A keyless sort compares the MAP's
+outputs -- here the negated quantity -- and every planner used to sort the
+source instead, in the opposite order.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> MAP(RECORD("q", 0 - _["amount"])) .> SORT()
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `_sub1`.* FROM (SELECT (0 - `o`.`amount`) AS `q` FROM `orders` `o`) `_sub1` ORDER BY `_sub1`.`q` ASC
+===
+
+### name: plan.map.pass-through-key-sorts-early
+--- note
+The shape the swap is for: the key reads only a field the MAP passes
+through, so the sort runs on the source and the projection is rendered
+over the sorted rows in one statement.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> MAP(RECORD("id", _["id"], "q", 0 - _["amount"])) .> SORT_BY(_["id"], "DESC")
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.`id` AS `id`, (0 - `o`.`amount`) AS `q` FROM `orders` `o` ORDER BY `o`.`id` DESC
+===
+
+### name: plan.sort.then-filter-on-the-key-splits
+--- note
+A FILTER that reads `_K` after a sort reads the sorted position; moving it
+in front of the sort would read the source's keys. The sort is the prefix,
+the FILTER the continuation -- four planners swapped the two and, with the
+FILTER then untranslatable, classified the whole pipeline as pure memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"]) .> FILTER(_K == "1")
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC
 ===

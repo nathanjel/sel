@@ -1,5 +1,7 @@
 # S. Lisp MAP fall-through emits the dependency columns in reverse order
 
+**Status:** FIXED 2026-09-15 with the I/AI/P rework: the Lisp fall-through was rewritten to the shared structure and emits dependency columns in first-seen order (see CHANGELOG "Hybrid planner: the shape guard, completed").
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

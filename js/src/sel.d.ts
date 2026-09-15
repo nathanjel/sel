@@ -107,10 +107,11 @@ export class Value {
 
 export class Program {
   readonly source: string;
-  /** The parse tree. Immutable once constructed: the optimiser and the SQL
-   *  planner copy on the way down, and a caller who supplies an AST is held
-   *  to the same rule. */
-  readonly ast: any;
+  /** The parse tree. Its nodes are immutable once constructed: the optimiser
+   *  and the SQL planner copy on the way down, and a caller who supplies an
+   *  AST is held to the same rule. Reassigning the whole tree is fine and
+   *  noticed: the physical tree run() evaluates is keyed by its identity. */
+  ast: any;
 
   constructor(source: string, ast: any);
 

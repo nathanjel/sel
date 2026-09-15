@@ -252,53 +252,113 @@
                                          (string= (node-s r) (node-s k-node))))))))
         t)))
 
-(defun filter-fields (filter-step)
+(defun reads-var-p (node names)
+  "Whether NODE reads one of NAMES as a variable -- other than as
+name[\"field\"], which is a field read. Identifiers are upcased by the lexer."
+  (labels ((walk (n)
+             (when (and n (node-p n))
+               (case (node-kind n)
+                 (:var (member (node-s n) names :test #'string=))
+                 (:index
+                  (let ((l (node-l n)) (r (node-r n)))
+                    (unless (and l (eq (node-kind l) :var) r (eq (node-kind r) :text))
+                      (or (walk l) (walk r)))))
+                 ((:call :list :seq) (some #'walk (node-items n)))
+                 ((:bin :assign) (or (walk (node-l n)) (walk (node-r n))))
+                 (:un (walk (node-l n)))
+                 (t nil)))))
+    (and (walk node) t)))
+
+(defun reads-row-or-key-p (node &optional (binder "_"))
+  "Whether a body reads the element as a whole (its binder, or any of the
+pipeline's implicit names) or its key _K. The field set says what a rewrite
+may rely on; this says when it may not: a body that reads either cannot move
+across a step that changes the rows' shape (MAP, SELECT_COLS) or renumbers
+them (MAP, SELECT_COLS, the sorts)."
+  (reads-var-p node (list binder "_" "_1" "_2" "_K")))
+
+(defun step-reads-key-p (step)
+  "Whether a step's own arguments (not its input) read _K: the keys a sort
+renumbers, so such a step keeps its place relative to one."
+  (some (lambda (arg) (reads-var-p arg '("_K"))) (rest (node-items step))))
+
+(defun source-is-list-p (source)
+  "Whether the source a pipeline starts from is a list already, so a FILTER
+whose predicate is a constant TRUE over it is the identity. Over a scalar it
+is not: FILTER wraps a scalar into a one-element list (spec §7.3), and only a
+later step, a list literal or a constructor is known not to be one."
+  (and source (node-p source)
+       (or (eq (node-kind source) :list)
+           (and (eq (node-kind source) :call)
+                (member (node-s source) '("LIST" "RECORD") :test #'string=)))))
+
+(defvar *fold-constants* t
+  "The other hosts' foldConstants option: off for the one slot whose shape
+the evaluator reads (STEP-ARG-FOLDS-P).")
+
+(defun step-arg-folds-p (step index)
+  "The evaluator resolves the three-argument SORT_BY / TOP_BY form by shape
+(spec §7.3): a text literal in the third slot is the direction, otherwise a
+bare name in the second slot is the binder and the third slot is its key. A
+fold that hoists a text literal into that slot -- IF(TRUE, \"DESC\", \"ASC\")
+-- would change the form, so the slot is walked without folding."
+  (let* ((args (node-items step))
+         (sort-count (cond ((string= (node-s step) "SORT_BY") (length args))
+                           ((string= (node-s step) "TOP_BY") (1- (length args)))
+                           (t 0))))
+    (not (and (= sort-count 3) (= index 2)
+              (eq (node-kind (second args)) :var)
+              (not (node-grouped (second args)))))))
+
+(defun filter-body (filter-step)
+  "The binder and predicate of a FILTER step, as two values."
   (let* ((args (node-items filter-step))
-         (count (length args))
-         (binder (if (= count 3) (node-s (second args)) "_"))
-         (pred (if (= count 3) (third args) (second args))))
+         (count (length args)))
+    (values (if (= count 3) (node-s (second args)) "_")
+            (if (= count 3) (third args) (second args)))))
+
+(defun filter-fields (filter-step)
+  (multiple-value-bind (binder pred) (filter-body filter-step)
     (collect-field-refs pred binder)))
 
-(defun sort-fields (sort-step)
+(defun bare-name-p (node)
+  (and node (node-p node) (eq (node-kind node) :var) (not (node-grouped node))))
+
+(defun sort-key (sort-step)
+  "The binder and key of a sort step, as two values; a keyless sort has no
+key. The forms are the evaluator's (spec §7.3)."
   (let* ((args (node-items sort-step))
          (count (length args))
-         (sname (node-s sort-step)))
+         (sname (node-s sort-step))
+         (binder "_")
+         (key nil))
     (cond
       ((member sname '("SORT" "SORT_DESC") :test #'string=)
-       (if (= count 1)
-           '()
-           (let ((binder (if (= count 3) (node-s (second args)) "_"))
-                 (key (if (= count 3) (third args) (second args))))
-             (collect-field-refs key binder))))
-      ((string= sname "SORT_BY")
-       (let (binder key)
-         (cond
-           ((= count 2) (setf binder "_" key (second args)))
-           ((= count 3)
-            (if (eq (node-kind (second args)) :var)
-                (setf binder (node-s (second args)) key (third args))
-                (setf binder "_" key (second args))))
-           (t
-            (setf binder (node-s (second args)) key (third args))))
-         (collect-field-refs key binder)))
+       (unless (= count 1)
+         (setf binder (if (and (= count 3) (bare-name-p (second args))) (node-s (second args)) "_")
+               key (if (= count 3) (third args) (second args)))))
       ((member sname '("TOP" "TOP_DESC") :test #'string=)
-       (if (= count 2)
-           '()
-           (let ((binder (if (= count 4) (node-s (second args)) "_"))
-                 (key (if (= count 4) (third args) (second args))))
-             (collect-field-refs key binder))))
-      ((string= sname "TOP_BY")
-       (let (binder key)
+       ;; TOP(source, key, n) has three arguments and TOP(source, binder, key, n)
+       ;; has four; the count below excludes n.
+       (unless (= count 2)
+         (let ((sort-count (1- count)))
+           (setf binder (if (and (= sort-count 3) (bare-name-p (second args))) (node-s (second args)) "_")
+                 key (if (= sort-count 3) (third args) (second args))))))
+      ((member sname '("SORT_BY" "TOP_BY") :test #'string=)
+       (let ((sort-count (if (string= sname "TOP_BY") (1- count) count)))
          (cond
-           ((= count 3) (setf binder "_" key (second args)))
-           ((= count 4)
-            (if (eq (node-kind (second args)) :var)
-                (setf binder (node-s (second args)) key (third args))
-                (setf binder "_" key (second args))))
-           (t
-            (setf binder (node-s (second args)) key (third args))))
-         (collect-field-refs key binder)))
-      (t '()))))
+           ((or (= sort-count 2)
+                (and (= sort-count 3) (eq (node-kind (third args)) :text)))
+            (setf key (second args)))
+           ((and (= sort-count 3) (bare-name-p (second args)))
+            (setf binder (node-s (second args)) key (third args)))
+           ((and (> count 2) (bare-name-p (second args)))
+            (setf binder (node-s (second args)) key (third args)))))))
+    (values binder key)))
+
+(defun sort-fields (sort-step)
+  (multiple-value-bind (binder key) (sort-key sort-step)
+    (and key (collect-field-refs key binder))))
 
 (defun select-cols-fields (step)
   (let* ((col-args (rest (node-items step)))
@@ -478,8 +538,9 @@
                  (mapcar (lambda (it) (rewrite-conjunct-for-relation it target-names binder)) (node-items copy))))
          copy)))))
 
-(defun optimize-logical-pipeline-steps (curr-steps)
-  "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps."
+(defun optimize-logical-pipeline-steps (source curr-steps)
+  "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps.
+SOURCE is what the first step reads, which only the FILTER(TRUE) pass needs."
   (let ((changed t))
     (loop while changed do
       (setf changed nil)
@@ -570,7 +631,9 @@
                      (string= (node-s s2) "FILTER"))
                 (let ((passthroughs (map-passthrough-fields s1))
                       (f-fields (filter-fields s2)))
-                  (if (and f-fields (every (lambda (f) (member f passthroughs :test #'string=)) f-fields))
+                  (if (and f-fields (every (lambda (f) (member f passthroughs :test #'string=)) f-fields)
+                           (not (multiple-value-bind (binder pred) (filter-body s2)
+                                  (reads-row-or-key-p pred binder))))
                       ;; Swap FILTER and MAP!
                       (progn
                         (push s2 new-steps)
@@ -594,7 +657,8 @@
           (let ((s1 (nth i curr-steps))
                 (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
             (if (and s2 (member (node-s s1) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=)
-                     (string= (node-s s2) "FILTER"))
+                     (string= (node-s s2) "FILTER")
+                     (not (step-reads-key-p s2)))
                 (progn
                   (push s2 new-steps)
                   (push s1 new-steps)
@@ -616,7 +680,9 @@
                      (string= (node-s s2) "FILTER"))
                 (let ((cols (select-cols-fields s1))
                       (f-fields (filter-fields s2)))
-                  (if (and f-fields (every (lambda (f) (member f cols :test #'string=)) f-fields))
+                  (if (and f-fields (every (lambda (f) (member f cols :test #'string=)) f-fields)
+                           (not (multiple-value-bind (binder pred) (filter-body s2)
+                                  (reads-row-or-key-p pred binder))))
                       (progn
                         (push s2 new-steps)
                         (push s1 new-steps)
@@ -640,10 +706,15 @@
             (if (and s2 (string= (node-s s1) "MAP")
                      (member (node-s s2) '("TOP" "TOP_DESC" "TOP_BY" "SORT" "SORT_DESC" "SORT_BY") :test #'string=)
                      (map-has-computed-fields-p s1))
+                ;; Only a key over pass-through fields is the same value before
+                ;; the MAP: a keyless sort compares the MAP's outputs, and a key
+                ;; that reads the whole row or _K reads what the MAP changes.
                 (let ((passthroughs (map-passthrough-fields s1))
                       (s-fields (sort-fields s2)))
-                  (if (or (null s-fields)
-                          (every (lambda (f) (member f passthroughs :test #'string=)) s-fields))
+                  (if (and s-fields
+                           (every (lambda (f) (member f passthroughs :test #'string=)) s-fields)
+                           (not (multiple-value-bind (binder key) (sort-key s2)
+                                  (reads-row-or-key-p key binder))))
                       ;; Swap TOP/SORT and MAP!
                       (progn
                         (push s2 new-steps)
@@ -705,7 +776,8 @@
           (let ((s1 (nth i curr-steps))
                 (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
             (if (and s2 (member (node-s s1) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=)
-                     (member (node-s s2) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=))
+                     (member (node-s s2) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=)
+                     (not (step-reads-key-p s2)))
                 (progn
                   (setf changed t)
                   (incf i 1))
@@ -746,7 +818,8 @@
                  (pred (if (= (length s-args) 3) (third s-args) (second s-args))))
             (if (and (string= (node-s s) "FILTER")
                      valid-binder
-                     pred (eq (node-kind pred) :bool) (node-b pred))
+                     pred (eq (node-kind pred) :bool) (node-b pred)
+                     (or (plusp i) (source-is-list-p source)))
                 (progn
                   (setf changed t)
                   (incf i 1))
@@ -839,12 +912,12 @@
               (incf i 1)))))
     (values (nreverse new-steps) changed)))
 
-(defun optimize-inmemory-pipeline-steps (curr-steps)
+(defun optimize-inmemory-pipeline-steps (source curr-steps)
   "Tier 2: In-memory physical rewrites, extending Tier 1."
   (let ((changed t))
     (loop while changed do
       (setf changed nil)
-      (setf curr-steps (optimize-logical-pipeline-steps curr-steps))
+      (setf curr-steps (optimize-logical-pipeline-steps source curr-steps))
       (multiple-value-bind (next-steps pass8-changed) (pass-pushdown-link curr-steps)
         (when pass8-changed
           (setf curr-steps next-steps
@@ -916,13 +989,17 @@ copy would only be a second object the translator has to recognise."
                        (setf (node-items copy)
                              (cons (first (node-items copy))
                                    (loop for item in (rest (node-items copy))
-                                         collect (optimize-tree item physical (1+ depth)))))
+                                         for index from 1
+                                         collect (let ((*fold-constants*
+                                                         (and *fold-constants* (step-arg-folds-p s index))))
+                                                   (optimize-tree item physical (1+ depth))))))
                        copy))))
          (build-pipeline-ast opt-source
                              (if physical
-                                 (optimize-inmemory-pipeline-steps opt-steps)
-                                 (optimize-logical-pipeline-steps opt-steps))))))
-    (t (fold-node (optimize-children node physical depth)))))
+                                 (optimize-inmemory-pipeline-steps opt-source opt-steps)
+                                 (optimize-logical-pipeline-steps opt-source opt-steps))))))
+    (t (let ((copy (optimize-children node physical depth)))
+         (if *fold-constants* (fold-node copy) copy)))))
 
 (defun optimize-ast-logical (node &optional (depth 1))
   "Applies Tier 1 engine-agnostic logical rewrites to an AST. NODE is not written to."

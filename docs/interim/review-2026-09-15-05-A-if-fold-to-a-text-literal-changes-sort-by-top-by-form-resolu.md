@@ -1,5 +1,7 @@
 # A. IF fold to a text literal changes SORT_BY/TOP_BY form resolution
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "The optimiser keeps the program's value".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** mixed · **hosts:** js, php, python, cpp, lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Introduced or promised by ed16df2.

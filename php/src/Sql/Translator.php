@@ -3041,9 +3041,10 @@ final class Translator
                 $key = $args[2];
                 $dir = 'ASC';
             } else {
-                $binder = '_';
-                $key = $args[1];
-                $dir = strtoupper($args[2]['v']);
+                // Neither form: the third slot is a direction the evaluator
+                // would compute, and SQL cannot -- the four-argument form's
+                // refusal.
+                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[2]['pos']);
             }
         } elseif ($count === 4) {
             if (!Constants::isBinderName($args[1])) {

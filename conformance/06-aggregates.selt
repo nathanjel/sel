@@ -143,3 +143,64 @@ IF(ALL(ITEMS, _["QTY"] > 0), "ok", "line with zero quantity: " & JOIN(MAP(FILTER
 --- expect
 text "line with zero quantity: B-7"
 ===
+### name: agg.filter.scalar-source-with-constant-predicate
+--- note
+A scalar first argument is a one-element list (§7.3), and FILTER over it is
+that list. An optimiser that drops a FILTER whose predicate is a constant
+TRUE may only do so when the input is already a list -- a later pipeline
+step, or a list literal -- never over an arbitrary first source. Every host
+answered `5` here until this pinned it.
+--- source
+FILTER(5, TRUE)
+--- expect
+tree -{"1"=t"5"}
+===
+### name: agg.filter.count-of-scalar-source-with-folded-predicate
+--- source
+COUNT(FILTER(5, 1 > 0))
+--- expect
+num 1
+===
+### name: agg.filter.null-source-with-constant-predicate
+--- source
+NULL .> FILTER(TRUE)
+--- expect
+none
+===
+### name: agg.sort_by.binder-with-folded-constant-key
+--- note
+The three-argument form is resolved by shape: a text literal in the third
+slot is the direction, otherwise a bare name in the second slot is the binder
+and the third slot is the key (§7.3). `IF(TRUE, "DESC", "ASC")` is not a text
+literal, so X is the binder and every key is "DESC": a stable sort that
+changes nothing. An optimiser that folds the IF into that slot would turn X
+into an undefined variable -- every host raised E_UNDEF_VAR here.
+--- source
+SORT_BY((3, 1, 2), X, IF(TRUE, "DESC", "ASC"))
+--- expect
+tree -{"1"=t"3", "2"=t"1", "3"=t"2"}
+===
+### name: agg.sort_by.placeholder-binder-with-folded-constant-key
+--- note
+Same form, with `_` spelled as the binder: the key is constant, so the order
+is unchanged; folded, `_` would be the key and "DESC" the direction.
+--- source
+SORT_BY(("b", "c", "a"), _, IF(1 > 0, "DESC", "ASC"))
+--- expect
+tree -{"1"=t"b", "2"=t"c", "3"=t"a"}
+===
+### name: agg.top_by.binder-with-folded-constant-key
+--- source
+TOP_BY((3, 1, 2), X, IF(TRUE, "DESC", "ASC"), 2)
+--- expect
+tree -{"1"=t"3", "2"=t"1"}
+===
+### name: agg.sort_by.folded-direction-without-a-binder
+--- note
+When the second slot is not a bare name there is no binder form to lose: the
+third slot is the direction whether it is a literal or evaluates to one.
+--- source
+LIST(RECORD("n", 1), RECORD("n", 2)) .> SORT_BY(_["n"], IF(TRUE, "DESC", "ASC")) .> MAP(_["n"])
+--- expect
+tree -{"1"=t"2", "2"=t"1"}
+===

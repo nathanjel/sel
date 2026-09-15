@@ -1,5 +1,7 @@
 # D. PHP planHybrid ignores foldConstants:false
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "Five quick wins".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** mixed · **hosts:** php, js, python
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Introduced or promised by ed16df2.

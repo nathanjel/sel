@@ -3940,7 +3940,9 @@ Value do_bucket(Args& a, Context& ctx) {
   std::unordered_map<std::uint64_t, std::vector<std::size_t>> group_buckets;
   for (std::size_t i = 0; i < source_size; i++) {
     const Value& item = collection_item(val, i);
-    ctx.frames.push_back({{binder, item}, {"_K", make_text(std::to_string(i + 1))}});
+    // `_K` in the key expression is the source element's key -- a record's
+    // field name, a list's position -- exactly as in SORT_BY's key.
+    ctx.frames.push_back({{binder, item}, {"_K", make_text(collection_key(val, i))}});
     Value eval_key;
     try {
       eval_key = a.eval(*key_node);
@@ -5379,6 +5381,63 @@ std::vector<std::string> opt_field_refs(const Node& node, std::string binder = "
   return {refs.begin(), refs.end()};
 }
 
+// Whether `node` reads one of `names` as a variable -- other than as
+// `name["field"]`, which is a field read. Case-insensitively, like the
+// evaluator's frames.
+bool opt_reads_var(const Node& node, const std::vector<std::string>& names) {
+  std::set<std::string> wanted;
+  for (const std::string& name : names) wanted.insert(upper_name(name));
+  bool found = false;
+  const auto walk = [&](const auto& self, const Node& item) -> void {
+    if (found) return;
+    if (item.t == NT::Var && wanted.count(upper_name(item.s))) { found = true; return; }
+    if (item.t == NT::Index && item.l && item.r && item.l->t == NT::Var && item.r->t == NT::Text) return;
+    if (item.l) self(self, *item.l);
+    if (item.r) self(self, *item.r);
+    for (const NodePtr& child : item.items) if (child) self(self, *child);
+  };
+  walk(walk, node);
+  return found;
+}
+
+// Whether a body reads the element as a whole (its binder, or any of the
+// pipeline's implicit names) or its key `_K`. The field set says what a
+// rewrite may rely on; this says when it may not: a body that reads either
+// cannot move across a step that changes the rows' shape (MAP, SELECT_COLS)
+// or renumbers them (MAP, SELECT_COLS, the sorts).
+bool opt_reads_row_or_key(const Node& node, const std::string& binder = "_") {
+  return opt_reads_var(node, {binder, "_", "_1", "_2", "_K"});
+}
+
+// Whether a step's own arguments (not its input) read `_K`: the keys a sort
+// renumbers, so such a step keeps its place relative to one.
+bool opt_step_reads_key(const Node& step) {
+  for (std::size_t i = 1; i < step.items.size(); i++) {
+    if (step.items[i] && opt_reads_var(*step.items[i], {"_K"})) return true;
+  }
+  return false;
+}
+
+// Whether the source a pipeline starts from is a list already, so a FILTER
+// whose predicate is a constant TRUE over it is the identity. Over a scalar
+// it is not: FILTER wraps a scalar into a one-element list (spec §7.3), and
+// only a later step, a list literal or a constructor is known not to be one.
+bool opt_source_is_list(const NodePtr& source) {
+  return source && (source->t == NT::List ||
+                    (source->t == NT::Call && (source->s == "LIST" || source->s == "RECORD")));
+}
+
+// The evaluator resolves the three-argument SORT_BY / TOP_BY form by shape
+// (spec §7.3): a text literal in the third slot is the direction, otherwise a
+// bare name in the second slot is the binder and the third slot is its key.
+// A fold that hoists a text literal into that slot -- `IF(TRUE, "DESC",
+// "ASC")` -- would change the form, so the slot is walked without folding.
+bool opt_step_arg_folds(const Node& step, std::size_t index) {
+  const std::size_t sort_count = step.s == "SORT_BY" ? step.items.size()
+      : step.s == "TOP_BY" ? step.items.size() - 1 : 0;
+  return !(sort_count == 3 && index == 2 && step.items[1]->t == NT::Var && !step.items[1]->grouped);
+}
+
 struct OptMapInfo { std::string binder; NodePtr body; bool explicit_binder = false; };
 struct OptFilterInfo { std::string binder; NodePtr predicate; bool explicit_binder = false; bool valid = false; };
 
@@ -5422,30 +5481,36 @@ bool opt_map_has_computed(const Node& step) {
   return opt_map_passthroughs(step).size() * 2 != info.body->items.size();
 }
 
-std::vector<std::string> opt_sort_fields(const Node& step) {
+struct OptSortInfo { std::string binder = "_"; NodePtr key; };
+
+OptSortInfo opt_sort_info(const Node& step) {
   const auto& args = step.items;
+  const std::size_t count = args.size();
+  OptSortInfo info;
   if (step.s == "SORT" || step.s == "SORT_DESC") {
-    if (args.size() == 1) return {};
-    const std::string binder = args.size() == 3 && args[1]->t == NT::Var && !args[1]->grouped
-        ? args[1]->s : "_";
-    return opt_field_refs(*((args.size() == 3) ? args[2] : args[1]), binder);
+    if (count == 1) return info;
+    info.binder = count == 3 && args[1]->t == NT::Var && !args[1]->grouped ? args[1]->s : "_";
+    info.key = count == 3 ? args[2] : args[1];
+  } else if (step.s == "TOP" || step.s == "TOP_DESC") {
+    if (count == 2) return info;
+    // TOP(source, key, n) has three arguments and TOP(source, binder, key, n)
+    // has four; `sort_count` excludes n, so the explicit-binder form is 3.
+    const std::size_t sort_count = count - 1;
+    info.binder = sort_count == 3 && args[1]->t == NT::Var && !args[1]->grouped ? args[1]->s : "_";
+    info.key = sort_count == 3 ? args[2] : args[1];
+  } else if (step.s == "SORT_BY" || step.s == "TOP_BY") {
+    const std::size_t sort_count = step.s == "TOP_BY" ? count - 1 : count;
+    if (sort_count == 2 || (sort_count == 3 && args[2]->t == NT::Text)) {
+      info.key = args[1];
+    } else if (sort_count == 3 && args[1]->t == NT::Var && !args[1]->grouped) {
+      info.binder = args[1]->s;
+      info.key = args[2];
+    } else if (count > 2 && args[1]->t == NT::Var && !args[1]->grouped) {
+      info.binder = args[1]->s;
+      info.key = args[2];
+    }
   }
-  const bool top_by = step.s == "TOP_BY";
-  const std::size_t sort_count = top_by ? args.size() - 1 : args.size();
-  std::string binder = "_";
-  NodePtr key;
-  if (sort_count == 2) {
-    key = args[1];
-  } else if (sort_count == 3 && args[2]->t == NT::Text) {
-    key = args[1];
-  } else if (sort_count == 3 && args[1]->t == NT::Var && !args[1]->grouped) {
-    binder = args[1]->s;
-    key = args[2];
-  } else if (args.size() > 2 && args[1]->t == NT::Var && !args[1]->grouped) {
-    binder = args[1]->s;
-    key = args[2];
-  }
-  return key ? opt_field_refs(*key, binder) : std::vector<std::string>{};
+  return info;
 }
 
 std::vector<std::string> opt_select_fields(const Node& step) {
@@ -5516,7 +5581,7 @@ NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const s
   return copy;
 }
 
-std::vector<NodePtr> opt_logical_steps(std::vector<NodePtr> current) {
+std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current) {
   bool changed = true;
   while (changed) {
     changed = false;
@@ -5568,7 +5633,7 @@ std::vector<NodePtr> opt_logical_steps(std::vector<NodePtr> current) {
         const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
-            })) {
+            }) && !opt_reads_row_or_key(*info.predicate, info.binder)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -5577,7 +5642,7 @@ std::vector<NodePtr> opt_logical_steps(std::vector<NodePtr> current) {
         }
       }
       if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
-          (*second)->s == "FILTER") {
+          (*second)->s == "FILTER" && !opt_step_reads_key(**second)) {
         next.push_back(*second);
         next.push_back(first);
         i += 2;
@@ -5590,7 +5655,7 @@ std::vector<NodePtr> opt_logical_steps(std::vector<NodePtr> current) {
         const auto fields = opt_select_fields(*first);
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(fields.begin(), fields.end(), f) != fields.end();
-            })) {
+            }) && !opt_reads_row_or_key(*info.predicate, info.binder)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -5602,11 +5667,15 @@ std::vector<NodePtr> opt_logical_steps(std::vector<NodePtr> current) {
           ((*second)->s == "TOP" || (*second)->s == "TOP_DESC" || (*second)->s == "TOP_BY" ||
            (*second)->s == "SORT" || (*second)->s == "SORT_DESC" || (*second)->s == "SORT_BY") &&
           opt_map_has_computed(*first)) {
-        const auto refs = opt_sort_fields(**second);
+        // Only a key over pass-through fields is the same value before the
+        // MAP: a keyless sort compares the MAP's outputs, and a key that
+        // reads the whole row or `_K` reads what the MAP changes.
+        const OptSortInfo sort = opt_sort_info(**second);
+        const auto refs = sort.key ? opt_field_refs(*sort.key, sort.binder) : std::vector<std::string>{};
         const auto passes = opt_map_passthroughs(*first);
-        if (refs.empty() || std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
+        if (sort.key && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
-            })) {
+            }) && !opt_reads_row_or_key(*sort.key, sort.binder)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -5632,7 +5701,8 @@ std::vector<NodePtr> opt_logical_steps(std::vector<NodePtr> current) {
         }
       }
       if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
-          ((*second)->s == "SORT" || (*second)->s == "SORT_DESC" || (*second)->s == "SORT_BY")) {
+          ((*second)->s == "SORT" || (*second)->s == "SORT_DESC" || (*second)->s == "SORT_BY") &&
+          !opt_step_reads_key(**second)) {
         next.push_back(*second);
         i += 2;
         changed = true;
@@ -5646,7 +5716,8 @@ std::vector<NodePtr> opt_logical_steps(std::vector<NodePtr> current) {
         continue;
       }
       const OptFilterInfo filter = first->s == "FILTER" ? opt_filter_info(*first) : OptFilterInfo{};
-      if (filter.valid && filter.predicate && filter.predicate->t == NT::Bool && filter.predicate->b) {
+      if (filter.valid && filter.predicate && filter.predicate->t == NT::Bool && filter.predicate->b &&
+          (!next.empty() || i > 0 || opt_source_is_list(source))) {
         i++;
         changed = true;
         continue;
@@ -5818,10 +5889,10 @@ std::pair<std::vector<NodePtr>, bool> opt_pushdown_join_filters(const std::vecto
   return {result, changed};
 }
 
-std::vector<NodePtr> opt_inmemory_steps(std::vector<NodePtr> steps) {
+std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodePtr> steps) {
   bool changed = true;
   while (changed) {
-    steps = opt_logical_steps(std::move(steps));
+    steps = opt_logical_steps(source, std::move(steps));
     auto pushed = opt_pushdown_join_filters(steps);
     steps = std::move(pushed.first);
     changed = pushed.second;
@@ -5847,12 +5918,14 @@ std::vector<NodePtr> opt_inmemory_steps(std::vector<NodePtr> steps) {
   return rewritten;
 }
 
-NodePtr opt_tree(const NodePtr& node, bool physical, int depth) {
+// `fold` is the other hosts' foldConstants option: off for the one slot
+// whose shape the evaluator reads (opt_step_arg_folds).
+NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true) {
   if (!node) return node;
   if (depth > MAX_DEPTH) return node;
   if (node->t == NT::Call && opt_pipeline_op(node->s) && !node->items.empty()) {
     auto [source, steps] = opt_unwind(node);
-    NodePtr optimized_source = opt_tree(source, physical, depth + 1);
+    NodePtr optimized_source = opt_tree(source, physical, depth + 1, fold);
     std::vector<NodePtr> optimized_steps;
     optimized_steps.reserve(steps.size());
     for (const NodePtr& step : steps) {
@@ -5860,19 +5933,20 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth) {
       copy->items.clear();
       copy->items.push_back(step->items[0]);
       for (std::size_t i = 1; i < step->items.size(); i++) {
-        copy->items.push_back(opt_tree(step->items[i], physical, depth + 1));
+        copy->items.push_back(opt_tree(step->items[i], physical, depth + 1,
+                                       fold && opt_step_arg_folds(*step, i)));
       }
       optimized_steps.push_back(std::move(copy));
     }
-    std::vector<NodePtr> final_steps = opt_logical_steps(std::move(optimized_steps));
-    if (physical) final_steps = opt_inmemory_steps(std::move(final_steps));
+    std::vector<NodePtr> final_steps = opt_logical_steps(optimized_source, std::move(optimized_steps));
+    if (physical) final_steps = opt_inmemory_steps(optimized_source, std::move(final_steps));
     return opt_build_pipeline(std::move(optimized_source), final_steps);
   }
   auto copy = opt_copy(node);
-  if (copy->l) copy->l = opt_tree(copy->l, physical, depth + 1);
-  if (copy->r) copy->r = opt_tree(copy->r, physical, depth + 1);
-  for (NodePtr& child : copy->items) child = opt_tree(child, physical, depth + 1);
-  return opt_fold(copy);
+  if (copy->l) copy->l = opt_tree(copy->l, physical, depth + 1, fold);
+  if (copy->r) copy->r = opt_tree(copy->r, physical, depth + 1, fold);
+  for (NodePtr& child : copy->items) child = opt_tree(child, physical, depth + 1, fold);
+  return fold ? opt_fold(copy) : copy;
 }
 
 }  // namespace

@@ -159,7 +159,7 @@ def validate(n: Node, ctx: Context | None = None) -> None:
     try:
         eval_node(n, ctx if ctx is not None else Context())
     except SelError as e:
-        _refuse_as_sel(e, n)
+        refuse_as_sel(e, n)
 
 
 def require_numeric(n: Node, ctx: Context | None = None) -> None:
@@ -186,10 +186,10 @@ def require_numeric(n: Node, ctx: Context | None = None) -> None:
     try:
         eval_node(n, ctx if ctx is not None else Context()).as_decimal(n.pos)
     except SelError as e:
-        _refuse_as_sel(e, n)
+        refuse_as_sel(e, n)
 
 
-def _refuse_as_sel(e: SelError, n: Node) -> None:
+def refuse_as_sel(e: SelError, n: Node) -> None:
     """SEL's own refusal, reported as the translator's.
 
     The position is SEL's own -- the innermost node that failed, not the

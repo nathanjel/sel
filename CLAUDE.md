@@ -42,7 +42,7 @@ node js/bin/sqlt.mjs [agg.link]        php php/bin/sqlt    cpp/build/sqlt
 lisp/bin/sqlt                          PYTHONPATH=$PWD/python python3 python/bin/sqlt
 ```
 
-Unit tests (layers under the suite — decimal, utf8, value; JS and PHP have none):
+Unit tests (layers under the suite — decimal, utf8, value; JS and PHP have `tools/check-js-optimizer.mjs` / `tools/check-php-optimizer.php` instead, which also execute hybrid plans):
 
 ```
 cd cpp && make test                  unit then conformance;  make asan  for sanitizers

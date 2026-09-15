@@ -8373,6 +8373,134 @@
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :unknown))) nil nil)))))
   (list
+   :name "stmt.take.count-sel-refuses-is-a-refusal"
+   :at "23-statements.sqlt:390"
+   :dialect "mariadb"
+   :source "ITEMS .> TAKE(1 / 0)"
+   :expect nil
+   :error "E_SQL_INVALID 1:17"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.drop.count-sel-refuses-is-a-refusal"
+   :at "23-statements.sqlt:408"
+   :dialect "mariadb"
+   :source "ITEMS .> DROP(1 / 0)"
+   :expect nil
+   :error "E_SQL_INVALID 1:17"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.filter.constant-true-is-a-where"
+   :at "23-statements.sqlt:421"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(TRUE)"
+   :expect "SELECT * FROM `items` WHERE TRUE"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.direction-that-is-not-a-literal-is-refused"
+   :at "23-statements.sqlt:439"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"qty\"], IF(TRUE, \"DESC\", \"ASC\"))"
+   :expect nil
+   :error "E_BAD_ARG 1:28"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.four-argument-direction-that-is-not-a-literal-is-refused"
+   :at "23-statements.sqlt:458"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(r, r[\"qty\"], IF(TRUE, \"DESC\", \"ASC\"))"
+   :expect nil
+   :error "E_BAD_ARG 1:31"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.binder-form-with-a-computed-key"
+   :at "23-statements.sqlt:471"
+   :dialect "mariadb"
+   :source "ITEMS .> FILTER(_[\"qty\"] > 0) .> SORT_BY(O, IF(TRUE, \"DESC\", \"ASC\"))"
+   :expect "SELECT * FROM `items` WHERE (`qty` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_bin ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.direction-is-case-insensitive"
+   :at "23-statements.sqlt:488"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"qty\"], \"desc\")"
+   :expect "SELECT * FROM `items` ORDER BY `qty` DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.map.computed-field-then-keyless-sort"
+   :at "23-statements.sqlt:503"
+   :dialect "mariadb"
+   :source "ITEMS .> MAP(RECORD(\"q\", 0 - _[\"qty\"])) .> SORT()"
+   :expect "SELECT `_sub1`.* FROM (SELECT (0 - `qty`) AS `q` FROM `items`) `_sub1` ORDER BY `_sub1`.`q` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
    :name "stmt.bucket.basic"
    :at "24-bucket.sqlt:9"
    :dialect "mariadb"
@@ -9701,8 +9829,24 @@
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ACTIVE" (binding-column "active" "o" :bool))) nil nil)))))
   (list
-   :name "plan.refuse.base-dialect"
+   :name "plan.take.count-sel-refuses-stays-in-memory"
    :at "25-hybrid-plans.sqlt:851"
+   :dialect "mariadb"
+   :source "ORDERS .> TAKE(1 / 0)"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.refuse.base-dialect"
+   :at "25-hybrid-plans.sqlt:867"
    :dialect "ansi"
    :source "ORDERS .> TAKE(1)"
    :expect nil
@@ -9718,7 +9862,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.immutable.folding-does-not-write-back"
-   :at "25-hybrid-plans.sqlt:868"
+   :at "25-hybrid-plans.sqlt:884"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"id\"] > 1 + 1) .> TAKE(2 * 2)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) LIMIT 4"
@@ -9734,7 +9878,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.immutable.folding-inside-a-kept-step"
-   :at "25-hybrid-plans.sqlt:890"
+   :at "25-hybrid-plans.sqlt:906"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(NOT (_[\"id\"] > 1 + 1)) .> MAP(RECORD(\"n\", ABORT(\"x\")))"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (NOT (`o`.`id` > 2))"
@@ -9750,7 +9894,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.pipeline-map-pushes-down-whole"
-   :at "25-hybrid-plans.sqlt:909"
+   :at "25-hybrid-plans.sqlt:925"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_)))"
    :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
@@ -9766,7 +9910,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.open-prefix-is-not-a-split-point"
-   :at "25-hybrid-plans.sqlt:928"
+   :at "25-hybrid-plans.sqlt:944"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))"
    :expect nil
@@ -9782,7 +9926,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.split-before-the-bucket"
-   :at "25-hybrid-plans.sqlt:946"
+   :at "25-hybrid-plans.sqlt:962"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"amount\"] > 1) .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)"
@@ -9798,7 +9942,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.projected-then-custom-map"
-   :at "25-hybrid-plans.sqlt:964"
+   :at "25-hybrid-plans.sqlt:980"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_))) .> MAP(RECORD(\"c\", _[\"cid\"], \"note\", ABORT(\"x\")))"
    :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
@@ -9814,7 +9958,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.sealed-prefix-is-not-a-split-point"
-   :at "25-hybrid-plans.sqlt:982"
+   :at "25-hybrid-plans.sqlt:998"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(2) .> MAP(RECORD(\"cid\", _K))"
    :expect nil
@@ -9827,4 +9971,100 @@
    :plan "pure_memory"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.pure-sql.constant-true-filter"
+   :at "25-hybrid-plans.sqlt:1011"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(TRUE)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE TRUE"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.sort.binder-form-keeps-its-form-when-the-key-folds"
+   :at "25-hybrid-plans.sqlt:1034"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(_[\"id\"] > 0) .> SORT_BY(O, IF(TRUE, \"DESC\", \"ASC\"))"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_bin ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.sort.direction-form-folds-to-a-literal"
+   :at "25-hybrid-plans.sqlt:1055"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"id\"], IF(TRUE, \"DESC\", \"ASC\"))"
+   :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.map.computed-field-then-keyless-sort-stays-after-the-map"
+   :at "25-hybrid-plans.sqlt:1075"
+   :dialect "mariadb"
+   :source "ORDERS .> MAP(RECORD(\"q\", 0 - _[\"amount\"])) .> SORT()"
+   :expect "SELECT `_sub1`.* FROM (SELECT (0 - `o`.`amount`) AS `q` FROM `orders` `o`) `_sub1` ORDER BY `_sub1`.`q` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
+  (list
+   :name "plan.map.pass-through-key-sorts-early"
+   :at "25-hybrid-plans.sqlt:1095"
+   :dialect "mariadb"
+   :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"q\", 0 - _[\"amount\"])) .> SORT_BY(_[\"id\"], \"DESC\")"
+   :expect "SELECT `o`.`id` AS `id`, (0 - `o`.`amount`) AS `q` FROM `orders` `o` ORDER BY `o`.`id` DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
+  (list
+   :name "plan.sort.then-filter-on-the-key-splits"
+   :at "25-hybrid-plans.sqlt:1114"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"id\"]) .> FILTER(_K == \"1\")"
+   :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))))

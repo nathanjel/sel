@@ -2326,6 +2326,24 @@ every host to:
   price of that cache is the immutability rule above: a caller who constructs
   a `Program` from an AST of their own must not write into its nodes afterwards
   (reassigning the whole tree is fine, and noticed).
+- **A rewrite keeps the program's value, or it does not fire.** The logical
+  optimiser moves a step across another only when the moved step cannot tell:
+  a `FILTER` or a sort moves in front of a `MAP` or a `SELECT_COLS` only when
+  its body reads nothing but fields the projection passes through unchanged
+  — never a keyless sort (it compares the projection's *outputs*), never a
+  body that reads the whole row (`COUNT(_)` counts the projection's fields)
+  or `_K` (the projection renumbers) — and a `FILTER` or a second sort that
+  reads `_K` stays after the sort that renumbered its rows. A `FILTER(TRUE)`
+  is dropped only where its input is already a list — after a step, or over
+  a list literal or constructor — because over a scalar it is the one-element
+  list spec §7.3 promises, and a bound relation is such a source: `ORDERS .>
+  FILTER(TRUE)` is a one-step pipeline the planner pushes down, not a bare
+  relation it leaves in memory. And a fold never changes the *form* of a
+  call the evaluator resolves by shape: the third slot of a three-argument
+  `SORT_BY` or `TOP_BY` whose second is a bare name is the binder form's key,
+  and `IF(TRUE, "DESC", "ASC")` there stays an `IF` rather than becoming the
+  direction (review 2026-09-15 findings A, E, C2; `plan.sort.*`,
+  `plan.map.*` and `plan.pure-sql.constant-true-filter` in the fixtures).
 - **The continuation reports errors where `run` would.** The planner folds
   one tree and cuts it in two, so what the memory half carries is what the
   in-memory optimiser would have built: a constant-condition `IF` folds only

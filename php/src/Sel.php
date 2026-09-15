@@ -14,9 +14,10 @@ final class Program
      * optimiser and the planner copy on the way down and never write into it
      * (sql/cases/25-hybrid-plans.sqlt asserts so) -- and a caller who builds a
      * Program from an AST of their own is held to the same rule. Not
-     * `readonly`, because __destruct has to take it apart by reference; a
-     * write to it after construction is unsupported rather than refused, and
-     * leaves run() evaluating the tree it was constructed with.
+     * `readonly`, because __destruct has to take it apart by reference, and
+     * because reassigning the WHOLE tree is fine and noticed (§12.1): the
+     * physical tree is keyed by the identity of $ast and rebuilt for a new
+     * one. Writing into its nodes is what is unsupported.
      *
      * @var array<string,mixed>
      */
@@ -32,6 +33,8 @@ final class Program
      * @var array<string,mixed>|null
      */
     private ?array $physical = null;
+    /** The $ast the physical tree was built from. */
+    private ?array $physicalOf = null;
 
     /** @param array<string,mixed> $ast */
     public function __construct(string $source, array $ast)
@@ -55,6 +58,10 @@ final class Program
      */
     public function __destruct()
     {
+        // Drop the cache key's share of $ast first: dismantling a copy-on-write
+        // array that is still shared would separate the two and leave the
+        // original, undismantled, to be destructed recursively.
+        $this->physicalOf = null;
         Parser::dismantle($this->ast);
         // The physical tree shares most of its nodes with $ast and is as deep
         // as it is; once $ast has been taken apart this is the last holder of
@@ -83,8 +90,13 @@ final class Program
      */
     public function physicalAst(): array
     {
-        if ($this->physical === null) {
+        // Keyed by the identity of $ast: PHP arrays are values, but a copy on
+        // write that has not been written to is one array, so `!==` is O(1)
+        // until the caller reassigns $ast -- which is then noticed, as in the
+        // other hosts (§12.1: "reassigning the whole tree is fine, and noticed").
+        if ($this->physical === null || $this->physicalOf !== $this->ast) {
             $this->physical = Optimizer::optimize($this->ast, true);
+            $this->physicalOf = $this->ast;
         }
         return $this->physical;
     }

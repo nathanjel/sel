@@ -119,3 +119,43 @@ A = LIST(RECORD("c", 7, "v", 1), RECORD("c", "7", "v", 2), RECORD("c", 9, "v", 3
 --- expect
 bool TRUE
 ===
+
+### name: rel.bucket.key-expression-sees-the-source-key
+--- note
+Review 2026-09-15 finding Q. Inside the key expression `_K` is the source
+element's key -- a record's field name, a list's position -- exactly as in
+SORT_BY's key. One host bound it to the position over every source.
+--- source
+R = RECORD("x", 10, "y", 20, "z", 30); R .> BUCKET(_K)
+--- expect
+tree -{"x"=-{"1"=t"10"}, "y"=-{"1"=t"20"}, "z"=-{"1"=t"30"}}
+===
+### name: rel.bucket.rebucket-by-group-key
+--- note
+The map a bare bucket yields is keyed by the group key, so a second BUCKET
+over it can group by `_K`.
+--- source
+LIST(RECORD("a", 7), RECORD("a", 9), RECORD("a", 7)) .> BUCKET(_["a"]) .> BUCKET(_K, RECORD("k", _K, "n", COUNT(_)))
+--- expect
+tree -{"1"=-{"k"=t"7", "n"=t"1"}, "2"=-{"k"=t"9", "n"=t"1"}}
+===
+### name: rel.bucket.map-of-key-then-sort-by-key
+--- note
+`_K` inside the MAP is the group key; a SORT_BY(_K) after the MAP reads the
+renumbered keys "1", "2". Moving the sort ahead of the MAP would renumber the
+buckets before the MAP reads their keys -- every host answered cat 1 / cat 2
+here until this pinned it.
+--- source
+LIST(RECORD("cat", "B"), RECORD("cat", "A"), RECORD("cat", "B")) .> BUCKET(_["cat"]) .> MAP(RECORD("cat", _K, "n", COUNT(_))) .> SORT_BY(_K)
+--- expect
+tree -{"1"=-{"cat"=t"B", "n"=t"2"}, "2"=-{"cat"=t"A", "n"=t"1"}}
+===
+### name: rel.bucket.map-of-key-then-sort-by-mapped-field
+--- note
+The control: the key reads a field the MAP computed, so the sort already
+stayed where it was written.
+--- source
+LIST(RECORD("cat", "B"), RECORD("cat", "A"), RECORD("cat", "B")) .> BUCKET(_["cat"]) .> MAP(RECORD("cat", _K, "n", COUNT(_))) .> SORT_BY(_["cat"])
+--- expect
+tree -{"1"=-{"cat"=t"A", "n"=t"1"}, "2"=-{"cat"=t"B", "n"=t"2"}}
+===

@@ -162,6 +162,8 @@ check(step_names($dedupePrune) === ['DEDUPE'], 'redundant dedupe elimination');
 
 $trueFilter = optimized_steps('(1, 2) .> FILTER(TRUE)');
 check($trueFilter === [], 'trivial TRUE filter elimination');
+$keptFilter = optimized_steps('DATA .> FILTER(TRUE)');
+check(step_names($keptFilter) === ['FILTER'], 'a first-step TRUE filter over a variable is kept (the source may be a scalar)');
 
 $bindings = [
     'CUSTOMERS' => Binding::relation('customers', 'customers', [
@@ -228,6 +230,21 @@ Sql::planHybrid($reusable, 'postgresql', $orders);
 check(snapshot($reusable->ast) === $before, 'run, both optimisers and planning leave the AST unchanged');
 check($reusable->run()->dump() === $first, 'repeated runs answer the same');
 check($reusable->physicalAst() === $reusable->physicalAst(), 'the physical AST is built once');
+// Review 2026-09-15 finding AA: keyed by the identity of $ast, as the other
+// hosts are -- reassigning the whole tree is fine, and noticed.
+$physical = $reusable->physicalAst();
+$reusable->ast = Sel::compile('1 + 1')->ast;
+check($reusable->physicalAst() !== $physical && $reusable->run()->asText() === '2',
+    'reassigning ast drops the cache');
+
+// Review 2026-09-15 finding D: foldConstants reaches the optimiser, as it does
+// in JS and Python; only an explicit false disables folding.
+$foldable = 'ORDERS .> FILTER(_["id"] > 1 + 1)';
+$folded = Sql::planHybrid(Sel::compile($foldable), 'postgresql', $orders);
+$unfolded = Sql::planHybrid(Sel::compile($foldable), 'postgresql', $orders, ['foldConstants' => false]);
+check(str_contains($folded->sqlStatement->asStatement(), '> 2')
+    && !str_contains($unfolded->sqlStatement->asStatement(), '> 2'),
+    'foldConstants:false reaches the logical optimiser');
 
 // --- a plan's continuation reports errors where run() does ---
 //

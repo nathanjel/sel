@@ -1,5 +1,7 @@
 # T. Fall-through classification diverges: Lisp walkers skip list nodes and accept only RECORD bodies; LAZY_RECORD is SQL-special in PHP/C++ only
 
+**Status:** FIXED 2026-09-15 with the I/AI/P rework and its cross-validation: the Lisp walkers descend every node kind, LAZY_RECORD bodies are accepted, and LAZY_RECORD is in no host's SQL-special list (see CHANGELOG "Hybrid planner: the shape guard, completed").
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** lisp, php, cpp, js, python
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

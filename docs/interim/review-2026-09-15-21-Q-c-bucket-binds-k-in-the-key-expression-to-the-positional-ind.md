@@ -1,5 +1,7 @@
 # Q. C++ BUCKET binds _K in the key expression to the positional index; the other four bind the source key
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "Five quick wins".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** cpp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

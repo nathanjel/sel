@@ -1,5 +1,7 @@
 # C2. MAP/SORT swap in the logical optimiser changes the program value; runs inside translate() in JS/Python only
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "The optimiser keeps the program's value". The translate-lane difference (which hosts optimise inside `translate`) is finding C and stays open; the `_K`-after-the-projection SQL the suggested statement case would have pinned is finding K and stays open, so the SQL-side pin is `stmt.map.computed-field-then-keyless-sort` instead.
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** js, php, python, cpp, lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.
