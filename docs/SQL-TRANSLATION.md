@@ -1852,7 +1852,7 @@ out to support both exactly as SEL means them.
 | Caveat | What differs |
 |---|---|
 | — (structural) | **No short-circuit.** `FALSE AND (1/0)` is `FALSE` in SEL; SQL may evaluate both sides and raise. Rules that lean on short-circuiting as a guard change meaning. |
-| — (structural) | **NULL.** SEL has no null. Any nullable column makes three-valued logic reachable. Aggregate skeletons use `IS [NOT] TRUE` to fold NULL to false; nothing else does. A translated rule is only as sound as the schema's nullability. |
+| — (structural) | **NULL.** SEL has no null. Any nullable column makes three-valued logic reachable. Aggregate skeletons use `IS [NOT] TRUE` to fold NULL to false; nothing else does. A translated rule is only as sound as the schema's nullability. A bare `BUCKET` over a nullable column is the same story: SEL refuses a `NULL` key (`E_NULL`, spec §7.3) where `GROUP BY` makes a NULL group. |
 | `unicode-case` | `UPPER`/`LOWER` are ASCII-only in SEL. MySQL and PostgreSQL apply full Unicode case mapping. **(verified)** SQLite agrees with SEL exactly, so `sqlite.json` overrides the caveat away rather than inheriting it. |
 | `division-scale` | SEL's `/` yields ten fractional digits, half away from zero. MySQL's DECIMAL division adds four. **(verified)** PostgreSQL's `/` on integers **truncates** — `10 / 4` is `2` — so `postgresql.json` casts both operands to `numeric`, leaving sixteen fractional digits against SEL's ten. The M1 prediction, measured. |
 | `decimal-float` | **(verified)** SQLite has no exact decimal type: arithmetic is int64 or IEEE double. Not a scale difference — a different number system. `0.1 + 0.2` is `0.30000000000000004` there and `0.3` in SEL, and no template fixes it, so every arithmetic entry carries this and `strict` refuses the lot. |
@@ -1864,7 +1864,7 @@ out to support both exactly as SEL means them.
 | `numeric-scale` | **(verified)** The value is equal and the scale is not. MariaDB's `LEAST(17, 123.456)` is `17.000` where SEL's `MIN` returns `17` — invisible until the result is read as text. It is also the only caveat a **skeleton** carries: MariaDB gives a `CASE` over NUM branches one type and pads to the widest scale, so `IF(FALSE, 2.50, 3)` is `3.00` there and `3` in SEL and on MySQL 8.4. That is `mariadb.json`'s first and only override, and it is the reason `skel` entries reach `Fragment::caveats` at all — before it, a skeleton could declare an inexactness that `strict` never saw. |
 | `scale-limit` | **(verified)** DECIMAL caps the scale of a product and SEL does not, so a result needing more fractional digits is truncated to the cap — to zero, when every surviving digit is one. `0.00000000000000000000000000000001 * 2` is `2e-32` in SEL and on MariaDB and `0.000000000000000000000000000000` on MySQL 8.4: the boundary is **30** there and **38** on MariaDB. It sits on `mysql-family` because both truncate; only the digit they stop at differs. `+` and `-` do not truncate on either, and `/` already declares `division-scale` for the same shape of loss. PostgreSQL's `numeric` has no such cap and carries no caveat, so a multiplication defect still fails the build there. |
 | `power-float` | `POWER` returns a float in every dialect; SEL's is exact. |
-| `text-collation` | The `$` family is bytewise in SEL. The `textCollate` lexical entry forces a binary collation; a column with an incompatible declared collation can still defeat it. |
+| `text-collation` | The `$` family is bytewise in SEL. The `textCollate` lexical entry forces a binary collation; a column with an incompatible declared collation can still defeat it. **(verified)** And `utf8mb4_bin` is PAD SPACE on MariaDB and MySQL: `'A'` and `'A '` compare equal under it, so `"A" $== "A "` is true there where SEL says FALSE, and a bucket keyed by `cat` merges the two — the same cast and collation now cover `GROUP BY`, `_K` and `ORDER BY` keys, so a grouped or sorted TEXT key is case-exact everywhere but not trailing-space-exact on the MySQL family. A NO PAD collation (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB) would close it and is a `textCollate` override away. |
 | `regex-engine` | SEL's regex subset is what PCRE and ECMAScript agree on. MySQL 8.0.4+ and MariaDB use ICU/PCRE, PostgreSQL uses POSIX ARE — the subset mostly survives, lazy quantifiers and some classes do not. SQLite has no `REGEXP` without a user function and refuses outright. |
 | `concat-null` | `CONCAT` / `\|\|` yields NULL if any operand is NULL; SEL's `&` cannot. |
 | — (refused) | `BAND`/`BOR`/`BXOR` — no portable byte-string bitwise operator exists. `ABORT` — a control-flow effect, not a value. `SPLIT`, `INDEXES`, `BTL`, `RGROUPS` — list-valued. **(verified)** `CHAR`/`CODE` on MariaDB, whose `ORD` and `CHAR` read bytes rather than code points — SQLite's `unicode()` and `char()` are code points and are mapped there. |
@@ -2280,7 +2280,22 @@ every host to:
   key)` on its own renders as the group *keys* — SQL has no nested row — while
   SEL's value is a map of member rows. So `BUCKET(src, key) .> MAP(proj)` is
   translated as `BUCKET(src, key, proj)`, one grouped statement (a `FILTER`
-  between them is its `HAVING`), and a prefix that ends in a bucket nobody has
+  between them is its `HAVING`) — which is exact because a bare bucket's key
+  is an index key (spec §7.3): one text or number, so the translator refuses
+  a list or record key, and a boolean or binary one, for that spelling
+  (`E_SQL_SHAPE`), where the projected spelling takes any key. A `FILTER`
+  after a `TAKE`/`DROP` on a grouped statement is a `WHERE` over the
+  paginated rows (the derived table), never a `HAVING` that would run before
+  the `LIMIT`; a `FILTER` over a bucket whose members are spent is refused.
+  A TEXT group key is rendered with the dialect's `textCast` and
+  `textCollate` — in the `GROUP BY`, in the `_K` projection and wherever
+  else `_K` appears (inside a `HAVING` as `MIN(…)` of it, which is the key
+  because the key is constant within its group, and which MariaDB and MySQL
+  accept where they reject the bare column) — because the evaluator groups
+  by the key's exact bytes and MariaDB's default collation merged `'A'` and
+  `'a'` into one group; a TEXT `ORDER BY` key likewise (review 2026-09-15
+  finding L, witnessed by `sql/oracle/statements.json` on live servers).
+  And a prefix that ends in a bucket nobody has
   projected — or in anything that followed one — is never a split point: the
   planner backs up to the step before the bucket, or stays in memory. Before
   this the split landed after the bucket and the continuation counted one row

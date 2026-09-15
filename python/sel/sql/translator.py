@@ -146,6 +146,7 @@ class Translator:
         self.depth = 0
         self.statement_plan: RelationalPlan | None = None
         self.in_where: bool = False
+        self.in_having: bool = False
         self.optimize = bool((options or {}).get('optimizeSql', True)
                              and not (options or {}).get('noOptimize', False))
         self.subquery_counter = 0
@@ -900,9 +901,50 @@ class Translator:
                 return frame[name]
         return None
 
+    def _group_key(self, src: dict[str, Any], group: dict[str, Any]) -> Fragment:
+        """A group key, rendered as the GROUP BY expression itself -- wherever
+        it appears: the clause, the ``_K`` projection, a HAVING. A TEXT key is
+        cast and collated the way the ``$`` family compares text, because the
+        evaluator groups by the key's exact bytes and a case-insensitive
+        collation would merge groups it keeps apart (review 2026-09-15
+        finding L; MariaDB's default merged 'A' and 'a'). The result is marked
+        exact so a comparison over it does not wrap it a second time --
+        MySQL's only_full_group_by accepts a projected or compared key only as
+        the identical expression."""
+        return self._collated_key(self._with_row(src, group['binder'],
+                                                 lambda: self._node(group['node'])))
+
+    def _collated_key(self, fragment: Fragment) -> Fragment:
+        if fragment.kind != 'TEXT' or fragment.exact:
+            return fragment
+        wrapped = self.emit.text_operand(fragment)
+        return Fragment(wrapped.parts, 'TEXT', self.dialect, wrapped.params, wrapped.param_kinds,
+                        wrapped.caveats, True, False, False)
+
     def _from_binder(self, b: Binder, n: Node) -> Fragment:
         if b.shape == Binder.NODE:
             return self._node(b.payload)
+        if b.shape == Binder.KEY:
+            # Inside a row already: bind the key's own binder to that row and
+            # render the key there, then collate it exactly as the GROUP BY does.
+            group, row = b.payload
+            self.frames.append({group['binder']: row})
+            try:
+                key = self._node(group['node'])
+            finally:
+                self.frames.pop()
+            collated = self._collated_key(key)
+            # In a HAVING, MariaDB and MySQL resolve a column only against the
+            # GROUP BY columns and the select list, not against an equal
+            # expression: `HAVING CAST(cat ...) COLLATE ...` is "unknown
+            # column cat" once the grouping is the collated expression. The
+            # key is constant within its group, so MIN of it IS the key, and
+            # an aggregate is what every server lets a HAVING name.
+            if self.in_having and collated is not key:
+                return Fragment(['MIN(', *collated.parts, ')'], 'TEXT', self.dialect,
+                                collated.params, collated.param_kinds, collated.caveats,
+                                True, False, False)
+            return collated
         if b.shape == Binder.COLUMN:
             return self._column_ref(b.payload)
         if b.shape == Binder.ROW:
@@ -1196,7 +1238,7 @@ class Translator:
 
         row = Binder.row(src['relation'])
         if self.statement_plan is not None and self.statement_plan.group_by and len(self.statement_plan.group_by) == 1:
-            k_binder = Binder.node(self.statement_plan.group_by[0]['node'])
+            k_binder = Binder.key((self.statement_plan.group_by[0], row))
         else:
             k_binder = Binder.none('a row of a relation has no key: SQL rows are '
                                    'unordered and unkeyed unless the schema says '
@@ -1645,6 +1687,17 @@ class Translator:
                     or plan.limit is not None or plan.offset is not None
                     or plan.order_by)
 
+    def _plan_needs_wrap_before_map(self, plan: RelationalPlan) -> bool:
+        """Whether a MAP must wrap the plan first. An ORDER BY alone does
+        not: the projection and the sort can share one statement (ORDER BY
+        may name the input's columns), and a derived table is where MariaDB
+        DROPS an ORDER BY that has no LIMIT beside it -- the statement
+        oracle's sorted rows came back in table order. Everything else above
+        the rows still wraps."""
+        return bool(plan.projections is not None or plan.select_cols is not None
+                    or plan.group_by is not None or plan.distinct
+                    or plan.limit is not None or plan.offset is not None)
+
     def _output_field_names(self, plan: RelationalPlan) -> list[str]:
         names = []
         if plan.projections is not None:
@@ -1739,10 +1792,14 @@ class Translator:
                     # binder -- the MAP spelling may name the group
                     # differently, so the projection keeps the binder the
                     # key node was written for.
+                    # is rendered as the group key itself (_group_key), under
+                    # the binder the key node was written for.
                     node_binder = binder
+                    group_key = None
                     if value_node.t == 'var' and value_node.name == '_K' and len(plan.group_by) == 1:
                         actual = plan.group_by[0]['node']
                         node_binder = plan.group_by[0]['binder']
+                        group_key = plan.group_by[0]
                     same_field = (actual.t == 'index' and actual.obj is not None
                                   and actual.obj.t == 'var'
                                   and actual.obj.name in ('_', binder)
@@ -1750,14 +1807,16 @@ class Translator:
                                   and ascii_upper(actual.idx.v) == ascii_upper(alias))
                     if not same_field:
                         plan.aggregate_aliases[alias] = actual
-                    projections.append({'alias': alias, 'binder': node_binder, 'node': actual})
+                    projections.append({'alias': alias, 'binder': node_binder, 'node': actual,
+                                        'group_key': group_key})
                 plan.projections = projections
             else:
                 plan.projections = [{'alias': None, 'binder': binder,
                                      'node': aggregate_node}]
         else:
             plan.projections = [{'alias': group.get('alias'),
-                                 'binder': group['binder'], 'node': group['node']}
+                                 'binder': group['binder'], 'node': group['node'],
+                                 'group_key': group}
                                 for group in plan.group_by]
         plan.select_cols = None
 
@@ -1791,11 +1850,23 @@ class Translator:
             if plan.bucket == 'open' and name not in ('FILTER', 'MAP'):
                 plan.bucket = 'sealed'
             if name == 'FILTER':
+                # A FILTER over a bare bucket whose members are spent: SQL has
+                # only the keys left, and SEL's value is still a map of groups.
+                if plan.bucket == 'sealed':
+                    refuse('E_SQL_SHAPE', 'a FILTER over buckets must follow the BUCKET directly: SQL '
+                           "keeps a bucket's members only for the projection that ends the grouping",
+                           step.pos)
+                # A FILTER after a LIMIT or OFFSET is a WHERE over the rows that
+                # survived them, grouped or not -- SEL applies the TAKE first,
+                # and a HAVING would run before it. Otherwise a FILTER directly
+                # after a grouping is its HAVING, and an ORDER BY in between
+                # changes nothing (HAVING then ORDER BY is sort-then-filter's
+                # rows).
                 plan = self._ensure_derived(plan, lambda candidate:
-                    candidate.group_by is None and bool(
+                    candidate.limit is not None or candidate.offset is not None
+                    or (candidate.group_by is None and bool(
                         candidate.projections is not None or candidate.select_cols is not None
-                        or candidate.limit is not None or candidate.offset is not None
-                        or candidate.order_by or candidate.distinct))
+                        or candidate.order_by or candidate.distinct)))
                 if len(args) == 2:
                     binder, predicate = '_', args[1]
                 elif len(args) == 3:
@@ -1827,6 +1898,14 @@ class Translator:
                 else:
                     refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', step.pos)
 
+                # A bare bucket's key is an index key (spec §7.4): one text or
+                # number. A list or record key is refused by the evaluator, and
+                # the boolean and binary kinds are refused below, once known.
+                several_keys = (key_node.t == 'list'
+                                or (key_node.t == 'call' and key_node.name in ('LIST', 'RECORD')))
+                if aggregate_node is None and several_keys:
+                    refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index '
+                           'does; BUCKET(src, key, proj) groups by several', key_node.pos)
                 group_by = []
                 if (key_node.t == 'list'
                         or (key_node.t == 'call' and key_node.name == 'LIST')):
@@ -1848,6 +1927,7 @@ class Translator:
                                      'pos': key_node.pos or step.pos})
                 plan.group_by = group_by
                 plan.bucket = 'open' if aggregate_node is None else None
+                plan.bare_key = aggregate_node is None
                 self._bucket_projection(plan, binder, aggregate_node)
 
             elif name == 'SELECT_COLS':
@@ -1900,7 +1980,7 @@ class Translator:
                     plan.bucket = None
                     self._bucket_projection(plan, binder, expr)
                     continue
-                plan = self._ensure_derived(plan, self._plan_has_rows_above)
+                plan = self._ensure_derived(plan, self._plan_needs_wrap_before_map)
                 if expr.t == 'call' and expr.name in ('RECORD', 'LAZY_RECORD'):
                     if len(expr.args) % 2:
                         refuse('E_ARITY', 'RECORD takes an even number of arguments', expr.pos)
@@ -2044,8 +2124,11 @@ class Translator:
                 for index, projection in enumerate(plan.projections):
                     if index:
                         parts.append(', ')
-                    fragment = self._with_row(
-                        src, projection['binder'], lambda p=projection: self._node(p['node']))
+                    if projection.get('group_key') is not None:
+                        fragment = self._group_key(src, projection['group_key'])
+                    else:
+                        fragment = self._with_row(
+                            src, projection['binder'], lambda p=projection: self._node(p['node']))
                     parts.extend(fragment.parts)
                     if projection.get('alias') is not None:
                         parts.append(' AS ' + self.emit.ident(projection['alias']))
@@ -2127,28 +2210,37 @@ class Translator:
                 for index, group in enumerate(plan.group_by):
                     if index:
                         parts.append(', ')
-                    fragment = self._with_row(src, group['binder'],
-                                              lambda g=group: self._node(g['node']))
+                    fragment = self._group_key(src, group)
+                    if plan.bare_key and fragment.kind in ('BOOL', 'BIN'):
+                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an '
+                               'index does; SEL refuses a boolean or binary key (E_NOT_TEXT)',
+                               group['pos'])
                     parts.extend(fragment.parts)
 
             if plan.having:
                 parts.append(' HAVING ')
-                for index, having in enumerate(plan.having):
-                    if index:
-                        parts.append(' AND ')
-                    fragment = self._with_row(
-                        src, having['binder'],
-                        lambda h=having: self._require_bool(
-                            self._node(h['node']), h['pos'], 'FILTER'))
-                    parts.extend(fragment.parts)
+                self.in_having = True
+                try:
+                    for index, having in enumerate(plan.having):
+                        if index:
+                            parts.append(' AND ')
+                        fragment = self._with_row(
+                            src, having['binder'],
+                            lambda h=having: self._require_bool(
+                                self._node(h['node']), h['pos'], 'FILTER'))
+                        parts.extend(fragment.parts)
+                finally:
+                    self.in_having = False
 
             if plan.order_by:
                 parts.append(' ORDER BY ')
                 for index, order in enumerate(plan.order_by):
                     if index:
                         parts.append(', ')
-                    fragment = self._with_row(src, order['binder'],
-                                              lambda o=order: self._node(o['node']))
+                    # A TEXT sort key is collated like a group key: SEL sorts
+                    # text by its bytes, and a server's default collation would not.
+                    fragment = self._collated_key(self._with_row(
+                        src, order['binder'], lambda o=order: self._node(o['node'])))
                     parts.extend(fragment.parts)
                     parts.append(' ' + order['dir'])
 

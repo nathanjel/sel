@@ -691,6 +691,17 @@ final class Structure
         return Value::list(array_map(static fn (array $entry): Value => $entry['item'], $heap));
     }
 
+    /** @param array{line:int,col:int,offset:int}|null $pos */
+    private static function bucketKeyText(Value $key, ?array $pos): string
+    {
+        $v = $key->force();
+        if ($v->kind === Value::NONE) {
+            if ($v->isNull()) fail('E_NULL', 'value is NULL', $pos);
+            fail('E_NOT_TEXT', 'a bucket key must be text or a number, got a list or record', $pos);
+        }
+        return $v->asText($pos);
+    }
+
     private static function doBucket(Args $a, Context $ctx): Value
     {
         $value = $a->val(0);
@@ -726,6 +737,12 @@ final class Structure
                 $ctx->setFrameValue($binder, $frame[$binder]);
                 $ctx->setFrameValue('_K', $frame['_K']);
                 $groupKey = $a->evalNode($keyNode);
+                // A bare bucket's key is an index key (spec §3.3): the scalar,
+                // verbatim, and refused the way indexing refuses it -- never
+                // collapsed onto a string that stands for every list, record or
+                // NULL. The projected spelling has no map to key and groups by
+                // identity instead.
+                $keyString = $aggregateNode === null ? self::bucketKeyText($groupKey, $keyNode['pos']) : '';
                 $hash = $groupKey->structuralHash();
                 $found = null;
                 foreach ($buckets[$hash] ?? [] as $groupIndex) {
@@ -737,14 +754,6 @@ final class Structure
                 if ($found !== null) {
                     $groups[$found]['rows'][] = $item;
                     return;
-                }
-                $keyString = '';
-                if ($aggregateNode === null) {
-                    $keyString = match ($groupKey->kind) {
-                        Value::TEXT => (string) $groupKey->scalar,
-                        Value::BOOL => $groupKey->scalar ? 'TRUE' : 'FALSE',
-                        default => $groupKey->looksNumeric() ? (string) $groupKey->scalar : '',
-                    };
                 }
                 $groupIndex = count($groups);
                 $groups[] = ['key' => $groupKey, 'keyString' => $keyString, 'rows' => [$item]];

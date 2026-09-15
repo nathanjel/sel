@@ -9,6 +9,8 @@ const NODE = 'node';       // an element of a static list: an AST node, re-enter
 const COLUMN = 'column';   // one column reference, from a `columns` binding
 const ROW = 'row';         // a row of a relation: fields resolve to its columns
 const NONE = 'none';       // in scope, but using it is an error with this reason
+const KEY = 'key';         // the key of the group being rendered: a group-by entry,
+                           // rendered as the GROUP BY expression itself
 
 export class Binder {
   // Mirrored as static properties so `Binder.ROW` works the way `Value.BOOL`
@@ -17,6 +19,7 @@ export class Binder {
   static COLUMN = COLUMN;
   static ROW = ROW;
   static NONE = NONE;
+  static KEY = KEY;
 
   constructor(shape, payload, reason = null) {
     this.shape = shape;
@@ -31,4 +34,6 @@ export class Binder {
   static row(relation) { return new Binder(ROW, relation); }
 
   static none(reason) { return new Binder(NONE, null, reason); }
+
+  static key(group) { return new Binder(KEY, group); }
 }

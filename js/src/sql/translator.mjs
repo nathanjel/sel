@@ -133,6 +133,7 @@ export class Translator {
     this.depth = 0;
     this.statementPlan = null;
     this.inWhere = false;
+    this.inHaving = false;
     this.subqueryCounter = 0;
   }
 
@@ -295,6 +296,25 @@ export class Translator {
         + 'own', n.pos);
     }
     refuse('E_SQL_BINDING', `unusable binding for ${n.name}`, n.pos);
+  }
+
+  // A group key, rendered as the GROUP BY expression itself -- wherever it
+  // appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
+  // collated the way the `$` family compares text, because the evaluator
+  // groups by the key's exact bytes and a case-insensitive collation would
+  // merge groups it keeps apart (review 2026-09-15 finding L; MariaDB's
+  // default merged 'A' and 'a'). The result is marked exact so a comparison
+  // over it does not wrap it a second time -- MySQL's only_full_group_by
+  // accepts a projected or compared key only as the identical expression.
+  groupKey(src, gb) {
+    return this.collatedKey(this.withRow(src, gb.binder, () => this.node(gb.node)));
+  }
+
+  collatedKey(frag) {
+    if (frag.kind !== 'TEXT' || frag.exact) return frag;
+    const wrapped = this.emit.textOperand(frag);
+    return new Fragment(wrapped.parts, 'TEXT', this.dialect, wrapped.params, wrapped.paramKinds,
+      wrapped.caveats, true, false, false);
   }
 
   columnRef(c) {
@@ -926,6 +946,30 @@ export class Translator {
 
   fromBinder(b, n) {
     if (b.shape === Binder.NODE) return this.node(b.payload);
+    if (b.shape === Binder.KEY) {
+      // Inside a row already: bind the key's own binder to that row and
+      // render the key there, then collate it exactly as the GROUP BY does.
+      const { group, row } = b.payload;
+      this.frames.push(new Map([[group.binder, row]]));
+      let key;
+      try {
+        key = this.node(group.node);
+      } finally {
+        this.frames.pop();
+      }
+      const collated = this.collatedKey(key);
+      // In a HAVING, MariaDB and MySQL resolve a column only against the
+      // GROUP BY columns and the select list, not against an equal
+      // expression: `HAVING CAST(cat …) COLLATE …` is "unknown column cat"
+      // once the grouping is the collated expression. The key is constant
+      // within its group, so MIN of it IS the key, and an aggregate is
+      // what every server lets a HAVING name.
+      if (this.inHaving && collated !== key) {
+        return new Fragment(['MIN(', ...collated.parts, ')'], 'TEXT', this.dialect,
+          collated.params, collated.paramKinds, collated.caveats, true, false, false);
+      }
+      return collated;
+    }
     if (b.shape === Binder.COLUMN) return this.columnRef(b.payload);
     if (b.shape === Binder.ROW) {
       const rel = b.payload;
@@ -1244,7 +1288,7 @@ export class Translator {
     const row = Binder.row(src.relation);
     let kBinder;
     if (this.statementPlan !== null && this.statementPlan.groupBy && this.statementPlan.groupBy.length === 1) {
-      kBinder = Binder.node(this.statementPlan.groupBy[0].node);
+      kBinder = Binder.key({ group: this.statementPlan.groupBy[0], row });
     } else {
       kBinder = Binder.none('a row of a relation has no key: SQL rows are unordered '
         + 'and unkeyed unless the schema says otherwise, and guessing which column '
@@ -1693,6 +1737,16 @@ export class Translator {
       || plan.orderBy.length);
   }
 
+  // Whether a MAP must wrap the plan first. An ORDER BY alone does not: the
+  // projection and the sort can share one statement (ORDER BY may name the
+  // input's columns), and a derived table is where MariaDB DROPS an ORDER BY
+  // that has no LIMIT beside it -- the statement oracle's sorted rows came
+  // back in table order. Everything else above the rows still wraps.
+  planNeedsWrapBeforeMap(plan) {
+    return Boolean(plan.projections || plan.selectCols || plan.groupBy
+      || plan.distinct || plan.limit !== null || plan.offset !== null);
+  }
+
   outputFieldNames(plan) {
     const names = [];
     if (plan.projections) {
@@ -1772,11 +1826,12 @@ export class Translator {
           let actualNode = vNode;
           // _K is the key, which was written against the KEY's binder -- the
           // MAP spelling may name the group differently, so the projection
-          // keeps the binder the key node was written for.
-          let nodeBinder = binder;
+          // is rendered as the group key itself (groupKey), under the binder
+          // the key node was written for.
+          let groupKey = null;
           if (vNode.t === 'var' && vNode.name === '_K' && plan.groupBy.length === 1) {
             actualNode = plan.groupBy[0].node;
-            nodeBinder = plan.groupBy[0].binder;
+            groupKey = plan.groupBy[0];
           }
           const isSameField = actualNode.t === 'index'
             && actualNode.obj
@@ -1790,8 +1845,9 @@ export class Translator {
           }
           projections.push({
             alias,
-            binder: nodeBinder,
+            binder: groupKey === null ? binder : groupKey.binder,
             node: actualNode,
+            groupKey,
           });
         }
         plan.projections = projections;
@@ -1811,6 +1867,7 @@ export class Translator {
           alias: gb.alias,
           binder: gb.binder,
           node: gb.node,
+          groupKey: gb,
         });
       }
       plan.projections = projections;
@@ -1854,10 +1911,20 @@ export class Translator {
 
       switch (name) {
         case 'FILTER': {
+          // A FILTER over a bare bucket whose members are spent: SQL has
+          // only the keys left, and SEL's value is still a map of groups.
+          if (plan.bucket === 'sealed') {
+            refuse('E_SQL_SHAPE', 'a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket\'s members only for the projection that ends the grouping', step.pos);
+          }
+          // A FILTER after a LIMIT or OFFSET is a WHERE over the rows that
+          // survived them, grouped or not -- SEL applies the TAKE first, and
+          // a HAVING would run before it. Otherwise a FILTER directly after
+          // a grouping is its HAVING, and an ORDER BY in between changes
+          // nothing (HAVING then ORDER BY is sort-then-filter's rows).
           plan = this.ensureDerived(plan, (candidate) =>
-            candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
-              || candidate.limit !== null || candidate.offset !== null
-              || candidate.orderBy.length || candidate.distinct));
+            candidate.limit !== null || candidate.offset !== null
+              || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
+                || candidate.orderBy.length || candidate.distinct)));
           let binder;
           let pred;
           if (args.length === 2) {
@@ -1909,6 +1976,14 @@ export class Translator {
             refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', step.pos);
           }
 
+          // A bare bucket's key is an index key (spec §7.4): one text or
+          // number. A list or record key is refused by the evaluator, and
+          // the boolean and binary kinds are refused below, once known.
+          const severalKeys = (keyNode.t === 'call' && (keyNode.name === 'LIST' || keyNode.name === 'RECORD'))
+            || keyNode.t === 'list';
+          if (aggNode === null && severalKeys) {
+            refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several', keyNode.pos);
+          }
           const groupBy = [];
           if ((keyNode.t === 'call' && keyNode.name === 'LIST') || keyNode.t === 'list') {
             const listItems = keyNode.t === 'list' ? keyNode.items : keyNode.args;
@@ -1946,6 +2021,7 @@ export class Translator {
           }
           plan.groupBy = groupBy;
           plan.bucket = aggNode === null ? 'open' : null;
+          plan.bareKey = aggNode === null;
           this.bucketProjection(plan, binder, aggNode);
           plan.selectCols = null;
           break;
@@ -2013,7 +2089,7 @@ export class Translator {
             this.bucketProjection(plan, binder, expr);
             break;
           }
-          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
+          plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
 
           if (expr.t === 'call' && (expr.name === 'RECORD' || expr.name === 'LAZY_RECORD')) {
             const recArgs = expr.args;
@@ -2288,7 +2364,9 @@ export class Translator {
         for (const proj of plan.projections) {
           if (!first) parts.push(', ');
           first = false;
-          const pFrag = this.withRow(src, proj.binder, () => this.node(proj.node));
+          const pFrag = proj.groupKey
+            ? this.groupKey(src, proj.groupKey)
+            : this.withRow(src, proj.binder, () => this.node(proj.node));
           for (const p of pFrag.parts) parts.push(p);
           if (proj.alias !== null) {
             parts.push(' AS ' + this.emit.ident(proj.alias));
@@ -2386,7 +2464,10 @@ export class Translator {
         for (const gb of plan.groupBy) {
           if (!first) parts.push(', ');
           first = false;
-          const gFrag = this.withRow(src, gb.binder, () => this.node(gb.node));
+          const gFrag = this.groupKey(src, gb);
+          if (plan.bareKey && (gFrag.kind === 'BOOL' || gFrag.kind === 'BIN')) {
+            refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; SEL refuses a boolean or binary key (E_NOT_TEXT)', gb.pos);
+          }
           for (const p of gFrag.parts) parts.push(p);
         }
       }
@@ -2395,10 +2476,15 @@ export class Translator {
       if (plan.having && plan.having.length > 0) {
         parts.push(' HAVING ');
         const hCondParts = [];
-        for (const hav of plan.having) {
-          const hFrag = this.withRow(src, hav.binder,
-            () => this.requireBool(this.node(hav.node), hav.pos, 'FILTER'));
-          hCondParts.push(hFrag.parts);
+        this.inHaving = true;
+        try {
+          for (const hav of plan.having) {
+            const hFrag = this.withRow(src, hav.binder,
+              () => this.requireBool(this.node(hav.node), hav.pos, 'FILTER'));
+            hCondParts.push(hFrag.parts);
+          }
+        } finally {
+          this.inHaving = false;
         }
         hCondParts.forEach((hp, idx) => {
           if (idx > 0) parts.push(' AND ');
@@ -2413,7 +2499,9 @@ export class Translator {
         for (const ord of plan.orderBy) {
           if (!first) parts.push(', ');
           first = false;
-          const oFrag = this.withRow(src, ord.binder, () => this.node(ord.node));
+          // A TEXT sort key is collated like a group key: SEL sorts text by
+          // its bytes, and a server's default collation would not.
+          const oFrag = this.collatedKey(this.withRow(src, ord.binder, () => this.node(ord.node)));
           for (const p of oFrag.parts) parts.push(p);
           parts.push(' ' + ord.dir);
         }

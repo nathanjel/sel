@@ -40,6 +40,11 @@ class RelationalPlan:
         # that is refused rather than evaluated over rows SEL would have
         # called groups.
         self.bucket: str | None = None
+        # Whether the grouping was written as a bare BUCKET (with or without
+        # the MAP that closes it). A bare bucket's key is an index key: SEL
+        # refuses a boolean, binary, list or record key, so the translator
+        # must too.
+        self.bare_key: bool = False
         self.having: list[dict[str, Any]] = []
         self.aggregate_aliases: dict[str, Any] = {}
         self.order_by: list[dict[str, Any]] = []

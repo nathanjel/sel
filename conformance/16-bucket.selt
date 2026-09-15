@@ -55,3 +55,67 @@ LIST(RECORD("dept", 10, "v", "x"), RECORD("dept", 20, "v", "y"), RECORD("dept", 
 --- expect
 tree -{"1"=-{"dept"=t"10", "count"=t"2"}, "2"=-{"dept"=t"20", "count"=t"1"}}
 ===
+
+% The key of a bare bucket is an index key (spec §3.3 and §7.4): its scalar
+% text, verbatim. A key that is not text or a number is refused with the error
+% indexing would give, at the key expression -- never silently collapsed. The
+% projected spelling groups by identity (§3.4) and may take any key, because
+% no map key has to be made from it. Review 2026-09-15 finding G: the bare
+% spelling once folded NULL, LIST and RECORD keys onto one string entry, a
+% different one per host, and lost the other rows.
+
+### name: rel.bucket.null-key-is-refused
+--- source
+LIST(RECORD("c", "x"), RECORD("c", NULL)) .> BUCKET(_["c"])
+--- expect
+error E_NULL at 1:54
+===
+### name: rel.bucket.bool-key-is-refused
+--- source
+LIST(RECORD("c", TRUE)) .> BUCKET(_["c"])
+--- expect
+error E_NOT_TEXT at 1:36
+===
+### name: rel.bucket.binary-key-is-refused
+--- source
+LIST(RECORD("c", FROM_HEX("ff"))) .> BUCKET(_["c"])
+--- expect
+error E_NOT_TEXT at 1:46
+===
+### name: rel.bucket.list-key-is-refused
+--- source
+LIST(RECORD("d", LIST(1, 2)), RECORD("d", LIST(3, 4))) .> BUCKET(_["d"])
+--- expect
+error E_NOT_TEXT at 1:67
+===
+### name: rel.bucket.record-key-is-refused
+--- source
+LIST(RECORD("d", RECORD("x", 1))) .> BUCKET(_["d"])
+--- expect
+error E_NOT_TEXT at 1:46
+===
+### name: rel.bucket.projected-spelling-groups-lists-by-identity
+--- note
+The projected spelling has no map to key, so a list key is compared as a
+value: [1,2] twice is one group, [3,4] another, and _K is the list.
+--- source
+LIST(RECORD("d", LIST(1, 2), "v", 1), RECORD("d", LIST(1, 2), "v", 2), RECORD("d", LIST(3, 4), "v", 3)) .> BUCKET(_["d"], RECORD("k", _K, "n", COUNT(_)))
+--- expect
+tree -{"1"=-{"k"=-{"1"=t"1", "2"=t"2"}, "n"=t"2"}, "2"=-{"k"=-{"1"=t"3", "2"=t"4"}, "n"=t"1"}}
+===
+### name: rel.bucket.projected-spelling-keeps-null-and-bool-keys
+--- source
+LIST(RECORD("c", NULL), RECORD("c", ""), RECORD("c", TRUE), RECORD("c", "TRUE")) .> BUCKET(_["c"], RECORD("k", _K, "n", COUNT(_)))
+--- expect
+tree -{"1"=-{"k"=-, "n"=t"1"}, "2"=-{"k"=t"", "n"=t"1"}, "3"=-{"k"=TRUE, "n"=t"1"}, "4"=-{"k"=t"TRUE", "n"=t"1"}}
+===
+### name: rel.bucket.map-spelling-equals-projected-spelling
+--- note
+For the keys a bare bucket accepts, `BUCKET(k) .> MAP(p)` and `BUCKET(k, p)`
+are one value -- which is what lets the SQL translator render them as one
+grouped statement.
+--- source
+A = LIST(RECORD("c", 7, "v", 1), RECORD("c", "7", "v", 2), RECORD("c", 9, "v", 3)); (A .> BUCKET(_["c"]) .> MAP(RECORD("k", _K, "n", COUNT(_)))) EQL (A .> BUCKET(_["c"], RECORD("k", _K, "n", COUNT(_))))
+--- expect
+bool TRUE
+===

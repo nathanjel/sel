@@ -16,10 +16,15 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"])
 --- expect
-SELECT `dept` FROM `items` GROUP BY `dept`
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
 ===
 
 ### name: stmt.bucket.multi-list
+--- note
+Grouping by several keys is the projected spelling's: it groups by identity
+(spec §3.4) and needs no map key. A bare bucket over a list key is refused
+(refuse-bare-bucket-over-a-list-key) -- it used to render as this statement
+while the evaluator collapsed every group onto one entry.
 --- dialect
 mariadb
 --- bindings
@@ -27,9 +32,9 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> BUCKET((_["dept"], _["category"]))
+ITEMS .> BUCKET((_["dept"], _["category"]), RECORD("n", COUNT(_)))
 --- expect
-SELECT `dept`, `category` FROM `items` GROUP BY `dept`, `category`
+SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_bin
 ===
 
 ### name: stmt.bucket.multi-record
@@ -40,9 +45,9 @@ mariadb
 --- as
 statement
 --- source
-ITEMS .> BUCKET(RECORD("dept", _["dept"], "category", _["category"]))
+ITEMS .> BUCKET(RECORD("dept", _["dept"], "category", _["category"]), RECORD("n", COUNT(_)))
 --- expect
-SELECT `dept` AS `dept`, `category` AS `category` FROM `items` GROUP BY `dept`, `category`
+SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_bin
 ===
 
 ### name: stmt.bucket.aggregates
@@ -55,7 +60,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "cnt", COUNT(_), "total", SUM(_, _["amount"])))
 --- expect
-SELECT `dept` AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
 ===
 
 ### name: stmt.bucket.custom-binder
@@ -68,7 +73,7 @@ statement
 --- source
 ITEMS .> BUCKET(r, r["dept"], RECORD("dept", _K, "total", SUM(r, x, x["amount"])))
 --- expect
-SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
 ===
 
 ### name: stmt.bucket.where-and-having
@@ -81,7 +86,7 @@ statement
 --- source
 ITEMS .> FILTER(_["active"] == 1) .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100)
 --- expect
-SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY `dept` HAVING (COALESCE(SUM(`amount`), 0) > 100)
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COALESCE(SUM(`amount`), 0) > 100)
 ===
 
 ### name: stmt.bucket.order-by-agg
@@ -94,7 +99,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> SORT_BY(_["total"], "DESC")
 --- expect
-SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` ORDER BY COALESCE(SUM(`amount`), 0) DESC
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY COALESCE(SUM(`amount`), 0) DESC
 ===
 
 ### name: stmt.bucket.pagination
@@ -107,7 +112,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> TAKE(10) .> DROP(5)
 --- expect
-SELECT `dept` FROM `items` GROUP BY `dept` LIMIT 10 OFFSET 5
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 10 OFFSET 5
 ===
 
 ### name: stmt.bucket.dialect-postgres
@@ -120,7 +125,7 @@ statement
 --- source
 ITEMS .> FILTER(_["active"] == 1) .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100) .> SORT_BY(_["total"], "DESC")
 --- expect
-SELECT "dept" AS "dept", COALESCE(SUM("amount"), 0) AS "total" FROM "items" WHERE ("active" = 1) GROUP BY "dept" HAVING (COALESCE(SUM("amount"), 0) > 100) ORDER BY COALESCE(SUM("amount"), 0) DESC
+SELECT CAST("dept" AS TEXT) COLLATE "C" AS "dept", COALESCE(SUM("amount"), 0) AS "total" FROM "items" WHERE ("active" = 1) GROUP BY CAST("dept" AS TEXT) COLLATE "C" HAVING (COALESCE(SUM("amount"), 0) > 100) ORDER BY COALESCE(SUM("amount"), 0) DESC
 ===
 
 ### name: stmt.bucket.dialect-sqlite
@@ -133,7 +138,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "cnt", COUNT(_))) .> DROP(5)
 --- expect
-SELECT "dept" AS "dept", COUNT(*) AS "cnt" FROM "items" GROUP BY "dept" LIMIT -1 OFFSET 5
+SELECT CAST("dept" AS TEXT) AS "dept", COUNT(*) AS "cnt" FROM "items" GROUP BY CAST("dept" AS TEXT) LIMIT -1 OFFSET 5
 ===
 
 ### name: stmt.bucket.dialect-mysql
@@ -146,7 +151,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> DROP(5)
 --- expect
-SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` LIMIT 18446744073709551615 OFFSET 5
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 18446744073709551615 OFFSET 5
 ===
 
 ### name: stmt.bucket.refusal-binder
@@ -204,7 +209,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "cnt", COUNT(_)))
 --- expect
-SELECT `dept` AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY `dept`
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
 ===
 
 ### name: stmt.bucket.pipeline-filter-then-map
@@ -220,7 +225,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> FILTER(COUNT(_) > 1) .> MAP(RECORD("dept", _K, "total", SUM(_, _["amount"])))
 --- expect
-SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` HAVING (COUNT(*) > 1)
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COUNT(*) > 1)
 ===
 
 ### name: stmt.bucket.pipeline-map-names-the-group
@@ -236,7 +241,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(g, RECORD("dept", _K, "total", SUM(g, x, x["amount"])))
 --- expect
-SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
 ===
 
 ### name: stmt.bucket.refuse-map-after-the-members-are-spent
@@ -315,5 +320,225 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "n", COUNT(_))) .> BUCKET(_["n"]) .> MAP(RECORD("n", _K, "depts", COUNT(_)))
 --- expect
-SELECT `_sub1`.`n` AS `n`, COUNT(*) AS `depts` FROM (SELECT `dept` AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY `dept`) `_sub1` GROUP BY `_sub1`.`n`
+SELECT `_sub1`.`n` AS `n`, COUNT(*) AS `depts` FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) `_sub1` GROUP BY `_sub1`.`n`
+===
+### name: stmt.bucket.refuse-bare-bucket-over-a-list-key
+--- note
+Review 2026-09-15 finding G. A bare bucket's key is an index key (spec
+§7.4): one text or number, verbatim; the evaluator refuses a list or record
+key with E_NOT_TEXT rather than collapse it. Multi-column grouping is the
+projected spelling's, so a bare BUCKET over LIST(...) is refused at the key
+instead of rendered as `GROUP BY dept, category`.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}, "ACTIVE": {"kind": "column", "column": "active", "type": "BOOL"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(LIST(_["dept"], _["category"]))
+--- error
+E_SQL_SHAPE 1:17
+===
+### name: stmt.bucket.refuse-bare-bucket-over-a-record-key
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}, "ACTIVE": {"kind": "column", "column": "active", "type": "BOOL"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(RECORD("d", _["dept"])) .> MAP(RECORD("n", COUNT(_)))
+--- error
+E_SQL_SHAPE 1:17
+===
+### name: stmt.bucket.refuse-bare-bucket-over-a-bool-key
+--- note
+The kinds an index key cannot be: a boolean or binary key is E_NOT_TEXT in
+the evaluator, so the SQL must not group by it -- with or without the MAP
+that closes the bucket.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}, "ACTIVE": {"kind": "column", "column": "active", "type": "BOOL"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["active"]) .> MAP(RECORD("a", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE 1:18
+===
+### name: stmt.bucket.projected-spelling-takes-a-bool-key
+--- note
+The projected spelling groups by identity and takes any key.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}, "ACTIVE": {"kind": "column", "column": "active", "type": "BOOL"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["active"], RECORD("a", _K, "n", COUNT(_)))
+--- expect
+SELECT `active` AS `a`, COUNT(*) AS `n` FROM `items` GROUP BY `active`
+===
+### name: stmt.bucket.filter-after-pagination
+--- note
+Review 2026-09-15 finding H. SEL applies the TAKE before the FILTER, so the
+FILTER is a WHERE over the paginated groups, not a HAVING that runs before
+the LIMIT. Four hosts appended a HAVING; the fifth wrapped. A LIMIT or
+OFFSET already on the plan always forces the derived table.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}, "ACTIVE": {"kind": "column", "column": "active", "type": "BOOL"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "n", COUNT(_))) .> TAKE(2) .> FILTER(_["n"] > 1)
+--- expect
+SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
+===
+### name: stmt.bucket.filter-after-drop
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}, "ACTIVE": {"kind": "column", "column": "active", "type": "BOOL"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "n", COUNT(_))) .> DROP(1) .> FILTER(_["n"] > 1)
+--- expect
+SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 18446744073709551615 OFFSET 1) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
+===
+### name: stmt.bucket.filter-after-sort
+--- note
+An ORDER BY before the FILTER is different: a HAVING then an ORDER BY is the
+same rows in the same order as sorting then filtering, so no wrap.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}, "ACTIVE": {"kind": "column", "column": "active", "type": "BOOL"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "s", SUM(_, _["qty"]))) .> SORT_BY(_["s"], "DESC") .> FILTER(_["s"] > 5)
+--- expect
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`qty`), 0) AS `s` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COALESCE(SUM(`qty`), 0) > 5) ORDER BY COALESCE(SUM(`qty`), 0) DESC
+===
+### name: stmt.bucket.refuse-filter-after-the-members-are-spent
+--- note
+A bare bucket paginated and then filtered: SQL has only the keys left, and
+a FILTER over them (`COUNT(_) > 1`) would ask about members that are gone.
+Refused like the MAP in refuse-map-after-the-members-are-spent.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "CATEGORY": {"kind": "column", "column": "category", "type": "TEXT"}, "ACTIVE": {"kind": "column", "column": "active", "type": "BOOL"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> TAKE(2) .> FILTER(COUNT(_) > 1)
+--- error
+E_SQL_SHAPE 1:42
+===
+### name: stmt.bucket.text-key-is-collated
+--- note
+Review 2026-09-15 finding L. The evaluator groups by the key's exact bytes;
+a server's default collation would not (MariaDB's utf8mb4_uca1400_ai_ci
+merged 'A' and 'a' into one group where run() answers two). A TEXT key is
+therefore cast and collated exactly as the `$` family compares text, and the
+projected key is the identical expression -- MySQL's only_full_group_by
+accepts nothing else. utf8mb4_bin is PAD SPACE on MariaDB and MySQL, so 'A'
+and 'A ' still merge; that is the text-collation caveat, not this case.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "n", COUNT(_)))
+--- expect
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+===
+### name: stmt.bucket.text-key-compared-in-having-is-the-same-expression
+--- note
+`_K` renders as the group key wherever it appears, and the key is already
+collated, so a `$==` over it does not wrap it a second time. In a HAVING it
+is wrapped in MIN(): MariaDB and MySQL resolve a HAVING column only against
+the GROUP BY columns and the select list, and once the grouping is the
+collated expression the bare column is "unknown column in HAVING" (the
+statement oracle found it); the key is constant within its group, so MIN of
+it is the key, and an aggregate is what every server lets a HAVING name.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> FILTER(_K $== "x") .> MAP(RECORD("dept", _K, "n", COUNT(_)))
+--- expect
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) = 'x')
+===
+### name: stmt.bucket.exact-text-key-stays-bare
+--- note
+A column the binding declares `exact` is already binary-collated, and is
+grouped as it is compared: bare.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT", "exact": true}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "n", COUNT(_)))
+--- expect
+SELECT `dept` AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY `dept`
+===
+### name: stmt.bucket.numeric-key-is-not-collated
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["qty"]) .> MAP(RECORD("qty", _K, "n", COUNT(_)))
+--- expect
+SELECT `qty` AS `qty`, COUNT(*) AS `n` FROM `items` GROUP BY `qty`
+===
+### name: stmt.bucket.text-sort-key-is-collated
+--- note
+The same for a sort key: SEL orders text by its bytes, and a server's
+default collation orders A, a, B where SEL orders A, B, a.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["dept"], "DESC") .> TAKE(3)
+--- expect
+SELECT * FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC LIMIT 3
+===
+### name: stmt.map.after-sort-shares-the-statement
+--- note
+A MAP after a SORT_BY does not wrap the sorted rows in a derived table: the
+projection and the ORDER BY share one statement, because MariaDB drops an
+ORDER BY inside a derived table that has no LIMIT -- the statement oracle's
+sorted rows came back in table order. With a LIMIT the wrap stays (the
+LIMIT keeps the order, and it must apply before the projection's aliases).
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["dept"]) .> MAP(RECORD("d", _["dept"], "q", _["qty"]))
+--- expect
+SELECT `dept` AS `d`, `qty` AS `q` FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ASC
 ===

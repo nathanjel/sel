@@ -683,6 +683,149 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
     return ['failed' => count($bad)];
 }
 
+// --- statements -------------------------------------------------------------
+
+/**
+ * The same comparison as run_rows, for the statement compiler: a pipeline is
+ * translated with translateStatement, run against the fixture, and evaluated by
+ * SEL over the same rows loaded as the relation. The two row sets must match
+ * value for value -- as a set, unless the statement says "ordered", because a
+ * statement without an ORDER BY promises no order.
+ *
+ * This lane exists because the .sqlt strings cannot see a collation: every host
+ * emitted the same GROUP BY `cat`, and MariaDB merged 'A' and 'a' into one group
+ * where BUCKET keeps two (review 2026-09-15 finding L).
+ */
+function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
+{
+    $spec = json_decode((string) file_get_contents(ORACLE . '/statements.json'), true);
+    if (!is_array($spec)) {
+        throw new RuntimeException('statements.json is not JSON');
+    }
+    $fixture = $spec['fixture'][$dialect] ?? null;
+    if ($fixture === null) {
+        echo "{$label}statements: no fixture for {$dialect}, skipped\n";
+        return ['failed' => 0];
+    }
+    $sql = (string) file_get_contents(ORACLE . '/' . $fixture);
+    $sql = preg_replace('/^\s*--.*$/m', '', $sql) ?? '';
+    $statements = 0;
+    foreach (explode(';', $sql) as $stmt) {
+        if (trim($stmt) !== '') {
+            $pdo->exec($stmt);
+            $statements++;
+        }
+    }
+    if ($statements === 0) {
+        throw new RuntimeException("{$fixture} contained no statements");
+    }
+    $bindings = bindings_from_json($spec['bindings'], $label);
+
+    // The relation, as SEL sees it: a list of records in fixture order.
+    $rows = [];
+    foreach ($pdo->query($spec['context']['query'])->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $one = [];
+        foreach ($spec['context']['columns'] as $col => $name) {
+            $one[$name] = (string) $r[$col];
+        }
+        $rows[] = $one;
+    }
+    $context = [$spec['context']['relation'] => $rows];
+
+    $bad = [];
+    $ok = 0;
+    $refused = 0;
+    foreach ($spec['statements'] as $case) {
+        $mustRefuse = $case['refuse'][$dialect] ?? null;
+        try {
+            $program = Sel::compile($case['sel']);
+            $frag = Sql::translateStatement($program, $dialect, $bindings);
+        } catch (SqlError $e) {
+            if ($mustRefuse === null) {
+                $bad[] = [$case['name'], '', "refused {$e->code} and nothing said it would; "
+                    . 'if that is right, say so: "refuse": {"' . $dialect . '": "' . $e->code . '"}'];
+                continue;
+            }
+            if ($e->code !== $mustRefuse) {
+                $bad[] = [$case['name'], '', "refused {$e->code} where the corpus expects {$mustRefuse}"];
+                continue;
+            }
+            $refused++;
+            continue;
+        }
+        if ($mustRefuse !== null) {
+            $bad[] = [$case['name'], '', "translated, where the corpus expects {$mustRefuse} on {$dialect}"];
+            continue;
+        }
+        $statement = $frag->asStatement();
+        try {
+            $db = $pdo->query($statement)->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $bad[] = [$case['name'], $statement, get_class($e) . ': ' . $e->getMessage()];
+            continue;
+        }
+        try {
+            $sel = $program->run($context)->toNative();
+        } catch (SelError $e) {
+            $bad[] = [$case['name'], $statement, "SEL refuses {$e->code}: {$e->getMessage()}"];
+            continue;
+        }
+        $want = statement_rows(is_array($sel) ? array_values($sel) : []);
+        $got = statement_rows($db);
+        if (empty($case['ordered'])) {
+            sort($want);
+            sort($got);
+        }
+        if ($got !== $want) {
+            $bad[] = [$case['name'], $statement,
+                'SEL=' . json_encode($want) . "\n        DB=" . json_encode($got)];
+            continue;
+        }
+        $ok++;
+        if ($verbose) {
+            printf("  ok       %-56s %d rows\n", $case['name'], count($want));
+        }
+    }
+
+    foreach ($bad as [$name, $statement, $why]) {
+        printf("DIFFER  %s\n        %s\n        %s\n", $name, $statement, $why);
+    }
+    printf("{$label}statements: %d agree, %d differ, %d refused\n", $ok, count($bad), $refused);
+    return ['failed' => count($bad)];
+}
+
+/**
+ * Rows in a comparable form: every value a string, numbers in SEL's canonical
+ * decimal (a server's COUNT is an int, its SUM a DECIMAL string, and SEL's are
+ * texts), bools as TRUE/FALSE the way SEL dumps them.
+ *
+ * @param list<mixed> $rows
+ * @return list<string>
+ */
+function statement_rows(array $rows): array
+{
+    $out = [];
+    foreach ($rows as $row) {
+        $cells = [];
+        foreach ((array) $row as $k => $v) {
+            if (is_bool($v)) {
+                $text = $v ? 'TRUE' : 'FALSE';
+            } elseif ($v === null) {
+                $text = 'NULL';
+            } else {
+                $text = (string) $v;
+                $d = Dec::parse(plain_number($text));
+                if ($d !== null) {
+                    $text = Dec::format($d);
+                }
+            }
+            $cells[] = $k . '=' . $text;
+        }
+        $out[] = implode('|', $cells);
+    }
+    return $out;
+}
+
 /**
  * Replace every `raw` written as a per-dialect object with this dialect's string.
  *
@@ -1084,10 +1227,10 @@ foreach (array_slice($argv, 1) as $arg) {
     } elseif (str_starts_with($arg, '--corpus=')) {
         $corpus = substr($arg, 9);
         $mode = 'fuzz';
-    } elseif (in_array($arg, ['expressions', 'rows', 'coverage', 'fuzz', 'all'], true)) {
+    } elseif (in_array($arg, ['expressions', 'rows', 'statements', 'coverage', 'fuzz', 'all'], true)) {
         $mode = $arg;
     } else {
-        fwrite(STDERR, "usage: sqlo [expressions|rows|coverage|fuzz|all] "
+        fwrite(STDERR, "usage: sqlo [expressions|rows|statements|coverage|fuzz|all] "
             . "[--corpus=FILE] [--dialect=NAME] [--verbose]\n");
         exit(2);
     }
@@ -1187,6 +1330,9 @@ foreach ($targets as $dialect) {
         }
         if ($mode === 'rows' || $mode === 'all') {
             $failed += run_rows($pdo, $dialect, $verbose, $label)['failed'];
+        }
+        if ($mode === 'statements' || $mode === 'all') {
+            $failed += run_statements($pdo, $dialect, $verbose, $label)['failed'];
         }
         if ($mode === 'fuzz') {
             if ($corpus === null || !is_file($corpus)) {

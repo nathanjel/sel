@@ -615,6 +615,8 @@ IS_PRESENT("hello")      => TRUE
 | `SORT(list [, name, body])` | sorts elements in ascending order |
 | `SORT_DESC(list [, name, body])` | sorts elements in descending order |
 | `SORT_BY(list, [name,] body [, dir])` | sorts elements by evaluated key expression |
+| `BUCKET(list, [name,] key)` | groups elements: a record keyed by the group key (text or number only — `NULL`, booleans, lists and records are refused) holding each group's members |
+| `BUCKET(list, [name,] key, proj)` | one `proj` per group; `_K` is the key, any value; a list key groups by all its fields |
 
 ### Text
 

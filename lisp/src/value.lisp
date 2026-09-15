@@ -483,9 +483,9 @@ same keys in the same order, pairwise EQL."
                   always (value-eql-at (svref sa i) (svref sb i) (1+ depth) pos))))
          ((and (value-is-list a) (value-is-list b)
                (value-storage a) (value-storage b))
-          (let ((sa (value-storage a))
-                (sb (value-storage b))
-                (n (length sa)))
+          (let* ((sa (value-storage a))
+                 (sb (value-storage b))
+                 (n (length sa)))
             (loop for i from 0 below n
                   always (value-eql-at (svref sa i) (svref sb i) (1+ depth) pos))))
          (t

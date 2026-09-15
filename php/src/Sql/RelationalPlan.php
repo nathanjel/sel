@@ -87,6 +87,13 @@ final class RelationalPlan
     public ?string $bucket = null;
 
     /**
+     * Whether the grouping was written as a bare BUCKET (with or without the
+     * MAP that closes it). A bare bucket's key is an index key: SEL refuses a
+     * boolean, binary, list or record key, so the translator must too.
+     */
+    public bool $bareKey = false;
+
+    /**
      * Post-group filter predicates (HAVING) from FILTER(...) after BUCKET.
      * @var list<array{binder: string, node: array<string,mixed>, pos: array{line:int,col:int,offset:int}}>
      */

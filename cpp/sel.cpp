@@ -3950,6 +3950,21 @@ Value do_bucket(Args& a, Context& ctx) {
     }
     ctx.frames.pop_back();
 
+    // A bare bucket's key is an index key (spec §3.3): the scalar, verbatim,
+    // and refused the way indexing refuses it -- never collapsed onto a string
+    // that stands for every list, record or NULL. The projected spelling has
+    // no map to key and groups by identity instead.
+    std::string key_str;
+    if (!agg_node) {
+      eval_key.force();
+      if (eval_key.kind() == Kind::None) {
+        if (eval_key.is_null()) fail("E_NULL", "value is NULL", key_node->pos);
+        fail("E_NOT_TEXT", "a bucket key must be text or a number, got a list or record",
+             key_node->pos);
+      }
+      key_str = eval_key.as_text(key_node->pos);
+    }
+
     int found = -1;
     const std::uint64_t hash = eval_key.structural_hash();
     const auto candidates = group_buckets.find(hash);
@@ -3965,14 +3980,6 @@ Value do_bucket(Args& a, Context& ctx) {
     if (found >= 0) {
       groups[found].rows.push_back(item.clone());
     } else {
-      std::string key_str;
-      if (eval_key.kind() == Kind::Text) {
-        key_str = eval_key.scalar();
-      } else if (eval_key.kind() == Kind::Bool) {
-        key_str = eval_key.boolean_scalar() ? "TRUE" : "FALSE";
-      } else if (eval_key.looks_numeric()) {
-        key_str = eval_key.scalar();
-      }
       groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {item.clone()}});
       group_buckets[hash].push_back(groups.size() - 1);
     }

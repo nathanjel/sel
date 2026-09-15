@@ -93,6 +93,15 @@ Binder Binder::none(std::string reason) {
   b.reason_ = std::move(reason);
   return b;
 }
+Binder Binder::key(std::string group_binder, SNodePtr group_node,
+                   std::shared_ptr<const RelationSpec> row) {
+  Binder b;
+  b.shape_ = Shape::Key;
+  b.reason_ = std::move(group_binder);  // the key's own binder name
+  b.node_ = std::move(group_node);
+  b.relation_ = std::move(row);
+  return b;
+}
 
 std::optional<int> list_key(std::string_view k) {
   if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;
@@ -445,12 +454,67 @@ Fragment Translator::index(const SNode& n) {
          obj.s() + " is bound as a column, which has no parts to index", n.pos());
 }
 
+// A group key, rendered as the GROUP BY expression itself -- wherever it
+// appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
+// collated the way the `$` family compares text, because the evaluator groups
+// by the key's exact bytes and a case-insensitive collation would merge groups
+// it keeps apart (review 2026-09-15 finding L; MariaDB's default merged 'A'
+// and 'a'). The result is marked exact so a comparison over it does not wrap
+// it a second time -- MySQL's only_full_group_by accepts a projected or
+// compared key only as the identical expression.
+Fragment Translator::group_key(const Source& src, const RelationalGroup& gb) {
+  return collated_key(with_row(src, gb.binder, [&]() { return node(gb.node); }));
+}
+
+Fragment Translator::collated_key(const Fragment& f) const {
+  if (f.kind() != SqlKind::Text || f.exact()) return f;
+  const Fragment wrapped = emit_.text_operand(f);
+  Fragment out(wrapped.parts(), SqlKind::Text, dialect_, wrapped.params(),
+               wrapped.param_kinds(), wrapped.caveats());
+  out.set_exact(true);
+  return out;
+}
+
 Fragment Translator::from_binder(const Binder& b, const SNode& n) {
   switch (b.shape()) {
     case Binder::Shape::Node:
       // Re-enters the whole walk on the element, so the depth counter and the
       // constant validation apply to the inlined element too.
       return node(b.as_node());
+    case Binder::Shape::Key: {
+      // Inside a row already: bind the key's own binder to that row and render
+      // the key there, then collate it exactly as the GROUP BY does.
+      Frame frame;
+      frame_set(frame, b.key_binder(), Binder::row(b.as_row_ptr()));
+      frames_.push_back(std::move(frame));
+      Fragment key;
+      try {
+        key = node(b.as_node());
+      } catch (...) {
+        frames_.pop_back();
+        throw;
+      }
+      frames_.pop_back();
+      const bool wrapped = key.kind() == SqlKind::Text && !key.exact();
+      Fragment collated = collated_key(key);
+      // In a HAVING, MariaDB and MySQL resolve a column only against the
+      // GROUP BY columns and the select list, not against an equal
+      // expression: `HAVING CAST(cat ...) COLLATE ...` is "unknown column
+      // cat" once the grouping is the collated expression. The key is
+      // constant within its group, so MIN of it IS the key, and an aggregate
+      // is what every server lets a HAVING name.
+      if (in_having_ && wrapped) {
+        std::vector<Fragment::Part> parts;
+        parts.push_back(Fragment::Part{false, "MIN(", 0});
+        for (const auto& p : collated.parts()) parts.push_back(p);
+        parts.push_back(Fragment::Part{false, ")", 0});
+        Fragment out(std::move(parts), SqlKind::Text, dialect_, collated.params(),
+                     collated.param_kinds(), collated.caveats());
+        out.set_exact(true);
+        return out;
+      }
+      return collated;
+    }
     case Binder::Shape::Column:
       return column_ref(b.as_column());
     case Binder::Shape::Row: {
@@ -1918,7 +1982,8 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
   std::vector<std::pair<std::string, Binder>> frame;
   frame_set(frame, binder_name, row);
   if (statement_plan_ && statement_plan_->group_by && statement_plan_->group_by->size() == 1) {
-    frame_set(frame, "_K", Binder::node((*statement_plan_->group_by)[0].node));
+    const RelationalGroup& gb = (*statement_plan_->group_by)[0];
+    frame_set(frame, "_K", Binder::key(gb.binder, gb.node, src.relation));
   } else {
     frame_set(frame, "_K",
               Binder::none("a row of a relation has no key: SQL rows are "
@@ -2205,6 +2270,17 @@ Fragment Translator::join_aggregate(const SNode& n) {
 // pipeline operators per host, or the planner and the translator drift apart.
 bool pipeline_op_name(std::string_view name) { return sel::is_pipeline_op(name); }
 
+// Whether a MAP must wrap the plan first. An ORDER BY alone does not: the
+// projection and the sort can share one statement (ORDER BY may name the
+// input's columns), and a derived table is where MariaDB DROPS an ORDER BY
+// that has no LIMIT beside it -- the statement oracle's sorted rows came back
+// in table order. Everything else above the rows still wraps.
+bool Translator::plan_needs_wrap_before_map(const RelationalPlan& plan) const {
+  return plan.projections.has_value() || plan.select_cols.has_value() ||
+         plan.group_by.has_value() || plan.distinct || plan.limit.has_value() ||
+         plan.offset.has_value();
+}
+
 bool Translator::plan_has_rows_above(const RelationalPlan& plan) const {
   return plan.projections.has_value() || plan.select_cols.has_value() ||
          plan.group_by.has_value() || plan.distinct || plan.limit.has_value() ||
@@ -2295,10 +2371,13 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
         // _K is the key, which was written against the KEY's binder -- the MAP
         // spelling may name the group differently, so the projection keeps the
         // binder the key node was written for.
+        // It is rendered as the group key itself (group_key).
         std::string node_binder = binder;
+        std::shared_ptr<const RelationalGroup> group_key;
         if (v_node->t() == SNode::T::Var && v_node->s() == "_K" && plan.group_by->size() == 1) {
           actual_node = (*plan.group_by)[0].node;
           node_binder = (*plan.group_by)[0].binder;
+          group_key = std::make_shared<const RelationalGroup>((*plan.group_by)[0]);
         }
         bool is_same_field = actual_node->t() == SNode::T::Index
           && actual_node->l() && actual_node->l()->t() == SNode::T::Var
@@ -2308,7 +2387,7 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
         if (!is_same_field) {
           plan.aggregate_aliases[alias] = actual_node;
         }
-        projections.push_back({alias, node_binder, actual_node});
+        projections.push_back({alias, node_binder, actual_node, group_key});
       }
       plan.projections = std::move(projections);
     } else {
@@ -2319,7 +2398,8 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
   } else {
     std::vector<RelationalProjection> projections;
     for (const auto& gb : *plan.group_by) {
-      projections.push_back({gb.alias, gb.binder, gb.node});
+      projections.push_back({gb.alias, gb.binder, gb.node,
+                             std::make_shared<const RelationalGroup>(gb)});
     }
     plan.projections = std::move(projections);
   }
@@ -2370,11 +2450,24 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
     }
 
     if (name == "FILTER") {
+      // A FILTER over a bare bucket whose members are spent: SQL has only the
+      // keys left, and SEL's value is still a map of groups.
+      if (plan.bucket == RelationalPlan::Bucket::Sealed) {
+        refuse("E_SQL_SHAPE",
+               "a FILTER over buckets must follow the BUCKET directly: SQL keeps a "
+               "bucket's members only for the projection that ends the grouping",
+               step->pos());
+      }
+      // A FILTER after a LIMIT or OFFSET is a WHERE over the rows that
+      // survived them, grouped or not -- SEL applies the TAKE first, and a
+      // HAVING would run before it. Otherwise a FILTER directly after a
+      // grouping is its HAVING, and an ORDER BY in between changes nothing
+      // (HAVING then ORDER BY is sort-then-filter's rows).
       const bool need_derived =
-          !plan.group_by.has_value() &&
-          (plan.projections.has_value() || plan.select_cols.has_value() ||
-           plan.distinct || plan.limit.has_value() || plan.offset.has_value() ||
-           !plan.order_by.empty());
+          plan.limit.has_value() || plan.offset.has_value() ||
+          (!plan.group_by.has_value() &&
+           (plan.projections.has_value() || plan.select_cols.has_value() ||
+            plan.distinct || !plan.order_by.empty()));
       plan = ensure_derived(std::move(plan), need_derived);
       std::string binder;
       SNodePtr pred;
@@ -2428,6 +2521,18 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         refuse("E_ARITY", "BUCKET takes 2 to 4 arguments", step->pos());
       }
 
+      // A bare bucket's key is an index key (spec §7.4): one text or number.
+      // A list or record key is refused by the evaluator, and the boolean and
+      // binary kinds are refused below, once known.
+      const bool several_keys =
+          (key_node->t() == SNode::T::Call && (key_node->s() == "LIST" || key_node->s() == "RECORD")) ||
+          key_node->t() == SNode::T::List;
+      if (!agg_node && several_keys) {
+        refuse("E_SQL_SHAPE",
+               "a bare BUCKET groups by one text or number key, as an index does; "
+               "BUCKET(src, key, proj) groups by several",
+               key_node->pos());
+      }
       std::vector<RelationalGroup> group_by;
       if ((key_node->t() == SNode::T::Call && key_node->s() == "LIST") || key_node->t() == SNode::T::List) {
         for (const auto& k_arg : key_node->kids()) {
@@ -2449,6 +2554,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       }
       plan.group_by = std::move(group_by);
       plan.bucket = agg_node ? RelationalPlan::Bucket::None : RelationalPlan::Bucket::Open;
+      plan.bare_key = !agg_node;
       bucket_projection(plan, binder, agg_node);
     } else if (name == "SELECT_COLS") {
       const bool need_derived = plan_has_rows_above(plan);
@@ -2522,7 +2628,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         bucket_projection(plan, binder, expr);
         continue;
       }
-      const bool need_derived = plan_has_rows_above(plan);
+      const bool need_derived = plan_needs_wrap_before_map(plan);
       plan = ensure_derived(std::move(plan), need_derived);
 
       if (expr->t() == SNode::T::Call &&
@@ -2784,9 +2890,9 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     for (const auto& proj : *plan.projections) {
       if (!first) add_sql(", ");
       first = false;
-      Fragment p_frag = with_row(src, proj.binder, [&]() {
-        return node(proj.node);
-      });
+      Fragment p_frag = proj.group_key
+          ? group_key(src, *proj.group_key)
+          : with_row(src, proj.binder, [&]() { return node(proj.node); });
       for (const auto& p : p_frag.parts()) {
         parts.push_back(p);
       }
@@ -2898,9 +3004,13 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     for (const auto& gb : *plan.group_by) {
       if (!first) add_sql(", ");
       first = false;
-      Fragment g_frag = with_row(src, gb.binder, [&]() {
-        return node(gb.node);
-      });
+      Fragment g_frag = group_key(src, gb);
+      if (plan.bare_key && (g_frag.kind() == SqlKind::Bool || g_frag.kind() == SqlKind::Bin)) {
+        refuse("E_SQL_SHAPE",
+               "a bare BUCKET groups by one text or number key, as an index does; SEL "
+               "refuses a boolean or binary key (E_NOT_TEXT)",
+               gb.pos);
+      }
       for (const auto& p : g_frag.parts()) {
         parts.push_back(p);
       }
@@ -2911,6 +3021,11 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   if (!plan.having.empty()) {
     add_sql(" HAVING ");
     std::vector<std::vector<Fragment::Part>> h_cond_parts;
+    in_having_ = true;
+    struct ResetHaving {
+      bool* h;
+      ~ResetHaving() { *h = false; }
+    } reset_having{&in_having_};
     for (const auto& hav : plan.having) {
       Fragment h_frag = with_row(src, hav.binder, [&]() {
         return require_bool(node(hav.node), hav.pos, "FILTER");
@@ -2932,9 +3047,9 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     for (const auto& ord : plan.order_by) {
       if (!first) add_sql(", ");
       first = false;
-      Fragment o_frag = with_row(src, ord.binder, [&]() {
-        return node(ord.node);
-      });
+      // A TEXT sort key is collated like a group key: SEL sorts text by its
+      // bytes, and a server's default collation would not.
+      Fragment o_frag = collated_key(with_row(src, ord.binder, [&]() { return node(ord.node); }));
       for (const auto& p : o_frag.parts()) {
         parts.push_back(p);
       }

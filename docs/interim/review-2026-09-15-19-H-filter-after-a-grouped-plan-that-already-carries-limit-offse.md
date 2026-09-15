@@ -1,5 +1,7 @@
 # H. FILTER after a grouped plan that already carries LIMIT/OFFSET/ORDER BY: Lisp wraps (WHERE), the other four append HAVING before LIMIT
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "Bucket keys, and a FILTER after pagination".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** js, php, python, cpp, lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

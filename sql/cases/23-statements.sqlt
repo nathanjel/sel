@@ -332,7 +332,7 @@ debug
 --- source
 ITEMS .> FILTER(_["name"] $== "foo") .> SORT_BY(_["name"] & "bar")
 --- expect
-SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CONCAT(`name`, ~2~) ASC
+SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CAST(CONCAT(`name`, ~2~) AS CHAR) COLLATE utf8mb4_bin ASC
 ===
 
 ### name: stmt.refusal.as-value

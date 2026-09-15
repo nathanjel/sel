@@ -290,6 +290,28 @@ Two guards, both of which have already caught something:
 against a database made by hand at a shell, three commit messages cite its
 result, and the database is gone. See `docs/history/SQL-TESTING.md` §10.
 
+## `statements.json` and `fixture-statements-*.sql`
+
+The statement-parity oracle: each pipeline is translated with
+`translateStatement`, run against its own small fixture, and evaluated by SEL
+over the same rows loaded as the relation. The two row sets must match value
+for value — as a set unless the statement says `"ordered"`, because a statement
+without an `ORDER BY` promises no order. Numbers are compared as numbers (a
+server's `COUNT` is an int, its `SUM` a decimal string), everything else byte
+for byte. A dialect that cannot express a statement names the refusal, as
+`rows.json` does.
+
+`rows.json` asks about `WHERE` clauses; this asks about the statement compiler:
+`GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, derived tables. It exists because the
+`sql/cases` strings were byte-identical in every host while MariaDB merged `'A'`
+and `'a'` into one group where `BUCKET` keeps two (review 2026-09-15 finding L):
+only a server can say whether `GROUP BY` means what `BUCKET` means. Its first
+run also found that MariaDB drops an `ORDER BY` inside a derived table without a
+`LIMIT`, and that neither MySQL nor MariaDB will resolve a `HAVING` against a
+grouping *expression* — both are why the fixture holds `'A'`, `'a'`, `'B'`,
+`'b'` and no trailing spaces (`utf8mb4_bin` is PAD SPACE; that is the
+`text-collation` caveat, not this fixture's question).
+
 ## What it found on its first two runs
 
 Against code that had been reviewed three times and had a green 180-case suite:

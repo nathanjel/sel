@@ -38,17 +38,23 @@ class Binder {
     Column,   // one column reference, from a `columns` binding
     Row,      // a row of a relation: fields resolve to that relation's columns
     None,     // in scope, but using it is an error with this reason
+    Key,      // the key of the group being rendered: a group-by entry and the
+              // row binder, rendered as the GROUP BY expression itself
   };
 
   static Binder node(SNodePtr n);
   static Binder column(ColumnSpec c);
   static Binder row(std::shared_ptr<const RelationSpec> r);
   static Binder none(std::string reason);
+  static Binder key(std::string group_binder, SNodePtr group_node,
+                    std::shared_ptr<const RelationSpec> row);
 
   Shape shape() const { return shape_; }
   const SNodePtr& as_node() const { return node_; }
+  const std::string& key_binder() const { return reason_; }
   const ColumnSpec& as_column() const { return column_; }
   const RelationSpec& as_row() const { return *relation_; }
+  const std::shared_ptr<const RelationSpec>& as_row_ptr() const { return relation_; }
   const std::string& reason() const { return reason_; }
 
  private:
@@ -75,10 +81,15 @@ class Binder {
 // in C++, where int64 would do, because it is part of the cross-host contract.
 std::optional<int> list_key(std::string_view k);
 
+struct RelationalGroup;
+
 struct RelationalProjection {
   std::optional<std::string> alias;
   std::string binder;
   SNodePtr node;
+  // Set when the projection IS a group key (a bare bucket's keys, `_K`): it
+  // is then rendered as the GROUP BY expression itself.
+  std::shared_ptr<const RelationalGroup> group_key;
 };
 
 struct RelationalFilter {
@@ -136,6 +147,10 @@ struct RelationalPlan {
   // rows SEL would have called groups.
   enum class Bucket { None, Open, Sealed };
   Bucket bucket = Bucket::None;
+  // Whether the grouping was written as a bare BUCKET (with or without the
+  // MAP that closes it). A bare bucket's key is an index key: SEL refuses a
+  // boolean, binary, list or record key, so the translator must too.
+  bool bare_key = false;
   std::vector<RelationalFilter> having;
   std::unordered_map<std::string, SNodePtr> aggregate_aliases;
   std::vector<RelationalOrder> order_by;
@@ -167,6 +182,7 @@ class Translator {
 
   Fragment variable(const SNode& n);
   Fragment column_ref(const ColumnSpec& c);
+  Fragment collated_key(const Fragment& f) const;
   Fragment index(const SNode& n);
   std::string constant_index(const SNode& idx);
   Fragment unary(const SNode& n);
@@ -248,6 +264,7 @@ class Translator {
   Fragment with_element(const Source& src, const std::string& binder_name,
                         const Binder& elem, const std::string& key, const SNode& n,
                         const std::function<Fragment()>& render);
+  Fragment group_key(const Source& src, const RelationalGroup& gb);
   Fragment with_row(const Source& src, const std::string& binder_name,
                     const std::function<Fragment()>& render);
   Fragment relation_aggregate(const std::string& name, const RelationSpec& rel,
@@ -258,6 +275,7 @@ class Translator {
   Fragment with_join_binders(const RelationalPlan& plan, const RelationalJoin& join,
                              const std::function<Fragment()>& render);
   bool plan_has_rows_above(const RelationalPlan& plan) const;
+  bool plan_needs_wrap_before_map(const RelationalPlan& plan) const;
   // The projection of a bucket: the RECORD (or single expression) evaluated
   // once per group, with `binder` bound to the group and _K to its key. Shared
   // by the two spellings SEL has for it -- BUCKET(src, key, proj) and
@@ -315,6 +333,7 @@ class Translator {
   int depth_ = 0;
   const RelationalPlan* statement_plan_ = nullptr;
   bool in_where_ = false;
+  bool in_having_ = false;
   int subquery_counter_ = 0;
 };
 

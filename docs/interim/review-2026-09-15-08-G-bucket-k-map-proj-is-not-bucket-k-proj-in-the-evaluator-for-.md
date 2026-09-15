@@ -1,5 +1,7 @@
 # G. BUCKET(k) .> MAP(proj) is not BUCKET(k, proj) in the evaluator for NULL/BOOL/LIST/RECORD keys; the bare BUCKET stringifies keys differently per host
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "Bucket keys, and a FILTER after pagination".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** mixed · **hosts:** js, php, python, cpp, lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Introduced or promised by ed16df2.

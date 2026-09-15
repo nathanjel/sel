@@ -8297,7 +8297,7 @@
    :at "23-statements.sqlt:323"
    :dialect "mariadb"
    :source "ITEMS .> FILTER(_[\"name\"] $== \"foo\") .> SORT_BY(_[\"name\"] & \"bar\")"
-   :expect "SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CONCAT(`name`, ~2~) ASC"
+   :expect "SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CAST(CONCAT(`name`, ~2~) AS CHAR) COLLATE utf8mb4_bin ASC"
    :error nil
    :throws nil
    :params nil
@@ -8377,7 +8377,7 @@
    :at "24-bucket.sqlt:9"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"])"
-   :expect "SELECT `dept` FROM `items` GROUP BY `dept`"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
    :error nil
    :throws nil
    :params nil
@@ -8392,8 +8392,8 @@
    :name "stmt.bucket.multi-list"
    :at "24-bucket.sqlt:22"
    :dialect "mariadb"
-   :source "ITEMS .> BUCKET((_[\"dept\"], _[\"category\"]))"
-   :expect "SELECT `dept`, `category` FROM `items` GROUP BY `dept`, `category`"
+   :source "ITEMS .> BUCKET((_[\"dept\"], _[\"category\"]), RECORD(\"n\", COUNT(_)))"
+   :expect "SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_bin"
    :error nil
    :throws nil
    :params nil
@@ -8406,10 +8406,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.multi-record"
-   :at "24-bucket.sqlt:35"
+   :at "24-bucket.sqlt:40"
    :dialect "mariadb"
-   :source "ITEMS .> BUCKET(RECORD(\"dept\", _[\"dept\"], \"category\", _[\"category\"]))"
-   :expect "SELECT `dept` AS `dept`, `category` AS `category` FROM `items` GROUP BY `dept`, `category`"
+   :source "ITEMS .> BUCKET(RECORD(\"dept\", _[\"dept\"], \"category\", _[\"category\"]), RECORD(\"n\", COUNT(_)))"
+   :expect "SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_bin"
    :error nil
    :throws nil
    :params nil
@@ -8422,10 +8422,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.aggregates"
-   :at "24-bucket.sqlt:48"
+   :at "24-bucket.sqlt:53"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_), \"total\", SUM(_, _[\"amount\"])))"
-   :expect "SELECT `dept` AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
    :error nil
    :throws nil
    :params nil
@@ -8438,10 +8438,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.custom-binder"
-   :at "24-bucket.sqlt:61"
+   :at "24-bucket.sqlt:66"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(r, r[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(r, x, x[\"amount\"])))"
-   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
    :error nil
    :throws nil
    :params nil
@@ -8454,10 +8454,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.where-and-having"
-   :at "24-bucket.sqlt:74"
+   :at "24-bucket.sqlt:79"
    :dialect "mariadb"
    :source "ITEMS .> FILTER(_[\"active\"] == 1) .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100)"
-   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY `dept` HAVING (COALESCE(SUM(`amount`), 0) > 100)"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COALESCE(SUM(`amount`), 0) > 100)"
    :error nil
    :throws nil
    :params nil
@@ -8470,10 +8470,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num)) (cons "ACTIVE" (binding-column "active" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.order-by-agg"
-   :at "24-bucket.sqlt:87"
+   :at "24-bucket.sqlt:92"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> SORT_BY(_[\"total\"], \"DESC\")"
-   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` ORDER BY COALESCE(SUM(`amount`), 0) DESC"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY COALESCE(SUM(`amount`), 0) DESC"
    :error nil
    :throws nil
    :params nil
@@ -8486,10 +8486,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.pagination"
-   :at "24-bucket.sqlt:100"
+   :at "24-bucket.sqlt:105"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(10) .> DROP(5)"
-   :expect "SELECT `dept` FROM `items` GROUP BY `dept` LIMIT 10 OFFSET 5"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 10 OFFSET 5"
    :error nil
    :throws nil
    :params nil
@@ -8502,10 +8502,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.dialect-postgres"
-   :at "24-bucket.sqlt:113"
+   :at "24-bucket.sqlt:118"
    :dialect "postgresql"
    :source "ITEMS .> FILTER(_[\"active\"] == 1) .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100) .> SORT_BY(_[\"total\"], \"DESC\")"
-   :expect "SELECT \"dept\" AS \"dept\", COALESCE(SUM(\"amount\"), 0) AS \"total\" FROM \"items\" WHERE (\"active\" = 1) GROUP BY \"dept\" HAVING (COALESCE(SUM(\"amount\"), 0) > 100) ORDER BY COALESCE(SUM(\"amount\"), 0) DESC"
+   :expect "SELECT CAST(\"dept\" AS TEXT) COLLATE \"C\" AS \"dept\", COALESCE(SUM(\"amount\"), 0) AS \"total\" FROM \"items\" WHERE (\"active\" = 1) GROUP BY CAST(\"dept\" AS TEXT) COLLATE \"C\" HAVING (COALESCE(SUM(\"amount\"), 0) > 100) ORDER BY COALESCE(SUM(\"amount\"), 0) DESC"
    :error nil
    :throws nil
    :params nil
@@ -8518,10 +8518,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num)) (cons "ACTIVE" (binding-column "active" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.dialect-sqlite"
-   :at "24-bucket.sqlt:126"
+   :at "24-bucket.sqlt:131"
    :dialect "sqlite"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_))) .> DROP(5)"
-   :expect "SELECT \"dept\" AS \"dept\", COUNT(*) AS \"cnt\" FROM \"items\" GROUP BY \"dept\" LIMIT -1 OFFSET 5"
+   :expect "SELECT CAST(\"dept\" AS TEXT) AS \"dept\", COUNT(*) AS \"cnt\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) LIMIT -1 OFFSET 5"
    :error nil
    :throws nil
    :params nil
@@ -8534,10 +8534,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.dialect-mysql"
-   :at "24-bucket.sqlt:139"
+   :at "24-bucket.sqlt:144"
    :dialect "mysql"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> DROP(5)"
-   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` LIMIT 18446744073709551615 OFFSET 5"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 18446744073709551615 OFFSET 5"
    :error nil
    :throws nil
    :params nil
@@ -8550,7 +8550,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refusal-binder"
-   :at "24-bucket.sqlt:152"
+   :at "24-bucket.sqlt:157"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(123, _[\"dept\"], _[\"dept\"])"
    :expect nil
@@ -8566,7 +8566,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.refusal-having-bool"
-   :at "24-bucket.sqlt:165"
+   :at "24-bucket.sqlt:170"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(\"not a bool\")"
    :expect nil
@@ -8582,7 +8582,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.refusal-unknown-field"
-   :at "24-bucket.sqlt:178"
+   :at "24-bucket.sqlt:183"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"unknown_col\"])"
    :expect nil
@@ -8598,10 +8598,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.pipeline-map-is-the-projection"
-   :at "24-bucket.sqlt:191"
+   :at "24-bucket.sqlt:196"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"cnt\", COUNT(_)))"
-   :expect "SELECT `dept` AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY `dept`"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
    :error nil
    :throws nil
    :params nil
@@ -8614,10 +8614,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.pipeline-filter-then-map"
-   :at "24-bucket.sqlt:210"
+   :at "24-bucket.sqlt:215"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(COUNT(_) > 1) .> MAP(RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"])))"
-   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept` HAVING (COUNT(*) > 1)"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COUNT(*) > 1)"
    :error nil
    :throws nil
    :params nil
@@ -8630,10 +8630,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.pipeline-map-names-the-group"
-   :at "24-bucket.sqlt:226"
+   :at "24-bucket.sqlt:231"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(g, RECORD(\"dept\", _K, \"total\", SUM(g, x, x[\"amount\"])))"
-   :expect "SELECT `dept` AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY `dept`"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
    :error nil
    :throws nil
    :params nil
@@ -8646,7 +8646,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-map-after-the-members-are-spent"
-   :at "24-bucket.sqlt:242"
+   :at "24-bucket.sqlt:247"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(2) .> MAP(RECORD(\"dept\", _K))"
    :expect nil
@@ -8662,7 +8662,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-bucket-over-an-open-bucket"
-   :at "24-bucket.sqlt:258"
+   :at "24-bucket.sqlt:263"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> BUCKET(COUNT(_)) .> MAP(RECORD(\"size\", _K, \"n\", COUNT(_)))"
    :expect nil
@@ -8678,7 +8678,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-projected-bucket-over-an-open-bucket"
-   :at "24-bucket.sqlt:275"
+   :at "24-bucket.sqlt:280"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> BUCKET(COUNT(_), RECORD(\"size\", _K, \"n\", COUNT(_)))"
    :expect nil
@@ -8694,7 +8694,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-bucket-over-a-sealed-bucket"
-   :at "24-bucket.sqlt:289"
+   :at "24-bucket.sqlt:294"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(2) .> BUCKET(_[\"dept\"])"
    :expect nil
@@ -8710,10 +8710,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.bucket-over-a-projected-bucket"
-   :at "24-bucket.sqlt:304"
+   :at "24-bucket.sqlt:309"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_))) .> BUCKET(_[\"n\"]) .> MAP(RECORD(\"n\", _K, \"depts\", COUNT(_)))"
-   :expect "SELECT `_sub1`.`n` AS `n`, COUNT(*) AS `depts` FROM (SELECT `dept` AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY `dept`) `_sub1` GROUP BY `_sub1`.`n`"
+   :expect "SELECT `_sub1`.`n` AS `n`, COUNT(*) AS `depts` FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) `_sub1` GROUP BY `_sub1`.`n`"
    :error nil
    :throws nil
    :params nil
@@ -8724,6 +8724,230 @@
    :tables :none
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
+  (list
+   :name "stmt.bucket.refuse-bare-bucket-over-a-list-key"
+   :at "24-bucket.sqlt:325"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(LIST(_[\"dept\"], _[\"category\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:17"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.refuse-bare-bucket-over-a-record-key"
+   :at "24-bucket.sqlt:343"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(RECORD(\"d\", _[\"dept\"])) .> MAP(RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:17"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.refuse-bare-bucket-over-a-bool-key"
+   :at "24-bucket.sqlt:355"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"active\"]) .> MAP(RECORD(\"a\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:18"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.projected-spelling-takes-a-bool-key"
+   :at "24-bucket.sqlt:371"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"active\"], RECORD(\"a\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT `active` AS `a`, COUNT(*) AS `n` FROM `items` GROUP BY `active`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.filter-after-pagination"
+   :at "24-bucket.sqlt:385"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"n\", COUNT(_))) .> TAKE(2) .> FILTER(_[\"n\"] > 1)"
+   :expect "SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.filter-after-drop"
+   :at "24-bucket.sqlt:402"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"n\", COUNT(_))) .> DROP(1) .> FILTER(_[\"n\"] > 1)"
+   :expect "SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 18446744073709551615 OFFSET 1) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.filter-after-sort"
+   :at "24-bucket.sqlt:414"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"s\", SUM(_, _[\"qty\"]))) .> SORT_BY(_[\"s\"], \"DESC\") .> FILTER(_[\"s\"] > 5)"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`qty`), 0) AS `s` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COALESCE(SUM(`qty`), 0) > 5) ORDER BY COALESCE(SUM(`qty`), 0) DESC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.refuse-filter-after-the-members-are-spent"
+   :at "24-bucket.sqlt:429"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(2) .> FILTER(COUNT(_) > 1)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:42"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.text-key-is-collated"
+   :at "24-bucket.sqlt:445"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.text-key-compared-in-having-is-the-same-expression"
+   :at "24-bucket.sqlt:465"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(_K $== \"x\") .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) = 'x')"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.exact-text-key-stays-bare"
+   :at "24-bucket.sqlt:485"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT `dept` AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY `dept`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text :exact t :sargable nil :guard nil))) nil nil)))))
+  (list
+   :name "stmt.bucket.numeric-key-is-not-collated"
+   :at "24-bucket.sqlt:500"
+   :dialect "mariadb"
+   :source "ITEMS .> BUCKET(_[\"qty\"]) .> MAP(RECORD(\"qty\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT `qty` AS `qty`, COUNT(*) AS `n` FROM `items` GROUP BY `qty`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.bucket.text-sort-key-is-collated"
+   :at "24-bucket.sqlt:512"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"dept\"], \"DESC\") .> TAKE(3)"
+   :expect "SELECT * FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC LIMIT 3"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.map.after-sort-shares-the-statement"
+   :at "24-bucket.sqlt:527"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"dept\"]) .> MAP(RECORD(\"d\", _[\"dept\"], \"q\", _[\"qty\"]))"
+   :expect "SELECT `dept` AS `d`, `qty` AS `q` FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "plan.pure-sql.direct"
    :at "25-hybrid-plans.sqlt:19"
@@ -9429,8 +9653,56 @@
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAMé" (binding-column "name" "o" :text))) nil nil)))))
   (list
-   :name "plan.refuse.base-dialect"
+   :name "plan.bucket.filter-after-pagination-is-a-where"
    :at "25-hybrid-plans.sqlt:796"
+   :dialect "mariadb"
+   :source "ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_))) .> TAKE(2) .> FILTER(_[\"n\"] > 1)"
+   :expect "SELECT `_sub1`.* FROM (SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id` LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.bucket.filter-after-pagination-on-sqlite-splits"
+   :at "25-hybrid-plans.sqlt:815"
+   :dialect "sqlite"
+   :source "ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_))) .> TAKE(2) .> FILTER(_[\"n\"] > 1)"
+   :expect "SELECT \"o\".\"customer_id\" AS \"cid\", COUNT(*) AS \"n\" FROM \"orders\" \"o\" GROUP BY \"o\".\"customer_id\" LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.bucket.bool-key-in-a-bare-bucket-stays-in-memory"
+   :at "25-hybrid-plans.sqlt:835"
+   :dialect "mariadb"
+   :source "ORDERS .> BUCKET(_[\"active\"]) .> MAP(RECORD(\"a\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ACTIVE" (binding-column "active" "o" :bool))) nil nil)))))
+  (list
+   :name "plan.refuse.base-dialect"
+   :at "25-hybrid-plans.sqlt:851"
    :dialect "ansi"
    :source "ORDERS .> TAKE(1)"
    :expect nil
@@ -9446,7 +9718,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.immutable.folding-does-not-write-back"
-   :at "25-hybrid-plans.sqlt:813"
+   :at "25-hybrid-plans.sqlt:868"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"id\"] > 1 + 1) .> TAKE(2 * 2)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) LIMIT 4"
@@ -9462,7 +9734,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.immutable.folding-inside-a-kept-step"
-   :at "25-hybrid-plans.sqlt:835"
+   :at "25-hybrid-plans.sqlt:890"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(NOT (_[\"id\"] > 1 + 1)) .> MAP(RECORD(\"n\", ABORT(\"x\")))"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (NOT (`o`.`id` > 2))"
@@ -9478,7 +9750,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.pipeline-map-pushes-down-whole"
-   :at "25-hybrid-plans.sqlt:854"
+   :at "25-hybrid-plans.sqlt:909"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_)))"
    :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
@@ -9494,7 +9766,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.open-prefix-is-not-a-split-point"
-   :at "25-hybrid-plans.sqlt:873"
+   :at "25-hybrid-plans.sqlt:928"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))"
    :expect nil
@@ -9510,7 +9782,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.split-before-the-bucket"
-   :at "25-hybrid-plans.sqlt:891"
+   :at "25-hybrid-plans.sqlt:946"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"amount\"] > 1) .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)"
@@ -9526,7 +9798,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.projected-then-custom-map"
-   :at "25-hybrid-plans.sqlt:909"
+   :at "25-hybrid-plans.sqlt:964"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_))) .> MAP(RECORD(\"c\", _[\"cid\"], \"note\", ABORT(\"x\")))"
    :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
@@ -9542,7 +9814,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.sealed-prefix-is-not-a-split-point"
-   :at "25-hybrid-plans.sqlt:927"
+   :at "25-hybrid-plans.sqlt:982"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(2) .> MAP(RECORD(\"cid\", _K))"
    :expect nil

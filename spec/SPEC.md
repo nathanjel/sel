@@ -654,6 +654,21 @@ its first argument, in insertion order.
 | `SORT(list [, body])` | list sorted ascending; `body` optional (defaults to element itself). |
 | `SORT_DESC(list [, body])` | list sorted descending; `body` optional (defaults to element itself). |
 | `SORT_BY(list, [binder,] key [, dir])` | list sorted by evaluated `key`; optional `dir` (`"ASC"` or `"DESC"`, default `"ASC"`). |
+| `BUCKET(list, [binder,] key)` | the elements grouped by evaluated `key`: a record whose keys are the group keys, in order of first appearance, each holding the list of its members (renumbered from `"1"`). |
+| `BUCKET(list, [binder,] key, proj)` | one `proj` result per group, as a list; within `proj`, the binder is the group's member list and `_K` its key. |
+
+**Bucket keys.** The two spellings group differently, because only one of
+them has to make a record key out of the group key:
+
+- In the two-argument spelling the group key is an **index key** (§3.3): the
+  key's scalar, verbatim, and only text or a number will do. A `NULL` key is
+  `E_NULL`; a boolean, binary, list or record key is `E_NOT_TEXT` — the errors
+  indexing gives — reported at the key expression. The result is a record, and
+  `.> MAP(proj)` over it is the same value as the three-argument spelling for
+  every key this spelling accepts: `_K` is the key's text either way.
+- In the three-argument spelling the group key is compared by **identity**
+  (§3.4) and may be any value — a list of several fields groups by all of them
+  — and `_K` is that value.
 
 Within a body, `_` is bound to the element and `_K` to its key.
 

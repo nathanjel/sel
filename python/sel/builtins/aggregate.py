@@ -367,6 +367,15 @@ define('TOP_DESC', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_top(args
 define('TOP_BY', 3, 5, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, None))
 
 
+def _bucket_key_text(key: Value, pos) -> str:
+    v = key.force()
+    if v.kind == Value.NONE:
+        if v.is_null():
+            fail('E_NULL', 'value is NULL', pos)
+        fail('E_NOT_TEXT', 'a bucket key must be text or a number, got a list or record', pos)
+    return v.as_text(pos)
+
+
 def do_bucket(args, ctx):
     val = args.val(0)
     if val.is_null() or val.size() == 0:
@@ -401,20 +410,17 @@ def do_bucket(args, ctx):
         if needs_k:
             frame['_K'] = Value.text(key if key is not None else str(index))
         group_key = args.eval_node(key_node)
+        # A bare bucket's key is an index key (spec §3.3): the scalar,
+        # verbatim, and refused the way indexing refuses it -- never collapsed
+        # onto a string that stands for every list, record or NULL. The
+        # projected spelling has no map to key and groups by identity instead.
+        key_str = _bucket_key_text(group_key, key_node.pos) if agg_node is None else ''
         hashed = structural_hash(group_key)
         bucket = table.setdefault(hashed, [])
         existing = next((group for group in bucket if group['key'].eql(group_key)), None)
         if existing is not None:
             existing['rows'].append(item)
             return
-        key_str = ''
-        if agg_node is None:
-            if group_key.kind == Value.TEXT:
-                key_str = str(group_key.scalar)
-            elif group_key.kind == Value.BOOL:
-                key_str = 'TRUE' if group_key.scalar else 'FALSE'
-            elif group_key.looks_numeric():
-                key_str = str(group_key.scalar)
         group = {'key': group_key, 'key_str': key_str, 'rows': [item]}
         bucket.append(group)
         groups.append(group)

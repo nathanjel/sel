@@ -20,6 +20,8 @@ final class Binder
     public const ROW = 'row';
     /** In scope, but using it is an error with this reason. */
     public const NONE = 'none';
+    /** The key of the group being rendered: a group-by entry and the row binder, rendered as the GROUP BY expression itself. */
+    public const KEY = 'key';
 
     public string $shape;
     /** @var array<string,mixed>|null */
@@ -55,5 +57,11 @@ final class Binder
     public static function none(string $reason): self
     {
         return new self(self::NONE, null, $reason);
+    }
+
+    /** @param array<string,mixed> $group */
+    public static function key(array $group, Binder $row): self
+    {
+        return new self(self::KEY, ['group' => $group, 'row' => $row]);
     }
 }

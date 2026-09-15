@@ -1,0 +1,98 @@
+{
+  "note": [
+    "The statement-parity oracle. Each pipeline is translated with",
+    "translateStatement and run against the fixture, and evaluated by SEL over",
+    "the same rows loaded as the relation; the two row sets must match, value",
+    "for value. Unless a statement says \"ordered\", rows are compared as a set,",
+    "because a statement without an ORDER BY promises no order.",
+    "",
+    "rows.json asks about WHERE clauses; this asks about the statement compiler:",
+    "GROUP BY, HAVING, ORDER BY, LIMIT, derived tables. It exists because the",
+    "sql/cases strings were byte-identical in every host while MariaDB merged",
+    "'A' and 'a' into one group (review 2026-09-15 finding L): only a server",
+    "can say whether GROUP BY means what BUCKET means.",
+    "",
+    "Numbers are compared as numbers (COUNT comes back as an int here and a",
+    "string there); everything else byte for byte."
+  ],
+  "fixture": {
+    "mariadb": "fixture-statements-mysql-family.sql",
+    "mysql": "fixture-statements-mysql-family.sql",
+    "sqlite": "fixture-statements-sqlite.sql",
+    "postgresql": "fixture-statements-postgresql.sql"
+  },
+  "bindings": {
+    "ITEMS": {
+      "kind": "relation",
+      "from": "grp_items",
+      "alias": "gi",
+      "fields": {
+        "ID": {
+          "table": "gi",
+          "column": "id",
+          "type": "NUM"
+        },
+        "CAT": {
+          "table": "gi",
+          "column": "cat",
+          "type": "TEXT"
+        },
+        "V": {
+          "table": "gi",
+          "column": "v",
+          "type": "NUM"
+        }
+      }
+    }
+  },
+  "context": {
+    "query": "SELECT id, cat, v FROM grp_items ORDER BY id",
+    "relation": "ITEMS",
+    "columns": {
+      "id": "id",
+      "cat": "cat",
+      "v": "v"
+    }
+  },
+  "statements": [
+    {
+      "name": "bare bucket keys are the exact bytes",
+      "sel": "ITEMS .> BUCKET(_[\"cat\"]) .> MAP(RECORD(\"cat\", _K, \"n\", COUNT(_)))"
+    },
+    {
+      "name": "projected bucket, text key",
+      "sel": "ITEMS .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"total\", SUM(_, _[\"v\"])))"
+    },
+    {
+      "name": "having over a text key",
+      "sel": "ITEMS .> BUCKET(_[\"cat\"]) .> FILTER(COUNT(_) > 1) .> MAP(RECORD(\"cat\", _K))"
+    },
+    {
+      "name": "having compares the key itself",
+      "sel": "ITEMS .> BUCKET(_[\"cat\"]) .> FILTER(_K $== \"a\") .> MAP(RECORD(\"cat\", _K, \"n\", COUNT(_)))"
+    },
+    {
+      "name": "sort by a text key is byte order",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"cat\"]) .> MAP(RECORD(\"cat\", _[\"cat\"], \"v\", _[\"v\"]))"
+    },
+    {
+      "name": "sort by a text key, descending",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"cat\"], \"DESC\") .> MAP(RECORD(\"cat\", _[\"cat\"]))"
+    },
+    {
+      "name": "filter after pagination is a where over the paginated groups",
+      "ordered": true,
+      "sel": "ITEMS .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"n\", COUNT(_))) .> SORT_BY(_[\"cat\"]) .> TAKE(2) .> FILTER(_[\"n\"] > 1)",
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      },
+      "why": "sqlite has no way to ask whether the derived n is a number, so the FILTER over it is refused there"
+    },
+    {
+      "name": "text equality in a where is the control",
+      "sel": "ITEMS .> FILTER(_[\"cat\"] $== \"a\") .> MAP(RECORD(\"id\", _[\"id\"]))"
+    }
+  ]
+}

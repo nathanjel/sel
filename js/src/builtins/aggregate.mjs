@@ -398,6 +398,15 @@ define({
   fn: (args, ctx) => doTop(args, ctx, null),
 });
 
+function bucketKeyText(key, pos) {
+  const v = key.force();
+  if (v.kind === 'NONE') {
+    if (v.isNull()) fail('E_NULL', 'value is NULL', pos);
+    fail('E_NOT_TEXT', 'a bucket key must be text or a number, got a list or record', pos);
+  }
+  return v.asText(pos);
+}
+
 function doBucket(args, ctx) {
   const value = args.val(0);
   if (value.isNull() || value.size() === 0) return Value.list([]);
@@ -426,18 +435,17 @@ function doBucket(args, ctx) {
     frame.set(binder, item);
     if (needsK) frame.set('_K', Value.text(key === undefined ? String(index) : key));
     const groupKey = args.evalNode(keyNode);
+    // A bare bucket's key is an index key (spec §3.3): the scalar, verbatim,
+    // and refused the way indexing refuses it -- never collapsed onto a
+    // string that stands for every list, record or NULL. The projected
+    // spelling has no map to key and groups by identity instead.
+    const keyString = aggregateNode === null ? bucketKeyText(groupKey, keyNode.pos) : '';
     const hash = structuralHash(groupKey);
     const bucket = table.get(hash) || [];
     const existing = bucket.find((group) => group.key.eql(groupKey));
     if (existing) {
       existing.rows.push(item);
       return;
-    }
-    let keyString = '';
-    if (aggregateNode === null) {
-      if (groupKey.kind === 'TEXT') keyString = String(groupKey.scalar);
-      else if (groupKey.kind === 'BOOL') keyString = groupKey.scalar ? 'TRUE' : 'FALSE';
-      else if (groupKey.looksNumeric()) keyString = String(groupKey.scalar);
     }
     const group = { key: groupKey, keyString, rows: [item] };
     bucket.push(group);

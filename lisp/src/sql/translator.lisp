@@ -28,7 +28,8 @@
   (const-root nil)
   (depth 0 :type fixnum)
   (statement-plan nil)
-  (in-where nil :type boolean))
+  (in-where nil :type boolean)
+  (in-having nil :type boolean))
 
 (defun list-key (k)
   "The 1-based list position a key names, or NIL when it names none.
@@ -301,12 +302,52 @@ row its binder gives you" name)
 index" name)
                      (snode-pos n))))))))
 
+(defun collated-key (tr f)
+  "A group key, rendered as the GROUP BY expression itself -- wherever it
+appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
+collated the way the `$` family compares text, because the evaluator groups by
+the key's exact bytes and a case-insensitive collation would merge groups it
+keeps apart (review 2026-09-15 finding L; MariaDB's default merged 'A' and
+'a'). The result is marked exact so a comparison over it does not wrap it a
+second time -- MySQL's only_full_group_by accepts a projected or compared key
+only as the identical expression."
+  (if (or (not (eq (fragment-kind f) :text)) (fragment-exact f))
+      f
+      (let ((w (emit-text-operand (translator-dialect tr) f)))
+        (%fragment (fragment-parts w) :text (translator-dialect tr)
+                   (fragment-params w) (fragment-param-kinds w) (fragment-caveats w)
+                   t nil nil))))
+
+(defun group-key (tr src gb)
+  "GB is a group-by entry (alias binder node pos)."
+  (collated-key tr (with-row tr src (second gb) (lambda () (walk-node tr (third gb))))))
+
 (defun from-binder (tr b n)
   "The binder half of a bare read."
   (case (binder-shape b)
     ;; Re-enters the whole walk on the element, so the depth counter and the
     ;; constant validation apply to the inlined element too.
     (:node (walk-node tr (binder-payload b)))
+    ;; Inside a row already: bind the key's own binder to that row and render
+    ;; the key there, then collate it exactly as the GROUP BY does.
+    (:key (destructuring-bind (group row) (binder-payload b)
+            (push (frame-set nil (second group) row) (translator-frames tr))
+            (let* ((key (unwind-protect (walk-node tr (third group))
+                          (pop (translator-frames tr))))
+                   (collated (collated-key tr key)))
+              ;; In a HAVING, MariaDB and MySQL resolve a column only against
+              ;; the GROUP BY columns and the select list, not against an
+              ;; equal expression: `HAVING CAST(cat ...) COLLATE ...` is
+              ;; "unknown column cat" once the grouping is the collated
+              ;; expression. The key is constant within its group, so MIN of
+              ;; it IS the key, and an aggregate is what every server lets a
+              ;; HAVING name.
+              (if (and (translator-in-having tr) (not (eq collated key)))
+                  (%fragment (append (list "MIN(") (fragment-parts collated) (list ")"))
+                             :text (translator-dialect tr)
+                             (fragment-params collated) (fragment-param-kinds collated)
+                             (fragment-caveats collated) t nil nil)
+                  collated))))
     (:column (column-ref tr (binder-payload b)))
     (:row
      (let* ((rel (binder-payload b))
@@ -1381,7 +1422,7 @@ against it; the correlation names the alias, so it cannot be renamed here" alias
                 (setf frame (frame-set frame (join-plan-left-binder j) row)))))))
       (setf frame (frame-set frame "_K"
                              (if (and plan (relational-plan-group-by plan) (= (length (relational-plan-group-by plan)) 1))
-                                 (binder-node (third (first (relational-plan-group-by plan))))
+                                 (binder-key (first (relational-plan-group-by plan)) row)
                                  (binder-none "a row of a relation has no key: SQL rows ~
 are unordered and unkeyed unless the schema says otherwise, and guessing which ~
 column is the key is not something this layer does"))))
@@ -1794,10 +1835,10 @@ SQL counterpart" (snode-pos e)))
                               (when (and (third p)
                                          (not (clist-p (third p)))
                                          (eq (snode-kind (third p)) :index)
-                                         (snode-r (third p))
-                                         (not (clist-p (snode-r (third p))))
-                                         (eq (snode-kind (snode-r (third p))) :text))
-                                (sel::node-s (snode-r (third p))))
+                                         (sel::node-r (third p))
+                                         (not (clist-p (sel::node-r (third p))))
+                                         (eq (snode-kind (sel::node-r (third p))) :text))
+                                (sel::node-s (sel::node-r (third p))))
                               "col"))
                 (uc (sel::ascii-upcase col-name))
                 (spec (list :column col-name :table sub-alias :type :unknown)))
@@ -1877,12 +1918,16 @@ can say about a bucket on its own."
                                                 (string-equal (sel::node-s r) alias))))))
                 (unless is-same-field
                   (push (cons alias actual-node) (relational-plan-aggregate-aliases plan)))
-                (push (list alias node-binder actual-node) projs)))
+                ;; A fourth element names the group-by entry the projection IS:
+                ;; it is then rendered as the group key itself (group-key).
+                (push (list alias node-binder actual-node
+                            (when is-key (first (relational-plan-group-by plan))))
+                      projs)))
             (setf (relational-plan-projections plan) (nreverse projs)))
           (setf (relational-plan-projections plan) (list (list nil binder agg-node))))
       (let ((projs '()))
         (dolist (gb (relational-plan-group-by plan))
-          (push (list (first gb) (second gb) (third gb)) projs))
+          (push (list (first gb) (second gb) (third gb) gb) projs))
         (setf (relational-plan-projections plan) (nreverse projs))))
   (setf (relational-plan-select-cols plan) nil))
 
@@ -1922,11 +1967,26 @@ can say about a bucket on its own."
                 (setf (relational-plan-bucket plan) :sealed))
               (cond
                 ((equal sname "FILTER")
+                 ;; A FILTER over a bare bucket whose members are spent: SQL
+                 ;; has only the keys left, and SEL's value is still a map of
+                 ;; groups.
+                 (when (eq (relational-plan-bucket plan) :sealed)
+                   (refuse "E_SQL_SHAPE"
+                           "a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping"
+                           pos))
+                 ;; A FILTER after a LIMIT or OFFSET is a WHERE over the rows
+                 ;; that survived them, grouped or not -- SEL applies the TAKE
+                 ;; first, and a HAVING would run before it. Otherwise a FILTER
+                 ;; directly after a grouping is its HAVING, and an ORDER BY in
+                 ;; between changes nothing (HAVING then ORDER BY is
+                 ;; sort-then-filter's rows).
                  (when (or (relational-plan-limit plan)
                            (relational-plan-offset plan)
                            (and (null (relational-plan-group-by plan))
-                                (relational-plan-projections plan))
-                           (relational-plan-order-by plan))
+                                (or (relational-plan-projections plan)
+                                    (relational-plan-select-cols plan)
+                                    (relational-plan-order-by plan)
+                                    (relational-plan-distinct plan))))
                    (setf plan (wrap-plan-as-derived-table plan)))
                  (let (binder pred)
                    (cond
@@ -1976,6 +2036,17 @@ can say about a bucket on its own."
                      (t
                       (refuse "E_ARITY" (format nil "~a takes 2 to 4 arguments" sname) pos)))
 
+                   ;; A bare bucket's key is an index key (spec §7.4): one text
+                   ;; or number. A list or record key is refused by the
+                   ;; evaluator, and the boolean and binary kinds are refused
+                   ;; below, once known.
+                   (when (and (null agg-node) (not (clist-p key-node))
+                              (or (eq (snode-kind key-node) :list)
+                                  (and (eq (snode-kind key-node) :call)
+                                       (member (sel::node-s key-node) '("LIST" "RECORD") :test #'equal))))
+                     (refuse "E_SQL_SHAPE"
+                             "a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several"
+                             (snode-pos key-node)))
                    (let ((group-by '()))
                      (cond
                        ((or (and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "LIST"))
@@ -1994,6 +2065,7 @@ can say about a bucket on its own."
                         (push (list nil binder key-node (snode-pos key-node)) group-by)))
                      (setf (relational-plan-group-by plan) (nreverse group-by)))
                    (setf (relational-plan-bucket plan) (if agg-node nil :open))
+                   (setf (relational-plan-bare-key plan) (null agg-node))
                    (bucket-projection plan binder agg-node)))
 
                 ((or (equal sname "LINK") (equal sname "LINK_LEFT"))
@@ -2103,9 +2175,18 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                      (setf (relational-plan-bucket plan) nil)
                      (bucket-projection plan binder expr)
                      (return-from map-step))
+                   ;; Whether a MAP must wrap the plan first. An ORDER BY alone
+                   ;; does not: the projection and the sort can share one
+                   ;; statement (ORDER BY may name the input's columns), and a
+                   ;; derived table is where MariaDB DROPS an ORDER BY that has
+                   ;; no LIMIT beside it -- the statement oracle's sorted rows
+                   ;; came back in table order. Everything else above the rows
+                   ;; still wraps, DISTINCT included: SELECT DISTINCT over the
+                   ;; projection is not the distinct rows projected.
                    (when (or (relational-plan-projections plan)
                              (relational-plan-select-cols plan)
                              (relational-plan-group-by plan)
+                             (relational-plan-distinct plan)
                              (relational-plan-limit plan)
                              (relational-plan-offset plan))
                      (setf plan (wrap-plan-as-derived-table plan)))
@@ -2176,7 +2257,9 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                    (let* ((alias (first proj))
                           (binder (second proj))
                           (node (third proj))
-                          (p-frag (with-row tr src binder (lambda () (walk-node tr node)))))
+                          (p-frag (if (fourth proj)
+                                      (group-key tr src (fourth proj))
+                                      (with-row tr src binder (lambda () (walk-node tr node))))))
                      (dolist (p (fragment-parts p-frag))
                        (push p parts))
                      (when alias
@@ -2276,9 +2359,12 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
               (dolist (gb (relational-plan-group-by plan))
                 (unless first (push ", " parts))
                 (setf first nil)
-                (let* ((binder (second gb))
-                       (node (third gb))
-                       (g-frag (with-row tr src binder (lambda () (walk-node tr node)))))
+                (let* ((g-frag (group-key tr src gb)))
+                  (when (and (relational-plan-bare-key plan)
+                             (member (fragment-kind g-frag) '(:bool :bin)))
+                    (refuse "E_SQL_SHAPE"
+                            "a bare BUCKET groups by one text or number key, as an index does; SEL refuses a boolean or binary key (E_NOT_TEXT)"
+                            (fourth gb)))
                   (dolist (p (fragment-parts g-frag))
                     (push p parts))))))
 
@@ -2286,14 +2372,17 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
           (when (relational-plan-having plan)
             (push " HAVING " parts)
             (let ((h-cond-parts '()))
-              (dolist (hav (relational-plan-having plan))
-                (let* ((binder (first hav))
-                       (node (second hav))
-                       (pos (third hav))
-                       (h-frag (with-row tr src binder
-                                 (lambda ()
-                                   (require-bool (walk-node tr node) pos "FILTER")))))
-                  (push (fragment-parts h-frag) h-cond-parts)))
+              (setf (translator-in-having tr) t)
+              (unwind-protect
+                   (dolist (hav (relational-plan-having plan))
+                     (let* ((binder (first hav))
+                            (node (second hav))
+                            (pos (third hav))
+                            (h-frag (with-row tr src binder
+                                      (lambda ()
+                                        (require-bool (walk-node tr node) pos "FILTER")))))
+                       (push (fragment-parts h-frag) h-cond-parts)))
+                (setf (translator-in-having tr) nil))
               (setf h-cond-parts (nreverse h-cond-parts))
               (loop for hp in h-cond-parts
                     for idx from 0
@@ -2309,7 +2398,10 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                      (let* ((binder (first ord))
                             (node (second ord))
                             (dir (third ord))
-                            (o-frag (with-row tr src binder (lambda () (walk-node tr node)))))
+                            ;; A TEXT sort key is collated like a group key: SEL
+                            ;; sorts text by its bytes, and a server's default
+                            ;; collation would not.
+                            (o-frag (collated-key tr (with-row tr src binder (lambda () (walk-node tr node))))))
                        (dolist (p (fragment-parts o-frag))
                          (push p parts))
                        (push (format nil " ~a" dir) parts))))

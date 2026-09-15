@@ -1,5 +1,7 @@
 # F. Lisp translator/planner calls the undefined function SNODE-R on sealed-bucket shapes
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "Grouped and sorted TEXT keys are collated".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

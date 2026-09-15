@@ -793,6 +793,61 @@ orders
 SELECT "o"."id" AS "NAMÉ", "o"."name" AS "namé" FROM "orders" "o" LIMIT 2
 ===
 
+### name: plan.bucket.filter-after-pagination-is-a-where
+--- note
+Review 2026-09-15 finding H, planner side: the same shape every host now
+renders as a derived table with the LIMIT inside and the FILTER outside,
+which is what run() answers (TAKE first, then FILTER).
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_))) .> TAKE(2) .> FILTER(_["n"] > 1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `_sub1`.* FROM (SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id` LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
+===
+
+### name: plan.bucket.filter-after-pagination-on-sqlite-splits
+--- note
+SQLite has no way to ask whether the derived `n` is a number, so the FILTER
+is refused there and the split lands after the TAKE -- one classification
+for all five hosts, where one host used to split and four pushed a wrong
+HAVING.
+--- dialect
+sqlite
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_))) .> TAKE(2) .> FILTER(_["n"] > 1)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT "o"."customer_id" AS "cid", COUNT(*) AS "n" FROM "orders" "o" GROUP BY "o"."customer_id" LIMIT 2
+===
+
+### name: plan.bucket.bool-key-in-a-bare-bucket-stays-in-memory
+--- note
+Finding G, planner side: the evaluator refuses a boolean key in a bare
+bucket (E_NOT_TEXT), so no SQL may group by one for that spelling.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ACTIVE": {"table": "o", "column": "active", "type": "BOOL"}}}}
+--- source
+ORDERS .> BUCKET(_["active"]) .> MAP(RECORD("a", _K, "n", COUNT(_)))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
 ### name: plan.refuse.base-dialect
 --- note
 Planning refuses what translate() refuses up front: a base is not a target,

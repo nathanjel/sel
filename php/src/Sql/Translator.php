@@ -55,6 +55,7 @@ final class Translator
     private int $depth = 0;
     private ?RelationalPlan $statementPlan = null;
     private bool $inWhere = false;
+    private bool $inHaving = false;
     private int $subqueryCounter = 0;
 
     /** @param array<string,mixed> $options */
@@ -1094,11 +1095,60 @@ final class Translator
     }
 
     /** @param array<string,mixed> $n */
+    /**
+     * A group key, rendered as the GROUP BY expression itself -- wherever it
+     * appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
+     * collated the way the `$` family compares text, because the evaluator
+     * groups by the key's exact bytes and a case-insensitive collation would
+     * merge groups it keeps apart (review 2026-09-15 finding L; MariaDB's
+     * default merged 'A' and 'a'). The result is marked exact so a comparison
+     * over it does not wrap it a second time -- MySQL's only_full_group_by
+     * accepts a projected or compared key only as the identical expression.
+     *
+     * @param array<string,mixed> $src @param array<string,mixed> $group
+     */
+    private function groupKey(array $src, array $group): Fragment
+    {
+        return $this->collatedKey($this->withRow($src, $group['binder'], fn (): Fragment => $this->node($group['node'])));
+    }
+
+    private function collatedKey(Fragment $f): Fragment
+    {
+        if ($f->kind !== 'TEXT' || $f->exact) {
+            return $f;
+        }
+        $wrapped = $this->emit->textOperand($f);
+        return new Fragment($wrapped->parts, 'TEXT', $this->dialect, $wrapped->params, $wrapped->paramKinds, $wrapped->caveats, true, false, false);
+    }
+
     private function fromBinder(Binder $b, array $n): Fragment
     {
         switch ($b->shape) {
             case Binder::NODE:
                 return $this->node($b->payload);
+            case Binder::KEY:
+                // Inside a row already: bind the key's own binder to that row
+                // and render the key there, then collate it exactly as the
+                // GROUP BY does.
+                $group = $b->payload['group'];
+                $this->frames[] = [$group['binder'] => $b->payload['row']];
+                try {
+                    $key = $this->node($group['node']);
+                } finally {
+                    array_pop($this->frames);
+                }
+                $collated = $this->collatedKey($key);
+                // In a HAVING, MariaDB and MySQL resolve a column only against
+                // the GROUP BY columns and the select list, not against an
+                // equal expression: `HAVING CAST(cat ...) COLLATE ...` is
+                // "unknown column cat" once the grouping is the collated
+                // expression. The key is constant within its group, so MIN of
+                // it IS the key, and an aggregate is what every server lets a
+                // HAVING name.
+                if ($this->inHaving && $collated !== $key) {
+                    return new Fragment(array_merge(['MIN('], $collated->parts, [')']), 'TEXT', $this->dialect, $collated->params, $collated->paramKinds, $collated->caveats, true, false, false);
+                }
+                return $collated;
             case Binder::COLUMN:
                 return $this->columnRef($b->payload);
             case Binder::ROW:
@@ -1544,7 +1594,7 @@ final class Translator
         $row = Binder::row($src['relation']);
         $kBinder = null;
         if ($this->statementPlan !== null && !empty($this->statementPlan->groupBy) && count($this->statementPlan->groupBy) === 1) {
-            $kBinder = Binder::node($this->statementPlan->groupBy[0]['node']);
+            $kBinder = Binder::key($this->statementPlan->groupBy[0], $row);
         } else {
             $kBinder = Binder::none('a row of a relation has no key: SQL rows are '
                       . 'unordered and unkeyed unless the schema says otherwise, and '
@@ -2362,6 +2412,20 @@ final class Translator
             || $plan->orderBy !== [];
     }
 
+    /**
+     * Whether a MAP must wrap the plan first. An ORDER BY alone does not: the
+     * projection and the sort can share one statement (ORDER BY may name the
+     * input's columns), and a derived table is where MariaDB DROPS an ORDER BY
+     * that has no LIMIT beside it -- the statement oracle's sorted rows came
+     * back in table order. Everything else above the rows still wraps.
+     */
+    private function planNeedsWrapBeforeMap(RelationalPlan $plan): bool
+    {
+        return $plan->projections !== null || $plan->selectCols !== null
+            || $plan->groupBy !== null || $plan->distinct
+            || $plan->limit !== null || $plan->offset !== null;
+    }
+
     /** @return list<string> */
     private function outputFieldNames(RelationalPlan $plan): array
     {
@@ -2474,10 +2538,13 @@ final class Translator
                     // _K is the key, which was written against the KEY's binder --
                     // the MAP spelling may name the group differently, so the
                     // projection keeps the binder the key node was written for.
+                    // It is rendered as the group key itself (groupKey).
                     $nodeBinder = $binder;
+                    $groupKey = null;
                     if ($vNode['t'] === 'var' && $vNode['name'] === '_K' && count($plan->groupBy) === 1) {
                         $actualNode = $plan->groupBy[0]['node'];
                         $nodeBinder = $plan->groupBy[0]['binder'];
+                        $groupKey = $plan->groupBy[0];
                     }
                     $isSameField = $actualNode['t'] === 'index'
                         && isset($actualNode['obj'])
@@ -2493,6 +2560,7 @@ final class Translator
                         'alias' => $alias,
                         'binder' => $nodeBinder,
                         'node' => $actualNode,
+                        'groupKey' => $groupKey,
                     ];
                 }
                 $plan->projections = $projections;
@@ -2512,6 +2580,7 @@ final class Translator
                     'alias' => $gb['alias'],
                     'binder' => $gb['binder'],
                     'node' => $gb['node'],
+                    'groupKey' => $gb,
                 ];
             }
             $plan->projections = $projections;
@@ -2568,11 +2637,23 @@ final class Translator
 
             switch ($name) {
                 case 'FILTER':
+                    // A FILTER over a bare bucket whose members are spent: SQL
+                    // has only the keys left, and SEL's value is still a map of
+                    // groups.
+                    if ($plan->bucket === 'sealed') {
+                        refuse('E_SQL_SHAPE', "a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
+                    }
+                    // A FILTER after a LIMIT or OFFSET is a WHERE over the rows
+                    // that survived them, grouped or not -- SEL applies the TAKE
+                    // first, and a HAVING would run before it. Otherwise a FILTER
+                    // directly after a grouping is its HAVING, and an ORDER BY in
+                    // between changes nothing (HAVING then ORDER BY is
+                    // sort-then-filter's rows).
                     $plan = $this->ensureDerived($plan,
-                        $plan->groupBy === null
-                        && ($plan->projections !== null || $plan->selectCols !== null
-                            || $plan->limit !== null || $plan->offset !== null
-                            || $plan->orderBy !== [] || $plan->distinct));
+                        $plan->limit !== null || $plan->offset !== null
+                        || ($plan->groupBy === null
+                            && ($plan->projections !== null || $plan->selectCols !== null
+                                || $plan->orderBy !== [] || $plan->distinct)));
                     if (count($args) === 2) {
                         $binder = '_';
                         $pred = $args[1];
@@ -2628,6 +2709,15 @@ final class Translator
                         refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', $step['pos']);
                     }
 
+                    // A bare bucket's key is an index key (spec §7.4): one text
+                    // or number. A list or record key is refused by the
+                    // evaluator, and the boolean and binary kinds are refused
+                    // below, once known.
+                    $severalKeys = ($keyNode['t'] === 'call' && in_array($keyNode['name'], ['LIST', 'RECORD'], true))
+                        || $keyNode['t'] === 'list';
+                    if ($aggNode === null && $severalKeys) {
+                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several', $keyNode['pos']);
+                    }
                     $groupBy = [];
                     if (($keyNode['t'] === 'call' && $keyNode['name'] === 'LIST') || $keyNode['t'] === 'list') {
                         $listItems = $keyNode['t'] === 'list' ? $keyNode['items'] : $keyNode['args'];
@@ -2666,6 +2756,7 @@ final class Translator
                     $plan->groupBy = $groupBy;
 
                     $plan->bucket = $aggNode === null ? 'open' : null;
+                    $plan->bareKey = $aggNode === null;
                     $this->bucketProjection($plan, $binder, $aggNode);
                     break;
 
@@ -2730,7 +2821,7 @@ final class Translator
                         $this->bucketProjection($plan, $binder, $expr);
                         break;
                     }
-                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
+                    $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
 
                     if ($expr['t'] === 'call' && in_array($expr['name'], ['RECORD', 'LAZY_RECORD'], true)) {
                         $recArgs = $expr['args'];
@@ -3003,7 +3094,9 @@ final class Translator
                         $parts[] = ', ';
                     }
                     $first = false;
-                    $pFrag = $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']));
+                    $pFrag = isset($proj['groupKey'])
+                        ? $this->groupKey($src, $proj['groupKey'])
+                        : $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']));
                     foreach ($pFrag->parts as $p) {
                         $parts[] = $p;
                     }
@@ -3120,7 +3213,10 @@ final class Translator
                         $parts[] = ', ';
                     }
                     $first = false;
-                    $gFrag = $this->withRow($src, $gb['binder'], fn (): Fragment => $this->node($gb['node']));
+                    $gFrag = $this->groupKey($src, $gb);
+                    if ($plan->bareKey && ($gFrag->kind === 'BOOL' || $gFrag->kind === 'BIN')) {
+                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; SEL refuses a boolean or binary key (E_NOT_TEXT)', $gb['pos']);
+                    }
                     foreach ($gFrag->parts as $p) {
                         $parts[] = $p;
                     }
@@ -3131,10 +3227,15 @@ final class Translator
             if (!empty($plan->having)) {
                 $parts[] = ' HAVING ';
                 $hCondParts = [];
-                foreach ($plan->having as $hav) {
-                    $hFrag = $this->withRow($src, $hav['binder'],
-                        fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER'));
-                    $hCondParts[] = $hFrag->parts;
+                $this->inHaving = true;
+                try {
+                    foreach ($plan->having as $hav) {
+                        $hFrag = $this->withRow($src, $hav['binder'],
+                            fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER'));
+                        $hCondParts[] = $hFrag->parts;
+                    }
+                } finally {
+                    $this->inHaving = false;
                 }
                 foreach ($hCondParts as $idx => $hp) {
                     if ($idx > 0) {
@@ -3155,7 +3256,9 @@ final class Translator
                         $parts[] = ', ';
                     }
                     $first = false;
-                    $oFrag = $this->withRow($src, $ord['binder'], fn (): Fragment => $this->node($ord['node']));
+                    // A TEXT sort key is collated like a group key: SEL sorts text
+                    // by its bytes, and a server's default collation would not.
+                    $oFrag = $this->collatedKey($this->withRow($src, $ord['binder'], fn (): Fragment => $this->node($ord['node'])));
                     foreach ($oFrag->parts as $p) {
                         $parts[] = $p;
                     }

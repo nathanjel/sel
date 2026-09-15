@@ -14,6 +14,8 @@ NODE = 'node'       # an element of a static list: an AST node, re-entered
 COLUMN = 'column'   # one column reference, from a `columns` binding
 ROW = 'row'         # a row of a relation: fields resolve to that relation's columns
 NONE = 'none'       # in scope, but using it is an error with this reason
+KEY = 'key'         # the key of the group being rendered: a group-by entry,
+                    # rendered as the GROUP BY expression itself
 
 
 class Binder:
@@ -25,6 +27,7 @@ class Binder:
     COLUMN = COLUMN
     ROW = ROW
     NONE = NONE
+    KEY = KEY
 
     def __init__(self, shape: str, payload: Any, reason: str | None = None) -> None:
         self.shape = shape
@@ -46,3 +49,7 @@ class Binder:
     @staticmethod
     def none(reason: str) -> 'Binder':
         return Binder(NONE, None, reason)
+
+    @staticmethod
+    def key(group: Any) -> 'Binder':
+        return Binder(KEY, group)

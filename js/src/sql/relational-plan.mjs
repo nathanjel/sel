@@ -38,6 +38,10 @@ export class RelationalPlan {
     // 'sealed': the members are gone for good, and a MAP after that is refused
     // rather than evaluated over rows SEL would have called groups.
     this.bucket = null;
+    // Whether the grouping was written as a bare BUCKET (with or without the
+    // MAP that closes it). A bare bucket's key is an index key: SEL refuses a
+    // boolean, binary, list or record key, so the translator must too.
+    this.bareKey = false;
     this.having = [];
     this.aggregateAliases = {};
     this.orderBy = [];

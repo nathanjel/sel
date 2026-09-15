@@ -484,6 +484,13 @@
       ((eq k :none) 0)
       (t (sxhash k)))))
 
+(defun bucket-key-text (key pos)
+  (let ((v (force-value key)))
+    (when (eq (value-kind v) :none)
+      (when (value-null-p v) (fail "E_NULL" "value is NULL" pos))
+      (fail "E_NOT_TEXT" "a bucket key must be text or a number, got a list or record" pos))
+    (as-text v pos)))
+
 (defun do-bucket (a ctx)
   (let* ((val (args-val a 0)))
     (force-value val)
@@ -510,21 +517,21 @@
                         (when needs-k
                           (setf (cdr k-cell) (%text (or k (format nil "~d" idx)))))
                         (let* ((eval-key (args-eval a key-node))
+                               ;; A bare bucket's key is an index key (spec §3.3):
+                               ;; the scalar, verbatim, and refused the way indexing
+                               ;; refuses it -- never collapsed onto a string that
+                               ;; stands for every list, record or NULL. The
+                               ;; projected spelling has no map to key and groups
+                               ;; by identity instead.
+                               (key-str (if (null agg-node)
+                                            (bucket-key-text eval-key (node-pos key-node))
+                                            ""))
                                (h (eval-key-hash eval-key))
                                (bucket (gethash h groups-table))
                                (found (find-if (lambda (g) (value-eql (group-entry-key g) eval-key)) bucket)))
                           (if found
                               (push item (group-entry-rows found))
-                              (let* ((key-str (if (null agg-node)
-                                                  (cond ((eq (value-kind eval-key) :text)
-                                                         (value-scalar eval-key))
-                                                        ((eq (value-kind eval-key) :bool)
-                                                         (if (value-scalar eval-key) "TRUE" "FALSE"))
-                                                        ((looks-numeric eval-key)
-                                                         (value-scalar eval-key))
-                                                        (t ""))
-                                                  ""))
-                                     (new-g (make-group-entry eval-key key-str)))
+                              (let* ((new-g (make-group-entry eval-key key-str)))
                                 (setf (group-entry-rows new-g) (list item))
                                 (setf (gethash h groups-table) (cons new-g bucket))
                                 (push new-g groups))))))

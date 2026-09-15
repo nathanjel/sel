@@ -137,6 +137,7 @@ class Fragment {
   const std::vector<std::string>& caveats() const { return caveats_; }
   const std::vector<Part>& parts() const { return parts_; }
   const std::vector<Value>& params() const { return params_; }
+  const std::vector<SqlKind>& param_kinds() const { return param_kinds_; }
   bool exact() const { return exact_; }
   bool sargable() const { return sargable_; }
   bool guard() const { return guard_; }

@@ -293,11 +293,14 @@ matching the three iteration shapes of docs/SQL-TRANSLATION.md §7, plus one tha
 exists only to carry a refusal -- so that `_K` inside a relation body fails
 saying rows have no key, rather than falling through to the bindings map and
 being reported as an unbound variable."
-  (shape :none)          ; :node :column :row :none
+  (shape :none)          ; :node :column :row :none :key
   (payload nil)
   (reason nil))
 
 (defun binder-node (node) (%binder :node node))
+;; The key of the group being rendered: the group-by entry and the row binder,
+;; rendered as the GROUP BY expression itself.
+(defun binder-key (group row) (%binder :key (list group row)))
 (defun binder-column (spec) (%binder :column spec))
 (defun binder-row (rel) (%binder :row rel))
 (defun binder-none (reason) (%binder :none nil reason))
