@@ -201,7 +201,7 @@ optimiser, and after the physical optimiser RUN uses."
                      ((equal (getf c :mode) "params") :params)
                      ((equal (getf c :mode) "debug") :debug)
                      (t (suite-fail "~a: unknown mode ~a" (getf c :at) (getf c :mode)))))
-         (sql nil) (err nil) (thrown nil) (frag nil))
+         (sql nil) (err nil) (thrown nil) (frag nil) (program nil) (binds nil))
     (handler-case
         (progn
           ;; Inside the handler: a bad registration is one of the outcomes a case
@@ -209,8 +209,10 @@ optimiser, and after the physical optimiser RUN uses."
           (when (getf c :register) (funcall (getf c :register)))
           ;; Inside it too: a binding constructor refuses a malformed binding at
           ;; construction, and that refusal is one of the outcomes a case asserts.
-          (let ((binds (funcall (getf c :bindings))))
-            (setf frag (translate (sel:compile-source (getf c :source)) dialect binds
+          (setf binds (funcall (getf c :bindings)))
+          (setf program (sel:compile-source (getf c :source)))
+          (progn
+            (setf frag (translate program dialect binds
                                   (list :strict (getf c :strict))))
             (setf sql (cond ((equal as "condition") (as-condition frag mode))
                             ((equal as "statement") (as-statement frag mode))
@@ -230,6 +232,33 @@ optimiser, and after the physical optimiser RUN uses."
                                (if err (sql-error-code err) sql)))))
     (when thrown
       (suite-fail "~a: unexpected ~a: ~a" (getf c :at) (type-of thrown) thrown))
+
+    ;; Every `--- as statement` case is also run through translate-statement,
+    ;; the public full-delegation entry point, which must say exactly what
+    ;; TRANSLATE says -- the same text, or the same refusal at the same column.
+    ;; Two hosts ran the logical optimiser in that lane and three did not, and
+    ;; only a twin check can see it (review 2026-09-15 finding C).
+    (when (and (equal as "statement") program)
+      (let ((twin-sql nil) (twin-err nil))
+        (handler-case
+            (setf twin-sql (as-statement (translate-statement program dialect binds
+                                                              (list :strict (getf c :strict)))
+                                         mode))
+          (sql-error (e) (setf twin-err e))
+          (suite-error (e) (error e))
+          (error (e) (suite-fail "~a: translate-statement signalled ~a: ~a" (getf c :at) (type-of e) e)))
+        (flet ((got (e) (if e (format nil "~a at ~a:~a" (sql-error-code e) (sql-error-line e) (sql-error-col e)) "SQL")))
+          (cond
+            ((or err twin-err)
+             (unless (and err twin-err
+                          (equal (sql-error-code err) (sql-error-code twin-err))
+                          (= (sql-error-line err) (sql-error-line twin-err))
+                          (= (sql-error-col err) (sql-error-col twin-err)))
+               (return-from run-case
+                 (format nil "translate() gave ~a but translate-statement gave ~a" (got err) (got twin-err)))))
+            ((not (equal twin-sql sql))
+             (return-from run-case
+               (format nil "translate-statement disagrees with translate():~%     ~a~%     ~a" twin-sql sql)))))))
 
     (when (getf c :error)
       (unless err

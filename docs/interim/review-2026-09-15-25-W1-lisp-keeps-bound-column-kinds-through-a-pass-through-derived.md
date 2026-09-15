@@ -1,5 +1,7 @@
 # W1. Lisp keeps bound column kinds through a pass-through derived table; the other four degrade them to UNKNOWN
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "One optimiser policy in front of the translator, one rewrite order". Resolved the conservative way: Lisp degrades to UNKNOWN like the other four.
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** lisp, js, python, php, cpp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

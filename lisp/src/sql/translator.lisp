@@ -1921,16 +1921,20 @@ SQL counterpart" (snode-pos e)))
                (cons (sel::ascii-upcase col) (list :column col :table sub-alias :type :unknown)))
              (relational-plan-select-cols plan)))
     (t
-     ;; All fields from source and joins, retargeted to sub-alias
+     ;; All fields from source and joins, retargeted to sub-alias. Their kind
+     ;; is UNKNOWN, as in the other four hosts: a derived table's column is
+     ;; read through the guard, whatever the source column was declared as
+     ;; (review 2026-09-15 finding W1; this host alone kept the kind and
+     ;; rendered a different WHERE).
      (let ((fields '()))
        (dolist (f (getf (relational-plan-source-relation plan) :fields))
          (let* ((col (or (getf (cdr f) :column) (car f)))
-                (spec (list :column col :table sub-alias :type (getf (cdr f) :type :unknown))))
+                (spec (list :column col :table sub-alias :type :unknown)))
            (push (cons (car f) spec) fields)))
        (dolist (j (relational-plan-joins plan))
          (dolist (f (getf (join-plan-source-relation j) :fields))
            (let* ((col (or (getf (cdr f) :column) (car f)))
-                  (spec (list :column col :table sub-alias :type (getf (cdr f) :type :unknown))))
+                  (spec (list :column col :table sub-alias :type :unknown)))
              (unless (assoc (car f) fields :test #'equal)
                (push (cons (car f) spec) fields)))))
        (nreverse fields)))))
@@ -2293,17 +2297,26 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                          (+ (or (relational-plan-offset plan) 0) off))))
 
                 ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
+                 ;; A sort after a LIMIT or OFFSET sorts the rows that survived
+                 ;; them, grouped or not, so those wrap; a sort over a
+                 ;; projection, SELECT_COLS or DISTINCT wraps so its key can
+                 ;; name what they produced. A sort after a sort does not wrap:
+                 ;; the sorts are stable, so the earlier one is the later one's
+                 ;; tie-breaker, and the later one's keys go FIRST in the ORDER
+                 ;; BY (review 2026-09-15 finding V).
                  (when (or (relational-plan-limit plan)
                            (relational-plan-offset plan)
-                           (and (relational-plan-projections plan)
-                                (not (relational-plan-group-by plan))))
+                           (and (not (relational-plan-group-by plan))
+                                (or (relational-plan-projections plan)
+                                    (relational-plan-select-cols plan)
+                                    (relational-plan-distinct plan))))
                    (setf plan (wrap-plan-as-derived-table plan)))
                  (let ((before (length (relational-plan-order-by plan))))
                    (analyze-sort-step tr step plan)
                    (setf (relational-plan-order-by plan)
-                         (append (subseq (relational-plan-order-by plan) 0 before)
-                                 (mapcar (lambda (ord) (append (subseq ord 0 4) (list over-groups)))
-                                         (nthcdr before (relational-plan-order-by plan)))))))))))
+                         (append (mapcar (lambda (ord) (append (subseq ord 0 4) (list over-groups)))
+                                         (nthcdr before (relational-plan-order-by plan)))
+                                 (subseq (relational-plan-order-by plan) 0 before)))))))))
           plan)))))
 
 (defun compile-statement (tr plan)
@@ -2555,11 +2568,12 @@ must not be swallowed by the path that exists to handle refusals."
     (multiple-value-bind (names root) (const-scope (translator-bindings tr))
       (setf (translator-const-names tr) names
             (translator-const-root tr) root)
+      ;; Stage 1 and nothing else: the translator renders the tree it is
+      ;; handed, as TRANSLATE does and as the other four hosts do (review
+      ;; 2026-09-15 finding C: this entry point alone ran the full optimiser).
+      ;; The planner is the one place that optimises before translating.
       (let* ((*subquery-counter* 0)
-             (ast (if (getf options :no-optimize)
-                      (sel:program-ast program)
-                      (sel:optimize-ast-logical (sel:program-ast program))))
-             (norm (normalise ast names root))
+             (norm (normalise (sel:program-ast program) names root))
              (plan (analyze-pipeline tr norm)))
         (unless plan
           (refuse "E_SQL_SHAPE" "expected a relational query or pipeline"))

@@ -8629,6 +8629,118 @@
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
+   :name "stmt.lane.translator-never-folds"
+   :at "23-statements.sqlt:556"
+   :dialect "postgresql"
+   :source "ORDERS .> FILTER(IF(TRUE, 2, 1) >= _[\"id\"])"
+   :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE (CASE WHEN TRUE THEN 2 ELSE 1 END >= \"o\".\"id\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.lane.translator-refuses-what-it-would-not-have-folded"
+   :at "23-statements.sqlt:577"
+   :dialect "postgresql"
+   :source "ORDERS .> FILTER(IF(TRUE, \"x\", 1) >= _[\"id\"])"
+   :expect nil
+   :error "E_SQL_SHAPE 1:18"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.lane.constant-filter-then-take"
+   :at "23-statements.sqlt:590"
+   :dialect "postgresql"
+   :source "ORDERS .> FILTER(TRUE) .> TAKE(1)"
+   :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE TRUE LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.lane.sort-then-filter-wraps"
+   :at "23-statements.sqlt:603"
+   :dialect "postgresql"
+   :source "ORDERS .> SORT_BY(_[\"id\"]) .> FILTER(_[\"id\"] > 1)"
+   :expect "SELECT \"_sub1\".* FROM (SELECT \"o\".* FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" ASC) \"_sub1\" WHERE (CASE WHEN (CAST(\"_sub1\".\"id\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"_sub1\".\"id\" AS NUMERIC) ELSE NULL END > 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.order-by.later-sort-is-the-primary-key"
+   :at "23-statements.sqlt:622"
+   :dialect "postgresql"
+   :source "ORDERS .> SORT_BY(_[\"name\"]) .> SORT_BY(_[\"id\"], \"DESC\") .> TAKE(2)"
+   :expect "SELECT \"o\".* FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" DESC, CAST(\"o\".\"name\" AS TEXT) COLLATE \"C\" ASC LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.order-by.later-sort-over-a-grouped-statement"
+   :at "23-statements.sqlt:642"
+   :dialect "postgresql"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"d\", _K, \"n\", COUNT(_))) .> SORT_BY(_[\"n\"]) .> SORT_BY(_[\"d\"])"
+   :expect "SELECT CAST(\"dept\" AS TEXT) COLLATE \"C\" AS \"d\", COUNT(*) AS \"n\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) COLLATE \"C\" ORDER BY CAST(\"dept\" AS TEXT) COLLATE \"C\" ASC, COUNT(*) ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.sort-after-pagination-sorts-the-page"
+   :at "23-statements.sqlt:655"
+   :dialect "postgresql"
+   :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"d\", _K, \"n\", COUNT(_))) .> TAKE(2) .> SORT_BY(_[\"n\"])"
+   :expect "SELECT \"_sub1\".* FROM (SELECT CAST(\"dept\" AS TEXT) COLLATE \"C\" AS \"d\", COUNT(*) AS \"n\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) COLLATE \"C\" LIMIT 2) \"_sub1\" ORDER BY \"_sub1\".\"n\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
+  (list
    :name "stmt.bucket.basic"
    :at "24-bucket.sqlt:9"
    :dialect "mariadb"
@@ -10723,4 +10835,68 @@
    :plan "pure_memory"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "STATUS" (binding-column "status" "o" :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "STATUS" (binding-column "status" "o" :text))) nil nil)))))
+  (list
+   :name "plan.fold.negative-literal"
+   :at "25-hybrid-plans.sqlt:1323"
+   :dialect "mariadb"
+   :source "ORDERS .> TAKE(2) .> MAP(RECORD(\"k\", -0, \"j\", - -1.50))"
+   :expect "SELECT 0 AS `k`, 1.50 AS `j` FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.fold.negative-literal-in-a-where"
+   :at "25-hybrid-plans.sqlt:1344"
+   :dialect "postgresql"
+   :source "ORDERS .> FILTER(_[\"id\"] > -1)"
+   :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE (\"o\".\"id\" > (-1))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.sort.later-sort-is-the-primary-key"
+   :at "25-hybrid-plans.sqlt:1359"
+   :dialect "postgresql"
+   :source "ORDERS .> SORT_BY(_[\"name\"]) .> SORT_BY(_[\"id\"], \"DESC\") .> TAKE(2)"
+   :expect "SELECT \"o\".* FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" DESC, CAST(\"o\".\"name\" AS TEXT) COLLATE \"C\" ASC LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.map.computed-then-sort-then-take"
+   :at "25-hybrid-plans.sqlt:1380"
+   :dialect "postgresql"
+   :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"n\", _[\"id\"] + 1)) .> SORT_BY(_[\"id\"], \"DESC\") .> TAKE(2)"
+   :expect "SELECT \"o\".\"id\" AS \"id\", (CAST(\"o\".\"id\" AS NUMERIC) + CAST(1 AS NUMERIC)) AS \"n\" FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" DESC LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))))

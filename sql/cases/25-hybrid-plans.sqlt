@@ -1319,3 +1319,80 @@ pure_memory
 --- tables
 orders
 ===
+
+### name: plan.fold.negative-literal
+--- note
+Review 2026-09-15 finding B. Every parser names unary minus NEG, and the
+fold arm in three optimisers tested for "-", so `-0` and `- -1.50` were
+folded in JS and Python and rendered as CASTs of negations in PHP, C++ and
+Lisp -- the same rows, different SQL. The Lisp arm also negated by string
+surgery ("-0"); it goes through the decimal core now, like the others.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> TAKE(2) .> MAP(RECORD("k", -0, "j", - -1.50))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT 0 AS `k`, 1.50 AS `j` FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1`
+===
+
+### name: plan.fold.negative-literal-in-a-where
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > -1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT "o".* FROM "orders" "o" WHERE ("o"."id" > (-1))
+===
+
+### name: plan.sort.later-sort-is-the-primary-key
+--- note
+Finding V from the planner's side: no optimiser drops the earlier sort any
+more (it was the later one's tie-breaker), so the plan carries both keys
+in the order the translator gives them, in every host. Lisp's optimiser
+used to run the rewrites as ordered passes and fused the second sort with
+the TAKE before the sort rule saw the pair.
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["name"]) .> SORT_BY(_["id"], "DESC") .> TAKE(2)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" DESC, CAST("o"."name" AS TEXT) COLLATE "C" ASC LIMIT 2
+===
+
+### name: plan.map.computed-then-sort-then-take
+--- note
+The sort moves ahead of the MAP (its key is a pass-through field) and the
+TAKE stays after it, in every host: one statement, LIMIT last. Lisp's
+pass order fused the TAKE into the sort first and wrapped the MAP around a
+limited derived table.
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("id", _["id"], "n", _["id"] + 1)) .> SORT_BY(_["id"], "DESC") .> TAKE(2)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT "o"."id" AS "id", (CAST("o"."id" AS NUMERIC) + CAST(1 AS NUMERIC)) AS "n" FROM "orders" "o" ORDER BY "o"."id" DESC LIMIT 2
+===

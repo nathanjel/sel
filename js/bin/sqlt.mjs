@@ -181,6 +181,8 @@ function runCase(c) {
   let error = null;
   let thrown = null;
   let frag = null;
+  let program = null;
+  let bindings = null;
   try {
     // Inside the try: a bad registration is one of the outcomes a case may
     // assert, so it has to be catchable rather than fatal.
@@ -188,8 +190,8 @@ function runCase(c) {
     // Inside the try: a Binding constructor refuses a malformed binding at the
     // earliest possible moment, which is construction rather than translation,
     // and that refusal is one of the outcomes a case asserts.
-    const bindings = c.bindings();
-    const program = compile(c.source);
+    bindings = c.bindings();
+    program = compile(c.source);
     frag = Sql.translate(program, dialect, bindings, options);
     sql = as === 'condition' ? frag.asCondition(mode)
       : as === 'statement' ? frag.asStatement(mode)
@@ -219,6 +221,31 @@ function runCase(c) {
   }
   if (thrown !== null) {
     throw new SuiteError(`${c.at}: unexpected ${thrown.constructor.name}: ${thrown.stack}`);
+  }
+
+  // Every `--- as statement` case is also run through translateStatement, the
+  // public full-delegation entry point, which must say exactly what
+  // translate() says -- the same text, or the same refusal at the same
+  // column. Two hosts ran the logical optimiser in that lane and three did
+  // not, and only a twin check can see it (review 2026-09-15 finding C).
+  if (as === 'statement' && program !== null) {
+    let twinSql = null;
+    let twinError = null;
+    try {
+      twinSql = Sql.translateStatement(program, dialect, bindings, options).asStatement(mode);
+    } catch (e) {
+      if (e instanceof SqlError) twinError = e;
+      else throw new SuiteError(`${c.at}: translateStatement threw ${e.constructor.name}: ${e.stack}`);
+    }
+    if (error !== null || twinError !== null) {
+      const got = (e) => (e === null ? 'SQL' : `${e.code} at ${e.line}:${e.col}`);
+      if (error === null || twinError === null || error.code !== twinError.code
+          || error.line !== twinError.line || error.col !== twinError.col) {
+        return `translate() gave ${got(error)} but translateStatement() gave ${got(twinError)}`;
+      }
+    } else if (twinSql !== sql) {
+      return `translateStatement() disagrees with translate():\n     ${twinSql}\n     ${sql}`;
+    }
   }
 
   if (c.error !== null && c.error !== undefined) {

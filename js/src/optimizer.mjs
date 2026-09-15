@@ -419,14 +419,9 @@ function logicalSteps(source, steps, options = {}) {
         changed = true;
         continue;
       }
-      if (second && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name)
-          && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(second.name)
-          && !stepReadsKey(second)) {
-        next.push(second);
-        i++;
-        changed = true;
-        continue;
-      }
+      // No rule drops a sort followed by another sort: the sorts are stable,
+      // so the first is the second's tie-breaker (rel.sort.then-sort-keeps-
+      // the-tie-order), and a rule that removed it changed the value.
       if (second && ['DISTINCT', 'DEDUPE'].includes(first.name)
           && ['DISTINCT', 'DEDUPE'].includes(second.name)) {
         next.push(first);

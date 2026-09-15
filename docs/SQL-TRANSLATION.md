@@ -2279,7 +2279,25 @@ every host to:
   translator.** `strict` is the translator's and is the one every host accepts;
   the three dynamic hosts also accept the optimiser's `fuseFilters` and
   `foldConstants`, and the planner forwards them rather than swallowing them.
-  C++ and Lisp take `strict` alone.
+  C++ and Lisp take `strict` alone. **The planner is the only entry point
+  that optimises**: `translate()` and `translate_statement()` run stage 1
+  and render the tree they are handed, in every host — a constant `IF` is a
+  `CASE`, `FILTER(TRUE)` is `WHERE TRUE`, two sorts are two sort keys. Two
+  hosts used to run the pipeline rewrites inside the translator and one
+  folded constants there, so the same program rendered differently per host
+  through a public entry point (review 2026-09-15 finding C); the `.sqlt`
+  runners now put every `--- as statement` case through both entry points
+  and require the same text or the same refusal.
+- **A later sort's keys come first.** SEL's sorts are stable, so `SORT_BY(a)
+  .> SORT_BY(b)` orders by `b` and breaks ties by `a`: the translator renders
+  `ORDER BY b, a`, never a derived table around the first sort (which loses
+  it) and never `a, b`, and no optimiser drops the earlier sort as redundant
+  (`rel.sort.then-sort-keeps-the-tie-order`). A sort after a `TAKE`/`DROP`
+  sorts the page — grouped or not, the paginated statement is wrapped —
+  and the Lisp optimiser applies the rewrites in the same single
+  left-to-right sweep as the other four, so a pipeline reaches the translator
+  in one shape everywhere (finding V; `stmt.order-by.later-sort-*`,
+  `plan.sort.later-sort-is-the-primary-key`, `plan.map.computed-then-sort-then-take`).
 - **A bucket is split only where SQL still has its members.** `BUCKET(src,
   key)` on its own renders as the group *keys* — SQL has no nested row — while
   SEL's value is a map of member rows. So `BUCKET(src, key) .> MAP(proj)` is

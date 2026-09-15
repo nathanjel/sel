@@ -350,7 +350,8 @@ def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
      ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
      ' .> SORT_BY(_["x"], "DESC")', ['SORT_BY', 'MAP']),
     ('(1, 2) .> FILTER(_ > 0) .> FILTER(_ < 3)', ['FILTER']),
-    ('(1, 2) .> SORT() .> SORT_DESC()', ['SORT_DESC']),
+    # A sort after a sort is kept: the sorts are stable and the first breaks ties.
+    ('(1, 2) .> SORT() .> SORT_DESC()', ['SORT', 'SORT_DESC']),
     ('(1, 2) .> DEDUPE() .> DISTINCT()', ['DEDUPE']),
     ('(1, 2) .> FILTER(TRUE)', []),
     # A first step over a variable is kept: the source may be a scalar.
@@ -589,6 +590,13 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         ('ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(LIST(1, 2, 3)))) .> TAKE(2)', 'pure_memory'),
         ('ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(IF(TRUE, LIST(1, 2), 3)))) .> TAKE(2)', 'pure_memory'),
         ('ORDERS .> FILTER(COUNT(_) > 2) .> MAP(RECORD("id", _["id"]))', 'pure_memory'),
+        # Finding V: a later sort's keys come first, the earlier sort breaks
+        # its ties; a sort after a TAKE sorts the page; the MAP/sort swap
+        # leaves the TAKE last.
+        ('ORDERS .> SORT_BY(_["name"]) .> SORT_BY(_["customer_id"], "DESC") .> TAKE(2)', 'pure_sql'),
+        ('ORDERS .> SORT_BY(_["id"], "DESC") .> SORT_BY(_["customer_id"], "DESC")', 'pure_sql'),
+        ('ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_))) .> TAKE(1) .> SORT_BY(_["n"])', 'pure_sql'),
+        ('ORDERS .> MAP(RECORD("id", _["id"], "n", _["id"] + 1)) .> SORT_BY(_["id"], "DESC") .> TAKE(2)', 'pure_sql'),
     ]
 
     def outcome(fn):

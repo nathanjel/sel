@@ -901,11 +901,13 @@ b\"c\\d")))
       (is (eq :bin (sel::node-kind pred)))
       (is (string= "AND" (sel::node-s pred)))))
 
-  ;; 11. Redundant successive SORT elimination
+  ;; 11. A sort after a sort is kept: the sorts are stable and the first
+  ;; breaks the second's ties.
   (let* ((prog (sel:compile-source "DATA .> SORT_BY(_['a']) .> SORT_BY(_['b'])"))
          (opt (sel:optimize-ast-logical (sel:program-ast prog))))
     (is (string= "SORT_BY" (sel::node-s opt)))
-    (is (string= "DATA" (sel::node-s (first (sel::node-items opt))))))
+    (is (string= "SORT_BY" (sel::node-s (first (sel::node-items opt)))))
+    (is (string= "DATA" (sel::node-s (first (sel::node-items (first (sel::node-items opt))))))))
 
   ;; 12. Redundant successive DEDUPE elimination
   (let* ((prog (sel:compile-source "DATA .> DEDUPE() .> DEDUPE()"))

@@ -216,6 +216,10 @@ std::string run_case(const SqlCase& c, const std::string& dialect) {
   std::string sql, thrown_what;
   SqlError error("", "");
   Fragment frag;
+  std::optional<sel::Program> program;
+  std::optional<sel::sql::Bindings> bindings;
+  sel::sql::Options options;
+  options.strict = c.strict;
 
   try {
     // Inside the try: a bad registration is one of the outcomes a case may
@@ -224,11 +228,9 @@ std::string run_case(const SqlCase& c, const std::string& dialect) {
     // Inside the try: a Binding constructor refuses a malformed binding at the
     // earliest possible moment, which is construction rather than translation,
     // and that refusal is one of the outcomes a case asserts.
-    sel::sql::Bindings bindings(c.bindings_fn());
-    sel::Program program = sel::compile(c.source);
-    sel::sql::Options options;
-    options.strict = c.strict;
-    frag = Sql::translate(program, dialect, bindings, options);
+    bindings.emplace(c.bindings_fn());
+    program = sel::compile(c.source);
+    frag = Sql::translate(*program, dialect, *bindings, options);
     sql = as_ == "condition" ? frag.as_condition(*mode)
         : (as_ == "statement" ? frag.as_statement(*mode)
                               : frag.as_value(*mode));
@@ -258,6 +260,38 @@ std::string run_case(const SqlCase& c, const std::string& dialect) {
   }
   if (have_thrown) {
     throw SuiteError(std::string(c.at) + ": unexpected throw: " + thrown_what);
+  }
+
+  // Every `--- as statement` case is also run through translate_statement, the
+  // public full-delegation entry point, which must say exactly what
+  // translate() says -- the same text, or the same refusal at the same column.
+  // Two hosts ran the logical optimiser in that lane and three did not, and
+  // only a twin check can see it (review 2026-09-15 finding C).
+  if (as_ == "statement" && program) {
+    bool twin_has_error = false;
+    std::string twin_sql;
+    SqlError twin_error("", "");
+    try {
+      twin_sql = Sql::translate_statement(*program, dialect, *bindings, options).as_statement(*mode);
+    } catch (const SqlError& e) {
+      twin_error = e;
+      twin_has_error = true;
+    } catch (const std::exception& e) {
+      throw SuiteError(std::string(c.at) + ": translate_statement threw: " + e.what());
+    }
+    const auto got = [](bool has, const SqlError& e) {
+      return has ? e.code() + " at " + std::to_string(e.line()) + ":" + std::to_string(e.col())
+                 : std::string("SQL");
+    };
+    if (have_error || twin_has_error) {
+      if (!have_error || !twin_has_error || error.code() != twin_error.code() ||
+          error.line() != twin_error.line() || error.col() != twin_error.col()) {
+        return "translate() gave " + got(have_error, error) + " but translate_statement() gave " +
+               got(twin_has_error, twin_error);
+      }
+    } else if (twin_sql != sql) {
+      return "translate_statement() disagrees with translate():\n     " + twin_sql + "\n     " + sql;
+    }
   }
 
   if (c.error) {

@@ -5287,7 +5287,7 @@ NodePtr opt_fold(const NodePtr& node) {
   if (!node) return node;
   if (node->t == NT::Un && node->l) {
     if (node->s == "NOT" && node->l->t == NT::Bool) return opt_bool(!node->l->b, node->pos);
-    if (node->s == "-" && node->l->t == NT::Num) {
+    if (node->s == "NEG" && node->l->t == NT::Num) {
       try {
         Dec value;
         if (dec_parse(node->l->s, value, node->pos)) {
@@ -5700,14 +5700,9 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           continue;
         }
       }
-      if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
-          ((*second)->s == "SORT" || (*second)->s == "SORT_DESC" || (*second)->s == "SORT_BY") &&
-          !opt_step_reads_key(**second)) {
-        next.push_back(*second);
-        i += 2;
-        changed = true;
-        continue;
-      }
+      // No rule drops a sort followed by another sort: the sorts are stable,
+      // so the first is the second's tie-breaker (rel.sort.then-sort-keeps-
+      // the-tie-order), and a rule that removed it changed the value.
       if (second && (first->s == "DISTINCT" || first->s == "DEDUPE") &&
           ((*second)->s == "DISTINCT" || (*second)->s == "DEDUPE")) {
         next.push_back(first);

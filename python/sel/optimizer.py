@@ -496,13 +496,10 @@ def logical_steps(source: Node | None, steps: list[Node],
                 i += 2
                 changed = True
                 continue
-            if (second is not None and first.name in ('SORT', 'SORT_DESC', 'SORT_BY')
-                    and second.name in ('SORT', 'SORT_DESC', 'SORT_BY')
-                    and not step_reads_key(second)):
-                next_steps.append(second)
-                i += 2
-                changed = True
-                continue
+            # No rule drops a sort followed by another sort: the sorts are
+            # stable, so the first is the second's tie-breaker
+            # (rel.sort.then-sort-keeps-the-tie-order), and a rule that removed
+            # it changed the value.
             if (second is not None and first.name in ('DISTINCT', 'DEDUPE')
                     and second.name in ('DISTINCT', 'DEDUPE')):
                 next_steps.append(first)

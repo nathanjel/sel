@@ -190,7 +190,7 @@ final class Optimizer
             if (($node['op'] ?? null) === 'NOT' && ($child['t'] ?? null) === 'bool') {
                 return self::boolNode(!(bool) $child['v'], $node['pos']);
             }
-            if (($node['op'] ?? null) === '-' && ($child['t'] ?? null) === 'num') {
+            if (($node['op'] ?? null) === 'NEG' && ($child['t'] ?? null) === 'num') {
                 try {
                     $value = Dec::parse((string) $child['v'], $child['pos'] ?? null);
                     if ($value !== null) {
@@ -443,14 +443,10 @@ final class Optimizer
                         continue;
                     }
                 }
-                if ($second !== null && in_array($firstName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
-                    && in_array($secondName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
-                    && !self::stepReadsKey($second)) {
-                    $next[] = $second;
-                    $i++;
-                    $changed = true;
-                    continue;
-                }
+                // No rule drops a sort followed by another sort: the sorts are
+                // stable, so the first is the second's tie-breaker
+                // (rel.sort.then-sort-keeps-the-tie-order), and a rule that
+                // removed it changed the value.
                 if ($second !== null && in_array($firstName, ['DISTINCT', 'DEDUPE'], true)
                     && in_array($secondName, ['DISTINCT', 'DEDUPE'], true)) {
                     $next[] = $first;

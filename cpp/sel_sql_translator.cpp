@@ -2753,15 +2753,25 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       plan.offset = plan.offset.value_or(0) + off;
     } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
                name == "TOP" || name == "TOP_DESC" || name == "TOP_BY") {
+      // A sort after a LIMIT or OFFSET sorts the rows that survived them,
+      // grouped or not, so those wrap; a sort over a projection or a DISTINCT
+      // wraps so its key can name what they produced. A sort after a sort
+      // does not wrap: the sorts are stable, so the earlier one is the later
+      // one's tie-breaker, and the later one's keys go FIRST in the ORDER BY
+      // (review 2026-09-15 finding V).
       const bool need_derived =
-          !plan.group_by.has_value() &&
-          (plan.projections.has_value() || plan.select_cols.has_value() ||
-           plan.distinct || plan.limit.has_value() || plan.offset.has_value() ||
-           !plan.order_by.empty());
+          plan.limit.has_value() || plan.offset.has_value() ||
+          (!plan.group_by.has_value() &&
+           (plan.projections.has_value() || plan.select_cols.has_value() || plan.distinct));
       plan = ensure_derived(std::move(plan), need_derived);
       const std::size_t before = plan.order_by.size();
       analyze_sort_step(step, plan);
-      for (std::size_t i = before; i < plan.order_by.size(); ++i) plan.order_by[i].over_groups = over_groups;
+      std::vector<RelationalOrder> added(plan.order_by.begin() + static_cast<std::ptrdiff_t>(before),
+                                         plan.order_by.end());
+      for (auto& entry : added) entry.over_groups = over_groups;
+      plan.order_by.erase(plan.order_by.begin() + static_cast<std::ptrdiff_t>(before), plan.order_by.end());
+      added.insert(added.end(), plan.order_by.begin(), plan.order_by.end());
+      plan.order_by = std::move(added);
     } else if (name == "LINK" || name == "LINK_LEFT") {
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);

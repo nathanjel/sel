@@ -395,3 +395,14 @@ LIST(3, 1, 2) .> SORT() .> SORT_BY(_K, "DESC")
 --- expect
 tree -{"1"=t"3", "2"=t"2", "3"=t"1"}
 ===
+
+### name: rel.sort.then-sort-keeps-the-tie-order
+--- note
+Sorts are stable, so a sort after a sort keeps the earlier order among
+equal keys: the first sort is the second's tie-breaker. An optimiser that
+dropped the first as redundant answered a=2 first here in every host.
+--- source
+LIST(RECORD("a", 2, "b", 1), RECORD("a", 1, "b", 1)) .> SORT_BY(_["a"]) .> SORT_BY(_["b"]) .> MAP(_["a"])
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===

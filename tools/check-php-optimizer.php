@@ -154,8 +154,8 @@ $filterFusion = optimized_steps('(1, 2) .> FILTER(_ > 0) .> FILTER(_ < 3)');
 check(step_names($filterFusion) === ['FILTER']
     && ($filterFusion[0]['args'][1]['op'] ?? null) === 'AND', 'FILTER fusion');
 
-$sortPrune = optimized_steps('(1, 2) .> SORT() .> SORT_DESC()');
-check(step_names($sortPrune) === ['SORT_DESC'], 'redundant sort elimination');
+$sortKept = optimized_steps('(1, 2) .> SORT() .> SORT_DESC()');
+check(step_names($sortKept) === ['SORT', 'SORT_DESC'], 'a sort after a sort is kept: the sorts are stable and the first breaks ties');
 
 $dedupePrune = optimized_steps('(1, 2) .> DEDUPE() .> DISTINCT()');
 check(step_names($dedupePrune) === ['DEDUPE'], 'redundant dedupe elimination');

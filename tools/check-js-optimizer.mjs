@@ -80,8 +80,8 @@ same(names(optimizedSteps(topPrefix + 'TOP(r, r["y"], 1)', false)), ['MAP', 'TOP
 
 same(names(optimizedSteps('(1, 2) .> FILTER(_ > 0) .> FILTER(_ < 3)', false)), ['FILTER'],
   'FILTER fusion');
-same(names(optimizedSteps('(1, 2) .> SORT() .> SORT_DESC()', false)), ['SORT_DESC'],
-  'redundant sort elimination');
+same(names(optimizedSteps('(1, 2) .> SORT() .> SORT_DESC()', false)), ['SORT', 'SORT_DESC'],
+  'a sort after a sort is kept: the sorts are stable and the first breaks ties');
 same(names(optimizedSteps('(1, 2) .> DEDUPE() .> DISTINCT()', false)), ['DEDUPE'],
   'redundant dedupe elimination');
 same(names(optimizedSteps('(1, 2) .> FILTER(TRUE)', false)), [],

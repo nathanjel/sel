@@ -1,5 +1,7 @@
 # V. Lisp applies logical rewrites as per-rule passes; SORT_BY .> SORT_BY / SORT_BY .> TAKE reach the translator differently and render a wrong ORDER BY
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "One optimiser policy in front of the translator, one rewrite order". The suggested `ORDER BY id DESC LIMIT 2` expectation was superseded: the earlier sort is the later one's tie-breaker (SEL sorts are stable), so the pinned SQL is `ORDER BY id DESC, name ASC LIMIT 2` and the optimiser's sort/sort elimination is removed in all five hosts.
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** lisp, js, php, python, cpp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

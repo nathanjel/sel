@@ -23,7 +23,7 @@ import { Emit } from './emit.mjs';
 import { refuse } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
 import { JoinPlan, RelationalPlan } from './relational-plan.mjs';
-import { optimizeAstLogical, PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS } from '../optimizer.mjs';
+import { PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS } from '../optimizer.mjs';
 
 // SEL list keys are the canonical decimals "1", "2", … — so "01" is not a key and
 // neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer used
@@ -117,11 +117,6 @@ export class Translator {
     this.emit = new Emit(dialect);
     this.bindings = bindings;
     this.strict = Boolean((options ?? {}).strict ?? false);
-    // SQL uses the logical pipeline rewrites, but leaves scalar constant
-    // folding and filter fusion off: the exact SQL lane intentionally preserves
-    // the source expression shape and its established parenthesisation.
-    this.optimize = (options ?? {}).optimizeSql !== false
-      && !Boolean((options ?? {}).noOptimize ?? false);
     this.params = [];
     this.paramKinds = [];
     // Aggregate binders, innermost last. Consulted before the bindings map, the
@@ -151,9 +146,12 @@ export class Translator {
     this.frames = [];
     this.depth = 0;
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
-    const sourceAst = this.optimize
-      ? optimizeAstLogical(ast, { foldConstants: false, fuseFilters: false }) : ast;
-    const norm = normalise.run(sourceAst, this.constNames, this.constCtx);
+    // Stage 1 and nothing else: the translator renders the tree it is handed.
+    // Two hosts ran the logical optimiser here and three did not, so the same
+    // program rendered different SQL per host (review 2026-09-15 finding C).
+    // The planner is the one place that optimises before translating, and
+    // it does so in every host.
+    const norm = normalise.run(ast, this.constNames, this.constCtx);
     const plan = this.analyzePipeline(norm);
     if (plan !== null) {
       return this.compileStatement(plan);
@@ -175,9 +173,7 @@ export class Translator {
     this.depth = 0;
     this.subqueryCounter = 0;
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
-    const sourceAst = this.optimize
-      ? optimizeAstLogical(ast, { foldConstants: false, fuseFilters: false }) : ast;
-    const norm = normalise.run(sourceAst, this.constNames, this.constCtx);
+    const norm = normalise.run(ast, this.constNames, this.constCtx);
     const plan = this.analyzePipeline(norm);
     if (plan === null) {
       refuse('E_SQL_SHAPE', 'expected a relational query or pipeline');
@@ -2206,14 +2202,22 @@ export class Translator {
         case 'TOP':
         case 'TOP_DESC':
         case 'TOP_BY':
+          // A sort after a LIMIT or OFFSET sorts the rows that survived them,
+          // grouped or not, so those wrap; a sort over a projection or a
+          // DISTINCT wraps so its key can name what they produced. A sort
+          // after a sort does not wrap: the sorts are stable, so the earlier
+          // one is the later one's tie-breaker, and the later one's keys go
+          // FIRST in the ORDER BY (review 2026-09-15 finding V).
           plan = this.ensureDerived(plan, (candidate) =>
-            candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
-              || candidate.distinct || candidate.limit !== null || candidate.offset !== null
-              || candidate.orderBy.length));
+            candidate.limit !== null || candidate.offset !== null
+              || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
+                || candidate.distinct)));
           {
             const before = plan.orderBy.length;
             this.analyzeSortStep(step, plan);
-            for (let i = before; i < plan.orderBy.length; i += 1) plan.orderBy[i].overGroups = overGroups;
+            const added = plan.orderBy.slice(before);
+            for (const entry of added) entry.overGroups = overGroups;
+            plan.orderBy = [...added, ...plan.orderBy.slice(0, before)];
           }
           break;
 

@@ -552,3 +552,119 @@ ITEMS .> MAP(RECORD("id", _["dept"], "n", COUNT(_)))
 --- error
 E_SQL_SHAPE 1:49
 ===
+
+### name: stmt.lane.translator-never-folds
+--- note
+Review 2026-09-15 finding C. The translator runs stage 1 and nothing else,
+in both entry points and in every host: `translate()` and
+`translate_statement()` render the tree they are handed, so a constant IF
+is a CASE. Two hosts ran the logical optimiser inside the translator and
+one folded constants there; the planner is the one place that optimises
+before translating. Every `--- as statement` case is now run through both
+entry points, which must agree.
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> FILTER(IF(TRUE, 2, 1) >= _["id"])
+--- expect
+SELECT "o".* FROM "orders" "o" WHERE (CASE WHEN TRUE THEN 2 ELSE 1 END >= "o"."id")
+===
+
+### name: stmt.lane.translator-refuses-what-it-would-not-have-folded
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> FILTER(IF(TRUE, "x", 1) >= _["id"])
+--- error
+E_SQL_SHAPE 1:18
+===
+
+### name: stmt.lane.constant-filter-then-take
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> FILTER(TRUE) .> TAKE(1)
+--- expect
+SELECT "o".* FROM "orders" "o" WHERE TRUE LIMIT 1
+===
+
+### name: stmt.lane.sort-then-filter-wraps
+--- note
+Without an optimiser in front of it the translator sees the steps as
+written: a FILTER after a sort is a WHERE over the sorted rows, through a
+derived table whose columns are read through the guard -- in every host,
+including the one that used to keep the source column's kind through the
+derived table (finding W1).
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["id"]) .> FILTER(_["id"] > 1)
+--- expect
+SELECT "_sub1".* FROM (SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" ASC) "_sub1" WHERE (CASE WHEN (CAST("_sub1"."id" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("_sub1"."id" AS NUMERIC) ELSE NULL END > 1)
+===
+
+### name: stmt.order-by.later-sort-is-the-primary-key
+--- note
+Review 2026-09-15 finding V. SEL's sorts are stable, so a sort after a sort
+keeps the earlier order among equal keys (conformance
+rel.sort.then-sort-keeps-the-tie-order): the later sort's keys come first
+in the ORDER BY and the earlier sort's follow as the tie-breaker. Four hosts
+wrapped the first sort in a derived table and lost it; the fifth appended
+the later keys after the earlier ones, which sorts by the wrong key.
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["name"]) .> SORT_BY(_["id"], "DESC") .> TAKE(2)
+--- expect
+SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" DESC, CAST("o"."name" AS TEXT) COLLATE "C" ASC LIMIT 2
+===
+
+### name: stmt.order-by.later-sort-over-a-grouped-statement
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"], RECORD("d", _K, "n", COUNT(_))) .> SORT_BY(_["n"]) .> SORT_BY(_["d"])
+--- expect
+SELECT CAST("dept" AS TEXT) COLLATE "C" AS "d", COUNT(*) AS "n" FROM "items" GROUP BY CAST("dept" AS TEXT) COLLATE "C" ORDER BY CAST("dept" AS TEXT) COLLATE "C" ASC, COUNT(*) ASC
+===
+
+### name: stmt.order-by.sort-after-pagination-sorts-the-page
+--- note
+A sort after a LIMIT sorts the rows that survived it, on a grouped
+statement too: four hosts appended the ORDER BY to the grouped statement,
+which sorted before limiting.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"DEPT": {"kind": "column", "column": "dept", "type": "TEXT"}, "AMOUNT": {"kind": "column", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> BUCKET(_["dept"], RECORD("d", _K, "n", COUNT(_))) .> TAKE(2) .> SORT_BY(_["n"])
+--- expect
+SELECT "_sub1".* FROM (SELECT CAST("dept" AS TEXT) COLLATE "C" AS "d", COUNT(*) AS "n" FROM "items" GROUP BY CAST("dept" AS TEXT) COLLATE "C" LIMIT 2) "_sub1" ORDER BY "_sub1"."n" ASC
+===

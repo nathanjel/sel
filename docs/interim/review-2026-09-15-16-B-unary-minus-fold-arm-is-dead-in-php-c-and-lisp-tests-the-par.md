@@ -1,5 +1,7 @@
 # B. Unary-minus fold arm is dead in PHP, C++ and Lisp (tests "-", the parser emits NEG)
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "One optimiser policy in front of the translator, one rewrite order".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** php, cpp, lisp, js, python
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

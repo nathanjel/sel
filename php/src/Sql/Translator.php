@@ -2974,16 +2974,26 @@ final class Translator
                 case 'TOP':
                 case 'TOP_DESC':
                 case 'TOP_BY':
+                    // A sort after a LIMIT or OFFSET sorts the rows that
+                    // survived them, grouped or not, so those wrap; a sort over
+                    // a projection or a DISTINCT wraps so its key can name what
+                    // they produced. A sort after a sort does not wrap: the
+                    // sorts are stable, so the earlier one is the later one's
+                    // tie-breaker, and the later one's keys go FIRST in the
+                    // ORDER BY (review 2026-09-15 finding V).
                     $plan = $this->ensureDerived($plan,
-                        $plan->groupBy === null
-                        && ($plan->projections !== null || $plan->selectCols !== null
-                            || $plan->distinct || $plan->limit !== null || $plan->offset !== null
-                            || $plan->orderBy !== []));
+                        $plan->limit !== null || $plan->offset !== null
+                        || ($plan->groupBy === null
+                            && ($plan->projections !== null || $plan->selectCols !== null
+                                || $plan->distinct)));
                     $before = count($plan->orderBy);
                     $this->analyzeSortStep($step, $plan);
-                    for ($i = $before; $i < count($plan->orderBy); $i++) {
-                        $plan->orderBy[$i]['overGroups'] = $overGroups;
+                    $added = array_slice($plan->orderBy, $before);
+                    foreach ($added as &$entry) {
+                        $entry['overGroups'] = $overGroups;
                     }
+                    unset($entry);
+                    $plan->orderBy = array_merge($added, array_slice($plan->orderBy, 0, $before));
                     break;
 
                 case 'LINK':

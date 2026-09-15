@@ -56,11 +56,18 @@
             (let ((res (make-node :bool (node-pos node))))
               (setf (node-b res) (not (node-b child)))
               res))
-           ((and (string= op "-") child (eq (node-kind child) :num) (plusp (length (node-s child))))
-            (let ((s (node-s child))
-                  (res (make-node :num (node-pos node))))
-              (setf (node-s res) (if (char= (char s 0) #\-) (subseq s 1) (concatenate 'string "-" s)))
-              res))
+           ;; Through the decimal core, as the other hosts and the evaluator:
+           ;; -0 is 0, not "-0". A numeral the core refuses is left for the
+           ;; evaluator, which owns that error.
+           ((and (string= op "NEG") child (eq (node-kind child) :num))
+            (handler-case
+                (let ((d (dec-parse (node-s child) (node-pos node))))
+                  (if d
+                      (let ((res (make-node :num (node-pos node))))
+                        (setf (node-s res) (dec-format (dec-negate d)))
+                        res)
+                      node))
+              (error () node)))
            (t node))))
 
       (:bin
@@ -370,8 +377,13 @@ key. The forms are the evaluator's (spec §7.3)."
           collect (node-s it))))
 
 (defun try-parse-int-literal (node)
+  "A non-negative integer literal's value, or NIL: what the slicing rules may
+fold, as in the other hosts (a negative count is the evaluator's error)."
   (when (and node (node-p node) (eq (node-kind node) :num))
-    (ignore-errors (parse-integer (node-s node)))))
+    (let ((s (node-s node)))
+      (when (and (plusp (length s))
+                 (every (lambda (c) (char<= #\0 c #\9)) s))
+        (ignore-errors (parse-integer s))))))
 
 (defun split-and-conjuncts (node)
   (if (and node (node-p node) (eq (node-kind node) :bin) (string= (node-s node) "AND"))
@@ -538,294 +550,152 @@ key. The forms are the evaluator's (spec §7.3)."
                  (mapcar (lambda (it) (rewrite-conjunct-for-relation it target-names binder)) (node-items copy))))
          copy)))))
 
+(defun sort-step-p (step)
+  (member (node-s step) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=))
+
+(defun valid-filter-p (step)
+  "A FILTER whose binder slot, if it has one, is a bare name."
+  (let ((args (node-items step)))
+    (or (= (length args) 2)
+        (and (= (length args) 3) (bare-name-p (second args))))))
+
+(defun fields-all-in-p (fields allowed)
+  (every (lambda (f) (member f allowed :test #'string=)) fields))
+
+(defun logical-step-pair (source i s1 s2)
+  "The rewrite for the pair (S1 S2) at position I, as two values: the steps
+that replace the pair and how many of the two were consumed -- or NIL when no
+rule fires. The rules, and their order, are the other four hosts' single
+left-to-right sweep (review 2026-09-15 finding V: this host ran them as ten
+ordered passes, and `MAP .> SORT_BY .> TAKE` reached the translator in a
+different shape than everywhere else)."
+  (let ((n1 (node-s s1))
+        (n2 (and s2 (node-s s2))))
+    (cond
+      ;; TAKE + TAKE -> TAKE(min); DROP + DROP -> DROP(sum)
+      ((and s2 (string= n1 "TAKE") (string= n2 "TAKE")
+            (= (length (node-items s1)) 2) (= (length (node-items s2)) 2)
+            (try-parse-int-literal (second (node-items s1)))
+            (try-parse-int-literal (second (node-items s2))))
+       (let* ((k1 (try-parse-int-literal (second (node-items s1))))
+              (k2 (try-parse-int-literal (second (node-items s2))))
+              (fused (copy-node-shallow s1))
+              (num-node (make-node :num (node-pos (second (node-items s2))))))
+         (setf (node-s num-node) (format nil "~d" (min k1 k2))
+               (node-items fused) (list (first (node-items s1)) num-node))
+         (values (list fused) 2)))
+      ((and s2 (string= n1 "DROP") (string= n2 "DROP")
+            (= (length (node-items s1)) 2) (= (length (node-items s2)) 2)
+            (try-parse-int-literal (second (node-items s1)))
+            (try-parse-int-literal (second (node-items s2))))
+       (let* ((d1 (try-parse-int-literal (second (node-items s1))))
+              (d2 (try-parse-int-literal (second (node-items s2))))
+              (fused (copy-node-shallow s1))
+              (num-node (make-node :num (node-pos (second (node-items s2))))))
+         (setf (node-s num-node) (format nil "~d" (+ d1 d2))
+               (node-items fused) (list (first (node-items s1)) num-node))
+         (values (list fused) 2)))
+      ;; SORT / SORT_DESC / SORT_BY + TAKE -> TOP / TOP_DESC / TOP_BY
+      ((and s2 (string= n2 "TAKE") (= (length (node-items s2)) 2) (sort-step-p s1))
+       (let* ((top-name (cond ((string= n1 "SORT") "TOP")
+                              ((string= n1 "SORT_DESC") "TOP_DESC")
+                              (t "TOP_BY")))
+              (fused (make-node :call (node-pos s1))))
+         (setf (node-s fused) top-name
+               (node-spec fused) (registry-lookup top-name)
+               (node-items fused) (append (copy-list (node-items s1))
+                                          (list (second (node-items s2)))))
+         (values (list fused) 2)))
+      ;; FILTER pushdown through MAP: only a predicate over pass-through
+      ;; fields that reads neither the whole row nor _K.
+      ((and s2 (string= n1 "MAP") (string= n2 "FILTER") (valid-filter-p s2)
+            (let ((f-fields (filter-fields s2)))
+              (and f-fields (fields-all-in-p f-fields (map-passthrough-fields s1))))
+            (not (multiple-value-bind (binder pred) (filter-body s2)
+                   (reads-row-or-key-p pred binder))))
+       (values (list s2 s1) 2))
+      ;; FILTER pushdown through a sort: not a predicate that reads _K.
+      ((and s2 (sort-step-p s1) (string= n2 "FILTER") (not (step-reads-key-p s2)))
+       (values (list s2 s1) 2))
+      ;; FILTER pushdown through SELECT_COLS
+      ((and s2 (string= n1 "SELECT_COLS") (string= n2 "FILTER") (valid-filter-p s2)
+            (let ((f-fields (filter-fields s2)))
+              (and f-fields (fields-all-in-p f-fields (select-cols-fields s1))))
+            (not (multiple-value-bind (binder pred) (filter-body s2)
+                   (reads-row-or-key-p pred binder))))
+       (values (list s2 s1) 2))
+      ;; Sort pushdown through MAP (late materialisation): only a key over
+      ;; pass-through fields is the same value before the MAP -- a keyless
+      ;; sort compares the MAP's outputs, and a key that reads the whole row
+      ;; or _K reads what the MAP changes.
+      ((and s2 (string= n1 "MAP")
+            (member n2 '("TOP" "TOP_DESC" "TOP_BY" "SORT" "SORT_DESC" "SORT_BY") :test #'string=)
+            (map-has-computed-fields-p s1)
+            (let ((s-fields (sort-fields s2)))
+              (and s-fields (fields-all-in-p s-fields (map-passthrough-fields s1))))
+            (not (multiple-value-bind (binder key) (sort-key s2)
+                   (reads-row-or-key-p key binder))))
+       (values (list s2 s1) 2))
+      ;; FILTER + FILTER -> FILTER(p1 AND p2)
+      ((and s2 (string= n1 "FILTER") (string= n2 "FILTER")
+            (valid-filter-p s1) (valid-filter-p s2))
+       (let* ((args1 (node-items s1))
+              (args2 (node-items s2))
+              (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
+              (pred1 (if (= (length args1) 3) (third args1) (second args1)))
+              (b2 (if (= (length args2) 3) (node-s (second args2)) "_"))
+              (pred2 (if (= (length args2) 3) (third args2) (second args2)))
+              (renamed-pred2 (if (string= b1 b2) pred2 (rename-var-in-node pred2 b2 b1)))
+              (and-node (make-node :bin (node-pos pred1)))
+              (fused (copy-node-shallow s1)))
+         (setf (node-s and-node) "AND"
+               (node-l and-node) pred1
+               (node-r and-node) renamed-pred2)
+         (setf (node-items fused)
+               (if (= (length args1) 3)
+                   (list (first args1) (second args1) and-node)
+                   (list (first args1) and-node)))
+         (values (list fused) 2)))
+      ;; DEDUPE / DISTINCT twice: the first one did it.
+      ((and s2 (member n1 '("DEDUPE" "DISTINCT") :test #'string=)
+            (member n2 '("DEDUPE" "DISTINCT") :test #'string=))
+       (values (list s1) 2))
+      ;; FILTER(TRUE) over a list is the identity: after a step, or over a
+      ;; list literal or constructor -- never as the first step over a source
+      ;; that might be a scalar.
+      ((and (string= n1 "FILTER") (valid-filter-p s1)
+            (let ((pred (if (= (length (node-items s1)) 3)
+                            (third (node-items s1))
+                            (second (node-items s1)))))
+              (and pred (eq (node-kind pred) :bool) (node-b pred)))
+            (or (plusp i) (source-is-list-p source)))
+       (values '() 1))
+      (t nil))))
+
 (defun optimize-logical-pipeline-steps (source curr-steps)
-  "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps.
-SOURCE is what the first step reads, which only the FILTER(TRUE) pass needs."
+  "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps,
+as one left-to-right sweep over the pairs of adjacent steps, repeated to a
+fixed point -- the same sweep, in the same rule order, as the other four
+hosts. SOURCE is what the first step reads, which only the FILTER(TRUE) rule
+needs."
   (let ((changed t))
     (loop while changed do
       (setf changed nil)
-
-      ;; Pass 1: Slicing Fusion (TAKE + TAKE -> TAKE(min), DROP + DROP -> DROP(sum))
       (let ((new-steps '())
             (i 0)
             (len (length curr-steps)))
         (loop while (< i len) do
           (let ((s1 (nth i curr-steps))
                 (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (cond
-              ((and s2 (string= (node-s s1) "TAKE") (string= (node-s s2) "TAKE")
-                    (= (length (node-items s1)) 2) (= (length (node-items s2)) 2))
-               (let ((k1 (try-parse-int-literal (second (node-items s1))))
-                     (k2 (try-parse-int-literal (second (node-items s2)))))
-                 (if (and k1 k2)
-                     (let* ((min-k (min k1 k2))
-                            (fused (copy-node-shallow s1))
-                            (num-node (make-node :num (node-pos (second (node-items s2))))))
-                       (setf (node-s num-node) (format nil "~d" min-k)
-                             (node-items fused) (list (first (node-items s1)) num-node))
-                       (push fused new-steps)
-                       (setf changed t)
-                       (incf i 2))
-                     (progn
-                       (push s1 new-steps)
-                       (incf i 1)))))
-
-              ((and s2 (string= (node-s s1) "DROP") (string= (node-s s2) "DROP")
-                    (= (length (node-items s1)) 2) (= (length (node-items s2)) 2))
-               (let ((d1 (try-parse-int-literal (second (node-items s1))))
-                     (d2 (try-parse-int-literal (second (node-items s2)))))
-                 (if (and d1 d2)
-                     (let* ((sum-d (+ d1 d2))
-                            (fused (copy-node-shallow s1))
-                            (num-node (make-node :num (node-pos (second (node-items s2))))))
-                       (setf (node-s num-node) (format nil "~d" sum-d)
-                             (node-items fused) (list (first (node-items s1)) num-node))
-                       (push fused new-steps)
-                       (setf changed t)
-                       (incf i 2))
-                     (progn
-                       (push s1 new-steps)
-                       (incf i 1)))))
-
-              (t
-               (push s1 new-steps)
-               (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 2: Fuse SORT / SORT_DESC / SORT_BY + TAKE -> TOP / TOP_DESC / TOP_BY
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (if (and s2 (string= (node-s s2) "TAKE")
-                     (= (length (node-items s2)) 2)
-                     (member (node-s s1) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=))
-                (let* ((k-node (second (node-items s2)))
-                       (sname (node-s s1))
-                       (top-name (cond ((string= sname "SORT") "TOP")
-                                       ((string= sname "SORT_DESC") "TOP_DESC")
-                                       (t "TOP_BY")))
-                       (spec (registry-lookup top-name))
-                       (fused (make-node :call (node-pos s1))))
-                  (setf (node-s fused) top-name
-                        (node-spec fused) spec
-                        (node-items fused) (append (copy-list (node-items s1)) (list k-node)))
-                  (push fused new-steps)
-                  (setf changed t)
-                  (incf i 2))
-                (progn
-                  (push s1 new-steps)
-                  (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 3: Filter pushdown through MAP
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (if (and s2 (string= (node-s s1) "MAP")
-                     (string= (node-s s2) "FILTER"))
-                (let ((passthroughs (map-passthrough-fields s1))
-                      (f-fields (filter-fields s2)))
-                  (if (and f-fields (every (lambda (f) (member f passthroughs :test #'string=)) f-fields)
-                           (not (multiple-value-bind (binder pred) (filter-body s2)
-                                  (reads-row-or-key-p pred binder))))
-                      ;; Swap FILTER and MAP!
-                      (progn
-                        (push s2 new-steps)
-                        (push s1 new-steps)
-                        (setf changed t)
-                        (incf i 2))
-                      (progn
-                        (push s1 new-steps)
-                        (incf i 1))))
-                (progn
-                  (push s1 new-steps)
-                  (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 4: Filter pushdown through SORT / SORT_DESC / SORT_BY
-      ;; (Filtering before sorting reduces sort set size without altering relative ordering)
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (if (and s2 (member (node-s s1) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=)
-                     (string= (node-s s2) "FILTER")
-                     (not (step-reads-key-p s2)))
-                (progn
-                  (push s2 new-steps)
-                  (push s1 new-steps)
-                  (setf changed t)
-                  (incf i 2))
-                (progn
-                  (push s1 new-steps)
-                  (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 5: Filter pushdown through SELECT_COLS
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (if (and s2 (string= (node-s s1) "SELECT_COLS")
-                     (string= (node-s s2) "FILTER"))
-                (let ((cols (select-cols-fields s1))
-                      (f-fields (filter-fields s2)))
-                  (if (and f-fields (every (lambda (f) (member f cols :test #'string=)) f-fields)
-                           (not (multiple-value-bind (binder pred) (filter-body s2)
-                                  (reads-row-or-key-p pred binder))))
-                      (progn
-                        (push s2 new-steps)
-                        (push s1 new-steps)
-                        (setf changed t)
-                        (incf i 2))
-                      (progn
-                        (push s1 new-steps)
-                        (incf i 1))))
-                (progn
-                  (push s1 new-steps)
-                  (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 6: TOP_BY / SORT_BY pushdown through MAP (Late Materialization)
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (if (and s2 (string= (node-s s1) "MAP")
-                     (member (node-s s2) '("TOP" "TOP_DESC" "TOP_BY" "SORT" "SORT_DESC" "SORT_BY") :test #'string=)
-                     (map-has-computed-fields-p s1))
-                ;; Only a key over pass-through fields is the same value before
-                ;; the MAP: a keyless sort compares the MAP's outputs, and a key
-                ;; that reads the whole row or _K reads what the MAP changes.
-                (let ((passthroughs (map-passthrough-fields s1))
-                      (s-fields (sort-fields s2)))
-                  (if (and s-fields
-                           (every (lambda (f) (member f passthroughs :test #'string=)) s-fields)
-                           (not (multiple-value-bind (binder key) (sort-key s2)
-                                  (reads-row-or-key-p key binder))))
-                      ;; Swap TOP/SORT and MAP!
-                      (progn
-                        (push s2 new-steps)
-                        (push s1 new-steps)
-                        (setf changed t)
-                        (incf i 2))
-                      (progn
-                        (push s1 new-steps)
-                        (incf i 1))))
-                (progn
-                  (push s1 new-steps)
-                  (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 7: Fuse consecutive FILTER + FILTER -> FILTER(p1 AND p2)
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (if (and s2 (string= (node-s s1) "FILTER") (string= (node-s s2) "FILTER")
-                     (or (= (length (node-items s1)) 2)
-                         (and (= (length (node-items s1)) 3)
-                              (let ((b1-node (second (node-items s1))))
-                                (and b1-node (eq (node-kind b1-node) :var)))))
-                     (or (= (length (node-items s2)) 2)
-                         (and (= (length (node-items s2)) 3)
-                              (let ((b2-node (second (node-items s2))))
-                                (and b2-node (eq (node-kind b2-node) :var))))))
-                (let* ((args1 (node-items s1))
-                       (args2 (node-items s2))
-                       (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
-                       (pred1 (if (= (length args1) 3) (third args1) (second args1)))
-                       (b2 (if (= (length args2) 3) (node-s (second args2)) "_"))
-                       (pred2 (if (= (length args2) 3) (third args2) (second args2)))
-                       (renamed-pred2 (if (string= b1 b2) pred2 (rename-var-in-node pred2 b2 b1)))
-                       (and-node (make-node :bin (node-pos pred1))))
-                  (setf (node-s and-node) "AND"
-                        (node-l and-node) pred1
-                        (node-r and-node) renamed-pred2)
-                  (let ((fused (copy-node-shallow s1)))
-                    (if (= (length args1) 3)
-                        (setf (node-items fused) (list (first args1) (second args1) and-node))
-                        (setf (node-items fused) (list (first args1) and-node)))
-                    (push fused new-steps)
+            (multiple-value-bind (replacement consumed) (logical-step-pair source i s1 s2)
+              (if consumed
+                  (progn
+                    (dolist (r replacement) (push r new-steps))
                     (setf changed t)
-                    (incf i 2)))
-                (progn
-                  (push s1 new-steps)
-                  (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 8: Eliminate redundant successive SORTs (keep only the second sort)
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (if (and s2 (member (node-s s1) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=)
-                     (member (node-s s2) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=)
-                     (not (step-reads-key-p s2)))
-                (progn
-                  (setf changed t)
-                  (incf i 1))
-                (progn
-                  (push s1 new-steps)
-                  (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 9: Eliminate redundant successive DEDUPES (keep only the first dedupe)
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (if (and s2 (member (node-s s1) '("DEDUPE" "DISTINCT") :test #'string=)
-                     (member (node-s s2) '("DEDUPE" "DISTINCT") :test #'string=))
-                (progn
-                  (push s1 new-steps)
-                  (setf changed t)
-                  (incf i 2))
-                (progn
-                  (push s1 new-steps)
-                  (incf i 1)))))
-        (setf curr-steps (nreverse new-steps)))
-
-      ;; Pass 10: Eliminate trivial FILTER(TRUE)
-      (let ((new-steps '())
-            (i 0)
-            (len (length curr-steps)))
-        (loop while (< i len) do
-          (let* ((s (nth i curr-steps))
-                 (s-args (node-items s))
-                 (valid-binder (or (= (length s-args) 2)
-                                   (and (= (length s-args) 3)
-                                        (let ((b (second s-args)))
-                                          (and b (eq (node-kind b) :var))))))
-                 (pred (if (= (length s-args) 3) (third s-args) (second s-args))))
-            (if (and (string= (node-s s) "FILTER")
-                     valid-binder
-                     pred (eq (node-kind pred) :bool) (node-b pred)
-                     (or (plusp i) (source-is-list-p source)))
-                (progn
-                  (setf changed t)
-                  (incf i 1))
-                (progn
-                  (push s new-steps)
-                  (incf i 1)))))
+                    (incf i consumed))
+                  (progn
+                    (push s1 new-steps)
+                    (incf i 1))))))
         (setf curr-steps (nreverse new-steps))))
     curr-steps))
 

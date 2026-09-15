@@ -582,7 +582,18 @@ while all 801 language cases were green. So, for any change to either:
 
 - **Order.** The planner runs stage 1 (`normalise`) first, then the logical
   optimiser, then unwinds. Never unwind the raw AST: a helper assignment is a
-  `seq`, and a `seq` is not a pipeline.
+  `seq`, and a `seq` is not a pipeline. And the planner is the *only* caller
+  of the optimiser in the SQL layer: `translate()` and `translate_statement()`
+  run stage 1 alone, in every host, and the `.sqlt` runners check the two
+  entry points against each other on every statement case. An optimiser
+  pre-pass inside the translator is how two hosts came to render a program
+  three ways.
+- **One sweep.** The logical rewrites are one left-to-right pass over
+  adjacent step pairs, rules tried in one fixed order at each position,
+  repeated to a fixed point — in all five hosts, including Lisp
+  (`logical-step-pair`). Ordered per-rule passes reach a different fixed
+  point (`SORT_BY .> TAKE` fused before the MAP/sort swap saw it), and the
+  planner's SQL prefix is pinned byte for byte.
 - **Ownership.** Neither the optimiser nor the planner writes into the tree it
   is handed. Copy the node, rewrite the copy, return it. A write-back is
   invisible until a constant folds, which is why the immutability fixtures

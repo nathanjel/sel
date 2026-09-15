@@ -303,6 +303,8 @@ function run_case(array $c): ?string
     $sql = null;
     $error = null;
     $thrown = null;
+    $program = null;
+    $bindings = null;
     Map::traceOn();
     try {
         // Inside the try: a bad registration is one of the outcomes a case may
@@ -352,6 +354,33 @@ function run_case(array $c): ?string
     if ($thrown !== null) {
         throw new RuntimeException("{$c['at']}: unexpected "
             . get_class($thrown) . ": {$thrown->getMessage()}");
+    }
+
+    // Every `--- as statement` case is also run through translateStatement,
+    // the public full-delegation entry point, which must say exactly what
+    // translate() says -- the same text, or the same refusal at the same
+    // column. Two hosts ran the logical optimiser in that lane and three did
+    // not, and only a twin check can see it (review 2026-09-15 finding C).
+    if ($as === 'statement' && $program !== null) {
+        $twinSql = null;
+        $twinError = null;
+        try {
+            $twinSql = Sql::translateStatement($program, $dialect, $bindings, $options)->asStatement($mode);
+        } catch (SqlError $e) {
+            $twinError = $e;
+        } catch (\Throwable $e) {
+            throw new RuntimeException("{$c['at']}: translateStatement threw "
+                . get_class($e) . ": {$e->getMessage()}");
+        }
+        $got = static fn (?SqlError $e): string => $e === null ? 'SQL' : "{$e->code} at {$e->line}:{$e->col}";
+        if ($error !== null || $twinError !== null) {
+            if ($error === null || $twinError === null || $error->code !== $twinError->code
+                || $error->line !== $twinError->line || $error->col !== $twinError->col) {
+                return 'translate() gave ' . $got($error) . ' but translateStatement() gave ' . $got($twinError);
+            }
+        } elseif ($twinSql !== $sql) {
+            return "translateStatement() disagrees with translate():\n     {$twinSql}\n     {$sql}";
+        }
     }
 
     if ($c['error'] !== null) {

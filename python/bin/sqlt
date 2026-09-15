@@ -234,6 +234,8 @@ def run_case(c: dict) -> str | None:
     error = None
     thrown = None
     frag = None
+    program = None
+    bindings = None
     try:
         # Inside the try: a bad registration is one of the outcomes a case may
         # assert, so it has to be catchable rather than fatal.
@@ -281,6 +283,30 @@ def run_case(c: dict) -> str | None:
                 f'{type(thrown).__name__} ({thrown})')
     if thrown is not None:
         raise SuiteError(f"{c['at']}: unexpected {type(thrown).__name__}: {thrown}")
+
+    # Every `--- as statement` case is also run through translate_statement,
+    # the public full-delegation entry point, which must say exactly what
+    # translate() says -- the same text, or the same refusal at the same
+    # column. Two hosts ran the logical optimiser in that lane and three did
+    # not, and only a twin check can see it (review 2026-09-15 finding C).
+    if c.get('as') == 'statement' and program is not None:
+        twin_sql = None
+        twin_error = None
+        try:
+            twin_sql = Sql.translate_statement(program, dialect, bindings, options).as_statement(mode)
+        except SqlError as e:
+            twin_error = e
+        except Exception as e:                                    # noqa: BLE001
+            raise SuiteError(f"{c['at']}: translate_statement threw {type(e).__name__}: {e}")
+
+        def got(e):
+            return 'SQL' if e is None else f'{e.code} at {e.line}:{e.col}'
+        if error is not None or twin_error is not None:
+            if (error is None or twin_error is None or error.code != twin_error.code
+                    or error.line != twin_error.line or error.col != twin_error.col):
+                return f'translate() gave {got(error)} but translate_statement() gave {got(twin_error)}'
+        elif twin_sql != sql:
+            return f'translate_statement() disagrees with translate():\n     {twin_sql}\n     {sql}'
 
     if c['error'] is not None:
         if error is None:

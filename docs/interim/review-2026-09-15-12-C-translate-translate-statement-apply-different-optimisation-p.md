@@ -1,5 +1,7 @@
 # C. translate()/translate_statement apply different optimisation policies per host
 
+**Status:** FIXED 2026-09-15 — see CHANGELOG "[Unreleased]" › "One optimiser policy in front of the translator, one rewrite order".
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** mixed · **hosts:** lisp, js, python, php, cpp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Introduced or promised by ed16df2.

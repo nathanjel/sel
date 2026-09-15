@@ -30,7 +30,7 @@ from .emit import Emit
 from .errors import refuse
 from .fragment import Fragment
 from .relational_plan import JoinPlan, RelationalPlan
-from ..optimizer import PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS, optimize_ast_logical
+from ..optimizer import PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS
 
 # The optimiser's list, not a second copy: one vocabulary of pipeline operators
 # per host, or the planner and the translator drift apart.
@@ -152,8 +152,6 @@ class Translator:
         self.statement_plan: RelationalPlan | None = None
         self.in_where: bool = False
         self.in_having: bool = False
-        self.optimize = bool((options or {}).get('optimizeSql', True)
-                             and not (options or {}).get('noOptimize', False))
         self.subquery_counter = 0
 
     def translate(self, ast: Node) -> Fragment:
@@ -168,10 +166,12 @@ class Translator:
         self.subquery_counter = 0
         self.statement_plan = None
         self.const_names, self.const_ctx = _constants.scope(self.bindings)
-        source_ast = (optimize_ast_logical(ast, {'foldConstants': False,
-                                                  'fuseFilters': False})
-                      if self.optimize else ast)
-        norm = _normalise.run(source_ast, self.const_names, self.const_ctx)
+        # Stage 1 and nothing else: the translator renders the tree it is
+        # handed. Two hosts ran the logical optimiser here and three did not,
+        # so the same program rendered different SQL per host (review
+        # 2026-09-15 finding C). The planner is the one place that optimises
+        # before translating, and it does so in every host.
+        norm = _normalise.run(ast, self.const_names, self.const_ctx)
         plan = self.analyze_pipeline(norm)
         if plan is not None:
             return self.compile_statement(plan)
@@ -192,10 +192,7 @@ class Translator:
         self.subquery_counter = 0
         self.statement_plan = None
         self.const_names, self.const_ctx = _constants.scope(self.bindings)
-        source_ast = (optimize_ast_logical(ast, {'foldConstants': False,
-                                                  'fuseFilters': False})
-                      if self.optimize else ast)
-        norm = _normalise.run(source_ast, self.const_names, self.const_ctx)
+        norm = _normalise.run(ast, self.const_names, self.const_ctx)
         plan = self.analyze_pipeline(norm)
         if plan is None:
             refuse('E_SQL_SHAPE', 'expected a relational query or pipeline')
@@ -2084,15 +2081,24 @@ class Translator:
                 plan.offset = (plan.offset or 0) + offset
 
             elif name in ('SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'):
+                # A sort after a LIMIT or OFFSET sorts the rows that survived
+                # them, grouped or not, so those wrap; a sort over a projection
+                # or a DISTINCT wraps so its key can name what they produced. A
+                # sort after a sort does not wrap: the sorts are stable, so the
+                # earlier one is the later one's tie-breaker, and the later
+                # one's keys go FIRST in the ORDER BY (review 2026-09-15
+                # finding V).
                 plan = self._ensure_derived(plan, lambda candidate:
-                    candidate.group_by is None and bool(
+                    candidate.limit is not None or candidate.offset is not None
+                    or (candidate.group_by is None and bool(
                         candidate.projections is not None or candidate.select_cols is not None
-                        or candidate.distinct or candidate.limit is not None
-                        or candidate.offset is not None or candidate.order_by))
+                        or candidate.distinct)))
                 before = len(plan.order_by)
                 self._analyze_sort_step_extended(step, plan)
-                for order in plan.order_by[before:]:
+                added = plan.order_by[before:]
+                for order in added:
                     order['over_groups'] = over_groups
+                plan.order_by = added + plan.order_by[:before]
 
             elif name in ('LINK', 'LINK_LEFT'):
                 plan = self._ensure_derived(plan, self._plan_has_rows_above)
