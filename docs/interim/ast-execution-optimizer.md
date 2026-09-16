@@ -137,6 +137,17 @@ The compiler walks an arithmetic subtree. If an unsupported construct is encount
 #### 3. No Speculative Deoptimization
 * SEL does not require JIT-style deoptimization / on-stack replacement (OSR). If a variable contains text that is not numeric, or if division by zero occurs, this is a terminal specification error (`E_NOT_NUM`, `E_DIV_ZERO`). The plan raises the error directly; no fallback to AST interpretation is needed or permitted.
 
+#### 4. The Evaluator as Depth Authority (Finding AF, Spec §6.4)
+* As established in review finding AF, the evaluator is the sole depth authority: `optimize_root()` guards at the entry point via `exceeds_depth(ast, 1)`. If any node in the AST reaches or exceeds `MAX_DEPTH` (200), the optimizer returns the tree as written without rewriting or folding.
+* Consequently, `compile_math_plan()` will never receive or flatten an AST that exceeds the depth cap. The evaluator retains full authority to raise `E_DEPTH` at the exact offending node's coordinates.
+
+#### 5. Amortized Compilation via `physical_ast` Caching (Finding AA)
+* All five hosts cache the physically optimized AST on the `Program` instance (`this._physical` in JS/PHP, `_physical_ast` in Python/C++, `physical-ast` in Lisp), keyed by the identity of the public AST.
+* Compiling a `MathPlan` (inspecting nodes, assigning slots, emitting instructions) is therefore performed **only once** per program lifecycle. Subsequent executions in tight loops (e.g. `MAP(items, ...)` or high-frequency rule execution) reuse the pre-compiled plan with zero recurring compilation overhead.
+
+#### 6. Eager Record Invariant (Finding R)
+* Following the complete removal of `LAZY_RECORD` across all hosts, records and lists are strictly eager. When an `INPUT_AST_LEAF` accesses a field (`row["amount"]` or `_["field"]`), the value is guaranteed to be a concrete, materialized `Value` in memory. There are no deferred closures/thunks to force, eliminating cross-host evaluation discrepancies and ensuring predictable execution order.
+
 ### 2.4 Algebraic Identity Simplification: AST vs. Slot-Level Eliminations
 
 A common compiler optimization is eliminating useless algebraic identities (e.g., `x + 0`, `x * 1`, `x * 0`, `a / a`). In SEL, dropping these operations naively at the AST level introduces **four severe semantic traps**:
