@@ -2,15 +2,16 @@
 (push #p"/work/lisp/" asdf:*central-registry*)
 (let ((*standard-output* (make-broadcast-stream))) (asdf:load-system :sel-lang/sql))
 (defun jq (s) (subseq (sel:value-dump (sel:make-text s)) 1))
-(defvar *replay* (when (uiop:getenv "AUDIT_REPLAY") (open "/work/tools/adversarial/replay-lisp.sel")))
+(defvar *replay* (if (uiop:getenv "AUDIT_REPLAY_DATA") (make-string-input-stream (uiop:getenv "AUDIT_REPLAY_DATA")) (when (uiop:getenv "AUDIT_REPLAY") (open "/work/tools/adversarial/replay-lisp.sel"))))
 (defun audit-bindings ()
  (loop for tab in '("r" "s") collect
   (cons (string-upcase tab) (sel.sql:binding-relation tab tab
    (loop for col in '("id" "cat" "v" "fk") collect
     (cons (string-upcase col) (sel.sql:binding-column col tab (if (equal col "cat") :text :num))))))))
-(with-open-file (in "/work/tools/adversarial/queries.sel")
+(with-open-stream (in (if (uiop:getenv "AUDIT_QUERY") (make-string-input-stream (uiop:getenv "AUDIT_QUERY")) (open "/work/tools/adversarial/queries.sel")))
  (loop for source = (read-line in nil) while source for i from 0 do
   (let ((p (sel:compile-source source)) (b (audit-bindings)))
+   (when (uiop:getenv "AUDIT_UNIQUE_KEY") (setf (cdr (assoc "R" b :test #'equal)) (sel.sql:binding-with-unique-key (cdr (assoc "R" b :test #'equal)) "id")))
    (dolist (d '("sqlite" "postgresql" "mariadb")) (dolist (strict '(nil t))
     (format t "{\"i\":~d,\"d\":~a,\"strict\":~a" i (jq d) (if strict "true" "false"))
     (handler-case
@@ -21,7 +22,9 @@
     (handler-case
      (let ((h (sel.sql:plan-hybrid p d b (list :strict strict))))
       (format t ",\"plan\":~a,\"prefix\":~a" (jq(cond((sel.sql:hybrid-plan-pure-sql-p h)"pure_sql")((sel.sql:hybrid-plan-pure-memory-p h)"pure_memory")(t "hybrid")))
-       (if(sel.sql:hybrid-plan-sql-statement h)(jq(sel.sql:as-statement(sel.sql:hybrid-plan-sql-statement h)))"null")))
+       (if(sel.sql:hybrid-plan-sql-statement h)(jq(sel.sql:as-statement(sel.sql:hybrid-plan-sql-statement h)))"null"))
+      (when (sel.sql:hybrid-plan-sql-statement h) (let ((f (sel.sql:hybrid-plan-sql-statement h)))
+       (format t ",\"prefix_params_sql\":~a,\"prefix_params\":[~{~a~^,~}]" (jq(sel.sql:as-statement f :params)) (mapcar (lambda(v)(jq(sel:as-text v))) (sel.sql:bindings f))))))
      (sel.sql:sql-error(e)(format t ",\"plan_error\":~a" (jq(sel.sql:sql-error-code e)))))
     (when *replay*
      (let ((data (sel:run(sel:compile-source(read-line *replay*)))))

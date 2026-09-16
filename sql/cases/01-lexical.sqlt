@@ -164,7 +164,7 @@ mariadb
 --- source
 "😀" $== "x"
 --- expect
-(CAST('😀' AS CHAR) COLLATE utf8mb4_bin = CAST('x' AS CHAR) COLLATE utf8mb4_bin)
+(CAST('😀' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: lex.text.non-bmp-literal-postgresql
 --- dialect
@@ -180,7 +180,7 @@ sqlite
 --- source
 "😀" $== "x"
 --- expect
-(CAST('😀' AS TEXT) = CAST('x' AS TEXT))
+(CAST('😀' AS TEXT) COLLATE BINARY = CAST('x' AS TEXT) COLLATE BINARY)
 ===
 ### name: lex.text.non-bmp-length-is-one-character
 --- note

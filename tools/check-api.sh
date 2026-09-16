@@ -23,8 +23,13 @@ if [ "$(echo "$IMPLS" | wc -w)" -lt 2 ]; then
   exit 1
 fi
 
+pids=()
 for impl in $IMPLS; do
-  impl_api "$impl" > "$WORK/$impl.txt"
+  sel_slot impl_api "$impl" > "$WORK/$impl.txt" &
+  pids+=($!)
+done
+sel_wait "${pids[@]}" || { echo "an API probe exited non-zero" >&2; exit 1; }
+for impl in $IMPLS; do
   # An implementation that printed nothing must not compare equal to another
   # that printed nothing.
   if [ ! -s "$WORK/$impl.txt" ]; then

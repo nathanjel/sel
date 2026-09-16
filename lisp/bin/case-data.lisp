@@ -280,7 +280,7 @@
    :at "01-lexical.sqlt:149"
    :dialect "mariadb"
    :source "\"😀\" $== \"x\""
-   :expect "(CAST('😀' AS CHAR) COLLATE utf8mb4_bin = CAST('x' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST('😀' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -312,7 +312,7 @@
    :at "01-lexical.sqlt:177"
    :dialect "sqlite"
    :source "\"😀\" $== \"x\""
-   :expect "(CAST('😀' AS TEXT) = CAST('x' AS TEXT))"
+   :expect "(CAST('😀' AS TEXT) COLLATE BINARY = CAST('x' AS TEXT) COLLATE BINARY)"
    :error nil
    :throws nil
    :params nil
@@ -552,7 +552,7 @@
    :at "02-operators.sqlt:127"
    :dialect "mariadb"
    :source "\"A\" $== \"a\""
-   :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -568,7 +568,7 @@
    :at "02-operators.sqlt:138"
    :dialect "mariadb"
    :source "\"a\" $< \"b\""
-   :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin < CAST('b' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin < CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -584,7 +584,7 @@
    :at "02-operators.sqlt:146"
    :dialect "mariadb"
    :source "\"a\" EQL \"a\""
-   :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -600,7 +600,7 @@
    :at "02-operators.sqlt:154"
    :dialect "mariadb"
    :source "S IN (\"open\", \"held\")"
-   :expect "((CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "((CAST(`state` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('held' AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params nil
@@ -616,7 +616,7 @@
    :at "02-operators.sqlt:170"
    :dialect "mariadb"
    :source "\"a\" IN \"a\""
-   :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -952,7 +952,7 @@
    :at "03-functions.sqlt:188"
    :dialect "mariadb"
    :source "RMATCH('^a.c$', \"abc\")"
-   :expect "('abc' COLLATE utf8mb4_bin REGEXP '(?s)^a.c$')"
+   :expect "('abc' COLLATE utf8mb4_nopad_bin REGEXP '(?s)^a.c$')"
    :error nil
    :throws nil
    :params nil
@@ -968,7 +968,7 @@
    :at "03-functions.sqlt:199"
    :dialect "mariadb"
    :source "RFIND('ó', \"zażółć\")"
-   :expect "REGEXP_INSTR('zażółć' COLLATE utf8mb4_bin, '(?s)ó')"
+   :expect "REGEXP_INSTR('zażółć' COLLATE utf8mb4_nopad_bin, '(?s)ó')"
    :error nil
    :throws nil
    :params nil
@@ -1192,7 +1192,7 @@
    :at "04-normalise.sqlt:34"
    :dialect "mariadb"
    :source "A = (\"x\", \"y\"); S IN (A, \"z\")"
-   :expect "(((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('x' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('y' AS CHAR) COLLATE utf8mb4_bin)) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('z' AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "(((CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('y' AS CHAR) COLLATE utf8mb4_nopad_bin)) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('z' AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params nil
@@ -1576,7 +1576,7 @@
    :at "06-modes.sqlt:93"
    :dialect "mariadb"
    :source "LEFT(T, 3) $== \"abc\""
-   :expect "(CAST(LEFT(`t`, 3) AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST(LEFT(`t`, 3) AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params "t\"abc\""
@@ -1608,7 +1608,7 @@
    :at "06-modes.sqlt:124"
    :dialect "mariadb"
    :source "S $== \"?\""
-   :expect "(CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params "t\"?\""
@@ -1624,7 +1624,7 @@
    :at "06-modes.sqlt:141"
    :dialect "mariadb"
    :source "S $== \"?\""
-   :expect "(CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('?' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('?' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -1672,7 +1672,7 @@
    :at "06-modes.sqlt:186"
    :dialect "mariadb"
    :source "\"a\" IN (\"a\", \"b\", \"c\")"
-   :expect "(((CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin) OR (CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)) OR (CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "(((CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin)) OR (CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params "t\"a\", t\"a\", t\"a\", t\"b\", t\"a\", t\"c\""
@@ -2543,7 +2543,7 @@
    :at "11-registration.sqlt:81"
    :dialect "mariadb"
    :source "LEN(\"a\")"
-   :expect "LEN('a' COLLATE utf8mb4_bin)"
+   :expect "LEN('a' COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -2630,7 +2630,7 @@
    :at "11-registration.sqlt:176"
    :dialect "mariadb-11.8"
    :source "\"A\" $== \"a\""
-   :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -2778,7 +2778,7 @@
    :at "12-aggregates.sqlt:44"
    :dialect "mariadb"
    :source "ALL((7, 8), _K $!= \"\")"
-   :expect "((CAST('1' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin) AND (CAST('2' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "((CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('' AS CHAR) COLLATE utf8mb4_nopad_bin) AND (CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('' AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params nil
@@ -2906,7 +2906,7 @@
    :at "12-aggregates.sqlt:143"
    :dialect "mariadb"
    :source "ALL(V, C, _K $== \"1\")"
-   :expect "(CAST('1' AS CHAR) COLLATE utf8mb4_bin = CAST('1' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -3034,7 +3034,7 @@
    :at "12-aggregates.sqlt:230"
    :dialect "mariadb"
    :source "SKU IN ITEMS"
-   :expect "((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)"
+   :expect "((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)"
    :error nil
    :throws nil
    :params nil
@@ -3146,7 +3146,7 @@
    :at "12-aggregates.sqlt:296"
    :dialect "mariadb"
    :source "ALL(L, _ $!= \"\")"
-   :expect "((CAST('a' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin) AND (CAST('b' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "((CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('' AS CHAR) COLLATE utf8mb4_nopad_bin) AND (CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('' AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params nil
@@ -3418,7 +3418,7 @@
    :at "12-aggregates.sqlt:479"
    :dialect "mariadb"
    :source "ALL(ITEMS, RMATCH('^[A-Z]{2}-\\d{4}$', _[\"SKU\"]))"
-   :expect "NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)"
+   :expect "NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_nopad_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)"
    :error nil
    :throws nil
    :params nil
@@ -3466,7 +3466,7 @@
    :at "12-aggregates.sqlt:523"
    :dialect "mariadb"
    :source "ANY(SKUS, _ $== \"AB-1000\")"
-   :expect "EXISTS (SELECT 1 FROM `order_items` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_bin = CAST('AB-1000' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)"
+   :expect "EXISTS (SELECT 1 FROM `order_items` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('AB-1000' AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)"
    :error nil
    :throws nil
    :params nil
@@ -3514,7 +3514,7 @@
    :at "12-aggregates.sqlt:567"
    :dialect "mariadb"
    :source "ANY(ITEMS, I, ANY(SKUS, S, S $== I[\"SKU\"]))"
-   :expect "EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND (EXISTS (SELECT 1 FROM `skus` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_bin = CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)) IS TRUE)"
+   :expect "EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND (EXISTS (SELECT 1 FROM `skus` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)) IS TRUE)"
    :error nil
    :throws nil
    :params nil
@@ -3562,7 +3562,7 @@
    :at "12-aggregates.sqlt:600"
    :dialect "mariadb"
    :source "NOT(\"flag\" IN NOTES)"
-   :expect "(NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))"
+   :expect "(NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))"
    :error nil
    :throws nil
    :params nil
@@ -3786,7 +3786,7 @@
    :at "13-review.sqlt:88"
    :dialect "mariadb"
    :source "RMATCH(\"abc\", C, \"\")"
-   :expect "(`c` COLLATE utf8mb4_bin REGEXP '(?s)abc')"
+   :expect "(`c` COLLATE utf8mb4_nopad_bin REGEXP '(?s)abc')"
    :error nil
    :throws nil
    :params nil
@@ -3802,7 +3802,7 @@
    :at "13-review.sqlt:102"
    :dialect "mariadb"
    :source "RMATCH(\"abc\", C, \"i\")"
-   :expect "(`c` COLLATE utf8mb4_bin REGEXP '(?si)abc')"
+   :expect "(`c` COLLATE utf8mb4_nopad_bin REGEXP '(?si)abc')"
    :error nil
    :throws nil
    :params nil
@@ -3899,7 +3899,7 @@
    :at "13-review.sqlt:178"
    :dialect "mariadb"
    :source "S IN ALLOWED"
-   :expect "((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "((CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('held' AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params nil
@@ -3979,7 +3979,7 @@
    :at "13-review.sqlt:246"
    :dialect "mariadb"
    :source "TRUE EQL FALSE"
-   :expect "(CAST(TRUE AS CHAR) COLLATE utf8mb4_bin = CAST(FALSE AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST(TRUE AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(FALSE AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -3995,7 +3995,7 @@
    :at "13-review.sqlt:257"
    :dialect "mariadb"
    :source "C EQL TRUE"
-   :expect "(CAST(`c` AS CHAR) COLLATE utf8mb4_bin = CAST(TRUE AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST(`c` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(TRUE AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -4155,7 +4155,7 @@
    :at "13-review.sqlt:372"
    :dialect "mariadb"
    :source "1 EQL \"1\""
-   :expect "(CAST(1 AS CHAR) COLLATE utf8mb4_bin = CAST('1' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "(CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -4478,7 +4478,7 @@
    :at "13-review.sqlt:669"
    :dialect "mariadb"
    :source "ANY(R, X, X[\"straße\"] $== \"a\")"
-   :expect "EXISTS (SELECT 1 FROM `t` `r` WHERE TRUE AND ((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)"
+   :expect "EXISTS (SELECT 1 FROM `t` `r` WHERE TRUE AND ((CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)"
    :error nil
    :throws nil
    :params nil
@@ -4562,7 +4562,7 @@
    :at "14-sqlite.sqlt:24"
    :dialect "sqlite"
    :source "\"2.50\" $== \"2.5\""
-   :expect "(CAST('2.50' AS TEXT) = CAST('2.5' AS TEXT))"
+   :expect "(CAST('2.50' AS TEXT) COLLATE BINARY = CAST('2.5' AS TEXT) COLLATE BINARY)"
    :error nil
    :throws nil
    :params nil
@@ -4606,11 +4606,11 @@
    :register nil
    :bindings (lambda () (list )))
   (list
-   :name "sqlite.text.no-collation-needed"
+   :name "sqlite.text.explicit-binary-collation"
    :at "14-sqlite.sqlt:55"
    :dialect "sqlite"
    :source "\"A\" $== \"a\""
-   :expect "(CAST('A' AS TEXT) = CAST('a' AS TEXT))"
+   :expect "(CAST('A' AS TEXT) COLLATE BINARY = CAST('a' AS TEXT) COLLATE BINARY)"
    :error nil
    :throws nil
    :params nil
@@ -4834,7 +4834,7 @@
    :at "14-sqlite.sqlt:195"
    :dialect "sqlite"
    :source "UPPER(\"abc\") $== \"ABC\""
-   :expect "(CAST(upper('abc') AS TEXT) = CAST('ABC' AS TEXT))"
+   :expect "(CAST(upper('abc') AS TEXT) COLLATE BINARY = CAST('ABC' AS TEXT) COLLATE BINARY)"
    :error nil
    :throws nil
    :params nil
@@ -7720,7 +7720,7 @@
    :at "22-sargable-bindings.sqlt:60"
    :dialect "mariadb"
    :source "TYPEPATH $== \"home\""
-   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('home' AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params nil
@@ -7880,7 +7880,7 @@
    :at "22-sargable-bindings.sqlt:184"
    :dialect "mariadb"
    :source "TYPEPATH $== \"home\""
-   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('home' AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params nil
@@ -7896,7 +7896,7 @@
    :at "22-sargable-bindings.sqlt:197"
    :dialect "cms-mariadb"
    :source "TYPEPATH $== \"home\""
-   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))"
+   :expect "((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('home' AS CHAR) COLLATE utf8mb4_nopad_bin))"
    :error nil
    :throws nil
    :params nil
@@ -7913,7 +7913,7 @@
    :at "22-sargable-bindings.sqlt:212"
    :dialect "mariadb"
    :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
-   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))"
+   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('news' AS CHAR) COLLATE utf8mb4_nopad_bin)))) IS TRUE))"
    :error nil
    :throws nil
    :params nil
@@ -7929,7 +7929,7 @@
    :at "22-sargable-bindings.sqlt:225"
    :dialect "mariadb"
    :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
-   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))"
+   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('news' AS CHAR) COLLATE utf8mb4_nopad_bin)))) IS TRUE))"
    :error nil
    :throws nil
    :params nil
@@ -7945,7 +7945,7 @@
    :at "22-sargable-bindings.sqlt:238"
    :dialect "mariadb"
    :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
-   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))"
+   :expect "(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('news' AS CHAR) COLLATE utf8mb4_nopad_bin)))) IS TRUE))"
    :error nil
    :throws nil
    :params nil
@@ -7961,7 +7961,7 @@
    :at "22-sargable-bindings.sqlt:251"
    :dialect "mariadb"
    :source "ANY(FIELDS, G, G[\"fname\"] $== \"f_group\" AND G[\"value\"] $== \"news\")"
-   :expect "EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE)"
+   :expect "EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('news' AS CHAR) COLLATE utf8mb4_nopad_bin)))) IS TRUE)"
    :error nil
    :throws nil
    :params nil
@@ -8185,8 +8185,8 @@
    :at "23-statements.sqlt:150"
    :dialect "mariadb"
    :source "ITEMS .> SELECT_COLS(\"id\") .> DISTINCT()"
-   :expect "SELECT DISTINCT `id` FROM `items`"
-   :error nil
+   :expect nil
+   :error "E_SQL_SHAPE"
    :throws nil
    :params nil
    :as "statement"
@@ -8297,7 +8297,7 @@
    :at "23-statements.sqlt:241"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(10) .> DROP(20)"
-   :expect "SELECT * FROM `items` LIMIT 10 OFFSET 20"
+   :expect "SELECT * FROM `items` LIMIT 0 OFFSET 10"
    :error nil
    :throws nil
    :params nil
@@ -8393,7 +8393,7 @@
    :at "23-statements.sqlt:323"
    :dialect "mariadb"
    :source "ITEMS .> FILTER(_[\"name\"] $== \"foo\") .> SORT_BY(_[\"name\"] & \"bar\")"
-   :expect "SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CAST(CONCAT(`name`, ~2~) AS CHAR) COLLATE utf8mb4_bin ASC"
+   :expect "SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CAST(CONCAT(`name`, ~2~) AS CHAR) COLLATE utf8mb4_nopad_bin ASC"
    :error nil
    :throws nil
    :params nil
@@ -8553,7 +8553,7 @@
    :at "23-statements.sqlt:471"
    :dialect "mariadb"
    :source "ITEMS .> FILTER(_[\"qty\"] > 0) .> SORT_BY(O, IF(TRUE, \"DESC\", \"ASC\"))"
-   :expect "SELECT * FROM `items` WHERE (`qty` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_bin ASC"
+   :expect "SELECT * FROM `items` WHERE (`qty` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_nopad_bin ASC"
    :error nil
    :throws nil
    :params nil
@@ -8681,7 +8681,7 @@
    :at "23-statements.sqlt:603"
    :dialect "postgresql"
    :source "ORDERS .> SORT_BY(_[\"id\"]) .> FILTER(_[\"id\"] > 1)"
-   :expect "SELECT \"_sub1\".* FROM (SELECT \"o\".* FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" ASC) \"_sub1\" WHERE (CASE WHEN (CAST(\"_sub1\".\"id\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"_sub1\".\"id\" AS NUMERIC) ELSE NULL END > 1)"
+   :expect "SELECT \"_sub1\".* FROM (SELECT \"o\".* FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" ASC) \"_sub1\" WHERE (\"_sub1\".\"id\" > 1)"
    :error nil
    :throws nil
    :params nil
@@ -8713,7 +8713,7 @@
    :at "23-statements.sqlt:642"
    :dialect "postgresql"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"d\", _K, \"n\", COUNT(_))) .> SORT_BY(_[\"n\"]) .> SORT_BY(_[\"d\"])"
-   :expect "SELECT CAST(\"dept\" AS TEXT) COLLATE \"C\" AS \"d\", COUNT(*) AS \"n\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) COLLATE \"C\" ORDER BY CAST(\"dept\" AS TEXT) COLLATE \"C\" ASC, COUNT(*) ASC"
+   :expect "SELECT CAST(\"dept\" AS TEXT) COLLATE \"C\" AS \"d\", COUNT(*) AS \"n\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) COLLATE \"C\" ORDER BY MIN(CAST(\"dept\" AS TEXT) COLLATE \"C\") ASC, COUNT(*) ASC"
    :error nil
    :throws nil
    :params nil
@@ -8745,7 +8745,7 @@
    :at "24-bucket.sqlt:9"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"])"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -8761,7 +8761,7 @@
    :at "24-bucket.sqlt:22"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET((_[\"dept\"], _[\"category\"]), RECORD(\"n\", COUNT(_)))"
-   :expect "SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -8777,7 +8777,7 @@
    :at "24-bucket.sqlt:40"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(RECORD(\"dept\", _[\"dept\"], \"category\", _[\"category\"]), RECORD(\"n\", COUNT(_)))"
-   :expect "SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -8793,7 +8793,7 @@
    :at "24-bucket.sqlt:53"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_), \"total\", SUM(_, _[\"amount\"])))"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -8809,7 +8809,7 @@
    :at "24-bucket.sqlt:66"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(r, r[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(r, x, x[\"amount\"])))"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -8825,7 +8825,7 @@
    :at "24-bucket.sqlt:79"
    :dialect "mariadb"
    :source "ITEMS .> FILTER(_[\"active\"] == 1) .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> FILTER(_[\"total\"] > 100)"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COALESCE(SUM(`amount`), 0) > 100)"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (COALESCE(SUM(`amount`), 0) > 100)"
    :error nil
    :throws nil
    :params nil
@@ -8841,7 +8841,7 @@
    :at "24-bucket.sqlt:92"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> SORT_BY(_[\"total\"], \"DESC\")"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY COALESCE(SUM(`amount`), 0) DESC"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY COALESCE(SUM(`amount`), 0) DESC"
    :error nil
    :throws nil
    :params nil
@@ -8857,7 +8857,7 @@
    :at "24-bucket.sqlt:105"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(10) .> DROP(5)"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 10 OFFSET 5"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 5 OFFSET 5"
    :error nil
    :throws nil
    :params nil
@@ -8889,7 +8889,7 @@
    :at "24-bucket.sqlt:131"
    :dialect "sqlite"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"cnt\", COUNT(_))) .> DROP(5)"
-   :expect "SELECT CAST(\"dept\" AS TEXT) AS \"dept\", COUNT(*) AS \"cnt\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) LIMIT -1 OFFSET 5"
+   :expect "SELECT CAST(\"dept\" AS TEXT) COLLATE BINARY AS \"dept\", COUNT(*) AS \"cnt\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) COLLATE BINARY LIMIT -1 OFFSET 5"
    :error nil
    :throws nil
    :params nil
@@ -8905,7 +8905,7 @@
    :at "24-bucket.sqlt:144"
    :dialect "mysql"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"]))) .> DROP(5)"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 18446744073709551615 OFFSET 5"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_0900_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_0900_bin LIMIT 18446744073709551615 OFFSET 5"
    :error nil
    :throws nil
    :params nil
@@ -8969,7 +8969,7 @@
    :at "24-bucket.sqlt:196"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"cnt\", COUNT(_)))"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -8985,7 +8985,7 @@
    :at "24-bucket.sqlt:215"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(COUNT(_) > 1) .> MAP(RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"])))"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COUNT(*) > 1)"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (COUNT(*) > 1)"
    :error nil
    :throws nil
    :params nil
@@ -9001,7 +9001,7 @@
    :at "24-bucket.sqlt:231"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(g, RECORD(\"dept\", _K, \"total\", SUM(g, x, x[\"amount\"])))"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -9081,8 +9081,8 @@
    :at "24-bucket.sqlt:309"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_))) .> BUCKET(_[\"n\"]) .> MAP(RECORD(\"n\", _K, \"depts\", COUNT(_)))"
-   :expect "SELECT `_sub1`.`n` AS `n`, COUNT(*) AS `depts` FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) `_sub1` GROUP BY `_sub1`.`n`"
-   :error nil
+   :expect nil
+   :error "E_SQL_SHAPE"
    :throws nil
    :params nil
    :as "statement"
@@ -9094,7 +9094,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-bare-bucket-over-a-list-key"
-   :at "24-bucket.sqlt:325"
+   :at "24-bucket.sqlt:326"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(LIST(_[\"dept\"], _[\"category\"]))"
    :expect nil
@@ -9110,7 +9110,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-bare-bucket-over-a-record-key"
-   :at "24-bucket.sqlt:343"
+   :at "24-bucket.sqlt:344"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(RECORD(\"d\", _[\"dept\"])) .> MAP(RECORD(\"n\", COUNT(_)))"
    :expect nil
@@ -9126,7 +9126,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-bare-bucket-over-a-bool-key"
-   :at "24-bucket.sqlt:355"
+   :at "24-bucket.sqlt:356"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"active\"]) .> MAP(RECORD(\"a\", _K, \"n\", COUNT(_)))"
    :expect nil
@@ -9142,7 +9142,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.projected-spelling-takes-a-bool-key"
-   :at "24-bucket.sqlt:371"
+   :at "24-bucket.sqlt:372"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"active\"], RECORD(\"a\", _K, \"n\", COUNT(_)))"
    :expect "SELECT `active` AS `a`, COUNT(*) AS `n` FROM `items` GROUP BY `active`"
@@ -9158,10 +9158,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.filter-after-pagination"
-   :at "24-bucket.sqlt:385"
+   :at "24-bucket.sqlt:386"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"n\", COUNT(_))) .> TAKE(2) .> FILTER(_[\"n\"] > 1)"
-   :expect "SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
+   :expect "SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
    :error nil
    :throws nil
    :params nil
@@ -9174,10 +9174,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.filter-after-drop"
-   :at "24-bucket.sqlt:402"
+   :at "24-bucket.sqlt:403"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"n\", COUNT(_))) .> DROP(1) .> FILTER(_[\"n\"] > 1)"
-   :expect "SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 18446744073709551615 OFFSET 1) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
+   :expect "SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 18446744073709551615 OFFSET 1) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
    :error nil
    :throws nil
    :params nil
@@ -9190,10 +9190,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.filter-after-sort"
-   :at "24-bucket.sqlt:414"
+   :at "24-bucket.sqlt:415"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"s\", SUM(_, _[\"qty\"]))) .> SORT_BY(_[\"s\"], \"DESC\") .> FILTER(_[\"s\"] > 5)"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`qty`), 0) AS `s` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COALESCE(SUM(`qty`), 0) > 5) ORDER BY COALESCE(SUM(`qty`), 0) DESC"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`qty`), 0) AS `s` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (COALESCE(SUM(`qty`), 0) > 5) ORDER BY COALESCE(SUM(`qty`), 0) DESC"
    :error nil
    :throws nil
    :params nil
@@ -9206,7 +9206,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-filter-after-the-members-are-spent"
-   :at "24-bucket.sqlt:429"
+   :at "24-bucket.sqlt:430"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> TAKE(2) .> FILTER(COUNT(_) > 1)"
    :expect nil
@@ -9222,10 +9222,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "CATEGORY" (binding-column "category" nil :text)) (cons "ACTIVE" (binding-column "active" nil :bool)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.text-key-is-collated"
-   :at "24-bucket.sqlt:445"
+   :at "24-bucket.sqlt:446"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_)))"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -9238,10 +9238,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.text-key-compared-in-having-is-the-same-expression"
-   :at "24-bucket.sqlt:465"
+   :at "24-bucket.sqlt:466"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(_K $== \"x\") .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_)))"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) = 'x')"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin) = 'x')"
    :error nil
    :throws nil
    :params nil
@@ -9254,7 +9254,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.exact-text-key-stays-bare"
-   :at "24-bucket.sqlt:485"
+   :at "24-bucket.sqlt:486"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"dept\", _K, \"n\", COUNT(_)))"
    :expect "SELECT `dept` AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY `dept`"
@@ -9269,11 +9269,11 @@
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text :exact t :sargable nil :guard nil))) nil nil)))))
   (list
-   :name "stmt.bucket.numeric-key-is-not-collated"
-   :at "24-bucket.sqlt:500"
+   :name "stmt.bucket.numeric-key-preserves-representation"
+   :at "24-bucket.sqlt:501"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"qty\"]) .> MAP(RECORD(\"qty\", _K, \"n\", COUNT(_)))"
-   :expect "SELECT `qty` AS `qty`, COUNT(*) AS `n` FROM `items` GROUP BY `qty`"
+   :expect "SELECT MIN(`qty`) AS `qty`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`qty` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -9286,10 +9286,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.text-sort-key-is-collated"
-   :at "24-bucket.sqlt:512"
+   :at "24-bucket.sqlt:513"
    :dialect "mariadb"
    :source "ITEMS .> SORT_BY(_[\"dept\"], \"DESC\") .> TAKE(3)"
-   :expect "SELECT * FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC LIMIT 3"
+   :expect "SELECT * FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin DESC LIMIT 3"
    :error nil
    :throws nil
    :params nil
@@ -9302,10 +9302,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.map.after-sort-shares-the-statement"
-   :at "24-bucket.sqlt:527"
+   :at "24-bucket.sqlt:528"
    :dialect "mariadb"
    :source "ITEMS .> SORT_BY(_[\"dept\"]) .> MAP(RECORD(\"d\", _[\"dept\"], \"q\", _[\"qty\"]))"
-   :expect "SELECT `dept` AS `d`, `qty` AS `q` FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ASC"
+   :expect "SELECT `dept` AS `d`, `qty` AS `q` FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin ASC"
    :error nil
    :throws nil
    :params nil
@@ -9318,7 +9318,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-member-field-through-the-group"
-   :at "24-bucket.sqlt:545"
+   :at "24-bucket.sqlt:546"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(g, RECORD(\"dept\", _K, \"amt\", g[\"amount\"]))"
    :expect nil
@@ -9334,7 +9334,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-member-field-in-the-three-argument-spelling"
-   :at "24-bucket.sqlt:564"
+   :at "24-bucket.sqlt:565"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"amt\", _[\"amount\"]))"
    :expect nil
@@ -9350,7 +9350,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-the-bare-group-as-a-value"
-   :at "24-bucket.sqlt:576"
+   :at "24-bucket.sqlt:577"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K, \"m\", _))"
    :expect nil
@@ -9366,7 +9366,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-a-member-by-position"
-   :at "24-bucket.sqlt:590"
+   :at "24-bucket.sqlt:591"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K, \"first\", _[\"1\"][\"amount\"]))"
    :expect nil
@@ -9382,7 +9382,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-having-alias-before-the-map"
-   :at "24-bucket.sqlt:605"
+   :at "24-bucket.sqlt:606"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(_[\"total\"] > 1) .> MAP(RECORD(\"dept\", _K, \"total\", SUM(_, _[\"amount\"])))"
    :expect nil
@@ -9398,7 +9398,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-member-field-in-a-having-over-the-groups"
-   :at "24-bucket.sqlt:622"
+   :at "24-bucket.sqlt:623"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(_[\"dept\"] $== \"A\") .> MAP(RECORD(\"d\", _K))"
    :expect nil
@@ -9414,7 +9414,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-max-over-the-group"
-   :at "24-bucket.sqlt:634"
+   :at "24-bucket.sqlt:635"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"dept\", _K, \"mx\", MAX(_, _[\"amount\"])))"
    :expect nil
@@ -9430,10 +9430,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.two-argument-sum-binds-the-member"
-   :at "24-bucket.sqlt:652"
+   :at "24-bucket.sqlt:653"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(g, RECORD(\"dept\", _K, \"n\", COUNT(g), \"s\", SUM(g, _[\"amount\"]), \"t\", SUM(g, x, x[\"amount\"])))"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n`, COALESCE(SUM(`amount`), 0) AS `s`, COALESCE(SUM(`amount`), 0) AS `t` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n`, COALESCE(SUM(`amount`), 0) AS `s`, COALESCE(SUM(`amount`), 0) AS `t` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -9446,7 +9446,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-the-member-key-inside-the-aggregate"
-   :at "24-bucket.sqlt:668"
+   :at "24-bucket.sqlt:669"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K, \"s\", SUM(_, _K)))"
    :expect nil
@@ -9462,7 +9462,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-count-of-the-group-under-another-name"
-   :at "24-bucket.sqlt:683"
+   :at "24-bucket.sqlt:684"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(g, RECORD(\"d\", _K, \"n\", COUNT(_)))"
    :expect nil
@@ -9478,7 +9478,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-source-key-before-the-bucket"
-   :at "24-bucket.sqlt:698"
+   :at "24-bucket.sqlt:699"
    :dialect "mariadb"
    :source "ITEMS .> FILTER(_K $== \"2\") .> BUCKET(_[\"dept\"], RECORD(\"k\", _K, \"n\", COUNT(_)))"
    :expect nil
@@ -9494,7 +9494,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-list-key-after-the-projection"
-   :at "24-bucket.sqlt:715"
+   :at "24-bucket.sqlt:716"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"k\", _K, \"n\", COUNT(_))) .> FILTER(_K $== \"2\")"
    :expect nil
@@ -9510,7 +9510,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-list-key-in-a-sort-after-the-projection"
-   :at "24-bucket.sqlt:732"
+   :at "24-bucket.sqlt:733"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"k\", _K, \"n\", COUNT(_))) .> SORT_BY(_K)"
    :expect nil
@@ -9526,7 +9526,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-source-key-as-the-bucket-key"
-   :at "24-bucket.sqlt:744"
+   :at "24-bucket.sqlt:745"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_K)"
    :expect nil
@@ -9542,10 +9542,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.group-key-sorts-the-bare-bucket"
-   :at "24-bucket.sqlt:759"
+   :at "24-bucket.sqlt:760"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> SORT_BY(_K, \"DESC\")"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin) DESC"
    :error nil
    :throws nil
    :params nil
@@ -9558,7 +9558,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-member-field-in-a-sort-over-the-groups"
-   :at "24-bucket.sqlt:774"
+   :at "24-bucket.sqlt:775"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> SORT_BY(_[\"dept\"])"
    :expect nil
@@ -9574,7 +9574,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.projected-row-has-only-the-projection"
-   :at "24-bucket.sqlt:789"
+   :at "24-bucket.sqlt:790"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K, \"n\", COUNT(_))) .> SORT_BY(_[\"dept\"])"
    :expect nil
@@ -9590,10 +9590,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.projected-key-alias-in-a-having"
-   :at "24-bucket.sqlt:805"
+   :at "24-bucket.sqlt:806"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K, \"n\", COUNT(_))) .> FILTER(_[\"d\"] $== \"A\")"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) = 'A')"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin) = 'A')"
    :error nil
    :throws nil
    :params nil
@@ -9606,10 +9606,10 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.projected-key-alias-in-a-sort"
-   :at "24-bucket.sqlt:821"
+   :at "24-bucket.sqlt:822"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K, \"n\", COUNT(_))) .> SORT_BY(_[\"d\"], \"DESC\")"
-   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC"
+   :expect "SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin) DESC"
    :error nil
    :throws nil
    :params nil
@@ -9622,7 +9622,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-count-of-the-projected-row"
-   :at "24-bucket.sqlt:833"
+   :at "24-bucket.sqlt:834"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K)) .> FILTER(COUNT(_) > 0)"
    :expect nil
@@ -9638,7 +9638,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-all-over-the-groups"
-   :at "24-bucket.sqlt:849"
+   :at "24-bucket.sqlt:850"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> FILTER(ALL(_, _[\"amount\"] > 5)) .> MAP(RECORD(\"d\", _K))"
    :expect nil
@@ -9654,7 +9654,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.bucket.refuse-count-of-a-bucket-in-the-projection"
-   :at "24-bucket.sqlt:864"
+   :at "24-bucket.sqlt:865"
    :dialect "mariadb"
    :source "ITEMS .> BUCKET(_[\"dept\"]) .> MAP(RECORD(\"d\", _K, \"by_status\", COUNT(BUCKET(_, _[\"status\"]))))"
    :expect nil
@@ -9865,30 +9865,30 @@
    :at "25-hybrid-plans.sqlt:224"
    :dialect "mariadb"
    :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> TAKE(2)"
-   :expect "SELECT `o`.* FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`) LIMIT 2"
+   :expect nil
    :error nil
    :throws nil
    :params nil
    :as nil
    :mode nil
    :strict nil
-   :plan "pure_sql"
+   :plan "pure_memory"
    :tables (list "orders" "customers")
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num))) nil nil)))))
   (list
    :name "plan.tables.dedupe-by-physical-source"
-   :at "25-hybrid-plans.sqlt:241"
+   :at "25-hybrid-plans.sqlt:243"
    :dialect "mariadb"
    :source "ORDERS .> LINK(O2, _1[\"id\"] == _2[\"id\"]) .> TAKE(2)"
-   :expect "SELECT `o`.* FROM `orders` `o` INNER JOIN `orders` `o2` ON (`o`.`id` = `o2`.`id`) LIMIT 2"
+   :expect nil
    :error nil
    :throws nil
    :params nil
    :as nil
    :mode nil
    :strict nil
-   :plan "pure_sql"
+   :plan "pure_memory"
    :tables (list "orders")
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "O2" (binding-relation "orders" "o2" (list (cons "ID" (binding-column "id" "o2" :num))) nil nil)))))
@@ -9909,24 +9909,24 @@
    :register nil
    :bindings (lambda () (list (cons "RECENT" (binding-relation-query "(SELECT * FROM orders WHERE id > 10)" "r" (list (cons "ID" (binding-column "id" "r" :num))) nil nil)))))
   (list
-   :name "plan.hybrid.left-join-then-projection"
+   :name "plan.pure-memory.left-join-then-select-cols-of-a-shared-name"
    :at "25-hybrid-plans.sqlt:277"
    :dialect "postgresql"
    :source "ORDERS .> LINK_LEFT(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> SELECT_COLS(\"id\")"
-   :expect "SELECT \"o\".* FROM \"orders\" \"o\" LEFT JOIN \"customers\" \"c\" ON (\"o\".\"customer_id\" = \"c\".\"id\")"
+   :expect nil
    :error nil
    :throws nil
    :params nil
    :as nil
    :mode nil
    :strict nil
-   :plan "hybrid"
+   :plan "pure_memory"
    :tables (list "orders" "customers")
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num))) nil nil)))))
   (list
    :name "plan.pure-sql.filters-fuse-before-planning"
-   :at "25-hybrid-plans.sqlt:294"
+   :at "25-hybrid-plans.sqlt:297"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"id\"] > 1) .> FILTER(_[\"id\"] < 9)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE ((`o`.`id` > 1) AND (`o`.`id` < 9))"
@@ -9942,7 +9942,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.pure-sql.sort-take-fuses-to-top"
-   :at "25-hybrid-plans.sqlt:313"
+   :at "25-hybrid-plans.sqlt:316"
    :dialect "mariadb"
    :source "ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(1)"
    :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 1"
@@ -9958,7 +9958,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.pure-sql.filter-drop-take"
-   :at "25-hybrid-plans.sqlt:328"
+   :at "25-hybrid-plans.sqlt:331"
    :dialect "postgresql"
    :source "ORDERS .> FILTER(_[\"id\"] > 1) .> DROP(1) .> TAKE(1)"
    :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE (\"o\".\"id\" > 1) LIMIT 1 OFFSET 1"
@@ -9973,27 +9973,27 @@
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
-   :name "plan.pure-sql.distinct"
-   :at "25-hybrid-plans.sqlt:343"
+   :name "plan.distinct.open-row-schema-stays-local"
+   :at "25-hybrid-plans.sqlt:346"
    :dialect "postgresql"
    :source "ORDERS .> DISTINCT()"
-   :expect "SELECT DISTINCT \"o\".* FROM \"orders\" \"o\""
+   :expect nil
    :error nil
    :throws nil
    :params nil
    :as nil
    :mode nil
    :strict nil
-   :plan "pure_sql"
+   :plan "pure_memory"
    :tables (list "orders")
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.options.strict-off-caveat-pushes-down"
-   :at "25-hybrid-plans.sqlt:358"
+   :at "25-hybrid-plans.sqlt:359"
    :dialect "mariadb"
    :source "ORDERS .> TAKE(2) .> FILTER(UPPER(_[\"name\"]) $== \"A\")"
-   :expect "SELECT `_sub1`.* FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1` WHERE (CAST(UPPER(`_sub1`.`name`) AS CHAR) COLLATE utf8mb4_bin = CAST('A' AS CHAR) COLLATE utf8mb4_bin)"
+   :expect "SELECT `_sub1`.* FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1` WHERE (CAST(UPPER(`_sub1`.`name`) AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('A' AS CHAR) COLLATE utf8mb4_nopad_bin)"
    :error nil
    :throws nil
    :params nil
@@ -10006,7 +10006,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.options.strict-on-caveat-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:376"
+   :at "25-hybrid-plans.sqlt:377"
    :dialect "mariadb"
    :source "ORDERS .> TAKE(2) .> FILTER(UPPER(_[\"name\"]) $== \"A\")"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
@@ -10022,7 +10022,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fold.literal-branch-is-hoisted-into-the-prefix"
-   :at "25-hybrid-plans.sqlt:397"
+   :at "25-hybrid-plans.sqlt:398"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(IF(TRUE, 2, 1) >= _[\"id\"])"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (2 >= `o`.`id`)"
@@ -10038,7 +10038,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.fold.compound-branch-stays-an-if"
-   :at "25-hybrid-plans.sqlt:416"
+   :at "25-hybrid-plans.sqlt:417"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(IF(TRUE, _[\"id\"] > 1, FALSE))"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE CASE WHEN TRUE THEN (`o`.`id` > 1) ELSE FALSE END"
@@ -10054,7 +10054,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.fold.hoisted-literal-does-not-change-the-split"
-   :at "25-hybrid-plans.sqlt:440"
+   :at "25-hybrid-plans.sqlt:441"
    :dialect "mariadb"
    :source "ORDERS .> TAKE(2) .> MAP(IF(TRUE, \"x\", 1) >= _[\"id\"])"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
@@ -10070,7 +10070,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.bare-bucket-at-the-end-is-pure-memory"
-   :at "25-hybrid-plans.sqlt:460"
+   :at "25-hybrid-plans.sqlt:461"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"])"
    :expect nil
@@ -10086,7 +10086,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.bucket.open-bucket-at-the-end-splits-before-it"
-   :at "25-hybrid-plans.sqlt:479"
+   :at "25-hybrid-plans.sqlt:480"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"amount\"] > 1) .> BUCKET(_[\"customer_id\"])"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)"
@@ -10102,7 +10102,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.bucket.sealed-bucket-at-the-end-is-pure-memory"
-   :at "25-hybrid-plans.sqlt:494"
+   :at "25-hybrid-plans.sqlt:495"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(1)"
    :expect nil
@@ -10118,7 +10118,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.bucket.having-at-the-end-is-pure-memory"
-   :at "25-hybrid-plans.sqlt:507"
+   :at "25-hybrid-plans.sqlt:508"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> FILTER(COUNT(_) > 1)"
    :expect nil
@@ -10134,7 +10134,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.bucket.bucket-over-buckets-is-pure-memory"
-   :at "25-hybrid-plans.sqlt:523"
+   :at "25-hybrid-plans.sqlt:524"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> BUCKET(COUNT(_)) .> MAP(RECORD(\"size\", _K, \"n\", COUNT(_)))"
    :expect nil
@@ -10150,7 +10150,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.aliased-pair-passes-through-by-key"
-   :at "25-hybrid-plans.sqlt:539"
+   :at "25-hybrid-plans.sqlt:540"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"cid\", _[\"customer_id\"], \"tag\", ABORT(\"x\"))) .> TAKE(3)"
    :expect "SELECT `o`.`customer_id` AS `cid` FROM `orders` `o` LIMIT 3"
@@ -10166,7 +10166,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.expression-pair-passes-through-by-key"
-   :at "25-hybrid-plans.sqlt:562"
+   :at "25-hybrid-plans.sqlt:563"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"plus\", _[\"amount\"] + 1, \"tag\", ABORT(\"x\"))) .> TAKE(3)"
    :expect "SELECT (`o`.`amount` + 1) AS `plus` FROM `orders` `o` LIMIT 3"
@@ -10182,7 +10182,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.downstream-bucket-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:580"
+   :at "25-hybrid-plans.sqlt:581"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"customer_id\", _[\"customer_id\"], \"tag\", ABORT(\"x\"))) .> BUCKET(_[\"customer_id\"])"
    :expect nil
@@ -10198,7 +10198,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.downstream-map-splits-before-the-map"
-   :at "25-hybrid-plans.sqlt:600"
+   :at "25-hybrid-plans.sqlt:601"
    :dialect "mariadb"
    :source "ORDERS .> TAKE(5) .> MAP(RECORD(\"id\", _[\"id\"], \"tag\", ABORT(\"x\"))) .> MAP(RECORD(\"i\", _[\"id\"]))"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 5"
@@ -10214,7 +10214,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.downstream-dedupe-splits-before-the-map"
-   :at "25-hybrid-plans.sqlt:615"
+   :at "25-hybrid-plans.sqlt:616"
    :dialect "mariadb"
    :source "ORDERS .> TAKE(5) .> MAP(RECORD(\"id\", _[\"id\"], \"tag\", ABORT(_[\"name\"]))) .> DEDUPE()"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 5"
@@ -10230,7 +10230,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.downstream-read-of-a-dependency-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:634"
+   :at "25-hybrid-plans.sqlt:635"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"tag\", ABORT(_[\"name\"]))) .> FILTER(_[\"name\"] $== \"x\")"
    :expect nil
@@ -10246,7 +10246,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.whole-row-read-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:652"
+   :at "25-hybrid-plans.sqlt:653"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"row\", ABORT(GET(_, \"name\")))) .> TAKE(3)"
    :expect nil
@@ -10262,7 +10262,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.dependency-colliding-with-a-pushable-key-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:668"
+   :at "25-hybrid-plans.sqlt:669"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"customer_id\", _[\"amount\"], \"tag\", ABORT(_[\"customer_id\"]))) .> TAKE(3)"
    :expect nil
@@ -10278,7 +10278,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.downstream-read-under-its-own-binder-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:685"
+   :at "25-hybrid-plans.sqlt:686"
    :dialect "mariadb"
    :source "ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"tag\", ABORT(r[\"name\"]))) .> SORT_BY(s, s[\"name\"])"
    :expect nil
@@ -10294,23 +10294,23 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key"
-   :at "25-hybrid-plans.sqlt:703"
+   :at "25-hybrid-plans.sqlt:704"
    :dialect "mariadb"
    :source "ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"tag\", ABORT(r[\"name\"]))) .> FILTER(s, s[\"id\"] > 1)"
-   :expect "SELECT `o`.`id` AS `id`, `o`.`name` AS `name` FROM `orders` `o` WHERE (`o`.`id` > 1)"
+   :expect nil
    :error nil
    :throws nil
    :params nil
    :as nil
    :mode nil
    :strict nil
-   :plan "hybrid"
+   :plan "pure_memory"
    :tables (list "orders")
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.dependency-differing-from-a-key-only-by-case-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:720"
+   :at "25-hybrid-plans.sqlt:721"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"tag\", ABORT(_[\"name\"]))) .> TAKE(2)"
    :expect nil
@@ -10326,7 +10326,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.custom-key-differing-from-a-pushable-key-only-by-case"
-   :at "25-hybrid-plans.sqlt:741"
+   :at "25-hybrid-plans.sqlt:742"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", ABORT(\"x\"))) .> TAKE(2)"
    :expect "SELECT `o`.`id` AS `x` FROM `orders` `o` LIMIT 2"
@@ -10342,7 +10342,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.two-dependencies-differing-only-by-case-stay-in-memory"
-   :at "25-hybrid-plans.sqlt:760"
+   :at "25-hybrid-plans.sqlt:761"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"a\", ABORT(_[\"name\"]), \"b\", ABORT(_[\"Name\"]))) .> TAKE(2)"
    :expect nil
@@ -10358,7 +10358,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fallthrough.case-is-ascii-case"
-   :at "25-hybrid-plans.sqlt:776"
+   :at "25-hybrid-plans.sqlt:777"
    :dialect "postgresql"
    :source "ORDERS .> MAP(RECORD(\"NAMÉ\", _[\"id\"], \"tag\", ABORT(_[\"namé\"]))) .> TAKE(2)"
    :expect "SELECT \"o\".\"id\" AS \"NAMÉ\", \"o\".\"name\" AS \"namé\" FROM \"orders\" \"o\" LIMIT 2"
@@ -10374,10 +10374,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAMé" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.bucket.filter-after-pagination-is-a-where"
-   :at "25-hybrid-plans.sqlt:796"
+   :at "25-hybrid-plans.sqlt:797"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_))) .> TAKE(2) .> FILTER(_[\"n\"] > 1)"
-   :expect "SELECT `_sub1`.* FROM (SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id` LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
+   :expect "SELECT `_sub1`.* FROM (SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)"
    :error nil
    :throws nil
    :params nil
@@ -10390,10 +10390,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.bucket.filter-after-pagination-on-sqlite-splits"
-   :at "25-hybrid-plans.sqlt:815"
+   :at "25-hybrid-plans.sqlt:816"
    :dialect "sqlite"
    :source "ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_))) .> TAKE(2) .> FILTER(_[\"n\"] > 1)"
-   :expect "SELECT \"o\".\"customer_id\" AS \"cid\", COUNT(*) AS \"n\" FROM \"orders\" \"o\" GROUP BY \"o\".\"customer_id\" LIMIT 2"
+   :expect "SELECT MIN(\"o\".\"customer_id\") AS \"cid\", COUNT(*) AS \"n\" FROM \"orders\" \"o\" GROUP BY CAST(\"o\".\"customer_id\" AS TEXT) COLLATE BINARY LIMIT 2"
    :error nil
    :throws nil
    :params nil
@@ -10406,7 +10406,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.bucket.bool-key-in-a-bare-bucket-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:835"
+   :at "25-hybrid-plans.sqlt:836"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"active\"]) .> MAP(RECORD(\"a\", _K, \"n\", COUNT(_)))"
    :expect nil
@@ -10422,7 +10422,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ACTIVE" (binding-column "active" "o" :bool))) nil nil)))))
   (list
    :name "plan.take.count-sel-refuses-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:851"
+   :at "25-hybrid-plans.sqlt:852"
    :dialect "mariadb"
    :source "ORDERS .> TAKE(1 / 0)"
    :expect nil
@@ -10438,7 +10438,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.refuse.base-dialect"
-   :at "25-hybrid-plans.sqlt:867"
+   :at "25-hybrid-plans.sqlt:868"
    :dialect "ansi"
    :source "ORDERS .> TAKE(1)"
    :expect nil
@@ -10454,7 +10454,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.immutable.folding-does-not-write-back"
-   :at "25-hybrid-plans.sqlt:884"
+   :at "25-hybrid-plans.sqlt:885"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"id\"] > 1 + 1) .> TAKE(2 * 2)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) LIMIT 4"
@@ -10470,7 +10470,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.immutable.folding-inside-a-kept-step"
-   :at "25-hybrid-plans.sqlt:906"
+   :at "25-hybrid-plans.sqlt:907"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(NOT (_[\"id\"] > 1 + 1)) .> MAP(RECORD(\"n\", ABORT(\"x\")))"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (NOT (`o`.`id` > 2))"
@@ -10486,10 +10486,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.pipeline-map-pushes-down-whole"
-   :at "25-hybrid-plans.sqlt:925"
+   :at "25-hybrid-plans.sqlt:926"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_)))"
-   :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
+   :expect "SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -10502,7 +10502,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.open-prefix-is-not-a-split-point"
-   :at "25-hybrid-plans.sqlt:944"
+   :at "25-hybrid-plans.sqlt:945"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))"
    :expect nil
@@ -10518,7 +10518,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.split-before-the-bucket"
-   :at "25-hybrid-plans.sqlt:962"
+   :at "25-hybrid-plans.sqlt:963"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"amount\"] > 1) .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"note\", ABORT(\"x\")))"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)"
@@ -10534,10 +10534,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.projected-then-custom-map"
-   :at "25-hybrid-plans.sqlt:980"
+   :at "25-hybrid-plans.sqlt:981"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_))) .> MAP(RECORD(\"c\", _[\"cid\"], \"note\", ABORT(\"x\")))"
-   :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
+   :expect "SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -10550,7 +10550,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.sealed-prefix-is-not-a-split-point"
-   :at "25-hybrid-plans.sqlt:998"
+   :at "25-hybrid-plans.sqlt:999"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> TAKE(2) .> MAP(RECORD(\"cid\", _K))"
    :expect nil
@@ -10566,7 +10566,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))) nil nil)))))
   (list
    :name "plan.pure-sql.constant-true-filter"
-   :at "25-hybrid-plans.sqlt:1011"
+   :at "25-hybrid-plans.sqlt:1012"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(TRUE)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE TRUE"
@@ -10582,10 +10582,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.sort.binder-form-keeps-its-form-when-the-key-folds"
-   :at "25-hybrid-plans.sqlt:1034"
+   :at "25-hybrid-plans.sqlt:1035"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[\"id\"] > 0) .> SORT_BY(O, IF(TRUE, \"DESC\", \"ASC\"))"
-   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_bin ASC"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_nopad_bin ASC"
    :error nil
    :throws nil
    :params nil
@@ -10598,7 +10598,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.sort.direction-form-folds-to-a-literal"
-   :at "25-hybrid-plans.sqlt:1055"
+   :at "25-hybrid-plans.sqlt:1056"
    :dialect "mariadb"
    :source "ORDERS .> SORT_BY(_[\"id\"], IF(TRUE, \"DESC\", \"ASC\"))"
    :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` DESC"
@@ -10614,7 +10614,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.map.computed-field-then-keyless-sort-stays-after-the-map"
-   :at "25-hybrid-plans.sqlt:1075"
+   :at "25-hybrid-plans.sqlt:1076"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"q\", 0 - _[\"amount\"])) .> SORT()"
    :expect "SELECT `_sub1`.* FROM (SELECT (0 - `o`.`amount`) AS `q` FROM `orders` `o`) `_sub1` ORDER BY `_sub1`.`q` ASC"
@@ -10630,7 +10630,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.map.pass-through-key-sorts-early"
-   :at "25-hybrid-plans.sqlt:1095"
+   :at "25-hybrid-plans.sqlt:1096"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"q\", 0 - _[\"amount\"])) .> SORT_BY(_[\"id\"], \"DESC\")"
    :expect "SELECT `o`.`id` AS `id`, (0 - `o`.`amount`) AS `q` FROM `orders` `o` ORDER BY `o`.`id` DESC"
@@ -10646,7 +10646,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.sort.then-filter-on-the-key-splits"
-   :at "25-hybrid-plans.sqlt:1114"
+   :at "25-hybrid-plans.sqlt:1115"
    :dialect "mariadb"
    :source "ORDERS .> SORT_BY(_[\"id\"]) .> FILTER(_K == \"1\")"
    :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC"
@@ -10662,7 +10662,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.member-field-through-the-group-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:1134"
+   :at "25-hybrid-plans.sqlt:1135"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(g, RECORD(\"cid\", _K, \"amt\", g[\"amount\"]))"
    :expect nil
@@ -10678,7 +10678,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.having-alias-before-the-map-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:1153"
+   :at "25-hybrid-plans.sqlt:1154"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> FILTER(_[\"total\"] > 1) .> MAP(RECORD(\"cid\", _K, \"total\", SUM(_, _[\"amount\"])))"
    :expect nil
@@ -10694,7 +10694,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.max-over-the-group-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:1166"
+   :at "25-hybrid-plans.sqlt:1167"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"mx\", MAX(_, _[\"amount\"])))"
    :expect nil
@@ -10710,10 +10710,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.two-argument-sum-under-a-named-group-pushes-down"
-   :at "25-hybrid-plans.sqlt:1179"
+   :at "25-hybrid-plans.sqlt:1180"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(g, RECORD(\"cid\", _K, \"n\", COUNT(g), \"s\", SUM(g, _[\"amount\"])))"
-   :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n`, COALESCE(SUM(`o`.`amount`), 0) AS `s` FROM `orders` `o` GROUP BY `o`.`customer_id`"
+   :expect "SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n`, COALESCE(SUM(`o`.`amount`), 0) AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -10726,7 +10726,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.source-key-before-the-bucket-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:1194"
+   :at "25-hybrid-plans.sqlt:1195"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_K $== \"2\") .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_)))"
    :expect nil
@@ -10742,10 +10742,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.list-key-after-the-projection-splits"
-   :at "25-hybrid-plans.sqlt:1212"
+   :at "25-hybrid-plans.sqlt:1213"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_))) .> FILTER(_K $== \"2\")"
-   :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
+   :expect "SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -10758,10 +10758,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.sort-by-list-key-after-the-projection-splits"
-   :at "25-hybrid-plans.sqlt:1232"
+   :at "25-hybrid-plans.sqlt:1233"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_))) .> SORT_BY(_K)"
-   :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
+   :expect "SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -10774,10 +10774,10 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.projected-row-field-splits"
-   :at "25-hybrid-plans.sqlt:1247"
+   :at "25-hybrid-plans.sqlt:1248"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"n\", COUNT(_))) .> SORT_BY(_[\"customer_id\"])"
-   :expect "SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`"
+   :expect "SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin"
    :error nil
    :throws nil
    :params nil
@@ -10790,7 +10790,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.map.count-of-a-row-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:1266"
+   :at "25-hybrid-plans.sqlt:1267"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"n\", COUNT(_)))"
    :expect nil
@@ -10806,7 +10806,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num))) nil nil)))))
   (list
    :name "plan.bucket.count-of-a-bucket-in-the-projection-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:1286"
+   :at "25-hybrid-plans.sqlt:1287"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"cid\", _K, \"by_status\", COUNT(BUCKET(_, _[\"status\"]))))"
    :expect nil
@@ -10822,7 +10822,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "STATUS" (binding-column "status" "o" :text))) nil nil)))))
   (list
    :name "plan.map.count-of-a-list-stays-in-memory"
-   :at "25-hybrid-plans.sqlt:1304"
+   :at "25-hybrid-plans.sqlt:1305"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"n\", COUNT(LIST(1, 2, 3)))) .> TAKE(2)"
    :expect nil
@@ -10838,7 +10838,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "STATUS" (binding-column "status" "o" :text))) nil nil)))))
   (list
    :name "plan.fold.negative-literal"
-   :at "25-hybrid-plans.sqlt:1323"
+   :at "25-hybrid-plans.sqlt:1324"
    :dialect "mariadb"
    :source "ORDERS .> TAKE(2) .> MAP(RECORD(\"k\", -0, \"j\", - -1.50))"
    :expect "SELECT 0 AS `k`, 1.50 AS `j` FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1`"
@@ -10854,7 +10854,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.fold.negative-literal-in-a-where"
-   :at "25-hybrid-plans.sqlt:1344"
+   :at "25-hybrid-plans.sqlt:1345"
    :dialect "postgresql"
    :source "ORDERS .> FILTER(_[\"id\"] > -1)"
    :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE (\"o\".\"id\" > (-1))"
@@ -10870,7 +10870,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.sort.later-sort-is-the-primary-key"
-   :at "25-hybrid-plans.sqlt:1359"
+   :at "25-hybrid-plans.sqlt:1360"
    :dialect "postgresql"
    :source "ORDERS .> SORT_BY(_[\"name\"]) .> SORT_BY(_[\"id\"], \"DESC\") .> TAKE(2)"
    :expect "SELECT \"o\".* FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" DESC, CAST(\"o\".\"name\" AS TEXT) COLLATE \"C\" ASC LIMIT 2"
@@ -10886,7 +10886,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.map.computed-then-sort-then-take"
-   :at "25-hybrid-plans.sqlt:1380"
+   :at "25-hybrid-plans.sqlt:1381"
    :dialect "postgresql"
    :source "ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"n\", _[\"id\"] + 1)) .> SORT_BY(_[\"id\"], \"DESC\") .> TAKE(2)"
    :expect "SELECT \"o\".\"id\" AS \"id\", (CAST(\"o\".\"id\" AS NUMERIC) + CAST(1 AS NUMERIC)) AS \"n\" FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" DESC LIMIT 2"
@@ -10902,7 +10902,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "plan.helper.literal-helper-is-inlined-at-its-read"
-   :at "25-hybrid-plans.sqlt:1400"
+   :at "25-hybrid-plans.sqlt:1401"
    :dialect "mariadb"
    :source "Y = \"x\"; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + Y)"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
@@ -10918,7 +10918,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.helper.folded-helper-is-a-literal"
-   :at "25-hybrid-plans.sqlt:1426"
+   :at "25-hybrid-plans.sqlt:1427"
    :dialect "mariadb"
    :source "N = 1 + 1; ORDERS .> TAKE(N)"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
@@ -10934,7 +10934,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.helper.relation-helper-is-the-pipeline-source"
-   :at "25-hybrid-plans.sqlt:1445"
+   :at "25-hybrid-plans.sqlt:1446"
    :dialect "mariadb"
    :source "X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _[\"id\"])"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
@@ -10950,7 +10950,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.helper.non-literal-helper-is-carried-as-written"
-   :at "25-hybrid-plans.sqlt:1466"
+   :at "25-hybrid-plans.sqlt:1467"
    :dialect "mariadb"
    :source "C = COUNT(ORDERS); ORDERS .> FILTER(_[\"id\"] > C)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > (SELECT COUNT(*) FROM `orders` `o` WHERE TRUE))"
@@ -10966,7 +10966,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.helper.unread-helper-reads-no-table"
-   :at "25-hybrid-plans.sqlt:1488"
+   :at "25-hybrid-plans.sqlt:1489"
    :dialect "mariadb"
    :source "U = USERS .> TAKE(1); ORDERS .> TAKE(2) .> MAP(_[\"id\"] + \"x\")"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
@@ -10982,7 +10982,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "USERS" (binding-relation "users" "u" (list (cons "ID" (binding-column "id" "u" :num))) nil nil)))))
   (list
    :name "plan.helper.indexed-helper-is-carried-as-written"
-   :at "25-hybrid-plans.sqlt:1509"
+   :at "25-hybrid-plans.sqlt:1510"
    :dialect "mariadb"
    :source "R[1] = 5; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + R[1])"
    :expect "SELECT `o`.* FROM `orders` `o` LIMIT 2"
@@ -10995,4 +10995,2740 @@
    :plan "hybrid"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "link.row.is-the-promoted-fields"
+   :at "26-links.sqlt:5"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
+   :expect "SELECT `o`.`customer_id`, `o`.`amount` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.row.filter-on-a-promoted-field"
+   :at "26-links.sqlt:25"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"]) .> FILTER(_[\"amount\"] > 5)"
+   :expect "SELECT `o`.`customer_id`, `o`.`amount` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`) WHERE (`o`.`amount` > 5)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.row.a-name-both-sides-have-is-refused"
+   :at "26-links.sqlt:38"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"name\", _[\"name\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:81"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.row.select-cols-of-a-shared-name-is-refused"
+   :at "26-links.sqlt:55"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> SELECT_COLS(\"id\")"
+   :expect nil
+   :error "E_SQL_SHAPE 1:73"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.row.a-named-binder-is-the-same-row"
+   :at "26-links.sqlt:68"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(r, RECORD(\"name\", r[\"name\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:84"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.row.a-named-binder-reads-a-promoted-field"
+   :at "26-links.sqlt:86"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(r, RECORD(\"a\", r[\"amount\"]))"
+   :expect "SELECT `o`.`amount` AS `a` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.binders.left-binder-does-not-outlive-the-link"
+   :at "26-links.sqlt:100"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"]) .> FILTER(O[\"id\"] > 1)"
+   :expect nil
+   :error "E_SQL_UNBOUND 1:72"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.binders.right-binder-does-not-outlive-the-link"
+   :at "26-links.sqlt:118"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"]) .> FILTER(C[\"id\"] > 1)"
+   :expect nil
+   :error "E_SQL_UNBOUND 1:72"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.binders.positional-binder-does-not-outlive-the-link"
+   :at "26-links.sqlt:131"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"]) .> FILTER(_2[\"id\"] > 1)"
+   :expect nil
+   :error "E_SQL_UNBOUND 1:72"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.binders.map-of-a-binder-is-refused"
+   :at "26-links.sqlt:144"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"]) .> MAP(O[\"id\"])"
+   :expect nil
+   :error "E_SQL_UNBOUND 1:69"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.derived.projects-the-promoted-fields"
+   :at "26-links.sqlt:157"
+   :dialect "sqlite"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> TAKE(2) .> MAP(RECORD(\"a\", _[\"amount\"]))"
+   :expect "SELECT \"_sub1\".\"amount\" AS \"a\" FROM (SELECT \"o\".\"customer_id\", \"o\".\"amount\" FROM \"orders\" \"o\" INNER JOIN \"customers\" \"c\" ON (CAST(\"o\".\"customer_id\" AS NUMERIC) = CAST(\"c\".\"id\" AS NUMERIC)) LIMIT 2) \"_sub1\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "link.derived.a-shared-name-above-it-is-refused"
+   :at "26-links.sqlt:174"
+   :dialect "sqlite"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> TAKE(2) .> MAP(RECORD(\"n\", _[\"name\"]))"
+   :expect nil
+   :error "E_SQL_BINDING 1:89"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "plan.link.unprojected-join-is-not-a-split-point"
+   :at "26-links.sqlt:187"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> TAKE(2)"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders" "customers")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "plan.link.projection-closes-the-join"
+   :at "26-links.sqlt:207"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"], \"s\", REPEAT(\"x\", _[\"customer_id\"])))"
+   :expect "SELECT `o`.`amount` AS `a`, REPEAT('x', `o`.`customer_id`) AS `s` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders" "customers")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "plan.link.fall-through-over-a-join-projects-its-dependencies"
+   :at "26-links.sqlt:223"
+   :dialect "sqlite"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"], \"s\", REPEAT(\"x\", _[\"customer_id\"])))"
+   :expect "SELECT \"o\".\"amount\" AS \"a\", \"o\".\"customer_id\" AS \"customer_id\" FROM \"orders\" \"o\" INNER JOIN \"customers\" \"c\" ON (CAST(\"o\".\"customer_id\" AS NUMERIC) = CAST(\"c\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders" "customers")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "plan.link.select-cols-closes-the-join"
+   :at "26-links.sqlt:242"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> SELECT_COLS(\"amount\")"
+   :expect "SELECT `o`.`amount` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders" "customers")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "plan.link.projected-bucket-closes-the-join"
+   :at "26-links.sqlt:258"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> BUCKET(_[\"customer_id\"], RECORD(\"c\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT MIN(`o`.`customer_id`) AS `c`, COUNT(*) AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`) GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders" "customers")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "plan.link.a-binder-after-the-join-stays-in-memory"
+   :at "26-links.sqlt:274"
+   :dialect "mariadb"
+   :source "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"]) .> FILTER(C[\"id\"] > 1)"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders" "customers")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "stmt.slice.smaller.mariadb"
+   :at "27-slices.sqlt:1"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(1)"
+   :expect "SELECT * FROM `items` ORDER BY `id` ASC LIMIT 1 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.smaller.postgresql"
+   :at "27-slices.sqlt:14"
+   :dialect "postgresql"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(1)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 1 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.smaller.sqlite"
+   :at "27-slices.sqlt:27"
+   :dialect "sqlite"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(1)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 1 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.equal.mariadb"
+   :at "27-slices.sqlt:40"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(2)"
+   :expect "SELECT * FROM `items` ORDER BY `id` ASC LIMIT 0 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.equal.postgresql"
+   :at "27-slices.sqlt:53"
+   :dialect "postgresql"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(2)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 0 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.equal.sqlite"
+   :at "27-slices.sqlt:66"
+   :dialect "sqlite"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(2)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 0 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.larger.mariadb"
+   :at "27-slices.sqlt:79"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(1) .> DROP(2)"
+   :expect "SELECT * FROM `items` ORDER BY `id` ASC LIMIT 0 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.larger.postgresql"
+   :at "27-slices.sqlt:92"
+   :dialect "postgresql"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(1) .> DROP(2)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 0 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.larger.sqlite"
+   :at "27-slices.sqlt:105"
+   :dialect "sqlite"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(1) .> DROP(2)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 0 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.zero-take.mariadb"
+   :at "27-slices.sqlt:118"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(0) .> DROP(2)"
+   :expect "SELECT * FROM `items` ORDER BY `id` ASC LIMIT 0 OFFSET 0"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.zero-take.postgresql"
+   :at "27-slices.sqlt:131"
+   :dialect "postgresql"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(0) .> DROP(2)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 0 OFFSET 0"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.zero-take.sqlite"
+   :at "27-slices.sqlt:144"
+   :dialect "sqlite"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(0) .> DROP(2)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 0 OFFSET 0"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.zero-drop.mariadb"
+   :at "27-slices.sqlt:157"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(0)"
+   :expect "SELECT * FROM `items` ORDER BY `id` ASC LIMIT 2 OFFSET 0"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.zero-drop.postgresql"
+   :at "27-slices.sqlt:170"
+   :dialect "postgresql"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(0)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 2 OFFSET 0"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.zero-drop.sqlite"
+   :at "27-slices.sqlt:183"
+   :dialect "sqlite"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(0)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 2 OFFSET 0"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.mixed.mariadb"
+   :at "27-slices.sqlt:196"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(1) .> TAKE(2) .> DROP(1) .> TAKE(3)"
+   :expect "SELECT * FROM `items` ORDER BY `id` ASC LIMIT 1 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.mixed.postgresql"
+   :at "27-slices.sqlt:209"
+   :dialect "postgresql"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(1) .> TAKE(2) .> DROP(1) .> TAKE(3)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 1 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.mixed.sqlite"
+   :at "27-slices.sqlt:222"
+   :dialect "sqlite"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(1) .> TAKE(2) .> DROP(1) .> TAKE(3)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 1 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.drop-take.mariadb"
+   :at "27-slices.sqlt:235"
+   :dialect "mariadb"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(1) .> TAKE(1)"
+   :expect "SELECT * FROM `items` ORDER BY `id` ASC LIMIT 1 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.drop-take.postgresql"
+   :at "27-slices.sqlt:248"
+   :dialect "postgresql"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(1) .> TAKE(1)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 1 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.drop-take.sqlite"
+   :at "27-slices.sqlt:261"
+   :dialect "sqlite"
+   :source "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(1) .> TAKE(1)"
+   :expect "SELECT * FROM \"items\" ORDER BY \"id\" ASC LIMIT 1 OFFSET 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" nil :num))) nil nil)))))
+  (list
+   :name "stmt.slice.large-offsets.mariadb"
+   :at "28-slice-overflow.sqlt:1"
+   :dialect "mariadb"
+   :source "ITEMS .> DROP(4503599627370496) .> DROP(4503599627370496) .> TAKE(1)"
+   :expect "SELECT `_sub1`.* FROM (SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 4503599627370496) `_sub1` LIMIT 1 OFFSET 4503599627370496"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.slice.large-offsets.postgresql"
+   :at "28-slice-overflow.sqlt:14"
+   :dialect "postgresql"
+   :source "ITEMS .> DROP(4503599627370496) .> DROP(4503599627370496) .> TAKE(1)"
+   :expect "SELECT \"_sub1\".* FROM (SELECT * FROM \"items\" OFFSET 4503599627370496) \"_sub1\" LIMIT 1 OFFSET 4503599627370496"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "stmt.slice.large-offsets.sqlite"
+   :at "28-slice-overflow.sqlt:27"
+   :dialect "sqlite"
+   :source "ITEMS .> DROP(4503599627370496) .> DROP(4503599627370496) .> TAKE(1)"
+   :expect "SELECT \"_sub1\".* FROM (SELECT * FROM \"items\" LIMIT -1 OFFSET 4503599627370496) \"_sub1\" LIMIT 1 OFFSET 4503599627370496"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "bind.text-identity.sargable.mariadb"
+   :at "29-text-identity.sqlt:1"
+   :dialect "mariadb"
+   :source "CAT $== \"a \""
+   :expect "((`cat` = 'a ') AND (CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a ' AS CHAR) COLLATE utf8mb4_nopad_bin))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "CAT" (binding-column "cat" nil :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "bind.text-identity.sargable-inequality.mariadb"
+   :at "29-text-identity.sqlt:14"
+   :dialect "mariadb"
+   :source "CAT $!= \"a \""
+   :expect "(CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('a ' AS CHAR) COLLATE utf8mb4_nopad_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "CAT" (binding-column "cat" nil :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "stmt.text-identity.key-text-operation.mariadb"
+   :at "29-text-identity.sqlt:27"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"length\", LEN(_K)))"
+   :expect "SELECT CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin AS `cat`, CHAR_LENGTH(MIN(CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin)) AS `length` FROM `r` GROUP BY CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "bind.text-identity.sargable.mysql"
+   :at "29-text-identity.sqlt:42"
+   :dialect "mysql"
+   :source "CAT $== \"a \""
+   :expect "((`cat` = 'a ') AND (CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a ' AS CHAR) COLLATE utf8mb4_0900_bin))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "CAT" (binding-column "cat" nil :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "bind.text-identity.sargable-inequality.mysql"
+   :at "29-text-identity.sqlt:55"
+   :dialect "mysql"
+   :source "CAT $!= \"a \""
+   :expect "(CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin <> CAST('a ' AS CHAR) COLLATE utf8mb4_0900_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "CAT" (binding-column "cat" nil :text :exact nil :sargable t :guard nil)))))
+  (list
+   :name "stmt.text-identity.key-text-operation.mysql"
+   :at "29-text-identity.sqlt:68"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"length\", LEN(_K)))"
+   :expect "SELECT CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin AS `cat`, CHAR_LENGTH(MIN(CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin)) AS `length` FROM `r` GROUP BY CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.text-identity.distinct-record.mariadb"
+   :at "30-distinct-text.sqlt:1"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"cat\", _[\"cat\"])) .> DISTINCT()"
+   :expect "SELECT DISTINCT CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin AS `cat` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.text-identity.distinct-columns.mariadb"
+   :at "30-distinct-text.sqlt:16"
+   :dialect "mariadb"
+   :source "R .> SELECT_COLS(\"cat\") .> DISTINCT()"
+   :expect "SELECT DISTINCT CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin AS `cat` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.text-identity.distinct-record.mysql"
+   :at "30-distinct-text.sqlt:31"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"cat\", _[\"cat\"])) .> DISTINCT()"
+   :expect "SELECT DISTINCT CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin AS `cat` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.text-identity.distinct-columns.mysql"
+   :at "30-distinct-text.sqlt:46"
+   :dialect "mysql"
+   :source "R .> SELECT_COLS(\"cat\") .> DISTINCT()"
+   :expect "SELECT DISTINCT CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin AS `cat` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.distinct.open-schema.mariadb"
+   :at "31-distinct-schema.sqlt:1"
+   :dialect "mariadb"
+   :source "R .> DISTINCT()"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.distinct.open-schema.mysql"
+   :at "31-distinct-schema.sqlt:14"
+   :dialect "mysql"
+   :source "R .> DISTINCT()"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.distinct.open-schema.postgresql"
+   :at "31-distinct-schema.sqlt:27"
+   :dialect "postgresql"
+   :source "R .> DISTINCT()"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.distinct.open-schema.sqlite"
+   :at "31-distinct-schema.sqlt:40"
+   :dialect "sqlite"
+   :source "R .> DISTINCT()"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.projected.mariadb"
+   :at "32-numeric-group-identity.sqlt:1"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"cat\"] + 0, RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.bare-map.mariadb"
+   :at "32-numeric-group-identity.sqlt:14"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"cat\"] + 0) .> MAP(RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.composite.mariadb"
+   :at "32-numeric-group-identity.sqlt:27"
+   :dialect "mariadb"
+   :source "R .> BUCKET(LIST(_[\"cat\"] + 0, _[\"cat\"]), RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.projected.mysql"
+   :at "32-numeric-group-identity.sqlt:40"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"cat\"] + 0, RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.bare-map.mysql"
+   :at "32-numeric-group-identity.sqlt:53"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"cat\"] + 0) .> MAP(RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.composite.mysql"
+   :at "32-numeric-group-identity.sqlt:66"
+   :dialect "mysql"
+   :source "R .> BUCKET(LIST(_[\"cat\"] + 0, _[\"cat\"]), RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.projected.postgresql"
+   :at "32-numeric-group-identity.sqlt:79"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"cat\"] + 0, RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.bare-map.postgresql"
+   :at "32-numeric-group-identity.sqlt:92"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"cat\"] + 0) .> MAP(RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.composite.postgresql"
+   :at "32-numeric-group-identity.sqlt:105"
+   :dialect "postgresql"
+   :source "R .> BUCKET(LIST(_[\"cat\"] + 0, _[\"cat\"]), RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.projected.sqlite"
+   :at "32-numeric-group-identity.sqlt:118"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"cat\"] + 0, RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.bare-map.sqlite"
+   :at "32-numeric-group-identity.sqlt:131"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"cat\"] + 0) .> MAP(RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.composite.sqlite"
+   :at "32-numeric-group-identity.sqlt:144"
+   :dialect "sqlite"
+   :source "R .> BUCKET(LIST(_[\"cat\"] + 0, _[\"cat\"]), RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.derived-computation.mariadb"
+   :at "33-group-identity-continuation.sqlt:1"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.group-identity.derived-helper.mariadb"
+   :at "33-group-identity-continuation.sqlt:14"
+   :dialect "mariadb"
+   :source "X = R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)); X .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.derived-computation.mysql"
+   :at "33-group-identity-continuation.sqlt:27"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.group-identity.derived-helper.mysql"
+   :at "33-group-identity-continuation.sqlt:40"
+   :dialect "mysql"
+   :source "X = R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)); X .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.derived-computation.postgresql"
+   :at "33-group-identity-continuation.sqlt:53"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.group-identity.derived-helper.postgresql"
+   :at "33-group-identity-continuation.sqlt:66"
+   :dialect "postgresql"
+   :source "X = R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)); X .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.group-identity.derived-computation.sqlite"
+   :at "33-group-identity-continuation.sqlt:79"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.group-identity.derived-helper.sqlite"
+   :at "33-group-identity-continuation.sqlt:92"
+   :dialect "sqlite"
+   :source "X = R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)); X .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.retains-safe-prefix.mariadb"
+   :at "34-safe-identity-prefix.sqlt:1"
+   :dialect "mariadb"
+   :source "R .> TAKE(2) .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT * FROM `r` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.numeric-dedupe.mariadb"
+   :at "34-safe-identity-prefix.sqlt:16"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> DISTINCT()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.retains-safe-prefix.mysql"
+   :at "34-safe-identity-prefix.sqlt:29"
+   :dialect "mysql"
+   :source "R .> TAKE(2) .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT * FROM `r` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.numeric-dedupe.mysql"
+   :at "34-safe-identity-prefix.sqlt:44"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> DISTINCT()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.retains-safe-prefix.postgresql"
+   :at "34-safe-identity-prefix.sqlt:57"
+   :dialect "postgresql"
+   :source "R .> TAKE(2) .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT * FROM \"r\" LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.numeric-dedupe.postgresql"
+   :at "34-safe-identity-prefix.sqlt:72"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> DISTINCT()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.retains-safe-prefix.sqlite"
+   :at "34-safe-identity-prefix.sqlt:85"
+   :dialect "sqlite"
+   :source "R .> TAKE(2) .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT * FROM \"r\" LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.numeric-dedupe.sqlite"
+   :at "34-safe-identity-prefix.sqlt:100"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"] + 0)) .> DISTINCT()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.map.mariadb"
+   :at "35-record-projection-collisions.sqlt:1"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.derived.mariadb"
+   :at "35-record-projection-collisions.sqlt:14"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"])) .> TAKE(1) .> FILTER(_[\"x\"] > 5)"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.case-collision.mariadb"
+   :at "35-record-projection-collisions.sqlt:27"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"X\", _[\"fk\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.bucket.mariadb"
+   :at "35-record-projection-collisions.sqlt:40"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"cat\"], RECORD(\"x\", _K, \"x\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.group-key.mariadb"
+   :at "35-record-projection-collisions.sqlt:53"
+   :dialect "mariadb"
+   :source "R .> BUCKET(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"]), RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.mixed.mariadb"
+   :at "35-record-projection-collisions.sqlt:66"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"x\", BACKWARDS(_[\"cat\"]), \"x\", _[\"id\"]))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.mixed-reverse.mariadb"
+   :at "35-record-projection-collisions.sqlt:79"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", BACKWARDS(_[\"cat\"])))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.safe-prefix.mariadb"
+   :at "35-record-projection-collisions.sqlt:92"
+   :dialect "mariadb"
+   :source "R .> TAKE(2) .> MAP(RECORD(\"x\", _[\"id\"], \"middle\", 7, \"x\", _[\"fk\"]))"
+   :expect "SELECT * FROM `r` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.map.mysql"
+   :at "35-record-projection-collisions.sqlt:107"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.derived.mysql"
+   :at "35-record-projection-collisions.sqlt:120"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"])) .> TAKE(1) .> FILTER(_[\"x\"] > 5)"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.case-collision.mysql"
+   :at "35-record-projection-collisions.sqlt:133"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"X\", _[\"fk\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.bucket.mysql"
+   :at "35-record-projection-collisions.sqlt:146"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"cat\"], RECORD(\"x\", _K, \"x\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.group-key.mysql"
+   :at "35-record-projection-collisions.sqlt:159"
+   :dialect "mysql"
+   :source "R .> BUCKET(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"]), RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.mixed.mysql"
+   :at "35-record-projection-collisions.sqlt:172"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"x\", BACKWARDS(_[\"cat\"]), \"x\", _[\"id\"]))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.mixed-reverse.mysql"
+   :at "35-record-projection-collisions.sqlt:185"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", BACKWARDS(_[\"cat\"])))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.safe-prefix.mysql"
+   :at "35-record-projection-collisions.sqlt:198"
+   :dialect "mysql"
+   :source "R .> TAKE(2) .> MAP(RECORD(\"x\", _[\"id\"], \"middle\", 7, \"x\", _[\"fk\"]))"
+   :expect "SELECT * FROM `r` LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.map.postgresql"
+   :at "35-record-projection-collisions.sqlt:213"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.derived.postgresql"
+   :at "35-record-projection-collisions.sqlt:226"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"])) .> TAKE(1) .> FILTER(_[\"x\"] > 5)"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.case-collision.postgresql"
+   :at "35-record-projection-collisions.sqlt:239"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"X\", _[\"fk\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.bucket.postgresql"
+   :at "35-record-projection-collisions.sqlt:252"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"cat\"], RECORD(\"x\", _K, \"x\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.group-key.postgresql"
+   :at "35-record-projection-collisions.sqlt:265"
+   :dialect "postgresql"
+   :source "R .> BUCKET(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"]), RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.mixed.postgresql"
+   :at "35-record-projection-collisions.sqlt:278"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"x\", BACKWARDS(_[\"cat\"]), \"x\", _[\"id\"]))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.mixed-reverse.postgresql"
+   :at "35-record-projection-collisions.sqlt:291"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", BACKWARDS(_[\"cat\"])))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.safe-prefix.postgresql"
+   :at "35-record-projection-collisions.sqlt:304"
+   :dialect "postgresql"
+   :source "R .> TAKE(2) .> MAP(RECORD(\"x\", _[\"id\"], \"middle\", 7, \"x\", _[\"fk\"]))"
+   :expect "SELECT * FROM \"r\" LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.map.sqlite"
+   :at "35-record-projection-collisions.sqlt:319"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.derived.sqlite"
+   :at "35-record-projection-collisions.sqlt:332"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"])) .> TAKE(1) .> FILTER(_[\"x\"] > 5)"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.case-collision.sqlite"
+   :at "35-record-projection-collisions.sqlt:345"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"X\", _[\"fk\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.bucket.sqlite"
+   :at "35-record-projection-collisions.sqlt:358"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"cat\"], RECORD(\"x\", _K, \"x\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.record-collision.group-key.sqlite"
+   :at "35-record-projection-collisions.sqlt:371"
+   :dialect "sqlite"
+   :source "R .> BUCKET(RECORD(\"x\", _[\"id\"], \"x\", _[\"fk\"]), RECORD(\"n\", COUNT(_)))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.mixed.sqlite"
+   :at "35-record-projection-collisions.sqlt:384"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"x\", BACKWARDS(_[\"cat\"]), \"x\", _[\"id\"]))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.mixed-reverse.sqlite"
+   :at "35-record-projection-collisions.sqlt:397"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"x\", _[\"id\"], \"x\", BACKWARDS(_[\"cat\"])))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.record-collision.safe-prefix.sqlite"
+   :at "35-record-projection-collisions.sqlt:410"
+   :dialect "sqlite"
+   :source "R .> TAKE(2) .> MAP(RECORD(\"x\", _[\"id\"], \"middle\", 7, \"x\", _[\"fk\"]))"
+   :expect "SELECT * FROM \"r\" LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :num)) (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "plan.latest-member.unique-revision.mariadb"
+   :at "36-latest-member.sqlt:1"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect "WITH `_sel_input` AS (SELECT * FROM `r` WHERE TRUE), `_sel_latest` AS (SELECT MAX(`id`) AS `_sel_revision`, MIN(`id`) AS `_sel_first` FROM `_sel_input` GROUP BY CAST(`fk` AS CHAR) COLLATE utf8mb4_nopad_bin) SELECT `_sel_input`.* FROM `_sel_input` JOIN `_sel_latest` ON `_sel_input`.`id` = `_sel_latest`.`_sel_revision` ORDER BY `_sel_latest`.`_sel_first` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.unique-revision.mysql"
+   :at "36-latest-member.sqlt:16"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect "WITH `_sel_input` AS (SELECT * FROM `r` WHERE TRUE), `_sel_latest` AS (SELECT MAX(`id`) AS `_sel_revision`, MIN(`id`) AS `_sel_first` FROM `_sel_input` GROUP BY CAST(`fk` AS CHAR) COLLATE utf8mb4_0900_bin) SELECT `_sel_input`.* FROM `_sel_input` JOIN `_sel_latest` ON `_sel_input`.`id` = `_sel_latest`.`_sel_revision` ORDER BY `_sel_latest`.`_sel_first` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.unique-revision.postgresql"
+   :at "36-latest-member.sqlt:31"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect "WITH \"_sel_input\" AS (SELECT * FROM \"r\" WHERE TRUE), \"_sel_latest\" AS (SELECT MAX(\"id\") AS \"_sel_revision\", MIN(\"id\") AS \"_sel_first\" FROM \"_sel_input\" GROUP BY CAST(\"fk\" AS TEXT) COLLATE \"C\") SELECT \"_sel_input\".* FROM \"_sel_input\" JOIN \"_sel_latest\" ON \"_sel_input\".\"id\" = \"_sel_latest\".\"_sel_revision\" ORDER BY \"_sel_latest\".\"_sel_first\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.unique-revision.sqlite"
+   :at "36-latest-member.sqlt:46"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect "WITH \"_sel_input\" AS (SELECT * FROM \"r\" WHERE 1), \"_sel_latest\" AS (SELECT MAX(\"id\") AS \"_sel_revision\", MIN(\"id\") AS \"_sel_first\" FROM \"_sel_input\" GROUP BY CAST(\"fk\" AS TEXT) COLLATE BINARY) SELECT \"_sel_input\".* FROM \"_sel_input\" JOIN \"_sel_latest\" ON \"_sel_input\".\"id\" = \"_sel_latest\".\"_sel_revision\" ORDER BY \"_sel_latest\".\"_sel_first\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.zero.mariadb"
+   :at "37-latest-member-fallback.sqlt:1"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 0)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.top-two.mariadb"
+   :at "37-latest-member-fallback.sqlt:14"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 2)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.ascending.mariadb"
+   :at "37-latest-member-fallback.sqlt:27"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"ASC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.computed-revision.mariadb"
+   :at "37-latest-member-fallback.sqlt:40"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"] + 0, \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.computed-partition.mariadb"
+   :at "37-latest-member-fallback.sqlt:53"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"fk\"] + 0) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.composite.mariadb"
+   :at "37-latest-member-fallback.sqlt:66"
+   :dialect "mariadb"
+   :source "R .> BUCKET(LIST(_[\"fk\"], _[\"id\"]), RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.no-proof.mariadb"
+   :at "37-latest-member-fallback.sqlt:79"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil)))))
+  (list
+   :name "plan.latest-member.fallback.needs-members.mariadb"
+   :at "37-latest-member-fallback.sqlt:92"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", COUNT(_), \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.zero.mysql"
+   :at "37-latest-member-fallback.sqlt:105"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 0)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.top-two.mysql"
+   :at "37-latest-member-fallback.sqlt:118"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 2)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.ascending.mysql"
+   :at "37-latest-member-fallback.sqlt:131"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"ASC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.computed-revision.mysql"
+   :at "37-latest-member-fallback.sqlt:144"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"] + 0, \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.computed-partition.mysql"
+   :at "37-latest-member-fallback.sqlt:157"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"fk\"] + 0) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.composite.mysql"
+   :at "37-latest-member-fallback.sqlt:170"
+   :dialect "mysql"
+   :source "R .> BUCKET(LIST(_[\"fk\"], _[\"id\"]), RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.no-proof.mysql"
+   :at "37-latest-member-fallback.sqlt:183"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil)))))
+  (list
+   :name "plan.latest-member.fallback.needs-members.mysql"
+   :at "37-latest-member-fallback.sqlt:196"
+   :dialect "mysql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", COUNT(_), \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.zero.postgresql"
+   :at "37-latest-member-fallback.sqlt:209"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 0)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.top-two.postgresql"
+   :at "37-latest-member-fallback.sqlt:222"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 2)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.ascending.postgresql"
+   :at "37-latest-member-fallback.sqlt:235"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"ASC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.computed-revision.postgresql"
+   :at "37-latest-member-fallback.sqlt:248"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"] + 0, \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.computed-partition.postgresql"
+   :at "37-latest-member-fallback.sqlt:261"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"fk\"] + 0) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.composite.postgresql"
+   :at "37-latest-member-fallback.sqlt:274"
+   :dialect "postgresql"
+   :source "R .> BUCKET(LIST(_[\"fk\"], _[\"id\"]), RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.no-proof.postgresql"
+   :at "37-latest-member-fallback.sqlt:287"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil)))))
+  (list
+   :name "plan.latest-member.fallback.needs-members.postgresql"
+   :at "37-latest-member-fallback.sqlt:300"
+   :dialect "postgresql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", COUNT(_), \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.zero.sqlite"
+   :at "37-latest-member-fallback.sqlt:313"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 0)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.top-two.sqlite"
+   :at "37-latest-member-fallback.sqlt:326"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 2)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.ascending.sqlite"
+   :at "37-latest-member-fallback.sqlt:339"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"ASC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.computed-revision.sqlite"
+   :at "37-latest-member-fallback.sqlt:352"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"] + 0, \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.computed-partition.sqlite"
+   :at "37-latest-member-fallback.sqlt:365"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"fk\"] + 0) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.composite.sqlite"
+   :at "37-latest-member-fallback.sqlt:378"
+   :dialect "sqlite"
+   :source "R .> BUCKET(LIST(_[\"fk\"], _[\"id\"]), RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.no-proof.sqlite"
+   :at "37-latest-member-fallback.sqlt:391"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil)))))
+  (list
+   :name "plan.latest-member.fallback.needs-members.sqlite"
+   :at "37-latest-member-fallback.sqlt:404"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", COUNT(_), \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "stmt.text-identity.schema-collation.sqlite"
+   :at "38-sqlite-schema-collation.sqlt:1"
+   :dialect "sqlite"
+   :source "R .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT CAST(\"cat\" AS TEXT) COLLATE BINARY AS \"cat\", COUNT(*) AS \"n\" FROM \"r\" GROUP BY CAST(\"cat\" AS TEXT) COLLATE BINARY"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.text-identity.schema-distinct.sqlite"
+   :at "38-sqlite-schema-collation.sqlt:18"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"cat\", _[\"cat\"])) .> DISTINCT()"
+   :expect "SELECT DISTINCT CAST(\"cat\" AS TEXT) COLLATE BINARY AS \"cat\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.text-identity.derived-pass-through.sqlite"
+   :at "39-derived-identity.sqlt:1"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"cat\", _[\"cat\"])) .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT CAST(\"_sub1\".\"cat\" AS TEXT) COLLATE BINARY AS \"cat\", COUNT(*) AS \"n\" FROM (SELECT \"cat\" AS \"cat\" FROM \"r\") \"_sub1\" GROUP BY CAST(\"_sub1\".\"cat\" AS TEXT) COLLATE BINARY"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
+  (list
+   :name "stmt.numeric-identity.derived-pass-through.sqlite"
+   :at "40-derived-numeric-and-unknown-identity.sqlt:1"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT MIN(\"_sub1\".\"key\") AS \"key\", COUNT(*) AS \"n\" FROM (SELECT \"v\" AS \"key\" FROM \"r\") \"_sub1\" GROUP BY CAST(\"_sub1\".\"key\" AS TEXT) COLLATE BINARY"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "plan.group-identity.unknown-derived-prefix.sqlite"
+   :at "40-derived-numeric-and-unknown-identity.sqlt:16"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT \"cat\" AS \"key\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.numeric-identity.derived-pass-through.postgresql"
+   :at "40-derived-numeric-and-unknown-identity.sqlt:33"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT MIN(\"_sub1\".\"key\") AS \"key\", COUNT(*) AS \"n\" FROM (SELECT \"v\" AS \"key\" FROM \"r\") \"_sub1\" GROUP BY CAST(\"_sub1\".\"key\" AS TEXT) COLLATE \"C\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "plan.group-identity.unknown-derived-prefix.postgresql"
+   :at "40-derived-numeric-and-unknown-identity.sqlt:48"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT \"cat\" AS \"key\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.numeric-identity.derived-pass-through.mariadb"
+   :at "40-derived-numeric-and-unknown-identity.sqlt:65"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT MIN(`_sub1`.`key`) AS `key`, COUNT(*) AS `n` FROM (SELECT `v` AS `key` FROM `r`) `_sub1` GROUP BY CAST(`_sub1`.`key` AS CHAR) COLLATE utf8mb4_nopad_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "plan.group-identity.unknown-derived-prefix.mariadb"
+   :at "40-derived-numeric-and-unknown-identity.sqlt:80"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT `cat` AS `key` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :unknown))) nil nil)))))
+  (list
+   :name "stmt.numeric-identity.derived-pass-through.mysql"
+   :at "40-derived-numeric-and-unknown-identity.sqlt:97"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT MIN(`_sub1`.`key`) AS `key`, COUNT(*) AS `n` FROM (SELECT `v` AS `key` FROM `r`) `_sub1` GROUP BY CAST(`_sub1`.`key` AS CHAR) COLLATE utf8mb4_0900_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "plan.group-identity.unknown-derived-prefix.mysql"
+   :at "40-derived-numeric-and-unknown-identity.sqlt:112"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"key\", _[\"cat\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT `cat` AS `key` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :unknown))) nil nil)))))
+  (list
+   :name "plan.group-identity.guarded-derived-prefix.sqlite"
+   :at "41-derived-type-proof-boundary.sqlt:1"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT \"v\" AS \"key\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-column "v" nil :num :exact nil :sargable nil :guard t))) nil nil)))))
+  (list
+   :name "plan.group-identity.raw-derived-prefix.sqlite"
+   :at "41-derived-type-proof-boundary.sqlt:18"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT v AS \"key\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-raw "v" :num))) nil nil)))))
+  (list
+   :name "plan.group-identity.guarded-derived-prefix.postgresql"
+   :at "41-derived-type-proof-boundary.sqlt:35"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT \"v\" AS \"key\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-column "v" nil :num :exact nil :sargable nil :guard t))) nil nil)))))
+  (list
+   :name "plan.group-identity.raw-derived-prefix.postgresql"
+   :at "41-derived-type-proof-boundary.sqlt:52"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT v AS \"key\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-raw "v" :num))) nil nil)))))
+  (list
+   :name "plan.group-identity.guarded-derived-prefix.mariadb"
+   :at "41-derived-type-proof-boundary.sqlt:69"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT `v` AS `key` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-column "v" nil :num :exact nil :sargable nil :guard t))) nil nil)))))
+  (list
+   :name "plan.group-identity.raw-derived-prefix.mariadb"
+   :at "41-derived-type-proof-boundary.sqlt:86"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT v AS `key` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-raw "v" :num))) nil nil)))))
+  (list
+   :name "plan.group-identity.guarded-derived-prefix.mysql"
+   :at "41-derived-type-proof-boundary.sqlt:103"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT `v` AS `key` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-column "v" nil :num :exact nil :sargable nil :guard t))) nil nil)))))
+  (list
+   :name "plan.group-identity.raw-derived-prefix.mysql"
+   :at "41-derived-type-proof-boundary.sqlt:120"
+   :dialect "mysql"
+   :source "R .> MAP(RECORD(\"key\", _[\"v\"])) .> BUCKET(_[\"key\"], RECORD(\"key\", _K, \"n\", COUNT(_)))"
+   :expect "SELECT v AS `key` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-raw "v" :num))) nil nil)))))))

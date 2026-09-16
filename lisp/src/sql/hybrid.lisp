@@ -26,7 +26,8 @@
   (continuation-source-var "_INPUT" :type string)
   (pure-sql-p nil :type boolean)
   (pure-memory-p nil :type boolean)
-  (source-tables '() :type list))
+  (source-tables '() :type list)
+  (selected-member nil)) ; plist :partition-key/:revision-key; full source rows
 
 (defun hybrid-plan-hybrid-p (plan)
   "Neither pure: a SQL prefix and an in-memory continuation."
@@ -250,7 +251,8 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
   (require-target dialect)
   (let* ((b (make-bindings (or bindings '())))
          (tr (%translator dialect b (and (getf options :strict) t)))
-         (bs (translator-bindings tr)))
+         (bs (translator-bindings tr))
+         (identity-barrier nil))
     (bindings-check-aliases bs)
     (multiple-value-bind (names root) (const-scope bs)
       (setf (translator-const-names tr) names
@@ -264,7 +266,8 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
       (let ((norm (handler-case (normalise (sel:program-ast program) names root)
                     (sql-error () (return-from plan-hybrid (pure-memory-plan program dialect bs))))))
         (when (clist-p norm)
-          (return-from plan-hybrid (pure-memory-plan program dialect bs))))
+          (return-from plan-hybrid (pure-memory-plan program dialect bs)))
+        (setf identity-barrier (identity-loss-before-grouping-p norm)))
       (multiple-value-bind (leading result) (statements (sel:program-ast program))
         (let ((literals (literal-helpers leading))
               (defs (definitions leading)))
@@ -290,12 +293,13 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                   (return-from plan-hybrid (pure-memory-plan program dialect bs)))
                 (let ((n-steps (length steps))
                       (input-var "_INPUT"))
-                  ;; 1. The whole pipeline, unless its rows would be a bucket's keys: the
-                  ;; translator renders a bare bucket as its keys, and a plan that
-                  ;; pushes the whole of `... .> BUCKET(k)` would hand them back.
+                  ;; 1. The whole pipeline, unless its rows would be a bucket's keys or
+                  ;; a join's rows without their binders: the translator renders a
+                  ;; bare bucket as its keys, and a plan that pushes the whole of
+                  ;; `... .> BUCKET(k)` would hand them back.
                   (let* ((full-ast (wrap (sel::build-pipeline-ast source-node steps)))
                          (full-prog (sel::%make-program "" full-ast))
-                         (full-frag (and (not (bucket-rows-are-keys-p steps))
+                         (full-frag (and (not identity-barrier) (not (rows-are-not-the-value-p steps))
                                          (try-translate-statement full-prog dialect bindings options))))
                     (when full-frag
                       (return-from plan-hybrid
@@ -304,9 +308,12 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                                           :sql-prefix-ast full-ast
                                           :pure-sql-p t
                                           :source-tables (tables full-ast)))))
+                  (let ((latest (try-plan-latest-member source-node steps dialect bs options #'wrap)))
+                    (when latest (return-from plan-hybrid latest)))
                   ;; 2. The MAP fall-through.
-                  (let ((ft-plan (try-plan-fallthrough source-node steps dialect bindings options
-                                                       input-var defs #'wrap)))
+                  (let ((ft-plan (and (not identity-barrier)
+                                     (try-plan-fallthrough source-node steps dialect bindings options
+                                                       input-var defs #'wrap))))
                     (when ft-plan
                       (setf (hybrid-plan-dialect ft-plan) dialect
                             (hybrid-plan-source-tables ft-plan)
@@ -317,7 +324,11 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                     (let* ((prefix-steps (subseq steps 0 k))
                            (prefix-ast (wrap (sel::build-pipeline-ast source-node prefix-steps)))
                            (prefix-prog (sel::%make-program "" prefix-ast))
-                           (frag (and (not (bucket-rows-are-keys-p prefix-steps))
+                           (frag (and (not (rows-are-not-the-value-p prefix-steps))
+                                      (or (not identity-barrier)
+                                          (handler-case
+                                              (not (identity-loss-before-grouping-p (normalise prefix-ast names root) t))
+                                            (sql-error () nil)))
                                       (try-translate-statement prefix-prog dialect bindings options))))
                       (when frag
                         (let* ((rem-steps (subseq steps k))
@@ -337,6 +348,87 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                   ;; 4. Nothing pushes down.
                   (pure-memory-plan program dialect bs))))))))))
 
+(defun latest-field-name (n)
+  "A direct default-row field; no computed/coerced partition or revision."
+  (when (and n (sel::node-p n) (eq (sel::node-kind n) :index)
+             (eq (sel::node-kind (sel::node-l n)) :var)
+             (equal (sel::node-s (sel::node-l n)) "_")
+             (eq (sel::node-kind (sel::node-r n)) :text))
+    (sel::node-s (sel::node-r n))))
+
+(defun try-plan-latest-member (source steps dialect bindings options wrap)
+  "Aggregate/join-back for a unique descending TOP 1, with local reshaping."
+  (handler-case
+      (block candidate
+        (unless (member dialect '("mariadb" "mysql" "postgresql" "sqlite") :test #'equal)
+          (return-from candidate nil))
+        (let* ((rel (binding-spec (bindings-get bindings (sel::node-s source))))
+               (revision (getf rel :unique-key))
+               (at (position "BUCKET" steps :key #'sel::node-s :test #'equal)))
+          (unless (and revision at (not (getf rel :from-raw-p)) (not (getf rel :correlate)))
+            (return-from candidate nil))
+          (let* ((bucket (nth at steps)) (ba (sel::node-items bucket))
+                 (partition (and (member (length ba) '(2 3)) (latest-field-name (second ba))))
+                 (body (if (= (length ba) 3) (third ba)
+                           (let ((m (nth (1+ at) steps)))
+                             (when (and m (equal (sel::node-s m) "MAP") (= (length (sel::node-items m)) 2))
+                               (second (sel::node-items m))))))
+                 (fields (getf rel :fields))
+                 (pf (cdr (assoc (sel::ascii-upcase (or partition "")) fields :test #'equal)))
+                 (rf (cdr (assoc (sel::ascii-upcase revision) fields :test #'equal))))
+            (unless (and partition body (eq (sel::node-kind body) :call)
+                         (equal (sel::node-s body) "RECORD") (= (length (sel::node-items body)) 4)
+                         (member (getf pf :type) '(:num :text)) (eq (getf rf :type) :num)
+                         (equal (getf pf :column) partition) (equal (getf rf :column) revision)
+                         (not (getf pf :raw)) (not (getf rf :raw)) (not (getf rf :guard)))
+              (return-from candidate nil))
+            (let* ((ra (sel::node-items body)) (values (list (second ra) (fourth ra)))
+                   (top (find-if (lambda (n) (and (eq (sel::node-kind n) :call) (equal (sel::node-s n) "TOP_BY"))) values))
+                   (key (find-if (lambda (n) (and (eq (sel::node-kind n) :var) (equal (sel::node-s n) "_K"))) values))
+                   (ta (and top (sel::node-items top))))
+              (unless (and (every (lambda (n) (eq (sel::node-kind n) :text)) (list (first ra) (third ra)))
+                           (not (equal (sel::node-s (first ra)) (sel::node-s (third ra))))
+                           key (= (length ta) 4) (eq (sel::node-kind (first ta)) :var)
+                           (equal (sel::node-s (first ta)) "_") (equal (latest-field-name (second ta)) revision)
+                           (eq (sel::node-kind (third ta)) :text) (equal (sel::node-s (third ta)) "DESC")
+                           (eq (sel::node-kind (fourth ta)) :num) (equal (sel::node-s (fourth ta)) "1"))
+                (return-from candidate nil)))
+            (dolist (step (subseq steps 0 at))
+              (unless (or (equal (sel::node-s step) "FILTER")
+                          (and (equal (sel::node-s step) "SORT_BY")
+                               (member (length (sel::node-items step)) '(2 3))
+                               (equal (latest-field-name (second (sel::node-items step))) revision)
+                               (or (= (length (sel::node-items step)) 2)
+                                   (and (eq (sel::node-kind (third (sel::node-items step))) :text)
+                                        (equal (sel::node-s (third (sel::node-items step))) "ASC")))))
+                (return-from candidate nil)))
+            (let* ((input-steps (subseq steps 0 at))
+                   (dummy (sel:program-ast (sel:compile-source "_INPUT .> FILTER(TRUE)")))
+                   (prefix (funcall wrap (sel::build-pipeline-ast source (or input-steps (list dummy)))))
+                   (sql (try-translate-statement (sel::%make-program "" prefix) dialect (binding-map-sorted bindings) options)))
+              (unless sql (return-from candidate nil))
+              (let ((input "_sel_input") (groups "_sel_latest"))
+                (loop while (equal (sel::ascii-upcase input) (sel::ascii-upcase (getf rel :from))) do (setf input (concatenate 'string input "_")))
+                (loop while (or (equal (sel::ascii-upcase groups) (sel::ascii-upcase (getf rel :from))) (equal groups input)) do (setf groups (concatenate 'string groups "_")))
+                (let* ((qi (emit-ident dialect input)) (qg (emit-ident dialect groups))
+                       (qr (emit-ident dialect revision)) (qmax (emit-ident dialect "_sel_revision"))
+                       (qfirst (emit-ident dialect "_sel_first"))
+                       (partition-sql (as-value
+                                       (emit-text-operand dialect (%fragment (list (emit-ident dialect partition)) (getf pf :type) dialect))))
+                       (parts (append (list (format nil "WITH ~a AS (" qi)) (fragment-parts sql)
+                                      (list (format nil "), ~a AS (SELECT MAX(~a) AS ~a, MIN(~a) AS ~a FROM ~a GROUP BY ~a) SELECT ~a.* FROM ~a JOIN ~a ON ~a.~a = ~a.~a ORDER BY ~a.~a ASC"
+                                                    qg qr qmax qr qfirst qi partition-sql qi qi qg qi qr qg qmax qg qfirst))))
+                       (cont-root (sel::make-node :var (sel::node-pos bucket)))
+                       (cont nil))
+                  (setf (sel::node-s cont-root) "_INPUT"
+                        cont (funcall wrap (sel::build-pipeline-ast cont-root (subseq steps at))))
+                  (make-hybrid-plan :dialect dialect :sql-statement
+                    (%fragment parts :statement dialect (fragment-params sql) (fragment-param-kinds sql) (fragment-caveats sql))
+                    :sql-prefix-ast prefix :continuation-ast cont :continuation-program (sel::%make-program "" cont)
+                    :source-tables (list (getf rel :from))
+                    :selected-member (list :partition-key partition :revision-key revision))))))))
+    (sql-error () nil)))
+
 (defun bucket-rows-are-keys-p (steps)
   "Whether the SQL rows for STEPS are a bucket's KEYS rather than the value SEL
 would have produced. A BUCKET without a projection is open: the translator
@@ -355,6 +447,26 @@ half would be evaluated over key rows."
                (setf open (= (length (sel::node-items step)) 2)))
               ((and open (equal name "MAP")) (setf open nil))
               ((and open (not (equal name "FILTER"))) (return t)))))))
+
+(defun join-rows-lack-binders-p (steps)
+  "Whether the SQL rows for STEPS are a join's rows without the binders SEL's
+rows carry. A LINK's row in SEL holds each side under its binders and the
+promoted fields beside them (spec §7.4); SQL carries the promoted fields
+alone. A MAP, a SELECT_COLS or a projected BUCKET after the LINK makes the
+rows exact again -- what they compute is over the promoted fields, or is
+refused -- so a prefix whose LINK nothing has projected is not a split point
+and not a full pushdown (finding Y, lanes): its continuation would read
+`_[\"C\"]` where the database sent nothing."
+  (let ((joined nil))
+    (dolist (step steps joined)
+      (let ((name (sel::node-s step)))
+        (cond ((member name '("LINK" "LINK_LEFT") :test #'equal) (setf joined t))
+              ((member name '("MAP" "SELECT_COLS" "BUCKET") :test #'equal) (setf joined nil)))))))
+
+(defun rows-are-not-the-value-p (steps)
+  "The two together: a prefix whose SQL rows are not the value SEL would have
+produced for it, whatever the translator says about it."
+  (or (bucket-rows-are-keys-p steps) (join-rows-lack-binders-p steps)))
 
 (defun walk-node-children (n fn)
   "Calls FN on every child node of N -- l, r and items -- whatever its kind."
@@ -432,7 +544,8 @@ list of helper names already looked through on this path."
 ;; (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and the
 ;; whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare the
 ;; dependency columns SQL carries where SEL compares the custom values.
-(defparameter +fallthrough-downstream+ '("FILTER" "SORT_BY" "TOP_BY" "TAKE" "DROP"))
+;; FILTER retains ordinal keys that SQL rows plus the local MAP cannot restore.
+(defparameter +fallthrough-downstream+ '("SORT_BY" "TOP_BY" "TAKE" "DROP"))
 
 (defun reads-whole-row-p (node binder)
   "Whether NODE reads the row itself -- the binder outside an index with a text
@@ -493,6 +606,13 @@ may read; WRAP puts a tree behind the assignments it depends on."
                          always (and (sel::node-p k) (eq (sel::node-kind k) :text))))
         (return-from try-plan-fallthrough nil))
       ;; Each pair is (key-node value-node pushable-p).
+      ;; Splitting a duplicate RECORD between SQL and local fields changes
+      ;; last-write order and may suppress evaluation of overwritten fields.
+      (let ((seen (make-hash-table :test #'equal)))
+        (loop for (k nil) on (sel::node-items rec-node) by #'cddr do
+          (let ((key (sel::node-s k)))
+            (when (gethash key seen) (return-from try-plan-fallthrough nil))
+            (setf (gethash key seen) t))))
       (let* ((pairs (loop for (k v) on (sel::node-items rec-node) by #'cddr
                           collect (list k v (not (contains-unsupported-sql-p v dialect defs)))))
              (pushable (remove-if-not #'third pairs))
@@ -604,17 +724,22 @@ may read; WRAP puts a tree behind the assignments it depends on."
 
 (defun execute-hybrid (plan db-runner &optional context)
   "Execute a HYBRID-PLAN using DB-RUNNER for SQL execution and SEL:RUN for in-memory continuation.
-DB-RUNNER is a function (lambda (sql-string params) ...) that returns a SEL:VALUE (e.g. list of rows)."
+DB-RUNNER is a function (lambda (sql-string params) ...) that returns a SEL:VALUE
+(e.g. list of rows). It is handed the statement in :PARAMS mode -- text
+literals as `?` placeholders, numbers inlined -- and BINDINGS, the bound values
+in placeholder order, which is what the other four hosts hand their runners
+(review finding AK: this host handed inline SQL and the creation-order slot
+list, which a driver could not bind as it was)."
   (cond
     ((hybrid-plan-pure-sql-p plan)
      (let ((frag (hybrid-plan-sql-statement plan)))
-       (funcall db-runner (as-statement frag) (fragment-params frag))))
+       (funcall db-runner (as-statement frag :params) (bindings frag))))
     ((hybrid-plan-pure-memory-p plan)
      (sel:run (hybrid-plan-continuation-program plan) context))
     (t
      ;; Hybrid execution: DB first, then in-memory continuation
      (let* ((frag (hybrid-plan-sql-statement plan))
-            (db-rows (funcall db-runner (as-statement frag) (fragment-params frag)))
+            (db-rows (funcall db-runner (as-statement frag :params) (bindings frag)))
             (cont-prog (hybrid-plan-continuation-program plan))
             (input-var (hybrid-plan-continuation-source-var plan)))
        (let ((cont-context (sel:make-none)))

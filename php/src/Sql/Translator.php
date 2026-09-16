@@ -1097,9 +1097,26 @@ final class Translator
      *
      * @param array<string,mixed> $src @param array<string,mixed> $group
      */
-    private function groupKey(array $src, array $group): Fragment
+    private function groupKey(array $src, array $group, bool $projected = false): Fragment
     {
-        return $this->collatedKey($this->withRow($src, $group['binder'], fn (): Fragment => $this->node($group['node'])));
+        $key = $this->withRow($src, $group['binder'], fn (): Fragment => $this->node($group['node']));
+        $identity = $this->identityGroupKey($group['node'], $key);
+        if ($projected && $key->kind === 'NUM') return new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect, $key->params, $key->paramKinds, $key->caveats);
+        return $identity;
+    }
+
+    private function identityGroupKey(array $node, Fragment $f): Fragment
+    {
+        if ($f->kind === 'UNKNOWN') refuse('E_SQL_SHAPE', 'group keys require proven scalar identity', $node['pos']);
+        if ($f->kind === 'NUM') {
+            if (!in_array($node['t'], ['var', 'index', 'num'], true)) {
+                refuse('E_SQL_SHAPE', 'computed numeric group keys do not preserve SEL identity', $node['pos']);
+            }
+            $numeric = new Fragment($f->parts, 'NUM', $this->dialect, $f->params, $f->paramKinds, $f->caveats);
+            $w = $this->emit->textOperand($numeric);
+            return new Fragment($w->parts, 'TEXT', $this->dialect, $w->params, $w->paramKinds, $w->caveats, true, false, false);
+        }
+        return $this->collatedKey($f);
     }
 
     private function collatedKey(Fragment $f): Fragment
@@ -1127,7 +1144,10 @@ final class Translator
                 } finally {
                     array_pop($this->frames);
                 }
-                $collated = $this->collatedKey($key);
+                $collated = $this->identityGroupKey($group['node'], $key);
+                if ($key->kind === 'NUM') {
+                    return new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect, $key->params, $key->paramKinds, $key->caveats);
+                }
                 // In a HAVING, MariaDB and MySQL resolve a column only against
                 // the GROUP BY columns and the select list, not against an
                 // equal expression: `HAVING CAST(cat ...) COLLATE ...` is
@@ -1135,7 +1155,8 @@ final class Translator
                 // expression. The key is constant within its group, so MIN of
                 // it IS the key, and an aggregate is what every server lets a
                 // HAVING name.
-                if ($this->inHaving && $collated !== $key) {
+                // Nested _K projections need the same aggregate under ONLY_FULL_GROUP_BY.
+                if ($collated !== $key) {
                     return new Fragment(array_merge(['MIN('], $collated->parts, [')']), 'TEXT', $this->dialect, $collated->params, $collated->paramKinds, $collated->caveats, true, false, false);
                 }
                 return $collated;
@@ -1246,7 +1267,7 @@ final class Translator
                     $n['pos']);
             }
             $field = strtoupper($key);
-            if ($name === '_' && $this->statementPlan !== null && $this->statementPlan->joins !== []) {
+            if ($b->joined && $this->statementPlan !== null && $this->statementPlan->joins !== []) {
                 $matches = [];
                 $sources = [[
                     'relation' => $this->statementPlan->sourceRelation,
@@ -1647,6 +1668,13 @@ final class Translator
         }
 
         $row = Binder::row($src['relation']);
+        // The row of a joined statement: a field read through it resolves across
+        // the sides (ambiguous when both have it), whatever the binder is called.
+        // Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
+        // after a LINK resolve to the left side where `run()` raises E_NO_KEY.
+        if ($this->statementPlan !== null && $this->statementPlan->joins !== []) {
+            $row->joined = true;
+        }
         $kBinder = Binder::none('a row of a relation has no key: SQL rows are '
                   . 'unordered and unkeyed unless the schema says otherwise, and '
                   . 'guessing which column is the key is not something this layer does');
@@ -1654,23 +1682,12 @@ final class Translator
         foreach ($src['filters'] as $filter) {
             $frame[$filter['binder']] = $row;
         }
-        if ($this->statementPlan !== null && $this->statementPlan->joins !== []) {
-            $frame['_'] = $row;
-            $frame['_1'] = $row;
-            $frame[$this->statementPlan->sourceName] = $row;
-            if ($this->statementPlan->sourceAlias !== null) {
-                $frame[$this->statementPlan->sourceAlias] = $row;
-            }
-            foreach ($this->statementPlan->joins as $index => $join) {
-                $right = Binder::row($join->sourceRelation);
-                $frame['_' . ($index + 2)] = $right;
-                $frame[$join->rightBinder] = $right;
-                $frame[$join->sourceName] = $right;
-                if ($join->sourceAlias !== null) {
-                    $frame[$join->sourceAlias] = $right;
-                }
-            }
-        }
+        // After a LINK only the row is in scope (spec §7.4): the binders are
+        // scoped to its predicate, and the evaluator raises E_UNDEF_VAR for
+        // `C["id"]` in a later step -- the joined row carries them as keys, not
+        // as names. This frame used to bind `_1`, `_2`, the relations' names
+        // and the right binder for every later step, so `FILTER(C["id"] > 1)`
+        // translated where `run()` fails (review 2026-09-15 finding W2).
         $this->frames[] = $frame;
         try {
             return $render();
@@ -2493,14 +2510,13 @@ final class Translator
             }
         } elseif ($plan->selectCols !== null) {
             $names = $plan->selectCols;
+        } elseif ($plan->joins !== []) {
+            foreach ($this->joinedRowFields($plan) as $field) {
+                $names[] = $field['name'];
+            }
         } else {
             foreach (array_keys($plan->sourceRelation['fields'] ?? []) as $name) {
                 $names[] = $name;
-            }
-            foreach ($plan->joins as $join) {
-                foreach (array_keys($join->sourceRelation['fields'] ?? []) as $name) {
-                    $names[] = $name;
-                }
             }
         }
         $unique = [];
@@ -2510,6 +2526,66 @@ final class Translator
             }
         }
         return $unique;
+    }
+
+    /**
+     * The fields of a joined row that SQL can carry (spec §7.4 "Joined rows"):
+     * the promoted ones -- a side's fields whose names, compared
+     * ASCII-case-insensitively, do not occur on the other side -- accumulated
+     * join by join as the evaluator promotes them. The binders (`_1`, `_2`, the
+     * relations' names) are nested records with no column, and a name both
+     * sides carry is E_NO_KEY in SEL; neither is projected, so a read of either
+     * over the derived table is refused where `run()` raises. `SELECT o.*` was
+     * the row before: the left table's columns, which a continuation read where
+     * SEL has no key, and which made a derived table over a join name columns
+     * it did not have (finding Y, lanes).
+     *
+     * @return list<array{name:string, spec:array<string,mixed>, owner:array<string,mixed>}>
+     */
+    private function joinedRowFields(RelationalPlan $plan): array
+    {
+        $entries = static function (?array $rel): array {
+            $out = [];
+            foreach ($rel['fields'] ?? [] as $name => $spec) {
+                $out[] = ['name' => (string) $name, 'spec' => $spec, 'owner' => $rel];
+            }
+            return $out;
+        };
+        $acc = $entries($plan->sourceRelation);
+        foreach ($plan->joins as $join) {
+            $right = $entries($join->sourceRelation);
+            $leftNames = array_map(static fn (array $f): string => strtoupper($f['name']), $acc);
+            $rightNames = array_map(static fn (array $f): string => strtoupper($f['name']), $right);
+            $acc = array_merge(
+                array_values(array_filter($acc, static fn (array $f): bool => !in_array(strtoupper($f['name']), $rightNames, true))),
+                array_values(array_filter($right, static fn (array $f): bool => !in_array(strtoupper($f['name']), $leftNames, true))),
+            );
+        }
+        return $acc;
+    }
+
+    private function outputFieldType(RelationalPlan $plan, string $name): string
+    {
+        // Computed projections remain UNKNOWN; only direct reads retain a type.
+        if ($plan->projections !== null) {
+            $projection = null;
+            foreach ($plan->projections as $p) {
+                if (($p['alias'] ?? null) === $name) { $projection = $p; break; }
+            }
+            $n = $projection['node'] ?? null;
+            if (!($n !== null && $n['t'] === 'index' && $n['obj']['t'] === 'var'
+                && $n['obj']['name'] === $projection['binder'] && $n['idx']['t'] === 'text')) return 'UNKNOWN';
+            $name = $n['idx']['v'];
+        }
+        $matches = [];
+        $relations = [$plan->sourceRelation];
+        foreach ($plan->joins as $join) $relations[] = $join->sourceRelation;
+        foreach ($relations as $rel) {
+            $field = $rel['fields'][strtoupper($name)] ?? null;
+            if ($field !== null) $matches[] = $field;
+        }
+        return count($matches) === 1 && !($matches[0]['guard'] ?? false) && !isset($matches[0]['raw'])
+            ? ($matches[0]['type'] ?? 'UNKNOWN') : 'UNKNOWN';
     }
 
     private function wrapPlanAsDerivedTable(RelationalPlan $plan): RelationalPlan
@@ -2533,7 +2609,7 @@ final class Translator
                 'kind' => 'column',
                 'column' => $sourceField['column'] ?? $name,
                 'table' => $alias,
-                'type' => 'UNKNOWN',
+                'type' => $this->outputFieldType($plan, $name),
             ];
         }
         $derived = new RelationalPlan();
@@ -2679,6 +2755,9 @@ final class Translator
     /** @param array<string,mixed> $n */
     public function analyzePipeline(array $n): ?RelationalPlan
     {
+        if (Constants::identityLossBeforeGrouping($n)) {
+            refuse('E_SQL_SHAPE', 'grouping depends on a computed projection without identity preservation', $n['pos']);
+        }
         $steps = [];
         $curr = $n;
         while ($curr['t'] === 'call' && in_array($curr['name'], self::PIPELINE_OPS, true)) {
@@ -2949,6 +3028,9 @@ final class Translator
                 case 'DISTINCT':
                 case 'DEDUPE':
                     $plan = $this->ensureDerived($plan, $plan->limit !== null || $plan->offset !== null);
+                    if ($plan->projections === null && $plan->selectCols === null) {
+                        refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', $step['pos']);
+                    }
                     $plan->distinct = true;
                     break;
 
@@ -2965,7 +3047,15 @@ final class Translator
                         refuse('E_ARITY', 'DROP takes 2 arguments', $step['pos']);
                     }
                     $off = $this->evalIntParam($args[1], 'DROP');
-                    $plan->offset = ($plan->offset ?? 0) + $off;
+                    // Consume the bounded slice; retain a SQL boundary for large sums.
+                    $skipped = $plan->limit === null ? $off : min($off, $plan->limit);
+                    if (($plan->offset ?? 0) > 9007199254740991 - $skipped) {
+                        $plan = $this->wrapPlanAsDerivedTable($plan);
+                        $plan->offset = $off;
+                    } else {
+                        if ($plan->limit !== null) $plan->limit -= $skipped;
+                        $plan->offset = ($plan->offset ?? 0) + $skipped;
+                    }
                     break;
 
                 case 'SORT':
@@ -3181,6 +3271,17 @@ final class Translator
 
     public function compileStatement(RelationalPlan $plan): Fragment
     {
+        // SQL aliases do not implement RECORD's last-write/evaluation contract.
+        foreach ([$plan->projections, $plan->groupBy] as $entries) {
+            $seen = [];
+            foreach ($entries ?? [] as $entry) {
+                if (($entry['alias'] ?? null) !== null) {
+                    $key = strtr($entry['alias'], 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+                    if (isset($seen[$key])) refuse('E_SQL_SHAPE', 'duplicate or case-colliding RECORD fields require local evaluation', $entry['node']['pos']);
+                    $seen[$key] = true;
+                }
+            }
+        }
         $previousPlan = $this->statementPlan;
         $this->statementPlan = $plan;
         try {
@@ -3202,10 +3303,14 @@ final class Translator
                     }
                     $first = false;
                     $pFrag = isset($proj['groupKey'])
-                        ? $this->groupKey($src, $proj['groupKey'])
+                        ? $this->groupKey($src, $proj['groupKey'], true)
                         : ($plan->groupBy !== null
                             ? $this->withGroup($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']))
                             : $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node'])));
+                    if ($plan->distinct) {
+                        if (in_array($pFrag->kind, ['UNKNOWN', 'NUM'], true)) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', $proj['node']['pos']);
+                        $pFrag = $this->identityGroupKey($proj['node'], $pFrag);
+                    }
                     foreach ($pFrag->parts as $p) {
                         $parts[] = $p;
                     }
@@ -3237,7 +3342,31 @@ final class Translator
                         : ($fSpec['table'] ?? ($owner === $plan->sourceRelation
                             ? $plan->sourceAlias : self::relationAlias($owner)));
                     $column = $fSpec['column'] ?? $col;
-                    $parts[] = $this->emit->column($table, $column);
+                    $sql = $this->emit->column($table, $column);
+                    if ($plan->distinct && in_array($fSpec['type'] ?? 'UNKNOWN', ['UNKNOWN', 'NUM'], true)) {
+                        refuse('E_SQL_SHAPE', 'DISTINCT requires known output kinds', null);
+                    }
+                    if ($plan->distinct && in_array($fSpec['type'] ?? null, ['TEXT', 'NUM'], true)) {
+                        $frag = $this->emit->textOperand(new Fragment([$sql], $fSpec['type'], $this->dialect));
+                        foreach ($frag->parts as $part) $parts[] = $part;
+                        $parts[] = ' AS ' . $this->emit->ident($column);
+                    } else $parts[] = $sql;
+                }
+            } elseif ($plan->joins !== []) {
+                // A joined row is its promoted fields (spec §7.4); see joinedRowFields.
+                $fields = $this->joinedRowFields($plan);
+                if ($fields === []) {
+                    $last = $plan->joins[count($plan->joins) - 1];
+                    refuse('E_SQL_SHAPE', 'the joined row has no field SQL can carry: every field '
+                        . 'is on both sides, and the binders are nested records', $last->pos ?? null);
+                }
+                $first = true;
+                foreach ($fields as $f) {
+                    if (!$first) {
+                        $parts[] = ', ';
+                    }
+                    $first = false;
+                    $parts[] = $this->emit->column($this->relationTableAlias($f['owner']), $f['spec']['column'] ?? $f['name']);
                 }
             } else {
                 if ($plan->sourceAlias !== null) {

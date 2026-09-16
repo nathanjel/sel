@@ -66,6 +66,7 @@
    #:binding-columns
    #:binding-relation
    #:binding-relation-query
+   #:binding-with-unique-key
    #:binding-value
 
    ;; The map, for an application that extends it
@@ -103,5 +104,6 @@
    #:hybrid-plan-pure-memory-p
    #:hybrid-plan-hybrid-p
    #:hybrid-plan-source-tables
+   #:hybrid-plan-selected-member
    #:plan-hybrid
    #:execute-hybrid))

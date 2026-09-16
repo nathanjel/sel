@@ -48,21 +48,43 @@ same(names(optimizedSteps(
   + ' .> SORT_BY(_["x"], "DESC") .> TAKE(1)', false)), ['TOP_BY'],
   'SORT_BY plus TAKE fusion');
 
+// A FILTER moves in front of a MAP, a sort or a SELECT_COLS only when a
+// later step renumbers the rows again without reading `_K`: FILTER keeps its
+// input's keys and the three renumber (spec §7.3), so at the end of a
+// pipeline the swap would change the answer's keys.
 same(names(optimizedSteps(
   '((RECORD("x", 1), RECORD("x", 2)))'
   + ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
-  + ' .> FILTER(_["x"] > 0)', false)), ['FILTER', 'MAP'], 'MAP filter pushdown');
+  + ' .> FILTER(_["x"] > 0) .> MAP(_["heavy"])', false)), ['FILTER', 'MAP', 'MAP'], 'MAP filter pushdown');
+same(names(optimizedSteps(
+  '((RECORD("x", 1), RECORD("x", 2)))'
+  + ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+  + ' .> FILTER(_["x"] > 0)', false)), ['MAP', 'FILTER'], 'MAP filter pushdown keeps the keys at the end of a pipeline');
+same(names(optimizedSteps(
+  '((RECORD("x", 1), RECORD("x", 2)))'
+  + ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+  + ' .> FILTER(_["x"] > 0) .> MAP(_K)', false)), ['MAP', 'FILTER', 'MAP'], 'MAP filter pushdown keeps the keys a later step reads');
+same(names(optimizedSteps(
+  '((RECORD("x", 1), RECORD("x", 2)))'
+  + ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+  + ' .> FILTER(_["x"] > 0) .> FILTER(_["x"] > 1) .> TAKE(1)', false)), ['FILTER', 'MAP', 'TAKE'], 'MAP filter pushdown after the FILTERs fuse');
 same(names(optimizedSteps(
   '((RECORD("x", 1), RECORD("x", 2)))'
   + ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
   + ' .> FILTER(_["heavy"] > 0)', false)), ['MAP', 'FILTER'],
   'MAP filter dependency guard');
-same(names(optimizedSteps('(1, 2) .> SORT() .> FILTER(_ > 0)', false)), ['FILTER', 'SORT'],
+same(names(optimizedSteps('(1, 2) .> SORT() .> FILTER(_ > 0) .> TAKE(1)', false)), ['FILTER', 'TOP'],
   'SORT filter pushdown');
+same(names(optimizedSteps('(1, 2) .> SORT() .> FILTER(_ > 0)', false)), ['SORT', 'FILTER'],
+  'SORT filter pushdown keeps the keys at the end of a pipeline');
 same(names(optimizedSteps(
   '((RECORD("x", 1), RECORD("x", 2)))'
-  + ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0)', false)), ['FILTER', 'SELECT_COLS'],
+  + ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0) .> MAP(_["x"])', false)), ['FILTER', 'SELECT_COLS', 'MAP'],
   'SELECT_COLS filter pushdown');
+same(names(optimizedSteps(
+  '((RECORD("x", 1), RECORD("x", 2)))'
+  + ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0)', false)), ['SELECT_COLS', 'FILTER'],
+  'SELECT_COLS filter pushdown keeps the keys at the end of a pipeline');
 
 const late = optimizedSteps(
   '((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
@@ -258,7 +280,12 @@ for (const [source, kind] of [
   ['ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1)', 'pure_memory'],
   ['ORDERS .> BUCKET(_["customer_id"]) .> BUCKET(COUNT(_)) .> MAP(RECORD("size", _K, "n", COUNT(_)))', 'pure_memory'],
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> SORT_BY(s, s["name"])', 'pure_memory'],
-  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'hybrid'],
+  // The FILTER no longer moves in front of the MAP (it would renumber the
+  // answer's keys); over the MAP's derived table sqlite cannot render its NUM
+  // guard, so nothing pushes down. A later step that renumbers again lets the
+  // swap through.
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'hybrid'],
   ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],
   ['ORDERS .> MAP(RECORD("x", _["id"], "X", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'],
   ['ORDERS .> MAP(RECORD("id", _["id"], "shout", (REPEAT(_["name"], 2), 1))) .> TAKE(2)', 'hybrid'],
@@ -279,6 +306,23 @@ for (const [source, kind] of [
   const want = outcome(() => program.run({ ORDERS: orderRows }));
   const executed = outcome(() => Sql.executeHybrid(plan, prefixInMemory, { ORDERS: orderRows }));
   check(executed === want, `${source}: the executed plan answers ${executed}, run() ${want}`);
+}
+
+// The runner contract (finding AK): the statement in `params` mode with
+// `bindings()` in placeholder order -- text literals as `?`, numbers inlined
+// -- in every host, so a driver binds what it is handed as it is. Lisp handed
+// the runner inline SQL and its creation-order slot list.
+{
+  const program = compile('ORDERS .> FILTER(FIND("needle", "hay-" & _["name"]) > 0 AND _["amount"] > 5) .> MAP(RECORD("g", RGROUPS("(a)", _["name"])))');
+  const plan = Sql.planHybrid(program, 'mariadb', fullOrders);
+  check(!plan.pureSql && !plan.pureMemory, 'runner contract: expected a hybrid plan');
+  let seen = null;
+  Sql.executeHybrid(plan, (sql, params) => { seen = { sql, params: params.map((v) => v.dump()).join(',') }; return []; }, { ORDERS: orderRows });
+  check(seen !== null, 'runner contract: the runner was not called');
+  check(seen.sql.includes('?') && !seen.sql.includes("'needle'") && !seen.sql.includes("'hay-'"),
+    `runner contract: text literals must be placeholders, got ${seen.sql}`);
+  check(!seen.sql.includes('?, 5') && seen.sql.includes('> 5'), `runner contract: a number is inlined, got ${seen.sql}`);
+  check(seen.params === 't"hay-",t"needle"', `runner contract: bindings in placeholder order, got ${seen.params}`);
 }
 
 console.log(`JS optimizer checks: ${checks} passed`);

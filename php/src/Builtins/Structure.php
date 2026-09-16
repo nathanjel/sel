@@ -237,15 +237,25 @@ final class Structure
         array $tableLeft,
         ?Value $nullRight,
     ): Value {
+        // Each key once, where it first occurred (spec §7.4): a carried or promoted
+        // key keeps its first value, a binder key holds the row this LINK bound
+        // even where an earlier LINK's `_1` or a relation joined twice carried a
+        // record of the same name. That is the row the compiled projector below
+        // builds from the shape (binders first, then slots); first-wins for the
+        // binders too kept the old `_1` on this path while the projector resolved
+        // it to the new row.
         $keys = [];
         $values = [];
-        $present = [];
-        $put = static function (string $key, Value $value) use (&$keys, &$values, &$present): void {
-            if (!isset($present[$key])) {
-                $present[$key] = true;
-                $keys[] = $key;
-                $values[] = $value;
-            }
+        $slot = [];
+        $put = static function (string $key, Value $value) use (&$keys, &$values, &$slot): void {
+            if (isset($slot[$key])) return;
+            $slot[$key] = count($keys);
+            $keys[] = $key;
+            $values[] = $value;
+        };
+        $bind = static function (string $key, Value $value) use (&$values, &$slot, $put): void {
+            if (isset($slot[$key])) $values[$slot[$key]] = $value;
+            else $put($key, $value);
         };
 
         $leftKeys = $left->keys();
@@ -255,15 +265,15 @@ final class Structure
         }
 
         $low1 = strtolower($b1);
-        $put($b1, $left);
-        if ($low1 !== $b1) $put($low1, $left);
-        if ($b1 !== '_1') $put('_1', $left);
+        $bind($b1, $left);
+        if ($low1 !== $b1) $bind($low1, $left);
+        if ($b1 !== '_1') $bind('_1', $left);
 
         $actualRight = $right ?? $nullRight ?? Value::none();
         $low2 = strtolower($b2);
-        $put($b2, $actualRight);
-        if ($low2 !== $b2) $put($low2, $actualRight);
-        if ($b2 !== '_2') $put('_2', $actualRight);
+        $bind($b2, $actualRight);
+        if ($low2 !== $b2) $bind($low2, $actualRight);
+        if ($b2 !== '_2') $bind('_2', $actualRight);
 
         foreach ($promotedLeft as $key) {
             $value = $left->get($key);

@@ -1,5 +1,7 @@
 # Y. In-memory LINK builds rows with duplicate keys in JS and Lisp but not PHP/Python/C++
 
+**Status:** FIXED 2026-09-16 — facets 1/2 (the in-memory row) in the first batch; facet 3 (the lanes) with W2: a joined row in SQL is now its promoted fields, in the statement and in a derived table, and an unprojected join is not a split point (`joinRowsLackBinders`); `sql/cases/26-links.sqlt`. Spec §7.4 "Joined rows" now specifies the row: each key once, in order of first occurrence, a binder key holding the row this LINK bound; `make_joined_row` in all five hosts builds it that way (JS and Lisp dedupe; every host's uncompiled path now binds `_1`/`X` like its compiled projector did). `rel.link.row-shape-named-left`, `rel.link.row-shape-literal-left`, `rel.link.chained-binders-hold-this-links-rows`, `rel.link-left.unmatched-row`.
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** js, lisp, php, python, cpp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

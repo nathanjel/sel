@@ -197,6 +197,11 @@ Four of these are load-bearing rather than cosmetic:
 - **`textCollate` is what makes `$==` honest.** SEL's `$` family compares bytes;
   MySQL's and MariaDB's default collation is case- and accent-insensitive, so a
   bare `=` would make `"A" $== "a"` true in the database and false in SEL.
+  Binary alone is insufficient: a PAD SPACE collation also merges `"a"` and
+  `"a "`. The shipped family/MariaDB map uses `utf8mb4_nopad_bin`; MySQL 8.4
+  overrides it with `utf8mb4_0900_bin`. Both retain text types and code-point
+  regex behavior. Their SQL spellings differ intentionally; case mirroring
+  pins this one substitution rather than assuming byte-identical leaf SQL.
 - **`sargablePrefilter` controls whether sargable text comparisons emit a coarse
   index prefilter.** MySQL and MariaDB set `"true"` to emit
   `((col = 'val') AND (CAST(col...) = CAST('val'...)))` to enable index seeks
@@ -314,7 +319,7 @@ Derive a dialect and override two keys:
 Map::defineDialect('cms-mariadb', [
     'extends' => 'mariadb',
     'lexical' => [
-        'textCollate' => ' COLLATE utf8mb3_bin',
+        'textCollate' => ' COLLATE utf8mb3_nopad_bin',
         'textCharset' => 'utf8mb3',
     ],
 ]);
@@ -345,9 +350,14 @@ and register the matching dialect at start-up:
 function dialect_for(PDO $pdo, string $base = 'mariadb', string $name = 'app'): string
 {
     $charset = (string) $pdo->query('SELECT @@character_set_connection')->fetchColumn();
-    // Every charset MariaDB 11.8 ships has a <charset>_bin collation except
-    // `binary`, whose binary collation is spelled `binary`.
-    $collation = $charset === 'binary' ? 'binary' : "{$charset}_bin";
+    // Do not manufacture a *_bin name: it may be PAD SPACE. This example
+    // supports the two verified utf8mb4 combinations; other connections need
+    // an explicitly verified byte-exact, no-padding collation.
+    $collation = match ([$base, $charset]) {
+        ['mariadb', 'utf8mb4'] => 'utf8mb4_nopad_bin',
+        ['mysql', 'utf8mb4'] => 'utf8mb4_0900_bin',
+        default => throw new RuntimeException('Configure a verified NO PAD collation'),
+    };
 
     Map::defineDialect($name, [
         'extends' => $base,
@@ -360,10 +370,10 @@ function dialect_for(PDO $pdo, string $base = 'mariadb', string $name = 'app'): 
 }
 ```
 
-Run against MariaDB 11.8 on both, the same code registers
-`utf8mb4_bin` and `utf8mb3_bin` respectively and `"A" $== "a"` answers on each —
-the two cells the static form gets wrong become right, and the deployment stops
-being able to drift away from its own configuration.
+The earlier version manufactured `*_bin` names and checked only `"A"` versus
+`"a"`; it missed PAD SPACE. This version refuses an unverified connection
+instead. The explicit utf8mb3 example above is MariaDB-specific (verified on
+11.8); do not assume that MySQL ships that same collation spelling.
 
 Four things it is worth knowing before using it:
 

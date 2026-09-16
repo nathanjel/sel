@@ -64,9 +64,14 @@ function binding_from_json(array $b, string $where): Binding
     $type = $b['type'] ?? 'UNKNOWN';
     switch ($b['kind']) {
         case 'column':
+            // Metadata must reach the constructor: dropping sargable/exact
+            // here makes the oracle silently test a different SQL path.
+            $flags = [$b['exact'] ?? false, $b['sargable'] ?? false,
+                      $b['guard'] ?? false, $b['collation'] ?? null,
+                      $b['prefilter'] ?? ($b['splitSargable'] ?? null)];
             return isset($b['raw'])
-                ? Binding::raw($b['raw'], $type)
-                : Binding::column($b['column'], $b['table'] ?? null, $type);
+                ? Binding::raw($b['raw'], $type, ...$flags)
+                : Binding::column($b['column'], $b['table'] ?? null, $type, ...$flags);
 
         case 'columns':
             // array_is_list, because json_decode(assoc) cannot tell a JSON
@@ -104,9 +109,10 @@ function binding_from_json(array $b, string $where): Binding
             $args = [$b['alias'] ?? null, $fields, $b['scalar'] ?? null,
                      is_array($corr) ? ($corr['raw'] ?? $corr) : $corr];
             $from = $b['from'];
-            return is_array($from)
+            $relation = is_array($from)
                 ? Binding::relationQuery($from['raw'] ?? $from, ...$args)
                 : Binding::relation($from, ...$args);
+            return array_key_exists('uniqueKey', $b) ? $relation->withUniqueKey($b['uniqueKey']) : $relation;
 
         case 'value':
             $v = $b['value'];

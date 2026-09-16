@@ -1,0 +1,48 @@
+### name: rel.slice.smaller
+--- source
+LIST(1, 2, 3, 4) .> TAKE(2) .> DROP(1)
+--- expect
+tree -{"1"=t"2"}
+===
+
+### name: rel.slice.equal
+--- source
+LIST(1, 2, 3, 4) .> TAKE(2) .> DROP(2)
+--- expect
+tree -
+===
+
+### name: rel.slice.larger
+--- source
+LIST(1, 2, 3, 4) .> TAKE(1) .> DROP(2)
+--- expect
+tree -
+===
+
+### name: rel.slice.zero-take
+--- source
+LIST(1, 2, 3, 4) .> TAKE(0) .> DROP(2)
+--- expect
+tree -
+===
+
+### name: rel.slice.zero-drop
+--- source
+LIST(1, 2, 3, 4) .> TAKE(2) .> DROP(0)
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: rel.slice.mixed
+--- source
+LIST(1, 2, 3, 4) .> DROP(1) .> TAKE(2) .> DROP(1) .> TAKE(3)
+--- expect
+tree -{"1"=t"3"}
+===
+
+### name: rel.slice.drop-take
+--- source
+LIST(1, 2, 3, 4) .> DROP(1) .> TAKE(1)
+--- expect
+tree -{"1"=t"2"}
+===

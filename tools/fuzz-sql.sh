@@ -55,6 +55,15 @@ done
 if [ "$(echo "$SQL_HOSTS" | wc -w)" -lt 2 ]; then
   echo "fewer than two hosts with a translator; nothing to diff"
 else
+  # Every (dialect, host) run at once, each under a slot (tools/impls.sh,
+  # SEL_JOBS); the comparison below reads the files in order.
+  for dialect in mariadb mysql postgresql sqlite; do
+    for impl in $SQL_HOSTS; do
+      { sel_slot impl_sqlfuzz "$impl" "$WORK/corpus.selc" "$dialect" > "$WORK/$impl.$dialect.txt" 2>&1
+        echo $? > "$WORK/$impl.$dialect.rc"; } &
+    done
+  done
+  wait
   for dialect in mariadb mysql postgresql sqlite; do
     ref=""
     # Counted, not asserted. This line used to end with a literal "0
@@ -65,7 +74,7 @@ else
     # the opposite of what happened, which is worse than saying nothing.
     disagreed=0
     for impl in $SQL_HOSTS; do
-      impl_sqlfuzz "$impl" "$WORK/corpus.selc" "$dialect" > "$WORK/$impl.$dialect.txt" 2>&1 || {
+      [ "$(cat "$WORK/$impl.$dialect.rc")" -eq 0 ] || {
         echo "$impl: sqlfuzz failed for $dialect" >&2; status=1; continue; }
       if [ -z "$ref" ]; then ref="$impl"; continue; fi
       if ! diff -q "$WORK/$ref.$dialect.txt" "$WORK/$impl.$dialect.txt" >/dev/null; then
@@ -84,10 +93,13 @@ fi
 
 # --- against a real database, when there is one ------------------------------
 for impl in $(available_impls); do
-  out="$(impl_oracle "$impl" fuzz "--corpus=$WORK/corpus.selc" "${EXTRA[@]+"${EXTRA[@]}"}" 2>&1)"
-  rc=$?
-  [ -z "$out" ] && continue
-  echo "$out" | sed "s/^/${impl}: /"
-  [ "$rc" -ne 0 ] && status=1
+  { sel_slot impl_oracle "$impl" fuzz "--corpus=$WORK/corpus.selc" "${EXTRA[@]+"${EXTRA[@]}"}" > "$WORK/$impl.oracle" 2>&1
+    echo $? > "$WORK/$impl.oracle.rc"; } &
+done
+wait
+for impl in $(available_impls); do
+  [ -s "$WORK/$impl.oracle" ] || continue
+  sed "s/^/${impl}: /" "$WORK/$impl.oracle"
+  [ "$(cat "$WORK/$impl.oracle.rc")" -ne 0 ] && status=1
 done
 exit "$status"

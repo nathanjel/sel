@@ -22,9 +22,12 @@ if [ "$(echo "$IMPLS" | wc -w)" -lt 2 ]; then
   exit 1
 fi
 
+pids=()
 for impl in $IMPLS; do
-  impl_e2e "$impl" > "$WORK/$impl.txt"
+  sel_slot impl_e2e "$impl" > "$WORK/$impl.txt" &
+  pids+=($!)
 done
+sel_wait "${pids[@]}" || { echo "an e2e runner exited non-zero" >&2; exit 1; }
 
 status=0
 for impl in $IMPLS; do

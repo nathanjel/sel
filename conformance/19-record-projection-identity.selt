@@ -1,0 +1,34 @@
+### name: rel.record-projection.last-value-first-position
+--- source
+LIST(1) .> MAP(RECORD("x", 1, "middle", 2, "x", 9, "X", 3))
+--- expect
+tree -{"1"=-{"x"=t"9", "middle"=t"2", "X"=t"3"}}
+===
+
+### name: rel.record-projection.overwritten-error
+--- source
+LIST(1) .> MAP(RECORD("x", 1 / 0, "x", 9))
+--- expect
+error E_DIV_ZERO
+===
+
+### name: rel.record-projection.overwritten-missing-field
+--- source
+LIST(RECORD("id", 1)) .> MAP(RECORD("x", _["missing"], "x", 9))
+--- expect
+error E_NO_KEY
+===
+
+### name: rel.record-projection.bucket-duplicates
+--- source
+LIST(1, 1) .> BUCKET(_, RECORD("x", _K, "middle", 2, "x", COUNT(_)))
+--- expect
+tree -{"1"=-{"x"=t"2", "middle"=t"2"}}
+===
+
+### name: rel.record-projection.group-key-duplicates
+--- source
+LIST(1, 2) .> BUCKET(RECORD("x", _, "x", 0), COUNT(_))
+--- expect
+tree -{"1"=t"2"}
+===

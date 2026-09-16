@@ -343,6 +343,9 @@ function main(argv) {
     // re-runs every mariadb case as mariadb and the count line still prints a
     // plausible number.
     const mirrorCase = { ...c, dialect: mirror };
+    // Pin the one SQL spelling difference: each server's NO PAD collation.
+    if (mirrorCase.expect) mirrorCase.expect = mirrorCase.expect.replaceAll(
+      ' COLLATE utf8mb4_nopad_bin', ' COLLATE utf8mb4_0900_bin');
     if (mirrorCase.dialect !== mirror) {
       process.stdout.write(`SUITE ERROR the mirrored case for ${c.name} is still `
         + `${mirrorCase.dialect}, so nothing is being mirrored\n`);

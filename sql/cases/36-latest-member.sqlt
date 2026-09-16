@@ -1,0 +1,59 @@
+### name: plan.latest-member.unique-revision.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+WITH `_sel_input` AS (SELECT * FROM `r` WHERE TRUE), `_sel_latest` AS (SELECT MAX(`id`) AS `_sel_revision`, MIN(`id`) AS `_sel_first` FROM `_sel_input` GROUP BY CAST(`fk` AS CHAR) COLLATE utf8mb4_nopad_bin) SELECT `_sel_input`.* FROM `_sel_input` JOIN `_sel_latest` ON `_sel_input`.`id` = `_sel_latest`.`_sel_revision` ORDER BY `_sel_latest`.`_sel_first` ASC
+===
+
+### name: plan.latest-member.unique-revision.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+WITH `_sel_input` AS (SELECT * FROM `r` WHERE TRUE), `_sel_latest` AS (SELECT MAX(`id`) AS `_sel_revision`, MIN(`id`) AS `_sel_first` FROM `_sel_input` GROUP BY CAST(`fk` AS CHAR) COLLATE utf8mb4_0900_bin) SELECT `_sel_input`.* FROM `_sel_input` JOIN `_sel_latest` ON `_sel_input`.`id` = `_sel_latest`.`_sel_revision` ORDER BY `_sel_latest`.`_sel_first` ASC
+===
+
+### name: plan.latest-member.unique-revision.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+WITH "_sel_input" AS (SELECT * FROM "r" WHERE TRUE), "_sel_latest" AS (SELECT MAX("id") AS "_sel_revision", MIN("id") AS "_sel_first" FROM "_sel_input" GROUP BY CAST("fk" AS TEXT) COLLATE "C") SELECT "_sel_input".* FROM "_sel_input" JOIN "_sel_latest" ON "_sel_input"."id" = "_sel_latest"."_sel_revision" ORDER BY "_sel_latest"."_sel_first" ASC
+===
+
+### name: plan.latest-member.unique-revision.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+WITH "_sel_input" AS (SELECT * FROM "r" WHERE 1), "_sel_latest" AS (SELECT MAX("id") AS "_sel_revision", MIN("id") AS "_sel_first" FROM "_sel_input" GROUP BY CAST("fk" AS TEXT) COLLATE BINARY) SELECT "_sel_input".* FROM "_sel_input" JOIN "_sel_latest" ON "_sel_input"."id" = "_sel_latest"."_sel_revision" ORDER BY "_sel_latest"."_sel_first" ASC
+===

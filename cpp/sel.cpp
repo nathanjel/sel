@@ -2857,9 +2857,11 @@ std::string upper_name(std::string name) {
 
 bool is_nested_record(const Value& value) { return value.size() > 0 && !value.is_list(); }
 
-Value first_collection_item(const Value& value) {
-  if (value.is_null() || (value.kind() == Kind::None && value.size() == 0)) return Value();
-  return collection_size(value) == 0 ? Value() : collection_item(value, 0);
+// nullptr means "there is no first element"; a NULL or field-less first
+// element is an element like any other (spec §7.4) and comes back as one.
+const Value* first_collection_item(const Value& value) {
+  if (value.is_null() || (value.kind() == Kind::None && value.size() == 0)) return nullptr;
+  return collection_size(value) == 0 ? nullptr : &collection_item(value, 0);
 }
 
 struct AliasPlanKey {
@@ -2964,10 +2966,18 @@ Value make_joined_row(const Value& left, const Value* right, const std::string& 
                       const std::string& b2, const std::vector<std::string>& promoted_left,
                       const std::vector<std::string>& promoted_right,
                       const std::vector<std::string>& nested_left, const Value& null_right) {
+  // Each key once, where it first occurred (spec §7.4): a carried or promoted
+  // key keeps its first value, a binder key holds the row this LINK bound
+  // even where an earlier LINK's `_1` or a relation joined twice carried a
+  // record of the same name. That is the row the compiled projector below
+  // builds from the shape (binders first, then slots); this path used to keep
+  // the carried record instead, so the two paths disagreed. Value::set on a
+  // key that exists replaces the value in place, keeping its position.
   Value out = Value::none();
   const auto put = [&out](const std::string& key, const Value& value) {
     if (!out.has(key)) out.set(key, value);
   };
+  const auto bind = [&out](const std::string& key, const Value& value) { out.set(key, value); };
   for (const auto& [key, value] : left.entries()) {
     if (is_nested_record(value)) put(key, value);
   }
@@ -2977,9 +2987,9 @@ Value make_joined_row(const Value& left, const Value* right, const std::string& 
     for (char& ch : v) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
     return v;
   }();
-  put(b1, left);
-  if (low1 != b1) put(low1, left);
-  if (b1 != "_1") put("_1", left);
+  bind(b1, left);
+  if (low1 != b1) bind(low1, left);
+  if (b1 != "_1") bind("_1", left);
 
   const Value actual_right = right ? *right : null_right;
   const std::string low2 = [&] {
@@ -2987,9 +2997,9 @@ Value make_joined_row(const Value& left, const Value* right, const std::string& 
     for (char& ch : v) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
     return v;
   }();
-  put(b2, actual_right);
-  if (low2 != b2) put(low2, actual_right);
-  if (b2 != "_2") put("_2", actual_right);
+  bind(b2, actual_right);
+  if (low2 != b2) bind(low2, actual_right);
+  if (b2 != "_2") bind("_2", actual_right);
 
   for (const std::string& key : promoted_left) {
     const Value* value = left.get(key);
@@ -3243,14 +3253,14 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   }
   if (left_value.is_null()) return Value::list({});
 
-  const Value first_left = first_collection_item(left_value);
-  const Value first_right = first_collection_item(right_value);
-  const bool have_left = !first_left.is_none() || !first_left.is_null();
-  const bool have_right = !first_right.is_none() || !first_right.is_null();
+  const Value* first_left = first_collection_item(left_value);
+  const Value* first_right = first_collection_item(right_value);
+  const bool have_left = first_left != nullptr;
+  const bool have_right = first_right != nullptr;
   if (!have_left || (!have_right && !left_join)) return Value::list({});
 
-  const Value sample_left = have_left ? ensure_row_table_alias(first_left, b1) : Value::none();
-  const Value sample_right = have_right ? ensure_row_table_alias(first_right, b2) : Value::none();
+  const Value sample_left = have_left ? ensure_row_table_alias(*first_left, b1) : Value::none();
+  const Value sample_right = have_right ? ensure_row_table_alias(*first_right, b2) : Value::none();
   const Value null_right = left_join ? make_null_record(sample_right, b2) : Value::none();
 
   const std::vector<std::string> left_keys = sample_left.keys();
@@ -5339,6 +5349,16 @@ bool opt_step_reads_key(const Node& step) {
   return false;
 }
 
+// Whether the step after a FILTER hides where the FILTER ran. FILTER keeps its
+// input's keys (spec §7.3) and MAP, SELECT_COLS and the sorts renumber, so a
+// FILTER moved in front of one of them carries the source's keys where the
+// program as written carried the step's -- visible in the answer, and in any
+// later `_K`. Only a following step that renumbers again without reading `_K`
+// hides that; the end of the pipeline, or another FILTER, does not.
+bool opt_keys_renumbered_by(const NodePtr* step) {
+  return step != nullptr && *step && (*step)->s != "FILTER" && !opt_step_reads_key(**step);
+}
+
 // Whether the source a pipeline starts from is a list already, so a FILTER
 // whose predicate is a constant TRUE over it is the identity. Over a scalar
 // it is not: FILTER wraps a scalar into a one-element list (spec §7.3), and
@@ -5510,6 +5530,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
     for (std::size_t i = 0; i < current.size();) {
       const NodePtr& first = current[i];
       const NodePtr* second = i + 1 < current.size() ? &current[i + 1] : nullptr;
+      const NodePtr* third = i + 2 < current.size() ? &current[i + 2] : nullptr;
       if (second && (*second)->s == "TAKE" && first->s == "TAKE" && first->items.size() == 2 &&
           (*second)->items.size() == 2) {
         const auto left = opt_numeric_literal(first->items[1]);
@@ -5554,7 +5575,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
-            }) && !opt_reads_row_or_key(*info.predicate, info.binder)) {
+            }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
+            opt_keys_renumbered_by(third)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -5563,7 +5585,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         }
       }
       if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
-          (*second)->s == "FILTER" && !opt_step_reads_key(**second)) {
+          (*second)->s == "FILTER" && !opt_step_reads_key(**second) &&
+          opt_keys_renumbered_by(third)) {
         next.push_back(*second);
         next.push_back(first);
         i += 2;
@@ -5576,7 +5599,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto fields = opt_select_fields(*first);
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(fields.begin(), fields.end(), f) != fields.end();
-            }) && !opt_reads_row_or_key(*info.predicate, info.binder)) {
+            }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
+            opt_keys_renumbered_by(third)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -5680,20 +5704,19 @@ OptAffinity opt_conjunct_affinity(const Node& conjunct, const std::set<std::stri
       return;
     }
     if (item.t == NT::Index && item.l && item.l->t == NT::Var && item.r && item.r->t == NT::Text) {
+      // `O["id"]` or `ORDERS["id"]` after the LINK: the binders are scoped to
+      // the predicate (spec §7.4), so as written this is E_UNDEF_VAR, or
+      // E_NO_KEY on the relation's list. Pushing it into the side it names
+      // turned that error into rows (review 2026-09-15, W2) -- only
+      // `_["O"]["id"]`, a read through the joined row's key, names a side.
       const std::string name = upper_name(item.l->s);
-      if (left_names.count(name)) has_left = true;
-      else if (right_names.count(name)) has_right = true;
-      else if (name == upper_name(binder) || name == "_") ambiguous = true;
+      if (name == upper_name(binder) || name == "_") ambiguous = true;
       else unknown = true;
       return;
     }
     if (item.t == NT::Var) {
       const std::string name = upper_name(item.s);
-      if (name != upper_name(binder) && name != "_") {
-        if (left_names.count(name)) has_left = true;
-        else if (right_names.count(name)) has_right = true;
-        else unknown = true;
-      }
+      if (name != upper_name(binder) && name != "_") unknown = true;
     }
     if (item.l) self(self, *item.l);
     if (item.r) self(self, *item.r);
@@ -5715,18 +5738,6 @@ NodePtr opt_rewrite_for_relation(const NodePtr& node, const std::set<std::string
     auto var = std::make_shared<Node>();
     var->t = NT::Var;
     var->pos = node->l->l->pos;
-    var->s = "_";
-    auto out = std::make_shared<Node>(*node);
-    out->l = var;
-    out->r = node->r;
-    out->items.clear();
-    return out;
-  }
-  if (node->t == NT::Index && node->l && node->l->t == NT::Var && node->r &&
-      node->r->t == NT::Text && targets.count(upper_name(node->l->s))) {
-    auto var = std::make_shared<Node>();
-    var->t = NT::Var;
-    var->pos = node->l->pos;
     var->s = "_";
     auto out = std::make_shared<Node>(*node);
     out->l = var;
@@ -5823,6 +5834,9 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
 // whose shape the evaluator reads (opt_step_arg_folds).
 NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true) {
   if (!node) return node;
+  // The evaluator/SQL normaliser owns the public depth error and its source
+  // position. opt_root never descends into a tree that reaches the cap; this
+  // guard keeps the walk bounded should a rewrite ever deepen one.
   if (depth > MAX_DEPTH) return node;
   if (node->t == NT::Call && opt_pipeline_op(node->s) && !node->items.empty()) {
     auto [source, steps] = opt_unwind(node);
@@ -5850,6 +5864,33 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
   return fold ? opt_fold(copy) : copy;
 }
 
+// Whether any node of the tree lies past the evaluator's depth cap, counted
+// the way the evaluator counts: the root at 1, every child one deeper, an
+// assignment's target excluded (the evaluator walks it iteratively). The walk
+// stops at the cap, so it is bounded however deep the tree is. It visits the
+// same child slots opt_tree does: `l`, `r` and `items`.
+bool opt_exceeds_depth(const Node& node, int depth) {
+  if (depth > MAX_DEPTH) return true;
+  const int next = depth + 1;
+  for (const NodePtr& item : node.items) {
+    if (item && opt_exceeds_depth(*item, next)) return true;
+  }
+  if (node.t != NT::Assign && node.l && opt_exceeds_depth(*node.l, next)) return true;
+  if (node.r && opt_exceeds_depth(*node.r, next)) return true;
+  return false;
+}
+
+// The evaluator is the depth authority (spec §6.4): a tree that reaches the
+// cap is evaluated as written, so it is returned as written. Folding at the
+// boundary erased the E_DEPTH the evaluator raises for a chain of 201
+// additions (each of them foldable), and a rewrite that lifts a child would
+// move it; not rewriting loses nothing, because such a tree either raises or
+// keeps its deep part on a branch that is never evaluated.
+NodePtr opt_root(const NodePtr& ast, bool physical) {
+  if (ast && opt_exceeds_depth(*ast, 1)) return ast;
+  return opt_tree(ast, physical, 1);
+}
+
 }  // namespace
 
 #include "sel_optimizer.cpp"
@@ -5862,10 +5903,12 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
 // on the first run and kept, because the rewrite and the copy it makes cost
 // more than evaluating a small rule does. One cell per compiled tree, shared by
 // every copy of the Program; call_once makes the first run under concurrent
-// callers build it exactly once and lets a throwing build (E_DEPTH from the
-// optimiser's own guard) be retried rather than cached as absent. SQL
-// translation never sees it, since a physical rewrite (join pushdown) is not
-// something a database can be asked to run.
+// callers build it exactly once. The optimiser cannot raise (a tree that
+// reaches the depth cap is returned as written, and the evaluator reports
+// E_DEPTH), so the retry call_once allows after a throwing build only covers
+// host-level exceptions such as std::bad_alloc, which are then not cached as
+// an absent tree. SQL translation never sees it, since a physical rewrite
+// (join pushdown) is not something a database can be asked to run.
 struct Program::Physical {
   std::once_flag once;
   NodePtr tree;

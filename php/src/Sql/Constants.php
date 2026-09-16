@@ -65,6 +65,76 @@ final class Constants
      *
      * @param array<string,mixed> $node
      */
+    private static function identityProjection(?array $node, int $depth = 0): bool
+    {
+        if ($node === null || $depth >= 180) return false;
+        if (in_array($node['t'], ['var', 'num', 'text', 'bool', 'null'], true)) return true;
+        if ($node['t'] === 'index') return self::identityProjection($node['obj'], $depth + 1)
+            && self::identityProjection($node['idx'], $depth + 1);
+        if ($node['t'] === 'call') {
+            if (in_array($node['name'], ['COUNT', 'LEN', 'BLEN'], true)) return true;
+            if ($node['name'] === 'RECORD') {
+                if (count($node['args']) % 2 !== 0) return false;
+                for ($i = 1; $i < count($node['args']); $i += 2) {
+                    if (!self::identityProjection($node['args'][$i], $depth + 1)) return false;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function identityInputs(?array $n, int $depth = 0): array|bool
+    {
+        if ($n === null || $depth >= 180) return true;
+        if (in_array($n['t'], ['num', 'text', 'bool', 'null'], true)) return [];
+        if ($n['t'] === 'var') return $n['name'] === '_K' ? [] : true;
+        if ($n['t'] === 'index') return $n['idx']['t'] !== 'text' ? true : ($n['obj']['t'] === 'var' ? [$n['idx']['v']] : self::identityInputs($n['obj'], $depth + 1));
+        if ($n['t'] === 'call' && in_array($n['name'], ['COUNT', 'LEN', 'BLEN'], true)) return [];
+        if ($n['t'] === 'list' || ($n['t'] === 'call' && in_array($n['name'], ['LIST', 'RECORD'], true))) {
+            $items = $n['t'] === 'list' ? $n['items'] : ($n['name'] === 'RECORD' ? array_values(array_filter($n['args'], fn ($i) => $i % 2, ARRAY_FILTER_USE_KEY)) : $n['args']);
+            $out = [];
+            foreach ($items as $item) {
+                $fields = self::identityInputs($item, $depth + 1);
+                if ($fields === true) return true;
+                $out = array_values(array_unique([...$out, ...$fields], SORT_STRING));
+            }
+            return $out;
+        }
+        return true;
+    }
+
+    public static function identityLossBeforeGrouping(array $node, bool $needed = false): bool
+    {
+        while ($node['t'] === 'call' && !empty($node['args'])) {
+            if ($needed && ($node['name'] === 'MAP' || ($node['name'] === 'BUCKET' && count($node['args']) > 2))) {
+                $body = $node['args'][count($node['args']) - 1]; $values = [$body];
+                if (is_array($needed) && $body['t'] === 'call' && $body['name'] === 'RECORD') {
+                    $found = []; $values = [];
+                    for ($i = 0; $i + 1 < count($body['args']); $i += 2) {
+                        $k = $body['args'][$i];
+                        if ($k['t'] === 'text' && in_array($k['v'], $needed, true)) { $found[] = $k['v']; $values[] = $body['args'][$i + 1]; }
+                    }
+                    foreach ($needed as $k) if (!in_array($k, $found, true)) return true;
+                }
+                foreach ($values as $v) if (!self::identityProjection($v)) return true;
+                $needed = [];
+                foreach ($values as $v) {
+                    $fields = self::identityInputs($v);
+                    $needed = $needed === true || $fields === true ? true : array_values(array_unique([...$needed, ...$fields], SORT_STRING));
+                }
+            }
+            if ($node['name'] === 'BUCKET') $needed = self::identityInputs($node['args'][count($node['args']) === 4 ? 2 : 1]);
+            if (in_array($node['name'], ['DISTINCT', 'DEDUPE'], true)) $needed = true;
+            if (is_array($needed) && in_array($node['name'], ['LINK', 'LINK_LEFT'], true) && $node['args'][1]['t'] === 'var') {
+                $right = count($node['args']) === 5 ? $node['args'][3]['name'] : $node['args'][1]['name'];
+                $needed = array_values(array_filter($needed, fn ($k) => strtr($k, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') !== $right));
+            }
+            $node = $node['args'][0];
+        }
+        return false;
+    }
+
     public static function isBinderName(array $node): bool
     {
         return ($node['t'] ?? null) === 'var' && empty($node['grouped']);

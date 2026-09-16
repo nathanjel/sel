@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE = os.path.join(ROOT, 'sql', 'mutations.json')
@@ -141,13 +143,31 @@ def mutation_in_scope(file, impls):
                for impl, root in HOST_ROOTS.items())
 
 
+# Every check runs under one of the SEL_JOBS slots of tools/impls.sh (and a php
+# check under one of the SEL_PHP_JOBS slots as well), so the mutations graded
+# side by side below share the gate's bound rather than adding their own. The
+# registry is sourced from the ORIGINAL tree: it only defines functions and the
+# slot directory, and the command still runs in the mutated copy.
+SLOT = ['bash', '-c',
+        '. "$0/tools/impls.sh" || exit 2; '
+        'if [ "$1" = php ]; then shift; sel_slot sel_php "$@"; else sel_slot "$@"; fi',
+        ROOT]
+
+
+def jobs():
+    raw = os.environ.get('SEL_JOBS', '')
+    if raw.strip().isdigit() and int(raw) > 0:
+        return int(raw)
+    return max(1, ((os.cpu_count() or 2) + 1) // 2)
+
+
 def run(cmd, cwd):
     # PYTHONPATH points at the mutated copy, not at the source tree, or the
     # Python runner would import the unmutated package and report every
     # mutation caught for the wrong reason -- the exact failure this tool
     # exists to catch, committed by the tool itself.
     env = dict(os.environ, PYTHONPATH=os.path.join(cwd, 'python'))
-    return subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.DEVNULL,
+    return subprocess.run(SLOT + list(cmd), cwd=cwd, env=env, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL).returncode
 
 
@@ -173,39 +193,38 @@ def main(argv):
     # not hypothetical: sqldoc went red when a skeleton changed and the design
     # document still quoted the old rendering, and the next four mutation runs
     # all reported `caught by sqldoc` for mutations sqldoc cannot see.
-    for label, cmd in checks:
-        if label in NEEDS_DB and not any_db:
-            continue
-        if run(cmd, ROOT) != 0:
+    pool = ThreadPoolExecutor(max_workers=jobs())
+    live = [(label, cmd) for label, cmd in checks if label not in NEEDS_DB or any_db]
+    baseline = list(pool.map(lambda lc: (lc[0], run(lc[1], ROOT)), live))
+    for label, rc in baseline:
+        if rc != 0:
             print(f'BASELINE {label} fails on the unmutated tree; every mutation '
                   'would be reported as caught by it. Fix that first.')
             return 2
 
     caught, holes, errors, skipped = 0, [], [], 0
+    lock = threading.Lock()
     # Plain mkdtemp: it already honours TMPDIR, and passing dir= explicitly only
     # removed tempfile's fallback -- a TMPDIR naming somewhere that does not
     # exist raised FileNotFoundError where the default form quietly uses /tmp.
     # Set TMPDIR to move this off a tmpfs; on a lot of Linux installs /tmp is
     # one, which makes every copy below resident memory rather than disk.
     work = tempfile.mkdtemp(prefix='mutate-sql.')
-    try:
-        for m in table['mutations']:
-            name = m['name']
-            if filters and not any(f in name for f in filters):
-                continue
-            if not mutation_in_scope(m['file'], impls):
-                continue
 
-            tree = os.path.join(work, name)
-            # The whole tree, minus git and build output: the map generator
-            # resolves its paths from its own location, so running the ORIGINAL
-            # generator would regenerate the ORIGINAL map and the copy would
-            # never see the mutation. That is not hypothetical -- it is what the
-            # first version of this script did, and it scored three mutations as
-            # holes that the suite catches immediately.
-            shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(
-                '.git', 'node_modules', 'build', 'dist', '.venv*', '__pycache__'))
-
+    def grade(m):
+        # One mutation: its own copy of the tree, the mutation applied, the
+        # checks run in order until one fails. Returns (name, verdict, detail).
+        name = m['name']
+        tree = os.path.join(work, name)
+        # The whole tree, minus git and build output: the map generator
+        # resolves its paths from its own location, so running the ORIGINAL
+        # generator would regenerate the ORIGINAL map and the copy would
+        # never see the mutation. That is not hypothetical -- it is what the
+        # first version of this script did, and it scored three mutations as
+        # holes that the suite catches immediately.
+        shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(
+            '.git', 'node_modules', 'build', 'dist', '.venv*', '__pycache__'))
+        try:
             # Each mutation gets its OWN tree at its own path, which is what
             # keeps the Lisp lane honest as well as the C++ one: ASDF keys its
             # fasl cache by absolute source path, so a fresh path recompiles.
@@ -217,26 +236,21 @@ def main(argv):
             text = open(path, encoding='utf-8').read()
             n = text.count(m['from'])
             if n != 1:
-                errors.append(f'{name}: pattern occurs {n} times in {m["file"]}, '
-                              'expected exactly 1 — the mutation is stale')
-                shutil.rmtree(tree, ignore_errors=True)
-                continue
+                return name, 'error', (f'{name}: pattern occurs {n} times in {m["file"]}, '
+                                       'expected exactly 1 — the mutation is stale')
             open(path, 'w', encoding='utf-8').write(text.replace(m['from'], m['to'], 1))
 
             # Proof it landed. A silent no-op would be scored by whatever the
             # checks say about unmutated code, which is this tool's own failure
             # mode and the reason it exists.
             if open(path, encoding='utf-8').read() == text:
-                errors.append(f'{name}: {m["file"]} is unchanged after mutation')
-                shutil.rmtree(tree, ignore_errors=True)
-                continue
+                return name, 'error', f'{name}: {m["file"]} is unchanged after mutation'
 
             if m['file'].startswith('sql/dialects/'):
                 before = [open(os.path.join(tree, g), encoding='utf-8').read()
                           for g in GENERATED]
                 if run(['node', 'tools/gen-sql-map.mjs'], tree) != 0:
-                    errors.append(f'{name}: the mutated map would not regenerate')
-                    continue
+                    return name, 'error', f'{name}: the mutated map would not regenerate'
                 # Landing in the source is not landing in the artifact. The
                 # generator drops `notes` entirely, so a mutation to one is a
                 # provable no-op that was scored as a HOLE -- this tool's own
@@ -247,34 +261,43 @@ def main(argv):
                 after = [open(os.path.join(tree, g), encoding='utf-8').read()
                          for g in GENERATED]
                 if after == before:
-                    errors.append(f'{name}: {m["file"]} changed but the generated map '
-                                  'did not — the mutation is a no-op')
-                    continue
+                    return name, 'error', (f'{name}: {m["file"]} changed but the generated '
+                                           'map did not — the mutation is a no-op')
 
-            by = None
-            for label, cmd in checks:
-                if label in NEEDS_DB and not any_db:
-                    continue
+            for label, cmd in live:
                 if run(cmd, tree) != 0:
-                    by = label
-                    break
-
-            # Freed here rather than in the finally below: every tree used to
+                    return name, 'caught', label
+            return name, 'survived', None
+        finally:
+            # Freed here rather than at the end of the run: every tree used to
             # stay alive for the whole run, so the space held grew with the
             # corpus for no reason -- nothing reads a tree once its mutation has
             # been graded.
             shutil.rmtree(tree, ignore_errors=True)
 
-            if by:
-                print(f'caught  {name:<34} by {by}')
-                caught += 1
-            elif missing:
-                print(f'skipped {name:<34} (survived; no DSN for ' + ', '.join(missing) + ')')
-                skipped += 1
-            else:
-                print(f'HOLE    {name:<34} survived every check')
-                holes.append(name)
+    selected = [m for m in table['mutations']
+                if (not filters or any(f in m['name'] for f in filters))
+                and mutation_in_scope(m['file'], impls)]
+    try:
+        # SEL_JOBS mutations side by side; each check inside takes a slot of
+        # the same bound, so the load never exceeds it. Verdicts print as
+        # they arrive, so the order varies from run to run; the counts do not.
+        for name, verdict, detail in pool.map(grade, selected):
+            with lock:
+                if verdict == 'error':
+                    errors.append(detail)
+                elif verdict == 'caught':
+                    print(f'caught  {name:<34} by {detail}', flush=True)
+                    caught += 1
+                elif missing:
+                    print(f'skipped {name:<34} (survived; no DSN for ' + ', '.join(missing) + ')',
+                          flush=True)
+                    skipped += 1
+                else:
+                    print(f'HOLE    {name:<34} survived every check', flush=True)
+                    holes.append(name)
     finally:
+        pool.shutdown(wait=True)
         shutil.rmtree(work, ignore_errors=True)
 
     print()

@@ -1,0 +1,415 @@
+### name: plan.latest-member.fallback.zero.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 0)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.top-two.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 2)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.ascending.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "ASC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.computed-revision.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"] + 0, "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.computed-partition.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"] + 0) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.composite.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(LIST(_["fk"], _["id"]), RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.no-proof.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.needs-members.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", COUNT(_), "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.zero.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 0)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.top-two.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 2)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.ascending.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "ASC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.computed-revision.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"] + 0, "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.computed-partition.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"] + 0) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.composite.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(LIST(_["fk"], _["id"]), RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.no-proof.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.needs-members.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", COUNT(_), "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.zero.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 0)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.top-two.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 2)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.ascending.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "ASC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.computed-revision.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"] + 0, "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.computed-partition.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"] + 0) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.composite.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(LIST(_["fk"], _["id"]), RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.no-proof.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.needs-members.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", COUNT(_), "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.zero.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 0)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.top-two.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 2)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.ascending.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "ASC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.computed-revision.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"] + 0, "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.computed-partition.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"] + 0) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.composite.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(LIST(_["fk"], _["id"]), RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.no-proof.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.latest-member.fallback.needs-members.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", COUNT(_), "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===

@@ -34,6 +34,8 @@ from . import normalise as sql_normalise
 from .bindings import Bindings
 from .errors import SqlError
 from .translator import Translator
+from .emit import Emit
+from .fragment import Fragment
 
 
 class HybridPlan:
@@ -45,7 +47,8 @@ class HybridPlan:
                  continuation_program: Program | None = None,
                  continuation_source_var: str = '_INPUT',
                  pure_sql: bool = False, pure_memory: bool = False,
-                 source_tables: list[str] | None = None) -> None:
+                 source_tables: list[str] | None = None,
+                 selected_member: dict[str, str] | None = None) -> None:
         self.dialect = dialect
         self.sql_statement = sql_statement
         self._sql_prefix_ast = sql_prefix_ast
@@ -55,6 +58,7 @@ class HybridPlan:
         self.pure_sql = bool(pure_sql)
         self.pure_memory = bool(pure_memory)
         self._source_tables = list(source_tables or [])
+        self.selected_member = selected_member
 
     @property
     def sql_query(self):
@@ -182,6 +186,32 @@ def _bucket_rows_are_keys(steps: list[Node]) -> bool:
     return open_
 
 
+def _join_rows_lack_binders(steps: list[Node]) -> bool:
+    """Whether the SQL rows for this step list are a join's rows without the
+    binders SEL's rows carry. A LINK's row in SEL holds each side under its
+    binders and the promoted fields beside them (spec §7.4); SQL carries the
+    promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after
+    the LINK makes the rows exact again -- what they compute is over the
+    promoted fields, or is refused -- so a prefix whose LINK nothing has
+    projected is not a split point and not a full pushdown (finding Y,
+    lanes): its continuation would read ``_["C"]`` where the database sent
+    nothing.
+    """
+    joined = False
+    for step in steps:
+        if step.name in ('LINK', 'LINK_LEFT'):
+            joined = True
+        elif step.name in ('MAP', 'SELECT_COLS', 'BUCKET'):
+            joined = False
+    return joined
+
+
+def _rows_are_not_the_value(steps: list[Node]) -> bool:
+    """The two together: a prefix whose SQL rows are not the value SEL would
+    have produced for it, whatever the translator says about it."""
+    return _bucket_rows_are_keys(steps) or _join_rows_lack_binders(steps)
+
+
 SQL_SPECIAL_CALLS = frozenset({
     'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'RECORD', 'LIST',
 })
@@ -255,7 +285,9 @@ def _field_references(node: Node | None, binder: str | None = '_') -> list[str]:
 # (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and the
 # whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare the
 # dependency columns SQL carries where SEL compares the custom values.
-FALLTHROUGH_DOWNSTREAM = frozenset({'FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP'})
+# FILTER retains the MAP's ordinal keys. SQL rows plus a local MAP cannot
+# reconstruct those keys after filtering, so this split must not absorb it.
+FALLTHROUGH_DOWNSTREAM = frozenset({'SORT_BY', 'TOP_BY', 'TAKE', 'DROP'})
 
 
 def _reads_whole_row(node: Node | None, binder: str) -> bool:
@@ -301,10 +333,14 @@ def _map_record_details(step: Node) -> dict[str, Any] | None:
             or len(body.args) % 2 != 0):
         return None
     pairs = []
+    seen = set()
     for i in range(0, len(body.args), 2):
         key = body.args[i]
         if key.t != 'text':
             return None
+        if key.v in seen:
+            return None
+        seen.add(key.v)
         pairs.append((key, body.args[i + 1]))
     return {'explicit': explicit, 'binder': args[1].name if explicit else '_',
             'body': body, 'pairs': pairs}
@@ -627,6 +663,80 @@ def _pure_memory_plan(program: Program, dialect: str, catalog: Bindings) -> Hybr
                       source_tables=_source_tables(program.ast, catalog))
 
 
+def _latest_field_name(node):
+    return (node.idx.v if node is not None and node.t == 'index'
+            and node.obj.t == 'var' and node.obj.name == '_' and node.idx.t == 'text' else None)
+
+
+def _try_latest_member(source, steps, dialect, catalog, opts, helpers):
+    """A schema-proven unique TOP 1, not an arbitrary bare-bucket split."""
+    if dialect not in ('mariadb', 'mysql', 'postgresql', 'sqlite'):
+        return None
+    rel = catalog.get(source.name, source.pos)
+    revision = rel.get('unique_key')
+    at = next((i for i, s in enumerate(steps) if s.name == 'BUCKET'), None)
+    if revision is None or at is None or not isinstance(rel['from'], str) or rel.get('correlate'):
+        return None
+    ba = steps[at].args
+    partition = _latest_field_name(ba[1]) if len(ba) in (2, 3) else None
+    body = ba[2] if len(ba) == 3 else None
+    if body is None and at + 1 < len(steps):
+        m = steps[at + 1]
+        if m.name == 'MAP' and len(m.args) == 2:
+            body = m.args[1]
+    pf = rel['fields'].get(ascii_upper(partition or ''), {})
+    rf = rel['fields'].get(ascii_upper(revision), {})
+    if (partition is None or body is None or body.t != 'call' or body.name != 'RECORD'
+            or len(body.args) != 4 or pf.get('type') not in ('NUM', 'TEXT') or rf.get('type') != 'NUM'
+            or pf.get('column') != partition or rf.get('column') != revision
+            or pf.get('raw') or rf.get('raw') or rf.get('guard')):
+        return None
+    ra = body.args
+    if ra[0].t != 'text' or ra[2].t != 'text' or ra[0].v == ra[2].v:
+        return None
+    values = [ra[1], ra[3]]
+    top = next((n for n in values if n.t == 'call' and n.name == 'TOP_BY'), None)
+    if top is None or not any(n.t == 'var' and n.name == '_K' for n in values):
+        return None
+    ta = top.args
+    if (len(ta) != 4 or ta[0].t != 'var' or ta[0].name != '_'
+            or _latest_field_name(ta[1]) != revision or ta[2].t != 'text' or ta[2].v != 'DESC'
+            or ta[3].t != 'num' or ta[3].v != '1'):
+        return None
+    for s in steps[:at]:
+        if s.name == 'FILTER':
+            continue
+        if (s.name != 'SORT_BY' or len(s.args) not in (2, 3)
+                or _latest_field_name(s.args[1]) != revision
+                or (len(s.args) == 3 and (s.args[2].t != 'text' or s.args[2].v != 'ASC'))):
+            return None
+    dummy = Node('call', source.pos, name='FILTER', args=[source, Node('bool', source.pos, v=True)])
+    prefix = helpers.wrap(build_pipeline(source, steps[:at] or [dummy]))
+    sql = _try_statement(prefix, dialect, catalog, opts)
+    if sql is None:
+        return None
+    try:
+        emit = Emit(dialect)
+        input_name, groups_name = '_sel_input', '_sel_latest'
+        while ascii_upper(input_name) == ascii_upper(rel['from']):
+            input_name += '_'
+        while ascii_upper(groups_name) in (ascii_upper(rel['from']), ascii_upper(input_name)):
+            groups_name += '_'
+        qi, qg, qr, qmax, qfirst = map(emit.ident, [input_name, groups_name, revision, '_sel_revision', '_sel_first'])
+        key = emit.text_operand(Fragment([emit.ident(partition)], pf['type'], dialect)).as_value()
+        parts = [f'WITH {qi} AS (', *sql.parts,
+                 f'), {qg} AS (SELECT MAX({qr}) AS {qmax}, MIN({qr}) AS {qfirst} FROM {qi} GROUP BY {key}) '
+                 f'SELECT {qi}.* FROM {qi} JOIN {qg} ON {qi}.{qr} = {qg}.{qmax} ORDER BY {qg}.{qfirst} ASC']
+        continuation = helpers.wrap(build_pipeline(Node('var', steps[at].pos, name='_INPUT'), steps[at:]))
+        return HybridPlan(dialect=dialect,
+                          sql_statement=Fragment(parts, 'STATEMENT', dialect, sql.params, sql.param_kinds, sql.caveats),
+                          sql_prefix_ast=prefix, continuation_ast=continuation,
+                          continuation_program=Program('', continuation), source_tables=[rel['from']],
+                          selected_member={'partition_key': partition, 'revision_key': revision})
+    except SqlError:
+        return None
+
+
 def plan_hybrid(program: Program, dialect: str,
                 bindings: Bindings | dict[str, Any] | None = None,
                 options: dict[str, Any] | None = None) -> HybridPlan:
@@ -644,7 +754,8 @@ def plan_hybrid(program: Program, dialect: str,
     # assignments" above.
     const_names, const_context = sql_constants.scope(catalog)
     try:
-        sql_normalise.run(program.ast, const_names, const_context)
+        normalized = sql_normalise.run(program.ast, const_names, const_context)
+        identity_barrier = sql_constants.identity_loss_before_grouping(normalized)
     except SqlError:
         return _pure_memory_plan(program, dialect, catalog)
     leading, result = _statements(program.ast)
@@ -677,22 +788,34 @@ def plan_hybrid(program: Program, dialect: str,
     # translator renders a bare bucket as its keys, and a plan that pushes the
     # whole of ``... .> BUCKET(k)`` would hand them back as the answer.
     full_ast = helpers.wrap(build_pipeline(source, steps))
-    full_sql = (None if _bucket_rows_are_keys(steps)
+    full_sql = (None if identity_barrier or _rows_are_not_the_value(steps)
                 else _try_statement(full_ast, dialect, catalog, opts))
     if full_sql is not None:
         return HybridPlan(dialect=dialect, sql_statement=full_sql,
                           sql_prefix_ast=full_ast, pure_sql=True,
                           source_tables=helpers.tables(full_ast))
 
-    fallthrough = _try_plan_fallthrough(source, steps, dialect, catalog, opts, helpers)
+    latest = _try_latest_member(source, steps, dialect, catalog, opts, helpers)
+    if latest is not None:
+        return latest
+
+    fallthrough = (None if identity_barrier else
+                   _try_plan_fallthrough(source, steps, dialect, catalog, opts, helpers))
     if fallthrough is not None:
         return fallthrough
 
     for count in range(len(steps) - 1, 0, -1):
         prefix_steps = steps[:count]
-        if _bucket_rows_are_keys(prefix_steps):
+        if _rows_are_not_the_value(prefix_steps):
             continue
         prefix_ast = helpers.wrap(build_pipeline(source, prefix_steps))
+        if identity_barrier:
+            try:
+                normalized_prefix = sql_normalise.run(prefix_ast, const_names, const_context)
+                if sql_constants.identity_loss_before_grouping(normalized_prefix, True):
+                    continue
+            except SqlError:
+                continue
         sql = _try_statement(prefix_ast, dialect, catalog, opts)
         if sql is None:
             continue

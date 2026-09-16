@@ -522,6 +522,11 @@ foreach ($cases as $c) {
     // mariadb -- the count line still prints a plausible number and the check
     // that makes mysql.json safe to leave empty has silently stopped happening.
     $mirrorCase = ['dialect' => $mirror] + $c;
+    // Pin the one SQL spelling difference: each server's NO PAD collation.
+    if ($mirrorCase['expect'] !== null) {
+        $mirrorCase['expect'] = str_replace(' COLLATE utf8mb4_nopad_bin',
+            ' COLLATE utf8mb4_0900_bin', $mirrorCase['expect']);
+    }
     if ($mirrorCase['dialect'] !== $mirror) {
         echo "SUITE ERROR the mirrored case for {$c['name']} is still "
             . "{$mirrorCase['dialect']}, so nothing is being mirrored\n";

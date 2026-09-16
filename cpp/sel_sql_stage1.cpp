@@ -276,6 +276,81 @@ bool constant_call(const SNode& n, const std::set<std::string>& bound) {
 
 bool is_binder_name(const Node& n) { return is_binder_name_impl(n.t, n.grouped); }
 
+static bool identity_projection(const SNodePtr& n, int depth = 0) {
+  if (!n || depth >= 180) return false;
+  using T = SNode::T;
+  if (n->t() == T::Var || n->t() == T::Num || n->t() == T::Text || n->t() == T::Bool || n->t() == T::Null) return true;
+  const auto& args = n->kids();
+  if (n->t() == T::Index) return args.size() == 2 && identity_projection(args[0], depth + 1) && identity_projection(args[1], depth + 1);
+  if (n->t() == T::Call) {
+    if (n->s() == "COUNT" || n->s() == "LEN" || n->s() == "BLEN") return true;
+    if (n->s() == "RECORD") {
+      if (args.size() % 2) return false;
+      for (size_t i = 1; i < args.size(); i += 2) if (!identity_projection(args[i], depth + 1)) return false;
+      return true;
+    }
+  }
+  return false;
+}
+
+struct IdentityInputs { bool whole = false; std::set<std::string> fields; };
+static IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
+  using T = SNode::T;
+  if (!n || depth >= 180) return {true, {}};
+  if (n->t() == T::Num || n->t() == T::Text || n->t() == T::Bool || n->t() == T::Null) return {};
+  if (n->t() == T::Var) return {n->s() != "_K", {}};
+  const auto& a = n->kids();
+  if (n->t() == T::Index) {
+    if (a.size() != 2 || a[1]->t() != T::Text) return {true, {}};
+    return a[0]->t() == T::Var ? IdentityInputs{false, {a[1]->s()}} : identity_inputs(a[0], depth + 1);
+  }
+  if (n->t() == T::Call && (n->s() == "COUNT" || n->s() == "LEN" || n->s() == "BLEN")) return {};
+  if (n->t() == T::List || (n->t() == T::Call && (n->s() == "LIST" || n->s() == "RECORD"))) {
+    IdentityInputs out;
+    bool record = n->t() == T::Call && n->s() == "RECORD";
+    for (std::size_t i = record ? 1 : 0; i < a.size(); i += record ? 2 : 1) {
+      auto fields = identity_inputs(a[i], depth + 1);
+      if (fields.whole) return fields;
+      out.fields.insert(fields.fields.begin(), fields.fields.end());
+    }
+    return out;
+  }
+  return {true, {}};
+}
+
+bool identity_loss_before_grouping(const SNodePtr& root, bool needed) {
+  IdentityInputs needs{needed, {}};
+  auto n = root;
+  while (n && n->t() == SNode::T::Call && !n->kids().empty()) {
+    const auto& args = n->kids();
+    if ((needs.whole || !needs.fields.empty()) && (n->s() == "MAP" || (n->s() == "BUCKET" && args.size() > 2))) {
+      const auto& body = args.back(); std::vector<SNodePtr> values{body};
+      if (!needs.whole && body->t() == SNode::T::Call && body->s() == "RECORD") {
+        values.clear(); std::set<std::string> found;
+        const auto& a = body->kids();
+        for (std::size_t i = 0; i + 1 < a.size(); i += 2) {
+          if (a[i]->t() == SNode::T::Text && needs.fields.contains(a[i]->s())) { found.insert(a[i]->s()); values.push_back(a[i + 1]); }
+        }
+        if (found != needs.fields) return true;
+      }
+      for (const auto& v : values) if (!identity_projection(v)) return true;
+      needs = {};
+      for (const auto& v : values) { auto f = identity_inputs(v); needs.whole |= f.whole; needs.fields.insert(f.fields.begin(), f.fields.end()); }
+    }
+    if (n->s() == "BUCKET") needs = identity_inputs(args[args.size() == 4 ? 2 : 1]);
+    if (n->s() == "DISTINCT" || n->s() == "DEDUPE") needs = {true, {}};
+    if (!needs.whole && (n->s() == "LINK" || n->s() == "LINK_LEFT") && args[1]->t() == SNode::T::Var) {
+      const auto& right = args[args.size() == 5 ? 3 : 1]->s();
+      std::erase_if(needs.fields, [&](std::string k) {
+        for (char& c : k) if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+        return k == right;
+      });
+    }
+    n = args[0];
+  }
+  return false;
+}
+
 bool is_binder_name(const SNode& n) {
   return n.t() == SNode::T::Var && !n.grouped();
 }

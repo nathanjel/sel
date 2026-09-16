@@ -1,0 +1,37 @@
+### name: rel.latest-member.winners-and-group-order
+--- source
+R = LIST(RECORD("id", 1, "fk", "b"), RECORD("id", 2, "fk", "a"), RECORD("id", 3, "fk", "a"), RECORD("id", 4, "fk", "b"));
+R .> SORT_BY(_["id"]) .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1))) .> MAP(_["latest"][1]["id"])
+--- expect
+tree -{"1"=t"4", "2"=t"3"}
+===
+
+### name: rel.latest-member.filtered-before-winners
+--- source
+R = LIST(RECORD("id", 1, "fk", "b"), RECORD("id", 2, "fk", "a"), RECORD("id", 3, "fk", "a"), RECORD("id", 4, "fk", "b"));
+R .> FILTER(_["id"] < 4) .> BUCKET(_["fk"], RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1))) .> MAP(_["latest"][1]["id"])
+--- expect
+tree -{"1"=t"1", "2"=t"3"}
+===
+
+### name: rel.latest-member.empty
+--- source
+LIST() .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- expect
+none
+===
+
+### name: rel.latest-member.ties-keep-source-order
+--- source
+R = LIST(RECORD("id", 1, "fk", "a", "v", "first"), RECORD("id", 1, "fk", "a", "v", "second"));
+R .> BUCKET(_["fk"]) .> MAP(TOP_BY(_, _["id"], "DESC", 1)[1]["v"])
+--- expect
+tree -{"1"=t"first"}
+===
+
+### name: rel.latest-member.null-bare-partition-raises
+--- source
+LIST(RECORD("id", 1, "fk", NULL)) .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- expect
+error E_NULL
+===

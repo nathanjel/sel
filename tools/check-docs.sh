@@ -30,7 +30,12 @@ total=${#want[@]}
 
 status=0
 for impl in $(available_impls); do
-  if ! impl_batch "$impl" --show "$WORK/docs.selc" > "$WORK/$impl.got" 2> "$WORK/$impl.err"; then
+  { sel_slot impl_batch "$impl" --show "$WORK/docs.selc" > "$WORK/$impl.got" 2> "$WORK/$impl.err"
+    echo $? > "$WORK/$impl.rc"; } &
+done
+wait
+for impl in $(available_impls); do
+  if [ "$(cat "$WORK/$impl.rc")" -ne 0 ]; then
     printf 'FAIL %-5s batch exited non-zero\n' "$impl"
     sed 's/^/       /' "$WORK/$impl.err" | head -5
     status=1

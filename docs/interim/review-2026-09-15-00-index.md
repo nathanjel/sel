@@ -80,4 +80,4 @@ Verdicts: 28 CONFIRMED, 1 PARTIAL, 0 REFUTED. Two further findings come from the
 
 | # | Finding | Status |
 |---|---|---|
-| 33 | [The FILTER-before-MAP rewrite renumbers the result's keys](review-2026-09-15-33-NEW-filter-before-map-rewrite-renumbers-keys.md) — found while fixing AJ and R; one witness per host, not independently verified | OPEN |
+| 33 | [The FILTER-before-MAP rewrite renumbers the result's keys](review-2026-09-15-33-NEW-filter-before-map-rewrite-renumbers-keys.md) — found while fixing AJ and R; one witness per host, not independently verified | FIXED 2026-09-16 |

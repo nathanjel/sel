@@ -16,7 +16,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"])
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: stmt.bucket.multi-list
@@ -34,7 +34,7 @@ statement
 --- source
 ITEMS .> BUCKET((_["dept"], _["category"]), RECORD("n", COUNT(_)))
 --- expect
-SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_bin
+SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: stmt.bucket.multi-record
@@ -47,7 +47,7 @@ statement
 --- source
 ITEMS .> BUCKET(RECORD("dept", _["dept"], "category", _["category"]), RECORD("n", COUNT(_)))
 --- expect
-SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_bin
+SELECT COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin, CAST(`category` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: stmt.bucket.aggregates
@@ -60,7 +60,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "cnt", COUNT(_), "total", SUM(_, _["amount"])))
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `cnt`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: stmt.bucket.custom-binder
@@ -73,7 +73,7 @@ statement
 --- source
 ITEMS .> BUCKET(r, r["dept"], RECORD("dept", _K, "total", SUM(r, x, x["amount"])))
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: stmt.bucket.where-and-having
@@ -86,7 +86,7 @@ statement
 --- source
 ITEMS .> FILTER(_["active"] == 1) .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> FILTER(_["total"] > 100)
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COALESCE(SUM(`amount`), 0) > 100)
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` WHERE (`active` = 1) GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (COALESCE(SUM(`amount`), 0) > 100)
 ===
 
 ### name: stmt.bucket.order-by-agg
@@ -99,7 +99,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> SORT_BY(_["total"], "DESC")
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY COALESCE(SUM(`amount`), 0) DESC
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY COALESCE(SUM(`amount`), 0) DESC
 ===
 
 ### name: stmt.bucket.pagination
@@ -112,7 +112,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> TAKE(10) .> DROP(5)
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 10 OFFSET 5
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 5 OFFSET 5
 ===
 
 ### name: stmt.bucket.dialect-postgres
@@ -138,7 +138,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "cnt", COUNT(_))) .> DROP(5)
 --- expect
-SELECT CAST("dept" AS TEXT) AS "dept", COUNT(*) AS "cnt" FROM "items" GROUP BY CAST("dept" AS TEXT) LIMIT -1 OFFSET 5
+SELECT CAST("dept" AS TEXT) COLLATE BINARY AS "dept", COUNT(*) AS "cnt" FROM "items" GROUP BY CAST("dept" AS TEXT) COLLATE BINARY LIMIT -1 OFFSET 5
 ===
 
 ### name: stmt.bucket.dialect-mysql
@@ -151,7 +151,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "total", SUM(_, _["amount"]))) .> DROP(5)
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 18446744073709551615 OFFSET 5
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_0900_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_0900_bin LIMIT 18446744073709551615 OFFSET 5
 ===
 
 ### name: stmt.bucket.refusal-binder
@@ -209,7 +209,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "cnt", COUNT(_)))
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `cnt` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: stmt.bucket.pipeline-filter-then-map
@@ -225,7 +225,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> FILTER(COUNT(_) > 1) .> MAP(RECORD("dept", _K, "total", SUM(_, _["amount"])))
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COUNT(*) > 1)
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (COUNT(*) > 1)
 ===
 
 ### name: stmt.bucket.pipeline-map-names-the-group
@@ -241,7 +241,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(g, RECORD("dept", _K, "total", SUM(g, x, x["amount"])))
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`amount`), 0) AS `total` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: stmt.bucket.refuse-map-after-the-members-are-spent
@@ -308,9 +308,10 @@ E_SQL_SHAPE 1:42
 ===
 ### name: stmt.bucket.bucket-over-a-projected-bucket
 --- note
-A bucket whose projection closed it is a list of records again, and a second
-BUCKET over that list is ordinary re-grouping: the grouped statement becomes
-a derived table.
+A bucket whose projection closed it is a list of records again. Computed
+projection types are not carried across the derived table yet, so this second
+BUCKET is refused until its key's identity can be proved. A hybrid plan can
+retain the first grouped statement and perform the second grouping locally.
 --- dialect
 mariadb
 --- bindings
@@ -319,8 +320,8 @@ mariadb
 statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "n", COUNT(_))) .> BUCKET(_["n"]) .> MAP(RECORD("n", _K, "depts", COUNT(_)))
---- expect
-SELECT `_sub1`.`n` AS `n`, COUNT(*) AS `depts` FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) `_sub1` GROUP BY `_sub1`.`n`
+--- error
+E_SQL_SHAPE
 ===
 ### name: stmt.bucket.refuse-bare-bucket-over-a-list-key
 --- note
@@ -397,7 +398,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "n", COUNT(_))) .> TAKE(2) .> FILTER(_["n"] > 1)
 --- expect
-SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
+SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
 ===
 ### name: stmt.bucket.filter-after-drop
 --- dialect
@@ -409,7 +410,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "n", COUNT(_))) .> DROP(1) .> FILTER(_["n"] > 1)
 --- expect
-SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin LIMIT 18446744073709551615 OFFSET 1) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
+SELECT `_sub1`.* FROM (SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 18446744073709551615 OFFSET 1) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
 ===
 ### name: stmt.bucket.filter-after-sort
 --- note
@@ -424,7 +425,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("dept", _K, "s", SUM(_, _["qty"]))) .> SORT_BY(_["s"], "DESC") .> FILTER(_["s"] > 5)
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COALESCE(SUM(`qty`), 0) AS `s` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (COALESCE(SUM(`qty`), 0) > 5) ORDER BY COALESCE(SUM(`qty`), 0) DESC
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COALESCE(SUM(`qty`), 0) AS `s` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (COALESCE(SUM(`qty`), 0) > 5) ORDER BY COALESCE(SUM(`qty`), 0) DESC
 ===
 ### name: stmt.bucket.refuse-filter-after-the-members-are-spent
 --- note
@@ -460,7 +461,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "n", COUNT(_)))
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 ### name: stmt.bucket.text-key-compared-in-having-is-the-same-expression
 --- note
@@ -480,7 +481,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> FILTER(_K $== "x") .> MAP(RECORD("dept", _K, "n", COUNT(_)))
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) = 'x')
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin) = 'x')
 ===
 ### name: stmt.bucket.exact-text-key-stays-bare
 --- note
@@ -497,7 +498,7 @@ ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("dept", _K, "n", COUNT(_)))
 --- expect
 SELECT `dept` AS `dept`, COUNT(*) AS `n` FROM `items` GROUP BY `dept`
 ===
-### name: stmt.bucket.numeric-key-is-not-collated
+### name: stmt.bucket.numeric-key-preserves-representation
 --- dialect
 mariadb
 --- bindings
@@ -507,7 +508,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["qty"]) .> MAP(RECORD("qty", _K, "n", COUNT(_)))
 --- expect
-SELECT `qty` AS `qty`, COUNT(*) AS `n` FROM `items` GROUP BY `qty`
+SELECT MIN(`qty`) AS `qty`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`qty` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 ### name: stmt.bucket.text-sort-key-is-collated
 --- note
@@ -522,7 +523,7 @@ statement
 --- source
 ITEMS .> SORT_BY(_["dept"], "DESC") .> TAKE(3)
 --- expect
-SELECT * FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC LIMIT 3
+SELECT * FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin DESC LIMIT 3
 ===
 ### name: stmt.map.after-sort-shares-the-statement
 --- note
@@ -540,7 +541,7 @@ statement
 --- source
 ITEMS .> SORT_BY(_["dept"]) .> MAP(RECORD("d", _["dept"], "q", _["qty"]))
 --- expect
-SELECT `dept` AS `d`, `qty` AS `q` FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ASC
+SELECT `dept` AS `d`, `qty` AS `q` FROM `items` ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin ASC
 ===
 ### name: stmt.bucket.refuse-member-field-through-the-group
 --- note
@@ -663,7 +664,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(g, RECORD("dept", _K, "n", COUNT(g), "s", SUM(g, _["amount"]), "t", SUM(g, x, x["amount"])))
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `dept`, COUNT(*) AS `n`, COALESCE(SUM(`amount`), 0) AS `s`, COALESCE(SUM(`amount`), 0) AS `t` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `dept`, COUNT(*) AS `n`, COALESCE(SUM(`amount`), 0) AS `s`, COALESCE(SUM(`amount`), 0) AS `t` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 ### name: stmt.bucket.refuse-the-member-key-inside-the-aggregate
 --- note
@@ -769,7 +770,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> SORT_BY(_K, "DESC")
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin) DESC
 ===
 ### name: stmt.bucket.refuse-member-field-in-a-sort-over-the-groups
 --- note
@@ -816,7 +817,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "n", COUNT(_))) .> FILTER(_["d"] $== "A")
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_bin) = 'A')
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin HAVING (MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin) = 'A')
 ===
 ### name: stmt.bucket.projected-key-alias-in-a-sort
 --- dialect
@@ -828,7 +829,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"]) .> MAP(RECORD("d", _K, "n", COUNT(_))) .> SORT_BY(_["d"], "DESC")
 --- expect
-SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin ORDER BY CAST(`dept` AS CHAR) COLLATE utf8mb4_bin DESC
+SELECT CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `d`, COUNT(*) AS `n` FROM `items` GROUP BY CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY MIN(CAST(`dept` AS CHAR) COLLATE utf8mb4_nopad_bin) DESC
 ===
 ### name: stmt.bucket.refuse-count-of-the-projected-row
 --- note

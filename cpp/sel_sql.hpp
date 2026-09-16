@@ -238,6 +238,7 @@ struct ColumnSpec {
 };
 
 struct RelationSpec {
+  std::optional<std::string> unique_key; // caller-proven, single-column, NOT NULL
   bool from_is_raw = false;      // a query the application wrote
   std::string from;              // a table name, or that query
   std::optional<std::string> alias;
@@ -307,6 +308,7 @@ class Binding {
   const ColumnSpec& as_column() const { return column_; }
   const std::vector<ColumnSpec>& as_columns() const { return columns_; }
   const RelationSpec& as_relation() const { return relation_; }
+  Binding with_unique_key(std::string key) const;
   const sel::Value& as_value() const { return value_; }
   // Nothing for an untyped value binding, which is emitted quoted.
   std::optional<SqlKind> value_type() const { return value_type_; }
@@ -419,7 +421,13 @@ class Sql {
                               Value context = Value::none());
 };
 
+struct SelectedMember {
+  std::string partition_key;
+  std::string revision_key;
+};
+
 struct HybridPlan {
+  std::optional<SelectedMember> selected_member;
   std::string dialect;
   std::optional<Fragment> sql_statement;
   std::shared_ptr<const Node> sql_prefix_ast;

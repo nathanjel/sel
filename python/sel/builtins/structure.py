@@ -221,33 +221,46 @@ def is_nested_record(value):
 
 def make_joined_row(left, right, b1, b2, promoted_left, promoted_right,
                     table_left, null_right):
+    # Each key once, where it first occurred (spec §7.4): a carried or promoted
+    # key keeps its first value, a binder key holds the row this LINK bound
+    # even where an earlier LINK's `_1` or a relation joined twice carried a
+    # record of the same name. That is the row the compiled projector below
+    # builds from the shape (binders first, then slots); with a first-wins
+    # `present` set for every key, this path kept the old value instead.
     entries = []
-    present = set()
+    slot = {}
 
     def put(key, value):
-        if key not in present:
-            present.add(key)
-            entries.append((key, value))
+        if key in slot:
+            return
+        slot[key] = len(entries)
+        entries.append((key, value))
+
+    def bind(key, value):
+        if key in slot:
+            entries[slot[key]] = (key, value)
+        else:
+            put(key, value)
 
     for key, value in left.entries():
         if is_nested_record(value):
             put(key, value)
 
     low1 = b1.lower()
-    put(b1, left)
+    bind(b1, left)
     if low1 != b1:
-        put(low1, left)
+        bind(low1, left)
     if b1 != '_1':
-        put('_1', left)
+        bind('_1', left)
 
     actual_right = right if right is not None else null_right
     actual_right = actual_right if actual_right is not None else Value.none()
     low2 = b2.lower()
-    put(b2, actual_right)
+    bind(b2, actual_right)
     if low2 != b2:
-        put(low2, actual_right)
+        bind(low2, actual_right)
     if b2 != '_2':
-        put('_2', actual_right)
+        bind('_2', actual_right)
 
     for key in promoted_left:
         value = left.get(key)

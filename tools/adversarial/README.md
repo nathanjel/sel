@@ -1,11 +1,48 @@
 # SEL adversarial audit, 2026-09-15
 
 The findings and their interpretation are in [REPORT.md](REPORT.md).
-The [recheck against 55f4aa6](RECHECK-55f4aa6.md) confirms all findings still
-stand. Current JSON files contain that rerun; `baseline-ef44fa2.tar.gz` preserves
+The historical [recheck against 55f4aa6](RECHECK-55f4aa6.md) confirmed all findings
+then. Current JSON files contain that rerun; `baseline-ef44fa2.tar.gz` preserves
 the original evidence.
-This directory adds an audit harness and captured evidence; it does not change
-SEL's implementations or the conformance suite.
+See the [current work index](../../docs/interim/sel-gaps-2026-09-15-00-index.md)
+for fix status; the captured historical JSON is not overwritten by regressions.
+
+## Current desired-behavior regressions
+
+Run `bash tools/adversarial/regressions.sh` from the repository root. It requires
+Docker, Python, Node (for the JS adapter), make and a C++23 compiler. It builds
+the current C++ adapter, creates four uniquely named disposable containers,
+installs PHP/Lisp tooling and a fresh Python wheel, and runs:
+
+- `identity.py`: direct and derived text/numeric group keys, DISTINCT and exact
+  filters; SQLite NOCASE/RTRIM schemas, PostgreSQL numeric scale, and MariaDB
+  case/trailing-space identity. Five source hosts plus the installed wheel,
+  strict off/on, inline and native prepared statements; unordered group output
+  is compared by exact record multiplicity.
+- `latest.py`: normalized and EAV latest-member results, empty and filtered
+  histories, complete nested payloads, and 1,000/100,000 revision fixtures.
+  It asserts 100 transferred winners for the 100,000-row fixture, rather than
+  accepting merely a promising SQL string or planner classification.
+- `witnesses.py`: the original F1–F5 reproduction queries plus composite grouping
+  and slice controls, asserted against current local SEL in all six SQL lanes.
+  Documented arithmetic/validation differences (C1) are deliberately separate.
+- The full expression/row/statement oracle on PostgreSQL, MariaDB, MySQL and
+  SQLite. The new identity/latest adapter matrix itself covers the first,
+  second and fourth platforms; shared SQL cases also pin MySQL rendering.
+
+Containers use pinned image digests, no published ports and no persistent
+volumes. Only containers created by this run are stopped on exit. Each Python
+harness creates uniquely named databases and drops them in `finally`; evidence
+is retained in a new `/tmp/sel-identity-evidence.*` or `/tmp/sel-latest-evidence.*`
+directory, whose path is printed.
+
+For an already provisioned disposable environment, run either Python script
+directly. Set `AUDIT_TOOLS`, `AUDIT_PG_CONTAINER`, `AUDIT_MARIA_CONTAINER`, and
+`AUDIT_WHEEL` to the tools/DB container names and installed-wheel path. The tools
+container must mount the repository read-only at `/work`, use that working
+directory, and share PostgreSQL's network namespace with MariaDB listening on
+3306. The scripts assume the disposable credentials established in
+`regressions.sh`. Do not point them at production databases.
 
 ## Reproduce
 

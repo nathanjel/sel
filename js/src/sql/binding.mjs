@@ -172,6 +172,14 @@ export class Binding {
     if (type === 'NUM') checkNumeric('this value binding', v);
     return new Binding({ kind: 'value', type: type ?? null, value: v });
   }
+
+  withUniqueKey(key) {
+    checkName('unique key', key);
+    if (this.spec.kind !== 'relation' || !Object.hasOwn(this.spec.fields, asciiUpper(key))) {
+      throw new SqlError('E_SQL_BINDING', 'a unique key must name a declared relation field');
+    }
+    return new Binding({ ...this.spec, unique_key: key });
+  }
 }
 
 export function typeName(v) {

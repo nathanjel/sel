@@ -1,0 +1,38 @@
+### name: stmt.slice.large-offsets.mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(4503599627370496) .> DROP(4503599627370496) .> TAKE(1)
+--- expect
+SELECT `_sub1`.* FROM (SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 4503599627370496) `_sub1` LIMIT 1 OFFSET 4503599627370496
+===
+
+### name: stmt.slice.large-offsets.postgresql
+--- dialect
+postgresql
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(4503599627370496) .> DROP(4503599627370496) .> TAKE(1)
+--- expect
+SELECT "_sub1".* FROM (SELECT * FROM "items" OFFSET 4503599627370496) "_sub1" LIMIT 1 OFFSET 4503599627370496
+===
+
+### name: stmt.slice.large-offsets.sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(4503599627370496) .> DROP(4503599627370496) .> TAKE(1)
+--- expect
+SELECT "_sub1".* FROM (SELECT * FROM "items" LIMIT -1 OFFSET 4503599627370496) "_sub1" LIMIT 1 OFFSET 4503599627370496
+===

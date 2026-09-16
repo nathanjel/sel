@@ -38,6 +38,32 @@ deliberately."
   (with-output-to-string (o)
     (loop for c across s do (if (char= c #\Newline) (write-string "\\n" o) (write-char c o)))))
 
+;; The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
+;; same in every host's runner: two tables, a NUM join key, a TEXT field whose
+;; name both sides share.
+(defun fuzz-bindings ()
+  (list (cons "ORDERS" (binding-relation "orders" "o"
+                         (list (cons "ID" (binding-column "id" "o" :num))
+                               (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))
+                               (cons "AMOUNT" (binding-column "amount" "o" :num))
+                               (cons "NAME" (binding-column "name" "o" :text)))))
+        (cons "CUSTOMERS" (binding-relation "customers" "c"
+                            (list (cons "ID" (binding-column "id" "c" :num))
+                                  (cons "NAME" (binding-column "name" "c" :text)))))))
+
+(defun render (f)
+  (format nil "~a | ~a | ~{~a~^,~}" (as-value f) (as-value f :params)
+          (mapcar #'sel:value-dump (bindings f))))
+
+;; Three lanes per program, `||`-separated: translate, translate-statement and
+;; plan-hybrid (its classification, then its statement in params mode).
+(defun attempt (thunk)
+  (handler-case (funcall thunk)
+    (sql-error (e) (format nil "!~a@~a:~a" (sql-error-code e) (sql-error-line e) (sql-error-col e)))
+    (sel:sel-error (e) (format nil "!SEL ~a@~a:~a" (sel:sel-error-code e)
+                               (sel:sel-error-line e) (sel:sel-error-col e)))
+    (error (e) (format nil "!HOST ~a" (type-of e)))))
+
 (defun main ()
   (let* ((args (sel-cli:script-args))
          (path (first args))
@@ -48,19 +74,20 @@ deliberately."
        (escape-newlines
         (handler-case
             (let ((program (sel:compile-source src)))
-              (handler-case
-                  ;; Three renderings, because comparing only the inline one once
-                  ;; let a mutation that bound a numeric literal as a parameter
-                  ;; walk straight through this lane.
-                  (let ((f (translate program dialect)))
-                    (format nil "~a | ~a | ~{~a~^,~}"
-                            (as-value f) (as-value f :params)
-                            (mapcar #'sel:value-dump (bindings f))))
-                (sql-error (e) (format nil "!~a@~a:~a" (sql-error-code e)
-                                       (sql-error-line e) (sql-error-col e)))
-                (sel:sel-error (e) (format nil "!SEL ~a@~a:~a" (sel:sel-error-code e)
-                                           (sel:sel-error-line e) (sel:sel-error-col e)))
-                (error (e) (format nil "!HOST ~a" (type-of e)))))
+              ;; Three renderings, because comparing only the inline one once
+              ;; let a mutation that bound a numeric literal as a parameter
+              ;; walk straight through this lane.
+              (let ((bindings (fuzz-bindings)))
+                (format nil "~a || ~a || ~a"
+                        (attempt (lambda () (render (translate program dialect bindings))))
+                        (attempt (lambda () (render (translate-statement program dialect bindings))))
+                        (attempt (lambda ()
+                                   (let* ((plan (plan-hybrid program dialect bindings))
+                                          (kind (cond ((hybrid-plan-pure-sql-p plan) "pure_sql")
+                                                      ((hybrid-plan-pure-memory-p plan) "pure_memory")
+                                                      (t "hybrid")))
+                                          (frag (hybrid-plan-sql-statement plan)))
+                                     (if frag (format nil "~a ~a" kind (as-statement frag :params)) kind)))))))
           (sel:sel-error () "-")
           (error (e) (format nil "!HOST ~a" (type-of e))))))
       (terpri))

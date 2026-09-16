@@ -23,7 +23,42 @@ except ImportError:
 
 import sel                                                          # noqa: E402
 from sel.errors import SelError                                     # noqa: E402
-from sel.sql import Sql, SqlError                                   # noqa: E402
+from sel.sql import Binding, Sql, SqlError                          # noqa: E402
+
+# The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
+# same in every host's runner: two tables, a NUM join key, a TEXT field whose
+# name both sides share.
+BINDINGS = {
+    'ORDERS': Binding.relation('orders', 'o', {
+        'ID': Binding.column('id', 'o', 'NUM'), 'CUSTOMER_ID': Binding.column('customer_id', 'o', 'NUM'),
+        'AMOUNT': Binding.column('amount', 'o', 'NUM'), 'NAME': Binding.column('name', 'o', 'TEXT')}),
+    'CUSTOMERS': Binding.relation('customers', 'c', {
+        'ID': Binding.column('id', 'c', 'NUM'), 'NAME': Binding.column('name', 'c', 'TEXT')}),
+}
+
+
+def render(f) -> str:
+    return ' | '.join([f.as_value(), f.as_value('params'),
+                       ','.join(v.dump() for v in f.bindings())])
+
+
+def attempt(fn) -> str:
+    # Three lanes per program, `||`-separated: translate(), translate_statement()
+    # and plan_hybrid() (its classification, then its statement in params mode).
+    try:
+        return fn()
+    except SqlError as e:
+        return f'!{e.code}@{e.line}:{e.col}'
+    except SelError as e:
+        return f'!SEL {e.code}@{e.line}:{e.col}'
+    except Exception as e:                                          # noqa: BLE001
+        return f'!HOST {type(e).__name__}: {e}'
+
+
+def plan_line(program, dialect: str) -> str:
+    plan = Sql.plan_hybrid(program, dialect, BINDINGS)
+    kind = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
+    return f'{kind} {plan.sql_statement.as_statement("params")}' if plan.sql_statement else kind
 
 
 def read_corpus(text: str) -> list[str]:
@@ -63,10 +98,11 @@ def main(argv: list[str]) -> int:
             continue
         try:
             # Three renderings; see js/bin/sqlfuzz.mjs for why.
-            f = Sql.translate(program, dialect)
-            lines.append(' | '.join([
-                f.as_value(), f.as_value('params'),
-                ','.join(v.dump() for v in f.bindings())]))
+            lines.append(' || '.join([
+                attempt(lambda: render(Sql.translate(program, dialect, BINDINGS))),
+                attempt(lambda: render(Sql.translate_statement(program, dialect, BINDINGS))),
+                attempt(lambda: plan_line(program, dialect)),
+            ]))
         except SqlError as e:
             lines.append(f'!{e.code}@{e.line}:{e.col}')
         except SelError as e:

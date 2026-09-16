@@ -1,5 +1,7 @@
 # AF. Lisp optimiser raises E_DEPTH itself where the other four fold past the boundary the evaluator refuses
 
+**Status:** FIXED 2026-09-16. Spec §6.4 now says the evaluator is the depth authority; every optimiser returns a tree that reaches the cap as written (a bounded `exceedsDepth` walk at the entry point, counting as the evaluator counts) and none raises — Lisp's `fail` is gone, and the four folding hosts no longer erase the E_DEPTH of a 201-term chain. `lim.eval-depth-foldable-chain`, `-just-under`, `-is-not-raised-on-an-unvisited-branch`, `-on-a-visited-branch`, `-through-an-assignment`, `-through-an-assignment-just-under`. The fuzzer suggestion (boundary-length chains in `gen-programs`) is left for finding #31.
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** lisp, js, php, python, cpp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing, but contradicting a promise ed16df2 wrote.

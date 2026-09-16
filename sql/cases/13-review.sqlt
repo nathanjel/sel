@@ -97,7 +97,7 @@ mariadb
 --- source
 RMATCH("abc", C, "")
 --- expect
-(`c` COLLATE utf8mb4_bin REGEXP '(?s)abc')
+(`c` COLLATE utf8mb4_nopad_bin REGEXP '(?s)abc')
 ===
 ### name: review.regex.i-flag-selects-the-other-template
 --- dialect
@@ -107,7 +107,7 @@ mariadb
 --- source
 RMATCH("abc", C, "i")
 --- expect
-(`c` COLLATE utf8mb4_bin REGEXP '(?si)abc')
+(`c` COLLATE utf8mb4_nopad_bin REGEXP '(?si)abc')
 ===
 ### name: review.regex.unknown-flag-is-refused
 --- note
@@ -186,7 +186,7 @@ mariadb
 --- source
 S IN ALLOWED
 --- expect
-((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))
+((CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('held' AS CHAR) COLLATE utf8mb4_nopad_bin))
 ===
 ### name: review.params.reordering-template-binds-in-output-order
 --- note
@@ -252,7 +252,7 @@ mariadb
 --- source
 TRUE EQL FALSE
 --- expect
-(CAST(TRUE AS CHAR) COLLATE utf8mb4_bin = CAST(FALSE AS CHAR) COLLATE utf8mb4_bin)
+(CAST(TRUE AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(FALSE AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: kinds.an-unknown-operand-is-the-accepted-limit
 --- note
@@ -265,7 +265,7 @@ mariadb
 --- source
 C EQL TRUE
 --- expect
-(CAST(`c` AS CHAR) COLLATE utf8mb4_bin = CAST(TRUE AS CHAR) COLLATE utf8mb4_bin)
+(CAST(`c` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(TRUE AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: kinds.bool-is-not-byte-comparable-directly
 --- note
@@ -379,7 +379,7 @@ mariadb
 --- source
 1 EQL "1"
 --- expect
-(CAST(1 AS CHAR) COLLATE utf8mb4_bin = CAST('1' AS CHAR) COLLATE utf8mb4_bin)
+(CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: kinds.a-bin-is-not-an-addend
 --- note
@@ -686,7 +686,7 @@ ANY(R, X, X["straße"] $== "a")
 --- as
 condition
 --- expect
-EXISTS (SELECT 1 FROM `t` `r` WHERE TRUE AND ((CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)
+EXISTS (SELECT 1 FROM `t` `r` WHERE TRUE AND ((CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)
 ===
 ### name: register.dialect.root-has-no-parent
 --- note

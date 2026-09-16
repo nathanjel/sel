@@ -338,6 +338,13 @@ fragment was rendered and discarded" orphans)))))
                (let ((m (cdr (assoc (getf c :dialect) +mirrors+ :test #'equal))))
                  (when (and m (null (getf c :register)))
                    (map-reset)
+                   ;; Pin the one SQL spelling difference: NO PAD collation names.
+                   (let ((c (copy-list c)))
+                   (when (getf c :expect)
+                     (setf (getf c :expect)
+                           (cl-ppcre:regex-replace-all " COLLATE utf8mb4_nopad_bin"
+                                                       (getf c :expect)
+                                                       " COLLATE utf8mb4_0900_bin")))
                    (let ((p2 (handler-case (let ((*print-base* *corpus-print-base*))
                                        (if (getf c :plan)
                                            (run-plan-case c m)
@@ -348,7 +355,7 @@ fragment was rendered and discarded" orphans)))))
                      (cond ((eq p2 :skip))
                            (p2 (push (cons c (format nil "mirrored to ~a, which must ~
 agree with ~a: ~a" m (getf c :dialect) p2)) failures))
-                           (t (incf mirrored)))))))))))
+                           (t (incf mirrored))))))))))))
     (dolist (f (reverse failures))
       (format t "FAIL ~a  (~a)~%     ~a~%" (getf (car f) :name) (getf (car f) :at) (cdr f)))
     (format t "~%~a passed (~a also checked against a mirrored dialect), ~a failed, ~

@@ -1,9 +1,43 @@
 # F1 — Compose TAKE/DROP as a bounded slice
 
-Status: confirmed, open at `55f4aa6`. Proposed priority: **P1, silent wrong
-rows**. Affects every translator on PostgreSQL, MariaDB and SQLite, with strict
+Status: implemented and verified in all five hosts on 2026-09-16. The default
+integration gate and live regressions pass; see the consolidated verification report.
+Originally confirmed at `55f4aa6`. Priority: **P1, silent wrong
+rows**. Affected every translator on PostgreSQL, MariaDB and SQLite, with strict
 off/on, inline/prepared SQL, and execution via a pure-SQL hybrid plan.
 [Index and verification scope](sel-gaps-2026-09-15-00-index.md).
+
+## Implementation and verification update — 2026-09-16
+
+Implemented first in Lisp, then Python, JS, PHP and C++. DROP now subtracts
+`min(count, remaining_limit)` from the limit and adds only that many skipped
+rows to the offset. Zero remains a real limit. If adding offsets would exceed
+the exact integer range shared by the hosts (2^53−1), a derived-table boundary
+keeps the two slices separate instead of overflowing/rounding their sum.
+Existing boundaries around FILTER, grouping, sorting and projection remain.
+
+Desired-result coverage now lives in:
+
+- `conformance/16-slices.selt`: seven local semantic cases, passing in all five hosts.
+- `sql/cases/27-slices.sqlt` and `28-slice-overflow.sqlt`: the three dialects,
+  including repeated large offsets. Two older expectations in statement/bucket
+  cases incorrectly encoded F1 and have been corrected. The complete SQL case
+  suite passes in all five hosts (723 cases per host).
+- `python/tests/test_sql_slices.py`: 96 live SQLite tests covering strict off/on,
+  empty/nonempty input, MAP/FILTER/BUCKET, direct inline/prepared SQL where
+  supported, and actual hybrid execution. All pass. SQLite's derived numeric
+  FILTER refusal is tested through its correct local continuation.
+- `sql/oracle/statements.json`: ten additional slice scenarios. The statement
+  oracle passes against disposable PostgreSQL 17, MariaDB 11.8, and SQLite:
+  respectively 18/18/16 successful statements, with SQLite's two documented
+  refusals and no mismatches.
+
+The original two witnesses were additionally executed against all three live
+databases using every source translator plus a freshly installed Python wheel,
+strict off/on, inline/native parameters/planner-prefix SQL: **216 correct SQL
+results**. Both witnesses remain pure SQL and return `[2]` and `[]`; no
+post-fetch correction is involved. Historical audit JSON and `verify.py` still
+describe the old bugs and have not been replaced with fresh baseline evidence.
 
 ## User-visible failure and reproduction
 

@@ -404,6 +404,11 @@ def main(argv: list[str]) -> int:
         # getting this backwards re-runs every mariadb case as mariadb and the
         # count line still prints a plausible number.
         mirror_case = {**c, 'dialect': mirror}
+        # Same semantics, different supported NO PAD collation names. Pin the
+        # spelling rather than consulting the map, so map mutations still fail.
+        if mirror_case.get('expect'):
+            mirror_case['expect'] = mirror_case['expect'].replace(
+                ' COLLATE utf8mb4_nopad_bin', ' COLLATE utf8mb4_0900_bin')
         if mirror_case['dialect'] != mirror:
             print(f"SUITE ERROR the mirrored case for {c['name']} is still "
                   f"{mirror_case['dialect']}, so nothing is being mirrored")

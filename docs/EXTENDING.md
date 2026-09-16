@@ -628,8 +628,11 @@ while all 801 language cases were green. So, for any change to either:
   evaluator would have produced for it — and "prefix" includes the whole
   pipeline: the full-pushdown probe is guarded like the prefix loop. A bare
   `BUCKET` breaks that (keys, not groups); `bucketRowsAreKeys` in each planner
-  is the list of such steps, and a new step whose SQL result differs in shape
-  from its SEL result belongs there. The MAP fall-through has its own list,
+  is the list of such steps, `joinRowsLackBinders` beside it is the other (a
+  `LINK`'s SQL row is its promoted fields, without the binders SEL's row
+  carries, until a `MAP`, a `SELECT_COLS` or a `BUCKET` projects it — finding
+  Y), and a new step whose SQL result differs in shape from its SEL result
+  belongs with them. The MAP fall-through has its own list,
   `FALLTHROUGH_DOWNSTREAM`: the steps that may follow a split MAP into the SQL
   because they keep its rows as they are. A new pipeline step is *not* in that
   list until you have shown the continuation still sees the MAP's input.
@@ -650,6 +653,18 @@ while all 801 language cases were green. So, for any change to either:
   whose IF arm never fired, reported the IF; the fuzzer compares positions,
   and so must any fold you add. A helper is the other way to move a position
   (see **Order**): inline only what is a literal, and at the read's position.
+- **Depth.** The evaluator is the depth authority (spec §6.4): a tree that
+  reaches the cap is evaluated as written, so every optimiser returns it as
+  written — `exceedsDepth` / `exceeds_depth` / `opt_exceeds_depth` /
+  `exceeds-depth-p` at the entry point, a bounded walk that counts as the
+  evaluator counts (root at 1, a child one deeper, an assignment's target
+  excluded). Folding a leaf at the boundary erased the `E_DEPTH` a chain of
+  201 additions raises in four hosts, and Lisp's optimiser raised it itself,
+  at its own count, on a branch the evaluator never visits (finding AF;
+  `lim.eval-depth-*` in `conformance/10-limits.selt`). An optimiser must
+  neither raise `E_DEPTH` nor make it disappear; not rewriting such a tree
+  loses nothing, because it either raises or keeps its deep part where the
+  evaluator never goes.
 
 - **Values.** A rewrite that moves a step is only sound when the moved step
   cannot see the difference, and "reads only pass-through fields" is not the
@@ -658,9 +673,41 @@ while all 801 language cases were green. So, for any change to either:
   `MAP`'s outputs. `readsRowOrKey` / `stepReadsKey` in each optimiser are
   the guards, next to the field-set check, and every rule that crosses a
   `MAP`, a `SELECT_COLS` or a sort uses them; a new rule that crosses one of
-  those must too. This is how five hosts agreed that `LIST(3, 1, 2) .>
+  those must too. And keys are part of the value (spec §7.3): `FILTER` keeps
+  its input's keys where `MAP`, `SELECT_COLS` and the sorts renumber, so a
+  `FILTER` moved in front of one of them carries the source's keys where the
+  program as written carried the step's — in the answer, and in a later
+  `_K`. `keysRenumberedBy` / `keys_renumbered_by` / `opt_keys_renumbered_by`
+  / `keys-renumbered-by-p` is the third guard: the swap is taken only when
+  the step after the `FILTER` renumbers again without reading `_K`; at the
+  end of a pipeline, or before another `FILTER`, it is not (finding #33;
+  `rel.map.then-filter-*`, `rel.sort.then-filter-keeps-the-sorted-keys`,
+  `rel.select-cols.then-filter-keeps-the-keys`). The SQL lane has no keys to
+  keep, but the continuation runs the same rewritten tree, so the planner's
+  optimiser is guarded the same way and a `MAP(…) .> FILTER(…)` tail is
+  rendered as a `WHERE` over the MAP's derived table. This is how five hosts agreed that `LIST(3, 1, 2) .>
   MAP(0 - _) .> SORT()` is `-1, -2, -3` while the unoptimised evaluator said
   `-3, -2, -1` — the fuzzer compares hosts, not lanes, so it never saw it.
+- **Binders.** A `LINK`'s binders are scoped to its predicate (spec §7.4);
+  after it the joined row carries them as keys, and `O["id"]` in a later step
+  is `E_UNDEF_VAR` as written. The join-filter pushdown therefore attributes
+  only a read *through the row* — `_["O"]["id"]` — to a side; a
+  binder-qualified read is left where it is, to fail. It used to push
+  `FILTER(O["id"] > 1)` into the `LINK`'s left source, where `O` is bound,
+  and answered rows for a program that raises (finding W2), while the same
+  pipeline through a helper never took the rewrite. The translators keep the
+  same scope: only `_` (and a step's own binder) after the join.
+- **Fuzz.** `tools/gen-programs.mjs` emits pipelines — `.>` chains of every
+  step, the sorts' forms, `_K` after a renumbering step, bare and projected
+  buckets, joins with and without named binders, helpers as sources — and
+  chains at the depth cap, since every cross-host divergence the 2026-09-15
+  review found lived in a shape the generator could not produce (finding
+  #31). With `--sql` the pipelines read the relations every host's `sqlfuzz`
+  runner binds (ORDERS, CUSTOMERS), and the runners print three lanes per
+  program: `translate`, `translate_statement` and `plan_hybrid`. A new step
+  or form belongs in the generator's `step()`; a new planner rule, in
+  `sql/mutations.json`, next to the `*-filter-swap-ignores-keys` and
+  `*-bucket-keys-are-rows` entries that keep the plan cases honest.
 - **Sources.** A step's input is a list after any step, but the *first* step
   reads the source, which may be a scalar: `FILTER(5, TRUE)` is `(5)`, and
   dropping the FILTER made it `5`. A rewrite that removes a first step must
@@ -688,8 +735,16 @@ three hosts accept, the `run()` cache — and nothing else.
 ## Running the checks
 
 ```
-tools/check.sh                 everything, in order
+tools/check.sh                 everything, side by side; the report in a fixed order
 ```
+
+The layers run concurrently under two bounds from `tools/impls.sh`: `SEL_JOBS`
+leaf commands at once (default half the hardware threads, rounded up) and
+`SEL_PHP_JOBS` PHP invocations among them (a quarter). Both are `flock` slots
+in one directory that every nested tool shares — a leaf takes a slot, a script
+that only queues leaves does not — so `SEL_JOBS=2 tools/check.sh` really is
+two processes, mutation runner included. A first Lisp step runs alone to warm
+ASDF's cache before the rest start.
 
 C++ has to be built first, or it is skipped with a note:
 

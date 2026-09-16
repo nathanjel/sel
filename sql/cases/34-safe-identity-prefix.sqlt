@@ -1,0 +1,111 @@
+### name: plan.identity-barrier.retains-safe-prefix.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> TAKE(2) .> MAP(RECORD("key", _["cat"] + 0)) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM `r` LIMIT 2
+===
+
+### name: plan.identity-barrier.numeric-dedupe.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("key", _["cat"] + 0)) .> DISTINCT()
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.identity-barrier.retains-safe-prefix.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> TAKE(2) .> MAP(RECORD("key", _["cat"] + 0)) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM `r` LIMIT 2
+===
+
+### name: plan.identity-barrier.numeric-dedupe.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("key", _["cat"] + 0)) .> DISTINCT()
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.identity-barrier.retains-safe-prefix.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> TAKE(2) .> MAP(RECORD("key", _["cat"] + 0)) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM "r" LIMIT 2
+===
+
+### name: plan.identity-barrier.numeric-dedupe.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("key", _["cat"] + 0)) .> DISTINCT()
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.identity-barrier.retains-safe-prefix.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> TAKE(2) .> MAP(RECORD("key", _["cat"] + 0)) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM "r" LIMIT 2
+===
+
+### name: plan.identity-barrier.numeric-dedupe.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("key", _["cat"] + 0)) .> DISTINCT()
+--- plan
+pure_memory
+--- tables
+r
+===

@@ -322,9 +322,32 @@ only as the identical expression."
                    (fragment-params w) (fragment-param-kinds w) (fragment-caveats w)
                    t nil nil))))
 
-(defun group-key (tr src gb)
+(defun identity-group-key (tr n f)
+  "Numeric equality is not SEL key identity. Preserve stored/literal numeric
+text, but do not pretend SQL arithmetic preserved the evaluator's scale."
+  (when (eq (fragment-kind f) :unknown)
+    (refuse "E_SQL_SHAPE" "group keys require proven scalar identity" (snode-pos n)))
+  (if (eq (fragment-kind f) :num)
+      (progn
+        (unless (member (snode-kind n) '(:var :index :num))
+          (refuse "E_SQL_SHAPE" "computed numeric group keys do not preserve SEL identity" (snode-pos n)))
+        (let* ((numeric (%fragment (fragment-parts f) :num (translator-dialect tr)
+                                  (fragment-params f) (fragment-param-kinds f) (fragment-caveats f)))
+               (w (emit-text-operand (translator-dialect tr) numeric)))
+          (%fragment (fragment-parts w) :text (translator-dialect tr)
+                     (fragment-params w) (fragment-param-kinds w) (fragment-caveats w)
+                     t nil nil)))
+      (collated-key tr f)))
+
+(defun group-key (tr src gb &optional projected)
   "GB is a group-by entry (alias binder node pos)."
-  (collated-key tr (with-row tr src (second gb) (lambda () (walk-node tr (third gb))))))
+  (let* ((key (with-row tr src (second gb) (lambda () (walk-node tr (third gb)))))
+         (identity (identity-group-key tr (third gb) key)))
+    (if (and projected (eq (fragment-kind key) :num))
+        (%fragment (append (list "MIN(") (fragment-parts key) (list ")"))
+                   :num (translator-dialect tr) (fragment-params key)
+                   (fragment-param-kinds key) (fragment-caveats key))
+        identity)))
 
 (defun from-binder (tr b n)
   "The binder half of a bare read."
@@ -338,7 +361,7 @@ only as the identical expression."
             (push (frame-set nil (second group) row) (translator-frames tr))
             (let* ((key (unwind-protect (walk-node tr (third group))
                           (pop (translator-frames tr))))
-                   (collated (collated-key tr key)))
+                   (collated (identity-group-key tr (third group) key)))
               ;; In a HAVING, MariaDB and MySQL resolve a column only against
               ;; the GROUP BY columns and the select list, not against an
               ;; equal expression: `HAVING CAST(cat ...) COLLATE ...` is
@@ -346,12 +369,21 @@ only as the identical expression."
               ;; expression. The key is constant within its group, so MIN of
               ;; it IS the key, and an aggregate is what every server lets a
               ;; HAVING name.
-              (if (and (translator-in-having tr) (not (eq collated key)))
+              ;; A nested _K projection also needs an aggregate: MySQL's
+              ;; ONLY_FULL_GROUP_BY cannot infer dependence through LEN(_K).
+              ;; Direct key projections use GROUP-KEY and stay unchanged.
+              (cond
+                ((eq (fragment-kind key) :num)
+                 ;; Identity is textual; arithmetic/order over _K remain numeric.
+                 (%fragment (append (list "MIN(") (fragment-parts key) (list ")"))
+                            :num (translator-dialect tr) (fragment-params key)
+                            (fragment-param-kinds key) (fragment-caveats key)))
+                ((not (eq collated key))
                   (%fragment (append (list "MIN(") (fragment-parts collated) (list ")"))
                              :text (translator-dialect tr)
                              (fragment-params collated) (fragment-param-kinds collated)
-                             (fragment-caveats collated) t nil nil)
-                  collated))))
+                             (fragment-caveats collated) t nil nil))
+                (t collated)))))
     (:column (column-ref tr (binder-payload b)))
     (:group
      (refuse "E_SQL_SHAPE"
@@ -431,7 +463,7 @@ no first row without an ORDER BY that nothing here can supply" name key)
             (uc-key (sel::ascii-upcase key)))
        (let* ((fields (getf (binder-payload b) :fields))
               (cell (assoc uc-key fields :test #'equal)))
-         (when (equal name "_")
+         (when (binder-joined b)
            (when (and cell plan (relational-plan-joins plan))
              (dolist (j (relational-plan-joins plan))
                (let* ((j-fields (getf (join-plan-source-relation j) :fields))
@@ -1430,32 +1462,25 @@ resolves to the key -- which is what the evaluator does."
 and a subquery reusing its own alias shadows the outer row rather than comparing ~
 against it; the correlation names the alias, so it cannot be renamed here" alias))))))
     (let ((row (binder-row (source-relation src)))
-          (plan (translator-statement-plan tr))
           (frame '()))
+      ;; The row of a joined statement: a field read through it resolves across
+      ;; the sides (ambiguous when both have it), whatever the binder is called.
+      ;; Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
+      ;; after a LINK resolve to the left side where `run()` raises E_NO_KEY.
+      (let ((plan (translator-statement-plan tr)))
+        (when (and plan (relational-plan-joins plan))
+          (setf (binder-joined row) t)))
       (setf frame (frame-set frame binder-name row))
-      ;; A joined statement has one SQL row but several SEL row binders; a
-      ;; statement without joins binds the name given and nothing else, as
-      ;; the evaluator does -- `MAP(g, _["x"])` leaves `_` undefined there
-      ;; (review 2026-09-15 finding J; this host bound `_` unconditionally).
-      (when (and plan (relational-plan-joins plan))
-        (setf frame (frame-set frame "_" row))
-        (setf frame (frame-set frame "_1" row))
-        (when (relational-plan-source-alias plan)
-          (setf frame (frame-set frame (relational-plan-source-alias plan) row)))
-        (when (and (relational-plan-source-subquery plan)
-                   (relational-plan-source-alias (relational-plan-source-subquery plan)))
-          (setf frame (frame-set frame (relational-plan-source-alias (relational-plan-source-subquery plan)) row)))
-        (let ((idx 2))
-          (dolist (j (relational-plan-joins plan))
-            (let ((j-row (binder-row (join-plan-source-relation j))))
-              (setf frame (frame-set frame (format nil "_~d" idx) j-row))
-              (incf idx)
-              (when (join-plan-right-binder j)
-                (setf frame (frame-set frame (join-plan-right-binder j) j-row)))
-              (when (join-plan-source-alias j)
-                (setf frame (frame-set frame (join-plan-source-alias j) j-row)))
-              (when (join-plan-left-binder j)
-                (setf frame (frame-set frame (join-plan-left-binder j) row)))))))
+      ;; The statement binds the name given and nothing else, as the
+      ;; evaluator does -- `MAP(g, _["x"])` leaves `_` undefined (review
+      ;; 2026-09-15 finding J; this host bound `_` unconditionally). After a
+      ;; LINK only the row is in scope (spec §7.4): the binders are scoped to
+      ;; its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
+      ;; a later step -- the joined row carries them as keys, not as names.
+      ;; This frame used to bind `_`, `_1`, `_2`, the relations' names and
+      ;; aliases and both binders for every later step of a joined statement,
+      ;; so `FILTER(C["id"] > 1)` translated where `run()` fails (review
+      ;; 2026-09-15 finding W2).
       (setf frame (frame-set frame "_K"
                              (binder-none "a row of a relation has no key: SQL rows ~
 are unordered and unkeyed unless the schema says otherwise, and guessing which ~
@@ -1898,6 +1923,66 @@ SQL counterpart" (snode-pos e)))
 
 (defvar *subquery-counter* 0)
 
+(defun joined-row-fields (plan)
+  "The fields of a joined row that SQL can carry (spec §7.4 \"Joined rows\"):
+the promoted ones -- a side's fields whose names, compared
+ASCII-case-insensitively, do not occur on the other side -- accumulated join
+by join as the evaluator promotes them. The binders (`_1`, `_2`, the
+relations' names) are nested records with no column, and a name both sides
+carry is E_NO_KEY in SEL; neither is projected, so a read of either over the
+derived table is refused where `run()` raises. `SELECT o.*` was the row
+before: the left table's columns, which a continuation read where SEL has no
+key, and which made a derived table over a join name columns it did not have
+(finding Y, lanes). Each entry is (NAME SPEC OWNER): the field's upcased name,
+its spec plist and the relation it belongs to."
+  (flet ((entries (rel)
+           (mapcar (lambda (f) (list (car f) (cdr f) rel)) (getf rel :fields))))
+    (let ((acc (entries (relational-plan-source-relation plan))))
+      (dolist (j (relational-plan-joins plan) acc)
+        (let* ((right (entries (join-plan-source-relation j)))
+               (left-names (mapcar (lambda (f) (sel::ascii-upcase (first f))) acc))
+               (right-names (mapcar (lambda (f) (sel::ascii-upcase (first f))) right)))
+          (setf acc (append
+                     (remove-if (lambda (f) (member (sel::ascii-upcase (first f)) right-names
+                                                    :test #'equal))
+                                acc)
+                     (remove-if (lambda (f) (member (sel::ascii-upcase (first f)) left-names
+                                                    :test #'equal))
+                                right))))))))
+
+(defun joined-relation-alias (plan rel)
+  "The alias REL renders under in PLAN's FROM clause: the plan's own for its
+source, a join's own for the relation it joins, and the relation's declared
+one otherwise (the JS host's relationTableAlias, for the promoted fields)."
+  (flet ((own (alias) (and (stringp alias) (plusp (length alias)) alias)))
+    (cond ((eq rel (relational-plan-source-relation plan))
+           (or (own (relational-plan-source-alias plan)) (relation-alias rel)))
+          (t (let ((j (find rel (relational-plan-joins plan) :key #'join-plan-source-relation)))
+               (if j
+                   (or (own (join-plan-source-alias j)) (relation-alias rel))
+                   (relation-alias rel)))))))
+
+(defun output-field-type (plan name)
+  "Preserve only proved direct column types, not inferred SQL expression types."
+  (let ((source-name name))
+    (when (relational-plan-projections plan)
+      (let* ((p (find name (relational-plan-projections plan) :key #'first :test #'equal))
+             (n (third p)))
+        (unless (and n (not (clist-p n)) (eq (snode-kind n) :index)
+                     (eq (snode-kind (sel::node-l n)) :var)
+                     (equal (sel::node-s (sel::node-l n)) (second p))
+                     (eq (snode-kind (sel::node-r n)) :text))
+          (return-from output-field-type :unknown))
+        (setf source-name (sel::node-s (sel::node-r n)))))
+    (let ((matches '()))
+      (dolist (rel (cons (relational-plan-source-relation plan)
+                        (mapcar #'join-plan-source-relation (relational-plan-joins plan))))
+        (let ((f (cdr (assoc (sel::ascii-upcase source-name) (getf rel :fields) :test #'equal))))
+          (when f (push f matches))))
+      (if (and (= (length matches) 1) (not (getf (first matches) :guard))
+               (not (getf (first matches) :raw)))
+          (or (getf (first matches) :type) :unknown) :unknown))))
+
 (defun plan-output-fields (plan sub-alias)
   (cond
     ((relational-plan-projections plan)
@@ -1913,30 +1998,29 @@ SQL counterpart" (snode-pos e)))
                                 (sel::node-s (sel::node-r (third p))))
                               "col"))
                 (uc (sel::ascii-upcase col-name))
-                (spec (list :column col-name :table sub-alias :type :unknown)))
+                (spec (list :column col-name :table sub-alias :type (output-field-type plan col-name))))
            (push (cons uc spec) fields)))
        (nreverse fields)))
     ((relational-plan-select-cols plan)
      (mapcar (lambda (col)
-               (cons (sel::ascii-upcase col) (list :column col :table sub-alias :type :unknown)))
+               (cons (sel::ascii-upcase col) (list :column col :table sub-alias :type (output-field-type plan col))))
              (relational-plan-select-cols plan)))
+    ((relational-plan-joins plan)
+     ;; A derived table over a join carries the joined row's promoted fields
+     ;; and nothing else (spec §7.4; see JOINED-ROW-FIELDS), retargeted to
+     ;; sub-alias, preserving each direct column's declared kind.
+     (mapcar (lambda (f)
+               (cons (first f) (list :column (or (getf (second f) :column) (first f))
+                                     :table sub-alias :type (output-field-type plan (first f)))))
+             (joined-row-fields plan)))
     (t
-     ;; All fields from source and joins, retargeted to sub-alias. Their kind
-     ;; is UNKNOWN, as in the other four hosts: a derived table's column is
-     ;; read through the guard, whatever the source column was declared as
-     ;; (review 2026-09-15 finding W1; this host alone kept the kind and
-     ;; rendered a different WHERE).
+     ;; All fields pass through unchanged. Keep their declared kinds so later
+     ;; grouping can preserve text collation and numeric representation.
      (let ((fields '()))
        (dolist (f (getf (relational-plan-source-relation plan) :fields))
          (let* ((col (or (getf (cdr f) :column) (car f)))
-                (spec (list :column col :table sub-alias :type :unknown)))
+                (spec (list :column col :table sub-alias :type (output-field-type plan (car f)))))
            (push (cons (car f) spec) fields)))
-       (dolist (j (relational-plan-joins plan))
-         (dolist (f (getf (join-plan-source-relation j) :fields))
-           (let* ((col (or (getf (cdr f) :column) (car f)))
-                  (spec (list :column col :table sub-alias :type :unknown)))
-             (unless (assoc (car f) fields :test #'equal)
-               (push (cons (car f) spec) fields)))))
        (nreverse fields)))))
 
 (defun wrap-plan-as-derived-table (plan &optional custom-alias)
@@ -1997,7 +2081,72 @@ can say about a bucket on its own."
         (setf (relational-plan-projections plan) (nreverse projs))))
   (setf (relational-plan-select-cols plan) nil))
 
+(defun identity-preserving-projection-p (n &optional (depth 0))
+  ;; A proof whitelist, not a numeric-kind guess. COUNT/LEN/BLEN yield
+  ;; canonical integers; arithmetic can change scale on the SQL side.
+  (and n (not (clist-p n)) (< depth 180)
+       (or (member (snode-kind n) '(:var :num :text :bool :null))
+           (and (eq (snode-kind n) :index)
+                (identity-preserving-projection-p (sel::node-l n) (1+ depth))
+                (identity-preserving-projection-p (sel::node-r n) (1+ depth)))
+           (and (eq (snode-kind n) :call)
+                (or (member (sel::node-s n) '("COUNT" "LEN" "BLEN") :test #'equal)
+                    (and (equal (sel::node-s n) "RECORD")
+                         (loop for tail on (sel::node-items n) by #'cddr
+                               always (and (second tail)
+                                           (identity-preserving-projection-p (second tail) (1+ depth))))))))))
+
+(defun identity-input-fields (n &optional (depth 0))
+  ;; T means the whole row, NIL no input identity, a list named row fields.
+  (cond
+    ((or (null n) (clist-p n) (>= depth 180)) t)
+    ((member (snode-kind n) '(:num :text :bool :null)) nil)
+    ((eq (snode-kind n) :var) (not (equal (sel::node-s n) "_K")))
+    ((eq (snode-kind n) :index)
+     (if (not (eq (snode-kind (sel::node-r n)) :text)) t
+         (if (eq (snode-kind (sel::node-l n)) :var) (list (sel::node-s (sel::node-r n)))
+             (identity-input-fields (sel::node-l n) (1+ depth)))))
+    ((and (eq (snode-kind n) :call) (member (sel::node-s n) '("COUNT" "LEN" "BLEN") :test #'equal)) nil)
+    ((or (eq (snode-kind n) :list)
+         (and (eq (snode-kind n) :call) (member (sel::node-s n) '("LIST" "RECORD") :test #'equal)))
+     (let ((out nil) (items (sel::node-items n)))
+       (when (equal (sel::node-s n) "RECORD") (setf items (loop for tail on items by #'cddr collect (second tail))))
+       (dolist (item items out)
+         (let ((fields (identity-input-fields item (1+ depth))))
+           (when (eq fields t) (return-from identity-input-fields t))
+           (setf out (union out fields :test #'equal))))))
+    (t t)))
+
+(defun identity-loss-before-grouping-p (ast &optional (needed nil))
+  (let ((n ast))
+    (loop while (and n (not (clist-p n)) (eq (snode-kind n) :call) (sel::node-items n)) do
+      (let ((name (sel::node-s n)) (args (sel::node-items n)))
+        (when (and needed (or (equal name "MAP") (and (equal name "BUCKET") (> (length args) 2))))
+          (let* ((body (car (last args))) (values (list body)))
+            (when (and (listp needed) (eq (snode-kind body) :call) (equal (sel::node-s body) "RECORD"))
+              (let ((found nil))
+                (setf values nil)
+                (loop for (k v) on (sel::node-items body) by #'cddr do
+                  (when (and (eq (snode-kind k) :text) (member (sel::node-s k) needed :test #'equal))
+                    (push (sel::node-s k) found) (push v values)))
+                (unless (subsetp needed found :test #'equal) (return-from identity-loss-before-grouping-p t))))
+            (unless (every #'identity-preserving-projection-p values) (return-from identity-loss-before-grouping-p t))
+            (setf needed nil)
+            (dolist (v values)
+              (let ((fields (identity-input-fields v)))
+                (setf needed (if (or (eq fields t) (eq needed t)) t (union needed fields :test #'equal)))))))
+        (when (equal name "BUCKET") (setf needed (identity-input-fields (nth (if (= (length args) 4) 2 1) args))))
+        (when (member name '("DISTINCT" "DEDUPE") :test #'equal) (setf needed t))
+        (when (and (listp needed) needed (member name '("LINK" "LINK_LEFT") :test #'equal)
+                   (eq (snode-kind (second args)) :var))
+          (let ((right (if (= (length args) 5) (sel::node-s (fourth args)) (sel::node-s (second args)))))
+            (setf needed (remove right needed :key #'sel::ascii-upcase :test #'equal))))
+        (setf n (first args))))
+    nil))
+
 (defun analyze-pipeline (tr ast)
+  (when (identity-loss-before-grouping-p ast)
+    (refuse "E_SQL_SHAPE" "grouping depends on a computed projection without identity preservation" (snode-pos ast)))
   (let ((steps '())
         (curr ast))
     (loop while (and curr
@@ -2278,6 +2427,11 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                  (when (or (relational-plan-limit plan)
                            (relational-plan-offset plan))
                    (setf plan (wrap-plan-as-derived-table plan)))
+                 ;; Field bindings describe accessible reads, not a closed
+                 ;; schema for r.*. Never deduplicate an untyped whole SQL row.
+                 (unless (or (relational-plan-projections plan)
+                             (relational-plan-select-cols plan))
+                   (refuse "E_SQL_SHAPE" "DISTINCT requires an explicit typed projection" pos))
                  (setf (relational-plan-distinct plan) t))
 
                 ((equal sname "TAKE")
@@ -2293,8 +2447,20 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                  (unless (= (length args) 2)
                    (refuse "E_ARITY" "DROP takes 2 arguments" pos))
                  (let ((off (eval-int-param tr (second args) "DROP")))
-                   (setf (relational-plan-offset plan)
-                         (+ (or (relational-plan-offset plan) 0) off))))
+                   ;; DROP consumes the bounded slice, not the original source.
+                   ;; Keep sums within the exact integer range shared by hosts;
+                   ;; a derived boundary preserves larger offsets without addition.
+                   (let ((skipped (if (relational-plan-limit plan)
+                                      (min off (relational-plan-limit plan)) off)))
+                     (if (> (or (relational-plan-offset plan) 0)
+                            (- 9007199254740991 skipped))
+                         (setf plan (wrap-plan-as-derived-table plan)
+                               (relational-plan-offset plan) off)
+                         (progn
+                           (when (relational-plan-limit plan)
+                             (decf (relational-plan-limit plan) skipped))
+                           (setf (relational-plan-offset plan)
+                                 (+ (or (relational-plan-offset plan) 0) skipped)))))))
 
                 ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
                  ;; A sort after a LIMIT or OFFSET sorts the rows that survived
@@ -2320,6 +2486,18 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
           plan)))))
 
 (defun compile-statement (tr plan)
+  ;; SQL aliases are not RECORD insertions. Refuse instead of deleting an
+  ;; overwritten expression (which can raise), including composite group keys.
+  (dolist (entries (list (relational-plan-projections plan)
+                        (relational-plan-group-by plan)))
+    (let ((seen (make-hash-table :test #'equal)))
+      (dolist (entry entries)
+        (when (first entry)
+          (let ((key (sel::ascii-upcase (first entry))))
+            (when (gethash key seen)
+              (refuse "E_SQL_SHAPE" "duplicate or case-colliding RECORD fields require local evaluation"
+                      (snode-pos (third entry))))
+            (setf (gethash key seen) t))))))
   (let ((prev-plan (translator-statement-plan tr)))
     (setf (translator-statement-plan tr) plan)
     (unwind-protect
@@ -2342,10 +2520,14 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                           (binder (second proj))
                           (node (third proj))
                           (p-frag (cond
-                                    ((fourth proj) (group-key tr src (fourth proj)))
+                                    ((fourth proj) (group-key tr src (fourth proj) t))
                                     ((relational-plan-group-by plan)
                                      (with-group tr src binder (lambda () (walk-node tr node))))
                                     (t (with-row tr src binder (lambda () (walk-node tr node)))))))
+                     (when (relational-plan-distinct plan)
+                       (when (member (fragment-kind p-frag) '(:unknown :num))
+                         (refuse "E_SQL_SHAPE" "DISTINCT requires proven structural output identity" (snode-pos node)))
+                       (setf p-frag (identity-group-key tr node p-frag)))
                      (dolist (p (fragment-parts p-frag))
                        (push p parts))
                      (when alias
@@ -2369,7 +2551,36 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                                         found)))
                           (table (or (getf f-spec :table) (relational-plan-source-alias plan)))
                           (column (or (getf f-spec :column) col)))
-                     (push (emit-column (translator-dialect tr) table column) parts)))))
+                     (let ((sql (emit-column (translator-dialect tr) table column)))
+                       (when (and (relational-plan-distinct plan)
+                                  (or (null (getf f-spec :type)) (member (getf f-spec :type) '(:unknown :num))))
+                         (refuse "E_SQL_SHAPE" "DISTINCT requires known output kinds" nil))
+                       (if (and (relational-plan-distinct plan) (member (getf f-spec :type) '(:text :num)))
+                           (progn
+                             (dolist (p (fragment-parts (emit-text-operand (translator-dialect tr)
+                                           (%fragment (list sql) (getf f-spec :type) (translator-dialect tr)))))
+                               (push p parts))
+                             (push (format nil " AS ~a" (emit-ident (translator-dialect tr) column)) parts))
+                           (push sql parts)))))))
+
+              ((relational-plan-joins plan)
+               ;; A joined row is its promoted fields (spec §7.4); see
+               ;; JOINED-ROW-FIELDS.
+               (let ((fields (joined-row-fields plan)))
+                 (when (null fields)
+                   (let ((last (car (last (relational-plan-joins plan)))))
+                     (refuse "E_SQL_SHAPE"
+                             (format nil "the joined row has no field SQL can carry: every ~
+field is on both sides, and the binders are nested records")
+                             (join-plan-pos last))))
+                 (let ((first t))
+                   (dolist (f fields)
+                     (unless first (push ", " parts))
+                     (setf first nil)
+                     (push (emit-column (translator-dialect tr)
+                                        (joined-relation-alias plan (third f))
+                                        (or (getf (second f) :column) (first f)))
+                           parts)))))
 
               (t
                (if (and (relational-plan-source-alias plan)

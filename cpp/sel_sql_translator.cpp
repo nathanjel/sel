@@ -483,8 +483,29 @@ Fragment Translator::index(const SNode& n) {
 // and 'a'). The result is marked exact so a comparison over it does not wrap
 // it a second time -- MySQL's only_full_group_by accepts a projected or
 // compared key only as the identical expression.
-Fragment Translator::group_key(const Source& src, const RelationalGroup& gb) {
-  return collated_key(with_row(src, gb.binder, [&]() { return node(gb.node); }));
+Fragment Translator::group_key(const Source& src, const RelationalGroup& gb, bool projected) {
+  const Fragment key = with_row(src, gb.binder, [&]() { return node(gb.node); });
+  const Fragment identity = identity_group_key(gb.node, key);
+  if (projected && key.kind() == SqlKind::Num) {
+    std::vector<Fragment::Part> parts{{false, "MIN(", 0}};
+    parts.insert(parts.end(), key.parts().begin(), key.parts().end());
+    parts.push_back({false, ")", 0});
+    return Fragment(parts, SqlKind::Num, dialect_, key.params(), key.param_kinds(), key.caveats());
+  }
+  return identity;
+}
+
+Fragment Translator::identity_group_key(const SNodePtr& n, const Fragment& f) const {
+  if (f.kind() == SqlKind::Unknown) refuse("E_SQL_SHAPE", "group keys require proven scalar identity", n->pos());
+  if (f.kind() == SqlKind::Num) {
+    if (n->t() != SNode::T::Var && n->t() != SNode::T::Index && n->t() != SNode::T::Num) {
+      refuse("E_SQL_SHAPE", "computed numeric group keys do not preserve SEL identity", n->pos());
+    }
+    const Fragment numeric(f.parts(), SqlKind::Num, dialect_, f.params(), f.param_kinds(), f.caveats());
+    const Fragment w = emit_.text_operand(numeric);
+    return Fragment(w.parts(), SqlKind::Text, dialect_, w.params(), w.param_kinds(), w.caveats(), true, false, false);
+  }
+  return collated_key(f);
 }
 
 Fragment Translator::collated_key(const Fragment& f) const {
@@ -516,15 +537,22 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
         throw;
       }
       frames_.pop_back();
-      const bool wrapped = key.kind() == SqlKind::Text && !key.exact();
-      Fragment collated = collated_key(key);
+      const bool wrapped = key.kind() == SqlKind::Num || (key.kind() == SqlKind::Text && !key.exact());
+      Fragment collated = identity_group_key(b.as_node(), key);
+      if (key.kind() == SqlKind::Num) {
+        std::vector<Fragment::Part> parts{{false, "MIN(", 0}};
+        parts.insert(parts.end(), key.parts().begin(), key.parts().end());
+        parts.push_back({false, ")", 0});
+        return Fragment(parts, SqlKind::Num, dialect_, key.params(), key.param_kinds(), key.caveats());
+      }
       // In a HAVING, MariaDB and MySQL resolve a column only against the
       // GROUP BY columns and the select list, not against an equal
       // expression: `HAVING CAST(cat ...) COLLATE ...` is "unknown column
       // cat" once the grouping is the collated expression. The key is
       // constant within its group, so MIN of it IS the key, and an aggregate
       // is what every server lets a HAVING name.
-      if (in_having_ && wrapped) {
+      // Nested _K projections need the same aggregate under ONLY_FULL_GROUP_BY.
+      if (wrapped) {
         std::vector<Fragment::Part> parts;
         parts.push_back(Fragment::Part{false, "MIN(", 0});
         for (const auto& p : collated.parts()) parts.push_back(p);
@@ -635,35 +663,34 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
     }
     const RelationSpec& rel = b.as_row();
     std::string field = ascii_upper(key);
+    // A joined row has a field only where exactly one side has it (spec §7.4
+    // "Joined rows"): a name both sides carry is E_NO_KEY in SEL, so it is
+    // refused here BEFORE the left relation's own field is consulted -- the
+    // left side's column was returned first, and `_["name"]` after a join
+    // translated where run() raises (review 2026-09-15 finding W2, d1). As in
+    // the other hosts, the lookup across the sides is for the row binder
+    // with_row marks as joined -- whatever it is called -- and never for the
+    // LINK predicate's own binders (with_join_binders), which are one side each.
+    if (b.joined() && statement_plan_ && !statement_plan_->joins.empty()) {
+      std::vector<std::pair<const RelationSpec*, const ColumnSpec*>> matches;
+      if (const ColumnSpec* c = statement_plan_->source_relation.field(field)) {
+        matches.emplace_back(&statement_plan_->source_relation, c);
+      }
+      for (const RelationalJoin& join : statement_plan_->joins) {
+        if (const ColumnSpec* c = join.source_relation.field(field)) {
+          matches.emplace_back(&join.source_relation, c);
+        }
+      }
+      if (matches.size() > 1) {
+        refuse("E_SQL_SHAPE", "field \"" + key + "\" is ambiguous across joined relations",
+               n.pos());
+      }
+      if (matches.size() == 1) return relation_column(*matches[0].first, *matches[0].second);
+    }
     // A derived table's fields carry the alias the projection gave them
     // (ensure_derived), so a read through any spelling of the name renders
     // that column, as in the other hosts -- not the spelling itself.
     if (const ColumnSpec* f = rel.field(field)) return relation_column(rel, *f);
-    // Joined SEL rows promote unambiguous fields from the other relations.
-    // Resolve that same shape here instead of refusing a field that is absent
-    // from the left relation but present on exactly one joined relation.
-    const auto same_relation = [](const RelationSpec& left, const RelationSpec& right) {
-      return left.from == right.from && left.alias == right.alias &&
-             left.from_is_raw == right.from_is_raw;
-    };
-    if (statement_plan_ && same_relation(rel, statement_plan_->source_relation)) {
-      const ColumnSpec* match = nullptr;
-      const RelationSpec* owner = nullptr;
-      for (const RelationalJoin& join : statement_plan_->joins) {
-        if (const ColumnSpec* candidate = join.source_relation.field(field)) {
-          if (match) {
-            refuse("E_SQL_SHAPE",
-                   name + "[\"" + key +
-                       "\"] is ambiguous across joined relations; qualify the "
-                       "field with its table name",
-                   n.pos());
-          }
-          match = candidate;
-          owner = &join.source_relation;
-        }
-      }
-      if (match && owner) return relation_column(*owner, *match);
-    }
     std::vector<std::string> known;
     for (const auto& [k, spec] : rel.fields) {
       (void)spec;
@@ -2012,7 +2039,12 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
       }
     }
   }
-  const Binder row = Binder::row(src.relation);
+  Binder row = Binder::row(src.relation);
+  // The row of a joined statement: a field read through it resolves across
+  // the sides (ambiguous when both have it), whatever the binder is called.
+  // Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
+  // after a LINK resolve to the left side where `run()` raises E_NO_KEY.
+  if (statement_plan_ && !statement_plan_->joins.empty()) row.set_joined(true);
   std::vector<std::pair<std::string, Binder>> frame;
   frame_set(frame, binder_name, row);
   frame_set(frame, "_K",
@@ -2021,27 +2053,12 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
                          "otherwise, and guessing which column is the key is "
                          "not something this layer does"));
   for (const Filter& f : src.filters) frame_set(frame, f.binder, row);
-
-  // A joined statement has one SQL row but several SEL row binders.  Keep all
-  // of them in the same frame so projections, filters, grouping and ordering
-  // can use either the ordinary `_`/`_1` spelling or the explicit join/table
-  // aliases.  The innermost frame still wins if an aggregate introduces a
-  // binder with one of these names.
-  if (statement_plan_ && !statement_plan_->joins.empty()) {
-    frame_set(frame, "_", row);
-    frame_set(frame, "_1", row);
-    frame_set(frame, statement_plan_->source_name, row);
-    if (statement_plan_->source_alias) frame_set(frame, *statement_plan_->source_alias, row);
-    for (std::size_t i = 0; i < statement_plan_->joins.size(); ++i) {
-      const RelationalJoin& join = statement_plan_->joins[i];
-      const Binder right = Binder::row(std::make_shared<RelationSpec>(join.source_relation));
-      frame_set(frame, "_" + std::to_string(i + 2), right);
-      frame_set(frame, join.right_binder, right);
-      frame_set(frame, join.source_name, right);
-      if (join.source_alias) frame_set(frame, *join.source_alias, right);
-      frame_set(frame, join.left_binder, row);
-    }
-  }
+  // After a LINK only the row is in scope (spec §7.4): the binders are scoped
+  // to its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
+  // a later step -- the joined row carries them as keys, not as names. This
+  // frame used to bind `_1`, `_2`, the relations' names and both binders of
+  // every join for every later step, so `FILTER(C["id"] > 1)` translated
+  // where `run()` fails (review 2026-09-15 finding W2).
 
   frames_.push_back(std::move(frame));
   struct Pop {
@@ -2364,6 +2381,50 @@ bool Translator::plan_has_rows_above(const RelationalPlan& plan) const {
          plan.offset.has_value() || !plan.order_by.empty();
 }
 
+// The fields of a joined row that SQL can carry (spec §7.4 "Joined rows"):
+// the promoted ones -- a side's fields whose names, compared
+// ASCII-case-insensitively, do not occur on the other side -- accumulated
+// join by join as the evaluator promotes them. The binders (`_1`, `_2`, the
+// relations' names) are nested records with no column, and a name both
+// sides carry is E_NO_KEY in SEL; neither is projected, so a read of either
+// over the derived table is refused where `run()` raises. `SELECT o.*` was
+// the row before: the left table's columns, which a continuation read where
+// SEL has no key, and which made a derived table over a join name columns
+// it did not have (finding Y, lanes).
+struct JoinedRowField {
+  std::string name;          // ASCII-upper, as the relation keys it
+  const ColumnSpec* spec;
+  const RelationSpec* owner;
+};
+
+std::vector<JoinedRowField> joined_row_fields(const RelationalPlan& plan) {
+  const auto entries = [](const RelationSpec& rel) {
+    std::vector<JoinedRowField> out;
+    for (const auto& [name, spec] : rel.fields) out.push_back({name, &spec, &rel});
+    return out;
+  };
+  const auto names_of = [](const std::vector<JoinedRowField>& fields) {
+    std::set<std::string> out;
+    for (const JoinedRowField& f : fields) out.insert(ascii_upper(f.name));
+    return out;
+  };
+  std::vector<JoinedRowField> acc = entries(plan.source_relation);
+  for (const RelationalJoin& join : plan.joins) {
+    const std::vector<JoinedRowField> right = entries(join.source_relation);
+    const std::set<std::string> left_names = names_of(acc);
+    const std::set<std::string> right_names = names_of(right);
+    std::vector<JoinedRowField> next;
+    for (const JoinedRowField& f : acc) {
+      if (!right_names.count(ascii_upper(f.name))) next.push_back(f);
+    }
+    for (const JoinedRowField& f : right) {
+      if (!left_names.count(ascii_upper(f.name))) next.push_back(f);
+    }
+    acc = std::move(next);
+  }
+  return acc;
+}
+
 std::vector<std::string> Translator::output_field_names(const RelationalPlan& plan) const {
   std::vector<std::string> names;
   if (plan.projections) {
@@ -2380,16 +2441,12 @@ std::vector<std::string> Translator::output_field_names(const RelationalPlan& pl
     }
   } else if (plan.select_cols) {
     names = *plan.select_cols;
+  } else if (!plan.joins.empty()) {
+    for (const JoinedRowField& f : joined_row_fields(plan)) names.push_back(f.name);
   } else {
     for (const auto& [name, ignored] : plan.source_relation.fields) {
       (void)ignored;
       names.push_back(name);
-    }
-    for (const RelationalJoin& join : plan.joins) {
-      for (const auto& [name, ignored] : join.source_relation.fields) {
-        (void)ignored;
-        names.push_back(name);
-      }
     }
   }
   std::vector<std::string> unique;
@@ -2399,6 +2456,28 @@ std::vector<std::string> Translator::output_field_names(const RelationalPlan& pl
     if (seen.insert(upper).second) unique.push_back(name);
   }
   return unique;
+}
+
+SqlKind Translator::output_field_type(const RelationalPlan& plan, std::string name) const {
+  // Computed projections remain UNKNOWN; only direct reads retain a type.
+  if (plan.projections) {
+    const RelationalProjection* projection = nullptr;
+    for (const auto& p : *plan.projections) {
+      if (p.alias && *p.alias == name) { projection = &p; break; }
+    }
+    const SNodePtr n = projection ? projection->node : nullptr;
+    if (!n || n->t() != SNode::T::Index || n->l()->t() != SNode::T::Var ||
+        n->l()->s() != projection->binder || n->r()->t() != SNode::T::Text) return SqlKind::Unknown;
+    name = n->r()->s();
+  }
+  const ColumnSpec* match = plan.source_relation.field(ascii_upper(name));
+  for (const auto& join : plan.joins) {
+    if (const auto* field = join.source_relation.field(ascii_upper(name))) {
+      if (match) return SqlKind::Unknown;
+      match = field;
+    }
+  }
+  return match && !match->guard && !match->is_raw ? match->type : SqlKind::Unknown;
 }
 
 RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
@@ -2431,7 +2510,7 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
     ColumnSpec field;
     field.column = source_field ? source_field->column : name;
     field.table = alias;
-    field.type = SqlKind::Unknown;
+    field.type = output_field_type(subquery, name);
     derived.source_relation.fields.emplace_back(ascii_upper(name), std::move(field));
   }
   return derived;
@@ -2485,6 +2564,9 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
 }
 
 std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) {
+  if (identity_loss_before_grouping(ast)) {
+    refuse("E_SQL_SHAPE", "grouping depends on a computed projection without identity preservation", ast->pos());
+  }
   std::vector<SNodePtr> steps;
   SNodePtr curr = ast;
 
@@ -2736,6 +2818,9 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
     } else if (name == "DISTINCT" || name == "DEDUPE") {
       const bool need_derived = plan.limit.has_value() || plan.offset.has_value();
       plan = ensure_derived(std::move(plan), need_derived);
+      if (!plan.projections && !plan.select_cols) {
+        refuse("E_SQL_SHAPE", "DISTINCT requires an explicit typed projection", step->pos());
+      }
       plan.distinct = true;
     } else if (name == "TAKE") {
       if (args.size() != 2) {
@@ -2748,7 +2833,15 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         refuse("E_ARITY", "DROP takes 2 arguments", step->pos());
       }
       int64_t off = eval_int_param(args[1], "DROP");
-      plan.offset = plan.offset.value_or(0) + off;
+      // Consume the bounded slice; retain a SQL boundary for large sums.
+      const int64_t skipped = plan.limit ? std::min(off, *plan.limit) : off;
+      if (plan.offset.value_or(0) > 9007199254740991LL - skipped) {
+        plan = ensure_derived(std::move(plan), true);
+        plan.offset = off;
+      } else {
+        if (plan.limit) *plan.limit -= skipped;
+        plan.offset = plan.offset.value_or(0) + skipped;
+      }
     } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
                name == "TOP" || name == "TOP_DESC" || name == "TOP_BY") {
       // A sort after a LIMIT or OFFSET sorts the rows that survived them,
@@ -2948,6 +3041,16 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
 }
 
 Fragment Translator::compile_statement(const RelationalPlan& plan) {
+  // Do not turn RECORD writes into duplicate SQL columns or discard evaluation.
+  const auto check_aliases = [](const auto& entries) {
+    std::set<std::string> seen;
+    if (entries) for (const auto& entry : *entries) {
+      if (entry.alias && !seen.insert(ascii_upper(*entry.alias)).second)
+        refuse("E_SQL_SHAPE", "duplicate or case-colliding RECORD fields require local evaluation", entry.node->pos());
+    }
+  };
+  check_aliases(plan.projections);
+  check_aliases(plan.group_by);
   const RelationalPlan* previous_plan = statement_plan_;
   statement_plan_ = &plan;
   struct ResetPlan {
@@ -2982,10 +3085,14 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       if (!first) add_sql(", ");
       first = false;
       Fragment p_frag = proj.group_key
-          ? group_key(src, *proj.group_key)
+          ? group_key(src, *proj.group_key, true)
           : plan.group_by
               ? with_group(src, proj.binder, [&]() { return node(proj.node); })
               : with_row(src, proj.binder, [&]() { return node(proj.node); });
+      if (plan.distinct) {
+        if (p_frag.kind() == SqlKind::Unknown || p_frag.kind() == SqlKind::Num) refuse("E_SQL_SHAPE", "DISTINCT requires proven structural output identity", proj.node->pos());
+        p_frag = identity_group_key(proj.node, p_frag);
+      }
       for (const auto& p : p_frag.parts()) {
         parts.push_back(p);
       }
@@ -3007,14 +3114,40 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
         }
       }
       const std::string column = f_spec && !f_spec->column.empty() ? f_spec->column : col;
+      if (plan.distinct && (!f_spec || f_spec->type == SqlKind::Unknown || f_spec->type == SqlKind::Num)) {
+        refuse("E_SQL_SHAPE", "DISTINCT requires known output kinds");
+      }
+      std::string sql;
       if (plan.joins.empty() && !plan.source_subquery) {
         const std::string table = f_spec && !f_spec->table.empty()
                                       ? f_spec->table
                                       : (plan.source_alias ? *plan.source_alias : "");
-        add_sql(emit_.column(table, column));
+        sql = emit_.column(table, column);
       } else {
-        add_sql(emit_.column(relation_table_alias(*owner), column));
+        sql = emit_.column(relation_table_alias(*owner), column);
       }
+      if (plan.distinct && f_spec && (f_spec->type == SqlKind::Text || f_spec->type == SqlKind::Num)) {
+        const Fragment frag = emit_.text_operand(Fragment({{false, sql, 0}}, f_spec->type, dialect_));
+        parts.insert(parts.end(), frag.parts().begin(), frag.parts().end());
+        add_sql(" AS " + emit_.ident(column));
+      } else add_sql(sql);
+    }
+  } else if (!plan.joins.empty()) {
+    // A joined row is its promoted fields (spec §7.4); see joined_row_fields.
+    const std::vector<JoinedRowField> fields = joined_row_fields(plan);
+    if (fields.empty()) {
+      const RelationalJoin& last = plan.joins.back();
+      refuse("E_SQL_SHAPE",
+             "the joined row has no field SQL can carry: every field is on both "
+             "sides, and the binders are nested records",
+             last.pos);
+    }
+    bool first = true;
+    for (const JoinedRowField& f : fields) {
+      if (!first) add_sql(", ");
+      first = false;
+      const std::string column = f.spec->column.empty() ? f.name : f.spec->column;
+      add_sql(emit_.column(relation_table_alias(*f.owner), column));
     }
   } else {
     if (plan.source_alias && !plan.source_alias->empty()) {

@@ -1,11 +1,51 @@
 # F4 — Implement RECORD duplicate-key semantics in SQL projections
 
-Status: confirmed, open at `55f4aa6`. Proposed priority: **P1, accepted query
-fails in the database**. PostgreSQL and MariaDB fail for all five translators
+Status: safe-fallback fix implemented in all five hosts on 2026-09-16;
+focused/live tests and the default integration gate pass. Originally confirmed at `55f4aa6`.
+Proposed priority: **P1, accepted query
+fails in the database**. In the original audit PostgreSQL and MariaDB failed for all five translators
 and the wheel, strict off/on and inline/native parameters. The SQLite witness
 falls back to a hybrid plan and happens to succeed with last-column-wins
 associative decoding; this is not proof that duplicate SQL projections are safe.
 [Index](sel-gaps-2026-09-15-00-index.md).
+
+## Implementation update — 2026-09-16
+
+Implemented first in Lisp, then Python/JS/PHP/C++. The statement compiler now
+checks output projection aliases and composite group-key aliases before rendering.
+Repeated aliases, including ASCII-case-only collisions, raise `E_SQL_SHAPE`.
+This applies recursively to derived statements. It does not delete overwritten
+expressions or depend on associative drivers silently dropping duplicate columns.
+
+Each hybrid mixed-MAP analyzer also rejects exact duplicate RECORD keys before
+partitioning pairs into SQL and custom fields. Otherwise a discarded custom
+expression could be skipped, or SQL/local evaluation order could choose the wrong
+last value. Existing proven mixed projections with distinct case-sensitive keys
+remain supported when only one case variant is sent to SQL.
+
+The selected remedy is the conservative fallback explicitly allowed below:
+the original MAP executes locally, preserving last-value/first-insertion order
+and every overwritten expression's error. Safe earlier SQL steps still run;
+ordinary unique-field projections are unaffected. Duplicate-key SQL pushdown
+itself remains unsupported until evaluation/shape preservation can be proven.
+
+Desired-result coverage:
+
+- `conformance/19-record-projection-identity.selt`: five cases, all five hosts.
+- `sql/cases/35-record-projection-collisions.sqlt`: 32 statement/planner cases
+  across MariaDB/MySQL/PostgreSQL/SQLite, including mixed MAP and safe prefixes.
+- `python/tests/test_sql_record_projections.py`: 106 passing tests, covering
+  raw/optimized/hybrid values, overwritten errors, field order, named binders,
+  derived FILTER/TAKE/SORT/MAP, grouped keys and a live SQLite prefix with
+  inline/native parameters and explicit unique-column/row-width assertions.
+- All five SQL suites passed 797 cases at this focused stage. The final expanded
+  852-case suites and default integration gate also pass; see the consolidated report.
+- The three original witnesses (7, 12, 15) pass 108 desired-result checks across
+  five source hosts plus a freshly installed Python wheel, three database
+  dialects and strict off/on. Each refuses ambiguous SQL with `E_SQL_SHAPE`,
+  selects pure memory and returns the exact local result. The broader rerun
+  executed 1,242 live SQL statements for the still-pushable audit scenarios and
+  720 hybrid outcomes; original saved audit JSON was not overwritten.
 
 ## Reproduction
 

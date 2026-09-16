@@ -1,5 +1,7 @@
 # Critic. Neither fuzzer nor the mutation catalogue can reach the pipeline/planner code the commit changes
 
+**Status:** FIXED 2026-09-16. `tools/gen-programs.mjs` emits pipelines (every step, the sorts' forms, `_K`, buckets, joins, helpers) and depth-cap chains; `--sql` mode reads relations every `sqlfuzz` runner now binds, and the runners compare `translate`, `translate_statement` and `plan_hybrid`; ten planner mutations added. The first 8000 programs found four divergences (C++ LINK over NULL/field-less elements, Lisp LINK_LEFT with no right elements, Lisp TOP with n = 0), all fixed and pinned in conformance/15-relational.selt.
+
 **Verdict:** UNVERIFIED (completeness critic; not sent to a second agent) · **severity:** medium · **category:** test-gap · **hosts:** js, php, python, cpp, lisp
 
 Locations: `tools/gen-programs.mjs:154-156`; `tools/fuzz.sh:30`; `tools/fuzz-sql.sh:28`; `sql/mutations.json`; `docs/EXTENDING.md:619-621`; `CHANGELOG.md:36`

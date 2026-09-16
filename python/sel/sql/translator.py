@@ -890,7 +890,7 @@ class Translator:
                 return frame[name]
         return None
 
-    def _group_key(self, src: dict[str, Any], group: dict[str, Any]) -> Fragment:
+    def _group_key(self, src: dict[str, Any], group: dict[str, Any], projected: bool = False) -> Fragment:
         """A group key, rendered as the GROUP BY expression itself -- wherever
         it appears: the clause, the ``_K`` projection, a HAVING. A TEXT key is
         cast and collated the way the ``$`` family compares text, because the
@@ -900,8 +900,25 @@ class Translator:
         exact so a comparison over it does not wrap it a second time --
         MySQL's only_full_group_by accepts a projected or compared key only as
         the identical expression."""
-        return self._collated_key(self._with_row(src, group['binder'],
-                                                 lambda: self._node(group['node'])))
+        key = self._with_row(src, group['binder'], lambda: self._node(group['node']))
+        identity = self._identity_group_key(group['node'], key)
+        if projected and key.kind == 'NUM':
+            return Fragment(['MIN(', *key.parts, ')'], 'NUM', self.dialect,
+                            key.params, key.param_kinds, key.caveats)
+        return identity
+
+    def _identity_group_key(self, node: Node, fragment: Fragment) -> Fragment:
+        if fragment.kind == 'UNKNOWN':
+            refuse('E_SQL_SHAPE', 'group keys require proven scalar identity', node.pos)
+        if fragment.kind == 'NUM':
+            if node.t not in ('var', 'index', 'num'):
+                refuse('E_SQL_SHAPE', 'computed numeric group keys do not preserve SEL identity', node.pos)
+            numeric = Fragment(fragment.parts, 'NUM', self.dialect, fragment.params,
+                               fragment.param_kinds, fragment.caveats)
+            wrapped = self.emit.text_operand(numeric)
+            return Fragment(wrapped.parts, 'TEXT', self.dialect, wrapped.params,
+                            wrapped.param_kinds, wrapped.caveats, True, False, False)
+        return self._collated_key(fragment)
 
     def _collated_key(self, fragment: Fragment) -> Fragment:
         if fragment.kind != 'TEXT' or fragment.exact:
@@ -922,14 +939,20 @@ class Translator:
                 key = self._node(group['node'])
             finally:
                 self.frames.pop()
-            collated = self._collated_key(key)
+            collated = self._identity_group_key(group['node'], key)
+            if key.kind == 'NUM':
+                # Textual identity must not change arithmetic/order over _K.
+                return Fragment(['MIN(', *key.parts, ')'], 'NUM', self.dialect,
+                                key.params, key.param_kinds, key.caveats)
             # In a HAVING, MariaDB and MySQL resolve a column only against the
             # GROUP BY columns and the select list, not against an equal
             # expression: `HAVING CAST(cat ...) COLLATE ...` is "unknown
             # column cat" once the grouping is the collated expression. The
             # key is constant within its group, so MIN of it IS the key, and
             # an aggregate is what every server lets a HAVING name.
-            if self.in_having and collated is not key:
+            # Nested key projections (e.g. LEN(_K)) also require an aggregate
+            # under MySQL ONLY_FULL_GROUP_BY. Direct keys use _group_key.
+            if collated is not key:
                 return Fragment(['MIN(', *collated.parts, ')'], 'TEXT', self.dialect,
                                 collated.params, collated.param_kinds, collated.caveats,
                                 True, False, False)
@@ -1006,7 +1029,7 @@ class Translator:
                        'no first row without an ORDER BY that nothing here can supply',
                        n.pos)
             field = ascii_upper(key)
-            if name == '_' and self.statement_plan is not None and self.statement_plan.joins:
+            if b.joined and self.statement_plan is not None and self.statement_plan.joins:
                 matches = []
                 sources = [(self.statement_plan.source_relation, self.statement_plan.source_name)]
                 sources.extend((join.source_relation, join.source_name)
@@ -1270,6 +1293,12 @@ class Translator:
                            src.get('pos'))
 
         row = Binder.row(src['relation'])
+        # The row of a joined statement: a field read through it resolves across
+        # the sides (ambiguous when both have it), whatever the binder is called.
+        # Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
+        # after a LINK resolve to the left side where `run()` raises E_NO_KEY.
+        if self.statement_plan is not None and self.statement_plan.joins:
+            row.joined = True
         k_binder = Binder.none('a row of a relation has no key: SQL rows are '
                                'unordered and unkeyed unless the schema says '
                                'otherwise, and guessing which column is the key '
@@ -1277,20 +1306,13 @@ class Translator:
         frame = {binder_name: row, '_K': k_binder}
         for f in src['filters']:
             frame[f['binder']] = row
-        plan = self.statement_plan
-        if plan is not None and plan.joins:
-            frame['_'] = row
-            frame['_1'] = row
-            frame[plan.source_name] = row
-            if plan.source_alias:
-                frame[plan.source_alias] = row
-            for index, join in enumerate(plan.joins):
-                right = Binder.row(join.source_relation)
-                frame[f'_{index + 2}'] = right
-                frame[join.right_binder] = right
-                frame[join.source_name] = right
-                if join.source_alias:
-                    frame[join.source_alias] = right
+        # After a LINK only the row is in scope (spec §7.4): the binders are
+        # scoped to its predicate, and the evaluator raises E_UNDEF_VAR for
+        # ``C["id"]`` in a later step -- the joined row carries them as keys,
+        # not as names. This frame used to bind ``_1``, ``_2``, the relations'
+        # names and the right binder for every later step, so
+        # ``FILTER(C["id"] > 1)`` translated where ``run()`` fails (review
+        # 2026-09-15 finding W2).
         self.frames.append(frame)
         try:
             return render()
@@ -1781,13 +1803,54 @@ class Translator:
                     names.append(f'expr{index + 1}')
         elif plan.select_cols is not None:
             names.extend(plan.select_cols)
-        else:
-            if plan.source_relation and plan.source_relation.get('fields'):
-                names.extend(plan.source_relation['fields'].keys())
-            for join in plan.joins:
-                if join.source_relation and join.source_relation.get('fields'):
-                    names.extend(join.source_relation['fields'].keys())
+        elif plan.joins:
+            names.extend(f['name'] for f in self._joined_row_fields(plan))
+        elif plan.source_relation and plan.source_relation.get('fields'):
+            names.extend(plan.source_relation['fields'].keys())
         return list(dict.fromkeys(names))
+
+    def _joined_row_fields(self, plan: RelationalPlan) -> list[dict[str, Any]]:
+        """The fields of a joined row that SQL can carry (spec §7.4 "Joined
+        rows"): the promoted ones -- a side's fields whose names, compared
+        ASCII-case-insensitively, do not occur on the other side --
+        accumulated join by join as the evaluator promotes them. The binders
+        (``_1``, ``_2``, the relations' names) are nested records with no
+        column, and a name both sides carry is E_NO_KEY in SEL; neither is
+        projected, so a read of either over the derived table is refused
+        where ``run()`` raises. ``SELECT o.*`` was the row before: the left
+        table's columns, which a continuation read where SEL has no key, and
+        which made a derived table over a join name columns it did not have
+        (finding Y, lanes).
+        """
+        def entries(rel):
+            return [{'name': name, 'spec': spec, 'owner': rel}
+                    for name, spec in ((rel or {}).get('fields') or {}).items()]
+
+        acc = entries(plan.source_relation)
+        for join in plan.joins:
+            right = entries(join.source_relation)
+            left_names = {ascii_upper(f['name']) for f in acc}
+            right_names = {ascii_upper(f['name']) for f in right}
+            acc = ([f for f in acc if ascii_upper(f['name']) not in right_names]
+                   + [f for f in right if ascii_upper(f['name']) not in left_names])
+        return acc
+
+    def _output_field_type(self, plan: RelationalPlan, name: str) -> str:
+        # Only a direct field read proves that the SQL output retains the
+        # binding's declared type. Computed projections remain UNKNOWN.
+        if plan.projections is not None:
+            projection = next((p for p in plan.projections if p.get('alias') == name), None)
+            node = projection['node'] if projection else None
+            if not (node and node.t == 'index' and node.obj.t == 'var'
+                    and node.obj.name == projection['binder'] and node.idx.t == 'text'):
+                return 'UNKNOWN'
+            name = node.idx.v
+        matches = [rel['fields'][ascii_upper(name)]
+                   for rel in [plan.source_relation, *(j.source_relation for j in plan.joins)]
+                   if rel and ascii_upper(name) in (rel.get('fields') or {})]
+        return (matches[0].get('type', 'UNKNOWN')
+                if len(matches) == 1 and not matches[0].get('guard')
+                and matches[0].get('raw') is None else 'UNKNOWN')
 
     def _wrap_plan_as_derived_table(self, plan: RelationalPlan) -> RelationalPlan:
         self.subquery_counter += 1
@@ -1806,7 +1869,7 @@ class Translator:
                 'kind': 'column',
                 'column': source_field.get('column', name) if source_field else name,
                 'table': alias,
-                'type': 'UNKNOWN',
+                'type': self._output_field_type(plan, name),
             }
         derived = RelationalPlan()
         derived.source_name = alias
@@ -1883,6 +1946,8 @@ class Translator:
         plan.select_cols = None
 
     def analyze_pipeline(self, n: Node) -> RelationalPlan | None:
+        if _constants.identity_loss_before_grouping(n):
+            refuse('E_SQL_SHAPE', 'grouping depends on a computed projection without identity preservation', n.pos)
         steps: list[Node] = []
         curr = n
         while curr.t == 'call' and curr.name in PIPELINE_OPS:
@@ -2066,6 +2131,8 @@ class Translator:
             elif name in ('DISTINCT', 'DEDUPE'):
                 plan = self._ensure_derived(plan, lambda candidate:
                     candidate.limit is not None or candidate.offset is not None)
+                if plan.projections is None and plan.select_cols is None:
+                    refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos)
                 plan.distinct = True
 
             elif name == 'TAKE':
@@ -2078,7 +2145,16 @@ class Translator:
                 if len(args) != 2:
                     refuse('E_ARITY', 'DROP takes 2 arguments', step.pos)
                 offset = self._eval_int_param(args[1], 'DROP')
-                plan.offset = (plan.offset or 0) + offset
+                # Consume the bounded slice. Avoid sums beyond the exact
+                # integer range shared by hosts by retaining a SQL boundary.
+                skipped = offset if plan.limit is None else min(offset, plan.limit)
+                if (plan.offset or 0) > 9007199254740991 - skipped:
+                    plan = self._wrap_plan_as_derived_table(plan)
+                    plan.offset = offset
+                else:
+                    if plan.limit is not None:
+                        plan.limit -= skipped
+                    plan.offset = (plan.offset or 0) + skipped
 
             elif name in ('SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'):
                 # A sort after a LIMIT or OFFSET sorts the rows that survived
@@ -2196,6 +2272,16 @@ class Translator:
                               'dir': direction, 'pos': step.pos})
 
     def compile_statement(self, plan: RelationalPlan) -> Fragment:
+        # SQL aliases are not RECORD insertions. Keep overwritten expressions
+        # local: deleting them can suppress errors and change field order.
+        for entries in (plan.projections, plan.group_by):
+            seen = set()
+            for entry in entries or []:
+                if entry.get('alias') is not None:
+                    key = ascii_upper(entry['alias'])
+                    if key in seen:
+                        refuse('E_SQL_SHAPE', 'duplicate or case-colliding RECORD fields require local evaluation', entry['node'].pos)
+                    seen.add(key)
         previous_plan = self.statement_plan
         previous_where = self.in_where
         self.statement_plan = plan
@@ -2208,13 +2294,17 @@ class Translator:
                     if index:
                         parts.append(', ')
                     if projection.get('group_key') is not None:
-                        fragment = self._group_key(src, projection['group_key'])
+                        fragment = self._group_key(src, projection['group_key'], True)
                     elif plan.group_by is not None:
                         fragment = self._with_group(
                             src, projection['binder'], lambda p=projection: self._node(p['node']))
                     else:
                         fragment = self._with_row(
                             src, projection['binder'], lambda p=projection: self._node(p['node']))
+                    if plan.distinct:
+                        if fragment.kind in ('UNKNOWN', 'NUM'):
+                            refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', projection['node'].pos)
+                        fragment = self._identity_group_key(projection['node'], fragment)
                     parts.extend(fragment.parts)
                     if projection.get('alias') is not None:
                         parts.append(' AS ' + self.emit.ident(projection['alias']))
@@ -2236,8 +2326,31 @@ class Translator:
                     else:
                         table = (field_spec.get('table') if field_spec else None) or (
                             plan.source_alias if owner is plan.source_relation else _relation_alias(owner))
-                    parts.append(self.emit.column(table,
-                                                 field_spec.get('column', column) if field_spec else column))
+                    output_column = field_spec.get('column', column) if field_spec else column
+                    sql = self.emit.column(table, output_column)
+                    if plan.distinct and (not field_spec or field_spec.get('type', 'UNKNOWN') in ('UNKNOWN', 'NUM')):
+                        refuse('E_SQL_SHAPE', 'DISTINCT requires known output kinds', None)
+                    if plan.distinct and field_spec and field_spec.get('type') in ('TEXT', 'NUM'):
+                        fragment = self.emit.text_operand(Fragment([sql], field_spec['type'], self.dialect))
+                        parts.extend(fragment.parts)
+                        parts.append(' AS ' + self.emit.ident(output_column))
+                    else:
+                        parts.append(sql)
+            elif plan.joins:
+                # A joined row is its promoted fields (spec §7.4); see
+                # _joined_row_fields.
+                fields = self._joined_row_fields(plan)
+                if not fields:
+                    last = plan.joins[-1]
+                    refuse('E_SQL_SHAPE', 'the joined row has no field SQL can carry: '
+                           'every field is on both sides, and the binders are nested '
+                           'records', last.pos)
+                for index, f in enumerate(fields):
+                    if index:
+                        parts.append(', ')
+                    spec = f['spec'] or {}
+                    parts.append(self.emit.column(self._relation_table_alias(f['owner']),
+                                                 spec.get('column', f['name'])))
             else:
                 parts.append(self.emit.ident(plan.source_alias) + '.*'
                              if plan.source_alias else '*')

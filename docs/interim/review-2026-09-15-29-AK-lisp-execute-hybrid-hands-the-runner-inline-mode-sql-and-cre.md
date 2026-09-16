@@ -1,5 +1,7 @@
 # AK. Lisp execute-hybrid hands the runner inline-mode SQL and creation-order params; the other four hand placeholder SQL and bindings()
 
+**Status:** FIXED 2026-09-16. `execute-hybrid` passes `(as-statement frag :params)` and `(bindings frag)`; docs/SQL-TRANSLATION.md §12.1 states the runner contract, and every host's unit lane pins it (a FILTER with two text literals and a number: `?` twice, no quoted literal, `> 5` inlined, bindings `hay-`, `needle`).
+
 **Verdict:** CONFIRMED · **severity:** medium · **introduced:** pre-existing · **hosts:** lisp
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

@@ -61,6 +61,46 @@ std::string escape_newlines(const std::string& s) {
 
 }  // namespace
 
+namespace {
+// The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
+// same in every host's runner: two tables, a NUM join key, a TEXT field whose
+// name both sides share.
+sel::sql::Bindings fuzz_bindings() {
+  using sel::sql::Binding; using sel::sql::SqlKind;
+  return sel::sql::Bindings({
+      {"ORDERS", Binding::relation("orders", "o", {
+          {"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)},
+          {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}})},
+      {"CUSTOMERS", Binding::relation("customers", "c", {
+          {"ID", Binding::column("id", "c", SqlKind::Num)}, {"NAME", Binding::column("name", "c", SqlKind::Text)}})}});
+}
+
+std::string render(const sel::sql::Fragment& f) {
+  std::string binds;
+  const std::vector<sel::Value> vs = f.bindings();
+  for (std::size_t i = 0; i < vs.size(); ++i) {
+    if (i) binds += ",";
+    binds += vs[i].dump();
+  }
+  return f.as_value() + " | " + f.as_value(sel::sql::Mode::Params) + " | " + binds;
+}
+
+// Three lanes per program, `||`-separated: translate(), translate_statement()
+// and plan_hybrid() (its classification, then its statement in params mode).
+template <typename F>
+std::string attempt(F fn) {
+  try {
+    return fn();
+  } catch (const sel::sql::SqlError& e) {
+    return "!" + e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
+  } catch (const sel::SelError& e) {
+    return "!SEL " + e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
+  } catch (const std::exception& e) {
+    return std::string("!HOST ") + e.what();
+  }
+}
+}  // namespace
+
 int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr, "usage: sqlfuzz corpus.selc [dialect]\n");
@@ -81,15 +121,14 @@ int main(int argc, char** argv) {
         // Three renderings, because comparing only the inline one let a
         // mutation that bound a numeric literal as a parameter walk straight
         // through this lane.
-        const sel::sql::Fragment f = sel::sql::Sql::translate(program, dialect);
-        std::string binds;
-        const std::vector<sel::Value> vs = f.bindings();
-        for (std::size_t i = 0; i < vs.size(); ++i) {
-          if (i) binds += ",";
-          binds += vs[i].dump();
-        }
-        line = f.as_value() + " | " + f.as_value(sel::sql::Mode::Params) + " | " +
-               binds;
+        const sel::sql::Bindings bindings = fuzz_bindings();
+        line = attempt([&] { return render(sel::sql::Sql::translate(program, dialect, bindings)); })
+             + " || " + attempt([&] { return render(sel::sql::Sql::translate_statement(program, dialect, bindings)); })
+             + " || " + attempt([&] {
+                 const auto plan = sel::sql::Sql::plan_hybrid(program, dialect, bindings);
+                 const std::string kind = plan.pure_sql ? "pure_sql" : plan.pure_memory ? "pure_memory" : "hybrid";
+                 return plan.sql_statement ? kind + " " + plan.sql_statement->as_statement(sel::sql::Mode::Params) : kind;
+               });
       } catch (const sel::sql::SqlError& e) {
         line = "!" + e.code() + "@" + std::to_string(e.line()) + ":" +
                std::to_string(e.col());

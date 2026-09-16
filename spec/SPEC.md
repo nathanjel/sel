@@ -532,6 +532,17 @@ analysing it, copying it, or freeing it — needs its own count or it will find
 the host's stack instead. That is the general rule the three caps are instances
 of, and every one of them was found the same way.
 
+**The evaluator is the depth authority.** Whether a program exceeds the
+evaluation depth is decided by evaluating it as written, and nothing that runs
+before the evaluator may change that answer. An optimiser must neither raise
+`E_DEPTH` itself — it would report it for a branch the evaluator never visits,
+`IF(TRUE, 7, <a chain 201 deep>)` — nor make it disappear: a chain of 201
+additions is `E_DEPTH` at its innermost node even though every one of them
+folds, and so is one of 199 behind an assignment, which costs a level of its
+own. A tree that reaches the cap is left as written and evaluated as written;
+`conformance/10-limits.selt` pins both sides of the boundary for a chain the
+optimiser could fold.
+
 Three arguments name a size rather than a value, and a large one asks for more
 work or more memory than any host has. Each is capped, and exceeding the cap is
 an ordinary SEL error rather than a host failure:
@@ -657,6 +668,14 @@ its first argument, in insertion order.
 | `BUCKET(list, [binder,] key)` | the elements grouped by evaluated `key`: a record whose keys are the group keys, in order of first appearance, each holding the list of its members (renumbered from `"1"`). |
 | `BUCKET(list, [binder,] key, proj)` | one `proj` result per group, as a list; within `proj`, the binder is the group's member list and `_K` its key. |
 
+**Keys are part of the value.** `FILTER` is the one step that keeps its input's
+keys; every other aggregate, and every list function of §7.4, renumbers from
+`"1"`. A pipeline's keys are those its steps produce in the order written, and
+a `_K` read after a step sees that step's keys: `MAP(…) .> FILTER(…)` keeps the
+`MAP`'s numbering for the rows it keeps, so an implementation that filters
+before it maps must not let that show — not in the answer's keys, and not in a
+later `_K`.
+
 **Bucket keys.** The two spellings group differently, because only one of
 them has to make a record key out of the group key:
 
@@ -669,6 +688,11 @@ them has to make a record key out of the group key:
 - In the three-argument spelling the group key is compared by **identity**
   (§3.4) and may be any value — a list of several fields groups by all of them
   — and `_K` is that value.
+
+An SQL backend must preserve this identity independently of a column's default
+collation: case folding or ignoring trailing spaces must not merge distinct
+text keys. Projection through an intermediate relation does not relax this
+requirement; when identity cannot be proved, grouping must remain local.
 
 Within a body, `_` is bound to the element and `_K` to its key.
 
@@ -697,11 +721,57 @@ failure.
 | `INDEXES(x)` | list of the keys, in order |
 | `HAS(x, key)` | BOOL |
 | `LIST(v1, v2, …)` | list of values without flattening nested lists/records |
-| `RECORD(k1, v1, k2, v2, …)` | record from key-value pairs; even argument count required (`E_ARITY` otherwise) |
+| `RECORD(k1, v1, k2, v2, …)` | record from key-value pairs; even argument count required (`E_ARITY` otherwise); keys are case-sensitive, repeated keys keep their first insertion position and last value; all arguments still evaluate left-to-right, including overwritten values |
 | `TAKE(list, n)` | first `n` elements as a list (`n >= 0`, `E_RANGE` if negative, `E_NOT_INT` if non-integer) |
 | `DROP(list, n)` | list after dropping first `n` elements (`n >= 0`, `E_RANGE` if negative, `E_NOT_INT` if non-integer) |
 | `SELECT_COLS(rel, c1, c2, …)` | list of records with only specified column keys preserved |
 | `DISTINCT(list)` | list of unique elements preserving order of first occurrence via `EQL` |
+| `LINK(left, right, pred)`, `LINK(left, right, L, R, pred)` | inner join: one joined row (below) per pair of a `left` element and a `right` element for which `pred` is `TRUE`, in `left` order then `right` order; within `pred`, `_1` (or `L`) is the left element and `_2` (or `R`) the right |
+| `LINK_LEFT(…)` | the same, plus one row per `left` element that matched nothing, whose right side is empty |
+| `TOP(list, [binder,] [body,] n)`, `TOP_DESC(…)` | the first `n` of `SORT(list, [binder,] [body])` / `SORT_DESC(…)`, as one step |
+| `TOP_BY(list, [binder,] key, n [, dir])` | the first `n` of `SORT_BY(list, [binder,] key [, dir])`, as one step |
+
+**Slices compose in pipeline order.** A `DROP` after a `TAKE` removes elements
+from that bounded result; it cannot restore elements excluded by the `TAKE`.
+For example, `LIST(1, 2, 3) .> TAKE(2) .> DROP(1)` contains only `2`, and
+`LIST(1, 2, 3) .> TAKE(1) .> DROP(2)` is empty.
+
+**A count of zero still evaluates the list.** `TAKE(list, 0)`, `DROP`, and the
+`TOP` family with `n` of `0` evaluate `list` before answering the empty list,
+so `TOP(LST, 0)` with `LST` unbound is `E_UNDEF_VAR`, not `()`; an optimiser
+that fuses a sort and a `TAKE` into a `TOP` must keep that.
+
+**Joined rows.** A joined row is a record whose keys are, in order of first
+occurrence: the nested records the left element already carried (the rows an
+earlier `LINK` in the same pipeline bound), the left binders, the right
+binders, then the *promoted* fields — the left element's scalar fields whose
+names, compared ASCII-case-insensitively, do not occur in the right element,
+followed by the right element's non-`NULL` scalar fields whose names do not
+occur in the left. The left binders are `_1`, the name given in the
+five-argument form, and — when the argument is a bare name, or a pipeline whose
+source is one — that name and its ASCII lowercase; the right binders are `_2`
+and likewise. A binder holds the element as `pred` saw it, which for a named
+argument is the element extended with the name and its lowercase as keys
+holding the element. Each key appears once, where it first occurred: a binder
+key holds the row *this* `LINK` bound even when the left element carried a
+nested record of the same name from an earlier one (the earlier `_1`, or a
+relation joined twice), and every other key holds its first value. An
+unmatched `LINK_LEFT` row holds under each right binder a record shaped like
+the right elements whose every field is `NULL`, and promotes nothing from the
+right.
+
+**How a `LINK` evaluates.** The pairs are the left elements in order, each with
+every right element in order. A `NULL` element, or one with no fields, is an
+element like any other, so a `pred` that indexes it fails as it would anywhere
+(`E_NO_KEY`). When `pred` is one comparison (`==` or `$==`) whose two sides read
+one binder each, the right side's expression is evaluated once per right
+element *first*, then the left side's once per left element, and pairs are
+matched by those values as the comparison would compare them (a `NULL` on
+either side matches nothing) — so an error in the right side's expression is
+reported before one in the left's. Any other `pred` is evaluated once per pair,
+left element outer, right element inner. With no right elements `pred` is never
+evaluated: an unmatched `LINK_LEFT` row costs no evaluation of it, and a `LINK`
+over an empty side is the empty list whatever `pred` would have done.
 
 ### 7.5 Text
 

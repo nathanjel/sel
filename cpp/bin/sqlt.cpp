@@ -412,8 +412,18 @@ int main(int argc, char** argv) {
     auto m = MIRRORS.find(c.dialect);
     if (m == MIRRORS.end() || c.register_fn) continue;
     Map::reset();
+    // Pin the one SQL spelling difference: each server's NO PAD collation.
+    SqlCase mirror_case = c;
+    std::string mirror_expect = c.expect ? c.expect : "";
+    const std::string maria_collation = " COLLATE utf8mb4_nopad_bin";
+    const std::string mysql_collation = " COLLATE utf8mb4_0900_bin";
+    for (size_t at = 0; (at = mirror_expect.find(maria_collation, at)) != std::string::npos;
+         at += mysql_collation.size()) {
+      mirror_expect.replace(at, maria_collation.size(), mysql_collation);
+    }
+    if (c.expect) mirror_case.expect = mirror_expect.c_str();
     try {
-      problem = c.plan ? run_plan_case(c, m->second) : run_case(c, m->second);
+      problem = c.plan ? run_plan_case(mirror_case, m->second) : run_case(mirror_case, m->second);
     } catch (const SuiteError& e) {
       std::printf("SUITE ERROR (mirrored to %s) %s\n", m->second.c_str(), e.what());
       ++suite_errors;

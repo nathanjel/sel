@@ -289,75 +289,79 @@ Returns (values left-expr right-expr is-numeric) or NIL."
              (%value-with-children (value-kind row) (value-scalar row) new-children (value-is-list row))))))))
 
 (defun make-joined-row (r1 r2 b1 b2 &optional pre-promoted-k1 pre-promoted-k2 pre-table-k1)
-  (let ((out-children '())
+  "One joined row. Each key once, where it first occurred (spec §7.4): a
+carried or promoted key keeps its first value (PUT), a binder key holds the
+row this LINK bound (BIND) even where an earlier LINK's `_1` or a relation
+joined twice carried a record of the same name. That is the row the compiled
+projector below builds from the shape (binders first, then slots); PHP, Python
+and C++ agreed with it on that path, while JS and Lisp built `X` twice."
+  (let ((entries '())
+        (slot (make-hash-table :test #'equal))
         (b1-low (string-downcase b1))
         (b2-low (string-downcase b2)))
-    ;; Preserve any existing table records from r1 (for chained links)
-    (if pre-table-k1
-        (dolist (k pre-table-k1)
-          (let ((child (value-get r1 k)))
-            (when child (push (cons k child) out-children))))
-        (dolist (c (value-children r1))
-          (let ((child (cdr c)))
-            (when (and child (value-children child) (not (value-is-list child)))
-              (push (cons (car c) child) out-children)))))
-    ;; Set explicit binder subrecords
-    (push (cons b1 r1) out-children)
-    (when (string/= b1 b1-low)
-      (push (cons b1-low r1) out-children))
-    (when (string/= b1 "_1")
-      (push (cons "_1" r1) out-children))
-    (if r2
-        (progn
-          (push (cons b2 r2) out-children)
-          (when (string/= b2 b2-low)
-            (push (cons b2-low r2) out-children))
-          (when (string/= b2 "_2")
-            (push (cons "_2" r2) out-children)))
-        (let ((null-val (make-none)))
-          (push (cons b2 null-val) out-children)
-          (when (string/= b2 b2-low)
-            (push (cons b2-low null-val) out-children))
-          (when (string/= b2 "_2")
-            (push (cons "_2" null-val) out-children))))
-    ;; Promote unambiguous scalar columns
-    (if (and pre-promoted-k1 (or pre-promoted-k2 (null r2)))
-        (progn
-          (dolist (k pre-promoted-k1)
-            (let ((v (value-get r1 k)))
-              (when v (push (cons k v) out-children))))
-          (when r2
-            (dolist (k pre-promoted-k2)
-              (let ((v (value-get r2 k)))
-                (when (and v (not (value-null-p v)))
-                  (push (cons k v) out-children))))))
-        (let ((keys1 (value-keys r1))
-              (keys2 (if r2 (value-keys r2) '())))
+    (labels ((put (k v)
+               (unless (gethash k slot)
+                 (let ((cell (cons k v)))
+                   (setf (gethash k slot) cell)
+                   (push cell entries))))
+             (bind (k v)
+               (let ((cell (gethash k slot)))
+                 (if cell
+                     (setf (cdr cell) v)
+                     (put k v)))))
+      ;; Preserve any existing table records from r1 (for chained links)
+      (if pre-table-k1
+          (dolist (k pre-table-k1)
+            (let ((child (value-get r1 k)))
+              (when child (put k child))))
           (dolist (c (value-children r1))
-            (let ((k (car c))
-                  (v (cdr c)))
-              (unless (or (and v (value-children v) (not (value-is-list v)))
-                          (member k keys2 :test #'string-equal))
-                (push (cons k v) out-children))))
-          (when r2
-            (dolist (c (value-children r2))
+            (let ((child (cdr c)))
+              (when (and child (value-children child) (not (value-is-list child)))
+                (put (car c) child)))))
+      ;; The binder keys hold the rows THIS link bound.
+      (bind b1 r1)
+      (when (string/= b1 b1-low) (bind b1-low r1))
+      (when (string/= b1 "_1") (bind "_1" r1))
+      (let ((right (or r2 (make-none))))
+        (bind b2 right)
+        (when (string/= b2 b2-low) (bind b2-low right))
+        (when (string/= b2 "_2") (bind "_2" right)))
+      ;; Promote unambiguous scalar columns
+      (if (and pre-promoted-k1 (or pre-promoted-k2 (null r2)))
+          (progn
+            (dolist (k pre-promoted-k1)
+              (let ((v (value-get r1 k)))
+                (when v (put k v))))
+            (when r2
+              (dolist (k pre-promoted-k2)
+                (let ((v (value-get r2 k)))
+                  (when (and v (not (value-null-p v)))
+                    (put k v))))))
+          (let ((keys1 (value-keys r1))
+                (keys2 (if r2 (value-keys r2) '())))
+            (dolist (c (value-children r1))
               (let ((k (car c))
                     (v (cdr c)))
                 (unless (or (and v (value-children v) (not (value-is-list v)))
-                            (value-null-p v)
-                            (member k keys1 :test #'string-equal))
-                  (push (cons k v) out-children)))))))
-    (let* ((entries (nreverse out-children))
+                            (member k keys2 :test #'string-equal))
+                  (put k v))))
+            (when r2
+              (dolist (c (value-children r2))
+                (let ((k (car c))
+                      (v (cdr c)))
+                  (unless (or (and v (value-children v) (not (value-is-list v)))
+                              (value-null-p v)
+                              (member k keys1 :test #'string-equal))
+                    (put k v))))))))
+    ;; Keys are unique by construction, so the row always takes a shape.
+    (let* ((entries (nreverse entries))
            (keys (mapcar #'car entries))
-           (n (length keys)))
-      (if (= (length (remove-duplicates keys :test #'string=)) n)
-          (let* ((shape (get-record-shape keys))
-                 (storage (make-array n)))
-            (loop for (nil . val) in entries
-                  for idx from 0
-                  do (setf (svref storage idx) val))
-            (%make-shaped-value shape storage))
-          (%value-with-children :none nil entries nil)))))
+           (shape (get-record-shape keys))
+           (storage (make-array (length keys))))
+      (loop for (nil . val) in entries
+            for idx from 0
+            do (setf (svref storage idx) val))
+      (%make-shaped-value shape storage))))
 
 (defun make-join-projector (sample-r1 sample-r2 b1 b2 promoted-k1 promoted-k2 table-k1 null-r2)
   (let* ((sample-joined (when (and sample-r1 sample-r2)
@@ -446,11 +450,17 @@ Returns (values left-expr right-expr is-numeric) or NIL."
       (t
        (fail "E_ARITY" (format nil "~a takes 3 or 5 arguments, got ~d" (args-name a) count)
              (args-pos-of a 0))))
-    (if (value-null-p val1)
+    ;; Spec §7.4 "How a LINK evaluates": with no right elements PRED is never
+    ;; evaluated. A LINK over an empty side is the empty list; a LINK_LEFT
+    ;; with left rows but no right rows emits each unmatched row below
+    ;; without touching PRED (the nested loop has no pairs to run it on).
+    (let* ((first-r1 (unless (value-null-p val1) (first-collection-item val1)))
+           (first-r2 (unless (value-null-p val1) (first-collection-item val2))))
+      (if (or (value-null-p val1)
+              (and (or (null first-r1) (null first-r2))
+                   (or (not is-left) (null first-r1))))
         (make-list-value nil)
-        (let* ((first-r1 (first-collection-item val1))
-               (first-r2 (first-collection-item val2))
-               (sample-r1 (when first-r1 (ensure-row-table-alias first-r1 b1)))
+        (let* ((sample-r1 (when first-r1 (ensure-row-table-alias first-r1 b1)))
                (sample-r2 (when first-r2 (ensure-row-table-alias first-r2 b2)))
                (null-r2 (when is-left (make-null-record sample-r2 b2)))
                (keys1 (if sample-r1 (value-keys sample-r1) '()))
@@ -477,8 +487,10 @@ Returns (values left-expr right-expr is-numeric) or NIL."
                  (projector (make-join-projector sample-r1 sample-r2 b1 b2 promoted-k1 promoted-k2 table-k1 null-r2)))
             (multiple-value-bind (left-expr right-expr is-numeric)
                 (try-extract-equi-keys pred-node b1 b2)
-              (if (and left-expr right-expr)
-                  ;; --- HASH JOIN ---
+              (if (and left-expr right-expr sample-r2)
+                  ;; --- HASH JOIN --- (only with right rows: the probe phase
+                  ;; evaluates the left key per left row, and with no pairs
+                  ;; PRED must not run at all)
                   (let ((ht (make-hash-table :test #'equal))
                         (b2-cell (cons b2 nil))
                         (b2-low-cell (cons (string-downcase b2) nil))
@@ -537,16 +549,17 @@ Returns (values left-expr right-expr is-numeric) or NIL."
                                    (matched nil))
                                (setf (cdr b1-cell) r1 (cdr b1-low-cell) r1
                                      (cdr b1-1-cell) r1 (cdr b1-_-cell) r1)
-                               (for-each-collection-item (item2 val2)
-                                 (let ((r2 (ensure-row-table-alias item2 b2)))
-                                   (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
-                                   (when (as-bool (args-eval a pred-node) (node-pos pred-node))
-                                     (setf matched t)
-                                     (push (funcall projector r1 r2) out))))
+                               (when sample-r2
+                                 (for-each-collection-item (item2 val2)
+                                   (let ((r2 (ensure-row-table-alias item2 b2)))
+                                     (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
+                                     (when (as-bool (args-eval a pred-node) (node-pos pred-node))
+                                       (setf matched t)
+                                       (push (funcall projector r1 r2) out)))))
                                (when (and is-left (not matched))
                                  (push (funcall projector r1 nil) out))))
                         (ctx-pop-frame ctx))))))
-            (make-list-value (nreverse out)))))))
+            (make-list-value (nreverse out))))))))
 
 (define-builtin "LINK" 3 5
   (lambda (a ctx) (do-link a ctx nil))

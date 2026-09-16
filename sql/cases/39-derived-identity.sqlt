@@ -1,0 +1,17 @@
+### name: stmt.text-identity.derived-pass-through.sqlite
+--- dialect
+sqlite
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("cat", _["cat"])) .> BUCKET(_["cat"], RECORD("cat", _K, "n", COUNT(_)))
+--- expect
+SELECT CAST("_sub1"."cat" AS TEXT) COLLATE BINARY AS "cat", COUNT(*) AS "n" FROM (SELECT "cat" AS "cat" FROM "r") "_sub1" GROUP BY CAST("_sub1"."cat" AS TEXT) COLLATE BINARY
+--- note
+A direct field projection preserves its declared type through the derived table;
+forgetting TEXT silently inherits a schema's NOCASE/RTRIM grouping semantics.
+===

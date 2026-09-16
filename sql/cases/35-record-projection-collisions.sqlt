@@ -1,0 +1,423 @@
+### name: stmt.record-collision.map.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", _["fk"]))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.derived.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", _["fk"])) .> TAKE(1) .> FILTER(_["x"] > 5)
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.case-collision.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "X", _["fk"]))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.bucket.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["cat"], RECORD("x", _K, "x", COUNT(_)))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.group-key.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> BUCKET(RECORD("x", _["id"], "x", _["fk"]), RECORD("n", COUNT(_)))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: plan.record-collision.mixed.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", BACKWARDS(_["cat"]), "x", _["id"]))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.record-collision.mixed-reverse.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", BACKWARDS(_["cat"])))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.record-collision.safe-prefix.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> TAKE(2) .> MAP(RECORD("x", _["id"], "middle", 7, "x", _["fk"]))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM `r` LIMIT 2
+===
+
+### name: stmt.record-collision.map.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", _["fk"]))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.derived.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", _["fk"])) .> TAKE(1) .> FILTER(_["x"] > 5)
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.case-collision.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "X", _["fk"]))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.bucket.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["cat"], RECORD("x", _K, "x", COUNT(_)))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.group-key.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> BUCKET(RECORD("x", _["id"], "x", _["fk"]), RECORD("n", COUNT(_)))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: plan.record-collision.mixed.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", BACKWARDS(_["cat"]), "x", _["id"]))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.record-collision.mixed-reverse.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", BACKWARDS(_["cat"])))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.record-collision.safe-prefix.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> TAKE(2) .> MAP(RECORD("x", _["id"], "middle", 7, "x", _["fk"]))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM `r` LIMIT 2
+===
+
+### name: stmt.record-collision.map.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", _["fk"]))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.derived.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", _["fk"])) .> TAKE(1) .> FILTER(_["x"] > 5)
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.case-collision.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "X", _["fk"]))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.bucket.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["cat"], RECORD("x", _K, "x", COUNT(_)))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.group-key.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> BUCKET(RECORD("x", _["id"], "x", _["fk"]), RECORD("n", COUNT(_)))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: plan.record-collision.mixed.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", BACKWARDS(_["cat"]), "x", _["id"]))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.record-collision.mixed-reverse.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", BACKWARDS(_["cat"])))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.record-collision.safe-prefix.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> TAKE(2) .> MAP(RECORD("x", _["id"], "middle", 7, "x", _["fk"]))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM "r" LIMIT 2
+===
+
+### name: stmt.record-collision.map.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", _["fk"]))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.derived.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", _["fk"])) .> TAKE(1) .> FILTER(_["x"] > 5)
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.case-collision.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "X", _["fk"]))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.bucket.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["cat"], RECORD("x", _K, "x", COUNT(_)))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.record-collision.group-key.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> BUCKET(RECORD("x", _["id"], "x", _["fk"]), RECORD("n", COUNT(_)))
+--- as
+statement
+--- error
+E_SQL_SHAPE
+===
+
+### name: plan.record-collision.mixed.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", BACKWARDS(_["cat"]), "x", _["id"]))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.record-collision.mixed-reverse.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["id"], "x", BACKWARDS(_["cat"])))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.record-collision.safe-prefix.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"NUM"},"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+R .> TAKE(2) .> MAP(RECORD("x", _["id"], "middle", 7, "x", _["fk"]))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM "r" LIMIT 2
+===

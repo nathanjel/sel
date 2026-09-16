@@ -290,7 +290,7 @@ int replay_register() {
               "join", EntrySpec::withdraw("LISTAGG is SQL:2016 and is spelled differently by every server that has it"));
   ++calls;
   Map::define_dialect("mysql-family~replay",
-                      DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_bin").lexical("textCharset", "utf8mb4").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("numericGuard", "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("textCast", "CAST({0} AS CHAR)").lexical("sargablePrefilter", "true"));
+                      DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_nopad_bin").lexical("textCharset", "utf8mb4").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("numericGuard", "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("textCast", "CAST({0} AS CHAR)").lexical("sargablePrefilter", "true"));
   ++calls;
   Map::define("mysql-family~replay", Section::Ops,
               "*", EntrySpec::tpl("({0} * {1})", "NUM").caveat("scale-limit"));
@@ -437,7 +437,7 @@ int replay_register() {
               "join", EntrySpec::withdraw("GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"));
   ++calls;
   Map::define_dialect("mysql~replay",
-                      DialectSpec::extending("mysql-family~replay").version("8.4").target(true));
+                      DialectSpec::extending("mysql-family~replay").version("8.4").target(true).lexical("textCollate", " COLLATE utf8mb4_0900_bin"));
   ++calls;
   Map::define_dialect("postgresql~replay",
                       DialectSpec::extending("ansi~replay").version("15").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "'\\x{hex}'::bytea").lexical("numericLiteral", "{0}").lexical("textCollate", " COLLATE \"C\"").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("numericGuard", "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END").lexical("binaryCast", "convert_to(CAST({0} AS TEXT), 'UTF8')").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?"));
@@ -590,7 +590,7 @@ int replay_register() {
               "IS_PRESENT", EntrySpec::tpl("(({textCast:0} IS NOT NULL) AND (btrim({textCast:0}, E' \\t\\r\\n') <> ''))", "BOOL"));
   ++calls;
   Map::define_dialect("sqlite~replay",
-                      DialectSpec::extending("ansi~replay").version("3.35").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "1").lexical("false", "0").lexical("binaryLiteral", "x'{hex}'").lexical("numericLiteral", "'{0}'").lexical("textCollate", "").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("binaryCast", "CAST({0} AS BLOB)").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?"));
+                      DialectSpec::extending("ansi~replay").version("3.35").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "1").lexical("false", "0").lexical("binaryLiteral", "x'{hex}'").lexical("numericLiteral", "'{0}'").lexical("textCollate", " COLLATE BINARY").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("binaryCast", "CAST({0} AS BLOB)").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?"));
   ++calls;
   Map::define("sqlite~replay", Section::Ops,
               "+", EntrySpec::tpl("({0} + {1})", "NUM").caveat("decimal-float"));

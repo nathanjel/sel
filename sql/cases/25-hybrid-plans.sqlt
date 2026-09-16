@@ -222,6 +222,10 @@ SELECT `o`.* FROM `Orders` `o` LIMIT 1
 ===
 
 ### name: plan.tables.first-use-order
+--- note
+A pure-memory plan still reports its sources (an unprojected join is not a
+split point, sql/cases/26-links.sqlt): what a rule reads does not depend on
+who answers it.
 --- dialect
 mariadb
 --- bindings
@@ -230,12 +234,10 @@ mariadb
 --- source
 ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> TAKE(2)
 --- plan
-pure_sql
+pure_memory
 --- tables
 orders
 customers
---- expect
-SELECT `o`.* FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`) LIMIT 2
 ===
 
 ### name: plan.tables.dedupe-by-physical-source
@@ -250,11 +252,9 @@ mariadb
 --- source
 ORDERS .> LINK(O2, _1["id"] == _2["id"]) .> TAKE(2)
 --- plan
-pure_sql
+pure_memory
 --- tables
 orders
---- expect
-SELECT `o`.* FROM `orders` `o` INNER JOIN `orders` `o2` ON (`o`.`id` = `o2`.`id`) LIMIT 2
 ===
 
 ### name: plan.tables.relation-query-is-reported-verbatim
@@ -274,7 +274,12 @@ pure_memory
 (SELECT * FROM orders WHERE id > 10)
 ===
 
-### name: plan.hybrid.left-join-then-projection
+### name: plan.pure-memory.left-join-then-select-cols-of-a-shared-name
+--- note
+`id` is on both sides, so SEL's joined row has no `id` and SELECT_COLS("id")
+is a list of empty records; and an unprojected join is not a split point
+(sql/cases/26-links.sqlt). This was a hybrid plan whose continuation read
+`id` from `SELECT o.*`.
 --- dialect
 postgresql
 --- bindings
@@ -283,12 +288,10 @@ postgresql
 --- source
 ORDERS .> LINK_LEFT(CUSTOMERS, _1["customer_id"] == _2["id"]) .> SELECT_COLS("id")
 --- plan
-hybrid
+pure_memory
 --- tables
 orders
 customers
---- expect
-SELECT "o".* FROM "orders" "o" LEFT JOIN "customers" "c" ON ("o"."customer_id" = "c"."id")
 ===
 
 ### name: plan.pure-sql.filters-fuse-before-planning
@@ -340,7 +343,7 @@ orders
 SELECT "o".* FROM "orders" "o" WHERE ("o"."id" > 1) LIMIT 1 OFFSET 1
 ===
 
-### name: plan.pure-sql.distinct
+### name: plan.distinct.open-row-schema-stays-local
 --- dialect
 postgresql
 --- bindings
@@ -348,11 +351,9 @@ postgresql
 --- source
 ORDERS .> DISTINCT()
 --- plan
-pure_sql
+pure_memory
 --- tables
 orders
---- expect
-SELECT DISTINCT "o".* FROM "orders" "o"
 ===
 
 ### name: plan.options.strict-off-caveat-pushes-down
@@ -370,7 +371,7 @@ pure_sql
 --- tables
 orders
 --- expect
-SELECT `_sub1`.* FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1` WHERE (CAST(UPPER(`_sub1`.`name`) AS CHAR) COLLATE utf8mb4_bin = CAST('A' AS CHAR) COLLATE utf8mb4_bin)
+SELECT `_sub1`.* FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1` WHERE (CAST(UPPER(`_sub1`.`name`) AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('A' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 
 ### name: plan.options.strict-on-caveat-stays-in-memory
@@ -702,7 +703,9 @@ orders
 
 ### name: plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key
 --- note
-The control: the same spelling reading a projected key is pushed down.
+Reading a projected key is not sufficient proof for a split MAP. FILTER
+retains its input's keys, whereas the MAP continuation renumbers SQL rows.
+Keep this pipeline local even when every predicate operand is typed.
 --- dialect
 mariadb
 --- bindings
@@ -710,11 +713,9 @@ mariadb
 --- source
 ORDERS .> MAP(r, RECORD("id", r["id"], "tag", ABORT(r["name"]))) .> FILTER(s, s["id"] > 1)
 --- plan
-hybrid
+pure_memory
 --- tables
 orders
---- expect
-SELECT `o`.`id` AS `id`, `o`.`name` AS `name` FROM `orders` `o` WHERE (`o`.`id` > 1)
 ===
 
 ### name: plan.fallthrough.dependency-differing-from-a-key-only-by-case-stays-in-memory
@@ -809,7 +810,7 @@ pure_sql
 --- tables
 orders
 --- expect
-SELECT `_sub1`.* FROM (SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id` LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
+SELECT `_sub1`.* FROM (SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)
 ===
 
 ### name: plan.bucket.filter-after-pagination-on-sqlite-splits
@@ -829,7 +830,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT "o"."customer_id" AS "cid", COUNT(*) AS "n" FROM "orders" "o" GROUP BY "o"."customer_id" LIMIT 2
+SELECT MIN("o"."customer_id") AS "cid", COUNT(*) AS "n" FROM "orders" "o" GROUP BY CAST("o"."customer_id" AS TEXT) COLLATE BINARY LIMIT 2
 ===
 
 ### name: plan.bucket.bool-key-in-a-bare-bucket-stays-in-memory
@@ -938,7 +939,7 @@ pure_sql
 --- tables
 orders
 --- expect
-SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: plan.bucket.open-prefix-is-not-a-split-point
@@ -992,7 +993,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: plan.bucket.sealed-prefix-is-not-a-split-point
@@ -1049,7 +1050,7 @@ pure_sql
 --- tables
 orders
 --- expect
-SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_bin ASC
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_nopad_bin ASC
 ===
 
 ### name: plan.sort.direction-form-folds-to-a-literal
@@ -1188,7 +1189,7 @@ pure_sql
 --- tables
 orders
 --- expect
-SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n`, COALESCE(SUM(`o`.`amount`), 0) AS `s` FROM `orders` `o` GROUP BY `o`.`customer_id`
+SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n`, COALESCE(SUM(`o`.`amount`), 0) AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: plan.bucket.source-key-before-the-bucket-stays-in-memory
@@ -1226,7 +1227,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: plan.bucket.sort-by-list-key-after-the-projection-splits
@@ -1241,7 +1242,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: plan.bucket.projected-row-field-splits
@@ -1260,7 +1261,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT `o`.`customer_id` AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY `o`.`customer_id`
+SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin
 ===
 
 ### name: plan.map.count-of-a-row-stays-in-memory

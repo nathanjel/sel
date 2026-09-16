@@ -1,0 +1,155 @@
+### name: stmt.group-identity.projected.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"] + 0, RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.bare-map.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"] + 0) .> MAP(RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.composite.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(LIST(_["cat"] + 0, _["cat"]), RECORD("n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.projected.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"] + 0, RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.bare-map.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"] + 0) .> MAP(RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.composite.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(LIST(_["cat"] + 0, _["cat"]), RECORD("n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.projected.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"] + 0, RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.bare-map.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"] + 0) .> MAP(RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.composite.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(LIST(_["cat"] + 0, _["cat"]), RECORD("n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.group-identity.projected.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"] + 0, RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_UNSUPPORTED
+===
+
+### name: stmt.group-identity.bare-map.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"] + 0) .> MAP(RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_UNSUPPORTED
+===
+
+### name: stmt.group-identity.composite.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(LIST(_["cat"] + 0, _["cat"]), RECORD("n", COUNT(_)))
+--- error
+E_SQL_UNSUPPORTED
+===

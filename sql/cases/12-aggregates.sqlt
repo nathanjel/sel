@@ -50,7 +50,7 @@ mariadb
 --- source
 ALL((7, 8), _K $!= "")
 --- expect
-((CAST('1' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin) AND (CAST('2' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin))
+((CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('' AS CHAR) COLLATE utf8mb4_nopad_bin) AND (CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('' AS CHAR) COLLATE utf8mb4_nopad_bin))
 ===
 ### name: agg.static.join
 --- note
@@ -148,7 +148,7 @@ mariadb
 --- source
 ALL(V, C, _K $== "1")
 --- expect
-(CAST('1' AS CHAR) COLLATE utf8mb4_bin = CAST('1' AS CHAR) COLLATE utf8mb4_bin)
+(CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: agg.columns.count-folds-to-a-literal
 --- dialect
@@ -235,7 +235,7 @@ mariadb
 --- source
 SKU IN ITEMS
 --- expect
-((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)
+((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)
 ===
 ### name: agg.relation.nested
 --- dialect
@@ -301,7 +301,7 @@ mariadb
 --- source
 ALL(L, _ $!= "")
 --- expect
-((CAST('a' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin) AND (CAST('b' AS CHAR) COLLATE utf8mb4_bin <> CAST('' AS CHAR) COLLATE utf8mb4_bin))
+((CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('' AS CHAR) COLLATE utf8mb4_nopad_bin) AND (CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('' AS CHAR) COLLATE utf8mb4_nopad_bin))
 ===
 ### name: agg.empty.all-is-true
 --- note
@@ -488,7 +488,7 @@ mariadb
 --- source
 ALL(ITEMS, RMATCH('^[A-Z]{2}-\d{4}$', _["SKU"]))
 --- expect
-NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)
+NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_nopad_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)
 ===
 ### name: agg.filter.absorbed-into-count-bare
 --- note
@@ -531,7 +531,7 @@ mariadb
 --- source
 ANY(SKUS, _ $== "AB-1000")
 --- expect
-EXISTS (SELECT 1 FROM `order_items` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_bin = CAST('AB-1000' AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)
+EXISTS (SELECT 1 FROM `order_items` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('AB-1000' AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)
 ===
 ### name: agg.relation.row-is-not-a-scalar-source
 --- note
@@ -574,7 +574,7 @@ mariadb
 --- source
 ANY(ITEMS, I, ANY(SKUS, S, S $== I["SKU"]))
 --- expect
-EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND (EXISTS (SELECT 1 FROM `skus` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_bin = CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin)) IS TRUE)) IS TRUE)
+EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND (EXISTS (SELECT 1 FROM `skus` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)) IS TRUE)
 ===
 ### name: agg.count.list-yielding-call-is-not-a-scalar
 --- note
@@ -612,7 +612,7 @@ mariadb
 --- source
 NOT("flag" IN NOTES)
 --- expect
-(NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))
+(NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))
 ===
 ### name: agg.count.structure-yielding-call-is-not-a-scalar
 --- note

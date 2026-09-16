@@ -1,0 +1,20 @@
+### name: rel.text-identity.trailing-space-equality
+--- source
+LIST("a", "a ") .> FILTER(_ $== "a")
+--- expect
+tree -{"1"=t"a"}
+===
+
+### name: rel.text-identity.group-count
+--- source
+COUNT(LIST("", " ", "  ", "a", "a ", "A", "ą", "ą ") .> BUCKET(_))
+--- expect
+text "8"
+===
+
+### name: rel.text-identity.sort
+--- source
+LIST("ą ", "ą", "a ", "a", "A", "  ", " ", "") .> SORT_BY(_)
+--- expect
+tree -{"1"=t"", "2"=t" ", "3"=t"  ", "4"=t"A", "5"=t"a", "6"=t"a ", "7"=t"ą", "8"=t"ą "}
+===

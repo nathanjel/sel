@@ -359,12 +359,31 @@ def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
     ('(3, 1, 2) .> SORT_DESC() .> TAKE(1)', ['TOP_DESC']),
     ('((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
      ' .> SORT_BY(_["x"], "DESC") .> TAKE(1)', ['TOP_BY']),
+    # A FILTER moves in front of a MAP, a sort or a SELECT_COLS only when a
+    # later step renumbers the rows again without reading `_K`: FILTER keeps
+    # its input's keys and the three renumber (spec §7.3), so at the end of a
+    # pipeline the swap would change the answer's keys.
     ('((RECORD("x", 1), RECORD("x", 2)))'
      ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
-     ' .> FILTER(_["x"] > 0)', ['FILTER', 'MAP']),
-    ('(1, 2) .> SORT() .> FILTER(_ > 0)', ['FILTER', 'SORT']),
+     ' .> FILTER(_["x"] > 0) .> MAP(_["heavy"])', ['FILTER', 'MAP', 'MAP']),
     ('((RECORD("x", 1), RECORD("x", 2)))'
-     ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0)', ['FILTER', 'SELECT_COLS']),
+     ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+     ' .> FILTER(_["x"] > 0)', ['MAP', 'FILTER']),
+    ('((RECORD("x", 1), RECORD("x", 2)))'
+     ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+     ' .> FILTER(_["x"] > 0) .> MAP(_K)', ['MAP', 'FILTER', 'MAP']),
+    ('((RECORD("x", 1), RECORD("x", 2)))'
+     ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+     ' .> FILTER(_["x"] > 0) .> FILTER(_["x"] > 1) .> TAKE(1)', ['FILTER', 'MAP', 'TAKE']),
+    ('((RECORD("x", 1), RECORD("x", 2)))'
+     ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+     ' .> FILTER(_["heavy"] > 0)', ['MAP', 'FILTER']),
+    ('(1, 2) .> SORT() .> FILTER(_ > 0) .> TAKE(1)', ['FILTER', 'TOP']),
+    ('(1, 2) .> SORT() .> FILTER(_ > 0)', ['SORT', 'FILTER']),
+    ('((RECORD("x", 1), RECORD("x", 2)))'
+     ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0) .> MAP(_["x"])', ['FILTER', 'SELECT_COLS', 'MAP']),
+    ('((RECORD("x", 1), RECORD("x", 2)))'
+     ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0)', ['SELECT_COLS', 'FILTER']),
     ('((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
      ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
      ' .> SORT_BY(_["x"], "DESC")', ['SORT_BY', 'MAP']),
@@ -428,6 +447,34 @@ def test_optimizer_physical_join_pushdown_keeps_record():
     ).ast)
     _, steps = unwind_pipeline(external_root)
     assert [step.name for step in steps] == ['LINK', 'FILTER']
+
+    # A binder or relation name read directly after the LINK -- `O["x"]`,
+    # `ORDERS["x"]`, `_2["x"]` -- is not a side: the binders are scoped to the
+    # predicate (spec §7.4), so as written it is E_UNDEF_VAR or E_NO_KEY, and
+    # pushing it into the side it names would turn that error into rows
+    # (review 2026-09-15, W2). Only `_["O"]["x"]` names a side.
+    for predicate in ('O["status"] $== "ACTIVE"', 'ORDERS["status"] $== "ACTIVE"',
+                      '_1["status"] $== "ACTIVE"', 'C["country"] $== "DE"',
+                      'CUSTOMERS["country"] $== "DE"', '_2["country"] $== "DE"'):
+        stays = optimize_ast_in_memory(sel_compile(
+            'ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"])'
+            f' .> FILTER({predicate})'
+        ).ast)
+        _, steps = unwind_pipeline(stays)
+        assert [step.name for step in steps] == ['LINK', 'FILTER'], predicate
+        # Left as written: the read still goes through the bare name.
+        read = steps[1].args[1].l
+        assert read.t == 'index' and read.obj.t == 'var'
+        assert read.obj.name.upper() == predicate.split('[')[0].upper()
+    through_the_key = optimize_ast_in_memory(sel_compile(
+        'ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"])'
+        ' .> FILTER(_["C"]["country"] $== "DE")'
+    ).ast)
+    _, steps = unwind_pipeline(through_the_key)
+    assert [step.name for step in steps] == ['LINK']
+    pushed = steps[0].args[1]
+    assert pushed.name == 'FILTER' and pushed.args[0].name == 'CUSTOMERS'
+    assert pushed.args[1].l.obj.name == '_'
 
     # `_K` is an unknown dependency outside BUCKET and must not be treated as
     # a neutral variable while classifying join predicates.
@@ -569,7 +616,12 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         # Cross-validation of that fix: a downstream step's own binder, keys
         # differing only by case, a list literal around the custom call.
         ('ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> SORT_BY(s, s["name"])', 'pure_memory'),
-        ('ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'hybrid'),
+        # The FILTER no longer moves in front of the MAP (it would renumber
+        # the answer's keys); over the MAP's derived table sqlite cannot
+        # render its NUM guard, so nothing pushes down. A later step that
+        # renumbers again lets the swap through.
+        ('ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'),
+        ('ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'hybrid'),
         ('ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'),
         ('ORDERS .> MAP(RECORD("x", _["id"], "X", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'),
         ('ORDERS .> MAP(RECORD("id", _["id"], "shout", (REPEAT(_["name"], 2), 1))) .> TAKE(2)', 'hybrid'),
@@ -644,6 +696,37 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         assert got_kind == expected, (source, got_kind)
         got = outcome(lambda: Sql.execute_hybrid(plan, runner, {'ORDERS': rows}))
         assert got == want, (source, got, want)
+
+
+def test_runner_contract_hands_params_statement_and_bindings_in_order():
+    """The runner contract (finding AK): the statement in `params` mode with
+    `bindings()` in placeholder order -- text literals as `?`, numbers inlined
+    -- in every host, so a driver binds what it is handed as it is. Lisp
+    handed the runner inline SQL and its creation-order slot list.
+    """
+    from sel.sql import Binding, Sql
+    bindings = {'ORDERS': Binding.relation('orders', 'o', {
+        'ID': Binding.column('id', 'o', 'NUM'),
+        'CUSTOMER_ID': Binding.column('customer_id', 'o', 'NUM'),
+        'AMOUNT': Binding.column('amount', 'o', 'NUM'),
+        'NAME': Binding.column('name', 'o', 'TEXT')})}
+    rows = [{'id': '1', 'customer_id': '7', 'amount': '10', 'name': 'a'}]
+    program = sel_compile('ORDERS .> FILTER(FIND("needle", "hay-" & _["name"]) > 0 AND _["amount"] > 5)'
+                          ' .> MAP(RECORD("g", RGROUPS("(a)", _["name"])))')
+    plan = Sql.plan_hybrid(program, 'mariadb', bindings)
+    assert not plan.pure_sql and not plan.pure_memory, 'expected a hybrid plan'
+    seen = []
+
+    def runner(sql, params):
+        seen.append((sql, [p.dump() for p in params]))
+        return []
+
+    Sql.execute_hybrid(plan, runner, {'ORDERS': rows})
+    assert len(seen) == 1, 'the runner was not called once'
+    sql, params = seen[0]
+    assert '?' in sql and "'needle'" not in sql and "'hay-'" not in sql, sql
+    assert '?, 5' not in sql and '> 5' in sql, sql
+    assert params == ['t"hay-"', 't"needle"'], params
 
 
 def test_program_caches_the_physical_ast_per_source_tree():

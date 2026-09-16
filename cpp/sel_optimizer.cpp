@@ -7,8 +7,8 @@
 // build and tools that include sel.cpp get one identical optimizer without
 // duplicating the evaluator or exposing the decimal core.
 
-NodePtr optimize_ast_logical(const NodePtr& ast) { return opt_tree(ast, false, 1); }
-NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_tree(ast, true, 1); }
+NodePtr optimize_ast_logical(const NodePtr& ast) { return opt_root(ast, false); }
+NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_root(ast, true); }
 NodePtr optimize_ast(const NodePtr& ast) { return optimize_ast_in_memory(ast); }
 
 // The pipeline vocabulary the SQL planner shares with the optimizer. See

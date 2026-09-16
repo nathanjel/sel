@@ -739,7 +739,7 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
         $mustRefuse = $case['refuse'][$dialect] ?? null;
         try {
             $program = Sel::compile($case['sel']);
-            $frag = Sql::translateStatement($program, $dialect, $bindings);
+            $frag = Sql::translateStatement($program, $dialect, $bindings, $case['options'] ?? []);
         } catch (SqlError $e) {
             if ($mustRefuse === null) {
                 $bad[] = [$case['name'], '', "refused {$e->code} and nothing said it would; "
@@ -760,6 +760,17 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
         $statement = $frag->asStatement();
         try {
             $db = $pdo->query($statement)->fetchAll(PDO::FETCH_ASSOC);
+            // Also execute native placeholders. An inline-only oracle cannot
+            // catch parameter order, lost slots, or driver coercion mistakes.
+            $prepared = $pdo->prepare($frag->asStatement('params'));
+            foreach ($frag->bindings() as $i => $value) {
+                $native = $value->toNative();
+                $type = $native === null ? PDO::PARAM_NULL
+                    : (is_bool($native) ? PDO::PARAM_BOOL : PDO::PARAM_STR);
+                $prepared->bindValue($i + 1, $native, $type);
+            }
+            $prepared->execute();
+            $parameterRows = $prepared->fetchAll(PDO::FETCH_ASSOC);
         } catch (Throwable $e) {
             $bad[] = [$case['name'], $statement, get_class($e) . ': ' . $e->getMessage()];
             continue;
@@ -772,13 +783,16 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
         }
         $want = statement_rows(is_array($sel) ? array_values($sel) : []);
         $got = statement_rows($db);
+        $parameterGot = statement_rows($parameterRows);
         if (empty($case['ordered'])) {
             sort($want);
             sort($got);
+            sort($parameterGot);
         }
-        if ($got !== $want) {
+        if ($got !== $want || $parameterGot !== $want) {
             $bad[] = [$case['name'], $statement,
-                'SEL=' . json_encode($want) . "\n        DB=" . json_encode($got)];
+                'SEL=' . json_encode($want) . "\n        DB=" . json_encode($got)
+                . "\n        PARAMS=" . json_encode($parameterGot)];
             continue;
         }
         $ok++;

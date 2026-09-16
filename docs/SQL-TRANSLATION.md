@@ -221,7 +221,7 @@ key by key.
   "true":           "TRUE",
   "false":          "FALSE",
   "binaryLiteral":  "X'{hex}'",       // BIN literals; null = refuse
-  "textCollate":    " COLLATE utf8mb4_bin",   // appended for $-family compares
+  "textCollate":    " COLLATE utf8mb4_nopad_bin",   // appended for $-family compares
   "numericCast":    "CAST({0} AS DECIMAL(38,10))",
   "isTrue":     "({0}) IS TRUE",
   "isNotTrue":  "({0}) IS NOT TRUE",
@@ -410,7 +410,7 @@ final class MapData
                 'textEscape' => ["'" => "''", '\\' => '\\\\'],
                 'true' => 'TRUE',
                 'false' => 'FALSE',
-                'textCollate' => ' COLLATE utf8mb4_bin',
+                'textCollate' => ' COLLATE utf8mb4_nopad_bin',
                 'numericCast' => 'CAST({0} AS DECIMAL(38,10))',
                 'isTrue' => '({0}) IS TRUE',
                 'isNotTrue' => '({0}) IS NOT TRUE',
@@ -478,7 +478,7 @@ DIALECTS: dict[str, dict] = {
             'identQuote': '`', 'identEscape': '``',
             'textQuote': "'", 'textEscape': {"'": "''", '\\': '\\\\'},
             'true': 'TRUE', 'false': 'FALSE',
-            'textCollate': ' COLLATE utf8mb4_bin',
+            'textCollate': ' COLLATE utf8mb4_nopad_bin',
             'numericCast': 'CAST({0} AS DECIMAL(38,10))',
             'isTrue': '({0}) IS TRUE',
             'isNotTrue': '({0}) IS NOT TRUE',
@@ -637,13 +637,13 @@ character escaped per `identEscape`.
 
 Relational database optimizers require expressions over indexed columns to be *sargable* (search-argument-able) to perform B-tree index seek and range scans rather than falling back to full table scans. `Binding::column` and `Binding::raw` provide metadata parameters to declare schema properties:
 
-- **`exact: bool = false`**: Declares that the underlying column or expression already provides exact binary comparison semantics (e.g. `_bin` or binary collations, byte-identical ASCII, UUIDs). When true:
+- **`exact: bool = false`**: Declares that the underlying column or expression already provides exact byte identity, including trailing spaces (for example a binary string, MariaDB `utf8mb4_nopad_bin`, or MySQL `utf8mb4_0900_bin`). A `_bin` suffix alone is not sufficient: `utf8mb4_bin` is PAD SPACE. This is a caller assertion, not schema discovery. When true:
   - String equality, inequality, and ordering comparisons (`$==`, `$!=`, `$<`, `$<=`, `$>`, `$>=`) omit defensive `CAST(... AS CHAR)` and `COLLATE` wrapping.
   - The translator emits bare comparisons (`col = 'val'`), enabling index seeks across MariaDB, MySQL, PostgreSQL, and SQLite.
   - In `x IN ("a", "b")` expansions over literal lists, each comparison is emitted uncast (`((col = 'a') OR (col = 'b'))`), enabling B-tree index range scans.
 - **`sargable: bool = false`**: For case-insensitive columns (e.g. MySQL `_ci` collations):
-  - On MariaDB and MySQL, emits a coarse equality prefilter combined with the exact binary check: `((col = 'val') AND (CAST(col AS CHAR) COLLATE utf8mb4_bin = CAST('val' AS CHAR) COLLATE utf8mb4_bin))`. The database query engine uses the index for the coarse equality prefilter to discard non-matching rows, executing the exact collation check only on candidate rows.
-  - On PostgreSQL and SQLite, where text equality is already exact by default, emits clean bare equality (`col = 'val'`).
+  - On MariaDB and MySQL, emits a coarse equality prefilter combined with the exact binary check: `((col = 'val') AND (CAST(col AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('val' AS CHAR) COLLATE utf8mb4_nopad_bin))`. The database query engine uses the index for the coarse equality prefilter to discard non-matching rows, executing the exact collation check only on candidate rows.
+  - On PostgreSQL and SQLite, retains the exact comparison without a coarse prefilter. SQLite explicitly uses `COLLATE BINARY`: column-level `NOCASE` and `RTRIM` declarations survive a cast and must be overridden.
 - **`guard: bool = false`**: Forces regex validation and safe numeric casting (`CASE WHEN col REGEXP ... THEN CAST(col AS DECIMAL) ELSE NULL END`) even when the binding is declared `NUM`. This protects against engine errors (such as MariaDB error 1292: `Truncated incorrect DOUBLE value`) when querying heterogeneous or dirty EAV string columns.
 - **`collation: ?string = null`**: String alias for collation configuration:
   - `'binary'` or `'exact'`: sets `exact = true`.
@@ -1091,7 +1091,7 @@ expression is refused:
 
 ```sel-case agg.relation.in
 SKU IN ITEMS
-    ((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)
+    ((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)
 ```
 
 ```sel-case refuse.in-over-a-multi-field-relation
@@ -1359,7 +1359,7 @@ SUM(ITEMS, _["QTY"] * _["PRICE"]) > CREDIT_LIMIT
 
 ```sel-case agg.contract.all-skus-well-formed
 ALL(ITEMS, RMATCH('^[A-Z]{2}-\d{4}$', _["SKU"]))
-    NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)
+    NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_nopad_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)
 ```
 
 That last one is `\d` rewritten to `[0-9]` — see §7.10.
@@ -1534,7 +1534,7 @@ uncovers a second, deeper one:
 ```
 3.0 IN (3)                       SEL: FALSE      (IN is EQL-based, and EQL does
                                                   not normalise numbers)
-    (3.0 COLLATE utf8mb4_bin = 3 COLLATE utf8mb4_bin)     MariaDB: 1
+    (3.0 COLLATE utf8mb4_nopad_bin = 3 COLLATE utf8mb4_nopad_bin)     MariaDB: 1
 ```
 
 A collation does not make MariaDB compare two numeric literals as text; it
@@ -1562,7 +1562,7 @@ parser had already given the same form.
 
 ```
 RMATCH('^a$', "A", "i")          SEL: TRUE
-    ('A' COLLATE utf8mb4_bin REGEXP CONCAT('(?s)', '^a$'))    MariaDB: 0
+    ('A' COLLATE utf8mb4_nopad_bin REGEXP CONCAT('(?s)', '^a$'))    MariaDB: 0
 ```
 
 The template names `{0}` and `{1}` only, `Emit::fill` ignores arguments a
@@ -1587,8 +1587,8 @@ decide what they mean. MariaDB's engine does not do that rewrite, and forcing a
 binary collation does not stop it. Verified on 11.8:
 
 ```
-SELECT '٣' COLLATE utf8mb4_bin REGEXP '^\d$'   ->  1     SEL says FALSE
-SELECT 'é' COLLATE utf8mb4_bin REGEXP '^\w$'   ->  1     SEL says FALSE
+SELECT '٣' COLLATE utf8mb4_nopad_bin REGEXP '^\d$'   ->  1     SEL says FALSE
+SELECT 'é' COLLATE utf8mb4_nopad_bin REGEXP '^\w$'   ->  1     SEL says FALSE
 ```
 
 The fix is not to copy the rewrite into the SQL layer. `Sel\Builtins\Regex`
@@ -2241,22 +2241,48 @@ returns a **plan** that is one of three things:
 | `hybrid` | the longest translatable prefix | a program over `_INPUT` | the database answers the prefix, the evaluator runs the rest over its rows |
 | `pure_memory` | none | the original program | nothing pushes down |
 
-The plan carries the same nine fields in every host, under each host's own
+The plan carries the same fields in every host, under each host's own
 spelling (`sourceTables` / `source_tables` / `hybrid-plan-source-tables`):
 
 | Field | Holds |
 |---|---|
 | `dialect` | the target named in the call |
 | `sql_statement` | the `Fragment` for the prefix, or none for `pure_memory` |
-| `sql_prefix_ast` | the tree that fragment was translated from, or none |
+| `sql_prefix_ast` | the translated prefix tree, or the logical input prefix for a selected-member strategy; none for pure memory |
 | `continuation_ast` | the tree the continuation runs; the original AST for `pure_memory`, none for `pure_sql` |
 | `continuation_program` | that tree as a `Program`; the original program for `pure_memory` |
 | `continuation_source_var` | the name the prefix's rows are bound to, `_INPUT` |
 | `pure_sql`, `pure_memory` | the classification; `is_hybrid` is neither |
+| `selected_member` | optional grouped-latest strategy metadata: `partition_key` and `revision_key`; otherwise none |
 | `source_tables` | the **physical** sources the plan reads |
 
 What the planner promises, and what `sql/cases/25-hybrid-plans.sqlt` holds
 every host to:
+
+The grouped-latest-member strategy is a deliberately narrow exception to a
+literal prefix split. A relation binding can declare a single-column unique,
+non-null key using Python/C++ `with_unique_key("id")`, JS/PHP
+`withUniqueKey("id")`, or Lisp `binding-with-unique-key`. These methods return
+a new binding and validate that the named field exists; uniqueness and NOT NULL
+are caller/schema promises, not inferred from a name such as `id`.
+
+With default binders, a direct NUM revision key and a direct TEXT/NUM partition key, the planner
+recognizes a BUCKET projection containing exactly the group key and
+`TOP_BY(_, _["id"], "DESC", 1)`. Physical column names must match the SEL field
+names. It accepts input filters and ascending revision ordering, then uses a
+filtered-input CTE, MAX(revision), and a join back to select complete winner
+rows. The original bucket/projection and later operations run locally on those
+rows; `selected_member` records the partition and revision keys. In this mode
+`sql_prefix_ast` describes the logical input, not an independent SEL expression
+equivalent to the entire selection SQL. Callers must execute `sql_statement`.
+
+Ascending revision order preserves first-group order through MIN(revision).
+Without an explicit source sort, SQL relations have no implicit order guarantee.
+Composite partitions, computed keys, TOP 0 or TOP N greater than 1, other input
+sorts, raw/correlated relations, additional member aggregates, and absent unique
+key metadata retain fallback. See the [F6 contract](interim/sel-gaps-2026-09-15-06-eav-latest-revision-pushdown.md).
+
+The ordinary prefix planner promises:
 
 - **It plans the program as written, through its helpers.** Stage 1 runs
   first for its verdict alone: a program it refuses is `pure_memory`. What is
@@ -2310,6 +2336,44 @@ every host to:
   left-to-right sweep as the other four, so a pipeline reaches the translator
   in one shape everywhere (finding V; `stmt.order-by.later-sort-*`,
   `plan.sort.later-sort-is-the-primary-key`, `plan.map.computed-then-sort-then-take`).
+- **The rewrites keep keys.** The logical optimiser moves a `FILTER` in
+  front of a `MAP`, a sort or a `SELECT_COLS` only when a later step
+  renumbers the rows again without reading `_K`: `FILTER` keeps its input's
+  keys and the three renumber (spec §7.3), and the continuation runs the
+  rewritten tree, so an unguarded swap answered `{"1": …}` where `run()`
+  answers `{"2": …}` (finding #33, found during the review's remediation).
+  A `MAP(…) .> FILTER(…)` that ends a pipeline is therefore rendered as a
+  `WHERE` over the MAP's derived table, not in front of the MAP. A partially
+  local MAP cannot absorb a later FILTER at all: its continuation would
+  renumber the surviving SQL rows and lose the FILTER's retained ordinal keys
+  (`plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key`).
+  Direct projected fields retain their declared kinds through derived tables;
+  arbitrary computed projections remain UNKNOWN. Grouping on an UNKNOWN key
+  is refused, retaining a safe prefix when available, rather than trusting
+  a database's default equality or collation.
+- **A joined row is its promoted fields, and a join alone is not a split
+  point.** SEL's row after a `LINK` holds each side under its binders and the
+  promoted fields beside them (spec §7.4 "Joined rows"); SQL carries the
+  promoted fields — `SELECT o.customer_id, o.amount FROM orders o INNER JOIN
+  …` — and nothing for the binders. A name both sides have is not a column
+  of the row (`E_SQL_SHAPE` at the read, where `run()` raises `E_NO_KEY`),
+  and a derived table over a join carries the same fields, so what a step
+  reads above it is what SEL's row has. Until a `MAP`, a `SELECT_COLS` or a
+  `BUCKET` projects the join, its rows are not the value: `joinRowsLackBinders`
+  beside `bucketRowsAreKeys` keeps such a prefix from being a split point or
+  a full pushdown, so `ORDERS .> LINK(…) .> TAKE(2)` is pure memory while
+  `… .> MAP(RECORD("a", _["amount"]))` is pure SQL. And the binders are
+  scoped to the predicate: `FILTER(C["id"] > 1)` after the `LINK` is
+  `E_SQL_UNBOUND` in every host, as `run()` raises `E_UNDEF_VAR` — three
+  hosts accepted the right binder and two accepted both (finding W2), and
+  `SELECT o.*` was every host's row (finding Y). `sql/cases/26-links.sqlt`.
+- **The runner sees placeholders.** `execute_hybrid` hands the runner the
+  statement in `params` mode and `bindings()` — `?` for every bound value
+  (text literals, binary), numbers inlined, values in placeholder order — in
+  every host, so a driver binds what it is handed as it is. Lisp handed the
+  runner inline-mode SQL and its creation-order slot list, so a runner
+  written against the other four bound values into a statement that had no
+  placeholders (finding AK); each host's unit lane now pins the contract.
 - **A bucket is split only where SQL still has its members.** `BUCKET(src,
   key)` on its own renders as the group *keys* — SQL has no nested row — while
   SEL's value is a map of member rows. So `BUCKET(src, key) .> MAP(proj)` is
@@ -2372,6 +2436,14 @@ every host to:
   move the split before the `MAP` instead. The continuation passes a
   projected pair through *by key* — `"cid", _["customer_id"]` comes back as
   `cid` and is read as `cid`, `_["amount"] + 1` is not added twice.
+- **RECORD writes are not SQL aliases.** Duplicate output or composite group-key
+  aliases, including ASCII-case-only collisions, refuse statement translation
+  with `E_SQL_SHAPE`. The planner backs up before the affected projection.
+  It does not silently delete overwritten expressions: these still evaluate
+  locally, can raise, and retain the first insertion position of the key while
+  its last value wins. Exact duplicate keys also disable mixed SQL/local MAP
+  fall-through. Distinct case-sensitive keys may still use mixed fall-through
+  when its existing checks prove the SQL columns and local fields stay separate.
 - **The caller's AST is never written to.** The optimiser and the planner copy
   on the way down, in every host, and the fixtures snapshot the tree before
   and compare after. A program is reusable: `run` it, plan it, `run` it again,

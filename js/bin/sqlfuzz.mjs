@@ -16,7 +16,28 @@
 
 import { readFileSync } from 'node:fs';
 import { compile, SelError } from '../src/sel.mjs';
-import { Sql, SqlError } from '../src/sql/index.mjs';
+import { Binding, Sql, SqlError } from '../src/sql/index.mjs';
+
+// The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
+// same in every host's runner: two tables, a NUM join key, a TEXT field whose
+// name both sides share.
+const bindings = {
+  ORDERS: Binding.relation('orders', 'o', {
+    ID: Binding.column('id', 'o', 'NUM'), CUSTOMER_ID: Binding.column('customer_id', 'o', 'NUM'),
+    AMOUNT: Binding.column('amount', 'o', 'NUM'), NAME: Binding.column('name', 'o', 'TEXT') }),
+  CUSTOMERS: Binding.relation('customers', 'c', {
+    ID: Binding.column('id', 'c', 'NUM'), NAME: Binding.column('name', 'c', 'TEXT') }),
+};
+const render = (f) => [f.asValue(), f.asValue('params'), f.bindings().map((v) => v.dump()).join(',')].join(' | ');
+// Three lanes per program, `||`-separated: translate(), translateStatement()
+// and planHybrid() (its classification, then its statement in params mode).
+const attempt = (fn) => {
+  try { return fn(); } catch (e) {
+    if (e instanceof SqlError) return `!${e.code}@${e.line}:${e.col}`;
+    if (e instanceof SelError) return `!SEL ${e.code}@${e.line}:${e.col}`;
+    return `!HOST ${e.constructor.name}: ${e.message}`;
+  }
+};
 
 const [path, dialect = 'mariadb'] = process.argv.slice(2);
 
@@ -50,9 +71,15 @@ for (const src of readCorpus(readFileSync(path, 'utf8'))) {
     // whether a slot is a literal or a placeholder is a `params`-mode decision,
     // and the bound values are a third thing again -- a host that emits the same
     // string while binding different values is exactly what this lane is for.
-    const f = Sql.translate(program, dialect);
-    lines.push([f.asValue(), f.asValue('params'),
-                f.bindings().map((v) => v.dump()).join(',')].join(' | '));
+    lines.push([
+      attempt(() => render(Sql.translate(program, dialect, bindings))),
+      attempt(() => render(Sql.translateStatement(program, dialect, bindings))),
+      attempt(() => {
+        const plan = Sql.planHybrid(program, dialect, bindings);
+        const kind = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+        return plan.sqlStatement ? `${kind} ${plan.sqlStatement.asStatement('params')}` : kind;
+      }),
+    ].join(' || '));
   } catch (e) {
     if (e instanceof SqlError) lines.push(`!${e.code}@${e.line}:${e.col}`);
     // A SEL error raised DURING translation is still a translator answer -- the

@@ -17,10 +17,46 @@ final class Optimizer
         'LINK', 'LINK_LEFT',
     ];
 
-    /** @param array<string,mixed> $ast */
+    /**
+     * The evaluator is the depth authority (spec §6.4): a tree that reaches the
+     * cap is evaluated as written, so it is returned as written. Folding at the
+     * boundary erased the E_DEPTH the evaluator raises for a chain of 201
+     * additions (each of them foldable), and a rewrite that lifts a child would
+     * move it; not rewriting loses nothing, because such a tree either raises or
+     * keeps its deep part on a branch that is never evaluated.
+     *
+     * @param array<string,mixed> $ast
+     */
     public static function optimize(array $ast, bool $physical = true, array $options = []): array
     {
-        return self::optimizeTree($ast, $physical, 1, $options);
+        return self::exceedsDepth($ast, 1) ? $ast : self::optimizeTree($ast, $physical, 1, $options);
+    }
+
+    /**
+     * Whether any node of the tree lies past the evaluator's depth cap, counted
+     * the way the evaluator counts: the root at 1, every child one deeper, an
+     * assignment's target excluded (the evaluator walks it iteratively). The walk
+     * stops at the cap, so it is bounded however deep the tree is.
+     *
+     * @param array<string,mixed>|null $node
+     */
+    private static function exceedsDepth(?array $node, int $depth): bool
+    {
+        if ($node === null) return false;
+        if ($depth > MAX_DEPTH) return true;
+        $next = $depth + 1;
+        foreach (['args', 'items'] as $key) {
+            foreach ($node[$key] ?? [] as $item) {
+                if (is_array($item) && self::exceedsDepth($item, $next)) return true;
+            }
+        }
+        foreach (['l', 'r', 'x', 'obj', 'idx'] as $key) {
+            if (isset($node[$key]) && is_array($node[$key]) && self::exceedsDepth($node[$key], $next)) return true;
+        }
+        if (($node['t'] ?? null) !== 'assign' && isset($node['target']) && is_array($node['target'])
+            && self::exceedsDepth($node['target'], $next)) return true;
+        if (isset($node['value']) && is_array($node['value']) && self::exceedsDepth($node['value'], $next)) return true;
+        return false;
     }
 
     /** @param array<string,mixed> $node @return array{source:array<string,mixed>,steps:list<array<string,mixed>>} */
@@ -52,8 +88,9 @@ final class Optimizer
     /** @param array<string,mixed> $node */
     private static function optimizeTree(array $node, bool $physical, int $depth, array $options): array
     {
-        // Let Parser/Evaluator report the normative depth error. Stopping the
-        // rewrite here avoids making the optimizer a second depth authority.
+        // The evaluator/SQL normaliser owns the public depth error and its source
+        // position. optimize() never descends into a tree that reaches the cap;
+        // this guard keeps the walk bounded should a rewrite ever deepen one.
         if ($depth > MAX_DEPTH) {
             return $node;
         }
@@ -360,7 +397,8 @@ final class Optimizer
                     $details = self::filterDetails($second);
                     $refs = self::fieldRefs($details['predicate'], $details['binder']);
                     if ($details['valid'] && $refs !== [] && self::allIn($refs, $passes)
-                        && !self::readsRowOrKey($details['predicate'], $details['binder'])) {
+                        && !self::readsRowOrKey($details['predicate'], $details['binder'])
+                        && self::keysRenumberedBy($steps[$i + 2] ?? null)) {
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -369,7 +407,8 @@ final class Optimizer
                     }
                 }
                 if ($second !== null && in_array($firstName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
-                    && $secondName === 'FILTER' && !self::stepReadsKey($second)) {
+                    && $secondName === 'FILTER' && !self::stepReadsKey($second)
+                    && self::keysRenumberedBy($steps[$i + 2] ?? null)) {
                     $next[] = $second;
                     $next[] = $first;
                     $i++;
@@ -380,7 +419,8 @@ final class Optimizer
                     $details = self::filterDetails($second);
                     $refs = self::fieldRefs($details['predicate'], $details['binder']);
                     if ($details['valid'] && $refs !== [] && self::allIn($refs, self::selectFields($first))
-                        && !self::readsRowOrKey($details['predicate'], $details['binder'])) {
+                        && !self::readsRowOrKey($details['predicate'], $details['binder'])
+                        && self::keysRenumberedBy($steps[$i + 2] ?? null)) {
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -596,6 +636,21 @@ final class Optimizer
     }
 
     /**
+     * Whether the step after a FILTER hides where the FILTER ran. FILTER keeps its
+     * input's keys (spec §7.3) and MAP, SELECT_COLS and the sorts renumber, so a
+     * FILTER moved in front of one of them carries the source's keys where the
+     * program as written carried the step's -- visible in the answer, and in any
+     * later `_K`. Only a following step that renumbers again without reading `_K`
+     * hides that; the end of the pipeline, or another FILTER, does not.
+     *
+     * @param array<string,mixed>|null $step
+     */
+    private static function keysRenumberedBy(?array $step): bool
+    {
+        return $step !== null && ($step['name'] ?? '') !== 'FILTER' && !self::stepReadsKey($step);
+    }
+
+    /**
      * Whether the source a pipeline starts from is a list already, so a FILTER
      * whose predicate is a constant TRUE over it is the identity. Over a scalar
      * it is not: FILTER wraps a scalar into a one-element list (spec §7.3), and
@@ -802,20 +857,20 @@ final class Optimizer
             if (($item['t'] ?? null) === 'index'
                 && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text') {
+                // `O["id"]` or `ORDERS["id"]` after the LINK: the binders are
+                // scoped to the predicate (spec §7.4), so as written this is
+                // E_UNDEF_VAR, or E_NO_KEY on the relation's list. Pushing it into
+                // the side it names turned that error into rows (review
+                // 2026-09-15, W2) -- only `_["O"]["id"]`, a read through the
+                // joined row's key, names a side.
                 $name = strtoupper((string) $item['obj']['name']);
-                if (in_array($name, array_map('strtoupper', $leftNames), true)) $hasLeft = true;
-                elseif (in_array($name, array_map('strtoupper', $rightNames), true)) $hasRight = true;
-                elseif ($name === strtoupper($binder) || $name === '_') $ambiguous = true;
+                if ($name === strtoupper($binder) || $name === '_') $ambiguous = true;
                 else $unknown = true;
                 return;
             }
             if (($item['t'] ?? null) === 'var') {
                 $name = strtoupper((string) $item['name']);
-                if ($name !== strtoupper($binder) && $name !== '_') {
-                    if (in_array($name, array_map('strtoupper', $leftNames), true)) $hasLeft = true;
-                    elseif (in_array($name, array_map('strtoupper', $rightNames), true)) $hasRight = true;
-                    else $unknown = true;
-                }
+                if ($name !== strtoupper($binder) && $name !== '_') $unknown = true;
             }
             foreach (['args', 'items'] as $key) foreach ($item[$key] ?? [] as $child) $visit($child);
             foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
@@ -843,10 +898,6 @@ final class Optimizer
             && in_array(strtoupper((string) $copy['obj']['idx']['v']), array_map('strtoupper', $names), true)) {
             $copy['obj'] = ['t' => 'var', 'name' => '_', 'pos' => $copy['obj']['obj']['pos']];
             return $copy;
-        }
-        if (($copy['t'] ?? null) === 'index' && ($copy['obj']['t'] ?? null) === 'var'
-            && in_array(strtoupper($copy['obj']['name']), array_map('strtoupper', $names), true)) {
-            $copy['obj'] = ['t' => 'var', 'name' => '_', 'pos' => $copy['obj']['pos']];
         }
         foreach (['args', 'items'] as $key) if (isset($copy[$key])) {
             $copy[$key] = array_map(static fn (array $item): array => self::rewriteJoinRefs($item, $names, $binder), $copy[$key]);

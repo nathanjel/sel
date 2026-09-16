@@ -34,6 +34,8 @@ final class HybridPlan
     public bool $pureMemory;
     /** @var list<string> */
     public array $sourceTables;
+    public ?array $selectedMember;
+    public ?array $selected_member;
 
     // Snake-case aliases mirror the cross-host planner contract. They are
     // values, rather than magic accessors, so a caller can serialize a plan
@@ -54,6 +56,7 @@ final class HybridPlan
     /** @param array<string,mixed> $spec */
     public function __construct(array $spec = [])
     {
+        $this->selectedMember = $this->selected_member = $spec['selectedMember'] ?? null;
         $this->dialect = $spec['dialect'] ?? null;
         $this->sqlStatement = $spec['sqlStatement'] ?? null;
         $this->sqlPrefixAst = $spec['sqlPrefixAst'] ?? null;
@@ -119,7 +122,8 @@ final class Hybrid
         // "helper assignments" below.
         [$constNames, $constContext] = Constants::scope($catalog);
         try {
-            Normalise::run($program->ast, $constNames, $constContext);
+            $normalized = Normalise::run($program->ast, $constNames, $constContext);
+            $identityBarrier = Constants::identityLossBeforeGrouping($normalized);
         } catch (SqlError) {
             return self::pureMemoryPlan($program, $dialect, $catalog);
         }
@@ -154,7 +158,7 @@ final class Hybrid
         // translator renders a bare bucket as its keys, and a plan that pushes
         // the whole of `... .> BUCKET(k)` would hand them back as the answer.
         $fullAst = $helpers['wrap'](Optimizer::buildPipeline($source, $steps));
-        $fullSql = self::bucketRowsAreKeys($steps) ? null : self::tryStatement($fullAst, $dialect, $catalog, $options);
+        $fullSql = $identityBarrier || self::rowsAreNotTheValue($steps) ? null : self::tryStatement($fullAst, $dialect, $catalog, $options);
         if ($fullSql !== null) {
             return new HybridPlan([
                 'dialect' => $dialect,
@@ -165,13 +169,22 @@ final class Hybrid
             ]);
         }
 
-        $fallthrough = self::tryPlanFallthrough($source, $steps, $dialect, $catalog, $options, $helpers);
+        $latest = self::tryLatestMember($source, $steps, $dialect, $catalog, $options, $helpers);
+        if ($latest !== null) return $latest;
+        $fallthrough = $identityBarrier ? null : self::tryPlanFallthrough($source, $steps, $dialect, $catalog, $options, $helpers);
         if ($fallthrough !== null) return $fallthrough;
 
         for ($count = count($steps) - 1; $count >= 1; $count--) {
             $prefixSteps = array_slice($steps, 0, $count);
-            if (self::bucketRowsAreKeys($prefixSteps)) continue;
+            if (self::rowsAreNotTheValue($prefixSteps)) continue;
             $prefixAst = $helpers['wrap'](Optimizer::buildPipeline($source, $prefixSteps));
+            if ($identityBarrier) {
+                try {
+                    if (Constants::identityLossBeforeGrouping(Normalise::run($prefixAst, $constNames, $constContext), true)) continue;
+                } catch (SqlError) {
+                    continue;
+                }
+            }
             $sql = self::tryStatement($prefixAst, $dialect, $catalog, $options);
             if ($sql === null) continue;
             $remaining = array_slice($steps, $count);
@@ -207,6 +220,70 @@ final class Hybrid
     }
 
     /** @param array<string,mixed> $ast @param array<string,mixed> $options */
+    private static function latestFieldName(?array $n): ?string
+    {
+        return ($n['t'] ?? null) === 'index' && $n['obj']['t'] === 'var' && $n['obj']['name'] === '_'
+            && $n['idx']['t'] === 'text' ? $n['idx']['v'] : null;
+    }
+
+    private static function tryLatestMember(array $source, array $steps, string $dialect, Bindings $catalog, array $opts, array $helpers): ?HybridPlan
+    {
+        if (!in_array($dialect, ['mariadb', 'mysql', 'postgresql', 'sqlite'], true)) return null;
+        $rel = $catalog->get($source['name'], $source['pos']);
+        $revision = $rel['unique_key'] ?? null;
+        $at = null;
+        foreach ($steps as $i => $s) if ($s['name'] === 'BUCKET') { $at = $i; break; }
+        if ($revision === null || $at === null || !is_string($rel['from']) || ($rel['correlate'] ?? null)) return null;
+        $ba = $steps[$at]['args'];
+        $partition = in_array(count($ba), [2, 3], true) ? self::latestFieldName($ba[1]) : null;
+        $body = count($ba) === 3 ? $ba[2] : null;
+        $m = $steps[$at + 1] ?? null;
+        if ($body === null && ($m['name'] ?? null) === 'MAP' && count($m['args']) === 2) $body = $m['args'][1];
+        $upper = static fn (string $s): string => strtr($s, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+        $pf = $rel['fields'][$upper($partition ?? '')] ?? [];
+        $rf = $rel['fields'][$upper($revision)] ?? [];
+        if ($partition === null || ($body['t'] ?? null) !== 'call' || $body['name'] !== 'RECORD' || count($body['args']) !== 4
+            || !in_array($pf['type'] ?? null, ['NUM', 'TEXT'], true) || ($rf['type'] ?? null) !== 'NUM'
+            || ($pf['column'] ?? null) !== $partition || ($rf['column'] ?? null) !== $revision
+            || ($pf['raw'] ?? null) || ($rf['raw'] ?? null) || ($rf['guard'] ?? false)) return null;
+        $ra = $body['args'];
+        if ($ra[0]['t'] !== 'text' || $ra[2]['t'] !== 'text' || $ra[0]['v'] === $ra[2]['v']) return null;
+        $top = null; $hasKey = false;
+        foreach ([$ra[1], $ra[3]] as $v) {
+            if ($v['t'] === 'call' && $v['name'] === 'TOP_BY') $top = $v;
+            if ($v['t'] === 'var' && $v['name'] === '_K') $hasKey = true;
+        }
+        if ($top === null || !$hasKey) return null;
+        $ta = $top['args'];
+        if (count($ta) !== 4 || $ta[0]['t'] !== 'var' || $ta[0]['name'] !== '_' || self::latestFieldName($ta[1]) !== $revision
+            || $ta[2]['t'] !== 'text' || $ta[2]['v'] !== 'DESC' || $ta[3]['t'] !== 'num' || $ta[3]['v'] !== '1') return null;
+        foreach (array_slice($steps, 0, $at) as $s) {
+            if ($s['name'] === 'FILTER') continue;
+            if ($s['name'] !== 'SORT_BY' || !in_array(count($s['args']), [2, 3], true) || self::latestFieldName($s['args'][1]) !== $revision
+                || (count($s['args']) === 3 && ($s['args'][2]['t'] !== 'text' || $s['args'][2]['v'] !== 'ASC'))) return null;
+        }
+        $dummy = ['t' => 'call', 'name' => 'FILTER', 'pos' => $source['pos'], 'args' => [$source, ['t' => 'bool', 'v' => true, 'pos' => $source['pos']]]];
+        $prefix = $helpers['wrap'](Optimizer::buildPipeline($source, $at ? array_slice($steps, 0, $at) : [$dummy]));
+        $sql = self::tryStatement($prefix, $dialect, $catalog, $opts);
+        if ($sql === null) return null;
+        try {
+            $emit = new Emit($dialect);
+            $input = '_sel_input'; $groups = '_sel_latest';
+            while ($upper($input) === $upper($rel['from'])) $input .= '_';
+            while (in_array($upper($groups), [$upper($rel['from']), $upper($input)], true)) $groups .= '_';
+            [$qi, $qg, $qr, $qmax, $qfirst] = array_map(fn ($s) => $emit->ident($s), [$input, $groups, $revision, '_sel_revision', '_sel_first']);
+            $key = $emit->textOperand(new Fragment([$emit->ident($partition)], $pf['type'], $dialect))->asValue();
+            $parts = ["WITH {$qi} AS (", ...$sql->parts,
+                "), {$qg} AS (SELECT MAX({$qr}) AS {$qmax}, MIN({$qr}) AS {$qfirst} FROM {$qi} GROUP BY {$key}) "
+                . "SELECT {$qi}.* FROM {$qi} JOIN {$qg} ON {$qi}.{$qr} = {$qg}.{$qmax} ORDER BY {$qg}.{$qfirst} ASC"];
+            $continuation = $helpers['wrap'](Optimizer::buildPipeline(['t' => 'var', 'name' => '_INPUT', 'pos' => $steps[$at]['pos']], array_slice($steps, $at)));
+            return new HybridPlan(['dialect' => $dialect,
+                'sqlStatement' => new Fragment($parts, 'STATEMENT', $dialect, $sql->params, $sql->paramKinds, $sql->caveats),
+                'sqlPrefixAst' => $prefix, 'continuationAst' => $continuation, 'continuationProgram' => new Program('', $continuation),
+                'sourceTables' => [$rel['from']], 'selectedMember' => ['partition_key' => $partition, 'revision_key' => $revision]]);
+        } catch (SqlError $e) { return null; }
+    }
+
     private static function tryStatement(array $ast, string $dialect, Bindings $catalog, array $options): ?Fragment
     {
         try {
@@ -292,6 +369,40 @@ final class Hybrid
     }
 
     /**
+     * Whether the SQL rows for this step list are a join's rows without the
+     * binders SEL's rows carry. A LINK's row in SEL holds each side under its
+     * binders and the promoted fields beside them (spec §7.4); SQL carries the
+     * promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after the
+     * LINK makes the rows exact again -- what they compute is over the promoted
+     * fields, or is refused -- so a prefix whose LINK nothing has projected is
+     * not a split point and not a full pushdown (finding Y, lanes): its
+     * continuation would read `_["C"]` where the database sent nothing.
+     *
+     * @param list<array<string,mixed>> $steps
+     */
+    private static function joinRowsLackBinders(array $steps): bool
+    {
+        $joined = false;
+        foreach ($steps as $step) {
+            $name = $step['name'] ?? '';
+            if ($name === 'LINK' || $name === 'LINK_LEFT') $joined = true;
+            elseif ($name === 'MAP' || $name === 'SELECT_COLS' || $name === 'BUCKET') $joined = false;
+        }
+        return $joined;
+    }
+
+    /**
+     * The two together: a prefix whose SQL rows are not the value SEL would have
+     * produced for it, whatever the translator says about it.
+     *
+     * @param list<array<string,mixed>> $steps
+     */
+    private static function rowsAreNotTheValue(array $steps): bool
+    {
+        return self::bucketRowsAreKeys($steps) || self::joinRowsLackBinders($steps);
+    }
+
+    /**
      * `$defs` are the helper definitions: a read of one is as unsupported as
      * its definition, since the translator will inline it.
      *
@@ -367,7 +478,8 @@ final class Hybrid
     // else, and the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts)
     // would compare the dependency columns SQL carries where SEL compares the
     // custom values.
-    private const FALLTHROUGH_DOWNSTREAM = ['FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP'];
+    // FILTER retains ordinal keys that SQL rows plus the local MAP cannot restore.
+    private const FALLTHROUGH_DOWNSTREAM = ['SORT_BY', 'TOP_BY', 'TAKE', 'DROP'];
 
     /**
      * Whether `$node` reads the row itself -- the binder outside an index with
@@ -422,8 +534,12 @@ final class Hybrid
             || $body['name'] !== 'RECORD'
             || count($body['args']) % 2 !== 0) return null;
         $pairs = [];
+        $seen = [];
         for ($i = 0; $i < count($body['args']); $i += 2) {
             if (($body['args'][$i]['t'] ?? null) !== 'text') return null;
+            $key = $body['args'][$i]['v'];
+            if (isset($seen[$key])) return null;
+            $seen[$key] = true;
             $pairs[] = ['key' => $body['args'][$i], 'value' => $body['args'][$i + 1]];
         }
         return ['explicit' => $explicit, 'binder' => $explicit ? $args[1]['name'] : '_',

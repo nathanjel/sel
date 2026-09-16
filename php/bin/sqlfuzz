@@ -14,6 +14,7 @@ require_once __DIR__ . '/../src/Sql/bootstrap.php';
 
 use Sel\Sel;
 use Sel\SelError;
+use Sel\Sql\Binding;
 use Sel\Sql\Sql;
 use Sel\Sql\SqlError;
 
@@ -49,6 +50,33 @@ if ($path === null) {
     exit(2);
 }
 
+// The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
+// same in every host's runner: two tables, a NUM join key, a TEXT field whose
+// name both sides share.
+$bindings = [
+    'ORDERS' => Binding::relation('orders', 'o', [
+        'ID' => Binding::column('id', 'o', 'NUM'), 'CUSTOMER_ID' => Binding::column('customer_id', 'o', 'NUM'),
+        'AMOUNT' => Binding::column('amount', 'o', 'NUM'), 'NAME' => Binding::column('name', 'o', 'TEXT')]),
+    'CUSTOMERS' => Binding::relation('customers', 'c', [
+        'ID' => Binding::column('id', 'c', 'NUM'), 'NAME' => Binding::column('name', 'c', 'TEXT')]),
+];
+$render = static fn ($f): string => implode(' | ', [
+    $f->asValue(), $f->asValue('params'),
+    implode(',', array_map(fn ($v) => $v->dump(), $f->bindings())),
+]);
+// Three lanes per program, `||`-separated: translate(), translateStatement()
+// and planHybrid() (its classification, then its statement in params mode).
+$attempt = static function (callable $fn): string {
+    try {
+        return $fn();
+    } catch (SqlError $e) {
+        return "!{$e->code}@{$e->line}:{$e->col}";
+    } catch (SelError $e) {
+        return "!SEL {$e->code}@{$e->line}:{$e->col}";
+    } catch (\Throwable $e) {
+        return '!HOST ' . get_class($e) . ': ' . $e->getMessage();
+    }
+};
 $lines = [];
 foreach (readCorpus((string) file_get_contents($path)) as $src) {
     try {
@@ -62,11 +90,14 @@ foreach (readCorpus((string) file_get_contents($path)) as $src) {
     }
     try {
         // Three renderings; see js/bin/sqlfuzz.mjs for why.
-        $f = Sql::translate($program, $dialect);
-        $lines[] = implode(' | ', [
-            $f->asValue(),
-            $f->asValue('params'),
-            implode(',', array_map(fn ($v) => $v->dump(), $f->bindings())),
+        $lines[] = implode(' || ', [
+            $attempt(static fn () => $render(Sql::translate($program, $dialect, $bindings))),
+            $attempt(static fn () => $render(Sql::translateStatement($program, $dialect, $bindings))),
+            $attempt(static function () use ($program, $dialect, $bindings): string {
+                $plan = Sql::planHybrid($program, $dialect, $bindings);
+                $kind = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+                return $plan->sqlStatement ? "$kind " . $plan->sqlStatement->asStatement('params') : $kind;
+            }),
         ]);
     } catch (SqlError $e) {
         $lines[] = "!{$e->code}@{$e->line}:{$e->col}";

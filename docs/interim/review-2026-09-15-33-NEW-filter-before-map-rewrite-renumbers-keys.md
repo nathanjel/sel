@@ -1,6 +1,6 @@
 # NEW. The FILTER-before-MAP rewrite renumbers the result's keys: `_K` after it, and the keys of the answer, differ from the unoptimised program
 
-**Status:** OPEN, found 2026-09-15 while fixing findings AJ and R (not verified by a second agent; one witness per host below). Not fixed: it is a rule of the logical optimiser, in all five hosts, and needs a decision on the guard.
+**Status:** FIXED 2026-09-16 (found 2026-09-15 while fixing findings AJ and R; one witness per host below). Spec §7.3 now says keys are part of the value; the three FILTER-moving rules (MAP, sort, SELECT_COLS) are guarded by `keysRenumberedBy`: the swap is taken only when the step after the FILTER renumbers again without reading `_K`. `rel.map.then-filter-keeps-the-map-keys`, `rel.map.then-filter-then-map-of-key`, `rel.map.then-filter-then-a-renumbering-step`, `rel.sort.then-filter-keeps-the-sorted-keys`, `rel.select-cols.then-filter-keeps-the-keys`; one planner case re-pinned (`plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key`).
 
 **Verdict:** reproduced on js, cpp, python (the same optimiser rule exists in php and lisp) · **severity:** high (a value differs from the spec's, in every host, so the fuzzer cannot see it) · **introduced:** pre-existing
 

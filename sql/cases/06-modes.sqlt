@@ -103,7 +103,7 @@ params
 --- source
 LEFT(T, 3) $== "abc"
 --- expect
-(CAST(LEFT(`t`, 3) AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)
+(CAST(LEFT(`t`, 3) AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin)
 --- params
 t"abc"
 ===
@@ -134,7 +134,7 @@ params
 --- source
 S $== "?"
 --- expect
-(CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)
+(CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin)
 --- params
 t"?"
 ===
@@ -146,7 +146,7 @@ mariadb
 --- source
 S $== "?"
 --- expect
-(CAST(`s` AS CHAR) COLLATE utf8mb4_bin = CAST('?' AS CHAR) COLLATE utf8mb4_bin)
+(CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('?' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: mode.params.order-follows-the-text-not-the-tree
 --- note
@@ -195,7 +195,7 @@ params
 --- source
 "a" IN ("a", "b", "c")
 --- expect
-(((CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin) OR (CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin)) OR (CAST(? AS CHAR) COLLATE utf8mb4_bin = CAST(? AS CHAR) COLLATE utf8mb4_bin))
+(((CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin)) OR (CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin))
 --- params
 t"a", t"a", t"a", t"b", t"a", t"c"
 ===

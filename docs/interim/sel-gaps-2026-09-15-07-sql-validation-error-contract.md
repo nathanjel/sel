@@ -13,6 +13,38 @@ not get lost alongside the five correctness bugs.
 | Dirty numeric text, case 10 | `E_NOT_NUM` | PostgreSQL/MariaDB guarded predicate drops the invalid row, including strict mode; SQLite refuses and evaluates locally |
 | Division precision, cases 2/3 | `1/3` yields `0.3333333333` | Dialects differ in scale/precision; fragments expose `division-scale` or `decimal-float`, and strict mode refuses |
 | Division by zero, case 11 | `E_DIV_ZERO` | PostgreSQL raises a DB error; MariaDB/SQLite SELECT returns NULL in tested default mode; the arithmetic caveat prevents strict pushdown |
+| Local depth limit, additional 2026-09-16 check | `E_DEPTH` | Stage-1 normalization can remove assignment/sequence wrappers and accept SQL for an expression exceeding the local evaluator's depth budget |
+
+### Additional depth-boundary evidence — 2026-09-16
+
+Enabling database-backed SQL fuzzing with the default 2,000-program corpus
+(seed 20260905) reports five such expressions per target, plus the ANSI probe.
+No other differences were reported in that run. This is **not introduced by
+the F1–F6 fixes**: a separate extraction of HEAD `01d9387` reproduces the same
+boundary in Python. A minimal reproducible construction is:
+
+```python
+source = 'A = 0; X = ' + ' + '.join(['1'] * 200) + '; X'
+program = compile(source)
+# program.run(): E_DEPTH
+# Sql.translate(program, 'postgresql').as_value(): accepted SQL
+```
+
+With 199 terms both paths accept; at 201 terms the translator also refuses,
+with `E_SQL_DEPTH`. The sequence/assignment wrappers count toward local
+evaluation depth but are removed before SQL rendering. Check each host's
+stage-1 normalization alongside its evaluator/optimizer depth accounting if
+extending error-preserving SQL policy. Conservatively refusing the original
+over-budget AST is one option; defining independent backend resource limits
+is another. That choice belongs to this contract work, not a silent change
+to the five requested correctness/capability fixes.
+
+Consequently, a default no-DSN integration pass and the passing live
+expression/row/statement oracle do **not** establish a green database-backed
+SQL fuzz lane. The latter still reports this pre-existing boundary. The
+captured diagnostic for this run is `/tmp/sel-live-sql-fuzz-depth-0916.log`;
+the deterministic command is `tools/fuzz-sql.sh 2000 20260905` with the oracle
+DSNs configured as in `tools/adversarial/regressions.sh`.
 
 The first witness is:
 

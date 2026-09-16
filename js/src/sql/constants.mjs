@@ -25,6 +25,7 @@ import { SelError } from '../errors.mjs';
 import { Context, evalNode } from '../eval.mjs';
 import { Value } from '../value.mjs';
 import { refuse } from './errors.mjs';
+import { asciiUpper } from '../lexer.mjs';
 
 // The value bindings, as a name set and an evaluation context.
 //
@@ -48,6 +49,68 @@ import { refuse } from './errors.mjs';
 // `ALL(V, (C), C > 0)` translated to working SQL for a rule that can never run.
 // A translation that is accepted where the language refuses is the one direction
 // this layer must never fail in.
+function identityProjection(node, depth = 0) {
+  if (!node || depth >= 180) return false;
+  if (['var', 'num', 'text', 'bool', 'null'].includes(node.t)) return true;
+  if (node.t === 'index') return identityProjection(node.obj, depth + 1) && identityProjection(node.idx, depth + 1);
+  if (node.t === 'call') {
+    if (['COUNT', 'LEN', 'BLEN'].includes(node.name)) return true;
+    if (node.name === 'RECORD') return node.args.length % 2 === 0
+      && node.args.every((n, i) => i % 2 === 0 || identityProjection(n, depth + 1));
+  }
+  return false;
+}
+
+function identityInputs(n, depth = 0) {
+  if (!n || depth >= 180) return true;
+  if (['num', 'text', 'bool', 'null'].includes(n.t)) return new Set();
+  if (n.t === 'var') return n.name === '_K' ? new Set() : true;
+  if (n.t === 'index') return n.idx.t !== 'text' ? true : n.obj.t === 'var' ? new Set([n.idx.v]) : identityInputs(n.obj, depth + 1);
+  if (n.t === 'call' && ['COUNT', 'LEN', 'BLEN'].includes(n.name)) return new Set();
+  if (n.t === 'list' || (n.t === 'call' && ['LIST', 'RECORD'].includes(n.name))) {
+    const items = n.t === 'list' ? n.items : n.name === 'RECORD' ? n.args.filter((_, i) => i % 2) : n.args;
+    const out = new Set();
+    for (const item of items) {
+      const fields = identityInputs(item, depth + 1);
+      if (fields === true) return true;
+      for (const f of fields) out.add(f);
+    }
+    return out;
+  }
+  return true;
+}
+
+export function identityLossBeforeGrouping(node, needed = false) {
+  while (node && node.t === 'call' && node.args?.length) {
+    if ((needed === true || needed?.size > 0) && (node.name === 'MAP' || (node.name === 'BUCKET' && node.args.length > 2))) {
+      const body = node.args.at(-1);
+      let values = [body];
+      if (needed instanceof Set && body.t === 'call' && body.name === 'RECORD') {
+        const found = new Set(); values = [];
+        for (let i = 0; i + 1 < body.args.length; i += 2) {
+          const k = body.args[i];
+          if (k.t === 'text' && needed.has(k.v)) { found.add(k.v); values.push(body.args[i + 1]); }
+        }
+        if ([...needed].some((k) => !found.has(k))) return true;
+      }
+      if (!values.every((v) => identityProjection(v))) return true;
+      needed = new Set();
+      for (const v of values) {
+        const fields = identityInputs(v);
+        needed = needed === true || fields === true ? true : new Set([...needed, ...fields]);
+      }
+    }
+    if (node.name === 'BUCKET') needed = identityInputs(node.args[node.args.length === 4 ? 2 : 1]);
+    if (['DISTINCT', 'DEDUPE'].includes(node.name)) needed = true;
+    if (needed instanceof Set && ['LINK', 'LINK_LEFT'].includes(node.name) && node.args[1].t === 'var') {
+      const right = node.args.length === 5 ? node.args[3].name : node.args[1].name;
+      needed = new Set([...needed].filter((k) => asciiUpper(k) !== right));
+    }
+    node = node.args[0];
+  }
+  return false;
+}
+
 export function isBinderName(node) {
   return node.t === 'var' && !node.grouped;
 }

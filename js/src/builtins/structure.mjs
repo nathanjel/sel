@@ -217,8 +217,23 @@ function isNestedRecord(value) {
 }
 
 function makeJoinedRow(left, right, b1, b2, promotedLeft, promotedRight, tableLeft, nullRight) {
+  // Each key once, where it first occurred (spec §7.4): a carried or promoted
+  // key keeps its first value, a binder key holds the row this LINK bound
+  // even where an earlier LINK's `_1` or a relation joined twice carried a
+  // record of the same name. That is the row the compiled projector below
+  // builds from the shape (binders first, then slots); PHP, Python and C++
+  // agreed with it on that path, while JS and Lisp built `X` twice.
   const entries = [];
-  const put = (key, value) => { entries.push([key, value]); };
+  const slot = new Map();
+  const put = (key, value) => {
+    if (slot.has(key)) return;
+    slot.set(key, entries.length);
+    entries.push([key, value]);
+  };
+  const bind = (key, value) => {
+    if (slot.has(key)) entries[slot.get(key)] = [key, value];
+    else put(key, value);
+  };
 
   // Carry nested table records from earlier links so chained joins retain the
   // relation-qualified access path (orders -> customers -> items).
@@ -227,16 +242,16 @@ function makeJoinedRow(left, right, b1, b2, promotedLeft, promotedRight, tableLe
   }
 
   const low1 = b1.toLowerCase();
-  put(b1, left);
-  if (low1 !== b1) put(low1, left);
-  if (b1 !== '_1') put('_1', left);
+  bind(b1, left);
+  if (low1 !== b1) bind(low1, left);
+  if (b1 !== '_1') bind('_1', left);
 
   const actualRight = right || nullRight;
   const nullOrRight = actualRight || Value.none();
   const low2 = b2.toLowerCase();
-  put(b2, nullOrRight);
-  if (low2 !== b2) put(low2, nullOrRight);
-  if (b2 !== '_2') put('_2', nullOrRight);
+  bind(b2, nullOrRight);
+  if (low2 !== b2) bind(low2, nullOrRight);
+  if (b2 !== '_2') bind('_2', nullOrRight);
 
   for (const key of promotedLeft) {
     const value = left.get(key);
@@ -248,7 +263,7 @@ function makeJoinedRow(left, right, b1, b2, promotedLeft, promotedRight, tableLe
       if (value !== undefined && !value.isNull()) put(key, value);
     }
   }
-  return Value.fromEntriesPreserveDuplicates(entries);
+  return Value.fromEntries(entries);
 }
 
 const JOIN_LEFT = 0;

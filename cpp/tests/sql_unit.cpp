@@ -32,17 +32,42 @@ Binding customers() {
 
 int main() {
   const Bindings bindings({{"ORDERS", orders()}, {"CUSTOMERS", customers()}});
+  // A joined row is its promoted fields (spec §7.4): `customer_id` and
+  // `name` are on one side each, so `_` reads them; `id` is on both.
   const sel::Program inner = sel::compile(
       "MAP(LINK(ORDERS, CUSTOMERS, O, C, O[\"CUSTOMER_ID\"] == C[\"ID\"]), "
-      "X, RECORD(\"ORDER_ID\", _1[\"ID\"], \"NAME\", _2[\"NAME\"]))");
+      "RECORD(\"CID\", _[\"CUSTOMER_ID\"], \"NAME\", _[\"NAME\"]))");
   const std::string inner_sql =
       Sql::translate_statement(inner, "mariadb", bindings).as_statement();
   const std::string wanted_inner =
-      "SELECT `o`.`id` AS `ORDER_ID`, `c`.`name` AS `NAME` FROM `orders` `o` "
+      "SELECT `o`.`customer_id` AS `CID`, `c`.`name` AS `NAME` FROM `orders` `o` "
       "INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)";
   if (inner_sql != wanted_inner) {
     std::cerr << "join SQL mismatch\n got:  " << inner_sql << "\n want: "
               << wanted_inner << "\n";
+    return 1;
+  }
+
+  // The binders are scoped to the LINK's predicate (spec §7.4): `_1`, `_2`,
+  // `O`, `C` and the relations' names are not names in a later step, and a
+  // field both sides have is not a field of the row.
+  const auto refuses = [&](const std::string& source, const std::string& code) {
+    try {
+      Sql::translate_statement(sel::compile(source), "mariadb", bindings);
+    } catch (const sel::sql::SqlError& e) {
+      if (e.code() == code) return true;
+      std::cerr << source << "\n refused with " << e.code() << ", want " << code << "\n";
+      return false;
+    }
+    std::cerr << source << "\n translated, want " << code << "\n";
+    return false;
+  };
+  const std::string link = "LINK(ORDERS, CUSTOMERS, O, C, O[\"CUSTOMER_ID\"] == C[\"ID\"])";
+  if (!refuses("MAP(" + link + ", RECORD(\"X\", _1[\"ID\"]))", "E_SQL_UNBOUND") ||
+      !refuses("MAP(" + link + ", RECORD(\"X\", _2[\"NAME\"]))", "E_SQL_UNBOUND") ||
+      !refuses("MAP(" + link + ", RECORD(\"X\", O[\"ID\"]))", "E_SQL_UNBOUND") ||
+      !refuses("FILTER(" + link + ", C[\"ID\"] > 1)", "E_SQL_UNBOUND") ||
+      !refuses("MAP(" + link + ", RECORD(\"X\", _[\"ID\"]))", "E_SQL_SHAPE")) {
     return 1;
   }
 
@@ -53,9 +78,7 @@ int main() {
       Sql::translate_statement(derived, "mariadb", bindings).as_statement();
   const std::string wanted_derived =
       "SELECT `_sub1`.* FROM (SELECT `id` AS `ID`, `customer_id` AS `CID` "
-      "FROM `orders` `o`) `_sub1` WHERE (CASE WHEN (`_sub1`.`ID` REGEXP "
-      "'\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`ID` AS DECIMAL(65,10)) "
-      "ELSE NULL END > 1)";
+      "FROM `orders` `o`) `_sub1` WHERE (`_sub1`.`ID` > 1)";
   if (derived_sql != wanted_derived) {
     std::cerr << "derived SQL mismatch\n got:  " << derived_sql << "\n want: "
               << wanted_derived << "\n";
@@ -211,7 +234,12 @@ int main() {
       {"ORDERS .> BUCKET(_[\"customer_id\"]) .> FILTER(COUNT(_) > 1)", "pure_memory"},
       {"ORDERS .> BUCKET(_[\"customer_id\"]) .> BUCKET(COUNT(_)) .> MAP(RECORD(\"size\", _K, \"n\", COUNT(_)))", "pure_memory"},
       {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> SORT_BY(s, s[\"name\"])", "pure_memory"},
-      {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)", "hybrid"},
+      // The FILTER no longer moves in front of the MAP (it would renumber the
+      // answer's keys); over the MAP's derived table sqlite cannot render its NUM
+      // guard, so nothing pushes down. A later step that renumbers again lets the
+      // swap through.
+      {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)", "pure_memory"},
+      {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)", "hybrid"},
       {"ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "pure_memory"},
       {"ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "hybrid"},
       {"ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", (REPEAT(_[\"name\"], 2), 1))) .> TAKE(2)", "hybrid"},
@@ -251,6 +279,52 @@ int main() {
     }
   }
 
-  std::cout << "cpp SQL advanced: 78/78 checks passed\n";
+  // The runner contract (finding AK): the statement in `params` mode with
+  // `bindings()` in placeholder order -- text literals as `?`, numbers inlined
+  // -- in every host, so a driver binds what it is handed as it is. Lisp handed
+  // the runner inline SQL and its creation-order slot list.
+  {
+    const sel::Program program = sel::compile(
+        "ORDERS .> FILTER(FIND(\"needle\", \"hay-\" & _[\"name\"]) > 0 AND _[\"amount\"] > 5)"
+        " .> MAP(RECORD(\"g\", RGROUPS(\"(a)\", _[\"name\"])))");
+    const sel::sql::HybridPlan plan = Sql::plan_hybrid(program, "mariadb", full_orders);
+    if (plan.pure_sql || plan.pure_memory) {
+      std::cerr << "runner contract: expected a hybrid plan\n";
+      return 1;
+    }
+    bool called = false;
+    std::string seen_sql;
+    std::string seen_params;
+    sel::Value context = sel::Value::none();
+    context.set("ORDERS", order_rows);
+    Sql::execute_hybrid(plan, [&](const std::string& sql, const std::vector<sel::Value>& params) {
+      called = true;
+      seen_sql = sql;
+      for (const sel::Value& v : params) {
+        if (!seen_params.empty()) seen_params += ",";
+        seen_params += v.dump();
+      }
+      return sel::Value::list({});
+    }, context);
+    if (!called) {
+      std::cerr << "runner contract: the runner was not called\n";
+      return 1;
+    }
+    const auto has = [&](const char* needle) { return seen_sql.find(needle) != std::string::npos; };
+    if (!has("?") || has("'needle'") || has("'hay-'")) {
+      std::cerr << "runner contract: text literals must be placeholders, got " << seen_sql << "\n";
+      return 1;
+    }
+    if (has("?, 5") || !has("> 5")) {
+      std::cerr << "runner contract: a number is inlined, got " << seen_sql << "\n";
+      return 1;
+    }
+    if (seen_params != "t\"hay-\",t\"needle\"") {
+      std::cerr << "runner contract: bindings in placeholder order, got " << seen_params << "\n";
+      return 1;
+    }
+  }
+
+  std::cout << "cpp SQL advanced: 85/85 checks passed\n";
   return 0;
 }

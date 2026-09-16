@@ -63,6 +63,30 @@ check(count($rightQualified) === 1 && $rightQualified[0]['name'] === 'LINK'
     && ($rightQualified[0]['args'][1]['name'] ?? null) === 'FILTER',
     'qualified right join-filter pushdown');
 
+// Only a read through the joined row's key names a side. `O["x"]`, `C["x"]`
+// or `ORDERS["x"]` after the LINK is E_UNDEF_VAR / E_NO_KEY as written (spec
+// §7.4: the binders are scoped to the predicate), so it is left where it is.
+$binderAfterLink = optimized_steps(
+    'ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"])'
+    . ' .> FILTER(C["id"] > 1)',
+);
+check(step_names($binderAfterLink) === ['LINK', 'FILTER']
+    && ($binderAfterLink[0]['args'][1]['t'] ?? null) === 'var'
+    && ($binderAfterLink[1]['args'][1]['l']['obj']['name'] ?? null) === 'C',
+    'a right binder after the LINK is not pushed into the right side');
+$leftBinderAfterLink = optimized_steps(
+    'ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"])'
+    . ' .> FILTER(O["id"] > 1)',
+);
+check(step_names($leftBinderAfterLink) === ['LINK', 'FILTER'],
+    'a left binder after the LINK is not pushed into the left side');
+$relationNameAfterLink = optimized_steps(
+    'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+    . ' .> FILTER(CUSTOMERS["id"] > 1)',
+);
+check(step_names($relationNameAfterLink) === ['LINK', 'FILTER'],
+    'a relation name after the LINK is not pushed into its side');
+
 $fixedPoint = optimized_steps(
     'ORDERS .> FILTER(_["status"] $== "ACTIVE")'
     . ' .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
@@ -120,26 +144,52 @@ $unfoldedVar = Optimizer::optimize(Sel::compile('IF(TRUE, X, 2)')->ast, false);
 check($unfoldedVar['t'] === 'call' && $unfoldedVar['name'] === 'IF',
     'IF over a variable branch is not folded');
 
+// A FILTER moves in front of a MAP, a sort or a SELECT_COLS only when a
+// later step renumbers the rows again without reading `_K`: FILTER keeps its
+// input's keys and the three renumber (spec §7.3), so at the end of a
+// pipeline the swap would change the answer's keys.
 $mapFilterPush = optimized_steps(
+    '((RECORD("x", 1), RECORD("x", 2)))'
+    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0) .> MAP(_["x"])',
+);
+check(step_names($mapFilterPush) === ['FILTER', 'MAP', 'MAP'], 'MAP filter pushdown');
+$mapFilterEnd = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
     . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0)',
 );
-check(step_names($mapFilterPush) === ['FILTER', 'MAP'], 'MAP filter pushdown');
+check(step_names($mapFilterEnd) === ['MAP', 'FILTER'], 'MAP filter pushdown keeps the keys at the end of a pipeline');
+$mapFilterKeyRead = optimized_steps(
+    '((RECORD("x", 1), RECORD("x", 2)))'
+    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0) .> MAP(_K)',
+);
+check(step_names($mapFilterKeyRead) === ['MAP', 'FILTER', 'MAP'], 'MAP filter pushdown keeps the keys a later step reads');
+$mapFilterFused = optimized_steps(
+    '((RECORD("x", 1), RECORD("x", 2)))'
+    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0) .> FILTER(_["x"] > 1) .> TAKE(1)',
+);
+check(step_names($mapFilterFused) === ['FILTER', 'MAP', 'TAKE'], 'MAP filter pushdown after the FILTERs fuse');
 $caseSensitiveMapFilter = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
-    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["X"] > 0)',
+    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["X"] > 0) .> MAP(_["x"])',
 );
-check(step_names($caseSensitiveMapFilter) === ['MAP', 'FILTER'],
+check(step_names($caseSensitiveMapFilter) === ['MAP', 'FILTER', 'MAP'],
     'MAP filter pushdown preserves case-sensitive field names');
 
-$sortFilterPush = optimized_steps('(1, 2) .> SORT() .> FILTER(_ > 0)');
-check(step_names($sortFilterPush) === ['FILTER', 'SORT'], 'SORT filter pushdown');
+$sortFilterPush = optimized_steps('(1, 2) .> SORT() .> FILTER(_ > 0) .> TAKE(1)');
+check(step_names($sortFilterPush) === ['FILTER', 'TOP'], 'SORT filter pushdown');
+$sortFilterEnd = optimized_steps('(1, 2) .> SORT() .> FILTER(_ > 0)');
+check(step_names($sortFilterEnd) === ['SORT', 'FILTER'], 'SORT filter pushdown keeps the keys at the end of a pipeline');
 
 $selectFilterPush = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
+    . ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0) .> MAP(_["x"])',
+);
+check(step_names($selectFilterPush) === ['FILTER', 'SELECT_COLS', 'MAP'], 'SELECT_COLS filter pushdown');
+$selectFilterEnd = optimized_steps(
+    '((RECORD("x", 1), RECORD("x", 2)))'
     . ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0)',
 );
-check(step_names($selectFilterPush) === ['FILTER', 'SELECT_COLS'], 'SELECT_COLS filter pushdown');
+check(step_names($selectFilterEnd) === ['SELECT_COLS', 'FILTER'], 'SELECT_COLS filter pushdown keeps the keys at the end of a pipeline');
 
 $lateMaterialization = optimized_steps(
     '((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
@@ -321,7 +371,12 @@ foreach ([
   ['ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1)', 'pure_memory'],
   ['ORDERS .> BUCKET(_["customer_id"]) .> BUCKET(COUNT(_)) .> MAP(RECORD("size", _K, "n", COUNT(_)))', 'pure_memory'],
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> SORT_BY(s, s["name"])', 'pure_memory'],
-  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'hybrid'],
+  // The FILTER no longer moves in front of the MAP (it would renumber the
+  // answer's keys); over the MAP's derived table sqlite cannot render its NUM
+  // guard, so nothing pushes down. A later step that renumbers again lets the
+  // swap through.
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'hybrid'],
   ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],
   ['ORDERS .> MAP(RECORD("x", _["id"], "X", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'],
   ['ORDERS .> MAP(RECORD("id", _["id"], "shout", (REPEAT(_["name"], 2), 1))) .> TAKE(2)', 'hybrid'],
@@ -349,6 +404,26 @@ foreach ([
     $want = $outcome(static fn () => $program->run(['ORDERS' => $orderRows]));
     $executed = $outcome(static fn () => Sql::executeHybrid($plan, $prefixInMemory, ['ORDERS' => $orderRows]));
     check($executed === $want, "{$source}: the executed plan answers {$executed}, run() {$want}");
+}
+
+// The runner contract (finding AK): the statement in `params` mode with
+// `bindings()` in placeholder order -- text literals as `?`, numbers inlined
+// -- in every host, so a driver binds what it is handed as it is. Lisp handed
+// the runner inline SQL and its creation-order slot list.
+{
+    $program = Sel::compile('ORDERS .> FILTER(FIND("needle", "hay-" & _["name"]) > 0 AND _["amount"] > 5) .> MAP(RECORD("g", RGROUPS("(a)", _["name"])))');
+    $plan = Sql::planHybrid($program, 'mariadb', $fullOrders);
+    check(!$plan->pureSql && !$plan->pureMemory, 'runner contract: expected a hybrid plan');
+    $seen = null;
+    Sql::executeHybrid($plan, static function (string $sql, array $params) use (&$seen): array {
+        $seen = ['sql' => $sql, 'params' => implode(',', array_map(static fn (\Sel\Value $v): string => $v->dump(), $params))];
+        return [];
+    }, ['ORDERS' => $orderRows]);
+    check($seen !== null, 'runner contract: the runner was not called');
+    check(str_contains($seen['sql'], '?') && !str_contains($seen['sql'], "'needle'") && !str_contains($seen['sql'], "'hay-'"),
+        "runner contract: text literals must be placeholders, got {$seen['sql']}");
+    check(!str_contains($seen['sql'], '?, 5') && str_contains($seen['sql'], '> 5'), "runner contract: a number is inlined, got {$seen['sql']}");
+    check($seen['params'] === 't"hay-",t"needle"', "runner contract: bindings in placeholder order, got {$seen['params']}");
 }
 
 echo "PHP optimizer checks: {$checks} passed\n";

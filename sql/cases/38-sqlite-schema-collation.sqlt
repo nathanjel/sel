@@ -1,0 +1,31 @@
+### name: stmt.text-identity.schema-collation.sqlite
+--- dialect
+sqlite
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"], RECORD("cat", _K, "n", COUNT(_)))
+--- expect
+SELECT CAST("cat" AS TEXT) COLLATE BINARY AS "cat", COUNT(*) AS "n" FROM "r" GROUP BY CAST("cat" AS TEXT) COLLATE BINARY
+--- note
+Explicit BINARY overrides both NOCASE and RTRIM declarations, which survive CAST.
+===
+
+### name: stmt.text-identity.schema-distinct.sqlite
+--- dialect
+sqlite
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("cat", _["cat"])) .> DISTINCT()
+--- expect
+SELECT DISTINCT CAST("cat" AS TEXT) COLLATE BINARY AS "cat" FROM "r"
+===

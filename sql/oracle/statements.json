@@ -35,6 +35,7 @@
         "CAT": {
           "table": "gi",
           "column": "cat",
+          "sargable": true,
           "type": "TEXT"
         },
         "V": {
@@ -55,6 +56,114 @@
     }
   },
   "statements": [
+    {
+      "name": "numeric grouped values keep numeric order across a derived table",
+      "ordered": true,
+      "sel": "ITEMS .> BUCKET(_[\"v\"], RECORD(\"v\", _K, \"n\", COUNT(_))) .> TAKE(100) .> SORT_BY(_[\"v\"])"
+    },
+    {
+      "name": "numeric group preserves input text and numeric ordering",
+      "ordered": true,
+      "sel": "ITEMS .> BUCKET(_[\"v\"], RECORD(\"v\", _K, \"n\", COUNT(_))) .> SORT_BY(_[\"v\"])",
+      "options": {"strict": true}
+    },
+    {
+      "name": "numeric group key in having",
+      "sel": "ITEMS .> BUCKET(_[\"v\"]) .> FILTER(_K > 9) .> MAP(RECORD(\"v\", _K, \"n\", COUNT(_)))"
+    },
+    {
+      "name": "text identity distinct selected column",
+      "sel": "ITEMS .> SELECT_COLS(\"cat\") .> DISTINCT()"
+    },
+    {
+      "name": "text identity distinct projection",
+      "sel": "ITEMS .> MAP(RECORD(\"cat\", _[\"cat\"])) .> DISTINCT()"
+    },
+    {
+      "name": "text identity empty",
+      "sel": "ITEMS .> FILTER(_[\"cat\"] $== \"\") .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "text identity space",
+      "options": {"strict": true},
+      "sel": "ITEMS .> FILTER(_[\"cat\"] $== \" \") .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "text identity two spaces",
+      "sel": "ITEMS .> FILTER(_[\"cat\"] $== \"  \") .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "text identity inequality",
+      "options": {"strict": true},
+      "sel": "ITEMS .> FILTER(_[\"cat\"] $!= \"a\") .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "text identity ordering predicate",
+      "sel": "ITEMS .> FILTER(_[\"cat\"] $> \"a\") .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "text identity having trailing space",
+      "sel": "ITEMS .> BUCKET(_[\"cat\"]) .> FILTER(_K $== \"a \") .> MAP(RECORD(\"cat\", _K, \"n\", COUNT(_)))"
+    },
+    {
+      "name": "text identity non-ASCII",
+      "sel": "ITEMS .> FILTER(_[\"cat\"] $== \"ą \") .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "text identity group-key text operation",
+      "sel": "ITEMS .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"length\", LEN(_K)))"
+    },
+    {
+      "name": "bounded slice smaller",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(1) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "bounded slice equal",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(2) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "bounded slice larger",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(1) .> DROP(2) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "bounded slice zero-take",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(0) .> DROP(2) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "bounded slice zero-drop",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(0) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "bounded slice mixed",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(1) .> TAKE(2) .> DROP(1) .> TAKE(3) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "bounded slice filter",
+      "why": "The direct id column retains its NUM declaration through the bounded derived slice, including on SQLite.",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(1) .> FILTER(_[\"id\"] > 0) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "bounded slice bucket",
+      "ordered": false,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(1) .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"n\", COUNT(_)))"
+    },
+    {
+      "name": "bounded slice empty-input",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(0) .> TAKE(2) .> DROP(1) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "bounded slice large-offsets",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(4503599627370496) .> DROP(4503599627370496) .> TAKE(1) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
     {
       "name": "bare bucket keys are the exact bytes",
       "sel": "ITEMS .> BUCKET(_[\"cat\"]) .> MAP(RECORD(\"cat\", _K, \"n\", COUNT(_)))"

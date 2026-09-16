@@ -450,3 +450,233 @@ LIST(RECORD("id", 1), RECORD("id", 2)) .> MAP(RECORD("v", _["id"], "bad", ABORT(
 --- expect
 error E_ABORT at 1:81
 ===
+
+### name: rel.map.then-filter-keeps-the-map-keys
+--- note
+Keys are part of the value (spec §7.3): MAP renumbers, FILTER keeps what it
+is given, so the row that survives is "2". Every host's logical optimiser
+moved this FILTER in front of the MAP -- exact for the rows, and wrong for
+their keys -- so every host answered "1". The swap is only invisible when a
+later step renumbers again without reading `_K`.
+--- source
+LIST(RECORD("id", 1), RECORD("id", 2)) .> MAP(RECORD("id", _["id"])) .> FILTER(_["id"] > 1)
+--- expect
+tree -{"2"=-{"id"=t"2"}}
+===
+
+### name: rel.map.then-filter-then-map-of-key
+--- note
+The same pipeline read through `_K`: the key the last MAP sees is the one
+the FILTER kept, which is the first MAP's numbering.
+--- source
+LIST(RECORD("id", 1), RECORD("id", 2)) .> MAP(RECORD("id", _["id"])) .> FILTER(_["id"] > 1) .> MAP(_K)
+--- expect
+tree -{"1"=t"2"}
+===
+
+### name: rel.map.then-filter-then-a-renumbering-step
+--- note
+The shape the rewrite is for: a MAP follows the FILTER and renumbers without
+reading `_K`, so nothing can tell which of the two ran first.
+--- source
+LIST(RECORD("id", 1), RECORD("id", 2)) .> MAP(RECORD("id", _["id"], "d", _["id"] * 2)) .> FILTER(_["id"] > 1) .> MAP(_["d"])
+--- expect
+tree -{"1"=t"4"}
+===
+
+### name: rel.sort.then-filter-keeps-the-sorted-keys
+--- note
+A sort renumbers too, and the same swap moved a FILTER in front of it.
+--- source
+LIST(RECORD("x", 2), RECORD("x", 1)) .> SORT_BY(_["x"]) .> FILTER(_["x"] > 1)
+--- expect
+tree -{"2"=-{"x"=t"2"}}
+===
+
+### name: rel.select-cols.then-filter-keeps-the-keys
+--- note
+SELECT_COLS renumbers like MAP, and the same swap was applied to it.
+--- source
+LIST(RECORD("a", 1, "b", 1), RECORD("a", 2, "b", 2)) .> SELECT_COLS("a") .> FILTER(_["a"] > 1)
+--- expect
+tree -{"2"=-{"a"=t"2"}}
+===
+
+### name: rel.link.row-shape-named-left
+--- note
+The joined row of spec §7.4: the left binders (the relation's name, its
+lowercase, `_1`), the right binders, then the promoted fields -- `id` is in
+both elements, so neither side's is promoted. Each key appears once, and a
+binder key holds the row this LINK bound: `X` is the same value as `_1`,
+the element extended with its aliases (so `X` has four keys, and `X.x` is the
+bare element). JS and Lisp built the row with `X`
+and `x` twice, the first holding the bare element.
+--- source
+X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7, "name", "ann")); J = X .> LINK(Y, _1["cid"] == _2["id"]); LIST(INDEXES(J[1]), INDEXES(J[1]["X"]), INDEXES(J[1]["_1"]), J[1]["X"]["x"]["id"], J[1]["name"])
+--- expect
+tree -{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"cid", "8"=t"name"}, "2"=-{"1"=t"id", "2"=t"cid", "3"=t"X", "4"=t"x"}, "3"=-{"1"=t"id", "2"=t"cid", "3"=t"X", "4"=t"x"}, "4"=t"1", "5"=t"ann"}
+===
+
+### name: rel.link.row-shape-literal-left
+--- note
+A literal argument has no name to bind, so the row is `_1`, `_2` and the
+promoted fields.
+--- source
+LIST(RECORD("id", 1, "cid", 7)) .> LINK(LIST(RECORD("id", 7, "name", "ann")), _1["cid"] == _2["id"]) .> MAP(INDEXES(_))
+--- expect
+tree -{"1"=-{"1"=t"_1", "2"=t"_2", "3"=t"cid", "4"=t"name"}}
+===
+
+### name: rel.link.chained-binders-hold-this-links-rows
+--- note
+A second LINK carries the first's binders as nested records and binds `_1`
+to the whole first row: the carried `_1` and `_2` of the first LINK do not
+survive as keys, the binders of the second win. `id` is promoted now: the
+first row has no scalar `id` for it to clash with.
+--- source
+X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7, "name", "ann")); Z = LIST(RECORD("id", 7, "zz", "q")); J = X .> LINK(Y, _1["cid"] == _2["id"]) .> LINK(Z, _1["cid"] == _2["id"]); LIST(INDEXES(J[1]), COUNT(J[1]["_1"]), COUNT(J[1]["X"]), J[1]["_2"]["zz"], J[1]["id"])
+--- expect
+tree -{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"Z", "8"=t"z", "9"=t"cid", "10"=t"name", "11"=t"id", "12"=t"zz"}, "2"=t"8", "3"=t"4", "4"=t"q", "5"=t"7"}
+===
+
+### name: rel.link-left.unmatched-row
+--- note
+An unmatched left element keeps its own binders and promoted fields; the
+right binders hold a record shaped like the right elements with every field
+NULL, and nothing of the right is promoted.
+--- source
+X = LIST(RECORD("id", 1, "cid", 7), RECORD("id", 2, "cid", 8)); Y = LIST(RECORD("id", 7, "name", "ann")); J = X .> LINK_LEFT(Y, _1["cid"] == _2["id"]); LIST(INDEXES(J[2]), J[2]["_2"], J[2]["Y"], HAS(J[2], "name"))
+--- expect
+tree -{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"cid"}, "2"=-{"id"=-, "name"=-, "Y"=-, "y"=-}, "3"=-{"id"=-, "name"=-, "Y"=-, "y"=-}, "4"=FALSE}
+===
+
+### name: rel.link.predicate-reads-an-element-with-no-fields
+--- note
+An element with no fields is an element (spec §7.4): the predicate runs and
+fails on it. C++ took a first element with nothing in it for no elements and
+answered the empty list without evaluating the predicate.
+--- source
+LIST(RECORD("a", 1)) .> SELECT_COLS("nope") .> LINK(LIST(RECORD("id", 1)), O, C, O["x"] == C["id"])
+--- expect
+error E_NO_KEY at 1:83
+===
+
+### name: rel.link-left.predicate-reads-a-null-left-element
+--- source
+LIST(NULL) .> LINK_LEFT(LIST(RECORD("id", 1)), O, C, O["x"] == C["id"])
+--- expect
+error E_NO_KEY at 1:55
+===
+
+### name: rel.link-left.null-right-element-is-an-element
+--- note
+The right side's key expression runs over every right element first, so its
+error comes before the left side's, and a NULL right element is one of them.
+--- source
+LIST(RECORD("a", 1)) .> LINK_LEFT(LIST(NULL), O, C, O["x"] == C["id"])
+--- expect
+error E_NO_KEY at 1:64
+===
+
+### name: rel.link.right-key-is-evaluated-first
+--- note
+The equality's right side is evaluated over the right elements before the
+left side over the left ones (spec §7.4), so the missing key is reported
+before the division by zero.
+--- source
+LIST(RECORD("a", 1)) .> LINK(LIST(RECORD("id", 1)), _1["a"] + 1/0 == _2["nope"])
+--- expect
+error E_NO_KEY at 1:72
+===
+
+### name: rel.link.other-predicates-run-per-pair
+--- note
+Not an equality of two binder reads, so it runs once per pair, left to right
+within the pair.
+--- source
+LIST(RECORD("a", 1)) .> LINK(LIST(RECORD("id", 1)), O, C, O["a"] == C["id"] AND 1/0 == 1)
+--- expect
+error E_DIV_ZERO at 1:82
+===
+
+### name: rel.link-left.no-right-elements-never-evaluates-the-predicate
+--- note
+No pairs, so `pred` never runs: the unmatched row is emitted without it.
+Lisp evaluated it anyway and raised.
+--- source
+LIST(RECORD("a", 1)) .> LINK_LEFT(LIST(), O, C, 1/0 == 1) .> MAP(_["a"])
+--- expect
+tree -{"1"=t"1"}
+===
+
+### name: rel.link.no-left-elements-never-evaluates-the-predicate
+--- source
+LIST() .> LINK_LEFT(LIST(RECORD("id", 1)), O, C, 1/0 == 1)
+--- expect
+tree -
+===
+
+### name: rel.top.zero-still-evaluates-the-list
+--- note
+Spec §7.4: a count of zero still evaluates the list. Lisp answered 0 with
+LST unbound, and so for `SORT() .> TAKE(0)`, which its optimiser fuses into
+this TOP.
+--- source
+COUNT(TOP(LST, 0))
+--- expect
+error E_UNDEF_VAR at 1:11
+===
+
+### name: rel.top-by.zero-still-evaluates-the-list
+--- source
+COUNT(TOP_BY(LST, _, 0))
+--- expect
+error E_UNDEF_VAR at 1:14
+===
+
+### name: rel.take.zero-after-a-sort-still-evaluates-the-list
+--- source
+LIST(1/0) .> SORT() .> TAKE(0)
+--- expect
+error E_DIV_ZERO at 1:7
+===
+
+### name: rel.link.then-filter.binder-is-not-a-name-after-the-link
+--- note
+The binders are scoped to the predicate (spec §7.4); after the LINK the row
+carries them as keys. Every host's optimiser pushed a FILTER reading
+`O["id"]` into the LINK's left side, where `O` is bound, and answered rows
+for a program that raises E_UNDEF_VAR as written (the same pipeline through
+a helper never took the rewrite). A read through the row, `_["O"]["id"]`,
+is what names a side.
+--- source
+X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7)); X .> LINK(Y, O, C, O["cid"] == C["id"]) .> FILTER(O["id"] > 1)
+--- expect
+error E_UNDEF_VAR at 1:115
+===
+
+### name: rel.link.then-filter.relation-name-is-its-list-after-the-link
+--- note
+`X` after the LINK is the list it was bound to, so `X["id"]` is E_NO_KEY;
+the optimiser took it for the left side and pushed the FILTER there.
+--- source
+X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7)); X .> LINK(Y, O, C, O["cid"] == C["id"]) .> FILTER(X["id"] > 0)
+--- expect
+error E_NO_KEY at 1:116
+===
+
+### name: rel.link.then-filter.through-the-left-binder-key
+--- note
+The read through the joined row's key is the shape the pushdown is for.
+--- source
+X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7)); X .> LINK(Y, O, C, O["cid"] == C["id"]) .> FILTER(_["O"]["id"] > 0) .> MAP(_["cid"])
+--- expect
+tree -{"1"=t"7"}
+===
+
+### name: rel.link.then-filter.through-the-right-binder-key
+--- source
+X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7)); X .> LINK(Y, O, C, O["cid"] == C["id"]) .> FILTER(_["C"]["id"] > 7) .> MAP(_["cid"])
+--- expect
+tree -
+===

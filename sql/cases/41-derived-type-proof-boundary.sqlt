@@ -1,0 +1,135 @@
+### name: plan.group-identity.guarded-derived-prefix.sqlite
+--- dialect
+sqlite
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"column","column":"v","type":"NUM","guard":true}}}}
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT "v" AS "key" FROM "r"
+===
+
+### name: plan.group-identity.raw-derived-prefix.sqlite
+--- dialect
+sqlite
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"raw","raw":"v","type":"NUM"}}}}
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT v AS "key" FROM "r"
+===
+
+### name: plan.group-identity.guarded-derived-prefix.postgresql
+--- dialect
+postgresql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"column","column":"v","type":"NUM","guard":true}}}}
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT "v" AS "key" FROM "r"
+===
+
+### name: plan.group-identity.raw-derived-prefix.postgresql
+--- dialect
+postgresql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"raw","raw":"v","type":"NUM"}}}}
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT v AS "key" FROM "r"
+===
+
+### name: plan.group-identity.guarded-derived-prefix.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"column","column":"v","type":"NUM","guard":true}}}}
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT `v` AS `key` FROM `r`
+===
+
+### name: plan.group-identity.raw-derived-prefix.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"raw","raw":"v","type":"NUM"}}}}
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT v AS `key` FROM `r`
+===
+
+### name: plan.group-identity.guarded-derived-prefix.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"column","column":"v","type":"NUM","guard":true}}}}
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT `v` AS `key` FROM `r`
+===
+
+### name: plan.group-identity.raw-derived-prefix.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"raw","raw":"v","type":"NUM"}}}}
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT v AS `key` FROM `r`
+===

@@ -1,0 +1,59 @@
+### name: stmt.text-identity.distinct-record.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("cat", _["cat"])) .> DISTINCT()
+--- expect
+SELECT DISTINCT CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin AS `cat` FROM `r`
+===
+
+### name: stmt.text-identity.distinct-columns.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> SELECT_COLS("cat") .> DISTINCT()
+--- expect
+SELECT DISTINCT CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin AS `cat` FROM `r`
+===
+
+### name: stmt.text-identity.distinct-record.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("cat", _["cat"])) .> DISTINCT()
+--- expect
+SELECT DISTINCT CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin AS `cat` FROM `r`
+===
+
+### name: stmt.text-identity.distinct-columns.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> SELECT_COLS("cat") .> DISTINCT()
+--- expect
+SELECT DISTINCT CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin AS `cat` FROM `r`
+===

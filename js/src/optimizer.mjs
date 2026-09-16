@@ -188,6 +188,16 @@ function stepReadsKey(step) {
   return step.args.slice(1).some((arg) => readsVar(arg, ['_K']));
 }
 
+// Whether the step after a FILTER hides where the FILTER ran. FILTER keeps its
+// input's keys (spec §7.3) and MAP, SELECT_COLS and the sorts renumber, so a
+// FILTER moved in front of one of them carries the source's keys where the
+// program as written carried the step's -- visible in the answer, and in any
+// later `_K`. Only a following step that renumbers again without reading `_K`
+// hides that; the end of the pipeline, or another FILTER, does not.
+function keysRenumberedBy(step) {
+  return step !== undefined && step.name !== 'FILTER' && !stepReadsKey(step);
+}
+
 // Whether the source a pipeline starts from is a list already, so a FILTER
 // whose predicate is a constant TRUE over it is the identity. Over a scalar
 // it is not: FILTER wraps a scalar into a one-element list (spec §7.3), and
@@ -361,7 +371,8 @@ function logicalSteps(source, steps, options = {}) {
         const details = filterDetails(second);
         const refs = fieldRefs(details.predicate, details.binder);
         if (details.valid && refs.length > 0 && refs.every((field) => passes.includes(field))
-            && !readsRowOrKey(details.predicate, details.binder)) {
+            && !readsRowOrKey(details.predicate, details.binder)
+            && keysRenumberedBy(current[i + 2])) {
           next.push(second, first);
           i++;
           changed = true;
@@ -369,7 +380,7 @@ function logicalSteps(source, steps, options = {}) {
         }
       }
       if (second && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name) && second.name === 'FILTER'
-          && !stepReadsKey(second)) {
+          && !stepReadsKey(second) && keysRenumberedBy(current[i + 2])) {
         next.push(second, first);
         i++;
         changed = true;
@@ -379,7 +390,8 @@ function logicalSteps(source, steps, options = {}) {
         const details = filterDetails(second);
         const refs = fieldRefs(details.predicate, details.binder);
         if (details.valid && refs.length > 0 && refs.every((field) => selectFields(first).includes(field))
-            && !readsRowOrKey(details.predicate, details.binder)) {
+            && !readsRowOrKey(details.predicate, details.binder)
+            && keysRenumberedBy(current[i + 2])) {
           next.push(second, first);
           i++;
           changed = true;
@@ -483,21 +495,21 @@ function pushdownJoinFilters(steps) {
             return;
           }
           if (item.obj?.t === 'var' && item.idx?.t === 'text') {
+            // `O["id"]` or `ORDERS["id"]` after the LINK: the binders are
+            // scoped to the predicate (spec §7.4), so as written this is
+            // E_UNDEF_VAR, or E_NO_KEY on the relation's list. Pushing it into
+            // the side it names turned that error into rows (review
+            // 2026-09-15, W2) -- only `_["O"]["id"]`, a read through the
+            // joined row's key, names a side.
             const name = item.obj.name.toUpperCase();
-            if (leftNames.has(name)) hasLeft = true;
-            else if (rightNames.has(name)) hasRight = true;
-            else if (name === info.binder.toUpperCase() || name === '_') ambiguous = true;
+            if (name === info.binder.toUpperCase() || name === '_') ambiguous = true;
             else unknown = true;
             return;
           }
         }
         if (item.t === 'var') {
           const name = item.name.toUpperCase();
-          if (name !== info.binder.toUpperCase() && name !== '_') {
-            if (leftNames.has(name)) hasLeft = true;
-            else if (rightNames.has(name)) hasRight = true;
-            else unknown = true;
-          }
+          if (name !== info.binder.toUpperCase() && name !== '_') unknown = true;
         }
         if (item.args) item.args.forEach(visit);
         if (item.items) item.items.forEach(visit);
@@ -517,11 +529,6 @@ function pushdownJoinFilters(steps) {
             && [binder.toUpperCase(), '_'].includes(copy.obj.obj.name.toUpperCase())
             && targetNames.has(copy.obj.idx.v.toUpperCase())) {
           return { t: 'index', obj: { t: 'var', name: '_', pos: copy.obj.obj.pos },
-            idx: copy.idx, pos: copy.pos };
-        }
-        if (copy.obj?.t === 'var' && copy.idx?.t === 'text'
-            && targetNames.has(copy.obj.name.toUpperCase())) {
-          return { t: 'index', obj: { t: 'var', name: '_', pos: copy.obj.pos },
             idx: copy.idx, pos: copy.pos };
         }
       }
@@ -629,9 +636,8 @@ function stepArgOptions(step, index, options) {
 function optimizeTree(node, physical, depth = 1, options = {}) {
   if (!node) return node;
   // The evaluator/SQL normaliser owns the public depth error and its source
-  // position.  Stop rewriting at the same boundary, but leave the remaining
-  // tree intact so a later walk reports the normative E_DEPTH/E_SQL_DEPTH at
-  // the node that actually exceeds the limit.
+  // position. optimizeRoot never descends into a tree that reaches the cap;
+  // this guard keeps the walk bounded should a rewrite ever deepen one.
   if (depth > MAX_DEPTH) return node;
   if (node.t === 'call' && PIPELINE_OPS.has(node.name)) {
     const { source, steps } = unwindPipeline(node);
@@ -679,7 +685,35 @@ function optimizeTree(node, physical, depth = 1, options = {}) {
   return options.foldConstants === false ? copy : fold(copy);
 }
 
-export function optimizeAstLogical(ast, options = {}) { return optimizeTree(ast, false, 1, options); }
-export function optimizeAstInMemory(ast) { return optimizeTree(ast, true); }
+// Whether any node of the tree lies past the evaluator's depth cap, counted
+// the way the evaluator counts: the root at 1, every child one deeper, an
+// assignment's target excluded (the evaluator walks it iteratively). The walk
+// stops at the cap, so it is bounded however deep the tree is.
+function exceedsDepth(node, depth) {
+  if (!node || typeof node !== 'object') return false;
+  if (depth > MAX_DEPTH) return true;
+  const next = depth + 1;
+  if (node.args) for (const item of node.args) if (exceedsDepth(item, next)) return true;
+  if (node.items) for (const item of node.items) if (exceedsDepth(item, next)) return true;
+  for (const key of ['l', 'r', 'x', 'obj', 'idx']) {
+    if (node[key] && exceedsDepth(node[key], next)) return true;
+  }
+  if (node.t !== 'assign' && node.target && exceedsDepth(node.target, next)) return true;
+  if (node.value && exceedsDepth(node.value, next)) return true;
+  return false;
+}
+
+// The evaluator is the depth authority (spec §6.4): a tree that reaches the
+// cap is evaluated as written, so it is returned as written. Folding at the
+// boundary erased the E_DEPTH the evaluator raises for a chain of 201
+// additions (each of them foldable), and a rewrite that lifts a child would
+// move it; not rewriting loses nothing, because such a tree either raises or
+// keeps its deep part on a branch that is never evaluated.
+function optimizeRoot(ast, physical, options) {
+  return exceedsDepth(ast, 1) ? ast : optimizeTree(ast, physical, 1, options);
+}
+
+export function optimizeAstLogical(ast, options = {}) { return optimizeRoot(ast, false, options); }
+export function optimizeAstInMemory(ast) { return optimizeRoot(ast, true, {}); }
 export function optimizeAst(ast) { return optimizeAstInMemory(ast); }
 export { PIPELINE_OPS, unwindPipeline, buildPipeline };

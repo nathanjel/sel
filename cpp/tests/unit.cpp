@@ -369,6 +369,61 @@ void test_relational_optimizations() {
   selt::ok(steps.size() == 2 && steps[0]->s == "FILTER" && steps[1]->s == "TOP_BY",
            "optimizer fuses filters and sort plus take");
 
+  // A FILTER moves in front of a MAP, a sort or a SELECT_COLS only when a
+  // later step renumbers the rows again without reading `_K`: FILTER keeps its
+  // input's keys and the three renumber (spec §7.3), so at the end of a
+  // pipeline the swap would change the answer's keys.
+  auto logical_names = [](const std::string& source) {
+    const NodePtr ast = optimize_ast_logical(compile(source).ast());
+    std::vector<std::string> out;
+    NodePtr cursor = ast;
+    while (cursor && cursor->t == NT::Call && !cursor->items.empty()) {
+      out.push_back(cursor->s);
+      cursor = cursor->items.front();
+    }
+    std::reverse(out.begin(), out.end());
+    return out;
+  };
+  using Names = std::vector<std::string>;
+  const std::string rows = "((RECORD(\"x\", 1), RECORD(\"x\", 2)))";
+  const std::string map = " .> MAP(RECORD(\"x\", _[\"x\"], \"heavy\", _[\"x\"] + 1))";
+  selt::ok(logical_names(rows + map + " .> FILTER(_[\"x\"] > 0) .> MAP(_[\"heavy\"])") == Names{"FILTER", "MAP", "MAP"},
+           "MAP filter pushdown");
+  selt::ok(logical_names(rows + map + " .> FILTER(_[\"x\"] > 0)") == Names{"MAP", "FILTER"},
+           "MAP filter pushdown keeps the keys at the end of a pipeline");
+  selt::ok(logical_names(rows + map + " .> FILTER(_[\"x\"] > 0) .> MAP(_K)") == Names{"MAP", "FILTER", "MAP"},
+           "MAP filter pushdown keeps the keys a later step reads");
+  selt::ok(logical_names(rows + map + " .> FILTER(_[\"x\"] > 0) .> FILTER(_[\"x\"] > 1) .> TAKE(1)")
+               == Names{"FILTER", "MAP", "TAKE"},
+           "MAP filter pushdown after the FILTERs fuse");
+  selt::ok(logical_names(rows + map + " .> FILTER(_[\"heavy\"] > 0)") == Names{"MAP", "FILTER"},
+           "MAP filter dependency guard");
+  selt::ok(logical_names("(1, 2) .> SORT() .> FILTER(_ > 0) .> TAKE(1)") == Names{"FILTER", "TOP"},
+           "SORT filter pushdown");
+  selt::ok(logical_names("(1, 2) .> SORT() .> FILTER(_ > 0)") == Names{"SORT", "FILTER"},
+           "SORT filter pushdown keeps the keys at the end of a pipeline");
+  selt::ok(logical_names(rows + " .> SELECT_COLS(\"x\") .> FILTER(_[\"x\"] > 0) .> MAP(_[\"x\"])")
+               == Names{"FILTER", "SELECT_COLS", "MAP"},
+           "SELECT_COLS filter pushdown");
+  selt::ok(logical_names(rows + " .> SELECT_COLS(\"x\") .> FILTER(_[\"x\"] > 0)") == Names{"SELECT_COLS", "FILTER"},
+           "SELECT_COLS filter pushdown keeps the keys at the end of a pipeline");
+
+  // The evaluator is the depth authority (spec §6.4): a tree at the cap is
+  // handed back as written, the same NodePtr, so the evaluator reports the
+  // E_DEPTH it would have reported for the program as written.
+  {
+    std::string chain = "1";
+    for (int i = 0; i < 200; i++) chain += " + 1";
+    const NodePtr deep = compile(chain).ast();
+    selt::ok(optimize_ast_logical(deep) == deep && optimize_ast_in_memory(deep) == deep,
+             "a tree past the depth cap is returned untouched");
+    std::string shallow = "1";
+    for (int i = 0; i < 100; i++) shallow += " + 1";
+    const NodePtr folded_chain = optimize_ast_logical(compile(shallow).ast());
+    selt::ok(folded_chain->t == NT::Num && folded_chain->s == "101",
+             "a tree under the depth cap is still folded");
+  }
+
   const NodePtr physical = optimize_ast_in_memory(compile(
       "A .> MAP(RECORD(\"x\", _[\"x\"], \"y\", _[\"y\"]))").ast());
   selt::ok(physical->t == NT::Call && physical->s == "MAP" &&
@@ -410,6 +465,49 @@ void test_relational_optimizations() {
   selt::ok(group_key.size() == 2 && group_key[0]->s == "LINK" &&
                group_key[1]->s == "FILTER",
            "_K is an unknown join dependency");
+
+  // Only a read through the joined row's key names a side (spec §7.4): the
+  // binders are scoped to the predicate, so `O["x"]` after the LINK is
+  // E_UNDEF_VAR as written and is left where it is, not pushed into a side.
+  const auto through_key = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
+      " .> FILTER(_[\"O\"][\"status\"] $== \"ACTIVE\")");
+  selt::ok(through_key.size() == 2 && through_key[0]->s == "FILTER" &&
+               through_key[1]->s == "LINK",
+           "a read through the joined row's left key pushes into the left side");
+
+  const auto through_right_key = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
+      " .> FILTER(_[\"C\"][\"name\"] $== \"x\")");
+  selt::ok(through_right_key.size() == 1 && through_right_key[0]->s == "LINK" &&
+               through_right_key[0]->items.size() >= 2 &&
+               through_right_key[0]->items[1]->t == NT::Call &&
+               through_right_key[0]->items[1]->s == "FILTER",
+           "a read through the joined row's right key pushes into the right side");
+
+  const auto bare_left_binder = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
+      " .> FILTER(O[\"status\"] $== \"ACTIVE\")");
+  selt::ok(bare_left_binder.size() == 2 && bare_left_binder[0]->s == "LINK" &&
+               bare_left_binder[1]->s == "FILTER" &&
+               bare_left_binder[0]->items[0]->t == NT::Var,
+           "a LINK binder read after the LINK is not pushed");
+
+  const auto bare_right_binder = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
+      " .> FILTER(C[\"name\"] $== \"x\")");
+  selt::ok(bare_right_binder.size() == 2 && bare_right_binder[0]->s == "LINK" &&
+               bare_right_binder[1]->s == "FILTER" &&
+               bare_right_binder[0]->items[1]->t == NT::Var,
+           "a LINK right binder read after the LINK is not pushed");
+
+  const auto bare_source_name = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
+      " .> FILTER(ORDERS[\"status\"] $== \"ACTIVE\")");
+  selt::ok(bare_source_name.size() == 2 && bare_source_name[0]->s == "LINK" &&
+               bare_source_name[1]->s == "FILTER" &&
+               bare_source_name[0]->items[0]->t == NT::Var,
+           "a relation name read after the LINK is not pushed");
 }
 
 }  // namespace

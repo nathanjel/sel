@@ -325,119 +325,121 @@
                    collect (value-copy (getf x :item)))))))))
 
 (defun do-top-sort (a ctx forced-dir)
+  ;; Spec §7.4: a count of zero still evaluates the list, so the list is
+  ;; evaluated (and its errors reported) before N is read, as in every other
+  ;; host. The optimiser fuses SORT .> TAKE(0) into this, so the order matters
+  ;; there too.
   (let* ((count (args-count a))
+         (val (args-val a 0))
          (limit (args-non-neg-int a (1- count))))
-    (if (zerop limit)
+    (if (or (zerop limit) (value-null-p val) (zerop (value-size val)))
         (make-list-value nil)
-        (let ((val (args-val a 0)))
-          (if (or (value-null-p val) (zerop (value-size val)))
-              (make-list-value nil)
-              (let* ((sort-count (1- count))
-                     direction
-                     binder
-                     body)
-                (if (= sort-count 1)
-                    (setf direction (or forced-dir "ASC"))
-                    (progn
-                      (cond
-                        ((= sort-count 2)
-                         (setf binder "_"
-                               body (args-node a 1)
-                               direction (or forced-dir "ASC")))
-                        ((= sort-count 3)
+        (let* ((sort-count (1- count))
+               direction
+               binder
+               body)
+          (if (= sort-count 1)
+              (setf direction (or forced-dir "ASC"))
+              (progn
+                (cond
+                  ((= sort-count 2)
+                   (setf binder "_"
+                         body (args-node a 1)
+                         direction (or forced-dir "ASC")))
+                  ((= sort-count 3)
+                   (cond
+                     (forced-dir
+                      (setf binder (args-symbol a 1)
+                            body (args-node a 2)
+                            direction forced-dir))
+                     ((eq (node-kind (args-node a 2)) :text)
+                      (setf binder "_"
+                            body (args-node a 1)
+                            direction (string-upcase (args-text a 2))))
+                     ((args-symbol-p a 1)
+                      (setf binder (args-symbol a 1)
+                            body (args-node a 2)
+                            direction "ASC"))
+                     (t
+                      (setf binder "_"
+                            body (args-node a 1)
+                            direction (string-upcase (args-text a 2))))))
+                  (t ; 4
+                   (setf binder (args-symbol a 1)
+                         body (args-node a 2)
+                         direction (string-upcase (args-text a 3)))))
+                (unless (or (string= direction "ASC") (string= direction "DESC"))
+                  (let ((pos-idx (if (= sort-count 4) 3 2)))
+                    (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
+                          (args-pos-of a pos-idx))))))
+          (let* ((desc (string= direction "DESC"))
+                 (greater-fn (if desc
+                                 (lambda (x y)
+                                   (let ((c (compare-values (getf x :key) (getf y :key))))
+                                     (if (zerop c) (> (getf x :idx) (getf y :idx)) (< c 0))))
+                                 (lambda (x y)
+                                   (let ((c (compare-values (getf x :key) (getf y :key))))
+                                     (if (zerop c) (> (getf x :idx) (getf y :idx)) (> c 0))))))
+                 (needs-k (and body (node-contains-var-p body "_K")))
+                 (binder-cell (cons binder nil))
+                 (k-cell (when needs-k (cons "_K" nil)))
+                 (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
+            (multiple-value-bind (push-item get-items)
+                (make-bounded-heap limit greater-fn)
+              (if (= sort-count 1)
+                  (cond
+                    ((and (value-is-list val) (value-storage val))
+                     (let ((storage (value-storage val)))
+                       (loop for i from 0 below (length storage)
+                             for item = (svref storage i)
+                             do (funcall push-item (list :item item :key item :idx i)))))
+                    (t
+                     (loop for (nil . item) in (aggregate-elements val)
+                           for idx from 0
+                           do (funcall push-item (list :item item :key item :idx idx)))))
+                  (progn
+                    (ctx-push-frame ctx frame)
+                    (unwind-protect
                          (cond
-                           (forced-dir
-                            (setf binder (args-symbol a 1)
-                                  body (args-node a 2)
-                                  direction forced-dir))
-                           ((eq (node-kind (args-node a 2)) :text)
-                            (setf binder "_"
-                                  body (args-node a 1)
-                                  direction (string-upcase (args-text a 2))))
-                           ((args-symbol-p a 1)
-                            (setf binder (args-symbol a 1)
-                                  body (args-node a 2)
-                                  direction "ASC"))
+                           ((and (value-is-list val) (value-storage val))
+                            (let ((storage (value-storage val)))
+                              (loop for i from 0 below (length storage)
+                                    for item = (svref storage i)
+                                    do (setf (cdr binder-cell) item)
+                                       (when needs-k
+                                         (setf (cdr k-cell) (%text (format nil "~d" (1+ i)))))
+                                       (funcall push-item (list :item item :key (args-eval a body) :idx i)))))
+                           ((value-shape val)
+                            (let* ((shape (value-shape val))
+                                   (storage (value-storage val))
+                                   (keys (record-shape-keys shape)))
+                              (loop for k in keys
+                                    for i from 0
+                                    for item = (svref storage i)
+                                    do (setf (cdr binder-cell) item)
+                                       (when needs-k
+                                         (setf (cdr k-cell) (%text k)))
+                                       (funcall push-item (list :item item :key (args-eval a body) :idx i)))))
                            (t
-                            (setf binder "_"
-                                  body (args-node a 1)
-                                  direction (string-upcase (args-text a 2))))))
-                        (t ; 4
-                         (setf binder (args-symbol a 1)
-                               body (args-node a 2)
-                               direction (string-upcase (args-text a 3)))))
-                      (unless (or (string= direction "ASC") (string= direction "DESC"))
-                        (let ((pos-idx (if (= sort-count 4) 3 2)))
-                          (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
-                                (args-pos-of a pos-idx))))))
-                (let* ((desc (string= direction "DESC"))
-                       (greater-fn (if desc
-                                       (lambda (x y)
-                                         (let ((c (compare-values (getf x :key) (getf y :key))))
-                                           (if (zerop c) (> (getf x :idx) (getf y :idx)) (< c 0))))
-                                       (lambda (x y)
-                                         (let ((c (compare-values (getf x :key) (getf y :key))))
-                                           (if (zerop c) (> (getf x :idx) (getf y :idx)) (> c 0))))))
-                       (needs-k (and body (node-contains-var-p body "_K")))
-                       (binder-cell (cons binder nil))
-                       (k-cell (when needs-k (cons "_K" nil)))
-                       (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
-                  (multiple-value-bind (push-item get-items)
-                      (make-bounded-heap limit greater-fn)
-                    (if (= sort-count 1)
-                        (cond
-                          ((and (value-is-list val) (value-storage val))
-                           (let ((storage (value-storage val)))
-                             (loop for i from 0 below (length storage)
-                                   for item = (svref storage i)
-                                   do (funcall push-item (list :item item :key item :idx i)))))
-                          (t
-                           (loop for (nil . item) in (aggregate-elements val)
-                                 for idx from 0
-                                 do (funcall push-item (list :item item :key item :idx idx)))))
-                        (progn
-                          (ctx-push-frame ctx frame)
-                          (unwind-protect
-                               (cond
-                                 ((and (value-is-list val) (value-storage val))
-                                  (let ((storage (value-storage val)))
-                                    (loop for i from 0 below (length storage)
-                                          for item = (svref storage i)
-                                          do (setf (cdr binder-cell) item)
-                                             (when needs-k
-                                               (setf (cdr k-cell) (%text (format nil "~d" (1+ i)))))
-                                             (funcall push-item (list :item item :key (args-eval a body) :idx i)))))
-                                 ((value-shape val)
-                                  (let* ((shape (value-shape val))
-                                         (storage (value-storage val))
-                                         (keys (record-shape-keys shape)))
-                                    (loop for k in keys
-                                          for i from 0
-                                          for item = (svref storage i)
-                                          do (setf (cdr binder-cell) item)
-                                             (when needs-k
-                                               (setf (cdr k-cell) (%text k)))
-                                             (funcall push-item (list :item item :key (args-eval a body) :idx i)))))
-                                 (t
-                                  (loop for (k . item) in (aggregate-elements val)
-                                        for idx from 0
-                                        do (setf (cdr binder-cell) item)
-                                           (when needs-k
-                                             (setf (cdr k-cell) (%text k)))
-                                           (funcall push-item (list :item item :key (args-eval a body) :idx idx))))))
-                            (ctx-pop-frame ctx)))
-                    (let ((items (funcall get-items)))
-                      (setf items (stable-sort items
-                                               (lambda (x y)
-                                                 (let ((c (compare-values (getf x :key) (getf y :key))))
-                                                   (if (zerop c)
-                                                       (< (getf x :idx) (getf y :idx))
-                                                       (progn
-                                                         (when desc (setf c (- c)))
-                                                         (< c 0)))))))
-                      (make-list-value
-                       (loop for x in items
-                             collect (getf x :item))))))))))))
+                            (loop for (k . item) in (aggregate-elements val)
+                                  for idx from 0
+                                  do (setf (cdr binder-cell) item)
+                                     (when needs-k
+                                       (setf (cdr k-cell) (%text k)))
+                                     (funcall push-item (list :item item :key (args-eval a body) :idx idx))))))
+                      (ctx-pop-frame ctx)))
+              (let ((items (funcall get-items)))
+                (setf items (stable-sort items
+                                         (lambda (x y)
+                                           (let ((c (compare-values (getf x :key) (getf y :key))))
+                                             (if (zerop c)
+                                                 (< (getf x :idx) (getf y :idx))
+                                                 (progn
+                                                   (when desc (setf c (- c)))
+                                                   (< c 0)))))))
+                (make-list-value
+                 (loop for x in items
+                       collect (getf x :item))))))))))
 
 (define-builtin "SORT" 1 3
   (lambda (a ctx) (do-sort a ctx "ASC"))

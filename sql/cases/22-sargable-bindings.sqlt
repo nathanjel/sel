@@ -68,7 +68,7 @@ mariadb
 --- source
 TYPEPATH $== "home"
 --- expect
-((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))
+((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('home' AS CHAR) COLLATE utf8mb4_nopad_bin))
 ===
 
 ### name: bind.sargable.postgresql
@@ -191,7 +191,7 @@ mariadb
 --- source
 TYPEPATH $== "home"
 --- expect
-((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))
+((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('home' AS CHAR) COLLATE utf8mb4_nopad_bin))
 ===
 
 ### name: bind.sargable.derived-dialect
@@ -206,7 +206,7 @@ cms-mariadb
 --- source
 TYPEPATH $== "home"
 --- expect
-((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_bin = CAST('home' AS CHAR) COLLATE utf8mb4_bin))
+((`cms_entry`.`typepath` = 'home') AND (CAST(`cms_entry`.`typepath` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('home' AS CHAR) COLLATE utf8mb4_nopad_bin))
 ===
 
 ### name: bind.separate.relation.mariadb
@@ -219,7 +219,7 @@ mariadb
 --- source
 ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
 --- expect
-(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))
+(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('news' AS CHAR) COLLATE utf8mb4_nopad_bin)))) IS TRUE))
 ===
 
 ### name: bind.separate.column.mariadb
@@ -232,7 +232,7 @@ mariadb
 --- source
 ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
 --- expect
-(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))
+(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('news' AS CHAR) COLLATE utf8mb4_nopad_bin)))) IS TRUE))
 ===
 
 ### name: bind.separate.splitsargable.mariadb
@@ -245,7 +245,7 @@ mariadb
 --- source
 ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
 --- expect
-(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE))
+(EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND ((`g`.`fname` = 'f_group') AND (`g`.`value` = 'news'))) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('news' AS CHAR) COLLATE utf8mb4_nopad_bin)))) IS TRUE))
 ===
 
 ### name: bind.separate.inline-override.mariadb
@@ -258,7 +258,7 @@ mariadb
 --- source
 ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
 --- expect
-EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_bin = CAST('news' AS CHAR) COLLATE utf8mb4_bin)))) IS TRUE)
+EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `cms_entry`.`cmsid` AND (((`g`.`fname` = 'f_group') AND ((`g`.`value` = 'news') AND (CAST(`g`.`value` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('news' AS CHAR) COLLATE utf8mb4_nopad_bin)))) IS TRUE)
 ===
 
 ### name: bind.separate.postgresql
@@ -286,4 +286,3 @@ ANY(FIELDS, G, G["fname"] $== "f_group" AND G["value"] $== "news")
 --- expect
 EXISTS (SELECT 1 FROM "cms_fields" "g" WHERE "g"."cmsid" = "cms_entry"."cmsid" AND ((("g"."fname" = 'f_group') AND ("g"."value" = 'news'))) IS TRUE)
 ===
-

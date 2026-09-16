@@ -564,6 +564,13 @@ Eleven layers, each catching what the others miss:
   means?". It skips itself when no DSN is set, which is why it is last: it is the
   only layer that cannot run everywhere.
 
+The layers are independent, so the gate runs them side by side: `SEL_JOBS`
+leaf commands at once (half the machine's threads, rounded up) of which at most
+`SEL_PHP_JOBS` are PHP (a quarter — on a box where `php` is a container, each
+call is a container start). The two are `flock` slots every nested tool shares,
+so the bound holds however many scripts are in flight, and the report is printed
+in the fixed order above once every layer has finished.
+
 Two more exist and are not in `tools/check.sh`, deliberately, because they take
 minutes rather than seconds: `tools/stress.sh` (deep structures, the shapes a
 fuzzer never emits) and `cd cpp && make asan` (the suite under the leak and

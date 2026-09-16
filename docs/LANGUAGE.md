@@ -589,6 +589,8 @@ IS_PRESENT("hello")      => TRUE
 | `DROP(list, n)` | drops first `n` elements |
 | `SELECT_COLS(rel, c1, …)` | projects specified columns |
 | `DISTINCT(list)` | unique elements preserving order |
+| `LINK(left, right, pred)`, `LINK(left, right, L, R, pred)` | inner join: a row per matching pair, `_1`/`L` and `_2`/`R` in `pred`; the row holds each side under its binders (and a named relation's name) plus the unambiguous fields of both — spec §7.4 "Joined rows" |
+| `LINK_LEFT(…)` | the same, keeping unmatched `left` elements with an all-`NULL` right side |
 
 ### Null safety & navigation
 

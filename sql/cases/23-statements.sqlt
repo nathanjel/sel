@@ -156,8 +156,8 @@ mariadb
 statement
 --- source
 ITEMS .> SELECT_COLS("id") .> DISTINCT()
---- expect
-SELECT DISTINCT `id` FROM `items`
+--- error
+E_SQL_SHAPE
 ===
 
 ### name: stmt.order-by.sort-by-asc
@@ -248,7 +248,7 @@ statement
 --- source
 ITEMS .> TAKE(10) .> DROP(20)
 --- expect
-SELECT * FROM `items` LIMIT 10 OFFSET 20
+SELECT * FROM `items` LIMIT 0 OFFSET 10
 ===
 
 ### name: stmt.limit-offset.drop-mariadb
@@ -332,7 +332,7 @@ debug
 --- source
 ITEMS .> FILTER(_["name"] $== "foo") .> SORT_BY(_["name"] & "bar")
 --- expect
-SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CAST(CONCAT(`name`, ~2~) AS CHAR) COLLATE utf8mb4_bin ASC
+SELECT * FROM `items` WHERE (`name` = ~1~) ORDER BY CAST(CONCAT(`name`, ~2~) AS CHAR) COLLATE utf8mb4_nopad_bin ASC
 ===
 
 ### name: stmt.refusal.as-value
@@ -482,7 +482,7 @@ statement
 --- source
 ITEMS .> FILTER(_["qty"] > 0) .> SORT_BY(O, IF(TRUE, "DESC", "ASC"))
 --- expect
-SELECT * FROM `items` WHERE (`qty` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_bin ASC
+SELECT * FROM `items` WHERE (`qty` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_nopad_bin ASC
 ===
 
 ### name: stmt.order-by.direction-is-case-insensitive
@@ -616,7 +616,7 @@ statement
 --- source
 ORDERS .> SORT_BY(_["id"]) .> FILTER(_["id"] > 1)
 --- expect
-SELECT "_sub1".* FROM (SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" ASC) "_sub1" WHERE (CASE WHEN (CAST("_sub1"."id" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("_sub1"."id" AS NUMERIC) ELSE NULL END > 1)
+SELECT "_sub1".* FROM (SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" ASC) "_sub1" WHERE ("_sub1"."id" > 1)
 ===
 
 ### name: stmt.order-by.later-sort-is-the-primary-key
@@ -649,7 +649,7 @@ statement
 --- source
 ITEMS .> BUCKET(_["dept"], RECORD("d", _K, "n", COUNT(_))) .> SORT_BY(_["n"]) .> SORT_BY(_["d"])
 --- expect
-SELECT CAST("dept" AS TEXT) COLLATE "C" AS "d", COUNT(*) AS "n" FROM "items" GROUP BY CAST("dept" AS TEXT) COLLATE "C" ORDER BY CAST("dept" AS TEXT) COLLATE "C" ASC, COUNT(*) ASC
+SELECT CAST("dept" AS TEXT) COLLATE "C" AS "d", COUNT(*) AS "n" FROM "items" GROUP BY CAST("dept" AS TEXT) COLLATE "C" ORDER BY MIN(CAST("dept" AS TEXT) COLLATE "C") ASC, COUNT(*) ASC
 ===
 
 ### name: stmt.order-by.sort-after-pagination-sorts-the-page

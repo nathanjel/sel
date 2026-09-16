@@ -376,7 +376,7 @@ b\"c\\d")))
 (test relational-sql-derived-tables
   (let* ((orders (sel.sql:binding-relation "orders" "orders"
                    (list (cons "ID" (sel.sql:binding-column "id" "orders"))
-                         (cons "C_ID" (sel.sql:binding-column "c_id" "orders"))
+                         (cons "C_ID" (sel.sql:binding-column "c_id" "orders" :num))
                          (cons "AMOUNT" (sel.sql:binding-column "amount" "orders")))))
          (bindings (list (cons "ORDERS" orders))))
     ;; MAP computed column followed by FILTER requires derived table subquery
@@ -400,7 +400,7 @@ b\"c\\d")))
            (sql (sel.sql:as-statement frag)))
       (is (not (null (search "\"_sub1\"" sql))))
       (is (not (null (search "\"_sub2\"" sql))))
-      (is (not (null (search "GROUP BY \"orders\".\"c_id\"" sql))))
+      (is (not (null (search "GROUP BY CAST(\"orders\".\"c_id\" AS TEXT) COLLATE \"C\"" sql))))
       (is (not (null (search "\"_sub2\".\"tax\"" sql)))))))
 
 (test hybrid-execution-planner
@@ -451,7 +451,34 @@ b\"c\\d")))
       (sel:value-set ctx "LOCAL_ROWS" (sel:evaluate "LIST(RECORD('x', 1), RECORD('x', 2))"))
       (let ((res (sel.sql:execute-hybrid plan nil ctx)))
         (is (= 1 (sel:value-size res)))
-        (is (string= "2" (sel:as-text (sel:value-get (sel:value-get res "2") "x"))))))))
+        (is (string= "2" (sel:as-text (sel:value-get (sel:value-get res "2") "x"))))))
+
+    ;; The runner contract (finding AK): the statement in :PARAMS mode with
+    ;; BINDINGS in placeholder order -- text literals as `?`, numbers inlined
+    ;; -- in every host, so a driver binds what it is handed as it is. This
+    ;; host handed the runner inline SQL and its creation-order slot list.
+    (let* ((typed-orders (sel.sql:binding-relation "orders" "orders"
+                           (list (cons "ID" (sel.sql:binding-column "id" "orders" :num))
+                                 (cons "AMOUNT" (sel.sql:binding-column "amount" "orders" :num))
+                                 (cons "NAME" (sel.sql:binding-column "name" "orders" :text)))))
+           (p (sel:compile-source "ORDERS .> FILTER(FIND(\"needle\", \"hay-\" & _['name']) > 0 AND _['amount'] > 5) .> MAP(RECORD('g', RGROUPS('(a)', _['name'])))"))
+           (plan (sel.sql:plan-hybrid p "mariadb" (list (cons "ORDERS" typed-orders))))
+           (seen-sql nil)
+           (seen-params nil)
+           (mock-runner (lambda (sql params)
+                          (setf seen-sql sql
+                                seen-params (mapcar #'sel:as-text params))
+                          (sel:evaluate "LIST()"))))
+      (is-false (sel.sql:hybrid-plan-pure-sql-p plan))
+      (is-false (sel.sql:hybrid-plan-pure-memory-p plan))
+      (sel.sql:execute-hybrid plan mock-runner)
+      (is (not (null seen-sql)) "runner contract: the runner was not called")
+      (is (not (null (search "?" seen-sql))) "runner contract: text literals must be placeholders, got ~a" seen-sql)
+      (is (null (search "'needle'" seen-sql)) "runner contract: text literals must be placeholders, got ~a" seen-sql)
+      (is (null (search "'hay-'" seen-sql)) "runner contract: text literals must be placeholders, got ~a" seen-sql)
+      (is (not (null (search "> 5" seen-sql))) "runner contract: a number is inlined, got ~a" seen-sql)
+      (is (null (search "?, 5" seen-sql)) "runner contract: a number is inlined, got ~a" seen-sql)
+      (is (equal '("hay-" "needle") seen-params) "runner contract: bindings in placeholder order, got ~s" seen-params))))
 
 (test relational-complex-twisted-pipeline
   ;; 1. In-memory execution of the full 9-stage pipeline
@@ -493,7 +520,7 @@ b\"c\\d")))
                          (cons "STATUS" (sel.sql:binding-column "status" "orders")))))
          (items (sel.sql:binding-relation "line_items" "line_items"
                   (list (cons "ORDER_ID" (sel.sql:binding-column "order_id" "line_items"))
-                        (cons "CATEGORY" (sel.sql:binding-column "category" "line_items"))
+                        (cons "CATEGORY" (sel.sql:binding-column "category" "line_items" :text))
                         (cons "UNIT_PRICE" (sel.sql:binding-column "unit_price" "line_items"))
                         (cons "QTY" (sel.sql:binding-column "qty" "line_items")))))
          (bindings (list (cons "ORDERS" orders) (cons "LINE_ITEMS" items)))
@@ -514,7 +541,7 @@ b\"c\\d")))
       (is (not (null (search "INNER JOIN \"line_items\"" sql))))
       (is (not (null (search "\"orders\".\"status\"" sql))))
       (is (not (null (search "\"_sub1\"" sql))))
-      (is (not (null (search "GROUP BY \"_sub1\".\"cat\"" sql))))
+      (is (not (null (search "GROUP BY CAST(\"_sub1\".\"cat\" AS TEXT) COLLATE \"C\"" sql))))
       (is (not (null (search "HAVING (COALESCE(SUM(\"_sub1\".\"line_total\"), 0) >= 200)" sql))))
       (is (not (null (search "ORDER BY COALESCE(SUM(\"_sub1\".\"line_total\"), 0) DESC" sql))))
       (is (not (null (search "LIMIT 5" sql)))))
@@ -729,13 +756,38 @@ b\"c\\d")))
     (is (string= "TOP_BY" (sel::node-s opt-ast)))
     (is (= 4 (length (sel::node-items opt-ast)))))
 
-  ;; 2. Filter Pushdown: MAP .> FILTER where FILTER only uses pass-through fields
-  (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10)"))
+  ;; 2. Filter Pushdown: MAP .> FILTER where FILTER only uses pass-through
+  ;; fields. A FILTER moves in front of a MAP, a sort or a SELECT_COLS only
+  ;; when a later step renumbers the rows again without reading `_K`: FILTER
+  ;; keeps its input's keys and the three renumber (spec §7.3), so at the end
+  ;; of a pipeline the swap would change the answer's keys.
+  (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10) .> MAP(_['heavy'])"))
          (opt-ast (sel:optimize-ast (sel:program-ast prog))))
-    ;; Top-level should now be MAP, with child FILTER
+    ;; Top-level is the second MAP; under it the first MAP, then the FILTER
     (is (string= "MAP" (sel::node-s opt-ast)))
     (let ((child (first (sel::node-items opt-ast))))
-      (is (string= "FILTER" (sel::node-s child)))))
+      (is (string= "MAP" (sel::node-s child)))
+      (let ((grandchild (first (sel::node-items child))))
+        (is (string= "FILTER" (sel::node-s grandchild))))))
+  ;; 2b. At the end of a pipeline the written order is kept
+  (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10)"))
+         (opt-ast (sel:optimize-ast (sel:program-ast prog))))
+    (is (string= "FILTER" (sel::node-s opt-ast)))
+    (is (string= "MAP" (sel::node-s (first (sel::node-items opt-ast))))))
+  ;; 2c. A later step that reads `_K` keeps the keys too
+  (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10) .> MAP(_K)"))
+         (opt-ast (sel:optimize-ast (sel:program-ast prog))))
+    (is (string= "MAP" (sel::node-s opt-ast)))
+    (let ((child (first (sel::node-items opt-ast))))
+      (is (string= "FILTER" (sel::node-s child)))
+      (is (string= "MAP" (sel::node-s (first (sel::node-items child)))))))
+  ;; 2d. After the FILTERs fuse, the fused FILTER moves in front of the MAP
+  (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10) .> FILTER(_['id'] > 20) .> TAKE(1)"))
+         (opt-ast (sel:optimize-ast (sel:program-ast prog))))
+    (is (string= "TAKE" (sel::node-s opt-ast)))
+    (let ((child (first (sel::node-items opt-ast))))
+      (is (string= "MAP" (sel::node-s child)))
+      (is (string= "FILTER" (sel::node-s (first (sel::node-items child)))))))
 
   ;; 3. Late Materialization: MAP .> TOP_BY
   (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> TOP_BY(_['id'], 3)"))
@@ -801,21 +853,47 @@ b\"c\\d")))
     (is (string= "DROP" (sel::node-s opt2)))
     (is (string= "15" (sel::node-s (second (sel::node-items opt2))))))
 
-  ;; 6. Filter Pushdown through SORT_BY
+  ;; 6. Filter Pushdown through SORT_BY: only with a renumbering follower,
+  ;; and the sort then fuses with the TAKE into TOP_BY
+  (let* ((prog (sel:compile-source "DATA .> SORT_BY(_['x']) .> FILTER(_['y'] > 10) .> TAKE(3)"))
+         (opt (sel:optimize-ast-logical (sel:program-ast prog))))
+    ;; Top-level should be TOP_BY, with child FILTER
+    (is (string= "TOP_BY" (sel::node-s opt)))
+    (let ((child (first (sel::node-items opt))))
+      (is (string= "FILTER" (sel::node-s child)))))
+  ;; 6b. At the end of a pipeline the written order is kept
   (let* ((prog (sel:compile-source "DATA .> SORT_BY(_['x']) .> FILTER(_['y'] > 10)"))
          (opt (sel:optimize-ast-logical (sel:program-ast prog))))
-    ;; Top-level should be SORT_BY, with child FILTER
-    (is (string= "SORT_BY" (sel::node-s opt)))
+    (is (string= "FILTER" (sel::node-s opt)))
+    (is (string= "SORT_BY" (sel::node-s (first (sel::node-items opt))))))
+  ;; 6c. A follower that reads `_K` keeps it too
+  (let* ((prog (sel:compile-source "DATA .> SORT_BY(_['x']) .> FILTER(_['y'] > 10) .> MAP(_K)"))
+         (opt (sel:optimize-ast-logical (sel:program-ast prog))))
+    (is (string= "MAP" (sel::node-s opt)))
     (let ((child (first (sel::node-items opt))))
-      (is (string= "FILTER" (sel::node-s child)))))
+      (is (string= "FILTER" (sel::node-s child)))
+      (is (string= "SORT_BY" (sel::node-s (first (sel::node-items child)))))))
 
-  ;; 7. Filter Pushdown through SELECT_COLS
+  ;; 7. Filter Pushdown through SELECT_COLS: only with a renumbering follower
+  (let* ((prog (sel:compile-source "DATA .> SELECT_COLS('id', 'y') .> FILTER(_['id'] > 10) .> MAP(_['id'])"))
+         (opt (sel:optimize-ast-logical (sel:program-ast prog))))
+    ;; Top-level is the MAP; under it SELECT_COLS, then the FILTER
+    (is (string= "MAP" (sel::node-s opt)))
+    (let ((child (first (sel::node-items opt))))
+      (is (string= "SELECT_COLS" (sel::node-s child)))
+      (is (string= "FILTER" (sel::node-s (first (sel::node-items child)))))))
+  ;; 7b. At the end of a pipeline the written order is kept
   (let* ((prog (sel:compile-source "DATA .> SELECT_COLS('id', 'y') .> FILTER(_['id'] > 10)"))
          (opt (sel:optimize-ast-logical (sel:program-ast prog))))
-    ;; Top-level should be SELECT_COLS, with child FILTER
-    (is (string= "SELECT_COLS" (sel::node-s opt)))
+    (is (string= "FILTER" (sel::node-s opt)))
+    (is (string= "SELECT_COLS" (sel::node-s (first (sel::node-items opt))))))
+  ;; 7c. A follower that reads `_K` keeps it too
+  (let* ((prog (sel:compile-source "DATA .> SELECT_COLS('id', 'y') .> FILTER(_['id'] > 10) .> MAP(_K)"))
+         (opt (sel:optimize-ast-logical (sel:program-ast prog))))
+    (is (string= "MAP" (sel::node-s opt)))
     (let ((child (first (sel::node-items opt))))
-      (is (string= "FILTER" (sel::node-s child)))))
+      (is (string= "FILTER" (sel::node-s child)))
+      (is (string= "SELECT_COLS" (sel::node-s (first (sel::node-items child)))))))
 
   ;; 8. Tier 1 Logical vs Tier 2 In-Memory distinction
   (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'x', _['val'] * 2))"))
@@ -916,7 +994,26 @@ b\"c\\d")))
     ;; Right side of LINK should be rewritten to FILTER on PRODUCTS
     (let ((right-side (second (sel::node-items opt))))
       (is (string= "FILTER" (sel::node-s right-side)))
-      (is (string= "PRODUCTS" (sel::node-s (first (sel::node-items right-side))))))))
+      (is (string= "PRODUCTS" (sel::node-s (first (sel::node-items right-side)))))))
+
+  ;; 14b. A binder read after the LINK names no side: the binders are scoped
+  ;; to the predicate (spec §7.4), so `O['status']` in the FILTER is
+  ;; E_UNDEF_VAR as written, and pushing it into ORDERS would turn that error
+  ;; into rows (review 2026-09-15, W2). The pipeline is left as it is.
+  (let* ((prog (sel:compile-source "ORDERS .> LINK(PRODUCTS, O, P, O['p_id'] == P['id']) .> FILTER(O['status'] $== 'ACTIVE' AND P['is_active'] == 1)"))
+         (opt (sel:optimize-ast-in-memory (sel:program-ast prog))))
+    (is (string= "FILTER" (sel::node-s opt)))
+    (let ((link (first (sel::node-items opt))))
+      (is (string= "LINK" (sel::node-s link)))
+      (is (string= "ORDERS" (sel::node-s (first (sel::node-items link)))))
+      (is (string= "PRODUCTS" (sel::node-s (second (sel::node-items link)))))))
+
+  ;; 14c. Likewise the relation's name and the positional binder: `ORDERS['x']`
+  ;; is E_NO_KEY on the list, `_2['x']` is E_UNDEF_VAR.
+  (let* ((prog (sel:compile-source "ORDERS .> LINK(PRODUCTS, _1['p_id'] == _2['id']) .> FILTER(ORDERS['status'] $== 'ACTIVE' AND _2['is_active'] == 1)"))
+         (opt (sel:optimize-ast-in-memory (sel:program-ast prog))))
+    (is (string= "FILTER" (sel::node-s opt)))
+    (is (string= "LINK" (sel::node-s (first (sel::node-items opt)))))))
 
 ;;; --- the hybrid planner's contract --------------------------------------
 ;;;
@@ -1080,7 +1177,12 @@ identity, and a snapshot is compared by value."
               ("ORDERS .> BUCKET(_[\"customer_id\"]) .> FILTER(COUNT(_) > 1)" :pure-memory)
               ("ORDERS .> BUCKET(_[\"customer_id\"]) .> BUCKET(COUNT(_)) .> MAP(RECORD(\"size\", _K, \"n\", COUNT(_)))" :pure-memory)
               ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> SORT_BY(s, s[\"name\"])" :pure-memory)
-              ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)" :hybrid)
+              ;; The FILTER no longer moves in front of the MAP (it would
+              ;; renumber the answer's keys); over the MAP's derived table
+              ;; sqlite cannot render its NUM guard, so nothing pushes down.
+              ;; A later step that renumbers again lets the swap through.
+              ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)" :pure-memory)
+              ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)" :hybrid)
               ("ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)" :pure-memory)
               ("ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", REPEAT(_[\"name\"], 2))) .> TAKE(2)" :hybrid)
               ("ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", (REPEAT(_[\"name\"], 2), 1))) .> TAKE(2)" :hybrid)

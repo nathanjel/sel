@@ -1,0 +1,127 @@
+### name: stmt.numeric-identity.derived-pass-through.sqlite
+--- dialect
+sqlite
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"column","column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- expect
+SELECT MIN("_sub1"."key") AS "key", COUNT(*) AS "n" FROM (SELECT "v" AS "key" FROM "r") "_sub1" GROUP BY CAST("_sub1"."key" AS TEXT) COLLATE BINARY
+===
+
+### name: plan.group-identity.unknown-derived-prefix.sqlite
+--- dialect
+sqlite
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat"}}}}
+--- source
+R .> MAP(RECORD("key", _["cat"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT "cat" AS "key" FROM "r"
+===
+
+### name: stmt.numeric-identity.derived-pass-through.postgresql
+--- dialect
+postgresql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"column","column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- expect
+SELECT MIN("_sub1"."key") AS "key", COUNT(*) AS "n" FROM (SELECT "v" AS "key" FROM "r") "_sub1" GROUP BY CAST("_sub1"."key" AS TEXT) COLLATE "C"
+===
+
+### name: plan.group-identity.unknown-derived-prefix.postgresql
+--- dialect
+postgresql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat"}}}}
+--- source
+R .> MAP(RECORD("key", _["cat"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT "cat" AS "key" FROM "r"
+===
+
+### name: stmt.numeric-identity.derived-pass-through.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"column","column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- expect
+SELECT MIN(`_sub1`.`key`) AS `key`, COUNT(*) AS `n` FROM (SELECT `v` AS `key` FROM `r`) `_sub1` GROUP BY CAST(`_sub1`.`key` AS CHAR) COLLATE utf8mb4_nopad_bin
+===
+
+### name: plan.group-identity.unknown-derived-prefix.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat"}}}}
+--- source
+R .> MAP(RECORD("key", _["cat"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT `cat` AS `key` FROM `r`
+===
+
+### name: stmt.numeric-identity.derived-pass-through.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"V":{"kind":"column","column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("key", _["v"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- expect
+SELECT MIN(`_sub1`.`key`) AS `key`, COUNT(*) AS `n` FROM (SELECT `v` AS `key` FROM `r`) `_sub1` GROUP BY CAST(`_sub1`.`key` AS CHAR) COLLATE utf8mb4_0900_bin
+===
+
+### name: plan.group-identity.unknown-derived-prefix.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat"}}}}
+--- source
+R .> MAP(RECORD("key", _["cat"])) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT `cat` AS `key` FROM `r`
+===

@@ -306,8 +306,26 @@ export class Translator {
   // default merged 'A' and 'a'). The result is marked exact so a comparison
   // over it does not wrap it a second time -- MySQL's only_full_group_by
   // accepts a projected or compared key only as the identical expression.
-  groupKey(src, gb) {
-    return this.collatedKey(this.withRow(src, gb.binder, () => this.node(gb.node)));
+  groupKey(src, gb, projected = false) {
+    const key = this.withRow(src, gb.binder, () => this.node(gb.node));
+    const identity = this.identityGroupKey(gb.node, key);
+    if (projected && key.kind === 'NUM') return new Fragment(['MIN(', ...key.parts, ')'],
+      'NUM', this.dialect, key.params, key.paramKinds, key.caveats);
+    return identity;
+  }
+
+  identityGroupKey(node, frag) {
+    if (frag.kind === 'UNKNOWN') refuse('E_SQL_SHAPE', 'group keys require proven scalar identity', node.pos);
+    if (frag.kind === 'NUM') {
+      if (!['var', 'index', 'num'].includes(node.t)) {
+        refuse('E_SQL_SHAPE', 'computed numeric group keys do not preserve SEL identity', node.pos);
+      }
+      const numeric = new Fragment(frag.parts, 'NUM', this.dialect, frag.params, frag.paramKinds, frag.caveats);
+      const wrapped = this.emit.textOperand(numeric);
+      return new Fragment(wrapped.parts, 'TEXT', this.dialect, wrapped.params, wrapped.paramKinds,
+        wrapped.caveats, true, false, false);
+    }
+    return this.collatedKey(frag);
   }
 
   collatedKey(frag) {
@@ -936,14 +954,19 @@ export class Translator {
       } finally {
         this.frames.pop();
       }
-      const collated = this.collatedKey(key);
+      const collated = this.identityGroupKey(group.node, key);
+      if (key.kind === 'NUM') {
+        return new Fragment(['MIN(', ...key.parts, ')'], 'NUM', this.dialect,
+          key.params, key.paramKinds, key.caveats);
+      }
       // In a HAVING, MariaDB and MySQL resolve a column only against the
       // GROUP BY columns and the select list, not against an equal
       // expression: `HAVING CAST(cat …) COLLATE …` is "unknown column cat"
       // once the grouping is the collated expression. The key is constant
       // within its group, so MIN of it IS the key, and an aggregate is
       // what every server lets a HAVING name.
-      if (this.inHaving && collated !== key) {
+      // Nested _K projections need the same aggregate under ONLY_FULL_GROUP_BY.
+      if (collated !== key) {
         return new Fragment(['MIN(', ...collated.parts, ')'], 'TEXT', this.dialect,
           collated.params, collated.paramKinds, collated.caveats, true, false, false);
       }
@@ -1027,7 +1050,7 @@ export class Translator {
           + 'row without an ORDER BY that nothing here can supply', n.pos);
       }
       const field = asciiUpper(key);
-      if (name === '_' && this.statementPlan !== null && this.statementPlan.joins?.length) {
+      if (b.joined && this.statementPlan !== null && this.statementPlan.joins?.length) {
         const matches = [];
         const sources = [{ relation: this.statementPlan.sourceRelation, label: this.statementPlan.sourceName },
           ...this.statementPlan.joins.map((join) => ({ relation: join.sourceRelation, label: join.sourceName }))];
@@ -1306,6 +1329,11 @@ export class Translator {
     }
 
     const row = Binder.row(src.relation);
+    // The row of a joined statement: a field read through it resolves across
+    // the sides (ambiguous when both have it), whatever the binder is called.
+    // Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
+    // after a LINK resolve to the left side where `run()` raises E_NO_KEY.
+    if (this.statementPlan !== null && this.statementPlan.joins?.length) row.joined = true;
     const frame = new Map([
       [binderName, row],
       ['_K', Binder.none('a row of a relation has no key: SQL rows are unordered '
@@ -1313,19 +1341,12 @@ export class Translator {
         + 'is the key is not something this layer does')],
     ]);
     for (const f of src.filters) frame.set(f.binder, row);
-    if (this.statementPlan !== null && this.statementPlan.joins?.length) {
-      frame.set('_', row);
-      frame.set('_1', row);
-      frame.set(this.statementPlan.sourceName, row);
-      if (this.statementPlan.sourceAlias) frame.set(this.statementPlan.sourceAlias, row);
-      this.statementPlan.joins.forEach((join, index) => {
-        const right = Binder.row(join.sourceRelation);
-        frame.set(`_${index + 2}`, right);
-        frame.set(join.rightBinder, right);
-        frame.set(join.sourceName, right);
-        if (join.sourceAlias) frame.set(join.sourceAlias, right);
-      });
-    }
+    // After a LINK only the row is in scope (spec §7.4): the binders are scoped
+    // to its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
+    // a later step -- the joined row carries them as keys, not as names. This
+    // frame used to bind `_1`, `_2`, the relations' names and the right
+    // binder for every later step, so `FILTER(C["id"] > 1)` translated where
+    // `run()` fails (review 2026-09-15 finding W2).
     this.frames.push(frame);
     try {
       return render();
@@ -1775,13 +1796,52 @@ export class Translator {
       });
     } else if (plan.selectCols) {
       names.push(...plan.selectCols);
-    } else {
-      if (plan.sourceRelation?.fields) names.push(...Object.keys(plan.sourceRelation.fields));
-      for (const join of plan.joins ?? []) {
-        if (join.sourceRelation?.fields) names.push(...Object.keys(join.sourceRelation.fields));
-      }
+    } else if (plan.joins?.length) {
+      names.push(...this.joinedRowFields(plan).map((f) => f.name));
+    } else if (plan.sourceRelation?.fields) {
+      names.push(...Object.keys(plan.sourceRelation.fields));
     }
     return [...new Set(names)];
+  }
+
+  // The fields of a joined row that SQL can carry (spec §7.4 "Joined rows"):
+  // the promoted ones -- a side's fields whose names, compared
+  // ASCII-case-insensitively, do not occur on the other side -- accumulated
+  // join by join as the evaluator promotes them. The binders (`_1`, `_2`, the
+  // relations' names) are nested records with no column, and a name both
+  // sides carry is E_NO_KEY in SEL; neither is projected, so a read of either
+  // over the derived table is refused where `run()` raises. `SELECT o.*` was
+  // the row before: the left table's columns, which a continuation read where
+  // SEL has no key, and which made a derived table over a join name columns
+  // it did not have (finding Y, lanes).
+  joinedRowFields(plan) {
+    const entries = (rel) => Object.entries(rel?.fields ?? {})
+      .map(([name, spec]) => ({ name, spec, owner: rel }));
+    let acc = entries(plan.sourceRelation);
+    for (const join of plan.joins ?? []) {
+      const right = entries(join.sourceRelation);
+      const leftNames = new Set(acc.map((f) => asciiUpper(f.name)));
+      const rightNames = new Set(right.map((f) => asciiUpper(f.name)));
+      acc = [
+        ...acc.filter((f) => !rightNames.has(asciiUpper(f.name))),
+        ...right.filter((f) => !leftNames.has(asciiUpper(f.name))),
+      ];
+    }
+    return acc;
+  }
+
+  outputFieldType(plan, name) {
+    // Computed projections remain UNKNOWN; only direct reads retain a type.
+    if (plan.projections !== null) {
+      const p = plan.projections.find(p => p.alias === name);
+      const n = p?.node;
+      if (!(n?.t === 'index' && n.obj.t === 'var' && n.obj.name === p.binder && n.idx.t === 'text')) return 'UNKNOWN';
+      name = n.idx.v;
+    }
+    const matches = [plan.sourceRelation, ...plan.joins.map(j => j.sourceRelation)]
+      .map(rel => rel?.fields?.[asciiUpper(name)]).filter(Boolean);
+    return matches.length === 1 && !matches[0].guard && matches[0].raw == null
+      ? (matches[0].type ?? 'UNKNOWN') : 'UNKNOWN';
   }
 
   wrapPlanAsDerivedTable(plan) {
@@ -1799,7 +1859,7 @@ export class Translator {
         }
       }
       fields[asciiUpper(name)] = {
-        kind: 'column', column: sourceField?.column ?? name, table: alias, type: 'UNKNOWN',
+        kind: 'column', column: sourceField?.column ?? name, table: alias, type: this.outputFieldType(plan, name),
       };
     }
     const derived = new RelationalPlan();
@@ -1921,6 +1981,9 @@ export class Translator {
   }
 
   analyzePipeline(n) {
+    if (constants.identityLossBeforeGrouping(n)) {
+      refuse('E_SQL_SHAPE', 'grouping depends on a computed projection without identity preservation', n.pos);
+    }
     const steps = [];
     let curr = n;
     while (curr.t === 'call' && PIPELINE_OPS.has(curr.name)) {
@@ -2175,6 +2238,9 @@ export class Translator {
         case 'DEDUPE':
           plan = this.ensureDerived(plan, (candidate) =>
             candidate.limit !== null || candidate.offset !== null);
+          if (plan.projections === null && plan.selectCols === null) {
+            refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos);
+          }
           plan.distinct = true;
           break;
 
@@ -2192,7 +2258,15 @@ export class Translator {
             refuse('E_ARITY', 'DROP takes 2 arguments', step.pos);
           }
           const off = this.evalIntParam(args[1], 'DROP');
-          plan.offset = (plan.offset ?? 0) + off;
+          // Consume the bounded slice; retain a SQL boundary for large sums.
+          const skipped = plan.limit === null ? off : Math.min(off, plan.limit);
+          if ((plan.offset ?? 0) > Number.MAX_SAFE_INTEGER - skipped) {
+            plan = this.wrapPlanAsDerivedTable(plan);
+            plan.offset = off;
+          } else {
+            if (plan.limit !== null) plan.limit -= skipped;
+            plan.offset = (plan.offset ?? 0) + skipped;
+          }
           break;
         }
 
@@ -2406,6 +2480,17 @@ export class Translator {
   }
 
   compileStatement(plan) {
+    // Refuse RECORD collisions before emitting aliases or dropping evaluations.
+    for (const entries of [plan.projections, plan.groupBy]) {
+      const seen = new Set();
+      for (const entry of entries ?? []) {
+        if (entry.alias !== null && entry.alias !== undefined) {
+          const key = asciiUpper(entry.alias);
+          if (seen.has(key)) refuse('E_SQL_SHAPE', 'duplicate or case-colliding RECORD fields require local evaluation', entry.node.pos);
+          seen.add(key);
+        }
+      }
+    }
     const previousPlan = this.statementPlan;
     this.statementPlan = plan;
     try {
@@ -2424,11 +2509,15 @@ export class Translator {
         for (const proj of plan.projections) {
           if (!first) parts.push(', ');
           first = false;
-          const pFrag = proj.groupKey
-            ? this.groupKey(src, proj.groupKey)
+          let pFrag = proj.groupKey
+            ? this.groupKey(src, proj.groupKey, true)
             : plan.groupBy !== null
               ? this.withGroup(src, proj.binder, () => this.node(proj.node))
               : this.withRow(src, proj.binder, () => this.node(proj.node));
+          if (plan.distinct) {
+            if (['UNKNOWN', 'NUM'].includes(pFrag.kind)) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', proj.node.pos);
+            pFrag = this.identityGroupKey(proj.node, pFrag);
+          }
           for (const p of pFrag.parts) parts.push(p);
           if (proj.alias !== null) {
             parts.push(' AS ' + this.emit.ident(proj.alias));
@@ -2455,7 +2544,28 @@ export class Translator {
             ? this.relationTableAlias(owner)
             : (fSpec?.table ?? (owner === plan.sourceRelation ? plan.sourceAlias : relationAlias(owner)));
           const column = fSpec?.column ?? col;
-          parts.push(this.emit.column(table, column));
+          const sql = this.emit.column(table, column);
+          if (plan.distinct && (!fSpec || ['UNKNOWN', 'NUM'].includes(fSpec.type ?? 'UNKNOWN'))) {
+            refuse('E_SQL_SHAPE', 'DISTINCT requires known output kinds', null);
+          }
+          if (plan.distinct && ['TEXT', 'NUM'].includes(fSpec?.type)) {
+            parts.push(...this.emit.textOperand(new Fragment([sql], fSpec.type, this.dialect)).parts);
+            parts.push(' AS ' + this.emit.ident(column));
+          } else parts.push(sql);
+        }
+      } else if (plan.joins?.length) {
+        // A joined row is its promoted fields (spec §7.4); see joinedRowFields.
+        const fields = this.joinedRowFields(plan);
+        if (fields.length === 0) {
+          const last = plan.joins[plan.joins.length - 1];
+          refuse('E_SQL_SHAPE', 'the joined row has no field SQL can carry: every field '
+            + 'is on both sides, and the binders are nested records', last.pos ?? null);
+        }
+        let first = true;
+        for (const f of fields) {
+          if (!first) parts.push(', ');
+          first = false;
+          parts.push(this.emit.column(this.relationTableAlias(f.owner), f.spec?.column ?? f.name));
         }
       } else {
         if (plan.sourceAlias !== null) {

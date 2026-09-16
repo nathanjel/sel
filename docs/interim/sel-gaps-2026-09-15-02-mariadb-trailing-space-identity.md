@@ -1,11 +1,85 @@
 # F2 — Preserve trailing spaces in MariaDB text identity
 
-Status: confirmed, open at `55f4aa6`. Proposed priority: **P1, silent wrong
+Status: implemented in the working tree on 2026-09-16, including safe fallback
+for bare-row DISTINCT; the default integration gate and live regressions pass.
+Originally confirmed at `55f4aa6`. Proposed priority: **P1, silent wrong
 selection and grouping**. Every host's MariaDB translator is affected, including
 strict mode and native parameters. PostgreSQL/SQLite are successful controls
 for the simple selection/grouping witnesses. MySQL is a required follow-up
 test if the shared family map is changed, not a platform tested by this audit.
 [Index](sel-gaps-2026-09-15-00-index.md).
+
+## Implementation and verification update — 2026-09-16
+
+Latest recheck extension: SQLite's default BINARY collation is not enough for
+columns declared NOCASE or RTRIM; CAST preserves those declarations. The shared
+SQLite map now explicitly emits `COLLATE BINARY` for exact text operations.
+Direct projected fields also retain their declared type through derived tables,
+so MAP/SELECT_COLS/slice wrappers cannot hide a TEXT key from the exact grouping
+renderer. UNKNOWN group keys are refused instead of using native SQL equality.
+SQL cases 38–40 and `tools/adversarial/identity.py` cover these additional paths.
+The Python identity suite now contains 126 passing tests. Final results are in
+the consolidated verification report linked from the index.
+
+The Lisp prototype was tested against live MariaDB before rollout. The authored
+family map now uses `utf8mb4_nopad_bin`; MySQL overrides it with
+`utf8mb4_0900_bin`. All five generated maps were regenerated. Both treatments
+retain TEXT, rather than returning binary group keys or making regex subjects
+binary. MariaDB documents NO PAD collations in its
+[supported collations](https://mariadb.com/docs/server/reference/data-types/string-data-types/character-sets/supported-character-sets-and-collations).
+
+Two additional statement paths needed changes in all five hand-written lanes:
+
+- Expressions over a collated group key (such as `LEN(_K)`) use the constant
+  group representative `MIN(key)`, also outside HAVING. MySQL's default
+  ONLY_FULL_GROUP_BY otherwise rejects these projections. Direct `_K`
+  projections retain the GROUP BY expression itself.
+- DISTINCT over MAP projections or explicitly selected TEXT columns applies
+  the same exact text treatment and retains the output column name.
+
+The five case runners still mirror MariaDB to MySQL, but pin the one deliberate
+collation-spelling substitution. They do not read the expected spelling from
+the map, so a bad map entry is not silently accepted. Runtime custom-collation
+registration cases remain independent.
+
+Verification completed:
+
+- All five hosts pass 733 SQL cases, including `29-text-identity.sqlt` and
+  `30-distinct-text.sqlt`. Three new local cases in
+  `conformance/17-text-identity.selt` pass in all five hosts.
+- Original grouping/equality/EAV attribute-join witnesses: 306 correct live
+  SQL outcomes across the five source hosts plus a fresh wheel, strict off/on,
+  inline/native parameters/planner prefixes where accepted, on MariaDB,
+  PostgreSQL and SQLite. This rerun preceded the final DISTINCT additions.
+- The expanded statement fixture contains empty text, spaces, trailing spaces,
+  case distinctions and non-ASCII text. MariaDB 11.8.8, MySQL 8.4.11 and
+  PostgreSQL 17 each pass 28 statements; SQLite passes 26 with two documented
+  numeric-coercion refusals. Every successful statement is run inline and with
+  native parameters. The broader expression/row/regex oracle also passed all
+  four servers before the final two DISTINCT cases were added.
+- The oracle JSON binding adapter now preserves exact/sargable/guard metadata;
+  previously it silently dropped these flags. The statement fixture declares
+  CAT sargable, so equality really tests the coarse prefilter plus exact
+  residual. Selected cases also run in strict mode.
+- Documentation no longer recommends treating any `_bin` schema collation as
+  exact. `exact` is an explicit caller promise; a PAD SPACE collation does not
+  meet it. Custom connection charset examples must choose a verified NO PAD
+  collation rather than manufacture a `*_bin` name.
+
+### Follow-up completion of the DISTINCT guard
+
+All five translators now refuse bare-row DISTINCT/DEDUPE: relation fields are
+read bindings, not a closed schema, so emitting a guessed deduplication projection
+could drop undeclared data. Explicit UNKNOWN and NUM projections also refuse
+DISTINCT without a structural-identity proof. Typed TEXT projections retain
+NO PAD SQL support. Safe projections can still run as a prefix; deduplication
+runs locally. Computed numeric projections are kept behind F3's identity barrier.
+
+`sql/cases/31-distinct-schema.sqlt` and `python/tests/test_sql_identity.py`
+cover the guard, including undeclared fields and actual continuation values.
+The later recheck confirmed all original F2 witnesses across all five source
+hosts plus a fresh wheel on PostgreSQL/MariaDB/SQLite. The final default
+integration gate passes; historical audit JSON remains intact.
 
 ## Reproduction
 

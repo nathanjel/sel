@@ -288,6 +288,17 @@ them (MAP, SELECT_COLS, the sorts)."
 renumbers, so such a step keeps its place relative to one."
   (some (lambda (arg) (reads-var-p arg '("_K"))) (rest (node-items step))))
 
+(defun keys-renumbered-by-p (step)
+  "Whether the step after a FILTER hides where the FILTER ran. FILTER keeps its
+input's keys (spec §7.3) and MAP, SELECT_COLS and the sorts renumber, so a
+FILTER moved in front of one of them carries the source's keys where the
+program as written carried the step's -- visible in the answer, and in any
+later `_K`. Only a following step that renumbers again without reading `_K`
+hides that; the end of the pipeline, or another FILTER, does not."
+  (and step
+       (string/= (node-s step) "FILTER")
+       (not (step-reads-key-p step))))
+
 (defun source-is-list-p (source)
   "Whether the source a pipeline starts from is a list already, so a FILTER
 whose predicate is a constant TRUE over it is the identity. Over a scalar it
@@ -465,17 +476,19 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
                         (t
                          (setf has-unknown t)))))
 
-                   ;; Pattern 2: _1['col'] or _2['col'] or tbl['col']
+                   ;; Pattern 2: NAME['col']. `O["id"]` or `ORDERS["id"]` after
+                   ;; the LINK: the binders are scoped to the predicate (spec
+                   ;; §7.4), so as written this is E_UNDEF_VAR, or E_NO_KEY on
+                   ;; the relation's list. Pushing it into the side it names
+                   ;; turned that error into rows (review 2026-09-15, W2) --
+                   ;; only `_["O"]["id"]`, a read through the joined row's key,
+                   ;; names a side.
                    ((and (eq (node-kind n) :index)
                          (let ((l (node-l n))
                                (r (node-r n)))
                            (and l (eq (node-kind l) :var) r (eq (node-kind r) :text))))
                     (let ((var-name (node-s (node-l n))))
                       (cond
-                        ((or (string= var-name "_1") (member var-name left-names :test #'string-equal))
-                         (setf has-left t))
-                        ((or (string= var-name "_2") (member var-name right-names :test #'string-equal))
-                         (setf has-right t))
                         ((or (string= var-name binder) (string= var-name "_"))
                          (setf has-ambiguous t))
                         (t
@@ -486,10 +499,6 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
                     (let ((v (node-s n)))
                       (cond
                         ((or (string= v binder) (string= v "_")) nil)
-                        ((or (string= v "_1") (member v left-names :test #'string-equal))
-                         (setf has-left t))
-                        ((or (string= v "_2") (member v right-names :test #'string-equal))
-                         (setf has-right t))
                         (t (setf has-unknown t)))))
 
                    (t
@@ -504,7 +513,7 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
       (t :unknown))))
 
 (defun rewrite-conjunct-for-relation (c target-names binder)
-  "Rewrites references in C like _['tbl']['col'] or _2['col'] or tbl['col'] into _['col']."
+  "Rewrites references in C like _['tbl']['col'] into _['col']."
   (when (and c (node-p c))
     (let ((copy (copy-node-shallow c)))
       (cond
@@ -526,21 +535,8 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
                  (node-r new-index) (node-r copy))
            new-index))
 
-        ;; Pattern 2: _1['col'] or _2['col'] or tbl['col'] -> _['col']
-        ((and (eq (node-kind copy) :index)
-              (let ((l (node-l copy))
-                    (r (node-r copy)))
-                (and l (eq (node-kind l) :var)
-                     (or (member (node-s l) '("_1" "_2") :test #'string=)
-                         (member (node-s l) target-names :test #'string-equal))
-                     r (eq (node-kind r) :text))))
-         (let ((new-index (make-node :index (node-pos copy)))
-               (var-node (make-node :var (node-pos copy))))
-           (setf (node-s var-node) "_")
-           (setf (node-l new-index) var-node
-                 (node-r new-index) (node-r copy))
-           new-index))
-
+        ;; No arm for NAME['col']: it is not attributed to a side (see
+        ;; CONJUNCT-RELATION-AFFINITY), so it is never rewritten.
         (t
          (when (node-l copy) (setf (node-l copy) (rewrite-conjunct-for-relation (node-l copy) target-names binder)))
          (when (node-r copy) (setf (node-r copy) (rewrite-conjunct-for-relation (node-r copy) target-names binder)))
@@ -561,13 +557,15 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
 (defun fields-all-in-p (fields allowed)
   (every (lambda (f) (member f allowed :test #'string=)) fields))
 
-(defun logical-step-pair (source i s1 s2)
+(defun logical-step-pair (source i s1 s2 s3)
   "The rewrite for the pair (S1 S2) at position I, as two values: the steps
 that replace the pair and how many of the two were consumed -- or NIL when no
-rule fires. The rules, and their order, are the other four hosts' single
-left-to-right sweep (review 2026-09-15 finding V: this host ran them as ten
-ordered passes, and `MAP .> SORT_BY .> TAKE` reached the translator in a
-different shape than everywhere else)."
+rule fires. S3 is the step after the pair (NIL at the end of the pipeline),
+which only the three FILTER-moving rules look at (KEYS-RENUMBERED-BY-P). The
+rules, and their order, are the other four hosts' single left-to-right sweep
+(review 2026-09-15 finding V: this host ran them as ten ordered passes, and
+`MAP .> SORT_BY .> TAKE` reached the translator in a different shape than
+everywhere else)."
   (let ((n1 (node-s s1))
         (n2 (and s2 (node-s s2))))
     (cond
@@ -606,22 +604,28 @@ different shape than everywhere else)."
                                           (list (second (node-items s2)))))
          (values (list fused) 2)))
       ;; FILTER pushdown through MAP: only a predicate over pass-through
-      ;; fields that reads neither the whole row nor _K.
+      ;; fields that reads neither the whole row nor _K, and only when the
+      ;; step after the FILTER renumbers the rows again (spec §7.3: keys are
+      ;; part of the value, and a FILTER keeps its input's).
       ((and s2 (string= n1 "MAP") (string= n2 "FILTER") (valid-filter-p s2)
             (let ((f-fields (filter-fields s2)))
               (and f-fields (fields-all-in-p f-fields (map-passthrough-fields s1))))
             (not (multiple-value-bind (binder pred) (filter-body s2)
-                   (reads-row-or-key-p pred binder))))
+                   (reads-row-or-key-p pred binder)))
+            (keys-renumbered-by-p s3))
        (values (list s2 s1) 2))
-      ;; FILTER pushdown through a sort: not a predicate that reads _K.
-      ((and s2 (sort-step-p s1) (string= n2 "FILTER") (not (step-reads-key-p s2)))
+      ;; FILTER pushdown through a sort: not a predicate that reads _K, and
+      ;; only when a later step renumbers again.
+      ((and s2 (sort-step-p s1) (string= n2 "FILTER") (not (step-reads-key-p s2))
+            (keys-renumbered-by-p s3))
        (values (list s2 s1) 2))
-      ;; FILTER pushdown through SELECT_COLS
+      ;; FILTER pushdown through SELECT_COLS, under the same key guard.
       ((and s2 (string= n1 "SELECT_COLS") (string= n2 "FILTER") (valid-filter-p s2)
             (let ((f-fields (filter-fields s2)))
               (and f-fields (fields-all-in-p f-fields (select-cols-fields s1))))
             (not (multiple-value-bind (binder pred) (filter-body s2)
-                   (reads-row-or-key-p pred binder))))
+                   (reads-row-or-key-p pred binder)))
+            (keys-renumbered-by-p s3))
        (values (list s2 s1) 2))
       ;; Sort pushdown through MAP (late materialisation): only a key over
       ;; pass-through fields is the same value before the MAP -- a keyless
@@ -685,8 +689,9 @@ needs."
             (len (length curr-steps)))
         (loop while (< i len) do
           (let ((s1 (nth i curr-steps))
-                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-            (multiple-value-bind (replacement consumed) (logical-step-pair source i s1 s2)
+                (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps)))
+                (s3 (when (< (+ i 2) len) (nth (+ i 2) curr-steps))))
+            (multiple-value-bind (replacement consumed) (logical-step-pair source i s1 s2 s3)
               (if consumed
                   (progn
                     (dolist (r replacement) (push r new-steps))
@@ -822,8 +827,10 @@ copy would only be a second object the translator has to recognise."
   (cond
     ((null node) nil)
     ((not (node-p node)) node)
-    ((> depth +max-depth+)
-     (fail "E_DEPTH" "evaluation nested too deeply" (node-pos node)))
+    ;; The evaluator/SQL normaliser owns the public depth error and its source
+    ;; position. The entry points never descend into a tree that reaches the
+    ;; cap; this guard keeps the walk bounded should a rewrite ever deepen one.
+    ((> depth +max-depth+) node)
     ((and (eq (node-kind node) :call)
           (member (node-s node) +pipeline-ops+ :test #'string=))
      (multiple-value-bind (source steps) (unwind-pipeline node)
@@ -847,13 +854,47 @@ copy would only be a second object the translator has to recognise."
     (t (let ((copy (optimize-children node physical depth)))
          (if *fold-constants* (fold-node copy) copy)))))
 
+(defun exceeds-depth-p (node depth)
+  "Whether any node of the tree lies past the evaluator's depth cap, counted
+the way the evaluator counts: the root at DEPTH (1 at the entry points), every
+child one deeper, an assignment's target excluded (the evaluator walks it
+iteratively) -- the same child slots OPTIMIZE-TREE walks. Anything that is not
+a node (the SQL layer's clist) has no children. The walk stops at the cap, so
+it is bounded however deep the tree is."
+  (cond
+    ((or (null node) (not (node-p node))) nil)
+    ((> depth +max-depth+) t)
+    (t (let ((next (1+ depth)))
+         (and (case (node-kind node)
+                ((:seq :list :call)
+                 (some (lambda (item) (exceeds-depth-p item next)) (node-items node)))
+                ((:bin :index)
+                 (or (exceeds-depth-p (node-l node) next)
+                     (exceeds-depth-p (node-r node) next)))
+                (:assign (exceeds-depth-p (node-r node) next))
+                (:un (exceeds-depth-p (node-l node) next))
+                (t nil))
+              t)))))
+
+(defun optimize-root (node physical depth)
+  "The evaluator is the depth authority (spec §6.4): a tree that reaches the
+cap is evaluated as written, so it is returned as written -- the same object.
+Raising E_DEPTH here (as this host once did) or folding at the boundary
+pre-empts or erases the E_DEPTH the evaluator raises for a chain of 201
+additions (each of them foldable), and a rewrite that lifts a child would move
+it; not rewriting loses nothing, because such a tree either raises or keeps
+its deep part on a branch that is never evaluated."
+  (if (exceeds-depth-p node depth)
+      node
+      (optimize-tree node physical depth)))
+
 (defun optimize-ast-logical (node &optional (depth 1))
   "Applies Tier 1 engine-agnostic logical rewrites to an AST. NODE is not written to."
-  (optimize-tree node nil depth))
+  (optimize-root node nil depth))
 
 (defun optimize-ast-in-memory (node &optional (depth 1))
   "Applies Tier 1 + Tier 2 in-memory physical rewrites to an AST. NODE is not written to."
-  (optimize-tree node t depth))
+  (optimize-root node t depth))
 
 (defun optimize-ast (node)
   (optimize-ast-in-memory node))

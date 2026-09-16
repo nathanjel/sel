@@ -200,6 +200,16 @@ subquery back to the outer row."
   (when alias (check-name "alias" alias))
   (%make-relation query t alias fields scalar correlate (or prefilter (when split-sargable "separate"))))
 
+(defun binding-with-unique-key (b key)
+  "Return a binding with a caller-proven single-column, non-null unique key."
+  (check-name "unique key" key)
+  (unless (and (binding-p b) (eq (binding-kind b) :relation)
+               (assoc (sel::ascii-upcase key) (getf (binding-spec b) :fields) :test #'equal))
+    (refuse "E_SQL_BINDING" "a unique key must name a declared relation field"))
+  (let ((spec (copy-list (binding-spec b))))
+    (setf (getf spec :unique-key) key)
+    (%binding :relation spec)))
+
 (defun binding-value (v &optional type)
   "A constant the application supplies, inlined as a literal.
 
@@ -295,7 +305,11 @@ saying rows have no key, rather than falling through to the bindings map and
 being reported as an unbound variable."
   (shape :none)          ; :node :column :row :none :key :group :projected
   (payload nil)
-  (reason nil))
+  (reason nil)
+  ;; A :row binder of a joined statement's row frame (WITH-ROW sets it): a
+  ;; field read through it resolves across the sides. Nil for the LINK
+  ;; predicate's own binders (WITH-JOIN-BINDERS), which name one side each.
+  (joined nil))
 
 (defun binder-node (node) (%binder :node node))
 ;; The key of the group being rendered: the group-by entry and the row binder,

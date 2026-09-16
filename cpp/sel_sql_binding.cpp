@@ -229,6 +229,15 @@ Binding Binding::relation_query(std::string query, std::optional<std::string> al
   return b;
 }
 
+Binding Binding::with_unique_key(std::string key) const {
+  check_name("unique key", key);
+  if (kind_ != Kind::Relation || !relation_.field(ascii_upper(key)))
+    refuse("E_SQL_BINDING", "a unique key must name a declared relation field");
+  Binding out = *this;
+  out.relation_.unique_key = std::move(key);
+  return out;
+}
+
 Binding Binding::value(sel::Value v, std::optional<SqlKind> type) {
   // The dynamic hosts check here that `type` names a kind at all -- every one of
   // the six, LIST included. SqlKind is an enum, so that check has nothing left

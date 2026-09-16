@@ -36,10 +36,14 @@ if [ "$records" -ne "$COUNT" ]; then
   exit 1
 fi
 
+# Every host at once, each under a slot (tools/impls.sh, SEL_JOBS).
+pids=()
 for impl in $IMPLS; do
   echo "running $impl..."
-  impl_batch "$impl" "$WORK/corpus.selc" > "$WORK/$impl.txt"
+  sel_slot impl_batch "$impl" "$WORK/corpus.selc" > "$WORK/$impl.txt" &
+  pids+=($!)
 done
+sel_wait "${pids[@]}" || { echo "a batch runner exited non-zero" >&2; exit 1; }
 
 node - "$WORK" "$IMPLS" <<'EOF'
 const { readFileSync } = require('node:fs');

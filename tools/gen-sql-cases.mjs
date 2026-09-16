@@ -147,6 +147,7 @@ function bindingCall(b, where) {
     return call('column', ['?']);
   }
   const type = b.type === undefined ? 'UNKNOWN' : b.type;
+  const unique = (expr) => b.uniqueKey === undefined ? expr : call('withUniqueKey', [expr, b.uniqueKey]);
   const exact = b.exact === true || b.collation === 'binary' || b.collation === 'exact';
   const sargable = b.sargable === true || b.collation === 'sargable' || b.collation === 'prefilter';
   const guard = b.guard === true;
@@ -203,9 +204,9 @@ function bindingCall(b, where) {
       }
       const from = b.from;
       if (isObj(from)) {
-        return call('relationQuery', [from.raw === undefined ? from : from.raw, ...rest]);
+        return unique(call('relationQuery', [from.raw === undefined ? from : from.raw, ...rest]));
       }
-      return call('relation', [from === undefined ? null : from, ...rest]);
+      return unique(call('relation', [from === undefined ? null : from, ...rest]));
     }
 
     case 'value':
@@ -280,6 +281,7 @@ const pyStr = (s) => JSON.stringify(String(s));
 const jsStr = (s) => JSON.stringify(String(s));
 
 function emitPhpArg(v) {
+  if (v?.__call === 'withUniqueKey') return `(${emitPhpArg(v.args[0])})->withUniqueKey(${emitPhpArg(v.args[1])})`;
   if (v === null || v === undefined) return 'null';
   if (v === true) return 'true';
   if (v === false) return 'false';
@@ -294,6 +296,7 @@ function emitPhpArg(v) {
 }
 
 function emitPyArg(v) {
+  if (v?.__call === 'withUniqueKey') return `${emitPyArg(v.args[0])}.with_unique_key(${emitPyArg(v.args[1])})`;
   if (v === null || v === undefined) return 'None';
   if (v === true) return 'True';
   if (v === false) return 'False';
@@ -311,6 +314,7 @@ function emitPyArg(v) {
 }
 
 function emitJsArg(v) {
+  if (v?.__call === 'withUniqueKey') return `${emitJsArg(v.args[0])}.withUniqueKey(${emitJsArg(v.args[1])})`;
   if (v === null || v === undefined) return 'null';
   if (v === true) return 'true';
   if (v === false) return 'false';
@@ -492,6 +496,7 @@ function lispKind(t) {
 }
 
 function lispArg(v) {
+  if (v?.__call === 'withUniqueKey') return `(sel.sql:binding-with-unique-key ${lispArg(v.args[0])} ${lispArg(v.args[1])})`;
   if (v === null || v === undefined) return 'nil';
   if (v === true) return 't';
   if (v === false) return 'nil';
@@ -697,6 +702,7 @@ function cppOptName(v, what) {
 
 // A binding call tree -> a typed constructor call.
 function cppBinding(v) {
+  if (v?.__call === 'withUniqueKey') return `${cppBinding(v.args[0])}.with_unique_key(${cppName(v.args[1], 'a unique key')})`;
   if (v === null || v === undefined || typeof v === 'string') {
     throw new Unrepresentable(`a binding that is ${shapeOf(v)}`);
   }

@@ -1,10 +1,56 @@
 # F3 — Preserve SEL identity for computed numeric group keys
 
-Status: confirmed, open at `55f4aa6`. Proposed priority: **P1, wrong group
-cardinality**. All five hosts and the wheel merge groups on PostgreSQL/MariaDB,
+Status: implemented in all five hosts on 2026-09-16 through identity guards
+and safe fallback; focused/live verification and the default integration gate pass.
+Originally confirmed at `55f4aa6`. Proposed priority: **P1, wrong group
+cardinality**. In the original audit all five hosts and the wheel merged groups on PostgreSQL/MariaDB,
 including strict mode. SQLite refuses the text-to-number computation and its
 pure-memory fallback correctly returns two groups.
 [Index](sel-gaps-2026-09-15-00-index.md).
+
+## Implementation update — 2026-09-16
+
+Latest recheck extension: direct column types now survive derived projections,
+including NUM columns whose stored representation distinguishes `1`, `1.0`
+and `1.00`. UNKNOWN group keys retain local fallback. Computed projections still
+lose type information conservatively; for example, regrouping a projected
+COUNT currently keeps the second grouping local. This is an explicit remaining
+optimization opportunity, not permission to group an arbitrary UNKNOWN value
+using the database's native equality.
+
+The identity barrier now follows the actual fields used by group keys, allowing
+an unrelated computed measure to remain in a SQL projection. A joined right
+relation's new field does not inherit uncertainty from a preceding left MAP.
+Type propagation also exposed an existing mixed-MAP/FILTER key-loss path:
+FILTER is no longer absorbed after a partially local MAP, because the MAP
+continuation would renumber the surviving SQL rows. Existing executed-plan
+checks assert the retained SEL keys; the shared plan fixture was corrected.
+
+The `identity-group-key` / `identityGroupKey` / `_identity_group_key` renderers
+now reject computed NUM group keys whose SEL representation cannot be proven.
+The original text-plus-zero witness chooses pure memory on all three databases,
+strict off/on, returning separate `1` and `1.0` groups in every host and a fresh
+Python wheel. This is a correctness fix, not numeric-expression SQL support.
+
+The planner's `identity-loss-before-grouping-p` / `identityLossBeforeGrouping` /
+`identity_loss_before_grouping` check follows normalized helper-expanded MAP
+projections. A derived alias cannot hide a lossy computation. It also applies
+before DISTINCT/DEDUPE, and prefix selection backs up before the lossy MAP while
+retaining safe earlier steps such as TAKE. Continuation AST positions are kept.
+
+For direct NUM columns, grouping uses the textual representation as identity;
+numeric projected `_K` uses `MIN(original_numeric)` so downstream comparisons
+and sorts remain numeric. Merely casting an already-computed decimal to text
+is deliberately not accepted as a proof. These guards are not a general proof
+of identity for arbitrary UNKNOWN bindings or caller-provided raw SQL.
+
+Coverage: `conformance/18-numeric-group-identity.selt`, SQL cases 32–34, and
+`python/tests/test_sql_identity.py` (80 tests including DISTINCT policy, helpers,
+derived aliases, negative/leading zero forms, strict settings and safe prefixes).
+The five SQL suites pass; the current full suite also includes later F4 tests.
+Live statement-oracle checks include numeric grouping, HAVING and numeric ordering
+after a derived table. Final default integration and live regression results are
+recorded in the consolidated verification report linked from the index.
 
 ## Reproduction and required semantics
 

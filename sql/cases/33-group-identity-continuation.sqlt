@@ -1,0 +1,103 @@
+### name: stmt.group-identity.derived-computation.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("key", _["cat"] + 0)) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: plan.group-identity.derived-helper.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+X = R .> MAP(RECORD("key", _["cat"] + 0)); X .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: stmt.group-identity.derived-computation.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("key", _["cat"] + 0)) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: plan.group-identity.derived-helper.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+X = R .> MAP(RECORD("key", _["cat"] + 0)); X .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: stmt.group-identity.derived-computation.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("key", _["cat"] + 0)) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: plan.group-identity.derived-helper.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+X = R .> MAP(RECORD("key", _["cat"] + 0)); X .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: stmt.group-identity.derived-computation.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("key", _["cat"] + 0)) .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- error
+E_SQL_SHAPE
+===
+
+### name: plan.group-identity.derived-helper.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- source
+X = R .> MAP(RECORD("key", _["cat"] + 0)); X .> BUCKET(_["key"], RECORD("key", _K, "n", COUNT(_)))
+--- plan
+pure_memory
+--- tables
+r
+===

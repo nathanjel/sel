@@ -38,6 +38,74 @@ SEL_PY_WHEEL_BIN="${SEL_PY_WHEEL_BIN:-$PWD/python/.venv-wheel/bin/python3}"
 # about how much memory PHP was configured to have rather than about the code.
 SEL_PHP_FLAGS="${SEL_PHP_FLAGS:-}"
 
+# --- concurrency -------------------------------------------------------------
+#
+# The gate and every tool it runs are independent reads of the tree, so they run
+# side by side; what bounds the load is two counting semaphores, taken by the
+# leaf commands rather than by the scripts that queue them, so the bound holds
+# however deeply the scripts nest:
+#
+#   SEL_JOBS      how many leaf commands run at once — half the hardware threads,
+#                 rounded up (8 on a 16-thread box)
+#   SEL_PHP_JOBS  how many of them may be PHP — a quarter, rounded up. On a box
+#                 without a php binary, `php` is a Docker wrapper, and each
+#                 invocation is a container start
+#
+# Both are flock(1) slots in one directory (SEL_SLOT_DIR), so a nested tool
+# started by the gate shares the gate's bound rather than adding its own. A leaf
+# waits for a free slot; nothing is ever refused.
+_sel_threads() { nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4; }
+SEL_JOBS="${SEL_JOBS:-$(( ($(_sel_threads) + 1) / 2 ))}"
+SEL_PHP_JOBS="${SEL_PHP_JOBS:-$(( ($(_sel_threads) + 3) / 4 ))}"
+[ "$SEL_JOBS" -ge 1 ] || SEL_JOBS=1
+[ "$SEL_PHP_JOBS" -ge 1 ] || SEL_PHP_JOBS=1
+# One directory per user, kept: the lock files are empty and the bound is then
+# shared by every SEL tool running on the box at once, which is what a bound on
+# the machine's load should be. Override to isolate a run.
+SEL_SLOT_DIR="${SEL_SLOT_DIR:-${TMPDIR:-/tmp}/sel-slots-$(id -u)}"
+mkdir -p "$SEL_SLOT_DIR"
+export SEL_JOBS SEL_PHP_JOBS SEL_SLOT_DIR
+
+# _sel_sem <prefix> <count> <command...>: run the command holding one of
+# <count> slots. Try every slot without blocking first, then block on one chosen
+# at random — the waiters spread over the slots, and a slot is released the
+# moment its holder exits, whatever it was doing.
+_sel_sem() {
+  local prefix="$1" count="$2" fd i rc
+  shift 2
+  for ((i = 0; i < count; i++)); do
+    exec {fd}>"$SEL_SLOT_DIR/$prefix.$i"
+    if flock -n "$fd"; then
+      "$@"; rc=$?
+      exec {fd}>&-
+      return "$rc"
+    fi
+    exec {fd}>&-
+  done
+  exec {fd}>"$SEL_SLOT_DIR/$prefix.$((RANDOM % count))"
+  flock "$fd"
+  "$@"; rc=$?
+  exec {fd}>&-
+  return "$rc"
+}
+
+# sel_slot <command...>: a leaf command, bounded by SEL_JOBS.
+sel_slot() { _sel_sem job "$SEL_JOBS" "$@"; }
+
+# sel_php <args...>: `php <args>`, bounded by SEL_PHP_JOBS as well. Every php
+# invocation in this file goes through it.
+sel_php() { _sel_sem php "$SEL_PHP_JOBS" php "$@"; }
+
+# sel_wait <pid...>: wait for each background job, keeping a failure. A bare
+# `wait` discards the statuses; this returns non-zero if any job did.
+sel_wait() {
+  local status=0 pid
+  for pid in "$@"; do
+    wait "$pid" || status=1
+  done
+  return "$status"
+}
+
 # The first implementation in the list is the reference the others are diffed
 # against in fuzz.sh. It is only a reporting convenience: a disagreement is a
 # disagreement whichever side of it you stand on, and spec/ decides who is wrong.
@@ -53,7 +121,7 @@ impl_conformance() {
     js)   node js/bin/conformance.mjs "$@" ;;
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node js/bin/conformance.mjs "$@" ;;
     js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node js/bin/conformance.mjs "$@" ;;
-    php)  php php/bin/conformance "$@" ;;
+    php)  sel_php php/bin/conformance "$@" ;;
     cpp)  cpp/build/conformance "$@" ;;
     lisp) lisp/bin/conformance "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/conformance.py "$@" ;;
@@ -71,7 +139,7 @@ impl_batch() {
     # Unquoted on purpose: SEL_PHP_FLAGS is a controlled internal variable
     # and its words are separate arguments.
     # shellcheck disable=SC2086
-    php)  php $SEL_PHP_FLAGS tools/run-batch.php "$@" ;;
+    php)  sel_php $SEL_PHP_FLAGS tools/run-batch.php "$@" ;;
     cpp)  cpp/build/batch "$@" ;;
     lisp) lisp/bin/batch "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/batch.py "$@" ;;
@@ -97,7 +165,7 @@ impl_example() {
   local impl="$1" cat="$2"; shift 2
   case "$impl" in
     js)     node "examples/$cat/js.mjs" "$@" ;;
-    php)    php $SEL_PHP_FLAGS "examples/$cat/php.php" "$@" ;;
+    php)    sel_php $SEL_PHP_FLAGS "examples/$cat/php.php" "$@" ;;
     cpp)    "cpp/build/example-$cat" "$@" ;;
     lisp)   sbcl --noinform --disable-debugger --non-interactive \
               --load lisp/bin/boot.lisp --load "examples/$cat/lisp.lisp" \
@@ -125,7 +193,7 @@ impl_e2e() {
     js)   node examples/e2e.mjs "$@" ;;
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node examples/e2e.mjs "$@" ;;
     js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node examples/e2e.mjs "$@" ;;
-    php)  php examples/e2e.php "$@" ;;
+    php)  sel_php examples/e2e.php "$@" ;;
     cpp)  cpp/build/e2e "$@" ;;
     lisp) lisp/bin/e2e "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 examples/e2e.py "$@" ;;
@@ -146,7 +214,7 @@ impl_deps() {
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node js/bin/sel.mjs --deps "$@" ;;
     js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node js/bin/sel.mjs --deps "$@" ;;
     # shellcheck disable=SC2086
-    php)  php $SEL_PHP_FLAGS php/bin/sel --deps "$@" ;;
+    php)  sel_php $SEL_PHP_FLAGS php/bin/sel --deps "$@" ;;
     cpp)  cpp/build/sel --deps "$@" ;;
     lisp) lisp/bin/sel --deps "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 -m sel --deps "$@" ;;
@@ -161,7 +229,7 @@ impl_api() {
     js)   node tools/api.mjs "$@" ;;
     js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node tools/api.mjs "$@" ;;
     js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node tools/api.mjs "$@" ;;
-    php)  php tools/api.php "$@" ;;
+    php)  sel_php tools/api.php "$@" ;;
     cpp)  cpp/build/api "$@" ;;
     lisp) lisp/bin/api "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/api.py "$@" ;;
@@ -177,7 +245,7 @@ impl_decimal() {
     # The oracle is a whitebox check on js/src/decimal.mjs, which the bundle
     # inlines verbatim. Running it twice would test the same code.
     js-bundle|js-bundle-min) echo "$impl: decimal core is js/src/decimal.mjs, covered above" ;;
-    php)  php tools/check-decimal.php "$@" ;;
+    php)  sel_php tools/check-decimal.php "$@" ;;
     cpp)  cpp/build/check-decimal "$@" ;;
     lisp) lisp/bin/check-decimal "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/check-decimal.py "$@" ;;
@@ -195,7 +263,7 @@ impl_decimal() {
 impl_sql() {
   local impl="$1"; shift
   case "$impl" in
-    php)  php php/bin/sqlt "$@" ;;
+    php)  sel_php php/bin/sqlt "$@" ;;
     js)   node js/bin/sqlt.mjs "$@" ;;
     # The bundle is built from js/src/sel.mjs, which does not import the SQL
     # layer -- it is a separate entry point (package.json "./sql"), so a host
@@ -231,7 +299,7 @@ impl_sql() {
 impl_sqlreplay() {
   local impl="$1"; shift
   case "$impl" in
-    php)  php php/bin/sqlreplay "$@" ;;
+    php)  sel_php php/bin/sqlreplay "$@" ;;
     js)   node js/bin/sqlreplay.mjs "$@" ;;
     # The bundle does not import the SQL layer; see impl_sql.
     js-bundle|js-bundle-min) return 0 ;;
@@ -246,7 +314,7 @@ impl_sqlreplay() {
 impl_sqlfuzz() {
   local impl="$1"; shift
   case "$impl" in
-    php)  php $SEL_PHP_FLAGS php/bin/sqlfuzz "$@" ;;
+    php)  sel_php $SEL_PHP_FLAGS php/bin/sqlfuzz "$@" ;;
     js)   node js/bin/sqlfuzz.mjs "$@" ;;
     # The bundle does not import the SQL layer; see impl_sql.
     js-bundle|js-bundle-min) return 0 ;;
@@ -261,7 +329,7 @@ impl_sqlfuzz() {
 impl_oracle() {
   local impl="$1"; shift
   case "$impl" in
-    php)  php php/bin/sqlo "$@" ;;
+    php)  sel_php php/bin/sqlo "$@" ;;
     # js has a translator and still no oracle, for the reason M7 records: the
     # oracle measures whether the MAP means what SEL means, and the map is data
     # every host consumes unchanged, so a second harness would ask one server
@@ -277,7 +345,7 @@ impl_oracle() {
 impl_sqldoc() {
   local impl="$1"; shift
   case "$impl" in
-    php)  php php/bin/sqldoc "$@" ;;
+    php)  sel_php php/bin/sqldoc "$@" ;;
     js|js-bundle|js-bundle-min|cpp|lisp) return 0 ;;   # a property of the design doc
     python|python-wheel) return 0 ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;

@@ -24,6 +24,12 @@ fi
 
 status=0
 for impl in $(available_impls); do
-  impl_decimal "$impl" "$WORK/oracle.txt" || status=1
+  { sel_slot impl_decimal "$impl" "$WORK/oracle.txt" > "$WORK/$impl.out" 2>&1
+    echo $? > "$WORK/$impl.rc"; } &
+done
+wait
+for impl in $(available_impls); do
+  cat "$WORK/$impl.out"
+  [ "$(cat "$WORK/$impl.rc")" -eq 0 ] || status=1
 done
 exit "$status"

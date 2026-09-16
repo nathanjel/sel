@@ -1,0 +1,51 @@
+### name: stmt.distinct.open-schema.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> DISTINCT()
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.distinct.open-schema.mysql
+--- dialect
+mysql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> DISTINCT()
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.distinct.open-schema.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> DISTINCT()
+--- error
+E_SQL_SHAPE
+===
+
+### name: stmt.distinct.open-schema.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> DISTINCT()
+--- error
+E_SQL_SHAPE
+===

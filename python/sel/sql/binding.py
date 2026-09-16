@@ -48,6 +48,13 @@ class Binding:
 
     # --- the four kinds ------------------------------------------------------
 
+    def with_unique_key(self, key: Any) -> 'Binding':
+        """Declare a schema-proven single-column, non-null unique key (a copy)."""
+        _check_name('unique key', key)
+        if self.spec.get('kind') != 'relation' or ascii_upper(key) not in self.spec['fields']:
+            raise SqlError('E_SQL_BINDING', 'a unique key must name a declared relation field')
+        return Binding({**self.spec, 'unique_key': key})
+
     @staticmethod
     def column(column: Any, table: Any = None, type: Any = 'UNKNOWN',  # noqa: A002
                exact: bool = False, sargable: bool = False, guard: bool = False,

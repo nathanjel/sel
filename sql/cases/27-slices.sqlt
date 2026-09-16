@@ -1,0 +1,272 @@
+### name: stmt.slice.smaller.mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(1)
+--- expect
+SELECT * FROM `items` ORDER BY `id` ASC LIMIT 1 OFFSET 1
+===
+
+### name: stmt.slice.smaller.postgresql
+--- dialect
+postgresql
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(1)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 1 OFFSET 1
+===
+
+### name: stmt.slice.smaller.sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(1)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 1 OFFSET 1
+===
+
+### name: stmt.slice.equal.mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(2)
+--- expect
+SELECT * FROM `items` ORDER BY `id` ASC LIMIT 0 OFFSET 2
+===
+
+### name: stmt.slice.equal.postgresql
+--- dialect
+postgresql
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(2)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 0 OFFSET 2
+===
+
+### name: stmt.slice.equal.sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(2)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 0 OFFSET 2
+===
+
+### name: stmt.slice.larger.mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(1) .> DROP(2)
+--- expect
+SELECT * FROM `items` ORDER BY `id` ASC LIMIT 0 OFFSET 1
+===
+
+### name: stmt.slice.larger.postgresql
+--- dialect
+postgresql
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(1) .> DROP(2)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 0 OFFSET 1
+===
+
+### name: stmt.slice.larger.sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(1) .> DROP(2)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 0 OFFSET 1
+===
+
+### name: stmt.slice.zero-take.mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(0) .> DROP(2)
+--- expect
+SELECT * FROM `items` ORDER BY `id` ASC LIMIT 0 OFFSET 0
+===
+
+### name: stmt.slice.zero-take.postgresql
+--- dialect
+postgresql
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(0) .> DROP(2)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 0 OFFSET 0
+===
+
+### name: stmt.slice.zero-take.sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(0) .> DROP(2)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 0 OFFSET 0
+===
+
+### name: stmt.slice.zero-drop.mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(0)
+--- expect
+SELECT * FROM `items` ORDER BY `id` ASC LIMIT 2 OFFSET 0
+===
+
+### name: stmt.slice.zero-drop.postgresql
+--- dialect
+postgresql
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(0)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 2 OFFSET 0
+===
+
+### name: stmt.slice.zero-drop.sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> TAKE(2) .> DROP(0)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 2 OFFSET 0
+===
+
+### name: stmt.slice.mixed.mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> DROP(1) .> TAKE(2) .> DROP(1) .> TAKE(3)
+--- expect
+SELECT * FROM `items` ORDER BY `id` ASC LIMIT 1 OFFSET 2
+===
+
+### name: stmt.slice.mixed.postgresql
+--- dialect
+postgresql
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> DROP(1) .> TAKE(2) .> DROP(1) .> TAKE(3)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 1 OFFSET 2
+===
+
+### name: stmt.slice.mixed.sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> DROP(1) .> TAKE(2) .> DROP(1) .> TAKE(3)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 1 OFFSET 2
+===
+
+### name: stmt.slice.drop-take.mariadb
+--- dialect
+mariadb
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> DROP(1) .> TAKE(1)
+--- expect
+SELECT * FROM `items` ORDER BY `id` ASC LIMIT 1 OFFSET 1
+===
+
+### name: stmt.slice.drop-take.postgresql
+--- dialect
+postgresql
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> DROP(1) .> TAKE(1)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 1 OFFSET 1
+===
+
+### name: stmt.slice.drop-take.sqlite
+--- dialect
+sqlite
+--- bindings
+{"ITEMS":{"kind":"relation","from":"items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["id"]) .> DROP(1) .> TAKE(1)
+--- expect
+SELECT * FROM "items" ORDER BY "id" ASC LIMIT 1 OFFSET 1
+===

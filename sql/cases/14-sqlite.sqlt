@@ -27,7 +27,7 @@ sqlite
 --- source
 "2.50" $== "2.5"
 --- expect
-(CAST('2.50' AS TEXT) = CAST('2.5' AS TEXT))
+(CAST('2.50' AS TEXT) COLLATE BINARY = CAST('2.5' AS TEXT) COLLATE BINARY)
 ===
 ### name: sqlite.num.comparison-always-coerces
 --- note
@@ -52,7 +52,7 @@ sqlite
 --- expect
 ('10' * 1.0 / '4')
 ===
-### name: sqlite.text.no-collation-needed
+### name: sqlite.text.explicit-binary-collation
 --- note
 SQLite's default collation is BINARY, so textCollate is empty and 'A' = 'a' is
 already 0. textCast is still there: without it two numeric operands compare as
@@ -62,7 +62,7 @@ sqlite
 --- source
 "A" $== "a"
 --- expect
-(CAST('A' AS TEXT) = CAST('a' AS TEXT))
+(CAST('A' AS TEXT) COLLATE BINARY = CAST('a' AS TEXT) COLLATE BINARY)
 ===
 ### name: sqlite.text.concat-is-an-operator
 --- dialect
@@ -204,7 +204,7 @@ sqlite
 --- source
 UPPER("abc") $== "ABC"
 --- expect
-(CAST(upper('abc') AS TEXT) = CAST('ABC' AS TEXT))
+(CAST(upper('abc') AS TEXT) COLLATE BINARY = CAST('ABC' AS TEXT) COLLATE BINARY)
 ===
 ### name: sqlite.bin.from-hex-is-refused
 --- note

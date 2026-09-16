@@ -1,0 +1,81 @@
+### name: bind.text-identity.sargable.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"CAT":{"kind":"column","column":"cat","type":"TEXT","sargable":true}}
+--- source
+CAT $== "a "
+--- expect
+((`cat` = 'a ') AND (CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a ' AS CHAR) COLLATE utf8mb4_nopad_bin))
+===
+
+### name: bind.text-identity.sargable-inequality.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"CAT":{"kind":"column","column":"cat","type":"TEXT","sargable":true}}
+--- source
+CAT $!= "a "
+--- expect
+(CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('a ' AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+
+### name: stmt.text-identity.key-text-operation.mariadb
+--- dialect
+mariadb
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"], RECORD("cat", _K, "length", LEN(_K)))
+--- expect
+SELECT CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin AS `cat`, CHAR_LENGTH(MIN(CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin)) AS `length` FROM `r` GROUP BY CAST(`cat` AS CHAR) COLLATE utf8mb4_nopad_bin
+===
+
+### name: bind.text-identity.sargable.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"CAT":{"kind":"column","column":"cat","type":"TEXT","sargable":true}}
+--- source
+CAT $== "a "
+--- expect
+((`cat` = 'a ') AND (CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a ' AS CHAR) COLLATE utf8mb4_0900_bin))
+===
+
+### name: bind.text-identity.sargable-inequality.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"CAT":{"kind":"column","column":"cat","type":"TEXT","sargable":true}}
+--- source
+CAT $!= "a "
+--- expect
+(CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin <> CAST('a ' AS CHAR) COLLATE utf8mb4_0900_bin)
+===
+
+### name: stmt.text-identity.key-text-operation.mysql
+--- dialect
+mysql
+--- options
+{"strict":true}
+--- bindings
+{"R":{"kind":"relation","from":"r","fields":{"CAT":{"kind":"column","column":"cat","type":"TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(_["cat"], RECORD("cat", _K, "length", LEN(_K)))
+--- expect
+SELECT CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin AS `cat`, CHAR_LENGTH(MIN(CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin)) AS `length` FROM `r` GROUP BY CAST(`cat` AS CHAR) COLLATE utf8mb4_0900_bin
+===

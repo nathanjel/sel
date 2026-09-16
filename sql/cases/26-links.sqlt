@@ -1,0 +1,287 @@
+% LINK and LINK_LEFT in the SQL lane: the joined row, the binders' scope, and
+% what a join lets the planner push down. Spec §7.4 "Joined rows" and "How a
+% LINK evaluates"; review 2026-09-15 findings W2 (d1, d2) and Y (lanes).
+
+### name: link.row.is-the-promoted-fields
+--- note
+A joined row in SQL is its promoted fields (spec §7.4 "Joined rows"): each
+side's fields whose names the other side does not have -- `id` and `name`
+are on both sides, so neither is a column of the row. The binders (`_1`,
+`_2`, ORDERS, O) are nested records SQL has no column for. This used to
+render as `SELECT o.*`, the left table's columns, which is a row SEL never
+produces.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])
+--- expect
+SELECT `o`.`customer_id`, `o`.`amount` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
+===
+### name: link.row.filter-on-a-promoted-field
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> FILTER(_["amount"] > 5)
+--- expect
+SELECT `o`.`customer_id`, `o`.`amount` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`) WHERE (`o`.`amount` > 5)
+===
+### name: link.row.a-name-both-sides-have-is-refused
+--- note
+`name` is on both sides, so the joined row has no `name`: `run()` raises
+E_NO_KEY at the read, and the translator refuses at the same place. C++
+resolved it to the left side's column (review 2026-09-15 finding W2, d1).
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("name", _["name"]))
+--- error
+E_SQL_SHAPE 1:81
+===
+### name: link.row.select-cols-of-a-shared-name-is-refused
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> SELECT_COLS("id")
+--- error
+E_SQL_SHAPE 1:73
+===
+### name: link.row.a-named-binder-is-the-same-row
+--- note
+A step's own binder after the join is the joined row under another name:
+the same fields, the same refusal of a name both sides have. Every host
+resolved `r["name"]` to the left side because the ambiguity check was
+gated on the binder being `_`.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(r, RECORD("name", r["name"]))
+--- error
+E_SQL_SHAPE 1:84
+===
+### name: link.row.a-named-binder-reads-a-promoted-field
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(r, RECORD("a", r["amount"]))
+--- expect
+SELECT `o`.`amount` AS `a` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
+===
+
+### name: link.binders.left-binder-does-not-outlive-the-link
+--- note
+The binders are scoped to the predicate (spec §7.4): after the LINK the row
+carries them as keys, and `O` is not a name -- `run()` raises E_UNDEF_VAR.
+Three hosts refused `O` and accepted `C`, two accepted both (finding W2,
+d2); every host now refuses every binder after the LINK.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> FILTER(O["id"] > 1)
+--- error
+E_SQL_UNBOUND 1:72
+===
+### name: link.binders.right-binder-does-not-outlive-the-link
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> FILTER(C["id"] > 1)
+--- error
+E_SQL_UNBOUND 1:72
+===
+### name: link.binders.positional-binder-does-not-outlive-the-link
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> FILTER(_2["id"] > 1)
+--- error
+E_SQL_UNBOUND 1:72
+===
+### name: link.binders.map-of-a-binder-is-refused
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> MAP(O["id"])
+--- error
+E_SQL_UNBOUND 1:69
+===
+### name: link.derived.projects-the-promoted-fields
+--- note
+A derived table over a join carries the joined row's promoted fields, so a
+step above it reads what SEL's row has. It used to be `SELECT o.*`, and a
+read of the right side's column above it was SQL the database rejected.
+--- dialect
+sqlite
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> TAKE(2) .> MAP(RECORD("a", _["amount"]))
+--- expect
+SELECT "_sub1"."amount" AS "a" FROM (SELECT "o"."customer_id", "o"."amount" FROM "orders" "o" INNER JOIN "customers" "c" ON (CAST("o"."customer_id" AS NUMERIC) = CAST("c"."id" AS NUMERIC)) LIMIT 2) "_sub1"
+===
+### name: link.derived.a-shared-name-above-it-is-refused
+--- dialect
+sqlite
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> TAKE(2) .> MAP(RECORD("n", _["name"]))
+--- error
+E_SQL_BINDING 1:89
+===
+### name: plan.link.unprojected-join-is-not-a-split-point
+--- note
+SQL's rows for a LINK lack the binders SEL's rows carry, so until a MAP, a
+SELECT_COLS or a BUCKET makes them exact the prefix is not a split point
+and not a full pushdown -- a continuation would read `_["C"]` where the
+database sent nothing (finding Y, lanes). `joinRowsLackBinders` beside
+`bucketRowsAreKeys` in each planner.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> TAKE(2)
+--- plan
+pure_memory
+--- tables
+orders
+customers
+===
+### name: plan.link.projection-closes-the-join
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["amount"], "s", REPEAT("x", _["customer_id"])))
+--- plan
+pure_sql
+--- tables
+orders
+customers
+--- expect
+SELECT `o`.`amount` AS `a`, REPEAT('x', `o`.`customer_id`) AS `s` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
+===
+### name: plan.link.fall-through-over-a-join-projects-its-dependencies
+--- note
+The MAP fall-through over a joined prefix is exact: its custom half reads a
+promoted field, which the SQL half projects.
+--- dialect
+sqlite
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["amount"], "s", REPEAT("x", _["customer_id"])))
+--- plan
+hybrid
+--- tables
+orders
+customers
+--- expect
+SELECT "o"."amount" AS "a", "o"."customer_id" AS "customer_id" FROM "orders" "o" INNER JOIN "customers" "c" ON (CAST("o"."customer_id" AS NUMERIC) = CAST("c"."id" AS NUMERIC))
+===
+### name: plan.link.select-cols-closes-the-join
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> SELECT_COLS("amount")
+--- plan
+pure_sql
+--- tables
+orders
+customers
+--- expect
+SELECT `o`.`amount` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
+===
+### name: plan.link.projected-bucket-closes-the-join
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> BUCKET(_["customer_id"], RECORD("c", _K, "n", COUNT(_)))
+--- plan
+pure_sql
+--- tables
+orders
+customers
+--- expect
+SELECT MIN(`o`.`customer_id`) AS `c`, COUNT(*) AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`) GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin
+===
+### name: plan.link.a-binder-after-the-join-stays-in-memory
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> FILTER(C["id"] > 1)
+--- plan
+pure_memory
+--- tables
+orders
+customers
+===

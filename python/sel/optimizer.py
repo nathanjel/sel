@@ -245,6 +245,17 @@ def step_reads_key(step: Node) -> bool:
     return any(reads_var(arg, ('_K',)) for arg in step.args[1:])
 
 
+def keys_renumbered_by(step: Node | None) -> bool:
+    """Whether the step after a FILTER hides where the FILTER ran. FILTER keeps
+    its input's keys (spec §7.3) and MAP, SELECT_COLS and the sorts renumber,
+    so a FILTER moved in front of one of them carries the source's keys where
+    the program as written carried the step's -- visible in the answer, and in
+    any later ``_K``. Only a following step that renumbers again without
+    reading ``_K`` hides that; the end of the pipeline, or another FILTER,
+    does not."""
+    return step is not None and step.name != 'FILTER' and not step_reads_key(step)
+
+
 def source_is_list(source: Node | None) -> bool:
     """Whether the source a pipeline starts from is a list already, so a FILTER
     whose predicate is a constant TRUE over it is the identity. Over a scalar
@@ -444,13 +455,15 @@ def logical_steps(source: Node | None, steps: list[Node],
                 details = filter_details(second)
                 refs = field_refs(details['predicate'], details['binder'])
                 if (details['valid'] and refs and all(field in passes for field in refs)
-                        and not reads_row_or_key(details['predicate'], details['binder'])):
+                        and not reads_row_or_key(details['predicate'], details['binder'])
+                        and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)):
                     next_steps.extend((second, first))
                     i += 2
                     changed = True
                     continue
             if (second is not None and first.name in ('SORT', 'SORT_DESC', 'SORT_BY')
-                    and second.name == 'FILTER' and not step_reads_key(second)):
+                    and second.name == 'FILTER' and not step_reads_key(second)
+                    and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)):
                 next_steps.extend((second, first))
                 i += 2
                 changed = True
@@ -459,7 +472,8 @@ def logical_steps(source: Node | None, steps: list[Node],
                 details = filter_details(second)
                 refs = field_refs(details['predicate'], details['binder'])
                 if (details['valid'] and refs and all(field in select_fields(first) for field in refs)
-                        and not reads_row_or_key(details['predicate'], details['binder'])):
+                        and not reads_row_or_key(details['predicate'], details['binder'])
+                        and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)):
                     next_steps.extend((second, first))
                     i += 2
                     changed = True
@@ -606,12 +620,15 @@ def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
                             unknown = True
                         return
                     if item.obj is not None and item.obj.t == 'var' and item.idx.t == 'text':
+                        # ``O["id"]`` or ``ORDERS["id"]`` after the LINK: the
+                        # binders are scoped to the predicate (spec §7.4), so
+                        # as written this is E_UNDEF_VAR, or E_NO_KEY on the
+                        # relation's list. Pushing it into the side it names
+                        # turned that error into rows (review 2026-09-15, W2)
+                        # -- only ``_["O"]["id"]``, a read through the joined
+                        # row's key, names a side.
                         name = item.obj.name.upper()
-                        if name in left_names:
-                            has_left = True
-                        elif name in right_names:
-                            has_right = True
-                        elif name in (info['binder'].upper(), '_'):
+                        if name in (info['binder'].upper(), '_'):
                             ambiguous = True
                         else:
                             unknown = True
@@ -619,12 +636,7 @@ def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
                 if item.t == 'var':
                     name = item.name.upper()
                     if name != info['binder'].upper() and name != '_':
-                        if name in left_names:
-                            has_left = True
-                        elif name in right_names:
-                            has_right = True
-                        else:
-                            unknown = True
+                        unknown = True
                 for child in item.args:
                     visit(child)
                 for child in item.items:
@@ -649,11 +661,6 @@ def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
                     return Node('index', copy.pos,
                                 obj=Node('var', copy.obj.obj.pos, name='_'),
                                 idx=copy.idx)
-                if (copy.obj is not None and copy.obj.t == 'var'
-                        and copy.idx is not None and copy.idx.t == 'text'
-                        and copy.obj.name.upper() in target_names):
-                    return Node('index', copy.pos,
-                                obj=Node('var', copy.obj.pos, name='_'), idx=copy.idx)
             copy.args = [rewrite(item, target_names) for item in copy.args]
             copy.items = [rewrite(item, target_names) for item in copy.items]
             if copy.l is not None:
@@ -708,6 +715,9 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
     options = options or {}
     if node is None:
         return None
+    # The evaluator/SQL normaliser owns the public depth error and its source
+    # position. optimize_root never descends into a tree that reaches the cap;
+    # this guard keeps the walk bounded should a rewrite ever deepen one.
     if depth > MAX_DEPTH:
         return node
     if node.t == 'call' and node.name in PIPELINE_OPS:
@@ -755,12 +765,49 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
     return copy if options.get('foldConstants', True) is False else fold(copy)
 
 
+def exceeds_depth(node: Node | None, depth: int) -> bool:
+    """Whether any node of the tree lies past the evaluator's depth cap,
+    counted the way the evaluator counts: the root at 1, every child one
+    deeper, an assignment's target excluded (the evaluator walks it
+    iteratively). The walk stops at the cap, so it is bounded however deep
+    the tree is."""
+    if node is None:
+        return False
+    if depth > MAX_DEPTH:
+        return True
+    nxt = depth + 1
+    for item in node.args:
+        if exceeds_depth(item, nxt):
+            return True
+    for item in node.items:
+        if exceeds_depth(item, nxt):
+            return True
+    for child in (node.l, node.r, node.x, node.obj, node.idx):
+        if child is not None and exceeds_depth(child, nxt):
+            return True
+    if node.t != 'assign' and node.target is not None and exceeds_depth(node.target, nxt):
+        return True
+    if node.value is not None and exceeds_depth(node.value, nxt):
+        return True
+    return False
+
+
+def optimize_root(ast: Node, physical: bool, options: dict[str, Any]) -> Node:
+    """The evaluator is the depth authority (spec §6.4): a tree that reaches
+    the cap is evaluated as written, so it is returned as written. Folding at
+    the boundary erased the E_DEPTH the evaluator raises for a chain of 201
+    additions (each of them foldable), and a rewrite that lifts a child would
+    move it; not rewriting loses nothing, because such a tree either raises or
+    keeps its deep part on a branch that is never evaluated."""
+    return ast if exceeds_depth(ast, 1) else optimize_tree(ast, physical, 1, options)
+
+
 def optimize_ast_logical(ast: Node, options: dict[str, Any] | None = None) -> Node:
-    return optimize_tree(ast, False, 1, options or {})
+    return optimize_root(ast, False, options or {})
 
 
 def optimize_ast_in_memory(ast: Node) -> Node:
-    return optimize_tree(ast, True)
+    return optimize_root(ast, True, {})
 
 
 def optimize_ast(ast: Node) -> Node:

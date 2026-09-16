@@ -30,11 +30,13 @@ import * as normalise from './normalise.mjs';
 import { Bindings } from './bindings.mjs';
 import { SqlError } from './errors.mjs';
 import { Translator } from './translator.mjs';
+import { Emit } from './emit.mjs';
+import { Fragment } from './fragment.mjs';
 
 export class HybridPlan {
   constructor({ dialect = null, sqlStatement = null, sqlPrefixAst = null, continuationAst = null,
     continuationProgram = null, continuationSourceVar = '_INPUT', pureSql = false,
-    pureMemory = false, sourceTables = [] } = {}) {
+    pureMemory = false, sourceTables = [], selectedMember = null } = {}) {
     this.dialect = dialect;
     this.sqlStatement = sqlStatement;
     this.sqlPrefixAst = sqlPrefixAst;
@@ -44,6 +46,7 @@ export class HybridPlan {
     this.pureSql = Boolean(pureSql);
     this.pureMemory = Boolean(pureMemory);
     this.sourceTables = sourceTables;
+    this.selectedMember = selectedMember;
   }
 
   get sql_query() { return this.sqlStatement; }
@@ -61,6 +64,7 @@ export class HybridPlan {
   get pureSqlP() { return this.pureSql; }
   get pureMemoryP() { return this.pureMemory; }
   get source_tables() { return this.sourceTables; }
+  get selected_member() { return this.selectedMember; }
 }
 
 function tryStatement(ast, dialect, bindings, options) {
@@ -138,6 +142,29 @@ function bucketRowsAreKeys(steps) {
   return open;
 }
 
+// Whether the SQL rows for this step list are a join's rows without the
+// binders SEL's rows carry. A LINK's row in SEL holds each side under its
+// binders and the promoted fields beside them (spec §7.4); SQL carries the
+// promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after the
+// LINK makes the rows exact again -- what they compute is over the promoted
+// fields, or is refused -- so a prefix whose LINK nothing has projected is
+// not a split point and not a full pushdown (finding Y, lanes): its
+// continuation would read `_["C"]` where the database sent nothing.
+function joinRowsLackBinders(steps) {
+  let joined = false;
+  for (const step of steps) {
+    if (step.name === 'LINK' || step.name === 'LINK_LEFT') joined = true;
+    else if (step.name === 'MAP' || step.name === 'SELECT_COLS' || step.name === 'BUCKET') joined = false;
+  }
+  return joined;
+}
+
+// The two together: a prefix whose SQL rows are not the value SEL would have
+// produced for it, whatever the translator says about it.
+function rowsAreNotTheValue(steps) {
+  return bucketRowsAreKeys(steps) || joinRowsLackBinders(steps);
+}
+
 const SQL_SPECIAL_CALLS = new Set([
   'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'RECORD', 'LIST',
 ]);
@@ -206,7 +233,8 @@ function collectFieldReferences(node, binder = '_') {
 // shape (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and
 // the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare
 // the dependency columns SQL carries where SEL compares the custom values.
-const FALLTHROUGH_DOWNSTREAM = new Set(['FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);
+// FILTER retains ordinal keys that SQL rows plus the local MAP cannot restore.
+const FALLTHROUGH_DOWNSTREAM = new Set(['SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);
 
 // Whether `node` reads the row itself -- the binder outside an index with a
 // text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected column
@@ -253,9 +281,12 @@ function mapRecordDetails(step) {
   if (!body || body.t !== 'call' || body.name !== 'RECORD'
       || body.args.length % 2 !== 0) return null;
   const pairs = [];
+  const seen = new Set();
   for (let i = 0; i < body.args.length; i += 2) {
     const key = body.args[i];
     if (key.t !== 'text') return null;
+    if (seen.has(key.v)) return null;
+    seen.add(key.v);
     pairs.push({ key, value: body.args[i + 1] });
   }
   return { explicit, binder, body, pairs };
@@ -540,6 +571,60 @@ function pureMemoryPlan(program, dialect, catalog) {
     continuationAst: program.ast, sourceTables: sourceTables(program.ast, catalog) });
 }
 
+function latestFieldName(n) {
+  return n?.t === 'index' && n.obj.t === 'var' && n.obj.name === '_' && n.idx.t === 'text' ? n.idx.v : null;
+}
+
+function tryLatestMember(source, steps, dialect, catalog, opts, helpers) {
+  if (!['mariadb', 'mysql', 'postgresql', 'sqlite'].includes(dialect)) return null;
+  const rel = catalog.get(source.name, source.pos), revision = rel.unique_key;
+  const at = steps.findIndex((s) => s.name === 'BUCKET');
+  if (!revision || at < 0 || typeof rel.from !== 'string' || rel.correlate) return null;
+  const ba = steps[at].args, partition = [2, 3].includes(ba.length) ? latestFieldName(ba[1]) : null;
+  let body = ba.length === 3 ? ba[2] : null;
+  const m = steps[at + 1];
+  if (!body && m?.name === 'MAP' && m.args.length === 2) body = m.args[1];
+  const pf = rel.fields[asciiUpper(partition ?? '')] ?? {}, rf = rel.fields[asciiUpper(revision)] ?? {};
+  if (partition === null || body?.t !== 'call' || body.name !== 'RECORD' || body.args.length !== 4
+      || !['NUM', 'TEXT'].includes(pf.type) || rf.type !== 'NUM' || pf.column !== partition
+      || rf.column !== revision || pf.raw || rf.raw || rf.guard) return null;
+  const ra = body.args, values = [ra[1], ra[3]];
+  if (ra[0].t !== 'text' || ra[2].t !== 'text' || ra[0].v === ra[2].v) return null;
+  const top = values.find((n) => n.t === 'call' && n.name === 'TOP_BY');
+  if (!top || !values.some((n) => n.t === 'var' && n.name === '_K')) return null;
+  const ta = top.args;
+  if (ta.length !== 4 || ta[0].t !== 'var' || ta[0].name !== '_' || latestFieldName(ta[1]) !== revision
+      || ta[2].t !== 'text' || ta[2].v !== 'DESC' || ta[3].t !== 'num' || ta[3].v !== '1') return null;
+  for (const s of steps.slice(0, at)) {
+    if (s.name === 'FILTER') continue;
+    if (s.name !== 'SORT_BY' || ![2, 3].includes(s.args.length) || latestFieldName(s.args[1]) !== revision
+        || (s.args.length === 3 && (s.args[2].t !== 'text' || s.args[2].v !== 'ASC'))) return null;
+  }
+  const dummy = { t: 'call', name: 'FILTER', pos: source.pos, args: [source, { t: 'bool', v: true, pos: source.pos }] };
+  const prefix = helpers.wrap(buildPipeline(source, at ? steps.slice(0, at) : [dummy]));
+  const sql = tryStatement(prefix, dialect, catalog, opts);
+  if (!sql) return null;
+  try {
+    const emit = new Emit(dialect);
+    let input = '_sel_input', groups = '_sel_latest';
+    while (asciiUpper(input) === asciiUpper(rel.from)) input += '_';
+    while ([asciiUpper(rel.from), asciiUpper(input)].includes(asciiUpper(groups))) groups += '_';
+    const [qi, qg, qr, qmax, qfirst] = [input, groups, revision, '_sel_revision', '_sel_first'].map((s) => emit.ident(s));
+    let key = emit.textOperand(new Fragment([emit.ident(partition)], pf.type, dialect)).asValue();
+    const parts = [`WITH ${qi} AS (`, ...sql.parts,
+      `), ${qg} AS (SELECT MAX(${qr}) AS ${qmax}, MIN(${qr}) AS ${qfirst} FROM ${qi} GROUP BY ${key}) `
+      + `SELECT ${qi}.* FROM ${qi} JOIN ${qg} ON ${qi}.${qr} = ${qg}.${qmax} ORDER BY ${qg}.${qfirst} ASC`];
+    const continuation = helpers.wrap(buildPipeline({ t: 'var', name: '_INPUT', pos: steps[at].pos }, steps.slice(at)));
+    return new HybridPlan({ dialect,
+      sqlStatement: new Fragment(parts, 'STATEMENT', dialect, sql.params, sql.paramKinds, sql.caveats),
+      sqlPrefixAst: prefix, continuationAst: continuation, continuationProgram: new Program('', continuation),
+      sourceTables: [rel.from], selectedMember: { partition_key: partition, revision_key: revision } });
+  } catch (e) {
+    if (e instanceof SqlError) return null;
+    throw e;
+  }
+}
+
 export function planHybrid(program, dialect, bindings = null, options = null) {
   const catalog = bindings instanceof Bindings ? bindings : new Bindings(bindings ?? {});
   const opts = options ?? {};
@@ -557,8 +642,10 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
   // planner's answers. Its TREE is not what is planned, though: see "helper
   // assignments" above.
   const [constNames, constCtx] = constants.scope(catalog);
+  let identityBarrier = false;
   try {
-    normalise.run(program.ast, constNames, constCtx);
+    const normalized = normalise.run(program.ast, constNames, constCtx);
+    identityBarrier = constants.identityLossBeforeGrouping(normalized);
   } catch (error) {
     if (error instanceof SqlError) return pureMemoryPlan(program, dialect, catalog);
     throw error;
@@ -588,20 +675,30 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
   // translator renders a bare bucket as its keys, and a plan that pushes the
   // whole of `... .> BUCKET(k)` would hand them back as the answer.
   const fullAst = helpers.wrap(buildPipeline(source, steps));
-  const fullSql = bucketRowsAreKeys(steps) ? null : tryStatement(fullAst, dialect, catalog, opts);
+  const fullSql = identityBarrier || rowsAreNotTheValue(steps) ? null : tryStatement(fullAst, dialect, catalog, opts);
   if (fullSql !== null) {
     return new HybridPlan({ dialect, sqlStatement: fullSql, sqlPrefixAst: fullAst,
       pureSql: true, sourceTables: helpers.tables(fullAst) });
   }
 
-  const fallthrough = tryPlanFallthrough(source, steps, dialect, catalog, opts, helpers);
+  const latest = tryLatestMember(source, steps, dialect, catalog, opts, helpers);
+  if (latest !== null) return latest;
+  const fallthrough = identityBarrier ? null : tryPlanFallthrough(source, steps, dialect, catalog, opts, helpers);
   if (fallthrough !== null) return fallthrough;
 
   const inputVar = '_INPUT';
   for (let count = steps.length - 1; count >= 1; count--) {
     const prefixSteps = steps.slice(0, count);
-    if (bucketRowsAreKeys(prefixSteps)) continue;
+    if (rowsAreNotTheValue(prefixSteps)) continue;
     const prefixAst = helpers.wrap(buildPipeline(source, prefixSteps));
+    if (identityBarrier) {
+      try {
+        if (constants.identityLossBeforeGrouping(normalise.run(prefixAst, constNames, constCtx), true)) continue;
+      } catch (e) {
+        if (e instanceof SqlError) continue;
+        throw e;
+      }
+    }
     const sql = tryStatement(prefixAst, dialect, catalog, opts);
     if (sql === null) continue;
     const remaining = steps.slice(count);

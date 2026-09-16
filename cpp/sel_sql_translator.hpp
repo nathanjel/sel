@@ -67,10 +67,16 @@ class Binder {
   const std::shared_ptr<const RelationSpec>& as_row_ptr() const { return relation_; }
   const std::string& reason() const { return reason_; }
   const std::vector<RelationalProjection>& projections() const { return *projections_; }
+  // Row shape only: the row of a joined statement, bound by with_row -- a
+  // field read through it resolves across the sides. The LINK predicate's own
+  // binders (with_join_binders) are one side each and never carry it.
+  bool joined() const { return joined_; }
+  void set_joined(bool joined) { joined_ = joined; }
 
  private:
   Binder() = default;
   Shape shape_ = Shape::None;
+  bool joined_ = false;
   SNodePtr node_;
   ColumnSpec column_;
   std::shared_ptr<const RelationSpec> relation_;
@@ -197,6 +203,7 @@ class Translator {
   Fragment variable(const SNode& n);
   Fragment column_ref(const ColumnSpec& c);
   Fragment collated_key(const Fragment& f) const;
+  Fragment identity_group_key(const SNodePtr& n, const Fragment& f) const;
   Fragment index(const SNode& n);
   std::string constant_index(const SNode& idx);
   Fragment unary(const SNode& n);
@@ -278,7 +285,7 @@ class Translator {
   Fragment with_element(const Source& src, const std::string& binder_name,
                         const Binder& elem, const std::string& key, const SNode& n,
                         const std::function<Fragment()>& render);
-  Fragment group_key(const Source& src, const RelationalGroup& gb);
+  Fragment group_key(const Source& src, const RelationalGroup& gb, bool projected = false);
   Fragment with_group(const Source& src, const std::string& binder_name,
                       const std::function<Fragment()>& render);
   Fragment with_projected(const Source& src, const std::string& binder_name,
@@ -303,6 +310,7 @@ class Translator {
   void bucket_projection(RelationalPlan& plan, const std::string& binder,
                          const SNodePtr& agg_node);
   std::vector<std::string> output_field_names(const RelationalPlan& plan) const;
+  SqlKind output_field_type(const RelationalPlan& plan, std::string name) const;
   RelationalPlan ensure_derived(RelationalPlan plan, bool needed);
   // The programmatic CASE builder, for SUM over an absorbed FILTER. Its kind
   // rule is deliberately NOT unify's: two differing known kinds yield UNKNOWN

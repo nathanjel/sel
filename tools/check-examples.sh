@@ -38,6 +38,14 @@ fi
 
 status=0
 for cat in $CATEGORIES; do
+  [ -d "examples/$cat" ] && [ ! -f "examples/$cat/REFERENCE" ] || continue
+  for impl in $IMPLS; do
+    { sel_slot impl_example "$impl" "$cat" > "$WORK/$cat.$impl" 2> "$WORK/$cat.$impl.err"
+      echo $? > "$WORK/$cat.$impl.rc"; } &
+  done
+done
+wait
+for cat in $CATEGORIES; do
   if [ ! -d "examples/$cat" ]; then
     echo "examples: no such category: $cat" >&2
     status=1
@@ -62,7 +70,7 @@ for cat in $CATEGORIES; do
   ref=""
   agreed=0
   for impl in $IMPLS; do
-    if ! impl_example "$impl" "$cat" > "$WORK/$cat.$impl" 2> "$WORK/$cat.$impl.err"; then
+    if [ "$(cat "$WORK/$cat.$impl.rc")" -ne 0 ]; then
       printf 'FAIL %s (%s) exited non-zero\n' "$cat" "$impl"
       sed 's/^/       /' "$WORK/$cat.$impl.err" | head -5
       status=1

@@ -1,5 +1,7 @@
 # W2. Other translator divergences the planner turns into different plans (Lisp DISTINCT/ORDER BY wrap, C++ derived column spelling, LINK binder scoping)
 
+**Status:** FIXED 2026-09-16. Facets (a), (b), (c) were found aligned in all five hosts by the earlier W1/V fixes and are pinned by the existing cases; (d1) C++ now refuses a field both sides carry (`link.row.a-name-both-sides-have-is-refused`); (d2) decided in spec §7.4: the binders are scoped to the predicate, every translator refuses every binder after the LINK (`link.binders.*`), and the optimiser's join-filter pushdown no longer attributes a binder-qualified read to a side (`rel.link.then-filter.*`). Along with it the joined row in SQL became its promoted fields (finding Y, lanes). `sql/cases/26-links.sqlt`.
+
 **Verdict:** CONFIRMED · **severity:** high · **introduced:** pre-existing · **hosts:** lisp, cpp, js, php, python
 
 Part of the review of commit ed16df2 (see `review-2026-09-15-00-index.md`). Group: Pre-existing cross-host divergences surfaced by the review.

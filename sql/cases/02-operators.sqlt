@@ -133,7 +133,7 @@ mariadb
 --- source
 "A" $== "a"
 --- expect
-(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
+(CAST('A' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: op.compare.text-family-ordering
 --- dialect
@@ -141,7 +141,7 @@ mariadb
 --- source
 "a" $< "b"
 --- expect
-(CAST('a' AS CHAR) COLLATE utf8mb4_bin < CAST('b' AS CHAR) COLLATE utf8mb4_bin)
+(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin < CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: op.eql.scalars-are-a-text-compare
 --- dialect
@@ -149,7 +149,7 @@ mariadb
 --- source
 "a" EQL "a"
 --- expect
-(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
+(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: op.in.literal-list
 --- note
@@ -165,7 +165,7 @@ mariadb
 --- source
 S IN ("open", "held")
 --- expect
-((CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('open' AS CHAR) COLLATE utf8mb4_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_bin = CAST('held' AS CHAR) COLLATE utf8mb4_bin))
+((CAST(`state` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('held' AS CHAR) COLLATE utf8mb4_nopad_bin))
 ===
 ### name: op.in.scalar-right-hand-side
 --- note
@@ -175,7 +175,7 @@ mariadb
 --- source
 "a" IN "a"
 --- expect
-(CAST('a' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
+(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: op.bitwise.refused-with-a-reason
 --- note

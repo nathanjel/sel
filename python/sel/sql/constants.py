@@ -33,6 +33,74 @@ from ..value import Value
 from .errors import refuse
 
 
+def _identity_projection(node: Node, depth: int = 0) -> bool:
+    if node is None or depth >= 180:
+        return False
+    if node.t in ('var', 'num', 'text', 'bool', 'null'):
+        return True
+    if node.t == 'index':
+        return _identity_projection(node.obj, depth + 1) and _identity_projection(node.idx, depth + 1)
+    if node.t == 'call':
+        if node.name in ('COUNT', 'LEN', 'BLEN'):
+            return True
+        if node.name == 'RECORD':
+            return len(node.args) % 2 == 0 and all(_identity_projection(n, depth + 1) for n in node.args[1::2])
+    return False
+
+
+def _identity_inputs(node: Node, depth: int = 0):
+    if node is None or depth >= 180:
+        return True
+    if node.t in ('num', 'text', 'bool', 'null'):
+        return set()
+    if node.t == 'var':
+        return set() if node.name == '_K' else True
+    if node.t == 'index':
+        if node.idx.t != 'text':
+            return True
+        return {node.idx.v} if node.obj.t == 'var' else _identity_inputs(node.obj, depth + 1)
+    if node.t == 'call' and node.name in ('COUNT', 'LEN', 'BLEN'):
+        return set()
+    if node.t == 'list' or (node.t == 'call' and node.name in ('LIST', 'RECORD')):
+        items = node.items if node.t == 'list' else node.args[1::2] if node.name == 'RECORD' else node.args
+        out = set()
+        for n in items:
+            fields = _identity_inputs(n, depth + 1)
+            if fields is True:
+                return True
+            out |= fields
+        return out
+    return True
+
+
+def identity_loss_before_grouping(node: Node, needed: bool = False) -> bool:
+    """Check the normalized tree, including helper-expanded MAP bodies."""
+    while node is not None and node.t == 'call' and node.args:
+        if needed and (node.name == 'MAP' or (node.name == 'BUCKET' and len(node.args) > 2)):
+            body, values = node.args[-1], [node.args[-1]]
+            if isinstance(needed, set) and body.t == 'call' and body.name == 'RECORD':
+                pairs = [(k.v, v) for k, v in zip(body.args[::2], body.args[1::2]) if k.t == 'text' and k.v in needed]
+                if not needed <= {k for k, _ in pairs}:
+                    return True
+                values = [v for _, v in pairs]
+            if not all(_identity_projection(v) for v in values):
+                return True
+            needed = set()
+            for v in values:
+                fields = _identity_inputs(v)
+                needed = True if fields is True or needed is True else needed | fields
+        if node.name == 'BUCKET':
+            needed = _identity_inputs(node.args[2 if len(node.args) == 4 else 1])
+        if node.name in ('DISTINCT', 'DEDUPE'):
+            needed = True
+        if isinstance(needed, set) and node.name in ('LINK', 'LINK_LEFT') and node.args[1].t == 'var':
+            from ..lexer import ascii_upper
+            right = node.args[3].name if len(node.args) == 5 else node.args[1].name
+            needed = {k for k in needed if ascii_upper(k) != right}
+        node = node.args[0]
+    return False
+
+
 def is_binder_name(node: Node) -> bool:
     """Is this node an aggregate's binder NAME, rather than a read of one?
 

@@ -16,10 +16,87 @@
   ],
   "mutations": [
     {
+      "name": "sqlite-inherited-collation",
+      "file": "sql/dialects/sqlite.json",
+      "from": "\"textCollate\": \" COLLATE BINARY\",",
+      "to": "\"textCollate\": \"\",",
+      "was": "F2: CAST retains SQLite NOCASE/RTRIM column collation; exact identity requires explicit BINARY."
+    },
+    {
+      "name": "lisp-derived-key-type-lost",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(output-field-type plan col-name)",
+      "to": ":unknown",
+      "was": "F2/F3: direct projection must carry TEXT/NUM identity into later grouping; cases 39-40 prove this in every host."
+    },
+    {
+      "name": "python-derived-key-type-lost",
+      "file": "python/sel/sql/translator.py",
+      "from": "'type': self._output_field_type(plan, name),",
+      "to": "'type': 'UNKNOWN',",
+      "was": "F2/F3: direct projection must carry TEXT/NUM identity into later grouping; cases 39-40 prove this in every host."
+    },
+    {
+      "name": "js-derived-key-type-lost",
+      "file": "js/src/sql/translator.mjs",
+      "from": "type: this.outputFieldType(plan, name)",
+      "to": "type: 'UNKNOWN'",
+      "was": "F2/F3: direct projection must carry TEXT/NUM identity into later grouping; cases 39-40 prove this in every host."
+    },
+    {
+      "name": "php-derived-key-type-lost",
+      "file": "php/src/Sql/Translator.php",
+      "from": "'type' => $this->outputFieldType($plan, $name),",
+      "to": "'type' => 'UNKNOWN',",
+      "was": "F2/F3: direct projection must carry TEXT/NUM identity into later grouping; cases 39-40 prove this in every host."
+    },
+    {
+      "name": "cpp-derived-key-type-lost",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "field.type = output_field_type(subquery, name);",
+      "to": "field.type = SqlKind::Unknown;",
+      "was": "F2/F3: direct projection must carry TEXT/NUM identity into later grouping; cases 39-40 prove this in every host."
+    },
+    {
+      "name": "lisp-mixed-map-filter-loses-keys",
+      "file": "lisp/src/sql/hybrid.lisp",
+      "from": "(defparameter +fallthrough-downstream+ '(\"SORT_BY\" \"TOP_BY\" \"TAKE\" \"DROP\"))",
+      "to": "(defparameter +fallthrough-downstream+ '(\"FILTER\" \"SORT_BY\" \"TOP_BY\" \"TAKE\" \"DROP\"))",
+      "was": "Mixed MAP continuation renumbers surviving rows while SEL FILTER retains input keys; a typed predicate must not enable this split."
+    },
+    {
+      "name": "python-mixed-map-filter-loses-keys",
+      "file": "python/sel/sql/hybrid.py",
+      "from": "FALLTHROUGH_DOWNSTREAM = frozenset({'SORT_BY', 'TOP_BY', 'TAKE', 'DROP'})",
+      "to": "FALLTHROUGH_DOWNSTREAM = frozenset({'FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP'})",
+      "was": "Mixed MAP continuation renumbers surviving rows while SEL FILTER retains input keys; a typed predicate must not enable this split."
+    },
+    {
+      "name": "js-mixed-map-filter-loses-keys",
+      "file": "js/src/sql/hybrid.mjs",
+      "from": "const FALLTHROUGH_DOWNSTREAM = new Set(['SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);",
+      "to": "const FALLTHROUGH_DOWNSTREAM = new Set(['FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);",
+      "was": "Mixed MAP continuation renumbers surviving rows while SEL FILTER retains input keys; a typed predicate must not enable this split."
+    },
+    {
+      "name": "php-mixed-map-filter-loses-keys",
+      "file": "php/src/Sql/Hybrid.php",
+      "from": "private const FALLTHROUGH_DOWNSTREAM = ['SORT_BY', 'TOP_BY', 'TAKE', 'DROP'];",
+      "to": "private const FALLTHROUGH_DOWNSTREAM = ['FILTER', 'SORT_BY', 'TOP_BY', 'TAKE', 'DROP'];",
+      "was": "Mixed MAP continuation renumbers surviving rows while SEL FILTER retains input keys; a typed predicate must not enable this split."
+    },
+    {
+      "name": "cpp-mixed-map-filter-loses-keys",
+      "file": "cpp/sel_sql_hybrid.cpp",
+      "from": "return name == \"SORT_BY\" || name == \"TOP_BY\" || name == \"TAKE\" ||",
+      "to": "return name == \"FILTER\" || name == \"SORT_BY\" || name == \"TOP_BY\" || name == \"TAKE\" ||",
+      "was": "Mixed MAP continuation renumbers surviving rows while SEL FILTER retains input keys; a typed predicate must not enable this split."
+    },
+    {
       "name": "collation-dropped",
       "was": "M1. MariaDB's REGEXP and = follow the operand's collation, which is case-insensitive by default, so \"A\" $== \"a\" was TRUE on the server and FALSE in SEL.",
       "file": "sql/dialects/mysql-family.json",
-      "from": "\"textCollate\": \" COLLATE utf8mb4_bin\",",
+      "from": "\"textCollate\": \" COLLATE utf8mb4_nopad_bin\",",
       "to": "\"textCollate\": \"\","
     },
     {
@@ -1141,6 +1218,146 @@
       "file": "sql/dialects/ansi.json",
       "from": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({textCast:0})\",",
       "to": "    \"LEN\": {\n      \"tpl\": \"CHAR_LENGTH({0})\","
+    },
+    {
+      "name": "js-filter-swap-ignores-keys",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "file": "js/src/optimizer.mjs",
+      "from": "  return step !== undefined && step.name !== 'FILTER' && !stepReadsKey(step);",
+      "to": "  return true;"
+    },
+    {
+      "name": "php-filter-swap-ignores-keys",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "file": "php/src/Optimizer.php",
+      "from": "        return $step !== null && ($step['name'] ?? '') !== 'FILTER' && !self::stepReadsKey($step);",
+      "to": "        return true;"
+    },
+    {
+      "name": "python-filter-swap-ignores-keys",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "file": "python/sel/optimizer.py",
+      "from": "    return step is not None and step.name != 'FILTER' and not step_reads_key(step)",
+      "to": "    return True"
+    },
+    {
+      "name": "cpp-filter-swap-ignores-keys",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "file": "cpp/sel.cpp",
+      "from": "  return step != nullptr && *step && (*step)->s != \"FILTER\" && !opt_step_reads_key(**step);",
+      "to": "  return true;"
+    },
+    {
+      "name": "lisp-filter-swap-ignores-keys",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "file": "lisp/src/optimizer.lisp",
+      "from": "  (and step\n       (string/= (node-s step) \"FILTER\")\n       (not (step-reads-key-p step))))",
+      "to": "  (progn step t))"
+    },
+    {
+      "name": "lisp-latest-member-top-two-is-top-one",
+      "was": "F6: preselecting one member for TOP N>1 loses rows; latest-member fallback cases must kill this mutation.",
+      "file": "lisp/src/sql/hybrid.lisp",
+      "from": "(equal (sel::node-s (fourth ta)) \"1\")",
+      "to": "t"
+    },
+    {
+      "name": "python-latest-member-top-two-is-top-one",
+      "was": "F6: preselecting one member for TOP N>1 loses rows; latest-member fallback cases must kill this mutation.",
+      "file": "python/sel/sql/hybrid.py",
+      "from": "ta[3].v != '1'",
+      "to": "False"
+    },
+    {
+      "name": "js-latest-member-top-two-is-top-one",
+      "was": "F6: preselecting one member for TOP N>1 loses rows; latest-member fallback cases must kill this mutation.",
+      "file": "js/src/sql/hybrid.mjs",
+      "from": "ta[3].v !== '1'",
+      "to": "false"
+    },
+    {
+      "name": "php-latest-member-top-two-is-top-one",
+      "was": "F6: preselecting one member for TOP N>1 loses rows; latest-member fallback cases must kill this mutation.",
+      "file": "php/src/Sql/Hybrid.php",
+      "from": "$ta[3]['v'] !== '1'",
+      "to": "false"
+    },
+    {
+      "name": "cpp-latest-member-top-two-is-top-one",
+      "was": "F6: preselecting one member for TOP N>1 loses rows; latest-member fallback cases must kill this mutation.",
+      "file": "cpp/sel_sql_hybrid.cpp",
+      "from": "ta[3]->s != \"1\"",
+      "to": "false"
+    },
+    {
+      "name": "js-bucket-keys-are-rows",
+      "was": "Review 2026-09-15 finding #31: the mutation catalogue had no entry for the planner's bucket state machine, so nothing said whether the 33 plan cases would notice a broken bucketRowsAreKeys. They do (three of them), and this entry keeps it that way.",
+      "file": "js/src/sql/hybrid.mjs",
+      "from": "function bucketRowsAreKeys(steps) {",
+      "to": "function bucketRowsAreKeys(steps) {\n  return false;"
+    },
+    {
+      "name": "php-bucket-keys-are-rows",
+      "was": "Review 2026-09-15 finding #31: the mutation catalogue had no entry for the planner's bucket state machine, so nothing said whether the 33 plan cases would notice a broken bucketRowsAreKeys. They do (three of them), and this entry keeps it that way.",
+      "file": "php/src/Sql/Hybrid.php",
+      "from": "    private static function bucketRowsAreKeys(array $steps): bool",
+      "to": "    private static function bucketRowsAreKeys(array $steps): bool { return false; }\n    private static function bucketRowsAreKeysUnused(array $steps): bool"
+    },
+    {
+      "name": "python-bucket-keys-are-rows",
+      "was": "Review 2026-09-15 finding #31: the mutation catalogue had no entry for the planner's bucket state machine, so nothing said whether the 33 plan cases would notice a broken bucketRowsAreKeys. They do (three of them), and this entry keeps it that way.",
+      "file": "python/sel/sql/hybrid.py",
+      "from": "def _bucket_rows_are_keys(steps: list[Node]) -> bool:",
+      "to": "def _bucket_rows_are_keys(steps: list[Node]) -> bool:\n    return False\n\n\ndef _bucket_rows_are_keys_unused(steps: list[Node]) -> bool:"
+    },
+    {
+      "name": "cpp-bucket-keys-are-rows",
+      "was": "Review 2026-09-15 finding #31: the mutation catalogue had no entry for the planner's bucket state machine, so nothing said whether the 33 plan cases would notice a broken bucketRowsAreKeys. They do (three of them), and this entry keeps it that way.",
+      "file": "cpp/sel_sql_hybrid.cpp",
+      "from": "bool bucket_rows_are_keys(const std::vector<NodePtr>& steps, std::size_t count) {",
+      "to": "bool bucket_rows_are_keys(const std::vector<NodePtr>& steps, std::size_t count) {\n  if (count < 1000000) return false;"
+    },
+    {
+      "name": "lisp-bucket-keys-are-rows",
+      "was": "Review 2026-09-15 finding #31: the mutation catalogue had no entry for the planner's bucket state machine, so nothing said whether the 33 plan cases would notice a broken bucketRowsAreKeys. They do (three of them), and this entry keeps it that way.",
+      "file": "lisp/src/sql/hybrid.lisp",
+      "from": "(defun bucket-rows-are-keys-p (steps)",
+      "to": "(defun bucket-rows-are-keys-p (steps) (declare (ignore steps)) nil)\n(defun bucket-rows-are-keys-p-unused (steps)"
+    },
+    {
+      "name": "js-join-rows-are-the-value",
+      "was": "Finding Y (2026-09-15), lanes: a LINK's SQL rows are its promoted fields without the binders SEL's rows carry, so an unprojected join is not a split point. A guard that never fires would push `ORDERS .> LINK(...) .> TAKE(2)` down as `SELECT o.customer_id, o.amount ... LIMIT 2` and hand the continuation rows with no `_[\"C\"]`; plan.link.unprojected-join-is-not-a-split-point pins it.",
+      "file": "js/src/sql/hybrid.mjs",
+      "from": "function joinRowsLackBinders(steps) {",
+      "to": "function joinRowsLackBinders(steps) {\n  return false;"
+    },
+    {
+      "name": "php-join-rows-are-the-value",
+      "was": "Finding Y (2026-09-15), lanes: a LINK's SQL rows are its promoted fields without the binders SEL's rows carry, so an unprojected join is not a split point. A guard that never fires would push `ORDERS .> LINK(...) .> TAKE(2)` down as `SELECT o.customer_id, o.amount ... LIMIT 2` and hand the continuation rows with no `_[\"C\"]`; plan.link.unprojected-join-is-not-a-split-point pins it.",
+      "file": "php/src/Sql/Hybrid.php",
+      "from": "    private static function joinRowsLackBinders(array $steps): bool",
+      "to": "    private static function joinRowsLackBinders(array $steps): bool { return false; }\n    private static function joinRowsLackBindersUnused(array $steps): bool"
+    },
+    {
+      "name": "python-join-rows-are-the-value",
+      "was": "Finding Y (2026-09-15), lanes: a LINK's SQL rows are its promoted fields without the binders SEL's rows carry, so an unprojected join is not a split point. A guard that never fires would push `ORDERS .> LINK(...) .> TAKE(2)` down as `SELECT o.customer_id, o.amount ... LIMIT 2` and hand the continuation rows with no `_[\"C\"]`; plan.link.unprojected-join-is-not-a-split-point pins it.",
+      "file": "python/sel/sql/hybrid.py",
+      "from": "def _join_rows_lack_binders(steps: list[Node]) -> bool:",
+      "to": "def _join_rows_lack_binders(steps: list[Node]) -> bool:\n    return False\n\n\ndef _join_rows_lack_binders_unused(steps: list[Node]) -> bool:"
+    },
+    {
+      "name": "cpp-join-rows-are-the-value",
+      "was": "Finding Y (2026-09-15), lanes: a LINK's SQL rows are its promoted fields without the binders SEL's rows carry, so an unprojected join is not a split point. A guard that never fires would push `ORDERS .> LINK(...) .> TAKE(2)` down as `SELECT o.customer_id, o.amount ... LIMIT 2` and hand the continuation rows with no `_[\"C\"]`; plan.link.unprojected-join-is-not-a-split-point pins it.",
+      "file": "cpp/sel_sql_hybrid.cpp",
+      "from": "bool join_rows_lack_binders(const std::vector<NodePtr>& steps, std::size_t count) {",
+      "to": "bool join_rows_lack_binders(const std::vector<NodePtr>& steps, std::size_t count) {\n  if (count < 1000000) return false;"
+    },
+    {
+      "name": "lisp-join-rows-are-the-value",
+      "was": "Finding Y (2026-09-15), lanes: a LINK's SQL rows are its promoted fields without the binders SEL's rows carry, so an unprojected join is not a split point. A guard that never fires would push `ORDERS .> LINK(...) .> TAKE(2)` down as `SELECT o.customer_id, o.amount ... LIMIT 2` and hand the continuation rows with no `_[\"C\"]`; plan.link.unprojected-join-is-not-a-split-point pins it.",
+      "file": "lisp/src/sql/hybrid.lisp",
+      "from": "(defun join-rows-lack-binders-p (steps)",
+      "to": "(defun join-rows-lack-binders-p (steps) (declare (ignore steps)) nil)\n(defun join-rows-lack-binders-p-unused (steps)"
     }
   ]
 }

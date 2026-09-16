@@ -1,8 +1,27 @@
 # SEL gaps from adversarial data-processing tests — work index
 
-Status: open, reproduced at `55f4aa6c01b594ca04947b03e5a4a931a0229ae0` on
+Status update 2026-09-16: F1–F4 and F6 are implemented in all five hosts, starting
+in Lisp; F5's earlier safe fallback was rechecked. The default full-roster
+integration gate is **ALL GREEN**. All 192 mutations were caught, including
+seven requiring separate live-DB runs. Desired-behavior regressions passed
+2,568 SQL executions and 1,188 exact hybrid replays; the full database oracle
+also passed PostgreSQL, MariaDB, MySQL and SQLite.
+
+The latest recheck additionally closed SQLite NOCASE/RTRIM identity and derived
+direct-field type-loss paths. UNKNOWN group keys and mixed-MAP downstream
+FILTER retain safe fallback. F6's explicitly unique-revision TOP 1 strategy
+transfers 100 complete winner rows from 100,000 revisions. C1 remains open:
+database-backed SQL fuzzing exposes a pre-existing local `E_DEPTH` versus SQL
+acceptance boundary. The historical verification below records the original
+audit, not the current fix status; see the dated updates.
+
+The consolidated [implementation/verification report](sel-gaps-2026-09-15-08-fix-verification.md)
+records the new live regression totals and explicitly separates the remaining
+C1 depth/error-policy boundary from the requested fixes.
+
+Original status: open, reproduced at `55f4aa6c01b594ca04947b03e5a4a931a0229ae0` on
 2026-09-15. Originally found at `ef44fa2aea403d04386f2d77478a7a283b44611e`.
-These are implementation work descriptions, not completed fixes. Priorities
+The original documents were implementation work descriptions. Priorities
 below are proposed triage priorities: P1 correctness, P2 capability/contract.
 
 ## Work items
@@ -17,7 +36,7 @@ below are proposed triage priorities: P1 correctness, P2 capability/contract.
 | F6 | P2 / performance capability | [Push down latest EAV revision per entity](sel-gaps-2026-09-15-06-eav-latest-revision-pushdown.md) |
 | C1 | P2 / documented semantic boundary | [Make SQL validation/error semantics explicit](sel-gaps-2026-09-15-07-sql-validation-error-contract.md) |
 
-F1–F5 are confirmed correctness defects. F6 is a correct but expensive fallback.
+F1–F5 were confirmed correctness defects. F6 is a correct but expensive fallback.
 C1 captures additional observed, already documented SQL behavior; it is not a
 sixth newly discovered correctness defect. Do not silently change language
 semantics to make a translator test pass.

@@ -26,6 +26,16 @@ use Sel\Value;
 
 final class Binding
 {
+    /** A copied relation binding with a schema-proven non-null unique key. */
+    public function withUniqueKey($key): self
+    {
+        self::checkName('unique key', $key);
+        $upper = strtr($key, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+        if ($this->spec['kind'] !== 'relation' || !array_key_exists($upper, $this->spec['fields'])) {
+            throw new SqlError('E_SQL_BINDING', 'a unique key must name a declared relation field');
+        }
+        return new self([...$this->spec, 'unique_key' => $key]);
+    }
     /**
      * The normalised record the translator reads. Public so Bindings can take
      * it; there is no other consumer, and nothing outside this file builds one.

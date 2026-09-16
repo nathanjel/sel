@@ -28,6 +28,10 @@ if (!Number.isInteger(count) || count < 1) {
 }
 const seed = Number(process.argv[3] || 20260813);
 const rnd = mulberry32(seed);
+// --sql: the pipelines read the relations the SQL fuzz runners bind (ORDERS,
+// CUSTOMERS) rather than lists the prelude builds, so they reach the
+// translator and the planner instead of being refused as unbound.
+const SQL_MODE = process.argv.slice(4).includes('--sql');
 
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 const chance = (p) => rnd() < p;
@@ -111,7 +115,67 @@ function expr(d) {
     case 13: return regexCall(d - 1);
     case 14: return `${pick(VARS)}[${expr(d - 1)}]`;
     case 15: return chance(0.5) ? sideEffectingAssign(d - 1) : sizedCall(d - 1);
+    case 16: return pipeline(d - 1);
     default: return atom();
+  }
+}
+
+// Relational pipelines: `source .> step .> step`, the vocabulary the 2026-09-15
+// review found every cross-host divergence in and this generator never
+// produced (finding #31) -- the sorts' forms, `_K` after a renumbering step,
+// bare and projected buckets, joins and their binders, helpers as sources.
+// Row fields are read by name with the odd wrong case, so E_NO_KEY and the
+// promotion rules are compared as much as the values.
+const ROW_SOURCES = SQL_MODE
+  ? ['ORDERS', 'ORDERS', 'CUSTOMERS']
+  : ['ROWS', 'ROWS', 'ITEMS', 'LST', 'LIST(RECORD("id", 1, "amount", 5, "name", "a"), RECORD("id", 2, "amount", 6, "name", "b"))'];
+const JOIN_RIGHT = SQL_MODE ? 'CUSTOMERS' : 'CUSTS';
+const FIELDS = ['id', 'amount', 'name', 'customer_id', 'QTY', 'ID', 'Amount'];
+const rowRef = (b) => (chance(0.12) ? '_K' : chance(0.08) ? b : `${b}["${pick(FIELDS)}"]`);
+const pred = (b) => (chance(0.7)
+  ? `${rowRef(b)} ${pick(NUMCMP)} ${pick(['1', '2', '5', '0', '"a"'])}`
+  : `${rowRef(b)} ${pick(TXTCMP)} ${pick(['"a"', '"Ann"', '"b"'])}`);
+function step(d) {
+  const dir = chance(0.3) ? ', "DESC"' : '';
+  switch (int(0, 15)) {
+    case 0: return `FILTER(${pred('_')})`;
+    case 1: return `FILTER(r, ${pred('r')})`;
+    case 2: return `MAP(RECORD("id", _["id"], "x", ${chance(0.5) ? `_["amount"] ${pick(ARITH)} ${int(1, 3)}` : `REPEAT(${pick(['"a"', '_["name"]'])}, 2)`}))`;
+    case 3: return `MAP(${rowRef('_')})`;
+    case 4: return `SORT_BY(${rowRef('_')}${dir})`;
+    case 5: return `SORT_BY(r, r["${pick(FIELDS)}"]${dir})`;
+    case 6: return `TAKE(${int(0, 3)})`;
+    case 7: return `DROP(${int(0, 2)})`;
+    case 8: return pick(['DEDUPE()', 'DISTINCT()', 'SORT()', 'SORT_DESC()']);
+    case 9: return `SELECT_COLS(${pick(['"id"', '"id", "amount"', '"name"', '"nope"'])})`;
+    case 10: return `BUCKET(${rowRef('_')})`;
+    case 11: return `BUCKET(${rowRef('_')}, RECORD("k", _K, "n", COUNT(_)${chance(0.5) ? ', "s", SUM(_, _["amount"])' : ''}))`;
+    case 12: return `${pick(['LINK', 'LINK_LEFT'])}(${JOIN_RIGHT}, ${chance(0.5) ? 'O, C, O["customer_id"] == C["id"]' : '_1["customer_id"] == _2["id"]'})`;
+    case 13: return `TOP_BY(${rowRef('_')}, ${int(1, 3)})`;
+    case 14: return `FILTER(${pred('_')} ${pick(['AND', 'OR'])} ${pred('_')})`;
+    default: return `MAP(RECORD("n", ${rowRef('_')}, "k", _K))`;
+  }
+}
+function pipeline(d) {
+  let p = pick(ROW_SOURCES);
+  for (let i = int(1, 3); i > 0; i--) p += ` .> ${step(d)}`;
+  if (chance(0.2)) p = `X = ${p}; X .> ${step(d)}`;
+  else if (chance(0.15)) p = `${pick(['COUNT', 'INDEXES'])}(${p})`;
+  else if (chance(0.1)) p = `SUM(${p}, ${rowRef('_')})`;
+  return p;
+}
+
+// Chains at and around the evaluation depth cap (spec §6.4): every term folds,
+// so an optimiser that folds past the boundary answers where the evaluator
+// raises E_DEPTH, and one that counts for itself raises where it does not.
+function depthProbe() {
+  const n = pick([198, 199, 200, 201, 202]);
+  const chain = Array(n).fill('1').join(' + ');
+  switch (int(0, 3)) {
+    case 0: return chain;
+    case 1: return `X = ${chain}; X`;
+    case 2: return `IF(${pick(['TRUE', 'FALSE'])}, 7, ${chain})`;
+    default: return `(${chain}) * 2`;
   }
 }
 
@@ -235,10 +299,23 @@ function setup() {
   return parts.join('; ');
 }
 
+// The rows the pipelines read when they are not bound relations: three orders
+// over two customers, so a join matches, a bucket has a group of two and a
+// group of one, and a promoted field clashes (`id`, `name`) on both sides.
+const ROWS_PRELUDE = 'ROWS = LIST(RECORD("id", 1, "customer_id", 7, "amount", 5, "name", "a"), '
+  + 'RECORD("id", 2, "customer_id", 7, "amount", 6, "name", "b"), '
+  + 'RECORD("id", 3, "customer_id", 9, "amount", 7, "name", "c")); '
+  + 'CUSTS = LIST(RECORD("id", 7, "name", "Ann"), RECORD("id", 9, "name", "Bob"))';
+
 const out = [];
 for (let i = 0; i < count; i++) {
-  const pre = setup();
-  const body = expr(int(1, 4));
+  let pre = setup();
+  let body;
+  const roll = rnd();
+  if (roll < 0.15) body = pipeline(int(1, 3));
+  else if (roll < 0.17) body = depthProbe();
+  else body = expr(int(1, 4));
+  if (!SQL_MODE && /\b(ROWS|CUSTS)\b/.test(body)) pre = pre ? `${ROWS_PRELUDE}; ${pre}` : ROWS_PRELUDE;
   out.push(`### ${i + 1}\n${pre ? `${pre}; ${body}` : body}\n`);
 }
 process.stdout.write(out.join(''));

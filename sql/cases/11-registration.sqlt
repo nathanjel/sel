@@ -89,7 +89,7 @@ mariadb
 --- source
 LEN("a")
 --- expect
-LEN('a' COLLATE utf8mb4_bin)
+LEN('a' COLLATE utf8mb4_nopad_bin)
 ===
 ### name: register.lexical.the-charset-follows-the-collation
 --- note
@@ -181,7 +181,7 @@ mariadb-11.8
 --- source
 "A" $== "a"
 --- expect
-(CAST('A' AS CHAR) COLLATE utf8mb4_bin = CAST('a' AS CHAR) COLLATE utf8mb4_bin)
+(CAST('A' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)
 ===
 ### name: register.dialect.may-override-a-lexical-key
 --- dialect

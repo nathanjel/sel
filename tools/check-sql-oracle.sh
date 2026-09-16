@@ -23,13 +23,17 @@ cd "$(dirname "$0")/.."
 
 status=0
 ran=0
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
 for impl in $(available_impls); do
-  out="$(impl_oracle "$impl" "${1:-all}" 2>&1)"
-  rc=$?
-  [ -z "$out" ] && continue
+  { sel_slot impl_oracle "$impl" "${1:-all}" > "$WORK/$impl.out" 2>&1; echo $? > "$WORK/$impl.rc"; } &
+done
+wait
+for impl in $(available_impls); do
+  [ -s "$WORK/$impl.out" ] || continue
   ran=1
-  echo "$out" | sed "s/^/${impl}: /"
-  [ "$rc" -ne 0 ] && status=1
+  sed "s/^/${impl}: /" "$WORK/$impl.out"
+  [ "$(cat "$WORK/$impl.rc")" -ne 0 ] && status=1
 done
 
 if [ "$ran" -eq 0 ]; then
