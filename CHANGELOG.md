@@ -12,6 +12,42 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Universal lazy decimal-to-string representation and cross-lane execution acceleration across all five host implementations (Common Lisp, C++, JavaScript, PHP, Python).
+
+  - **Universal lazy decimal representation (Aster concept).** Values produced by decimal operations (`Value::num`, `integer`, arithmetic operators, and `MathPlan` execution) retain their native arbitrary-precision decimal structures (`dec_val` / `_decimal` / `decVal` / `_dec_val`), leaving their scalar string representation uncomputed. String formatting is deferred lazily on-demand until explicitly observed in string context (`as_text()`, string concatenation `&`, canonical dump, or host interop).
+  - **Leaf cloning and direct numeric equality.** Leaf values without child structures bypass allocations in `clone_at` while preserving deferred decimal state. Structural equality (`eql_at`) checks decimal operands directly (comparing sign, scale, and mantissa/digits) without triggering string serialization or allocations.
+  - **Parser AST decimal caching and index literal fast paths.** Numeric literals parsed in `parse_primary` store their parsed `Dec` directly on the AST `Node`, eliminating string re-parsing in the evaluator and `MathPlan` compiler. Property lookup on text literals (`obj["field"]`) reads the node's key string directly without wrapping in an intermediate `Value`.
+  - **Verified parity across all test suites.** 100% green across all 898 conformance test cases, 39,990 random decimal oracle cases (0 mismatches), 185 mutant warrants caught, 4,000 differential fuzz programs, and identical byte-for-byte ASCII art output on `examples/mandelbrot.sel`.
+  - **JavaScript native BigInt mantissa migration.** Migrated `Dec` in `js/src/decimal.mjs` to native `BigInt` mantissas (`digits` as `BigInt`), matching Python's `int` and SBCL's bignum cores. Eliminated intermediate base-10 string serialization and parsing in `mul`, `add`, `sub`, `div`, and `cmp`, reducing Mandelbrot pure runtime from 1.203s to 0.119s (0.191s CLI, over 10x acceleration).
+  - **Benchmark results across all 5 lanes (empirically measured):**
+    - *Mandelbrot (`examples/mandelbrot.sel`):*
+      - Common Lisp (SBCL): pure run time **0.078 s** (#1 fastest pure math execution, zero consing) (CLI 0.767 s)
+      - JavaScript (Node.js): pure run time **0.119 s** (CLI **0.191 s**, fastest CLI execution)
+      - C++: total CLI **0.298 s**
+      - Python 3 (CPython): pure run time **0.389 s** (CLI 0.455 s)
+      - PHP 8.3 (with GMP): pure run time **0.524 s** (CLI 1.043 s)
+    - *10,000-row relational pipeline (`PROJECT .> FILTER .> BUCKET .> SORT_BY .> TAKE`):*
+      - JavaScript: run **0.239 s**, compile 0.286 s (total CLI: **0.615 s**)
+      - C++: total CLI **0.274 s**
+      - Common Lisp: run **0.276 s**, compile 0.200 s (total CLI: **1.136 s**)
+      - PHP: run **0.965 s**, compile 1.087 s (total CLI: **2.655 s**)
+      - Python: run **1.755 s**, compile 2.149 s (total CLI: **4.033 s**)
+
+Cross-lane big-decimal execution acceleration across all host implementations (JavaScript, Common Lisp, C++, PHP, Python), as documented in `docs/interim/sel_big_decimal_cross_lane_acceleration_analysis.md` (2026-09-17).
+
+  - **JavaScript native `BigInt` core.** Replaced character-by-character string arithmetic loops in `addAbs`, `subAbs`, `mulAbs`, and `divModAbs` with native `BigInt` operations while strictly preserving decimal scaling, minimal scale normalization, rounding half-away-from-zero rules, and 1M-digit limit guards (`MAX_INT_DIGITS`, `MAX_FRAC_DIGITS`). Mandelbrot execution accelerated from 44.8s to 1.28s (~35x speedup).
+  - **Common Lisp (SBCL) native bignum core and execution acceleration.** Migrated `Dec` representation to native integer bignums (`digits` as integer), mirroring Python's `decimal.py`. Implemented divide-and-conquer radix parsing (`parse-bignum-string`), $O(1)$ bit-length capacity checks (`+max-int-bits+ 3321929`), explicit base-10 formatting (`write-to-string ... :base 10`), and eliminated intermediate string conversions during expression evaluation and comparisons. Replaced linear $O(N)$ token position scan in `lexer-pos-at` with binary search over `(simple-array fixnum (*))`, reducing 10k-line compilation time from 6.42s to 0.20s (32x speedup). Implemented lazy decimal string formatting (`%scalar` deferred until text access) and stack-allocated math execution scratchpad (`dynamic-extent`), driving Mandelbrot pure runtime from 1.074s to 0.079s (13.6x speedup, fastest of all hosts).
+  - **C++ 128-bit fast path and base-$10^9$ limbs.** Added native `__int128_t` mantissa fast path (covering values up to $10^{38}$ with scale $\le 38$), multi-limb base-$10^9$ arithmetic (`uint32_t` limbs, `uint64_t` accumulators), $O(1)$ substring division for powers of 10, and cached `dec_val` on `Value::Impl` to eliminate string re-parsing during math plan execution. Mandelbrot execution accelerated from 6.5s to 0.306s (21x speedup).
+  - **PHP hybrid GMP and native multi-limb engine.** Implemented automatic GMP extension support (`extension_loaded('gmp')`) with a pure-PHP accelerated fallback featuring 64-bit native int fast paths, 2-limb 18-digit products, base-$10^{14}$ addition/subtraction, base-$10^7$ multi-limb multiplication, and $O(1)$ power-of-10 slice operations for `isInteger`, `trunc`, `floor`, `ceil`, and `round`. Mandelbrot execution accelerated from ~48s to 1.10s (~43x speedup with GMP; 4.65s on pure-PHP fallback without GMP).
+  - **100% Cross-Lane Parity.** Verified with 39,990 random test cases against Python's decimal oracle (`tools/check-decimal.sh 4000`, 0 mismatches), 898/898 conformance cases in all 7 host configurations, 4,000 differential fuzz programs with 0 disagreements, and byte-identical ASCII art on `examples/mandelbrot.sel`.
+
+In-memory AST mathematical execution optimizer (`MathPlan`) across all five host implementations (Python, JavaScript, C++, PHP, Common Lisp), as planned in `docs/interim/ast-execution-optimizer.md` (2026-09-16).
+
+  - **Subtree compilation to flat three-address execution plans.** Arithmetic expressions over numerical operators (`+`, `-`, `*`, `/`, `%`, `^`, unary `-`) are compiled during physical optimization into an array of linear 3-address instructions (`LOAD_VAL`, `LOAD_VAR`, `LOAD_LEAF`, `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `POW`, `NEG`). Nested arithmetic walks bypass recursive AST node dispatch and intermediate decimal serialization, operating directly over native decimal representations with temporary register reuse.
+  - **Strict spec parity, error positions, and evaluation order.** Retains strict left-to-right operand evaluation (Spec §6.2) and exact innermost error position reporting (Spec §6.3) for `E_NOT_NUM`, `E_DIV_ZERO`, and `E_NUM_OVERFLOW`. Non-math subtrees and variables are evaluated in order and asserted as decimals. Expressions reaching or exceeding the evaluator depth cap ($\ge 200$) remain unoptimized per Spec §6.4 (Finding AF), evaluating as written through the standard depth-checked evaluator.
+  - **Safe algebraic identity copy-propagation.** Zero-scale additive identities (`x + 0`, `0 + x`, `x - 0`) and multiplicative identities (`x * 1`, `1 * x`) eliminate redundant binary arithmetic steps at plan compilation time, while runtime validation preserves type safety (`E_NOT_NUM`) at the operand's source position.
+  - **Iterative arithmetic acceleration.** Eliminates AST overhead in tight loops; verified byte-for-byte identical ASCII output across all five hosts on `examples/mandelbrot.sel` with dramatic runtime speedups.
+
 Adversarial SQL/local-processing gaps F1–F4 and F6, verified across all five implementations (2026-09-16); the existing F5 joined-row fallback was rechecked.
 
   - **Slices compose without widening the result** (F1). Repeated `TAKE`/`DROP`, empty slices and large offsets preserve the bounded input window, with safe-integer overflow handling.

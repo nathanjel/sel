@@ -132,7 +132,7 @@ def iter_elements(value: Any):
 
 
 class Value:
-    __slots__ = ('kind', 'scalar', 'children', 'is_list', 'shape', 'storage',
+    __slots__ = ('kind', '_scalar', 'children', 'is_list', 'shape', 'storage',
                  '_dec_val')
 
     # The kind constants, mirrored as class attributes so `Value.BOOL` works the
@@ -144,7 +144,7 @@ class Value:
 
     def __init__(self, kind: str, scalar: Any, is_list: bool = False) -> None:
         self.kind = kind
-        self.scalar = scalar
+        self._scalar = scalar
         self.is_list = is_list
         # dict, created on demand. Python dicts are insertion-ordered and
         # re-assigning an existing key keeps its original position, which is
@@ -157,6 +157,16 @@ class Value:
         # representation remains normative, while repeated numeric coercions
         # reuse the immutable parsed decimal rather than allocating another Dec.
         self._dec_val: D.Dec | None = None
+
+    @property
+    def scalar(self) -> Any:
+        if self._scalar is None and self._dec_val is not None:
+            self._scalar = D.format(self._dec_val)
+        return self._scalar
+
+    @scalar.setter
+    def scalar(self, val: Any) -> None:
+        self._scalar = val
 
     # --- kind predicates ------------------------------------------------------
     #
@@ -261,19 +271,21 @@ class Value:
         that fails later somewhere else. Internal callers pass a Dec.
         """
         if not isinstance(d, str):
-            v = Value(TEXT, D.format(d))
+            v = Value(TEXT, None)
             v._dec_val = d
             return v
         parsed = D.parse(d)
         if parsed is None:
             fail('E_NOT_NUM', f'not a number: {d!r}', None)
-        v = Value(TEXT, D.format(parsed))
+        v = Value(TEXT, None)
         v._dec_val = parsed
         return v
 
     @staticmethod
     def int(n: int) -> Value:  # noqa: A003
-        return Value.num(D.from_int(n))
+        v = Value(TEXT, None)
+        v._dec_val = D.from_int(n)
+        return v
 
     @staticmethod
     def list(values: list[Value]) -> Value:  # noqa: A003
@@ -355,6 +367,8 @@ class Value:
         """The value that supplies the scalar: itself, or its first child,
         recursively.
         """
+        if self.kind != NONE:
+            return self
         v = self
         guard = 0
         while v.kind == NONE:
@@ -450,7 +464,11 @@ as as_text().
     def _clone_at(self, depth: int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
-        out = Value(self.kind, self.scalar, self.is_list)
+        if self.shape is None and self.storage is None and not self.children:
+            out = Value(self.kind, self._scalar, self.is_list)
+            out._dec_val = self._dec_val
+            return out
+        out = Value(self.kind, self._scalar, self.is_list)
         out._dec_val = self._dec_val
         if self.shape is not None:
             out.shape = self.shape
@@ -476,7 +494,16 @@ as as_text().
             fail('E_DEPTH', 'value nested too deeply', pos)
         if self.kind != other.kind:
             return False
-        if self.kind in (TEXT, BOOL, BIN):
+        if self.kind == TEXT:
+            if self._dec_val is not None and other._dec_val is not None:
+                if (self._dec_val.neg != other._dec_val.neg or
+                    self._dec_val.scale != other._dec_val.scale or
+                    self._dec_val.digits != other._dec_val.digits):
+                    return False
+            else:
+                if self.scalar != other.scalar:
+                    return False
+        elif self.kind in (BOOL, BIN):
             if self.scalar != other.scalar:
                 return False
         if self.size() != other.size():

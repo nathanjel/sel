@@ -128,7 +128,7 @@ final class Value
 
     public string $kind;
     /** @var string|bool|null */
-    public $scalar;
+    private $scalar = null;
     /** @var array<array-key, Value> */
     public array $children = [];
     public bool $isList = false;
@@ -136,7 +136,7 @@ final class Value
     /** @var list<Value>|null */
     public ?array $storage = null;
     /** @var array{neg:bool,digits:string,scale:int}|null */
-    private ?array $decVal = null;
+    public ?array $decVal = null;
 
     /** @param string|bool|null $scalar */
     private function __construct(string $kind, $scalar, bool $isList = false)
@@ -144,6 +144,38 @@ final class Value
         $this->kind = $kind;
         $this->scalar = $scalar;
         $this->isList = $isList;
+    }
+
+    public function getScalar(): mixed
+    {
+        if ($this->scalar === null && $this->decVal !== null) {
+            $this->scalar = Dec::format($this->decVal);
+        }
+        return $this->scalar;
+    }
+
+    public function __get(string $name): mixed
+    {
+        if ($name === 'scalar') {
+            return $this->getScalar();
+        }
+        return null;
+    }
+
+    public function __set(string $name, mixed $value): void
+    {
+        if ($name === 'scalar') {
+            $this->scalar = $value;
+            $this->decVal = null;
+        }
+    }
+
+    public function __isset(string $name): bool
+    {
+        if ($name === 'scalar') {
+            return $this->scalar !== null || $this->decVal !== null;
+        }
+        return false;
     }
 
     public static function none(): self
@@ -182,7 +214,7 @@ final class Value
     public static function num($d): self
     {
         if (!is_string($d)) {
-            $v = new self(self::TEXT, Dec::format($d));
+            $v = new self(self::TEXT, null);
             $v->decVal = $d;
             return $v;
         }
@@ -190,14 +222,14 @@ final class Value
         if ($parsed === null) {
             fail('E_NOT_NUM', 'not a number: ' . json_encode($d));
         }
-        $v = new self(self::TEXT, Dec::format($parsed));
+        $v = new self(self::TEXT, null);
         $v->decVal = $parsed;
         return $v;
     }
 
     public static function int(int $n): self
     {
-        $v = new self(self::TEXT, (string) $n);
+        $v = new self(self::TEXT, null);
         $v->decVal = Dec::fromInt($n);
         return $v;
     }
@@ -376,7 +408,7 @@ final class Value
             return true;
         }
         if ($this->kind === self::TEXT && $this->size() === 0) {
-            return preg_match('/^[ \t\r\n]*$/', (string) $this->scalar) === 1;
+            return preg_match('/^[ \t\r\n]*$/', (string) $this->getScalar()) === 1;
         }
         return false;
     }
@@ -517,6 +549,9 @@ final class Value
     /** @param array{line:int,col:int,offset:int}|null $pos */
     public function scalarSource(?array $pos = null): Value
     {
+        if ($this->kind !== self::NONE) {
+            return $this;
+        }
         $v = $this;
         $guard = 0;
         while ($v->kind === self::NONE) {
@@ -539,7 +574,7 @@ final class Value
     {
         $v = $this->scalarSource($pos);
         if ($v->kind === self::TEXT) {
-            return (string) $v->scalar;
+            return (string) $v->getScalar();
         }
         if ($v->kind === self::BIN) {
             fail('E_NOT_TEXT', 'expected text, got binary (use FROM_UTF8)', $pos);
@@ -553,7 +588,7 @@ final class Value
         $v = $this->scalarSource($pos);
         // TEXT already holds its UTF-8 bytes, so this is the identity.
         if ($v->kind === self::BIN || $v->kind === self::TEXT) {
-            return (string) $v->scalar;
+            return (string) $v->getScalar();
         }
         fail('E_NOT_BIN', 'expected binary or text, got boolean', $pos);
     }
@@ -581,9 +616,9 @@ final class Value
         if ($v->decVal !== null) {
             return $v->decVal;
         }
-        $d = Dec::parse((string) $v->scalar, $pos);
+        $d = Dec::parse((string) $v->getScalar(), $pos);
         if ($d === null) {
-            fail('E_NOT_NUM', 'not a number: ' . json_encode($v->scalar), $pos);
+            fail('E_NOT_NUM', 'not a number: ' . json_encode($v->getScalar()), $pos);
         }
         $v->decVal = $d;
         return $d;
@@ -638,6 +673,11 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $pos);
         }
+        if ($this->shape === null && $this->storage === null && $this->children === []) {
+            $out = new self($this->kind, $this->scalar, $this->isList);
+            $out->decVal = $this->decVal;
+            return $out;
+        }
         if ($this->shape !== null) {
             $values = [];
             foreach ($this->storage as $value) {
@@ -683,7 +723,7 @@ final class Value
         }
         $scalar = match ($this->kind) {
             self::NONE => '',
-            self::TEXT, self::BIN => (string) $this->scalar,
+            self::TEXT, self::BIN => (string) $this->getScalar(),
             self::BOOL => $this->scalar ? '1' : '0',
         };
         hash_update($hash, $this->kind . ':' . strlen($scalar) . ':' . $scalar . ';');
@@ -722,8 +762,22 @@ final class Value
         if ($this->kind !== $other->kind) {
             return false;
         }
-        if ($this->scalar !== $other->scalar) {
-            return false;
+        if ($this->kind === self::TEXT) {
+            if ($this->decVal !== null && $other->decVal !== null) {
+                if ($this->decVal['neg'] !== $other->decVal['neg']
+                    || $this->decVal['scale'] !== $other->decVal['scale']
+                    || $this->decVal['digits'] !== $other->decVal['digits']) {
+                    return false;
+                }
+            } else {
+                if ($this->getScalar() !== $other->getScalar()) {
+                    return false;
+                }
+            }
+        } elseif ($this->kind === self::BOOL || $this->kind === self::BIN) {
+            if ($this->scalar !== $other->scalar) {
+                return false;
+            }
         }
         if ($this->size() !== $other->size()) {
             return false;
@@ -767,8 +821,8 @@ final class Value
         }
         $s = match ($this->kind) {
             self::NONE => '-',
-            self::TEXT => 't' . self::quoteDump((string) $this->scalar),
-            self::BIN => 'b' . bin2hex((string) $this->scalar),
+            self::TEXT => 't' . self::quoteDump((string) $this->getScalar()),
+            self::BIN => 'b' . bin2hex((string) $this->getScalar()),
             self::BOOL => $this->scalar ? 'TRUE' : 'FALSE',
         };
         if ($this->size() === 0) {
@@ -902,7 +956,7 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', null);
         }
-        $scalar = $this->kind === self::NONE ? null : $this->scalar;
+        $scalar = $this->kind === self::NONE ? null : $this->getScalar();
         if ($this->size() === 0) {
             return $scalar;
         }

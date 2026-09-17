@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos, SelError, fail
+from .math_plan import MathPlan, OpCode
 from .parser import Node
 from .utf8 import bytes_compare
 from .value import BIN, BOOL, NONE, TEXT, Value
@@ -126,16 +127,89 @@ def eval_node(node: Node, ctx: Context) -> Value:
         ctx.depth -= 1
         fail('E_DEPTH', 'evaluation nested too deeply', node.pos)
     try:
+        if node.math_plan is not None:
+            return _eval_math_plan(node.math_plan, ctx)
         return _dispatch(node, ctx)
     finally:
         ctx.depth -= 1
+
+
+def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
+    scratchpad: list[Any] = [None] * plan.scratchpad_size
+    for step in plan.steps:
+        op = step.op
+        if op == OpCode.LOAD_VAR:
+            val = ctx.lookup(step.name)
+            if val is None:
+                fail('E_UNDEF_VAR', f'undefined variable {step.name}', step.pos)
+            scratchpad[step.dst] = val.as_decimal(step.pos)
+        elif op == OpCode.LOAD_CONST:
+            scratchpad[step.dst] = step.const_val
+        elif op == OpCode.LOAD_LEAF:
+            val = eval_node(step.leaf_node, ctx)
+            scratchpad[step.dst] = val.as_decimal(step.leaf_node.pos)
+        elif op == OpCode.ADD:
+            scratchpad[step.dst] = D.add(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+        elif op == OpCode.SUB:
+            scratchpad[step.dst] = D.sub(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+        elif op == OpCode.MUL:
+            scratchpad[step.dst] = D.mul(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+        elif op == OpCode.DIV:
+            scratchpad[step.dst] = D.div(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+        elif op == OpCode.MOD:
+            scratchpad[step.dst] = D.mod(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+        elif op == OpCode.NEG:
+            scratchpad[step.dst] = D.negate(scratchpad[step.src1])
+        elif op == OpCode.ABS:
+            scratchpad[step.dst] = D.abs_(scratchpad[step.src1])
+        elif op == OpCode.SIGN:
+            s = D.sign(scratchpad[step.src1])
+            scratchpad[step.dst] = D.make(s < 0, abs(s), 0)
+        elif op == OpCode.CEIL:
+            scratchpad[step.dst] = D.ceil(scratchpad[step.src1])
+        elif op == OpCode.FLOOR:
+            scratchpad[step.dst] = D.floor(scratchpad[step.src1])
+        elif op == OpCode.TRUNC:
+            scratchpad[step.dst] = D.trunc(scratchpad[step.src1])
+        elif op == OpCode.ROUND:
+            d2 = scratchpad[step.src2]
+            if not D.is_integer(d2):
+                fail('E_NOT_INT', 'ROUND argument 2 must be a whole number', step.aux_pos)
+            n = D.to_safe_int(d2)
+            if n < 0:
+                fail('E_RANGE', 'ROUND argument 2 must not be negative', step.aux_pos)
+            if n > 1000000:
+                fail('E_RANGE', f'ROUND scale {n} exceeds the maximum of 1000000', step.aux_pos)
+            scratchpad[step.dst] = D.round(scratchpad[step.src1], n, step.pos)
+        elif op == OpCode.POWER:
+            d2 = scratchpad[step.src2]
+            if not D.is_integer(d2):
+                fail('E_NOT_INT', 'POWER argument 2 must be a whole number', step.aux_pos)
+            n = D.to_safe_int(d2)
+            if n < 0:
+                fail('E_RANGE', 'POWER argument 2 must not be negative', step.aux_pos)
+            if n > 100000:
+                fail('E_RANGE', f'POWER exponent {n} exceeds the maximum of 100000', step.aux_pos)
+            scratchpad[step.dst] = D.power(scratchpad[step.src1], n, step.pos)
+        elif op == OpCode.MIN:
+            a = scratchpad[step.src1]
+            b = scratchpad[step.src2]
+            scratchpad[step.dst] = b if D.cmp(b, a) < 0 else a
+        elif op == OpCode.MAX:
+            a = scratchpad[step.src1]
+            b = scratchpad[step.src2]
+            scratchpad[step.dst] = b if D.cmp(b, a) > 0 else a
+    return Value.num(scratchpad[plan.output_slot])
 
 
 def _dispatch(node: Node, ctx: Context) -> Value:
     t = node.t
 
     if t == 'num':
-        return Value.text(node.v)        # canonicalised by the parser
+        v = Value(TEXT, node.v)
+        if node.dec is not None:
+            v._dec_val = node.dec
+        return v
     if t == 'text':
         return Value.text(node.v)
     if t == 'bool':
@@ -151,7 +225,7 @@ def _dispatch(node: Node, ctx: Context) -> Value:
 
     if t == 'index':
         obj = eval_node(node.obj, ctx)
-        key = eval_node(node.idx, ctx).as_text(node.idx.pos)
+        key = node.idx.v if node.idx.t == 'text' else eval_node(node.idx, ctx).as_text(node.idx.pos)
         child = obj.get(key)
         if child is None:
             fail('E_NO_KEY', f'no key "{key}"', node.pos)

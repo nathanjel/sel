@@ -22,7 +22,9 @@
   (l nil)                  ; bin/index/assign left; un operand
   (r nil)                  ; bin/index/assign right
   (items nil :type list)   ; seq/list items, call arguments
-  (spec nil))              ; call
+  (spec nil)               ; call
+  (dec-val nil)            ; cached DEC struct for :num nodes
+  (math-plan nil))         ; compiled MathPlan when physical AST is optimized
 
 ;;; The operator families, named once for the PARSER. The precedence table below
 ;;; is BUILT from these rather than repeating them, and EVAL-BINARY asks
@@ -364,8 +366,10 @@
         (:num
          (p-next p)
          ;; Canonicalised once, here: the literal 007 is the value 7.
-         (let ((n (make-node :num (token-pos tok))))
-           (setf (node-s n) (dec-format (dec-parse (token-value tok) (token-pos tok))))
+         (let* ((parsed (dec-parse (token-value tok) (token-pos tok)))
+                (n (make-node :num (token-pos tok))))
+           (setf (node-dec-val n) parsed
+                 (node-s n) (dec-format parsed))
            n))
 
         (:text

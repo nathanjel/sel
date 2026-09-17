@@ -560,8 +560,8 @@ final class Parser
         try {
             if ($t['type'] === 'num') {
                 $this->next();
-                // Canonicalised once, here: the literal 007 is the value 7.
-                return ['t' => 'num', 'v' => Dec::format(Dec::parse($t['value'], $t)), 'pos' => $t];
+                $parsed = Dec::parse($t['value'], $t);
+                return ['t' => 'num', 'v' => Dec::format($parsed), 'dec' => $parsed, 'pos' => $t];
             }
             if ($t['type'] === 'text') {
                 $this->next();

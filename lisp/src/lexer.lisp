@@ -38,7 +38,7 @@
 (defstruct (lexer (:constructor %make-lexer))
   (chars "" :type string)
   (n 0 :type fixnum)
-  (line-starts nil :type list))
+  (line-starts (make-array 0 :element-type 'fixnum) :type (simple-array fixnum (*))))
 
 (defun make-lexer (source)
   ;; A lone surrogate here is E_UTF8 rather than a silently mangled token.
@@ -48,16 +48,30 @@
     (loop for i from 0 below (length source)
           when (char= (char source i) #\Newline)
             do (push (1+ i) starts))
-    (%make-lexer :chars source :n (length source) :line-starts (nreverse starts))))
+    (%make-lexer :chars source
+                 :n (length source)
+                 :line-starts (coerce (nreverse starts) '(simple-array fixnum (*))))))
 
 (defun lexer-pos-at (lx offset)
-  (let ((line 1)
-        (start 0))
-    (loop for s in (lexer-line-starts lx)
-          for k from 1
-          while (<= s offset)
-          do (setf line k start s))
-    (make-pos line (1+ (- offset start)) offset)))
+  (declare (optimize (speed 3) (safety 1)))
+  (declare (type lexer lx) (type fixnum offset))
+  (let* ((starts (lexer-line-starts lx))
+         (len (length starts))
+         (low 0)
+         (high len))
+    (declare (type (simple-array fixnum (*)) starts)
+             (type fixnum len low high))
+    (loop while (< low high)
+          do (let ((mid (the fixnum (ash (+ low high) -1))))
+               (if (<= (aref starts mid) offset)
+                   (setf low (1+ mid))
+                   (setf high mid))))
+    (let* ((idx (the fixnum (1- low)))
+           (start (aref starts idx)))
+      (declare (type fixnum idx start))
+      (make-pos (the fixnum (1+ idx))
+                (the fixnum (1+ (- offset start)))
+                offset))))
 
 (defun lexer-slice (lx from to) (subseq (lexer-chars lx) from to))
 

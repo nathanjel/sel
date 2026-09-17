@@ -18,6 +18,20 @@ final class Dec
     /** @var list<int>|null */
     private static ?array $nativePow10 = null;
 
+    private static ?bool $hasGmp = null;
+    /** @var list<int> */
+    private static array $pow10Int = [
+        1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000
+    ];
+
+    private static function hasGmp(): bool
+    {
+        if (self::$hasGmp === null) {
+            self::$hasGmp = extension_loaded('gmp');
+        }
+        return self::$hasGmp;
+    }
+
     // spec/SPEC.md §6.4. These bound the *value*; ROUND's scale cap and POWER's
     // exponent cap bound *arguments*, and an argument cap is not a value cap —
     // POWER's base is unbounded, so nesting one POWER inside another multiplies
@@ -48,34 +62,90 @@ final class Dec
 
     private static function addAbs(string $a, string $b): string
     {
-        $out = '';
-        $i = strlen($a) - 1;
-        $j = strlen($b) - 1;
-        $carry = 0;
-        while ($i >= 0 || $j >= 0 || $carry) {
-            $s = ($i >= 0 ? ord($a[$i--]) - 48 : 0) + ($j >= 0 ? ord($b[$j--]) - 48 : 0) + $carry;
-            $out = chr(48 + $s % 10) . $out;
-            $carry = $s >= 10 ? 1 : 0;
+        if (self::hasGmp()) {
+            return gmp_strval(gmp_add($a, $b));
         }
-        return $out;
+
+        $la = strlen($a);
+        $lb = strlen($b);
+        if ($la <= 18 && $lb <= 18) {
+            return (string) ((int) $a + (int) $b);
+        }
+
+        $out = '';
+        $carry = 0;
+        $i = $la;
+        $j = $lb;
+        while ($i > 0 || $j > 0 || $carry > 0) {
+            $chunkA = 0;
+            if ($i > 0) {
+                $startA = max(0, $i - 14);
+                $chunkA = (int) substr($a, $startA, $i - $startA);
+                $i = $startA;
+            }
+            $chunkB = 0;
+            if ($j > 0) {
+                $startB = max(0, $j - 14);
+                $chunkB = (int) substr($b, $startB, $j - $startB);
+                $j = $startB;
+            }
+            $sum = $chunkA + $chunkB + $carry;
+            if ($sum >= 100000000000000) { // 10^14
+                $rem = $sum - 100000000000000;
+                $carry = 1;
+            } else {
+                $rem = $sum;
+                $carry = 0;
+            }
+            if ($i > 0 || $j > 0 || $carry > 0) {
+                $out = sprintf('%014d', $rem) . $out;
+            } else {
+                $out = (string) $rem . $out;
+            }
+        }
+        return $out === '' ? '0' : $out;
     }
 
     /** Requires a >= b. */
     private static function subAbs(string $a, string $b): string
     {
+        if (self::hasGmp()) {
+            return gmp_strval(gmp_sub($a, $b));
+        }
+
+        $la = strlen($a);
+        if ($la <= 18) {
+            return (string) ((int) $a - (int) $b);
+        }
+
         $out = '';
-        $i = strlen($a) - 1;
-        $j = strlen($b) - 1;
         $borrow = 0;
-        while ($i >= 0) {
-            $s = (ord($a[$i--]) - 48) - ($j >= 0 ? ord($b[$j--]) - 48 : 0) - $borrow;
-            if ($s < 0) {
-                $s += 10;
+        $i = $la;
+        $j = strlen($b);
+        while ($i > 0) {
+            $startA = max(0, $i - 14);
+            $chunkA = (int) substr($a, $startA, $i - $startA);
+            $i = $startA;
+
+            $chunkB = 0;
+            if ($j > 0) {
+                $startB = max(0, $j - 14);
+                $chunkB = (int) substr($b, $startB, $j - $startB);
+                $j = $startB;
+            }
+
+            $diff = $chunkA - $chunkB - $borrow;
+            if ($diff < 0) {
+                $diff += 100000000000000;
                 $borrow = 1;
             } else {
                 $borrow = 0;
             }
-            $out = chr(48 + $s) . $out;
+            if ($i > 0) {
+                $out = sprintf('%014d', $diff) . $out;
+            } else {
+                $out = (string) $diff . $out;
+            }
         }
         return self::strip($out);
     }
@@ -85,29 +155,89 @@ final class Dec
         if ($a === '0' || $b === '0') {
             return '0';
         }
-        $n = strlen($a);
-        $m = strlen($b);
-        $acc = array_fill(0, $n + $m, 0);
-        for ($i = $n - 1; $i >= 0; $i--) {
-            $av = ord($a[$i]) - 48;
-            if ($av === 0) {
-                continue;
-            }
-            $carry = 0;
-            for ($j = $m - 1; $j >= 0; $j--) {
-                $t = $acc[$i + $j + 1] + $av * (ord($b[$j]) - 48) + $carry;
-                $acc[$i + $j + 1] = $t % 10;
-                $carry = intdiv($t, 10);
-            }
-            $acc[$i] += $carry;
+        if (self::hasGmp()) {
+            return gmp_strval(gmp_mul($a, $b));
         }
-        return self::strip(implode('', $acc));
+
+        $la = strlen($a);
+        $lb = strlen($b);
+        if ($la + $lb <= 18) {
+            return (string) ((int) $a * (int) $b);
+        }
+
+        if ($la <= 18 && $lb <= 18) {
+            $a0 = $la > 9 ? (int) substr($a, -9) : (int) $a;
+            $a1 = $la > 9 ? (int) substr($a, 0, -9) : 0;
+            $b0 = $lb > 9 ? (int) substr($b, -9) : (int) $b;
+            $b1 = $lb > 9 ? (int) substr($b, 0, -9) : 0;
+
+            $p0 = $a0 * $b0;
+            $p1 = $a0 * $b1 + $a1 * $b0;
+            $p2 = $a1 * $b1;
+
+            $c0 = $p0 % 1000000000;
+            $carry1 = intdiv($p0, 1000000000);
+            $p1 += $carry1;
+            $c1 = $p1 % 1000000000;
+            $carry2 = intdiv($p1, 1000000000);
+            $c2 = $p2 + $carry2;
+
+            if ($c2 > 0) {
+                return (string) $c2 . sprintf('%09d%09d', $c1, $c0);
+            }
+            if ($c1 > 0) {
+                return (string) $c1 . sprintf('%09d', $c0);
+            }
+            return (string) $c0;
+        }
+
+        $limbsA = [];
+        for ($i = $la; $i > 0; $i -= 7) {
+            $start = max(0, $i - 7);
+            $limbsA[] = (int) substr($a, $start, $i - $start);
+        }
+        $limbsB = [];
+        for ($j = $lb; $j > 0; $j -= 7) {
+            $start = max(0, $j - 7);
+            $limbsB[] = (int) substr($b, $start, $j - $start);
+        }
+
+        $na = count($limbsA);
+        $nb = count($limbsB);
+        $acc = array_fill(0, $na + $nb, 0);
+
+        for ($i = 0; $i < $na; $i++) {
+            $ai = $limbsA[$i];
+            if ($ai === 0) continue;
+            for ($j = 0; $j < $nb; $j++) {
+                $acc[$i + $j] += $ai * $limbsB[$j];
+            }
+        }
+
+        $carry = 0;
+        $nc = count($acc);
+        for ($k = 0; $k < $nc; $k++) {
+            $t = $acc[$k] + $carry;
+            $acc[$k] = $t % 10000000;
+            $carry = intdiv($t, 10000000);
+        }
+        while ($carry > 0) {
+            $acc[] = $carry % 10000000;
+            $carry = intdiv($carry, 10000000);
+        }
+
+        while (count($acc) > 1 && end($acc) === 0) {
+            array_pop($acc);
+        }
+
+        $out = (string) array_pop($acc);
+        while (!empty($acc)) {
+            $out .= sprintf('%07d', array_pop($acc));
+        }
+        return $out;
     }
 
     /**
-     * Schoolbook long division. Trial digits by repeated subtraction — at most
-     * nine per output digit, which keeps it obviously correct and trivial to port.
-     *
      * @return array{0:string,1:string}|null
      */
     private static function divModAbs(string $a, string $b): ?array
@@ -115,13 +245,61 @@ final class Dec
         if ($b === '0') {
             return null;
         }
-        if (self::cmpAbs($a, $b) < 0) {
+        $cmp = self::cmpAbs($a, $b);
+        if ($cmp < 0) {
             return ['0', $a];
         }
+        if ($cmp === 0) {
+            return ['1', '0'];
+        }
+
+        $lb = strlen($b);
+        if ($b[0] === '1' && $lb - 1 === strspn($b, '0', 1)) {
+            $k = $lb - 1;
+            if ($k === 0) {
+                return [$a, '0'];
+            }
+            $la = strlen($a);
+            if ($la <= $k) {
+                return ['0', $a];
+            }
+            $q = substr($a, 0, -$k);
+            $r = self::strip(substr($a, -$k));
+            return [$q, $r];
+        }
+
+        $la = strlen($a);
+        if ($la <= 18) {
+            $ia = (int) $a;
+            $ib = (int) $b;
+            return [(string) intdiv($ia, $ib), (string) ($ia % $ib)];
+        }
+
+        if (self::hasGmp()) {
+            [$q, $r] = gmp_div_qr($a, $b);
+            return [gmp_strval($q), gmp_strval($r)];
+        }
+
+        if ($lb <= 9) {
+            $ib = (int) $b;
+            $rem = 0;
+            $q = '';
+            for ($i = 0; $i < $la; $i += 9) {
+                $chunkLen = min(9, $la - $i);
+                $chunk = (int) substr($a, $i, $chunkLen);
+                $curr = $rem * self::$pow10Int[$chunkLen] + $chunk;
+                $qChunk = intdiv($curr, $ib);
+                $rem = $curr % $ib;
+                if ($q !== '' || $qChunk > 0) {
+                    $q .= $q === '' ? (string) $qChunk : sprintf("%0{$chunkLen}d", $qChunk);
+                }
+            }
+            return [$q === '' ? '0' : $q, (string) $rem];
+        }
+
         $q = '';
         $r = '0';
-        $len = strlen($a);
-        for ($i = 0; $i < $len; $i++) {
+        for ($i = 0; $i < $la; $i++) {
             $r = self::strip($r . $a[$i]);
             $k = 0;
             while (self::cmpAbs($r, $b) >= 0) {
@@ -343,8 +521,11 @@ final class Dec
         if ($d['scale'] === 0) {
             return true;
         }
-        [, $r] = self::divModAbs($d['digits'], self::pow10($d['scale']));
-        return $r === '0';
+        $len = strlen($d['digits']);
+        if ($len <= $d['scale']) {
+            return $d['digits'] === '0';
+        }
+        return strspn(substr($d['digits'], $len - $d['scale']), '0') === $d['scale'];
     }
 
     /** @param array{neg:bool,digits:string,scale:int} $d */

@@ -86,7 +86,7 @@ final class Optimizer
     }
 
     /** @param array<string,mixed> $node */
-    private static function optimizeTree(array $node, bool $physical, int $depth, array $options): array
+    private static function optimizeTree(array $node, bool $physical, int $depth, array $options, bool $inMath = false): array
     {
         // The evaluator/SQL normaliser owns the public depth error and its source
         // position. optimize() never descends into a tree that reaches the cap;
@@ -98,13 +98,13 @@ final class Optimizer
         if (($node['t'] ?? null) === 'call'
             && in_array($node['name'], self::PIPELINE_OPS, true)) {
             $unwound = self::unwindPipeline($node);
-            $source = self::optimizeTree($unwound['source'], $physical, $depth + 1, $options);
+            $source = self::optimizeTree($unwound['source'], $physical, $depth + 1, $options, false);
             $steps = [];
             foreach ($unwound['steps'] as $step) {
                 $copy = self::copyNode($step);
                 $copy['args'] = [$copy['args'][0]];
                 foreach (array_slice($step['args'], 1, null, true) as $index => $arg) {
-                    $copy['args'][] = self::optimizeTree($arg, $physical, $depth + 1, self::stepArgOptions($step, $index, $options));
+                    $copy['args'][] = self::optimizeTree($arg, $physical, $depth + 1, self::stepArgOptions($step, $index, $options), false);
                 }
                 $steps[] = $copy;
             }
@@ -120,33 +120,52 @@ final class Optimizer
             return self::buildPipeline($source, $steps);
         }
 
+        $isCurrMath = MathPlan::isMathOp($node);
+        $nextInMath = $isCurrMath;
+
         $copy = self::copyNode($node);
-        foreach (['args', 'items'] as $key) {
-            if (isset($copy[$key])) {
-                $copy[$key] = array_map(
-                    static fn (array $item): array => self::optimizeTree($item, $physical, $depth + 1, $options),
-                    $copy[$key],
-                );
+        if (isset($copy['args'])) {
+            $copy['args'] = array_map(
+                static fn (array $item): array => self::optimizeTree($item, $physical, $depth + 1, $options, $nextInMath),
+                $copy['args'],
+            );
+        }
+        if (isset($copy['items'])) {
+            $copy['items'] = array_map(
+                static fn (array $item): array => self::optimizeTree($item, $physical, $depth + 1, $options, false),
+                $copy['items'],
+            );
+        }
+        foreach (['l', 'r', 'x'] as $key) {
+            if (isset($copy[$key]) && is_array($copy[$key])) {
+                $copy[$key] = self::optimizeTree($copy[$key], $physical, $depth + 1, $options, $nextInMath);
             }
         }
-        foreach (['l', 'r', 'x', 'obj', 'idx'] as $key) {
+        foreach (['obj', 'idx'] as $key) {
             if (isset($copy[$key]) && is_array($copy[$key])) {
-                $copy[$key] = self::optimizeTree($copy[$key], $physical, $depth + 1, $options);
+                $copy[$key] = self::optimizeTree($copy[$key], $physical, $depth + 1, $options, false);
             }
         }
         if (($copy['t'] ?? null) === 'assign') {
             if (isset($copy['value']) && is_array($copy['value'])) {
-                $copy['value'] = self::optimizeTree($copy['value'], $physical, $depth + 1, $options);
+                $copy['value'] = self::optimizeTree($copy['value'], $physical, $depth + 1, $options, false);
             }
         } else {
             foreach (['target', 'value'] as $key) {
                 if (isset($copy[$key]) && is_array($copy[$key])) {
-                    $copy[$key] = self::optimizeTree($copy[$key], $physical, $depth + 1, $options);
+                    $copy[$key] = self::optimizeTree($copy[$key], $physical, $depth + 1, $options, false);
                 }
             }
         }
         // Only an explicit false disables folding, as in JS and Python.
-        return (($options['foldConstants'] ?? true) === false) ? $copy : self::foldNode($copy);
+        $folded = (($options['foldConstants'] ?? true) === false) ? $copy : self::foldNode($copy);
+        if ($physical && !$inMath && MathPlan::isMathOp($folded)) {
+            $plan = MathPlan::compile($folded);
+            if ($plan !== null) {
+                $folded['mathPlan'] = $plan;
+            }
+        }
+        return $folded;
     }
 
     /** @param array<string,mixed> $node */

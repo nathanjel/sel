@@ -19,7 +19,8 @@
           (node-l copy) (node-l n)
           (node-r copy) (node-r n)
           (node-items copy) (copy-list (node-items n))
-          (node-spec copy) (node-spec n))
+          (node-spec copy) (node-spec n)
+          (node-math-plan copy) (node-math-plan n))
     copy))
 
 ;; A fold that replaces a node by one of its children must not move the error
@@ -798,28 +799,36 @@ needs."
                 changed t)))))
   curr-steps)
 
-(defun optimize-children (node physical depth)
+(defun optimize-children (node physical depth in-math)
   "A shallow copy of NODE with every child optimised. NODE itself is never
 written: the tree a Program owns is the caller's, the other four hosts copy on
 the way down, and this one wrote into its input until the cross-language review
 -- so a second RUN saw a tree the first had already rewritten, and the SQL
 planner saw one the evaluator had rewritten for itself."
-  (let ((copy (copy-node-shallow node)))
+  (let ((copy (copy-node-shallow node))
+        (next-in-math (is-math-op-p node)))
     (case (node-kind node)
-      ((:seq :list :call)
+      ((:seq :list)
        (setf (node-items copy)
              (loop for item in (node-items node)
-                   collect (optimize-tree item physical (1+ depth)))))
-      ((:bin :index)
-       (setf (node-l copy) (optimize-tree (node-l node) physical (1+ depth))
-             (node-r copy) (optimize-tree (node-r node) physical (1+ depth))))
+                   collect (optimize-tree item physical (1+ depth) nil))))
+      (:call
+       (setf (node-items copy)
+             (loop for item in (node-items node)
+                   collect (optimize-tree item physical (1+ depth) next-in-math))))
+      (:bin
+       (setf (node-l copy) (optimize-tree (node-l node) physical (1+ depth) next-in-math)
+             (node-r copy) (optimize-tree (node-r node) physical (1+ depth) next-in-math)))
+      (:index
+       (setf (node-l copy) (optimize-tree (node-l node) physical (1+ depth) nil)
+             (node-r copy) (optimize-tree (node-r node) physical (1+ depth) nil)))
       (:assign
-       (setf (node-r copy) (optimize-tree (node-r node) physical (1+ depth))))
+       (setf (node-r copy) (optimize-tree (node-r node) physical (1+ depth) nil)))
       (:un
-       (setf (node-l copy) (optimize-tree (node-l node) physical (1+ depth)))))
+       (setf (node-l copy) (optimize-tree (node-l node) physical (1+ depth) next-in-math))))
     copy))
 
-(defun optimize-tree (node physical depth)
+(defun optimize-tree (node physical depth &optional (in-math nil))
   "Tier 1 logical rewrites, plus the Tier 2 physical ones when PHYSICAL.
 Anything that is not a node -- the SQL layer's clist, which stage 1 leaves in a
 child slot -- is returned as it is: it has no children this walk knows, and a
@@ -834,7 +843,7 @@ copy would only be a second object the translator has to recognise."
     ((and (eq (node-kind node) :call)
           (member (node-s node) +pipeline-ops+ :test #'string=))
      (multiple-value-bind (source steps) (unwind-pipeline node)
-       (let ((opt-source (optimize-tree source physical depth))
+       (let ((opt-source (optimize-tree source physical depth nil))
              (opt-steps
                (loop for s in steps
                      collect
@@ -845,14 +854,19 @@ copy would only be a second object the translator has to recognise."
                                          for index from 1
                                          collect (let ((*fold-constants*
                                                          (and *fold-constants* (step-arg-folds-p s index))))
-                                                   (optimize-tree item physical (1+ depth))))))
+                                                   (optimize-tree item physical (1+ depth) nil)))))
                        copy))))
          (build-pipeline-ast opt-source
                              (if physical
                                  (optimize-inmemory-pipeline-steps opt-source opt-steps)
                                  (optimize-logical-pipeline-steps opt-source opt-steps))))))
-    (t (let ((copy (optimize-children node physical depth)))
-         (if *fold-constants* (fold-node copy) copy)))))
+    (t (let* ((copy (optimize-children node physical depth in-math))
+              (folded (if *fold-constants* (fold-node copy) copy)))
+         (when (and physical (not in-math) (is-math-op-p folded))
+           (let ((plan (compile-math-plan folded)))
+             (when plan
+               (setf (node-math-plan folded) plan))))
+         folded))))
 
 (defun exceeds-depth-p (node depth)
   "Whether any node of the tree lies past the evaluator's depth cap, counted

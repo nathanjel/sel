@@ -49,13 +49,24 @@ function listIndex(key, length) {
 export class Value {
   constructor(kind, scalar, isList = false) {
     this.kind = kind;
-    this.scalar = scalar;
+    this._scalar = scalar;
     this.children = null;   // Map<string, Value>, created on demand
     this._entries = null;   // ordered duplicate-preserving fallback (join only)
     this.isList = isList;
     this.shape = null;      // shared RecordShape for flat records
     this.storage = null;    // flat array for records and lists
     this._decimal = null;   // parsed decimal cache for numeric TEXT values
+  }
+
+  get scalar() {
+    if (this._scalar === null && this._decimal !== null) {
+      this._scalar = D.format(this._decimal);
+    }
+    return this._scalar;
+  }
+
+  set scalar(s) {
+    this._scalar = s;
   }
 
   // The kind constants, mirrored as statics so `Value.BOOL` works the way
@@ -166,13 +177,13 @@ export class Value {
       parsed = D.parse(d);
       if (parsed === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(d)}`, null);
     }
-    const v = new Value(TEXT, D.format(parsed));
+    const v = new Value(TEXT, null);
     v._decimal = parsed;
     return v;
   }
   static int(n) {
     const d = D.fromInt(n);
-    const v = new Value(TEXT, D.format(d));
+    const v = new Value(TEXT, null);
     v._decimal = d;
     return v;
   }
@@ -299,8 +310,8 @@ export class Value {
 
   // --- scalar context (§3.2) ------------------------------------------------
 
-  // The value that supplies the scalar: itself, or its first child, recursively.
   scalarSource(pos) {
+    if (this.kind !== NONE) return this;
     let v = this;
     let guard = 0;
     while (v.kind === NONE) {
@@ -398,7 +409,12 @@ export class Value {
     if (this.isList && this.storage !== null) {
       return Value.listOwned(this.storage.map((value) => value.cloneAt(depth + 1, pos)));
     }
-    const out = new Value(this.kind, this.kind === BIN ? this.scalar.slice() : this.scalar, this.isList);
+    if (!this.children && this._entries === null) {
+      const out = new Value(this.kind, this.kind === BIN ? (this._scalar ? this._scalar.slice() : null) : this._scalar, this.isList);
+      out._decimal = this._decimal;
+      return out;
+    }
+    const out = new Value(this.kind, this.kind === BIN ? (this._scalar ? this._scalar.slice() : null) : this._scalar, this.isList);
     out._decimal = this._decimal;
     if (this._entries !== null) {
       out._entries = this._entries.map(([key, value]) => [key, value.cloneAt(depth + 1, pos)]);
@@ -418,7 +434,17 @@ export class Value {
   eqlAt(other, depth, pos) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
     if (this.kind !== other.kind) return false;
-    if (this.kind === TEXT || this.kind === BOOL) {
+    if (this.kind === TEXT) {
+      if (this._decimal !== null && other._decimal !== null) {
+        if (this._decimal.neg !== other._decimal.neg ||
+            this._decimal.scale !== other._decimal.scale ||
+            this._decimal.digits !== other._decimal.digits) {
+          return false;
+        }
+      } else {
+        if (this.scalar !== other.scalar) return false;
+      }
+    } else if (this.kind === BOOL) {
       if (this.scalar !== other.scalar) return false;
     } else if (this.kind === BIN) {
       if (!bytesEqual(this.scalar, other.scalar)) return false;

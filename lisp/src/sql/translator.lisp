@@ -1824,7 +1824,7 @@ SQL counterpart" (snode-pos e)))
         (refuse "E_NOT_INT" (format nil "~a count must be an integer" op) (snode-pos n)))
       (when (sel::dec-neg d)
         (refuse "E_RANGE" (format nil "~a count cannot be negative" op) (snode-pos n)))
-      (parse-integer (sel::dec-digits d)))))
+      (sel::dec-to-int d))))
 
 (defun analyze-sort-step (tr step plan)
   (let* ((name (sel::node-s step))

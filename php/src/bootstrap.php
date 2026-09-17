@@ -11,6 +11,7 @@ require_once __DIR__ . '/Utf8.php';
 require_once __DIR__ . '/Dec.php';
 require_once __DIR__ . '/Value.php';
 require_once __DIR__ . '/Registry.php';
+require_once __DIR__ . '/MathPlan.php';
 require_once __DIR__ . '/Optimizer.php';
 require_once __DIR__ . '/Lexer.php';
 require_once __DIR__ . '/Parser.php';

@@ -33,6 +33,7 @@
      (:file "registry")
      (:file "lexer")
      (:file "parser")
+     (:file "math-plan")
      (:file "eval")
      (:module "builtins"
       :serial t

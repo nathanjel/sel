@@ -5,6 +5,7 @@
 import * as D from './decimal.mjs';
 import { lookup } from './registry.mjs';
 import { MAX_DEPTH } from './errors.mjs';
+import { compileMathPlan, isMathOp } from './math_plan.mjs';
 
 const PIPELINE_OPS = new Set([
   'FILTER', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
@@ -633,7 +634,7 @@ function stepArgOptions(step, index, options) {
   return options;
 }
 
-function optimizeTree(node, physical, depth = 1, options = {}) {
+function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
   if (!node) return node;
   // The evaluator/SQL normaliser owns the public depth error and its source
   // position. optimizeRoot never descends into a tree that reaches the cap;
@@ -641,11 +642,11 @@ function optimizeTree(node, physical, depth = 1, options = {}) {
   if (depth > MAX_DEPTH) return node;
   if (node.t === 'call' && PIPELINE_OPS.has(node.name)) {
     const { source, steps } = unwindPipeline(node);
-    const optimizedSource = optimizeTree(source, physical, depth + 1, options);
+    const optimizedSource = optimizeTree(source, physical, depth + 1, options, false);
     const optimizedSteps = steps.map((step) => {
       const copy = copyNode(step);
       copy.args = [copy.args[0], ...copy.args.slice(1).map((item, offset) =>
-        optimizeTree(item, physical, depth + 1, stepArgOptions(step, offset + 1, options)))];
+        optimizeTree(item, physical, depth + 1, stepArgOptions(step, offset + 1, options), false))];
       return copy;
     });
     let finalSteps = logicalSteps(optimizedSource, optimizedSteps, options);
@@ -659,30 +660,39 @@ function optimizeTree(node, physical, depth = 1, options = {}) {
     }
     return buildPipeline(optimizedSource, finalSteps);
   }
+
+  const isCurrMath = isMathOp(node);
+  const nextInMath = isCurrMath;
+
   const copy = copyNode(node);
-  if (copy.args) copy.args = copy.args.map((item) => optimizeTree(item, physical, depth + 1, options));
-  if (copy.items) copy.items = copy.items.map((item) => optimizeTree(item, physical, depth + 1, options));
-  if (copy.l) copy.l = optimizeTree(copy.l, physical, depth + 1, options);
-  if (copy.r) copy.r = optimizeTree(copy.r, physical, depth + 1, options);
-  if (copy.x) copy.x = optimizeTree(copy.x, physical, depth + 1, options);
-  if (copy.obj) copy.obj = optimizeTree(copy.obj, physical, depth + 1, options);
-  if (copy.idx) copy.idx = optimizeTree(copy.idx, physical, depth + 1, options);
+  if (copy.args) copy.args = copy.args.map((item) => optimizeTree(item, physical, depth + 1, options, nextInMath));
+  if (copy.items) copy.items = copy.items.map((item) => optimizeTree(item, physical, depth + 1, options, false));
+  if (copy.l) copy.l = optimizeTree(copy.l, physical, depth + 1, options, nextInMath);
+  if (copy.r) copy.r = optimizeTree(copy.r, physical, depth + 1, options, nextInMath);
+  if (copy.x) copy.x = optimizeTree(copy.x, physical, depth + 1, options, nextInMath);
+  if (copy.obj) copy.obj = optimizeTree(copy.obj, physical, depth + 1, options, false);
+  if (copy.idx) copy.idx = optimizeTree(copy.idx, physical, depth + 1, options, false);
   // Assignment targets are walked iteratively by the evaluator and by the
   // dependency scanner; recursively charging them here would reject a valid
   // value-depth boundary before the evaluator can report it at the outermost
   // index, as required by the host-neutrality cases.
   if (copy.t === 'assign') {
-    if (copy.value) copy.value = optimizeTree(copy.value, physical, depth + 1, options);
+    if (copy.value) copy.value = optimizeTree(copy.value, physical, depth + 1, options, false);
   } else if (copy.target) {
-    copy.target = optimizeTree(copy.target, physical, depth + 1, options);
-    if (copy.value) copy.value = optimizeTree(copy.value, physical, depth + 1, options);
+    copy.target = optimizeTree(copy.target, physical, depth + 1, options, false);
+    if (copy.value) copy.value = optimizeTree(copy.value, physical, depth + 1, options, false);
   } else if (copy.value) {
-    copy.value = optimizeTree(copy.value, physical, depth + 1, options);
+    copy.value = optimizeTree(copy.value, physical, depth + 1, options, false);
   }
   // Keep the evaluator's depth guard observable for deliberately deep source
   // expressions. Constant folding is useful for ordinary expressions, but it
   // must not collapse a 5,000-node depth-limit probe into one literal.
-  return options.foldConstants === false ? copy : fold(copy);
+  const folded = options.foldConstants === false ? copy : fold(copy);
+  if (physical && !inMath && isMathOp(folded)) {
+    const plan = compileMathPlan(folded);
+    if (plan) folded.mathPlan = plan;
+  }
+  return folded;
 }
 
 // Whether any node of the tree lies past the evaluator's depth cap, counted

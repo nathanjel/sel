@@ -7,6 +7,7 @@ import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { bytesCompare } from './utf8.mjs';
+import { OpCode } from './math_plan.mjs';
 
 // Exported so the SQL translator can say "as deep as the evaluator counts"
 // rather than repeating 200, the same way python/sel/sql does.
@@ -114,15 +115,113 @@ export function evalNode(node, ctx) {
     fail('E_DEPTH', 'evaluation nested too deeply', node.pos);
   }
   try {
+    if (node.mathPlan) return evalMathPlan(node.mathPlan, ctx);
     return evalDispatch(node, ctx);
   } finally {
     ctx.depth--;
   }
 }
 
+const DEC_NEG_ONE = { neg: true, digits: 1n, scale: 0 };
+const DEC_ZERO = { neg: false, digits: 0n, scale: 0 };
+const DEC_ONE = { neg: false, digits: 1n, scale: 0 };
+
+export function evalMathPlan(plan, ctx) {
+  const scratchpad = new Array(plan.scratchpadSize);
+  for (let i = 0; i < plan.steps.length; i++) {
+    const step = plan.steps[i];
+    switch (step.op) {
+      case OpCode.LOAD_VAR: {
+        const val = ctx.lookup(step.name);
+        if (val === undefined) fail('E_UNDEF_VAR', `undefined variable ${step.name}`, step.pos);
+        scratchpad[step.dst] = val.asDecimal(step.pos);
+        break;
+      }
+      case OpCode.LOAD_CONST:
+        scratchpad[step.dst] = step.constVal;
+        break;
+      case OpCode.LOAD_LEAF: {
+        const val = evalNode(step.leafNode, ctx);
+        scratchpad[step.dst] = val.asDecimal(step.leafNode.pos);
+        break;
+      }
+      case OpCode.ADD:
+        scratchpad[step.dst] = D.add(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+        break;
+      case OpCode.SUB:
+        scratchpad[step.dst] = D.sub(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+        break;
+      case OpCode.MUL:
+        scratchpad[step.dst] = D.mul(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+        break;
+      case OpCode.DIV:
+        scratchpad[step.dst] = D.div(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+        break;
+      case OpCode.MOD:
+        scratchpad[step.dst] = D.mod(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+        break;
+      case OpCode.NEG:
+        scratchpad[step.dst] = D.negate(scratchpad[step.src1]);
+        break;
+      case OpCode.ABS:
+        scratchpad[step.dst] = D.abs(scratchpad[step.src1]);
+        break;
+      case OpCode.SIGN: {
+        const s = D.sign(scratchpad[step.src1]);
+        scratchpad[step.dst] = s < 0 ? DEC_NEG_ONE : (s === 0 ? DEC_ZERO : DEC_ONE);
+        break;
+      }
+      case OpCode.CEIL:
+        scratchpad[step.dst] = D.ceil(scratchpad[step.src1]);
+        break;
+      case OpCode.FLOOR:
+        scratchpad[step.dst] = D.floor(scratchpad[step.src1]);
+        break;
+      case OpCode.TRUNC:
+        scratchpad[step.dst] = D.trunc(scratchpad[step.src1]);
+        break;
+      case OpCode.ROUND: {
+        const d2 = scratchpad[step.src2];
+        if (!D.isInteger(d2)) fail('E_NOT_INT', 'ROUND argument 2 must be a whole number', step.auxPos);
+        const n = D.toSafeInt(d2);
+        if (n < 0) fail('E_RANGE', 'ROUND argument 2 must not be negative', step.auxPos);
+        if (n > 1000000) fail('E_RANGE', `ROUND scale ${n} exceeds the maximum of 1000000`, step.auxPos);
+        scratchpad[step.dst] = D.round(scratchpad[step.src1], n, step.pos);
+        break;
+      }
+      case OpCode.POWER: {
+        const d2 = scratchpad[step.src2];
+        if (!D.isInteger(d2)) fail('E_NOT_INT', 'POWER argument 2 must be a whole number', step.auxPos);
+        const n = D.toSafeInt(d2);
+        if (n < 0) fail('E_RANGE', 'POWER argument 2 must not be negative', step.auxPos);
+        if (n > 100000) fail('E_RANGE', `POWER exponent ${n} exceeds the maximum of 100000`, step.auxPos);
+        scratchpad[step.dst] = D.power(scratchpad[step.src1], n, step.pos);
+        break;
+      }
+      case OpCode.MIN: {
+        const a = scratchpad[step.src1];
+        const b = scratchpad[step.src2];
+        scratchpad[step.dst] = D.cmp(b, a) < 0 ? b : a;
+        break;
+      }
+      case OpCode.MAX: {
+        const a = scratchpad[step.src1];
+        const b = scratchpad[step.src2];
+        scratchpad[step.dst] = D.cmp(b, a) > 0 ? b : a;
+        break;
+      }
+    }
+  }
+  return Value.num(scratchpad[plan.outputSlot]);
+}
+
 function evalDispatch(node, ctx) {
   switch (node.t) {
-    case 'num': return Value.text(node.v);      // canonicalised by the parser
+    case 'num': {
+      const v = Value.text(node.v);
+      if (node.dec) v._decimal = node.dec;
+      return v;
+    }
     case 'text': return Value.text(node.v);
     case 'bool': return Value.bool(node.v);
     case 'null': return Value.null();
@@ -135,7 +234,7 @@ function evalDispatch(node, ctx) {
 
     case 'index': {
       const obj = evalNode(node.obj, ctx);
-      const key = evalNode(node.idx, ctx).asText(node.idx.pos);
+      const key = node.idx.t === 'text' ? node.idx.v : evalNode(node.idx, ctx).asText(node.idx.pos);
       const child = obj.get(key);
       if (child === undefined) fail('E_NO_KEY', `no key ${JSON.stringify(key)}`, node.pos);
       return child;

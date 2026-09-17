@@ -1,20 +1,17 @@
-// Exact decimal arithmetic on digit strings. See spec/SPEC.md §4.
+// Exact decimal arithmetic on native BigInt magnitudes. See spec/SPEC.md §4.
 //
-// Neither host has a usable exact numeric type — PHP has no bigint and BCMath is
-// an optional extension, JS has doubles — so this is written from scratch and
-// ported line for line. Everything here is deterministic and allocation-cheap
-// enough for validation-sized numbers.
-//
-// A decimal is { neg, digits, scale }, meaning  (neg ? -1 : 1) * digits / 10^scale.
-// `digits` is the unscaled integer as a string with no leading zeros ("0" for
-// zero). Zero is never negative. Scale is part of the value: 2.50 is digits
-// "250" at scale 2, and stays "2.50" through addition. `intVal` caches the
-// signed unscaled integer for hot values: V8's exact safe-number path handles
-// the common case, while BigInt is materialised only for a value that crosses
-// the safe-integer boundary but still fits the bounded arithmetic fast path.
-// The digit-string implementation remains the arbitrary-size fallback.
+// A decimal is { neg, digits, scale }, meaning (neg ? -1 : 1) * digits / 10^scale.
+// `digits` is the unscaled magnitude as a native BigInt (0n for zero).
+// Zero is never negative. Scale is part of the value: 2.50 is digits 250n at
+// scale 2, and stays "2.50" through addition.
+// Carrying native BigInt mantissas eliminates intermediate string conversions
+// during arithmetic operations, matching Python's int and SBCL's bignum cores.
 
 import { fail } from './errors.mjs';
+
+if (typeof BigInt !== 'undefined' && BigInt.prototype.toJSON === undefined) {
+  BigInt.prototype.toJSON = function () { return this.toString(); };
+}
 
 export const DIV_SCALE = 10;
 
@@ -28,116 +25,41 @@ export const DIV_SCALE = 10;
 export const MAX_INT_DIGITS = 1000000;
 export const MAX_FRAC_DIGITS = 1000000;
 
-// --- digit-string primitives (non-negative, no leading zeros) ----------------
+const _MAX_INT_BITS = 3321929;
+const _FAST_BOUND = 10n ** 18n;
 
-function strip(s) {
-  let i = 0;
-  while (i < s.length - 1 && s.charCodeAt(i) === 48) i++;
-  return i === 0 ? s : s.slice(i);
-}
+const POW10_TABLE = [1n];
+for (let i = 1; i <= 64; i++) POW10_TABLE.push(POW10_TABLE[i - 1] * 10n);
+const POW10_CACHE = new Map();
 
-function cmpAbs(a, b) {
-  if (a.length !== b.length) return a.length < b.length ? -1 : 1;
-  return a === b ? 0 : (a < b ? -1 : 1);
-}
-
-function addAbs(a, b) {
-  const out = [];
-  let i = a.length - 1, j = b.length - 1, carry = 0;
-  while (i >= 0 || j >= 0 || carry) {
-    const s = (i >= 0 ? a.charCodeAt(i--) - 48 : 0) + (j >= 0 ? b.charCodeAt(j--) - 48 : 0) + carry;
-    out.push(s % 10);
-    carry = s >= 10 ? 1 : 0;
+export function pow10(k) {
+  if (k <= 64) return POW10_TABLE[k];
+  let v = POW10_CACHE.get(k);
+  if (!v) {
+    v = 10n ** BigInt(k);
+    POW10_CACHE.set(k, v);
   }
-  return out.reverse().join('');
+  return v;
 }
 
-// Requires a >= b.
-function subAbs(a, b) {
-  const out = [];
-  let i = a.length - 1, j = b.length - 1, borrow = 0;
-  while (i >= 0) {
-    let s = (a.charCodeAt(i--) - 48) - (j >= 0 ? b.charCodeAt(j--) - 48 : 0) - borrow;
-    if (s < 0) { s += 10; borrow = 1; } else { borrow = 0; }
-    out.push(s);
-  }
-  return strip(out.reverse().join(''));
+function bitLength(n) {
+  if (n === 0n) return 0;
+  const hex = n.toString(16);
+  return (hex.length - 1) * 4 + (32 - Math.clz32(parseInt(hex[0], 16)));
 }
 
-function mulAbs(a, b) {
-  if (a === '0' || b === '0') return '0';
-  const n = a.length, m = b.length;
-  const acc = new Array(n + m).fill(0);
-  for (let i = n - 1; i >= 0; i--) {
-    const av = a.charCodeAt(i) - 48;
-    if (av === 0) continue;
-    let carry = 0;
-    for (let j = m - 1; j >= 0; j--) {
-      const t = acc[i + j + 1] + av * (b.charCodeAt(j) - 48) + carry;
-      acc[i + j + 1] = t % 10;
-      carry = (t - (t % 10)) / 10;
-    }
-    acc[i] += carry;
-  }
-  return strip(acc.join(''));
+function numDigits(n) {
+  if (n === 0n) return 1;
+  const bitLen = bitLength(n);
+  let d = Math.floor((bitLen * 30103) / 100000) + 1;
+  while (n < pow10(d - 1)) d--;
+  return d;
 }
 
-// Schoolbook long division. Trial digits by repeated subtraction — at most nine
-// per output digit, which keeps it obviously correct and trivial to port.
-function divModAbs(a, b) {
-  if (b === '0') return null;
-  if (cmpAbs(a, b) < 0) return [ '0', a ];
-  const q = [];
-  let r = '0';
-  for (let i = 0; i < a.length; i++) {
-    r = strip(r + a[i]);
-    let k = 0;
-    while (cmpAbs(r, b) >= 0) { r = subAbs(r, b); k++; }
-    q.push(k);
-  }
-  return [ strip(q.join('')), r ];
-}
-
-function scaleUp(digits, k) {
-  return k <= 0 ? digits : (digits === '0' ? '0' : digits + '0'.repeat(k));
-}
-
-const POW10 = (k) => (k === 0 ? '1' : '1' + '0'.repeat(k));
-
-// --- construction -----------------------------------------------------------
-
-const FAST_SCALE = 18;
-const SAFE_BIGINT = 9007199254740991n;
-const FAST_LIMIT = 4611686018427387900n; // just below signed 63-bit range
-
-function cacheIntFromDigits(neg, digits) {
-  const number = Number(digits);
-  if (Number.isSafeInteger(number)) return neg ? -number : number;
-  // Avoid BigInt allocation for the overwhelmingly common <= 15 digit case;
-  // this branch is only reached when the safe-number representation is not
-  // exact and the bounded integer fast path is worth retaining.
-  if (digits.length > 19) return undefined;
-  const magnitude = BigInt(digits);
-  if (magnitude > FAST_LIMIT) return undefined;
-  return neg ? -magnitude : magnitude;
-}
-
-function normaliseIntVal(value) {
-  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : undefined;
-  if (typeof value !== 'bigint') return undefined;
-  const magnitude = value < 0n ? -value : value;
-  if (magnitude <= SAFE_BIGINT) return Number(value);
-  return magnitude <= FAST_LIMIT ? value : undefined;
-}
-
-function make(neg, digits, scale, intVal = undefined) {
-  const actualNeg = digits === '0' ? false : neg;
-  if (intVal === undefined && scale <= FAST_SCALE) {
-    intVal = cacheIntFromDigits(actualNeg, digits);
-  } else if (intVal !== undefined) {
-    intVal = normaliseIntVal(intVal);
-  }
-  return { neg: actualNeg, digits, scale, intVal };
+function make(neg, digits, scale) {
+  const d = typeof digits === 'bigint' ? digits : BigInt(digits);
+  const actualNeg = d === 0n ? false : !!neg;
+  return { neg: actualNeg, digits: d, scale };
 }
 
 // Refuses a value SEL cannot hold, where it is built rather than where it is
@@ -146,15 +68,19 @@ function make(neg, digits, scale, intVal = undefined) {
 // enormous value is never allocated: without that, nesting POWER three deep
 // exhausted the host's memory before any check could run.
 function guard(d, pos) {
-  if (d.scale > MAX_FRAC_DIGITS) fail('E_RANGE', `number has more than ${MAX_FRAC_DIGITS} fractional digits`, pos);
-  // Negative when the value is below 1: those render as a single "0".
-  if (d.digits.length - d.scale > MAX_INT_DIGITS) {
-    fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
+  if (d.scale > MAX_FRAC_DIGITS) {
+    fail('E_RANGE', `number has more than ${MAX_FRAC_DIGITS} fractional digits`, pos);
+  }
+  if (d.digits > _FAST_BOUND) {
+    const bLen = bitLength(d.digits);
+    if (bLen >= _MAX_INT_BITS && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
+      fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
+    }
   }
   return d;
 }
 
-export const ZERO = make(false, '0', 0);
+export const ZERO = make(false, 0n, 0);
 
 const NUM_RE = /^-?[0-9]+(\.[0-9]+)?$/;
 
@@ -171,45 +97,52 @@ export function parse(text, pos) {
   const dot = body.indexOf('.');
   const intPart = dot < 0 ? body : body.slice(0, dot);
   const fracPart = dot < 0 ? '' : body.slice(dot + 1);
-  return guard(make(neg, strip(intPart + fracPart), fracPart.length), pos);
+  const stripped = (intPart + fracPart).replace(/^0+/, '') || '0';
+  if (fracPart.length > MAX_FRAC_DIGITS) {
+    fail('E_RANGE', `number has more than ${MAX_FRAC_DIGITS} fractional digits`, pos);
+  }
+  if (stripped.length - fracPart.length > MAX_INT_DIGITS) {
+    fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
+  }
+  return make(neg, BigInt(stripped), fracPart.length);
 }
 
 export function format(d) {
   const sign = d.neg ? '-' : '';
-  if (d.scale === 0) return sign + d.digits;
-  const padded = d.digits.length <= d.scale
-    ? '0'.repeat(d.scale - d.digits.length + 1) + d.digits
-    : d.digits;
+  const digitsStr = d.digits.toString();
+  if (d.scale === 0) return sign + digitsStr;
+  const padded = digitsStr.length <= d.scale
+    ? '0'.repeat(d.scale - digitsStr.length + 1) + digitsStr
+    : digitsStr;
   return sign + padded.slice(0, padded.length - d.scale) + '.' + padded.slice(padded.length - d.scale);
 }
 
 export function fromInt(n) {
-  if (typeof n === 'bigint') {
-    const neg = n < 0n;
-    const magnitude = neg ? -n : n;
-    return make(neg, magnitude.toString(), 0, n);
-  }
-  const neg = n < 0;
-  return make(neg, String(Math.abs(n)), 0);
+  const big = BigInt(n);
+  const neg = big < 0n;
+  return make(neg, neg ? -big : big, 0);
 }
 
-export function isZero(d) { return d.digits === '0'; }
+export function isZero(d) {
+  return d.digits === 0n;
+}
+
 export function negate(d) {
-  return make(!d.neg, d.digits, d.scale,
-    d.intVal === undefined ? undefined : -d.intVal);
+  return make(!d.neg, d.digits, d.scale);
 }
+
 export function abs(d) {
-  return make(false, d.digits, d.scale,
-    d.intVal === undefined ? undefined
-      : (d.intVal < 0 ? -d.intVal : d.intVal));
+  return make(false, d.digits, d.scale);
 }
-export function sign(d) { return isZero(d) ? 0 : (d.neg ? -1 : 1); }
+
+export function sign(d) {
+  return d.digits === 0n ? 0 : (d.neg ? -1 : 1);
+}
 
 // True when the value has no fractional part left after its scale is honoured.
 export function isInteger(d) {
   if (d.scale === 0) return true;
-  const [, r] = divModAbs(d.digits, POW10(d.scale));
-  return r === '0';
+  return d.digits % pow10(d.scale) === 0n;
 }
 
 export function toSafeInt(d) {
@@ -222,106 +155,33 @@ export function toSafeInt(d) {
 
 function aligned(a, b) {
   const s = Math.max(a.scale, b.scale);
-  return [ scaleUp(a.digits, s - a.scale), scaleUp(b.digits, s - b.scale), s ];
-}
-
-function pow10Big(k) {
-  return 10n ** BigInt(k);
-}
-
-function scaledFast(d, scale) {
-  if (d.intVal === undefined || scale < d.scale || scale > FAST_SCALE) return null;
-  const diff = scale - d.scale;
-  if (diff === 0) return d.intVal;
-  if (typeof d.intVal === 'number') {
-    const value = d.intVal * (10 ** diff);
-    if (Number.isSafeInteger(value)) return value;
-    const exact = BigInt(d.intVal) * pow10Big(diff);
-    const magnitude = exact < 0n ? -exact : exact;
-    return magnitude <= FAST_LIMIT ? exact : null;
-  }
-  const value = d.intVal * pow10Big(diff);
-  const magnitude = value < 0n ? -value : value;
-  return magnitude <= FAST_LIMIT ? value : null;
-}
-
-function fastValue(value, scale) {
-  if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value)) return null;
-    return make(value < 0, String(Math.abs(value)), scale, value);
-  }
-  const magnitude = value < 0n ? -value : value;
-  if (magnitude > FAST_LIMIT) return null;
-  return make(value < 0n, magnitude.toString(), scale, value);
-}
-
-function asBigInt(value) {
-  return typeof value === 'bigint' ? value : BigInt(value);
-}
-
-function tryFastAdd(a, b) {
-  if (a.intVal === undefined || b.intVal === undefined
-      || a.scale > FAST_SCALE || b.scale > FAST_SCALE) return null;
-  const scale = Math.max(a.scale, b.scale);
-  const aa = scaledFast(a, scale);
-  const bb = scaledFast(b, scale);
-  if (aa === null || bb === null) return null;
-  if (typeof aa === 'number' && typeof bb === 'number') {
-    const sum = aa + bb;
-    if (Number.isSafeInteger(sum)) return fastValue(sum, scale);
-  }
-  const sum = asBigInt(aa) + asBigInt(bb);
-  return fastValue(sum, scale);
-}
-
-function tryFastMul(a, b) {
-  const scale = a.scale + b.scale;
-  if (a.intVal === undefined || b.intVal === undefined || scale > FAST_SCALE) return null;
-  if (typeof a.intVal === 'number' && typeof b.intVal === 'number') {
-    const product = a.intVal * b.intVal;
-    if (Number.isSafeInteger(product)) return fastValue(product, scale);
-  }
-  return fastValue(asBigInt(a.intVal) * asBigInt(b.intVal), scale);
+  const A = a.scale === s ? a.digits : a.digits * pow10(s - a.scale);
+  const B = b.scale === s ? b.digits : b.digits * pow10(s - b.scale);
+  return [A, B, s];
 }
 
 export function add(a, b, pos) {
-  const fast = tryFastAdd(a, b);
-  if (fast !== null) return fast;
   const [A, B, s] = aligned(a, b);
   // Only true addition can grow: a difference is never wider than its operands,
   // and the aligned scale is the larger of two already legal ones.
-  if (a.neg === b.neg) return guard(make(a.neg, addAbs(A, B), s), pos);
-  const c = cmpAbs(A, B);
-  if (c === 0) return make(false, '0', s);
-  return c > 0 ? make(a.neg, subAbs(A, B), s) : make(b.neg, subAbs(B, A), s);
+  if (a.neg === b.neg) return guard(make(a.neg, A + B, s), pos);
+  if (A === B) return make(false, 0n, s);
+  return A > B ? make(a.neg, A - B, s) : make(b.neg, B - A, s);
 }
 
-export function sub(a, b, pos) { return add(a, negate(b), pos); }
+export function sub(a, b, pos) {
+  return add(a, negate(b), pos);
+}
 
 export function mul(a, b, pos) {
-  const fast = tryFastMul(a, b);
-  if (fast !== null) return fast;
-  return guard(make(a.neg !== b.neg, mulAbs(a.digits, b.digits), a.scale + b.scale), pos);
+  return guard(make(a.neg !== b.neg, a.digits * b.digits, a.scale + b.scale), pos);
 }
 
 export function cmp(a, b) {
-  if (isZero(a) && isZero(b)) return 0;
+  if (a.digits === 0n && b.digits === 0n) return 0;
   if (a.neg !== b.neg) return a.neg ? -1 : 1;
-  if (a.intVal !== undefined && b.intVal !== undefined
-      && a.scale <= FAST_SCALE && b.scale <= FAST_SCALE) {
-    const scale = Math.max(a.scale, b.scale);
-    const aa = scaledFast(a, scale);
-    const bb = scaledFast(b, scale);
-    if (aa !== null && bb !== null) {
-      if (typeof aa === 'number' && typeof bb === 'number') {
-        return aa < bb ? -1 : aa > bb ? 1 : 0;
-      }
-      const A = asBigInt(aa), B = asBigInt(bb);
-      return A < B ? -1 : A > B ? 1 : 0;
-    }
-  }
   const [A, B] = aligned(a, b);
-  const c = cmpAbs(A, B);
+  const c = A === B ? 0 : (A < B ? -1 : 1);
   return a.neg ? -c : c;
 }
 
@@ -329,68 +189,77 @@ export function cmp(a, b) {
 // then reported at its minimal scale); otherwise rounded half away from zero to
 // exactly DIV_SCALE digits. So 4/2 is "2" and 1/3 is "0.3333333333".
 export function div(a, b, pos) {
-  if (isZero(b)) fail('E_DIV_ZERO', 'division by zero', pos);
-  const N = scaleUp(a.digits, b.scale);
-  const D = scaleUp(b.digits, a.scale);
-  const [q, r] = divModAbs(scaleUp(N, DIV_SCALE), D);
+  if (b.digits === 0n) fail('E_DIV_ZERO', 'division by zero', pos);
+  const N = a.digits * pow10(b.scale);
+  const D = b.digits * pow10(a.scale);
+  const num = N * 10000000000n; // pow10(DIV_SCALE)
+  let q = num / D;
+  const r = num % D;
   const neg = a.neg !== b.neg;
-
-  if (r === '0') {
-    // Exact: drop trailing zeros to reach the minimal scale.
-    let digits = q, scale = DIV_SCALE;
-    while (scale > 0 && digits.length > 1 && digits.charCodeAt(digits.length - 1) === 48) {
-      digits = digits.slice(0, -1);
+  if (r === 0n) {
+    let digits = q;
+    let scale = DIV_SCALE;
+    while (scale > 0 && digits % 10n === 0n && digits !== 0n) {
+      digits /= 10n;
       scale--;
     }
-    if (digits === '0') scale = 0;
+    if (digits === 0n) scale = 0;
     return guard(make(neg, digits, scale), pos);
   }
-  const up = cmpAbs(addAbs(r, r), D) >= 0 ? addAbs(q, '1') : q;
-  return guard(make(neg, up, DIV_SCALE), pos);
+  if (2n * r >= D) q += 1n;
+  return guard(make(neg, q, DIV_SCALE), pos);
 }
 
 // Remainder of truncated division: takes the sign of the dividend.
 export function mod(a, b, pos) {
-  if (isZero(b)) fail('E_DIV_ZERO', 'modulo by zero', pos);
+  if (b.digits === 0n) fail('E_DIV_ZERO', 'modulo by zero', pos);
   const [A, B, s] = aligned(a, b);
-  const [, r] = divModAbs(A, B);
-  return make(a.neg, r, s);
+  return make(a.neg, A % B, s);
 }
 
 // --- rounding ---------------------------------------------------------------
+//
+// All of it half away from zero, on the magnitude, with the sign reattached by
+// make(). Math.round is half-up (and floats besides) so it cannot appear here.
 
 export function round(d, n, pos) {
-  if (n >= d.scale) return guard(make(d.neg, scaleUp(d.digits, n - d.scale), n), pos);
-  const k = d.scale - n;
-  const p = POW10(k);
-  const [q, r] = divModAbs(d.digits, p);
-  // Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
-  const up = cmpAbs(addAbs(r, r), p) >= 0 ? addAbs(q, '1') : q;
-  return guard(make(d.neg, up, n), pos);
+  if (n >= d.scale) {
+    return guard(make(d.neg, d.digits * pow10(n - d.scale), n), pos);
+  }
+  const p = pow10(d.scale - n);
+  let q = d.digits / p;
+  const r = d.digits % p;
+  if (2n * r >= p) q += 1n;
+  return guard(make(d.neg, q, n), pos);
 }
 
 export function trunc(d) {
   if (d.scale === 0) return d;
-  const [q] = divModAbs(d.digits, POW10(d.scale));
-  return make(d.neg, q, 0);
+  return make(d.neg, d.digits / pow10(d.scale), 0);
 }
 
 export function floor(d) {
   if (d.scale === 0) return d;
-  const [q, r] = divModAbs(d.digits, POW10(d.scale));
-  return make(d.neg, d.neg && r !== '0' ? addAbs(q, '1') : q, 0);
+  const p = pow10(d.scale);
+  let q = d.digits / p;
+  const r = d.digits % p;
+  if (d.neg && r !== 0n) q += 1n;
+  return make(d.neg, q, 0);
 }
 
 export function ceil(d) {
   if (d.scale === 0) return d;
-  const [q, r] = divModAbs(d.digits, POW10(d.scale));
-  return make(d.neg, !d.neg && r !== '0' ? addAbs(q, '1') : q, 0);
+  const p = pow10(d.scale);
+  let q = d.digits / p;
+  const r = d.digits % p;
+  if (!d.neg && r !== 0n) q += 1n;
+  return make(d.neg, q, 0);
 }
 
 // n must be a non-negative integer; the result scale is scale(x) * n, which
 // falls out of repeated multiplication.
 export function power(a, n, pos) {
-  let result = make(false, '1', 0);
+  let result = make(false, 1n, 0);
   let base = a;
   // Arithmetic, not bit operators: JS's `&` and `>>` coerce to *32 bits*, so a
   // exponent above 2^31 silently wrapped and POWER(10, 4294967299) answered

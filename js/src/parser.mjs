@@ -340,8 +340,8 @@ class Parser {
     try {
       if (t.type === 'num') {
         this.next();
-        // Canonicalised once, here: the literal 007 is the value 7.
-        return { t: 'num', v: D.format(D.parse(t.value, t)), pos: t };
+        const parsed = D.parse(t.value, t);
+        return { t: 'num', v: D.format(parsed), dec: parsed, pos: t };
       }
       if (t.type === 'text') { this.next(); return { t: 'text', v: t.value, pos: t }; }
 

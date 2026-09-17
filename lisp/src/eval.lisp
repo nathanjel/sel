@@ -96,12 +96,140 @@
   (when (> (context-depth ctx) +max-depth+)
     (decf (context-depth ctx))
     (fail "E_DEPTH" "evaluation nested too deeply" (node-pos node)))
-  (unwind-protect (eval-dispatch node ctx)
+  (unwind-protect
+      (if (node-math-plan node)
+          (eval-math-plan (node-math-plan node) ctx)
+          (eval-dispatch node ctx))
     (decf (context-depth ctx))))
 
+(defun eval-math-plan (plan ctx)
+  (declare (optimize (speed 3) (safety 1)))
+  (declare (type math-plan plan) (type context ctx))
+  (let* ((size (math-plan-scratchpad-size plan))
+         (scratchpad (make-array size :initial-element nil))
+         (steps (math-plan-steps plan))
+         (num-steps (length steps)))
+    (declare (type fixnum size num-steps)
+             (type simple-vector scratchpad steps)
+             (dynamic-extent scratchpad))
+    (loop for i from 0 below num-steps
+          do (let* ((step (svref steps i))
+                    (op (math-step-op step))
+                    (dst (math-step-dst step)))
+               (declare (type math-step step)
+                        (type fixnum dst)
+                        (type keyword op))
+               (case op
+                 (:load-var
+                  (let ((v (ctx-lookup ctx (math-step-name step))))
+                    (unless v
+                      (fail "E_UNDEF_VAR" (format nil "undefined variable ~a" (math-step-name step))
+                            (math-step-pos step)))
+                    (setf (svref scratchpad dst)
+                          (as-dec v (math-step-pos step)))))
+
+                 (:load-const
+                  (setf (svref scratchpad dst) (math-step-const-val step)))
+
+                 (:load-leaf
+                  (let* ((leaf (math-step-leaf-node step))
+                         (v (eval-node leaf ctx)))
+                    (setf (svref scratchpad dst)
+                          (as-dec v (node-pos leaf)))))
+
+                 (:add
+                  (setf (svref scratchpad dst)
+                        (dec-add (svref scratchpad (math-step-src1 step))
+                                 (svref scratchpad (math-step-src2 step))
+                                 (math-step-pos step))))
+
+                 (:sub
+                  (setf (svref scratchpad dst)
+                        (dec-sub (svref scratchpad (math-step-src1 step))
+                                 (svref scratchpad (math-step-src2 step))
+                                 (math-step-pos step))))
+
+                 (:mul
+                  (setf (svref scratchpad dst)
+                        (dec-mul (svref scratchpad (math-step-src1 step))
+                                 (svref scratchpad (math-step-src2 step))
+                                 (math-step-pos step))))
+
+                 (:div
+                  (setf (svref scratchpad dst)
+                        (dec-div (svref scratchpad (math-step-src1 step))
+                                 (svref scratchpad (math-step-src2 step))
+                                 (math-step-pos step))))
+
+                 (:mod
+                  (setf (svref scratchpad dst)
+                        (dec-mod (svref scratchpad (math-step-src1 step))
+                                 (svref scratchpad (math-step-src2 step))
+                                 (math-step-pos step))))
+
+                 (:neg
+                  (setf (svref scratchpad dst)
+                        (dec-negate (svref scratchpad (math-step-src1 step)))))
+
+                 (:abs
+                  (setf (svref scratchpad dst)
+                        (dec-abs (svref scratchpad (math-step-src1 step)))))
+
+                 (:sign
+                  (let ((s (dec-sign (svref scratchpad (math-step-src1 step)))))
+                    (setf (svref scratchpad dst) (dec-from-int s))))
+
+                 (:ceil
+                  (setf (svref scratchpad dst)
+                        (dec-ceil (svref scratchpad (math-step-src1 step)))))
+
+                 (:floor
+                  (setf (svref scratchpad dst)
+                        (dec-floor (svref scratchpad (math-step-src1 step)))))
+
+                 (:trunc
+                  (setf (svref scratchpad dst)
+                        (dec-trunc (svref scratchpad (math-step-src1 step)))))
+
+                 (:round
+                  (let ((d2 (svref scratchpad (math-step-src2 step))))
+                    (unless (dec-integerp d2)
+                      (fail "E_NOT_INT" "ROUND argument 2 must be a whole number" (math-step-aux-pos step)))
+                    (let ((n (dec-to-int d2)))
+                      (when (minusp n)
+                        (fail "E_RANGE" "ROUND argument 2 must not be negative" (math-step-aux-pos step)))
+                      (when (> n 1000000)
+                        (fail "E_RANGE" (format nil "ROUND scale ~d exceeds the maximum of 1000000" n) (math-step-aux-pos step)))
+                      (setf (svref scratchpad dst)
+                            (dec-round (svref scratchpad (math-step-src1 step)) n (math-step-pos step))))))
+
+                 (:power
+                  (let ((d2 (svref scratchpad (math-step-src2 step))))
+                    (unless (dec-integerp d2)
+                      (fail "E_NOT_INT" "POWER argument 2 must be a whole number" (math-step-aux-pos step)))
+                    (let ((n (dec-to-int d2)))
+                      (when (minusp n)
+                        (fail "E_RANGE" "POWER argument 2 must not be negative" (math-step-aux-pos step)))
+                      (when (> n 100000)
+                        (fail "E_RANGE" (format nil "POWER exponent ~d exceeds the maximum of 100000" n) (math-step-aux-pos step)))
+                      (setf (svref scratchpad dst)
+                            (dec-power (svref scratchpad (math-step-src1 step)) n (math-step-pos step))))))
+
+                 (:min
+                  (let ((a (svref scratchpad (math-step-src1 step)))
+                        (b (svref scratchpad (math-step-src2 step))))
+                    (setf (svref scratchpad dst) (if (minusp (dec-cmp b a)) b a))))
+
+                 (:max
+                  (let ((a (svref scratchpad (math-step-src1 step)))
+                        (b (svref scratchpad (math-step-src2 step))))
+                    (setf (svref scratchpad dst) (if (plusp (dec-cmp b a)) b a)))))))
+    (make-num (svref scratchpad (math-plan-output-slot plan)))))
+
 (defun eval-dispatch (node ctx)
+  (declare (optimize (speed 3) (safety 1)))
   (case (node-kind node)
-    (:num (%text (node-s node)))          ; canonicalised by the parser
+    (:num (%make-value-raw :text (node-s node) nil nil 0 nil nil nil nil (node-dec-val node)))
     (:text (%text (node-s node)))
     (:bool (make-bool (node-b node)))
     (:null (make-null))
@@ -113,7 +241,10 @@
 
     (:index
      (let* ((obj (eval-node (node-l node) ctx))
-            (key (as-text (eval-node (node-r node) ctx) (node-pos (node-r node))))
+            (r (node-r node))
+            (key (if (eq (node-kind r) :text)
+                     (node-s r)
+                     (as-text (eval-node r ctx) (node-pos r))))
             (child (value-get obj key)))
        (or child
            (fail "E_NO_KEY" (format nil "no key ~s" key) (node-pos node)))))

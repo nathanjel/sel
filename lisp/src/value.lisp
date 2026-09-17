@@ -48,9 +48,9 @@
             (setf (gethash canonical *shape-cache*) shape)
             shape)))))
 
-(defstruct (value (:constructor %make-value-raw (kind scalar children-internal tail count index is-list shape storage dec-val)))
+(defstruct (value (:constructor %make-value-raw (kind %scalar children-internal tail count index is-list shape storage dec-val)))
   (kind :none :type keyword)     ; :none :text :bin :bool
-  (scalar nil)
+  (%scalar nil)
   (children-internal nil :type list)      ; list of (key . value), insertion-ordered
   (tail nil :type list)          ; last cons of CHILDREN
   (count 0 :type fixnum)
@@ -59,6 +59,16 @@
   (shape nil)                    ; shared record-shape pointer
   (storage nil)                  ; simple-vector of values (records or lists)
   (dec-val nil))                 ; cached DEC struct for numeric text
+
+(declaim (inline value-scalar))
+(defun value-scalar (v)
+  (or (value-%scalar v)
+      (let ((dec (value-dec-val v)))
+        (if dec
+            (let ((formatted (dec-format dec)))
+              (setf (value-%scalar v) formatted)
+              formatted)
+            nil))))
 
 (defun %make-value (kind scalar children &optional is-list shape storage dec-val)
   (%make-value-raw kind scalar children (last children) (length children) nil is-list shape storage dec-val))
@@ -152,20 +162,14 @@ tail, count and index that keep lookup and append O(1)."
 (defun make-num (d)
   "D is a DEC or a decimal string. A string is canonicalised: 007 becomes 7."
   (etypecase d
-    (dec (let ((v (%text (dec-format d))))
-           (setf (value-dec-val v) d)
-           v))
+    (dec (%make-value-raw :text nil nil nil 0 nil nil nil nil d))
     (string (let ((p (dec-parse d)))
               (unless p (fail "E_NOT_NUM" (format nil "not a number: ~a" d)))
-              (let ((v (%text (dec-format p))))
-                (setf (value-dec-val v) p)
-                v)))))
+              (%make-value-raw :text nil nil nil 0 nil nil nil nil p)))))
 
 (defun make-int (n)
-  (let* ((d (dec-from-int n))
-         (v (%text (dec-format d))))
-    (setf (value-dec-val v) d)
-    v))
+  (let ((d (dec-from-int n)))
+    (%make-value-raw :text nil nil nil 0 nil nil nil nil d)))
 
 (defun parse-list-key (k)
   (declare (type string k))
@@ -310,27 +314,32 @@ tail, count and index that keep lookup and append O(1)."
 
 ;;; --- scalar context (§3.2) -------------------------------------------------
 
+(declaim (inline scalar-source))
 (defun scalar-source (v &optional at)
   "The value that supplies the scalar: V itself, or its first child, recursively."
-  (let ((cur v)
-        (guard 0))
-    (loop while (eq (value-kind cur) :none)
-          do (when (value-null-p cur)
-               (fail "E_NULL" "value is NULL" at))
-             (when (zerop (value-size cur))
-               (fail "E_NO_SCALAR" "value has no scalar and no children" at))
-             (let ((first-val (cond
-                                ((value-shape cur)
-                                 (svref (value-storage cur) 0))
-                                ((and (value-is-list cur) (value-storage cur))
-                                 (svref (value-storage cur) 0))
-                                (t
-                                 (cdr (first (value-children-internal cur)))))))
-               (setf cur first-val))
-             (incf guard)
-             (when (> guard 1000)
-               (fail "E_DEPTH" "scalar context nested too deeply" at)))
-    cur))
+  (declare (optimize (speed 3) (safety 1)))
+  (if (not (eq (value-kind v) :none))
+      v
+      (let ((cur v)
+            (guard 0))
+        (declare (type fixnum guard))
+        (loop while (eq (value-kind cur) :none)
+              do (when (value-null-p cur)
+                   (fail "E_NULL" "value is NULL" at))
+                 (when (zerop (value-size cur))
+                   (fail "E_NO_SCALAR" "value has no scalar and no children" at))
+                 (let ((first-val (cond
+                                    ((value-shape cur)
+                                     (svref (value-storage cur) 0))
+                                    ((and (value-is-list cur) (value-storage cur))
+                                     (svref (value-storage cur) 0))
+                                    (t
+                                     (cdr (first (value-children-internal cur)))))))
+                   (setf cur first-val))
+                 (incf guard)
+                 (when (> guard 1000)
+                   (fail "E_DEPTH" "scalar context nested too deeply" at)))
+        cur)))
 
 (defun as-text (v &optional at)
   (let ((s (scalar-source v at)))
@@ -352,6 +361,7 @@ tail, count and index that keep lookup and append O(1)."
         (value-scalar s)
         (fail "E_NOT_BOOL" "expected a boolean — SEL has no truthiness" at))))
 
+(declaim (inline as-dec))
 (defun as-dec (v &optional at)
   (let ((s (scalar-source v at)))
     (unless (eq (value-kind s) :text)
@@ -383,9 +393,26 @@ tail, count and index that keep lookup and append O(1)."
   (value-copy-at v 1 pos))
 
 (defun value-copy-at (v depth pos)
+  (declare (optimize (speed 3) (safety 1)))
+  (declare (type fixnum depth))
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" pos))
   (cond
+    ((null (or (value-shape v) (value-children-internal v) (value-is-list v)))
+     ;; Fast path for leaf scalar values (numbers, strings, booleans, null)
+     (let ((k (value-kind v)))
+       (case k
+         (:text
+          (let ((dec (value-dec-val v)))
+            (if dec
+                (%make-value-raw :text (value-%scalar v) nil nil 0 nil nil nil nil dec)
+                (%make-value-raw :text (value-%scalar v) nil nil 0 nil nil nil nil nil))))
+         (:bin
+          (%make-value-raw :bin (copy-seq (the (vector (unsigned-byte 8)) (value-%scalar v))) nil nil 0 nil nil nil nil nil))
+         (:bool
+          (%make-value-raw :bool (value-%scalar v) nil nil 0 nil nil nil nil nil))
+         (otherwise
+          (%make-value-raw :none nil nil nil 0 nil nil nil nil nil)))))
     ((value-shape v)
      (let* ((shape (value-shape v))
             (n (record-shape-size shape))
@@ -421,11 +448,20 @@ same keys in the same order, pairwise EQL."
   (value-eql-at a b 1 pos))
 
 (defun value-eql-at (a b depth pos)
+  (declare (optimize (speed 3) (safety 1)))
+  (declare (type fixnum depth))
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" pos))
   (and (eq (value-kind a) (value-kind b))
        (case (value-kind a)
-         (:text (string= (value-scalar a) (value-scalar b)))
+         (:text
+          (let ((da (value-dec-val a))
+                (db (value-dec-val b)))
+            (if (and da db)
+                (and (= (dec-digits da) (dec-digits db))
+                     (= (dec-scale da) (dec-scale db))
+                     (eq (dec-neg da) (dec-neg db)))
+                (string= (value-scalar a) (value-scalar b)))))
          (:bin (bytes-equal (value-scalar a) (value-scalar b)))
          (:bool (eq (value-scalar a) (value-scalar b)))
          (t t))

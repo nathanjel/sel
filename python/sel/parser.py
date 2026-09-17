@@ -117,6 +117,8 @@ class Node:
     args: list[Node] = field(default_factory=list)      # call
     spec: Spec | None = None            # call
     grouped: bool = False
+    dec: Any = None
+    math_plan: Any = None
 
 
 class Parser:
@@ -378,7 +380,8 @@ class Parser:
             if t.type == 'num':
                 self.next()
                 # Canonicalised once, here: the literal 007 is the value 7.
-                return Node('num', t.pos, v=D.format(D.parse(t.value, t.pos)))
+                parsed = D.parse(t.value, t.pos)
+                return Node('num', t.pos, v=D.format(parsed), dec=parsed)
 
             if t.type == 'text':
                 self.next()

@@ -122,6 +122,8 @@ struct RecordShape {
 //
 // If you are embedding SEL and were relying on `Value b = a;` to isolate `b`,
 // that is the one thing this type changed in 0.3.0: write `a.clone()`.
+struct Dec;
+
 class Value {
  public:
   using Entry = std::pair<std::string, Value>;
@@ -137,6 +139,8 @@ class Value {
   // Canonicalises: "007" becomes "7", "-0.00" becomes "0.00". E_NOT_NUM if the
   // text is not a number in the sense of spec/SPEC.md §4.
   static Value num(const std::string& decimal);
+  static Value num(const Dec& d);
+  static Value num(std::shared_ptr<const Dec> d);
   static Value integer(long long n);
   // A list keyed "1".."n", as `,` builds.
   static Value list(std::vector<Value> values);
@@ -215,6 +219,9 @@ class Value {
   // reported when one is supplied, the same convention as as_text().
   Value clone(Pos pos = {}) const;
 
+  const std::shared_ptr<const Dec>& dec_val() const;
+  void set_dec_val(std::shared_ptr<const Dec> d) const;
+
  private:
   friend struct Internals;
 
@@ -229,13 +236,15 @@ class Value {
   // ever removes a child.
   struct Impl {
     Kind kind = Kind::None;
-    std::string scalar;   // TEXT: UTF-8 bytes. BIN: raw bytes. Otherwise empty.
+    mutable std::string scalar;   // TEXT: UTF-8 bytes. BIN: raw bytes. Otherwise empty.
+    mutable bool scalar_computed = false;
     bool boolean = false;  // BOOL only.
     bool is_list = false;
     std::vector<Entry> children;
     std::unordered_map<std::string, std::size_t> index;
     std::shared_ptr<const RecordShape> shape;
     std::vector<Value> storage;
+    mutable std::shared_ptr<const Dec> dec_val;
 
     // Torn down iteratively, for the reason Node is: destroying a child is
     // usually the last reference to it, so freeing a deep tree recursed once per

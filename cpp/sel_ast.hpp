@@ -32,6 +32,7 @@ namespace sel {
 
 class Args;
 struct Context;
+struct MathPlan;
 
 constexpr int VARIADIC = 1 << 20;
 
@@ -60,6 +61,8 @@ struct Node {
   std::shared_ptr<const Node> l, r;       // Bin: operands. Index: obj, idx. Assign: target, value.
   std::vector<std::shared_ptr<const Node>> items;   // Seq/List/Call arguments
   const Spec* spec = nullptr;             // Call
+  std::shared_ptr<const MathPlan> math_plan;
+  std::shared_ptr<const Dec> dec;
 
   Node() = default;
   // Kept explicitly: declaring a destructor makes the implicit copy deprecated,

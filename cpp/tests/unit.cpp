@@ -510,6 +510,52 @@ void test_relational_optimizations() {
            "a relation name read after the LINK is not pushed");
 }
 
+void test_math_plan() {
+  selt::section("math plan");
+
+  const auto p = compile("a + b * c");
+  const auto phys = p.physical_ast();
+  selt::ok(phys->math_plan != nullptr, "math_plan is attached to root +");
+  selt::ok(phys->r->math_plan == nullptr, "child * does not have separate math_plan");
+  selt::eq(phys->math_plan->steps.size(), 5u, "5 steps for a + b * c");
+  auto root = Value::record({"A", "B", "C"}, {Value::num("2"), Value::num("3"), Value::num("4")});
+  selt::eq(p.run(root).as_text(), std::string("14"), "evaluates to 14");
+
+  // Copy propagation
+  const auto p_id = compile("x + 0");
+  const auto phys_id = p_id.physical_ast();
+  selt::ok(phys_id->math_plan != nullptr, "math_plan is attached to x + 0");
+  selt::eq(phys_id->math_plan->steps.size(), 1u, "1 step for x + 0");
+  selt::eq(phys_id->math_plan->steps[0].name, std::string("X"), "name is X");
+  auto root_id = Value::record({"X"}, {Value::num("42.50")});
+  selt::eq(p_id.run(root_id).as_text(), std::string("42.50"), "scale 42.50 preserved");
+
+  // Type check on identity copy propagation
+  auto root_bad = Value::record({"X"}, {Value::text("hello")});
+  selt::raises("E_NOT_NUM", [&] { p_id.run(root_bad); }, "E_NOT_NUM on invalid x");
+
+  // Scale preservation (x + 0.00)
+  const auto p_scale = compile("x + 0.00");
+  const auto phys_scale = p_scale.physical_ast();
+  selt::eq(phys_scale->math_plan->steps.size(), 3u, "3 steps for x + 0.00");
+  auto root_scale = Value::record({"X"}, {Value::num("5")});
+  selt::eq(p_scale.run(root_scale).as_text(), std::string("5.00"), "scale 5.00 preserved");
+
+  // Left-to-right evaluation order
+  const auto p_order = compile("(1 / 0) + UNDEFINED");
+  selt::raises("E_DIV_ZERO", [&] { p_order.run(); }, "E_DIV_ZERO before UNDEFINED");
+
+  // Builtins
+  const auto p_round = compile("ROUND(a + b, 2)");
+  selt::ok(p_round.physical_ast()->math_plan != nullptr, "ROUND has math_plan");
+  auto root_round = Value::record({"A", "B"}, {Value::num("1.234"), Value::num("2.345")});
+  selt::eq(p_round.run(root_round).as_text(), std::string("3.58"), "ROUND result 3.58");
+
+  const auto p_min = compile("MIN(a, b, c)");
+  auto root_min = Value::record({"A", "B", "C"}, {Value::num("10"), Value::num("5"), Value::num("8")});
+  selt::eq(p_min.run(root_min).as_text(), std::string("5"), "MIN result 5");
+}
+
 }  // namespace
 
 int main() {
@@ -519,5 +565,6 @@ int main() {
   test_host_api();
   test_evaluation_order();
   test_relational_optimizations();
+  test_math_plan();
   return selt::report("cpp unit");
 }

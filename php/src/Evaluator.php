@@ -29,10 +29,116 @@ final class Evaluator
             fail('E_DEPTH', 'evaluation nested too deeply', $node['pos']);
         }
         try {
+            if (isset($node['mathPlan'])) {
+                return self::evalMathPlan($node['mathPlan'], $ctx);
+            }
             return self::dispatch($node, $ctx);
         } finally {
             $ctx->depth--;
         }
+    }
+
+    private const DEC_NEG_ONE = ['neg' => true, 'digits' => '1', 'scale' => 0];
+    private const DEC_ZERO = ['neg' => false, 'digits' => '0', 'scale' => 0];
+    private const DEC_ONE = ['neg' => false, 'digits' => '1', 'scale' => 0];
+
+    /**
+     * @param array{steps:list<array<string,mixed>>,outputSlot:int,scratchpadSize:int} $plan
+     */
+    public static function evalMathPlan(array $plan, Context $ctx): Value
+    {
+        $scratchpad = array_fill(0, $plan['scratchpadSize'], null);
+        foreach ($plan['steps'] as $step) {
+            switch ($step['op']) {
+                case MathOpCode::LOAD_VAR:
+                    $val = $ctx->lookup($step['name']);
+                    if ($val === null) {
+                        fail('E_UNDEF_VAR', "undefined variable {$step['name']}", $step['pos']);
+                    }
+                    $scratchpad[$step['dst']] = $val->asDecimal($step['pos']);
+                    break;
+                case MathOpCode::LOAD_CONST:
+                    $scratchpad[$step['dst']] = $step['constVal'];
+                    break;
+                case MathOpCode::LOAD_LEAF:
+                    $val = self::evalNode($step['leafNode'], $ctx);
+                    $scratchpad[$step['dst']] = $val->asDecimal($step['leafNode']['pos']);
+                    break;
+                case MathOpCode::ADD:
+                    $scratchpad[$step['dst']] = Dec::add($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    break;
+                case MathOpCode::SUB:
+                    $scratchpad[$step['dst']] = Dec::sub($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    break;
+                case MathOpCode::MUL:
+                    $scratchpad[$step['dst']] = Dec::mul($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    break;
+                case MathOpCode::DIV:
+                    $scratchpad[$step['dst']] = Dec::div($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    break;
+                case MathOpCode::MOD:
+                    $scratchpad[$step['dst']] = Dec::mod($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    break;
+                case MathOpCode::NEG:
+                    $scratchpad[$step['dst']] = Dec::negate($scratchpad[$step['src1']]);
+                    break;
+                case MathOpCode::ABS:
+                    $scratchpad[$step['dst']] = Dec::abs($scratchpad[$step['src1']]);
+                    break;
+                case MathOpCode::SIGN:
+                    $s = Dec::sign($scratchpad[$step['src1']]);
+                    $scratchpad[$step['dst']] = $s < 0 ? self::DEC_NEG_ONE : ($s === 0 ? self::DEC_ZERO : self::DEC_ONE);
+                    break;
+                case MathOpCode::CEIL:
+                    $scratchpad[$step['dst']] = Dec::ceil($scratchpad[$step['src1']]);
+                    break;
+                case MathOpCode::FLOOR:
+                    $scratchpad[$step['dst']] = Dec::floor($scratchpad[$step['src1']]);
+                    break;
+                case MathOpCode::TRUNC:
+                    $scratchpad[$step['dst']] = Dec::trunc($scratchpad[$step['src1']]);
+                    break;
+                case MathOpCode::ROUND:
+                    $d2 = $scratchpad[$step['src2']];
+                    if (!Dec::isInteger($d2)) {
+                        fail('E_NOT_INT', 'ROUND argument 2 must be a whole number', $step['auxPos']);
+                    }
+                    $n = Dec::toInt($d2);
+                    if ($n < 0) {
+                        fail('E_RANGE', 'ROUND argument 2 must not be negative', $step['auxPos']);
+                    }
+                    if ($n > 1000000) {
+                        fail('E_RANGE', "ROUND scale {$n} exceeds the maximum of 1000000", $step['auxPos']);
+                    }
+                    $scratchpad[$step['dst']] = Dec::round($scratchpad[$step['src1']], $n, $step['pos']);
+                    break;
+                case MathOpCode::POWER:
+                    $d2 = $scratchpad[$step['src2']];
+                    if (!Dec::isInteger($d2)) {
+                        fail('E_NOT_INT', 'POWER argument 2 must be a whole number', $step['auxPos']);
+                    }
+                    $n = Dec::toInt($d2);
+                    if ($n < 0) {
+                        fail('E_RANGE', 'POWER argument 2 must not be negative', $step['auxPos']);
+                    }
+                    if ($n > 100000) {
+                        fail('E_RANGE', "POWER exponent {$n} exceeds the maximum of 100000", $step['auxPos']);
+                    }
+                    $scratchpad[$step['dst']] = Dec::power($scratchpad[$step['src1']], $n, $step['pos']);
+                    break;
+                case MathOpCode::MIN:
+                    $a = $scratchpad[$step['src1']];
+                    $b = $scratchpad[$step['src2']];
+                    $scratchpad[$step['dst']] = Dec::cmp($b, $a) < 0 ? $b : $a;
+                    break;
+                case MathOpCode::MAX:
+                    $a = $scratchpad[$step['src1']];
+                    $b = $scratchpad[$step['src2']];
+                    $scratchpad[$step['dst']] = Dec::cmp($b, $a) > 0 ? $b : $a;
+                    break;
+            }
+        }
+        return Value::num($scratchpad[$plan['outputSlot']]);
     }
 
     /** @param array<string,mixed> $node */
@@ -40,6 +146,12 @@ final class Evaluator
     {
         switch ($node['t']) {
             case 'num':                                 // canonicalised by the parser
+                $v = Value::text($node['v']);
+                if (isset($node['dec'])) {
+                    $v->decVal = $node['dec'];
+                }
+                return $v;
+
             case 'text':
                 return Value::text($node['v']);
 
@@ -58,7 +170,9 @@ final class Evaluator
 
             case 'index':
                 $obj = self::evalNode($node['obj'], $ctx);
-                $key = self::evalNode($node['idx'], $ctx)->asText($node['idx']['pos']);
+                $key = ($node['idx']['t'] ?? null) === 'text'
+                    ? $node['idx']['v']
+                    : self::evalNode($node['idx'], $ctx)->asText($node['idx']['pos']);
                 $child = $obj->get($key);
                 if ($child === null) {
                     fail('E_NO_KEY', 'no key ' . json_encode($key), $node['pos']);

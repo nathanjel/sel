@@ -1207,3 +1207,90 @@ identity, and a snapshot is compared by value."
                  (let ((want (outcome (lambda () (sel:run program (context)))))
                        (got (outcome (lambda () (sel.sql:execute-hybrid plan prefix-in-memory (context))))))
                    (is (string= want got) "~a: the executed plan answers ~a, run ~a" source got want)))))))
+
+(test math-plan
+  ;; 1. Physical AST attaches math-plan to root arithmetic operations
+  (let* ((prog (sel:compile-source "a + b * 2"))
+         (phys (sel:program-physical-ast prog)))
+    (is (not (null (sel::node-math-plan phys))))
+    ;; Evaluation with context
+    (let ((ctx (sel:make-none)))
+      (sel:value-set ctx "A" (sel:make-num "10"))
+      (sel:value-set ctx "B" (sel:make-num "3"))
+      (is (string= "16" (sel:as-text (sel:run prog ctx))))))
+
+  ;; 2. Copy propagation identities
+  ;; x + 0
+  (let* ((prog (sel:compile-source "x + 0"))
+         (phys (sel:program-physical-ast prog))
+         (plan (sel::node-math-plan phys)))
+    (is (not (null plan)))
+    ;; Only 1 step: LOAD_VAR
+    (is (= 1 (length (sel::math-plan-steps plan))))
+    (let ((ctx (sel:make-none)))
+      (sel:value-set ctx "X" (sel:make-num "42"))
+      (is (string= "42" (sel:as-text (sel:run prog ctx))))
+      ;; Type safety check: string throws E_NOT_NUM
+      (sel:value-set ctx "X" (sel:make-text "hello"))
+      (raises "E_NOT_NUM" (sel:run prog ctx))))
+
+  ;; 0 + x
+  (let* ((prog (sel:compile-source "0 + x"))
+         (phys (sel:program-physical-ast prog))
+         (plan (sel::node-math-plan phys)))
+    (is (not (null plan)))
+    (let ((ctx (sel:make-none)))
+      (sel:value-set ctx "X" (sel:make-num "99"))
+      (is (string= "99" (sel:as-text (sel:run prog ctx))))))
+
+  ;; x - 0
+  (let* ((prog (sel:compile-source "x - 0"))
+         (phys (sel:program-physical-ast prog))
+         (plan (sel::node-math-plan phys)))
+    (is (not (null plan)))
+    (is (= 1 (length (sel::math-plan-steps plan))))
+    (let ((ctx (sel:make-none)))
+      (sel:value-set ctx "X" (sel:make-num "7"))
+      (is (string= "7" (sel:as-text (sel:run prog ctx))))))
+
+  ;; x * 1
+  (let* ((prog (sel:compile-source "x * 1"))
+         (phys (sel:program-physical-ast prog))
+         (plan (sel::node-math-plan phys)))
+    (is (not (null plan)))
+    (is (= 1 (length (sel::math-plan-steps plan))))
+    (let ((ctx (sel:make-none)))
+      (sel:value-set ctx "X" (sel:make-num "5"))
+      (is (string= "5" (sel:as-text (sel:run prog ctx))))))
+
+  ;; Scale preservation: x + 0.00 must NOT be collapsed (expands scale)
+  (let* ((prog (sel:compile-source "x + 0.00"))
+         (phys (sel:program-physical-ast prog))
+         (plan (sel::node-math-plan phys)))
+    (is (not (null plan)))
+    (is (> (length (sel::math-plan-steps plan)) 1))
+    (let ((ctx (sel:make-none)))
+      (sel:value-set ctx "X" (sel:make-num "5"))
+      (is (string= "5.00" (sel:as-text (sel:run prog ctx))))))
+
+  ;; 3. Compound expressions: zr * zr - zi * zi + cr
+  (let* ((prog (sel:compile-source "zr * zr - zi * zi + cr"))
+         (phys (sel:program-physical-ast prog)))
+    (is (not (null (sel::node-math-plan phys))))
+    (let ((ctx (sel:make-none)))
+      (sel:value-set ctx "ZR" (sel:make-num "1.5"))
+      (sel:value-set ctx "ZI" (sel:make-num "2.0"))
+      (sel:value-set ctx "CR" (sel:make-num "0.5"))
+      ;; 1.5*1.5 - 2.0*2.0 + 0.5 = 2.25 - 4.00 + 0.5 = -1.25
+      (is (string= "-1.25" (sel:as-text (sel:run prog ctx))))))
+
+  ;; 4. Math builtins: ROUND, ABS, SIGN, POWER
+  (let* ((prog (sel:compile-source "ROUND(ABS(x) + POWER(y, 2), 2)"))
+         (phys (sel:program-physical-ast prog)))
+    (is (not (null (sel::node-math-plan phys))))
+    (let ((ctx (sel:make-none)))
+      (sel:value-set ctx "X" (sel:make-num "-3.14159"))
+      (sel:value-set ctx "Y" (sel:make-num "2"))
+      ;; 3.14159 + 4 = 7.14159 -> round to 2 = 7.14
+      (is (string= "7.14" (sel:as-text (sel:run prog ctx)))))))
+

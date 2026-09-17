@@ -13,6 +13,7 @@ from typing import Any
 from . import decimal as D
 from .errors import MAX_DEPTH, SelError
 from .eval import bytes_compare
+from .math_plan import compile_math_plan, is_math_op
 from .parser import Node
 from .registry import lookup
 from .utf8 import encode_utf8
@@ -711,7 +712,8 @@ def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
 
 
 def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
-                  options: dict[str, Any] | None = None) -> Node | None:
+                  options: dict[str, Any] | None = None,
+                  in_math: bool = False) -> Node | None:
     options = options or {}
     if node is None:
         return None
@@ -722,12 +724,12 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
         return node
     if node.t == 'call' and node.name in PIPELINE_OPS:
         source, steps = unwind_pipeline(node)
-        optimized_source = optimize_tree(source, physical, depth + 1, options)
+        optimized_source = optimize_tree(source, physical, depth + 1, options, False)
         optimized_steps = []
         for step in steps:
             copy = copy_node(step)
             copy.args = [copy.args[0], *[
-                optimize_tree(item, physical, depth + 1, step_arg_options(step, index, options))
+                optimize_tree(item, physical, depth + 1, step_arg_options(step, index, options), False)
                 for index, item in enumerate(copy.args[1:], 1)
             ]]
             optimized_steps.append(copy)
@@ -740,29 +742,38 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
                 final_steps = logical_steps(optimized_source, final_steps, options)
         return build_pipeline(optimized_source, final_steps)
 
+    is_curr_math = is_math_op(node)
+    next_in_math = is_curr_math
+
     copy = copy_node(node)
-    copy.args = [optimize_tree(item, physical, depth + 1, options) for item in copy.args]
-    copy.items = [optimize_tree(item, physical, depth + 1, options) for item in copy.items]
+    copy.args = [optimize_tree(item, physical, depth + 1, options, next_in_math) for item in copy.args]
+    copy.items = [optimize_tree(item, physical, depth + 1, options, False) for item in copy.items]
     if copy.l is not None:
-        copy.l = optimize_tree(copy.l, physical, depth + 1, options)
+        copy.l = optimize_tree(copy.l, physical, depth + 1, options, next_in_math)
     if copy.r is not None:
-        copy.r = optimize_tree(copy.r, physical, depth + 1, options)
+        copy.r = optimize_tree(copy.r, physical, depth + 1, options, next_in_math)
     if copy.x is not None:
-        copy.x = optimize_tree(copy.x, physical, depth + 1, options)
+        copy.x = optimize_tree(copy.x, physical, depth + 1, options, next_in_math)
     if copy.obj is not None:
-        copy.obj = optimize_tree(copy.obj, physical, depth + 1, options)
+        copy.obj = optimize_tree(copy.obj, physical, depth + 1, options, False)
     if copy.idx is not None:
-        copy.idx = optimize_tree(copy.idx, physical, depth + 1, options)
+        copy.idx = optimize_tree(copy.idx, physical, depth + 1, options, False)
     if copy.t == 'assign':
         if copy.value is not None:
-            copy.value = optimize_tree(copy.value, physical, depth + 1, options)
+            copy.value = optimize_tree(copy.value, physical, depth + 1, options, False)
     elif copy.target is not None:
-        copy.target = optimize_tree(copy.target, physical, depth + 1, options)
+        copy.target = optimize_tree(copy.target, physical, depth + 1, options, False)
         if copy.value is not None:
-            copy.value = optimize_tree(copy.value, physical, depth + 1, options)
+            copy.value = optimize_tree(copy.value, physical, depth + 1, options, False)
     elif copy.value is not None:
-        copy.value = optimize_tree(copy.value, physical, depth + 1, options)
-    return copy if options.get('foldConstants', True) is False else fold(copy)
+        copy.value = optimize_tree(copy.value, physical, depth + 1, options, False)
+
+    folded = copy if options.get('foldConstants', True) is False else fold(copy)
+    if physical and not in_math and is_math_op(folded):
+        plan = compile_math_plan(folded)
+        if plan is not None:
+            folded.math_plan = plan
+    return folded
 
 
 def exceeds_depth(node: Node | None, depth: int) -> bool:
