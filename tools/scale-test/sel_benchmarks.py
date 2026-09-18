@@ -148,7 +148,6 @@ def canonical(value: Any) -> Any:
 
 
 def benchmark_value(value: Value) -> Any:
-    value.force()
     if value.size() == 0:
         if value.is_list:
             return []
@@ -168,7 +167,6 @@ def same_value(actual: Any, expected: Any) -> bool:
 
 
 def representation_counts(value: Value, counts: dict[str, int]) -> None:
-    value.force()
     if value.is_list:
         counts['lists'] += 1
     elif value.shape is not None:
@@ -178,12 +176,12 @@ def representation_counts(value: Value, counts: dict[str, int]) -> None:
     if value.storage is not None:
         for child in value.storage:
             representation_counts(child, counts)
-    elif value.children:
-        for child in value.children.values():
+    else:
+        for _, child in value.entries():
             representation_counts(child, counts)
 
 
-def run_and_materialize(program, context: Value) -> tuple[float, float, float, Any]:
+def run_and_materialize(program: Any, context: Value) -> tuple[float, float, float, Any]:
     prepared_start = time.perf_counter()
     run_start = time.perf_counter()
     actual = program.run(context)
@@ -195,6 +193,7 @@ def run_and_materialize(program, context: Value) -> tuple[float, float, float, A
     return run_ms, materialize_ms, prepared_ms, rows
 
 
+
 def plan_sql(plan: HybridPlan) -> str | None:
     return None if plan.sql_statement is None else plan.sql_statement.as_statement('inline')
 
@@ -202,15 +201,18 @@ def plan_sql(plan: HybridPlan) -> str | None:
 def check_plan(plan: HybridPlan, expected: dict[str, Any], dialect: str,
                failures: list[str]) -> None:
     sql_key = 'sql_postgres' if dialect == 'postgresql' else 'sql_mariadb'
-    if plan_sql(plan) != expected.get(sql_key):
+    expected_sql = expected.get(sql_key)
+    if plan_sql(plan) != expected_sql:
         failures.append(f'{dialect} SQL differs from Lisp reference')
-    expected_hybrid = (expected.get('is_hybrid') is True
-                       or expected.get('has_continuation') is True)
+    expected_has_sql = expected_sql is not None
+    expected_continuation = expected.get('has_continuation') is True
+    expected_hybrid = expected_has_sql and expected_continuation
+    expected_pure_sql = expected_has_sql and not expected_continuation
     if plan.is_hybrid != expected_hybrid:
         failures.append(f'{dialect} hybrid flag differs')
-    if plan.pure_sql != (not expected_hybrid):
+    if plan.pure_sql != expected_pure_sql:
         failures.append(f'{dialect} pureSql flag differs')
-    if (plan.continuation_program is not None) != (expected.get('has_continuation') is True):
+    if (plan.continuation_program is not None) != expected_continuation:
         failures.append(f'{dialect} continuation presence differs')
 
 

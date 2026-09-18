@@ -241,11 +241,15 @@ function plan_sql(?HybridPlan $plan): ?string
 function check_plan(HybridPlan $plan, array $expected, string $dialect, array &$failures): void
 {
     $sqlKey = $dialect === 'postgresql' ? 'sql_postgres' : 'sql_mariadb';
-    if (plan_sql($plan) !== ($expected[$sqlKey] ?? null)) $failures[] = "{$dialect} SQL differs from Lisp reference";
-    $expectedHybrid = ($expected['is_hybrid'] ?? false) === true || ($expected['has_continuation'] ?? false) === true;
+    $expectedSql = $expected[$sqlKey] ?? null;
+    if (plan_sql($plan) !== $expectedSql) $failures[] = "{$dialect} SQL differs from Lisp reference";
+    $expectedHasSql = $expectedSql !== null;
+    $expectedContinuation = ($expected['has_continuation'] ?? false) === true;
+    $expectedHybrid = $expectedHasSql && $expectedContinuation;
+    $expectedPureSql = $expectedHasSql && !$expectedContinuation;
     if ($plan->isHybrid() !== $expectedHybrid) $failures[] = "{$dialect} hybrid flag differs";
-    if ($plan->pureSql !== !$expectedHybrid) $failures[] = "{$dialect} pureSql flag differs";
-    if (($plan->continuationProgram !== null) !== (($expected['has_continuation'] ?? false) === true)) {
+    if ($plan->pureSql !== $expectedPureSql) $failures[] = "{$dialect} pureSql flag differs";
+    if (($plan->continuationProgram !== null) !== $expectedContinuation) {
         $failures[] = "{$dialect} continuation presence differs";
     }
 }
@@ -342,7 +346,6 @@ function phase_stats(array $samples): array
 /** @param array<string,int> $counts */
 function representation_counts(Value $value, array &$counts): void
 {
-    $value->force();
     if ($value->isList) $counts['lists']++;
     elseif ($value->shape !== null) $counts['shaped_records']++;
     elseif ($value->size() > 0) $counts['fallback_records']++;

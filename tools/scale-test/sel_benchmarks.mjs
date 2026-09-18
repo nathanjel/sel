@@ -215,7 +215,6 @@ function canonical(value) {
 }
 
 function benchmarkValue(value) {
-  value.force();
   if (value.size() === 0) {
     if (value.isList) return [];
     if (value.kind === 'TEXT' || value.kind === 'BIN' || value.kind === 'BOOL') return value.scalar;
@@ -229,7 +228,6 @@ function benchmarkValue(value) {
 }
 
 function representationCounts(value, counts) {
-  value.force();
   if (value.isList) counts.lists += 1;
   else if (value.shape) counts.shaped_records += 1;
   else if (value.size() > 0) counts.fallback_records += 1;
@@ -265,18 +263,22 @@ function planSql(plan) {
 function checkPlan(plan, expected, dialect, failures) {
   const sqlKey = dialect === 'postgresql' ? 'sql_postgres' : 'sql_mariadb';
   const actualSql = planSql(plan);
-  if (actualSql !== expected[sqlKey]) {
+  const expectedSql = expected[sqlKey] ?? null;
+  if (actualSql !== expectedSql) {
     failures.push(`${dialect} SQL differs from Lisp reference`);
   }
-  const expectedHybrid = expected.is_hybrid === true || expected.has_continuation === true;
+  const expectedHasSql = expectedSql !== null;
+  const expectedContinuation = expected.has_continuation === true;
+  const expectedHybrid = expectedHasSql && expectedContinuation;
+  const expectedPureSql = expectedHasSql && !expectedContinuation;
   if (plan.isHybrid !== expectedHybrid) {
     failures.push(`${dialect} hybrid flag is ${plan.isHybrid}, expected ${expectedHybrid}`);
   }
-  if (plan.pureSql !== !expectedHybrid) {
-    failures.push(`${dialect} pureSql flag is ${plan.pureSql}, expected ${!expectedHybrid}`);
+  if (plan.pureSql !== expectedPureSql) {
+    failures.push(`${dialect} pureSql flag is ${plan.pureSql}, expected ${expectedPureSql}`);
   }
   const hasContinuation = plan.continuationProgram !== null;
-  if (hasContinuation !== (expected.has_continuation === true)) {
+  if (hasContinuation !== expectedContinuation) {
     failures.push(`${dialect} continuation presence differs from Lisp reference`);
   }
 }

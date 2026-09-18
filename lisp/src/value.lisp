@@ -494,9 +494,16 @@ same keys in the same order, pairwise EQL."
   (let ((h (sxhash (value-kind v))))
     (case (value-kind v)
       (:text
-       (let ((s (value-scalar v)))
-         (when (stringp s)
-           (setf h (logand most-positive-fixnum (logxor h (sxhash s)))))))
+       (let ((dec (value-dec-val v)))
+         (if dec
+             (setf h (logand most-positive-fixnum
+                             (logxor h
+                                     (if (dec-neg dec) 1 0)
+                                     (sxhash (dec-scale dec))
+                                     (sxhash (dec-digits dec)))))
+             (let ((s (value-scalar v)))
+               (when (stringp s)
+                 (setf h (logand most-positive-fixnum (logxor h (sxhash s)))))))))
       (:bool
        (setf h (logand most-positive-fixnum (logxor h (if (value-scalar v) 12345 67890)))))
       (:bin

@@ -621,10 +621,6 @@ int main(int argc, char** argv) {
       ScenarioRun item{id, expected, sel::compile(query_value->as_text()), 0.0, {}, {}, 0};
       const auto compile_stop = std::chrono::steady_clock::now();
       item.compile_ms = std::chrono::duration<double, std::milli>(compile_stop - compile_start).count();
-      const bool expected_hybrid = [&] {
-        const Value* value = expected.get("is_hybrid");
-        return value && !value->is_null() && value->as_bool();
-      }();
       const bool expected_continuation = [&] {
         const Value* value = expected.get("has_continuation");
         return value && !value->is_null() && value->as_bool();
@@ -640,8 +636,10 @@ int main(int argc, char** argv) {
         } else if (expected_has_sql && plan.sql_statement->as_statement() != expected_sql->as_text()) {
           item.failures.push_back(dialect + " SQL differs from Lisp reference");
         }
+        const bool expected_hybrid = expected_has_sql && expected_continuation;
+        const bool expected_pure_sql = expected_has_sql && !expected_continuation;
         if (plan.is_hybrid != expected_hybrid) item.failures.push_back(dialect + " hybrid flag differs");
-        if (plan.pure_sql != !expected_hybrid) item.failures.push_back(dialect + " pureSql flag differs");
+        if (plan.pure_sql != expected_pure_sql) item.failures.push_back(dialect + " pureSql flag differs");
         if (plan.continuation_program.has_value() != expected_continuation) {
           item.failures.push_back(dialect + " continuation presence differs");
         }

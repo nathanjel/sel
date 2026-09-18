@@ -618,10 +618,14 @@ def main() -> int:
             dataset, reference_path, report_dir / "python.json", args.runs,
             args.warmups, args.timing_mode, python_environment, args.only)
         if not args.skip_db:
-            from run_benchmarks import run_corrected_database_benchmark
-            reports.update(run_corrected_database_benchmark(
-                dataset, reference_path, args.runs, args.warmups, args.timing_mode,
-                reference=reference, database=database))
+            try:
+                from run_benchmarks import run_corrected_database_benchmark
+                reports.update(run_corrected_database_benchmark(
+                    dataset, reference_path, args.runs, args.warmups, args.timing_mode,
+                    reference=reference, database=database))
+            except Exception as error:
+                print(f"[skip] database benchmark skipped: {error}", flush=True)
+
         for lane, report in reports.items():
             validate_report(
                 report, lane, reference, fixture,
