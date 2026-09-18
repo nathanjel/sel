@@ -685,6 +685,44 @@ std::string dec_format(const Dec& d) {
          padded.substr(padded.size() - scale);
 }
 
+std::size_t dec_format_buf(const Dec& d, char* out) {
+  char* p = out;
+  if (d.neg) *p++ = '-';
+  if (d.small) {
+    __int128_t m = d.mantissa < 0 ? -d.mantissa : d.mantissa;
+    char digits[48];
+    int dlen = 0;
+    if (m == 0) {
+      digits[dlen++] = '0';
+    } else {
+      while (m > 0) {
+        digits[dlen++] = '0' + static_cast<char>(m % 10);
+        m /= 10;
+      }
+    }
+    if (d.scale == 0) {
+      for (int i = dlen - 1; i >= 0; --i) *p++ = digits[i];
+      return static_cast<std::size_t>(p - out);
+    }
+    const int scale = d.scale;
+    if (dlen <= scale) {
+      *p++ = '0';
+      *p++ = '.';
+      for (int i = 0; i < scale - dlen; ++i) *p++ = '0';
+      for (int i = dlen - 1; i >= 0; --i) *p++ = digits[i];
+    } else {
+      const int int_part = dlen - scale;
+      for (int i = dlen - 1; i >= dlen - int_part; --i) *p++ = digits[i];
+      *p++ = '.';
+      for (int i = dlen - int_part - 1; i >= 0; --i) *p++ = digits[i];
+    }
+    return static_cast<std::size_t>(p - out);
+  }
+  const std::string s = dec_format(d);
+  std::memcpy(out, s.data(), s.size());
+  return s.size();
+}
+
 Dec dec_from_int(long long n) {
   return dec_from_mantissa(n, 0);
 }
@@ -1062,6 +1100,24 @@ struct Internals {
     v.p_->is_list = is_list;
     return v;
   }
+  static Value with_children(Kind kind, std::vector<Value::Entry> entries, bool is_list = false) {
+    Value v;
+    v.p_->kind = kind;
+    v.p_->scalar_computed = true;
+    v.p_->boolean = false;
+    v.p_->is_list = is_list;
+    v.p_->children = std::move(entries);
+    return v;
+  }
+  static Value shaped_direct(std::shared_ptr<const RecordShape> shape, std::size_t reserve_size) {
+    Value v;
+    v.p_->shape = std::move(shape);
+    v.p_->storage.reserve(reserve_size);
+    return v;
+  }
+  static std::vector<Value>& storage(Value& v) {
+    return v.p_->storage;
+  }
 };
 
 Value::Value() : p_(std::make_shared<Impl>()) {}
@@ -1311,6 +1367,9 @@ void Value::build_index() const {
 
 std::vector<Value::Entry>::iterator Value::find(const std::string& key) {
   ensure_children();
+  if (p_->index.empty() && p_->children.size() >= INDEX_THRESHOLD) {
+    build_index();
+  }
   if (!p_->index.empty()) {
     auto it = p_->index.find(key);
     return it == p_->index.end() ? p_->children.end()
@@ -1322,6 +1381,9 @@ std::vector<Value::Entry>::iterator Value::find(const std::string& key) {
 
 std::vector<Value::Entry>::const_iterator Value::find(const std::string& key) const {
   ensure_children();
+  if (p_->index.empty() && p_->children.size() >= INDEX_THRESHOLD) {
+    build_index();
+  }
   if (!p_->index.empty()) {
     auto it = p_->index.find(key);
     return it == p_->index.end() ? p_->children.end()
@@ -1653,30 +1715,41 @@ std::uint64_t Value::structural_hash(Pos pos) const {
     h ^= v + UINT64_C(0x9e3779b97f4a7c15) + (h << 6) + (h >> 2);
     return h;
   };
-  const std::function<std::uint64_t(const Value&, int)> walk =
-      [&](const Value& value, int depth) -> std::uint64_t {
+  const auto walk = [&](auto& self, const Value& value, int depth) -> std::uint64_t {
     if (depth > MAX_DEPTH) fail("E_DEPTH", "value nested too deeply", pos);
     std::uint64_t h = mix(UINT64_C(0xcbf29ce484222325), static_cast<std::uint64_t>(value.p_->kind));
     h = mix(h, value.p_->boolean ? 1 : 0);
-    h = mix(h, std::hash<std::string>{}(value.scalar()));
+    if (value.p_->kind == Kind::Text) {
+      if (value.p_->scalar_computed) {
+        h = mix(h, std::hash<std::string_view>{}(value.p_->scalar));
+      } else if (value.p_->dec_val) {
+        char buf[64];
+        const std::size_t len = dec_format_buf(*value.p_->dec_val, buf);
+        h = mix(h, std::hash<std::string_view>{}(std::string_view(buf, len)));
+      } else {
+        h = mix(h, std::hash<std::string_view>{}(value.p_->scalar));
+      }
+    } else {
+      h = mix(h, std::hash<std::string_view>{}(value.p_->scalar));
+    }
     if (value.p_->shape) {
       for (std::size_t i = 0; i < value.p_->shape->keys.size(); i++) {
         h = mix(h, std::hash<std::string>{}(value.p_->shape->keys[i]));
-        h = mix(h, walk(value.p_->storage[i], depth + 1));
+        h = mix(h, self(self, value.p_->storage[i], depth + 1));
       }
     } else if (value.p_->is_list && value.p_->children.empty()) {
       // List keys are derived positions and are not part of Lisp's list hash.
-      for (const Value& item : value.p_->storage) h = mix(h, walk(item, depth + 1));
+      for (const Value& item : value.p_->storage) h = mix(h, self(self, item, depth + 1));
     } else {
       value.ensure_children();
       for (const auto& entry : value.p_->children) {
         h = mix(h, std::hash<std::string>{}(entry.first));
-        h = mix(h, walk(entry.second, depth + 1));
+        h = mix(h, self(self, entry.second, depth + 1));
       }
     }
     return h;
   };
-  return walk(*this, 1);
+  return walk(walk, *this, 1);
 }
 
 namespace {
@@ -3522,12 +3595,13 @@ struct JoinProjector {
       return make_joined_row(left, nullptr, b1, b2, promoted_left, promoted_right,
                              nested_left, null_right);
     }
-    std::vector<Value> slots;
-    slots.reserve(actions.size());
+    Value out = Internals::shaped_direct(shape, actions.size());
+    auto& slots = Internals::storage(out);
     const RecordShape* left_shape = left.shape().get();
     const RecordShape* right_shape = right->shape().get();
+    static const Value none_val = Value::none();
     const auto append = [&slots](const Value* value) {
-      slots.push_back(value ? *value : Value::none());
+      slots.push_back(value ? *value : none_val);
     };
     for (std::size_t i = 0; i < actions.size(); i++) {
       const JoinAction& action = actions[i];
@@ -3558,10 +3632,10 @@ struct JoinProjector {
           append(value);
           break;
         }
-        case JoinAction::Kind::None: slots.push_back(Value::none()); break;
+        case JoinAction::Kind::None: slots.push_back(none_val); break;
       }
     }
-    return Value::shaped(shape, std::move(slots));
+    return out;
   }
 };
 
@@ -3694,17 +3768,116 @@ std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b
   return std::nullopt;
 }
 
-std::optional<std::string> canonical_join_key(const Value& value, bool numeric) {
+struct FastJoinKey {
+  enum class Type : uint8_t { Empty, Int64, SmallDec, BigDec, Text };
+  Type type = Type::Empty;
+  bool neg = false;
+  int32_t scale = 0;
+  int64_t int_val = 0;
+  std::string text;
+
+  bool operator==(const FastJoinKey& o) const noexcept {
+    if (type != o.type) return false;
+    switch (type) {
+      case Type::Empty: return true;
+      case Type::Int64: return int_val == o.int_val;
+      case Type::SmallDec: return int_val == o.int_val && scale == o.scale && neg == o.neg;
+      case Type::BigDec: return scale == o.scale && neg == o.neg && text == o.text;
+      case Type::Text: return text == o.text;
+    }
+    return false;
+  }
+};
+
+struct FastJoinKeyHash {
+  std::size_t operator()(const FastJoinKey& k) const noexcept {
+    switch (k.type) {
+      case FastJoinKey::Type::Int64:
+        return std::hash<int64_t>{}(k.int_val);
+      case FastJoinKey::Type::SmallDec: {
+        std::size_t h = std::hash<int64_t>{}(k.int_val);
+        h ^= std::hash<int32_t>{}(k.scale) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= (k.neg ? 1 : 0);
+        return h;
+      }
+      case FastJoinKey::Type::BigDec: {
+        std::size_t h = std::hash<std::string>{}(k.text);
+        h ^= std::hash<int32_t>{}(k.scale) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= (k.neg ? 1 : 0);
+        return h;
+      }
+      case FastJoinKey::Type::Text:
+        return std::hash<std::string>{}(k.text);
+      default:
+        return 0;
+    }
+  }
+};
+
+std::optional<FastJoinKey> make_fast_join_key(const Value& value, bool numeric) {
   if (value.is_null()) return std::nullopt;
+  FastJoinKey key;
   if (numeric) {
+    Dec d;
     try {
-      return std::string("N:") + dec_format(as_dec(value, {}));
+      d = as_dec(value, {});
     } catch (const SelError&) {
       return std::nullopt;
     }
+    if (d.small) {
+      __int128_t m = d.mantissa;
+      int32_t s = d.scale;
+      bool neg = d.neg;
+      if (m == 0) {
+        key.type = FastJoinKey::Type::Int64;
+        key.int_val = 0;
+        return key;
+      }
+      while (s > 0 && (m % 10) == 0) {
+        m /= 10;
+        s--;
+      }
+      if (s == 0 && m >= INT64_MIN && m <= INT64_MAX) {
+        key.type = FastJoinKey::Type::Int64;
+        key.int_val = static_cast<int64_t>(m);
+        return key;
+      }
+      if (m >= INT64_MIN && m <= INT64_MAX) {
+        key.type = FastJoinKey::Type::SmallDec;
+        key.neg = neg;
+        key.scale = s;
+        key.int_val = static_cast<int64_t>(m);
+        return key;
+      }
+      key.type = FastJoinKey::Type::BigDec;
+      key.neg = neg;
+      key.scale = s;
+      key.text = dec_get_digits(d);
+      return key;
+    } else {
+      std::string digits = dec_get_digits(d);
+      int32_t s = d.scale;
+      bool neg = d.neg;
+      if (digits == "0") {
+        key.type = FastJoinKey::Type::Int64;
+        key.int_val = 0;
+        return key;
+      }
+      while (s > 0 && !digits.empty() && digits.back() == '0') {
+        digits.pop_back();
+        s--;
+      }
+      key.type = FastJoinKey::Type::BigDec;
+      key.neg = neg;
+      key.scale = s;
+      key.text = std::move(digits);
+      return key;
+    }
   }
   if (value.kind() != Kind::Text) return std::nullopt;
-  return std::string("T:") + value.scalar();
+  key.type = FastJoinKey::Type::Text;
+  key.text = value.scalar();
+  return key;
 }
 
 std::string single_relation_name(const Node& node) {
@@ -3796,7 +3969,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   };
 
   if (equi && have_right) {
-    std::unordered_map<std::string, std::vector<Value>> buckets;
+    std::unordered_map<FastJoinKey, std::vector<Value>, FastJoinKeyHash> buckets;
     buckets.reserve(collection_size(right_value));
     std::vector<std::pair<std::string, Value>> frame;
     add_frame_names(frame, b2, Value::none());
@@ -3807,7 +3980,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
         const Value row = ensure_row_table_alias(item, b2);
         set_frame(ctx.frames.back(), b2, row);
         set_frame(ctx.frames.back(), "_2", row);
-        const auto join_key = canonical_join_key(a.eval(*equi->right), equi->numeric);
+        const auto join_key = make_fast_join_key(a.eval(*equi->right), equi->numeric);
         if (join_key) buckets[*join_key].push_back(row);
       });
     } catch (...) {
@@ -3827,7 +4000,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
         set_frame(ctx.frames.back(), b1, row);
         set_frame(ctx.frames.back(), "_1", row);
         set_frame(ctx.frames.back(), "_", row);
-        const auto join_key = canonical_join_key(a.eval(*equi->left), equi->numeric);
+        const auto join_key = make_fast_join_key(a.eval(*equi->left), equi->numeric);
         auto it = join_key ? buckets.find(*join_key) : buckets.end();
         if (it != buckets.end()) {
           for (const Value& right : it->second) output.push_back(projector(row, &right));
@@ -3939,7 +4112,7 @@ void register_structure() {
                     std::min<std::size_t>(static_cast<std::size_t>(count), source_size);
                 out.reserve(limit);
                 for (std::size_t i = 0; i < limit; i++) {
-                  out.push_back(collection_item(val, i).clone());
+                  out.push_back(collection_item(val, i));
                 }
                 return Value::list(std::move(out));
               }});
@@ -3953,7 +4126,7 @@ void register_structure() {
                 std::vector<Value> out;
                 out.reserve(source_size - static_cast<std::size_t>(count));
                 for (std::size_t i = static_cast<std::size_t>(count); i < source_size; i++) {
-                  out.push_back(collection_item(val, i).clone());
+                  out.push_back(collection_item(val, i));
                 }
                 return Value::list(std::move(out));
               }});
@@ -3973,7 +4146,7 @@ void register_structure() {
                   Value new_row = Value::none();
                   for (const auto& c : cols) {
                     if (row.has(c)) {
-                      new_row.set(c, row.get(c)->clone());
+                      new_row.set(c, *row.get(c));
                     }
                   }
                   out.push_back(std::move(new_row));
@@ -3994,7 +4167,7 @@ void register_structure() {
                     }
                   }
                   if (!found) {
-                    out.push_back(item.clone());
+                    out.push_back(item);
                   }
                 });
                 return Value::list(std::move(out));
@@ -4035,27 +4208,43 @@ void register_structure() {
 // Runs `visit` per element with the binder and _K in scope. Returning a value
 // from `visit` stops the walk and becomes the result.
 std::optional<Value> walk(Args& a, Context& ctx,
-                          const std::function<std::optional<Value>(const Value&, const std::string&,
+                          const std::function<std::optional<Value>(const Value&, std::size_t,
                                                                    const Value&, const Node&)>& visit) {
   const bool three = a.count() == 3;
   const std::string binder = three ? a.symbol(1) : std::string("_");
   const Node& body = a.node(three ? 2 : 1);
+  const bool needs_k = node_contains_var(body, "_K");
+
+  const Value& coll = a.val(0);
+  const std::size_t count = collection_size(coll);
+  if (count == 0) return std::nullopt;
+
+  std::vector<std::pair<std::string, Value>> frame;
+  frame.reserve(needs_k ? 2 : 1);
+  frame.emplace_back(binder, Value::none());
+  if (needs_k) frame.emplace_back("_K", Value::none());
+  ctx.frames.push_back(std::move(frame));
 
   std::optional<Value> stopped;
-  for_each_collection_item(a.val(0), [&](const std::string& key, const Value& item) {
-    if (stopped.has_value()) return;
-    ctx.frames.push_back({{binder, item}, {"_K", make_text(key)}});
-    std::optional<Value> result;
-    try {
+  try {
+    for (std::size_t i = 0; i < count; ++i) {
+      const Value& item = collection_item(coll, i);
+      ctx.frames.back()[0].second = item;
+      if (needs_k) {
+        ctx.frames.back()[1].second = make_text(collection_key(coll, i));
+      }
       const Value r = a.eval(body);
-      result = visit(r, key, item, body);
-    } catch (...) {
-      ctx.frames.pop_back();
-      throw;
+      std::optional<Value> result = visit(r, i, item, body);
+      if (result.has_value()) {
+        stopped = std::move(result);
+        break;
+      }
     }
+  } catch (...) {
     ctx.frames.pop_back();
-    if (result.has_value()) stopped = std::move(result);
-  });
+    throw;
+  }
+  ctx.frames.pop_back();
   return stopped;
 }
 
@@ -4173,19 +4362,28 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
       fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", a.pos_of(pos_idx));
     }
 
-    for (std::size_t i = 0; i < source_size; i++) {
-      const Value& item = collection_item(val, i);
-      ctx.frames.push_back({{binder, item}, {"_K", make_text(collection_key(val, i))}});
-      Value eval_key;
-      try {
-        eval_key = a.eval(*body);
-      } catch (...) {
-        ctx.frames.pop_back();
-        throw;
+    const bool needs_k = node_contains_var(*body, "_K");
+    std::vector<std::pair<std::string, Value>> frame;
+    frame.reserve(needs_k ? 2 : 1);
+    frame.emplace_back(binder, Value::none());
+    if (needs_k) frame.emplace_back("_K", Value::none());
+    ctx.frames.push_back(std::move(frame));
+
+    try {
+      for (std::size_t i = 0; i < source_size; i++) {
+        const Value& item = collection_item(val, i);
+        ctx.frames.back()[0].second = item;
+        if (needs_k) {
+          ctx.frames.back()[1].second = make_text(collection_key(val, i));
+        }
+        Value eval_key = a.eval(*body);
+        indexed.push_back({item, std::move(eval_key), i});
       }
+    } catch (...) {
       ctx.frames.pop_back();
-      indexed.push_back({item.clone(), std::move(eval_key), i});
+      throw;
     }
+    ctx.frames.pop_back();
   }
 
   const bool desc = (direction == "DESC");
@@ -4286,32 +4484,45 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     }
   };
 
-  std::size_t index = 0;
-  for (std::size_t i = 0; i < source_size; i++) {
-    const Value& item = collection_item(value, i);
-    const std::string key = collection_key(value, i);
-    TopEntry candidate{item, item, index};
-    if (body) {
-      std::vector<std::pair<std::string, Value>> frame{{binder, item}};
-      if (node_contains_var(*body, "_K")) frame.emplace_back("_K", make_text(key));
-      ctx.frames.push_back(std::move(frame));
-      try {
-        candidate.key = a.eval(*body);
-      } catch (...) {
-        ctx.frames.pop_back();
-        throw;
-      }
-      ctx.frames.pop_back();
-    }
-    if (heap.size() < k) {
-      heap.push_back(std::move(candidate));
-      sift_up(heap.size() - 1);
-    } else if (worse(heap.front(), candidate)) {
-      heap.front() = std::move(candidate);
-      sift_down(0);
-    }
-    index++;
+  const bool needs_k = body && node_contains_var(*body, "_K");
+  if (body) {
+    std::vector<std::pair<std::string, Value>> frame;
+    frame.reserve(needs_k ? 2 : 1);
+    frame.emplace_back(binder, Value::none());
+    if (needs_k) frame.emplace_back("_K", Value::none());
+    ctx.frames.push_back(std::move(frame));
   }
+
+  std::size_t index = 0;
+  try {
+    for (std::size_t i = 0; i < source_size; i++) {
+      const Value& item = collection_item(value, i);
+      TopEntry candidate;
+      candidate.item = item;
+      candidate.idx = index;
+      if (body) {
+        ctx.frames.back()[0].second = item;
+        if (needs_k) {
+          ctx.frames.back()[1].second = make_text(collection_key(value, i));
+        }
+        candidate.key = a.eval(*body);
+      } else {
+        candidate.key = item;
+      }
+      if (heap.size() < k) {
+        heap.push_back(std::move(candidate));
+        sift_up(heap.size() - 1);
+      } else if (worse(heap.front(), candidate)) {
+        heap.front() = std::move(candidate);
+        sift_down(0);
+      }
+      index++;
+    }
+  } catch (...) {
+    if (body) ctx.frames.pop_back();
+    throw;
+  }
+  if (body) ctx.frames.pop_back();
   std::stable_sort(heap.begin(), heap.end(), compare);
   std::vector<Value> out;
   out.reserve(heap.size());
@@ -4354,53 +4565,60 @@ Value do_bucket(Args& a, Context& ctx) {
   // collisions and preserves SEL's exact EQL semantics for keys such as 1 and
   // 1.0.
   std::unordered_map<std::uint64_t, std::vector<std::size_t>> group_buckets;
-  for (std::size_t i = 0; i < source_size; i++) {
-    const Value& item = collection_item(val, i);
-    // `_K` in the key expression is the source element's key -- a record's
-    // field name, a list's position -- exactly as in SORT_BY's key.
-    ctx.frames.push_back({{binder, item}, {"_K", make_text(collection_key(val, i))}});
-    Value eval_key;
-    try {
-      eval_key = a.eval(*key_node);
-    } catch (...) {
-      ctx.frames.pop_back();
-      throw;
-    }
-    ctx.frames.pop_back();
+  const bool needs_k_key = node_contains_var(*key_node, "_K");
+  std::vector<std::pair<std::string, Value>> frame;
+  frame.reserve(needs_k_key ? 2 : 1);
+  frame.emplace_back(binder, Value::none());
+  if (needs_k_key) frame.emplace_back("_K", Value::none());
+  ctx.frames.push_back(std::move(frame));
 
-    // A bare bucket's key is an index key (spec §3.3): the scalar, verbatim,
-    // and refused the way indexing refuses it -- never collapsed onto a string
-    // that stands for every list, record or NULL. The projected spelling has
-    // no map to key and groups by identity instead.
-    std::string key_str;
-    if (!agg_node) {
-      if (eval_key.kind() == Kind::None) {
-        if (eval_key.is_null()) fail("E_NULL", "value is NULL", key_node->pos);
-        fail("E_NOT_TEXT", "a bucket key must be text or a number, got a list or record",
-             key_node->pos);
+  try {
+    for (std::size_t i = 0; i < source_size; i++) {
+      const Value& item = collection_item(val, i);
+      ctx.frames.back()[0].second = item;
+      if (needs_k_key) {
+        ctx.frames.back()[1].second = make_text(collection_key(val, i));
       }
-      key_str = eval_key.as_text(key_node->pos);
-    }
+      Value eval_key = a.eval(*key_node);
 
-    int found = -1;
-    const std::uint64_t hash = eval_key.structural_hash();
-    const auto candidates = group_buckets.find(hash);
-    if (candidates != group_buckets.end()) {
-      for (const std::size_t g_idx : candidates->second) {
-        if (groups[g_idx].key.eql(eval_key)) {
-          found = static_cast<int>(g_idx);
-          break;
+      // A bare bucket's key is an index key (spec §3.3): the scalar, verbatim,
+      // and refused the way indexing refuses it -- never collapsed onto a string
+      // that stands for every list, record or NULL. The projected spelling has
+      // no map to key and groups by identity instead.
+      std::string key_str;
+      if (!agg_node) {
+        if (eval_key.kind() == Kind::None) {
+          if (eval_key.is_null()) fail("E_NULL", "value is NULL", key_node->pos);
+          fail("E_NOT_TEXT", "a bucket key must be text or a number, got a list or record",
+               key_node->pos);
+        }
+        key_str = eval_key.as_text(key_node->pos);
+      }
+
+      int found = -1;
+      const std::uint64_t hash = eval_key.structural_hash();
+      const auto candidates = group_buckets.find(hash);
+      if (candidates != group_buckets.end()) {
+        for (const std::size_t g_idx : candidates->second) {
+          if (groups[g_idx].key.eql(eval_key)) {
+            found = static_cast<int>(g_idx);
+            break;
+          }
         }
       }
-    }
 
-    if (found >= 0) {
-      groups[found].rows.push_back(item.clone());
-    } else {
-      groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {item.clone()}});
-      group_buckets[hash].push_back(groups.size() - 1);
+      if (found >= 0) {
+        groups[found].rows.push_back(item);
+      } else {
+        groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {item}});
+        group_buckets[hash].push_back(groups.size() - 1);
+      }
     }
+  } catch (...) {
+    ctx.frames.pop_back();
+    throw;
   }
+  ctx.frames.pop_back();
 
   if (!agg_node) {
     Value out = Value::none();
@@ -4412,24 +4630,31 @@ Value do_bucket(Args& a, Context& ctx) {
 
   std::vector<Value> out;
   out.reserve(groups.size());
-  for (auto& g : groups) {
-    ctx.frames.push_back({{binder, Value::list(std::move(g.rows))}, {"_K", g.key.clone()}});
-    Value res;
-    try {
-      res = a.eval(*agg_node);
-    } catch (...) {
-      ctx.frames.pop_back();
-      throw;
+  const bool needs_k_agg = node_contains_var(*agg_node, "_K");
+  frame.clear();
+  frame.reserve(needs_k_agg ? 2 : 1);
+  frame.emplace_back(binder, Value::none());
+  if (needs_k_agg) frame.emplace_back("_K", Value::none());
+  ctx.frames.push_back(std::move(frame));
+  try {
+    for (auto& g : groups) {
+      ctx.frames.back()[0].second = Value::list(std::move(g.rows));
+      if (needs_k_agg) {
+        ctx.frames.back()[1].second = std::move(g.key);
+      }
+      out.push_back(a.eval(*agg_node));
     }
+  } catch (...) {
     ctx.frames.pop_back();
-    out.push_back(std::move(res));
+    throw;
   }
+  ctx.frames.pop_back();
   return Value::list(std::move(out));
 }
 
 void register_aggregates() {
   define(Spec{"ALL", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
-                auto s = walk(a, ctx, [](const Value& r, const std::string&, const Value&,
+                auto s = walk(a, ctx, [](const Value& r, std::size_t, const Value&,
                                          const Node& body) -> std::optional<Value> {
                   if (r.as_bool(body.pos)) return std::nullopt;
                   return Value::boolean(false);
@@ -4438,7 +4663,7 @@ void register_aggregates() {
               }});
 
   define(Spec{"ANY", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
-                auto s = walk(a, ctx, [](const Value& r, const std::string&, const Value&,
+                auto s = walk(a, ctx, [](const Value& r, std::size_t, const Value&,
                                          const Node& body) -> std::optional<Value> {
                   if (r.as_bool(body.pos)) return Value::boolean(true);
                   return std::nullopt;
@@ -4448,9 +4673,9 @@ void register_aggregates() {
 
   define(Spec{"MAP", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
                 std::vector<Value> out;
-                walk(a, ctx, [&out](const Value& r, const std::string&, const Value&,
+                walk(a, ctx, [&out](const Value& r, std::size_t, const Value&,
                                     const Node&) -> std::optional<Value> {
-                  out.push_back(r.clone());
+                  out.push_back(r);
                   return std::nullopt;
                 });
                 return Value::list(std::move(out));
@@ -4459,19 +4684,26 @@ void register_aggregates() {
   // The one aggregate that preserves keys — a filtered list should still be
   // addressable the way the original was.
   define(Spec{"FILTER", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
-                Value out = Value::none();
-                out.set_is_list(true);
-                walk(a, ctx, [&out](const Value& r, const std::string& key, const Value& item,
-                                    const Node& body) -> std::optional<Value> {
-                  if (r.as_bool(body.pos)) out.set(key, item.clone());
+                const Value& coll = a.val(0);
+                std::vector<Value::Entry> entries;
+                walk(a, ctx, [&entries, &coll](const Value& r, std::size_t idx, const Value& item,
+                                               const Node& body) -> std::optional<Value> {
+                  if (r.as_bool(body.pos)) {
+                    entries.emplace_back(collection_key(coll, idx), item);
+                  }
                   return std::nullopt;
                 });
-                return out;
+                if (entries.empty()) {
+                  Value out = Value::none();
+                  out.set_is_list(true);
+                  return out;
+                }
+                return Internals::with_children(Kind::None, std::move(entries), true);
               }});
 
   define(Spec{"SUM", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
                 Dec total = DEC_ZERO;
-                walk(a, ctx, [&total](const Value& r, const std::string&, const Value&,
+                walk(a, ctx, [&total](const Value& r, std::size_t, const Value&,
                                       const Node& body) -> std::optional<Value> {
                   total = dec_add(total, as_dec(r, body.pos), body.pos);
                   return std::nullopt;
