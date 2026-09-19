@@ -64,8 +64,14 @@ final class Structure
     {
         if ($value->isNull()) return;
         if ($value->isList && $value->storage !== null) {
-            foreach ($value->storage as $i => $item) {
-                $callback((string) ($i + 1), $item);
+            if ($value->listKeys !== null) {
+                foreach ($value->storage as $i => $item) {
+                    $callback($value->listKeys[$i], $item);
+                }
+            } else {
+                foreach ($value->storage as $i => $item) {
+                    $callback((string) ($i + 1), $item);
+                }
             }
             return;
         }
@@ -160,17 +166,200 @@ final class Structure
         return null;
     }
 
-    private static function canonicalJoinKey(Value $value, bool $numeric): ?string
+    private static function canonicalJoinKey(Value $value, bool $numeric): int|string|null
     {
         if ($value->isNull()) return null;
         if ($numeric) {
+            $v = $value->kind !== Value::NONE ? $value : null;
+            if ($v === null) {
+                try {
+                    $v = $value->scalarSource();
+                } catch (\Throwable) {
+                    return null;
+                }
+            }
+            if ($v->kind !== Value::TEXT) {
+                return null;
+            }
+            if ($v->decVal !== null) {
+                $dec = $v->decVal;
+                $scale = $dec['scale'];
+                $digits = $dec['digits'];
+                $neg = $dec['neg'];
+                while ($scale > 0 && str_ends_with($digits, '0')) {
+                    $digits = substr($digits, 0, -1);
+                    $scale--;
+                }
+                if ($scale === 0) {
+                    if ($digits === '0' || $digits === '') return 0;
+                    $len = strlen($digits);
+                    if ($len < 19) {
+                        $int = (int) $digits;
+                        return $neg ? -$int : $int;
+                    }
+                    return ($neg ? '-' : '') . $digits;
+                }
+                $sign = $neg ? '-' : '';
+                $len = strlen($digits);
+                if ($len <= $scale) {
+                    $padded = str_repeat('0', $scale - $len + 1) . $digits;
+                    $cut = strlen($padded) - $scale;
+                    return $sign . substr($padded, 0, $cut) . '.' . substr($padded, $cut);
+                }
+                $cut = $len - $scale;
+                return $sign . substr($digits, 0, $cut) . '.' . substr($digits, $cut);
+            }
+            $scalar = $v->scalar;
+            if (is_string($scalar)) {
+                $len = strlen($scalar);
+                if ($len > 0) {
+                    $first = $scalar[0];
+                    if ($first === '-') {
+                        if ($len > 1 && ctype_digit(substr($scalar, 1)) && ($len === 2 || $scalar[1] !== '0')) {
+                            if ($len < 20) {
+                                return -(int) substr($scalar, 1);
+                            }
+                            return $scalar;
+                        }
+                    } elseif (ctype_digit($scalar) && ($len === 1 || $first !== '0')) {
+                        if ($len < 19) {
+                            return (int) $scalar;
+                        }
+                        return $scalar;
+                    }
+                }
+            }
             try {
-                return Dec::format($value->asDecimal());
+                return Dec::format($v->asDecimal());
             } catch (\Throwable) {
                 return null;
             }
         }
-        return $value->kind === Value::TEXT ? (string) $value->scalar : null;
+        if ($value->kind === Value::TEXT) {
+            $s = $value->scalar;
+            if ($s === null && $value->decVal !== null) {
+                $s = $value->getScalar();
+            }
+            return is_string($s) ? $s : null;
+        }
+        return null;
+    }
+
+    /**
+     * @param array<string,mixed> $expr
+     * @param list<string> $allowedBinders
+     */
+    private static function compileEquiKeyExtractor(array $expr, array $allowedBinders, bool $numeric, ?Value $sample): ?callable
+    {
+        $allowed = array_fill_keys(array_map('strtoupper', $allowedBinders), true);
+
+        // Case 1: _['field'] or _2['field'] or BINDER['field']
+        if (($expr['t'] ?? null) === 'index'
+            && ($expr['obj']['t'] ?? null) === 'var'
+            && isset($allowed[strtoupper((string) $expr['obj']['name'])])
+            && ($expr['idx']['t'] ?? null) === 'text') {
+            $keyName = (string) $expr['idx']['v'];
+            $pos = $expr['pos'];
+            if ($sample !== null && $sample->shape !== null && isset($sample->shape->keyMap[$keyName])) {
+                $slot = $sample->shape->keyMap[$keyName];
+                $shape = $sample->shape;
+                return static function (Value $row) use ($slot, $shape, $keyName, $numeric, $pos): int|string|null {
+                    $val = ($row->shape === $shape && $row->storage !== null)
+                        ? ($row->storage[$slot] ?? null)
+                        : $row->get($keyName);
+                    if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($keyName), $pos);
+                    return self::canonicalJoinKey($val, $numeric);
+                };
+            }
+            return static function (Value $row) use ($keyName, $numeric, $pos): int|string|null {
+                $val = $row->get($keyName);
+                if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($keyName), $pos);
+                return self::canonicalJoinKey($val, $numeric);
+            };
+        }
+
+        // Case 2: _['table']['field']
+        if (($expr['t'] ?? null) === 'index'
+            && ($expr['obj']['t'] ?? null) === 'index'
+            && ($expr['obj']['obj']['t'] ?? null) === 'var'
+            && isset($allowed[strtoupper((string) $expr['obj']['obj']['name'])])
+            && ($expr['obj']['idx']['t'] ?? null) === 'text'
+            && ($expr['idx']['t'] ?? null) === 'text') {
+            $tableName = (string) $expr['obj']['idx']['v'];
+            $fieldName = (string) $expr['idx']['v'];
+            $tablePos = $expr['obj']['pos'];
+            $fieldPos = $expr['pos'];
+            if ($sample !== null && $sample->shape !== null && isset($sample->shape->keyMap[$tableName])) {
+                $tableSlot = $sample->shape->keyMap[$tableName];
+                $tableShape = $sample->shape;
+                $subSample = $sample->storage[$tableSlot] ?? null;
+                if ($subSample instanceof Value && $subSample->shape !== null && isset($subSample->shape->keyMap[$fieldName])) {
+                    $fieldSlot = $subSample->shape->keyMap[$fieldName];
+                    $subShape = $subSample->shape;
+                    return static function (Value $row) use ($tableSlot, $tableShape, $fieldSlot, $subShape, $tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|null {
+                        if ($row->shape === $tableShape && $row->storage !== null) {
+                            $sub = $row->storage[$tableSlot] ?? null;
+                            if ($sub !== null && $sub->shape === $subShape && $sub->storage !== null) {
+                                $val = $sub->storage[$fieldSlot] ?? null;
+                                if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($fieldName), $fieldPos);
+                                return self::canonicalJoinKey($val, $numeric);
+                            }
+                        }
+                        $sub = $row->get($tableName);
+                        if ($sub === null) fail('E_NO_KEY', 'no key ' . json_encode($tableName), $tablePos);
+                        $val = $sub->get($fieldName);
+                        if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($fieldName), $fieldPos);
+                        return self::canonicalJoinKey($val, $numeric);
+                    };
+                }
+                return static function (Value $row) use ($tableSlot, $tableShape, $tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|null {
+                    $sub = ($row->shape === $tableShape && $row->storage !== null)
+                        ? ($row->storage[$tableSlot] ?? null)
+                        : $row->get($tableName);
+                    if ($sub === null) fail('E_NO_KEY', 'no key ' . json_encode($tableName), $tablePos);
+                    $val = $sub->get($fieldName);
+                    if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($fieldName), $fieldPos);
+                    return self::canonicalJoinKey($val, $numeric);
+                };
+            }
+            return static function (Value $row) use ($tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|null {
+                $sub = $row->get($tableName);
+                if ($sub === null) fail('E_NO_KEY', 'no key ' . json_encode($tableName), $tablePos);
+                $val = $sub->get($fieldName);
+                if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($fieldName), $fieldPos);
+                return self::canonicalJoinKey($val, $numeric);
+            };
+        }
+
+        // Case 3: Var reference, e.g. _
+        if (($expr['t'] ?? null) === 'var' && isset($allowed[strtoupper((string) $expr['name'])])) {
+            return static fn (Value $row): int|string|null => self::canonicalJoinKey($row, $numeric);
+        }
+
+        return null;
+    }
+
+    private static function compileRowTableAliaser(string $tableName, ?Value $sample): callable
+    {
+        if ($tableName === '' || $tableName === '_1' || ($sample !== null && $sample->has($tableName))) {
+            return static fn (Value $row): Value => $row;
+        }
+        if ($sample !== null && $sample->shape !== null) {
+            $sampleShape = $sample->shape;
+            $cached = $sampleShape->alias($tableName);
+            $targetShape = $cached['shape'];
+            $addLower = $cached['addLower'];
+            return static function (Value $row) use ($sampleShape, $targetShape, $addLower, $tableName): Value {
+                if ($row->shape === $sampleShape && $row->storage !== null) {
+                    $storage = $row->storage;
+                    $storage[] = $row;
+                    if ($addLower) $storage[] = $row;
+                    return Value::fromShape($targetShape, $storage);
+                }
+                return self::ensureRowTableAlias($row, $tableName);
+            };
+        }
+        return static fn (Value $row): Value => self::ensureRowTableAlias($row, $tableName);
     }
 
     private static function ensureRowTableAlias(Value $row, string $tableName): Value
@@ -353,27 +542,35 @@ final class Structure
             : null;
         $nullPlan = $compile($nullSample, $leftShape, $nullRight?->shape);
 
-        $build = static function (array $plan, Value $left, Value $right): Value {
+        $makeBuilder = static function (array $plan): callable {
             $actions = $plan['actions'];
             $slots = $plan['slots'];
-            // Sequential appends keep the destination packed without first
-            // writing placeholder zvals. The defensive action still assigns a
-            // real NONE value, so every output slot remains populated.
-            $storage = [];
-            foreach ($actions as $i => $action) {
-                $slot = $slots[$i];
-                $storage[] = match ($action) {
-                    0 => $left,
-                    1 => $right,
-                    2 => $left->storage[$slot],
-                    3 => $right->storage[$slot],
-                    4 => $left->get($slot) ?? Value::none(),
-                    5 => $right->get($slot) ?? Value::none(),
-                    default => Value::none(),
-                };
-            }
-            return Value::fromShape($plan['shape'], $storage);
+            $shape = $plan['shape'];
+            return static function (Value $left, Value $right) use ($actions, $slots, $shape): Value {
+                $storage = [];
+                $leftStorage = $left->storage;
+                $rightStorage = $right->storage;
+                foreach ($actions as $i => $action) {
+                    $slot = $slots[$i];
+                    $storage[] = match ($action) {
+                        0 => $left,
+                        1 => $right,
+                        2 => $leftStorage[$slot],
+                        3 => $rightStorage[$slot],
+                        4 => $left->get($slot) ?? Value::none(),
+                        5 => $right->get($slot) ?? Value::none(),
+                        default => Value::none(),
+                    };
+                }
+                return Value::fromShape($shape, $storage);
+            };
         };
+
+        $matchedBuilder = $matchedPlan !== null ? $makeBuilder($matchedPlan) : null;
+        $nullBuilder = $nullPlan !== null ? $makeBuilder($nullPlan) : null;
+        $matchedLeftShape = $matchedPlan['leftShape'] ?? null;
+        $matchedRightShape = $matchedPlan['rightShape'] ?? null;
+        $nullLeftShape = $nullPlan['leftShape'] ?? null;
 
         if ($matchedPlan === null && $nullPlan === null) {
             return static fn (Value $left, ?Value $right): Value =>
@@ -381,17 +578,17 @@ final class Structure
         }
 
         return static function (Value $left, ?Value $right) use (
-            $matchedPlan, $nullPlan, $nullRight, $build,
-            $b1, $b2, $promotedLeft, $promotedRight, $tableLeft,
+            $matchedBuilder, $nullBuilder, $matchedLeftShape, $matchedRightShape, $nullLeftShape,
+            $nullRight, $b1, $b2, $promotedLeft, $promotedRight, $tableLeft,
         ): Value {
-            if ($right !== null && $matchedPlan !== null
-                && $left->shape === $matchedPlan['leftShape']
-                && $right->shape === $matchedPlan['rightShape']) {
-                return $build($matchedPlan, $left, $right);
+            if ($right !== null && $matchedBuilder !== null
+                && $left->shape === $matchedLeftShape
+                && $right->shape === $matchedRightShape) {
+                return $matchedBuilder($left, $right);
             }
-            if ($right === null && $nullPlan !== null
-                && $left->shape === $nullPlan['leftShape']) {
-                return $build($nullPlan, $left, $nullRight ?? Value::none());
+            if ($right === null && $nullBuilder !== null
+                && $left->shape === $nullLeftShape) {
+                return $nullBuilder($left, $nullRight ?? Value::none());
             }
             return self::makeJoinedRow($left, $right, $b1, $b2, $promotedLeft, $promotedRight, $tableLeft, $nullRight);
         };
@@ -423,6 +620,8 @@ final class Structure
         }
         $sampleLeft = $firstLeft === null ? null : self::ensureRowTableAlias($firstLeft, $b1);
         $sampleRight = $firstRight === null ? null : self::ensureRowTableAlias($firstRight, $b2);
+        $aliasLeft = self::compileRowTableAliaser($b1, $firstLeft);
+        $aliasRight = self::compileRowTableAliaser($b2, $firstRight);
         $nullRight = $leftJoin ? self::makeNullRecord($sampleRight, $b2) : null;
         $leftKeys = $sampleLeft?->keys() ?? [];
         $rightKeys = $sampleRight?->keys() ?? [];
@@ -469,47 +668,92 @@ final class Structure
 
         if ($equi !== null && $sampleRight !== null) {
             $buckets = [];
-            $frameRight = [$b2 => Value::none(), strtolower($b2) => Value::none(), '_2' => Value::none()];
-            $ctx->pushFrame($frameRight);
-            try {
-                $each($rightValue, function (Value $item) use (&$frameRight, &$buckets, $b2, $equi, $a, $ctx): void {
-                    $row = self::ensureRowTableAlias($item, $b2);
-                    $frameRight[$b2] = $row;
-                    $frameRight[strtolower($b2)] = $row;
-                    $frameRight['_2'] = $row;
-                    $ctx->setFrameValue($b2, $row);
-                    $ctx->setFrameValue(strtolower($b2), $row);
-                    $ctx->setFrameValue('_2', $row);
-                    $key = self::canonicalJoinKey($a->evalNode($equi['right']), $equi['numeric']);
-                    if ($key !== null) $buckets[$key][] = $row;
-                });
-            } finally {
-                $ctx->popFrame();
+            $rightAllowed = [$b2, strtolower($b2), '_2'];
+            $rightExtractor = self::compileEquiKeyExtractor($equi['right'], $rightAllowed, $equi['numeric'], $sampleRight);
+            if ($rightExtractor !== null) {
+                if ($rightValue->isList && $rightValue->storage !== null) {
+                    foreach ($rightValue->storage as $item) {
+                        $row = $aliasRight($item);
+                        $key = $rightExtractor($row);
+                        if ($key !== null) $buckets[$key][] = $row;
+                    }
+                } else {
+                    $each($rightValue, static function (Value $item) use (&$buckets, $aliasRight, $rightExtractor): void {
+                        $row = $aliasRight($item);
+                        $key = $rightExtractor($row);
+                        if ($key !== null) $buckets[$key][] = $row;
+                    });
+                }
+            } else {
+                $b2Lower = strtolower($b2);
+                $hasLower2 = $b2Lower !== $b2;
+                $frameRight = [$b2 => Value::none(), '_2' => Value::none()];
+                if ($hasLower2) $frameRight[$b2Lower] = Value::none();
+                $ctx->pushFrame($frameRight);
+                try {
+                    $each($rightValue, function (Value $item) use (&$buckets, $b2, $b2Lower, $hasLower2, $aliasRight, $equi, $a, $ctx): void {
+                        $row = $aliasRight($item);
+                        $ctx->setFrameValue($b2, $row);
+                        if ($hasLower2) $ctx->setFrameValue($b2Lower, $row);
+                        $ctx->setFrameValue('_2', $row);
+                        $key = self::canonicalJoinKey($a->evalNode($equi['right']), $equi['numeric']);
+                        if ($key !== null) $buckets[$key][] = $row;
+                    });
+                } finally {
+                    $ctx->popFrame();
+                }
             }
 
-            $frameLeft = [$b1 => Value::none(), strtolower($b1) => Value::none(), '_1' => Value::none(), '_' => Value::none()];
-            $ctx->pushFrame($frameLeft);
-            try {
-                $each($leftValue, function (Value $item) use (&$frameLeft, &$buckets, &$output, $b1, $b2, $equi, $a, $leftJoin, $project, $ctx): void {
-                    $row = self::ensureRowTableAlias($item, $b1);
-                    $frameLeft[$b1] = $row;
-                    $frameLeft[strtolower($b1)] = $row;
-                    $frameLeft['_1'] = $row;
-                    $frameLeft['_'] = $row;
-                    $ctx->setFrameValue($b1, $row);
-                    $ctx->setFrameValue(strtolower($b1), $row);
-                    $ctx->setFrameValue('_1', $row);
-                    $ctx->setFrameValue('_', $row);
-                    $key = self::canonicalJoinKey($a->evalNode($equi['left']), $equi['numeric']);
-                    $matches = $key === null ? null : ($buckets[$key] ?? null);
-                    if ($matches !== null) {
-                        foreach ($matches as $right) $output[] = $project($row, $right);
-                    } elseif ($leftJoin) {
-                        $output[] = $project($row, null);
+            $leftAllowed = [$b1, strtolower($b1), '_1', '_'];
+            $leftExtractor = self::compileEquiKeyExtractor($equi['left'], $leftAllowed, $equi['numeric'], $sampleLeft);
+            if ($leftExtractor !== null) {
+                if ($leftValue->isList && $leftValue->storage !== null) {
+                    foreach ($leftValue->storage as $item) {
+                        $row = $aliasLeft($item);
+                        $key = $leftExtractor($row);
+                        $matches = $key === null ? null : ($buckets[$key] ?? null);
+                        if ($matches !== null) {
+                            foreach ($matches as $right) $output[] = $project($row, $right);
+                        } elseif ($leftJoin) {
+                            $output[] = $project($row, null);
+                        }
                     }
-                });
-            } finally {
-                $ctx->popFrame();
+                } else {
+                    $each($leftValue, static function (Value $item) use (&$buckets, &$output, $aliasLeft, $leftExtractor, $leftJoin, $project): void {
+                        $row = $aliasLeft($item);
+                        $key = $leftExtractor($row);
+                        $matches = $key === null ? null : ($buckets[$key] ?? null);
+                        if ($matches !== null) {
+                            foreach ($matches as $right) $output[] = $project($row, $right);
+                        } elseif ($leftJoin) {
+                            $output[] = $project($row, null);
+                        }
+                    });
+                }
+            } else {
+                $b1Lower = strtolower($b1);
+                $hasLower1 = $b1Lower !== $b1;
+                $frameLeft = [$b1 => Value::none(), '_1' => Value::none(), '_' => Value::none()];
+                if ($hasLower1) $frameLeft[$b1Lower] = Value::none();
+                $ctx->pushFrame($frameLeft);
+                try {
+                    $each($leftValue, function (Value $item) use (&$buckets, &$output, $b1, $b1Lower, $hasLower1, $aliasLeft, $equi, $a, $leftJoin, $project, $ctx): void {
+                        $row = $aliasLeft($item);
+                        $ctx->setFrameValue($b1, $row);
+                        if ($hasLower1) $ctx->setFrameValue($b1Lower, $row);
+                        $ctx->setFrameValue('_1', $row);
+                        $ctx->setFrameValue('_', $row);
+                        $key = self::canonicalJoinKey($a->evalNode($equi['left']), $equi['numeric']);
+                        $matches = $key === null ? null : ($buckets[$key] ?? null);
+                        if ($matches !== null) {
+                            foreach ($matches as $right) $output[] = $project($row, $right);
+                        } elseif ($leftJoin) {
+                            $output[] = $project($row, null);
+                        }
+                    });
+                } finally {
+                    $ctx->popFrame();
+                }
             }
         } else {
             $frame = [
@@ -518,8 +762,8 @@ final class Structure
             ];
             $ctx->pushFrame($frame);
             try {
-                $each($leftValue, function (Value $leftItem) use (&$frame, &$output, $b1, $b2, $rightValue, $a, $predicate, $leftJoin, $project, $ctx): void {
-                    $left = self::ensureRowTableAlias($leftItem, $b1);
+                $each($leftValue, function (Value $leftItem) use (&$frame, &$output, $b1, $b2, $rightValue, $aliasLeft, $aliasRight, $a, $predicate, $leftJoin, $project, $ctx): void {
+                    $left = $aliasLeft($leftItem);
                         $frame[$b1] = $left;
                     $frame[strtolower($b1)] = $left;
                         $frame['_1'] = $left;
@@ -530,9 +774,9 @@ final class Structure
                         $ctx->setFrameValue('_', $left);
                     $matched = false;
                     self::forEachElement($rightValue, function (string $rightKey, Value $rightItem) use (
-                        &$frame, &$output, &$matched, $b1, $b2, $left, $a, $predicate, $project, $ctx,
+                        &$frame, &$output, &$matched, $b1, $b2, $left, $aliasRight, $a, $predicate, $project, $ctx,
                     ): void {
-                        $right = self::ensureRowTableAlias($rightItem, $b2);
+                        $right = $aliasRight($rightItem);
                         $frame[$b2] = $right;
                         $frame[strtolower($b2)] = $right;
                         $frame['_2'] = $right;
@@ -667,7 +911,11 @@ final class Structure
                 }
             };
             if ($value->isList && $value->storage !== null) {
-                foreach ($value->storage as $i => $item) $consume((string) ($i + 1), $item);
+                if ($value->listKeys !== null) {
+                    foreach ($value->storage as $i => $item) $consume($value->listKeys[$i], $item);
+                } else {
+                    foreach ($value->storage as $i => $item) $consume((string) ($i + 1), $item);
+                }
             } else {
                 self::forEachElement($value, $consume);
             }

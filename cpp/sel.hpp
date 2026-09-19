@@ -122,13 +122,31 @@ struct RecordShape {
 //
 // If you are embedding SEL and were relying on `Value b = a;` to isolate `b`,
 // that is the one thing this type changed in 0.3.0: write `a.clone()`.
-struct Dec;
+#if defined(__SIZEOF_INT128__)
+using dec_mantissa_t = __int128_t;
+#else
+using dec_mantissa_t = std::int64_t;
+#endif
+
+struct Dec {
+  bool neg = false;
+  mutable std::string digits;
+  std::int32_t scale = 0;
+  bool small = false;
+  dec_mantissa_t mantissa = 0;
+  mutable std::vector<uint32_t> limbs;
+};
 
 class Value {
  public:
   using Entry = std::pair<std::string, Value>;
 
   Value();
+  Value(const Value& other);
+  Value(Value&& other) noexcept;
+  Value& operator=(const Value& other);
+  Value& operator=(Value&& other) noexcept;
+  ~Value();
 
   static Value none();
   static Value null();
@@ -219,45 +237,42 @@ class Value {
   // reported when one is supplied, the same convention as as_text().
   Value clone(Pos pos = {}) const;
 
-  const std::shared_ptr<const Dec>& dec_val() const;
+  bool has_dec() const;
+  const Dec& dec_ref() const;
+  void set_dec(const Dec& d) const;
+  const Dec* dec_val() const;
   void set_dec_val(std::shared_ptr<const Dec> d) const;
 
- private:
-  friend struct Internals;
-
-  // Insertion order is normative, so the children are a vector. Lookup by key
-  // would then be a linear scan, which makes building an n-element list O(n²) —
-  // the JS and PHP hosts get ordered-plus-O(1) for free from a Map and from
-  // PHP's ordered hash array, and this is how C++ gets the same.
-  //
-  // The index is built only once a value has enough children to be worth it:
-  // almost every Value in a program has none, so an unordered_map in each would
-  // cost far more than the scan it saves. Positions are stable because nothing
-  // ever removes a child.
   struct Impl {
+    uint32_t ref_count = 1;
     Kind kind = Kind::None;
     mutable std::string scalar;   // TEXT: UTF-8 bytes. BIN: raw bytes. Otherwise empty.
     mutable bool scalar_computed = false;
     bool boolean = false;  // BOOL only.
     bool is_list = false;
+    mutable bool has_dec = false;
+    mutable Dec dec_val;
     std::vector<Entry> children;
     std::unordered_map<std::string, std::size_t> index;
     std::shared_ptr<const RecordShape> shape;
     std::vector<Value> storage;
-    mutable std::shared_ptr<const Dec> dec_val;
+    Impl* next_free = nullptr;
 
-    // Torn down iteratively, for the reason Node is: destroying a child is
-    // usually the last reference to it, so freeing a deep tree recursed once per
-    // level and found the stack. The language cannot build one that deep any
-    // more, but `set()` is public and an embedding application still can, and a
-    // destructor is the one operation it cannot be refused by.
     Impl() = default;
     Impl(const Impl&) = default;
     Impl& operator=(const Impl&) = default;
-    ~Impl();
+    ~Impl() = default;
+
+    static void* operator new(std::size_t size);
+    static void operator delete(void* ptr, std::size_t size) noexcept;
   };
 
-  static constexpr std::size_t INDEX_THRESHOLD = 16;
+ private:
+  friend struct Internals;
+
+  static constexpr std::size_t INDEX_THRESHOLD = 4;
+
+  static void destroy(Impl* p);
 
   // The recursive halves of clone(), eql() and dump(). The public three are one
   // line each; these carry the depth that spec/SPEC.md §6.4 caps, so that a
@@ -267,13 +282,7 @@ class Value {
   bool eql_at(const Value& other, int depth, Pos pos) const;
   std::string dump_at(int depth) const;
 
-  // Never null. Shared between handles; clone() is what breaks the sharing.
-  //
-  // There is no cycle collector behind this, so a value that contained itself
-  // would leak. It cannot: every path that stores one value inside another
-  // clones first, which is the same five places the other hosts clone. `make
-  // asan` runs the suite with the leak checker to keep that true.
-  std::shared_ptr<Impl> p_;
+  Impl* p_ = nullptr;
 
   // Shaped records and vector-backed lists keep their ordered-entry view lazy.
   // The vector is still available to the public entries() API, but hot field
@@ -284,6 +293,58 @@ class Value {
   std::vector<Entry>::iterator find(const std::string& key);
   std::vector<Entry>::const_iterator find(const std::string& key) const;
 };
+
+inline Value::Value(const Value& other) : p_(other.p_) {
+  if (p_) ++p_->ref_count;
+}
+
+inline Value::Value(Value&& other) noexcept : p_(other.p_) {
+  other.p_ = nullptr;
+}
+
+inline Value& Value::operator=(const Value& other) {
+  if (this != &other && p_ != other.p_) {
+    if (p_ && --p_->ref_count == 0) destroy(p_);
+    p_ = other.p_;
+    if (p_) ++p_->ref_count;
+  }
+  return *this;
+}
+
+inline Value& Value::operator=(Value&& other) noexcept {
+  if (this != &other) {
+    if (p_ && --p_->ref_count == 0) destroy(p_);
+    p_ = other.p_;
+    other.p_ = nullptr;
+  }
+  return *this;
+}
+
+inline Value::~Value() {
+  if (p_ && --p_->ref_count == 0) destroy(p_);
+}
+
+inline bool Value::has_dec() const { return p_ && p_->has_dec; }
+inline const Dec& Value::dec_ref() const { return p_->dec_val; }
+inline void Value::set_dec(const Dec& d) const {
+  if (p_) {
+    p_->dec_val = d;
+    p_->has_dec = true;
+  }
+}
+inline const Dec* Value::dec_val() const {
+  return (p_ && p_->has_dec) ? &p_->dec_val : nullptr;
+}
+inline void Value::set_dec_val(std::shared_ptr<const Dec> d) const {
+  if (p_) {
+    if (d) {
+      p_->dec_val = *d;
+      p_->has_dec = true;
+    } else {
+      p_->has_dec = false;
+    }
+  }
+}
 
 // --- programs ---------------------------------------------------------------
 

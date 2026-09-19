@@ -244,17 +244,6 @@ constexpr long long MAX_QUANTIFIER = 65535;   // PCRE2's own hard limit
 
 }  // namespace (anonymous)
 
-struct Dec {
-  bool neg = false;
-  mutable std::string digits;
-  std::int32_t scale = 0;
-  bool small = false;
-  __int128_t mantissa = 0;
-};
-
-const std::shared_ptr<const Dec>& Value::dec_val() const { return p_->dec_val; }
-void Value::set_dec_val(std::shared_ptr<const Dec> d) const { p_->dec_val = std::move(d); }
-
 enum class MathOp : uint8_t {
   LoadVar,
   LoadConst,
@@ -388,6 +377,100 @@ std::string limbs_to_string(const std::vector<uint32_t>& limbs) {
   return s;
 }
 
+std::vector<uint32_t> add_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
+  size_t n = std::max(la.size(), lb.size());
+  std::vector<uint32_t> res;
+  res.reserve(n + 1);
+  uint32_t carry = 0;
+  for (size_t i = 0; i < n || carry; ++i) {
+    uint64_t sum = carry + (i < la.size() ? la[i] : 0) + (i < lb.size() ? lb[i] : 0);
+    res.push_back(static_cast<uint32_t>(sum % BASE_10E9));
+    carry = static_cast<uint32_t>(sum / BASE_10E9);
+  }
+  return res;
+}
+
+std::vector<uint32_t> sub_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
+  std::vector<uint32_t> res;
+  res.reserve(la.size());
+  int64_t borrow = 0;
+  for (size_t i = 0; i < la.size(); ++i) {
+    int64_t diff = static_cast<int64_t>(la[i]) - (i < lb.size() ? lb[i] : 0) - borrow;
+    if (diff < 0) {
+      diff += BASE_10E9;
+      borrow = 1;
+    } else {
+      borrow = 0;
+    }
+    res.push_back(static_cast<uint32_t>(diff));
+  }
+  while (res.size() > 1 && res.back() == 0) res.pop_back();
+  return res;
+}
+
+int cmp_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
+  if (la.size() != lb.size()) return la.size() < lb.size() ? -1 : 1;
+  for (size_t i = la.size(); i > 0; --i) {
+    if (la[i - 1] != lb[i - 1]) return la[i - 1] < lb[i - 1] ? -1 : 1;
+  }
+  return 0;
+}
+
+std::vector<uint32_t> mul_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
+  if ((la.size() == 1 && la[0] == 0) || (lb.size() == 1 && lb[0] == 0)) return {0};
+  if (la.size() == 1 && la[0] == 1) return lb;
+  if (lb.size() == 1 && lb[0] == 1) return la;
+  const size_t n = la.size(), m = lb.size();
+  const size_t total = n + m;
+  unsigned __int128 stack_acc[256];
+  std::vector<unsigned __int128> heap_acc;
+  unsigned __int128* acc = nullptr;
+  if (total <= 256) {
+    std::fill_n(stack_acc, total, 0);
+    acc = stack_acc;
+  } else {
+    heap_acc.assign(total, 0);
+    acc = heap_acc.data();
+  }
+  for (size_t i = 0; i < n; ++i) {
+    const uint64_t av = la[i];
+    if (av == 0) continue;
+    for (size_t j = 0; j < m; ++j) {
+      acc[i + j] += static_cast<unsigned __int128>(av) * lb[j];
+    }
+  }
+  std::vector<uint32_t> res(total);
+  unsigned __int128 carry = 0;
+  for (size_t i = 0; i < total; ++i) {
+    unsigned __int128 cur = acc[i] + carry;
+    res[i] = static_cast<uint32_t>(cur % BASE_10E9);
+    carry = cur / BASE_10E9;
+  }
+  size_t len = total;
+  while (len > 1 && res[len - 1] == 0) len--;
+  res.resize(len);
+  return res;
+}
+
+void scale_up_limbs(std::vector<uint32_t>& limbs, long long diff) {
+  if (diff <= 0 || (limbs.size() == 1 && limbs[0] == 0)) return;
+  long long words = diff / 9;
+  long long rem = diff % 9;
+  if (rem > 0) {
+    uint64_t factor = static_cast<uint64_t>(POW10_128[rem]);
+    uint64_t carry = 0;
+    for (size_t i = 0; i < limbs.size(); ++i) {
+      uint64_t cur = static_cast<uint64_t>(limbs[i]) * factor + carry;
+      limbs[i] = static_cast<uint32_t>(cur % BASE_10E9);
+      carry = cur / BASE_10E9;
+    }
+    if (carry > 0) limbs.push_back(static_cast<uint32_t>(carry));
+  }
+  if (words > 0) {
+    limbs.insert(limbs.begin(), static_cast<size_t>(words), 0);
+  }
+}
+
 std::string dec_digits_from_magnitude(unsigned __int128 magnitude) {
   if (magnitude == 0) return "0";
   char buf[42];
@@ -408,18 +491,7 @@ std::string add_abs(const std::string& a, const std::string& b) {
     for (char c : b) vb = vb * 10 + (c - '0');
     return dec_digits_from_magnitude(va + vb);
   }
-  std::vector<uint32_t> la = string_to_limbs(a);
-  std::vector<uint32_t> lb = string_to_limbs(b);
-  std::size_t n = std::max(la.size(), lb.size());
-  std::vector<uint32_t> res;
-  res.reserve(n + 1);
-  uint64_t carry = 0;
-  for (std::size_t i = 0; i < n || carry; ++i) {
-    uint64_t cur = carry + (i < la.size() ? la[i] : 0) + (i < lb.size() ? lb[i] : 0);
-    res.push_back(static_cast<uint32_t>(cur % BASE_10E9));
-    carry = cur / BASE_10E9;
-  }
-  return limbs_to_string(res);
+  return limbs_to_string(add_limbs(string_to_limbs(a), string_to_limbs(b)));
 }
 
 // Requires a >= b.
@@ -432,25 +504,10 @@ std::string sub_abs(const std::string& a, const std::string& b) {
     for (char c : b) vb = vb * 10 + (c - '0');
     return dec_digits_from_magnitude(va - vb);
   }
-  std::vector<uint32_t> la = string_to_limbs(a);
-  std::vector<uint32_t> lb = string_to_limbs(b);
-  std::vector<uint32_t> res;
-  res.reserve(la.size());
-  int64_t borrow = 0;
-  for (std::size_t i = 0; i < la.size(); ++i) {
-    int64_t diff = static_cast<int64_t>(la[i]) - (i < lb.size() ? lb[i] : 0) - borrow;
-    if (diff < 0) {
-      diff += BASE_10E9;
-      borrow = 1;
-    } else {
-      borrow = 0;
-    }
-    res.push_back(static_cast<uint32_t>(diff));
-  }
-  return limbs_to_string(res);
+  return limbs_to_string(sub_limbs(string_to_limbs(a), string_to_limbs(b)));
 }
 
-std::string mul_abs(const std::string& a, const std::string& b) {
+[[maybe_unused]] std::string mul_abs(const std::string& a, const std::string& b) {
   if (a == "0" || b == "0") return "0";
   if (a == "1") return b;
   if (b == "1") return a;
@@ -468,24 +525,7 @@ std::string mul_abs(const std::string& a, const std::string& b) {
       return dec_digits_from_magnitude(prod);
     }
   }
-  std::vector<uint32_t> la = string_to_limbs(a);
-  std::vector<uint32_t> lb = string_to_limbs(b);
-  std::size_t n = la.size(), m = lb.size();
-  std::vector<uint64_t> acc(n + m, 0);
-  for (std::size_t i = 0; i < n; ++i) {
-    uint64_t av = la[i];
-    if (av == 0) continue;
-    uint64_t carry = 0;
-    for (std::size_t j = 0; j < m; ++j) {
-      uint64_t cur = acc[i + j] + av * lb[j] + carry;
-      acc[i + j] = cur % BASE_10E9;
-      carry = cur / BASE_10E9;
-    }
-    acc[i + m] += carry;
-  }
-  while (acc.size() > 1 && acc.back() == 0) acc.pop_back();
-  std::vector<uint32_t> res(acc.begin(), acc.end());
-  return limbs_to_string(res);
+  return limbs_to_string(mul_limbs(string_to_limbs(a), string_to_limbs(b)));
 }
 
 // Schoolbook long division with power-of-10 and single-digit fast paths.
@@ -551,17 +591,78 @@ std::string pow10(long long k) {
 
 // --- construction
 
-const std::string& dec_get_digits(const Dec& d) {
-  if (d.digits.empty()) {
-    if (d.small) {
-      unsigned __int128 mag = d.mantissa < 0 ? static_cast<unsigned __int128>(-(d.mantissa))
-                                             : static_cast<unsigned __int128>(d.mantissa);
-      const_cast<Dec&>(d).digits = dec_digits_from_magnitude(mag);
+const std::vector<uint32_t>& dec_get_limbs(const Dec& d) {
+  if (!d.limbs.empty()) return d.limbs;
+  if (d.small) {
+    std::vector<uint32_t>& l = const_cast<Dec&>(d).limbs;
+    unsigned __int128 mag = d.mantissa < 0 ? static_cast<unsigned __int128>(-(d.mantissa))
+                                           : static_cast<unsigned __int128>(d.mantissa);
+    if (mag == 0) {
+      l.push_back(0);
     } else {
-      const_cast<Dec&>(d).digits = "0";
+      while (mag > 0) {
+        l.push_back(static_cast<uint32_t>(mag % BASE_10E9));
+        mag /= BASE_10E9;
+      }
+    }
+    return d.limbs;
+  }
+  if (!d.digits.empty()) {
+    const_cast<Dec&>(d).limbs = string_to_limbs(d.digits);
+    return d.limbs;
+  }
+  const_cast<Dec&>(d).limbs = {0};
+  return d.limbs;
+}
+
+const std::string& dec_get_digits(const Dec& d) {
+  if (!d.digits.empty()) return d.digits;
+  if (d.small) {
+    unsigned __int128 mag = d.mantissa < 0 ? static_cast<unsigned __int128>(-(d.mantissa))
+                                           : static_cast<unsigned __int128>(d.mantissa);
+    const_cast<Dec&>(d).digits = dec_digits_from_magnitude(mag);
+    return d.digits;
+  }
+  if (!d.limbs.empty()) {
+    const_cast<Dec&>(d).digits = limbs_to_string(d.limbs);
+    return d.digits;
+  }
+  const_cast<Dec&>(d).digits = "0";
+  return d.digits;
+}
+
+Dec dec_from_mantissa(__int128_t mantissa, long long scale) {
+  Dec d;
+  d.neg = mantissa < 0;
+  d.scale = static_cast<std::int32_t>(scale);
+  d.small = true;
+  d.mantissa = mantissa;
+  return d;
+}
+
+Dec dec_from_limbs(bool neg, std::vector<uint32_t> limbs, long long scale) {
+  while (limbs.size() > 1 && limbs.back() == 0) limbs.pop_back();
+  if (limbs.empty() || (limbs.size() == 1 && limbs[0] == 0)) {
+    return dec_from_mantissa(0, scale);
+  }
+  if (scale <= 38 && limbs.size() <= 4) {
+    unsigned __int128 mag = 0;
+    for (size_t i = limbs.size(); i > 0; --i) {
+      mag = mag * BASE_10E9 + limbs[i - 1];
+    }
+    const unsigned __int128 limit = neg ? (static_cast<unsigned __int128>(1) << 127)
+                                        : static_cast<unsigned __int128>(~((static_cast<unsigned __int128>(1)) << 127));
+    if (mag <= limit) {
+      __int128_t mantissa = neg ? -static_cast<__int128_t>(mag) : static_cast<__int128_t>(mag);
+      return dec_from_mantissa(mantissa, scale);
     }
   }
-  return d.digits;
+  Dec d;
+  d.neg = neg;
+  d.small = false;
+  d.scale = static_cast<std::int32_t>(scale);
+  d.limbs = std::move(limbs);
+  return d;
 }
 
 std::optional<__int128_t> dec_small_mantissa(const std::string& digits, bool neg) {
@@ -582,15 +683,6 @@ std::optional<__int128_t> dec_small_mantissa(const std::string& digits, bool neg
   return -static_cast<__int128_t>(magnitude);
 }
 
-Dec dec_from_mantissa(__int128_t mantissa, long long scale) {
-  Dec d;
-  d.neg = mantissa < 0;
-  d.scale = static_cast<std::int32_t>(scale);
-  d.small = true;
-  d.mantissa = mantissa;
-  return d;
-}
-
 Dec dec_make(bool neg, std::string digits, long long scale) {
   Dec d;
   d.digits = strip(digits);
@@ -607,20 +699,30 @@ Dec dec_make(bool neg, std::string digits, long long scale) {
 // rendered. Every operation that can grow a number passes its result through
 // here, so dec_power — repeated squaring over dec_mul — trips on an intermediate
 // and the enormous value is never allocated.
-Dec dec_guard(Dec d, Pos pos) {
+Dec dec_guard(Dec&& d, Pos pos) {
   if (d.scale > MAX_FRAC_DIGITS) {
     fail("E_RANGE", "number has more than " + std::to_string(MAX_FRAC_DIGITS) + " fractional digits",
          pos);
   }
   if (d.small) {
-    return d;
+    return std::move(d);
+  }
+  if (!d.limbs.empty()) {
+    if (static_cast<long long>(d.limbs.size()) * 9 - d.scale <= MAX_INT_DIGITS) {
+      return std::move(d);
+    }
   }
   const std::string& digits = dec_get_digits(d);
   if (static_cast<long long>(digits.size()) - d.scale > MAX_INT_DIGITS) {
     fail("E_RANGE", "number has more than " + std::to_string(MAX_INT_DIGITS) + " integer digits",
          pos);
   }
-  return d;
+  return std::move(d);
+}
+
+[[maybe_unused]] Dec dec_guard(const Dec& d, Pos pos) {
+  Dec copy = d;
+  return dec_guard(std::move(copy), pos);
 }
 
 const Dec DEC_ZERO = dec_from_mantissa(0, 0);
@@ -729,35 +831,50 @@ Dec dec_from_int(long long n) {
 
 bool dec_is_zero(const Dec& d) {
   if (d.small) return d.mantissa == 0;
+  if (!d.limbs.empty()) return d.limbs.size() == 1 && d.limbs[0] == 0;
   return dec_get_digits(d) == "0";
 }
 
 Dec dec_negate(const Dec& d) {
   if (d.small) return dec_from_mantissa(-d.mantissa, d.scale);
+  if (!d.limbs.empty()) {
+    Dec r = d;
+    if (!(r.limbs.size() == 1 && r.limbs[0] == 0)) r.neg = !r.neg;
+    return r;
+  }
   return dec_make(!d.neg, dec_get_digits(d), d.scale);
 }
 
 Dec dec_abs(const Dec& d) {
   if (d.small) return dec_from_mantissa(d.mantissa < 0 ? -d.mantissa : d.mantissa, d.scale);
+  if (!d.limbs.empty()) {
+    Dec r = d;
+    r.neg = false;
+    return r;
+  }
   return dec_make(false, dec_get_digits(d), d.scale);
 }
 
 int dec_sign(const Dec& d) {
   if (d.small) return d.mantissa == 0 ? 0 : (d.mantissa < 0 ? -1 : 1);
+  if (!d.limbs.empty()) {
+    if (d.limbs.size() == 1 && d.limbs[0] == 0) return 0;
+    return d.neg ? -1 : 1;
+  }
   return dec_is_zero(d) ? 0 : (d.neg ? -1 : 1);
 }
 
 // --- arithmetic
 
 void dec_aligned(const Dec& a, const Dec& b, std::string& A, std::string& B, long long& s) {
-  s = std::max(a.scale, b.scale);
+  s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
   A = scale_up(dec_get_digits(a), s - a.scale);
   B = scale_up(dec_get_digits(b), s - b.scale);
 }
 
 Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small) {
-    const long long target_scale = std::max(a.scale, b.scale);
+    const long long target_scale = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
     if (target_scale <= 38 && (target_scale - a.scale) <= 38 && (target_scale - b.scale) <= 38) {
       __int128_t sa = a.mantissa;
       __int128_t sb = b.mantissa;
@@ -776,16 +893,30 @@ Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
       }
     }
   }
-  std::string A, B;
-  long long s;
-  dec_aligned(a, b, A, B, s);
-  // Only true addition can grow: a difference is never wider than its operands,
-  // and the aligned scale is the larger of two already legal ones.
-  if (a.neg == b.neg) return dec_guard(dec_make(a.neg, add_abs(A, B), s), pos);
-  const int c = cmp_abs(A, B);
-  if (c == 0) return dec_make(false, "0", s);
-  return c > 0 ? dec_guard(dec_make(a.neg, sub_abs(A, B), s), pos)
-               : dec_guard(dec_make(b.neg, sub_abs(B, A), s), pos);
+  const std::vector<uint32_t>& ref_a = dec_get_limbs(a);
+  const std::vector<uint32_t>& ref_b = dec_get_limbs(b);
+  const long long s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
+  const std::vector<uint32_t>* pa = &ref_a;
+  const std::vector<uint32_t>* pb = &ref_b;
+  std::vector<uint32_t> scaled_a, scaled_b;
+  if (s > a.scale) {
+    scaled_a = ref_a;
+    scale_up_limbs(scaled_a, s - a.scale);
+    pa = &scaled_a;
+  }
+  if (s > b.scale) {
+    scaled_b = ref_b;
+    scale_up_limbs(scaled_b, s - b.scale);
+    pb = &scaled_b;
+  }
+
+  if (a.neg == b.neg) {
+    return dec_guard(dec_from_limbs(a.neg, add_limbs(*pa, *pb), s), pos);
+  }
+  const int c = cmp_limbs(*pa, *pb);
+  if (c == 0) return dec_from_mantissa(0, s);
+  return c > 0 ? dec_guard(dec_from_limbs(a.neg, sub_limbs(*pa, *pb), s), pos)
+               : dec_guard(dec_from_limbs(b.neg, sub_limbs(*pb, *pa), s), pos);
 }
 
 Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
@@ -800,14 +931,17 @@ Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
       }
     }
   }
-  return dec_guard(dec_make(a.neg != b.neg, mul_abs(dec_get_digits(a), dec_get_digits(b)), a.scale + b.scale), pos);
+  const std::vector<uint32_t>& la = dec_get_limbs(a);
+  const std::vector<uint32_t>& lb = dec_get_limbs(b);
+  const bool res_neg = a.neg != b.neg;
+  return dec_guard(dec_from_limbs(res_neg, mul_limbs(la, lb), static_cast<long long>(a.scale) + b.scale), pos);
 }
 
 int dec_cmp(const Dec& a, const Dec& b) {
   if (dec_is_zero(a) && dec_is_zero(b)) return 0;
   if (a.neg != b.neg) return a.neg ? -1 : 1;
   if (a.small && b.small) {
-    const long long target_scale = std::max(a.scale, b.scale);
+    const long long target_scale = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
     if (target_scale <= 38 && (target_scale - a.scale) <= 38 && (target_scale - b.scale) <= 38) {
       __int128_t sa = a.mantissa;
       __int128_t sb = b.mantissa;
@@ -823,10 +957,20 @@ int dec_cmp(const Dec& a, const Dec& b) {
       }
     }
   }
-  std::string A, B;
-  long long s;
-  dec_aligned(a, b, A, B, s);
-  const int c = cmp_abs(A, B);
+  const std::vector<uint32_t>& ref_a = dec_get_limbs(a);
+  const std::vector<uint32_t>& ref_b = dec_get_limbs(b);
+  int c = 0;
+  if (a.scale == b.scale) {
+    c = cmp_limbs(ref_a, ref_b);
+  } else if (a.scale < b.scale) {
+    std::vector<uint32_t> la = ref_a;
+    scale_up_limbs(la, b.scale - a.scale);
+    c = cmp_limbs(la, ref_b);
+  } else {
+    std::vector<uint32_t> lb = ref_b;
+    scale_up_limbs(lb, a.scale - b.scale);
+    c = cmp_limbs(ref_a, lb);
+  }
   return a.neg ? -c : c;
 }
 
@@ -1115,25 +1259,71 @@ struct Internals {
     v.p_->storage.reserve(reserve_size);
     return v;
   }
+  static Value from_dec(Dec d) {
+    Value v;
+    v.p_->kind = Kind::Text;
+    v.p_->has_dec = true;
+    v.p_->dec_val = std::move(d);
+    v.p_->scalar_computed = false;
+    return v;
+  }
   static std::vector<Value>& storage(Value& v) {
     return v.p_->storage;
   }
 };
 
-Value::Value() : p_(std::make_shared<Impl>()) {}
+namespace {
+struct ImplFreelist {
+  Value::Impl* head = nullptr;
+  std::size_t count = 0;
+  static constexpr std::size_t MAX_CACHED = 2048;
+  ~ImplFreelist() {
+    while (head) {
+      Value::Impl* next = head->next_free;
+      ::operator delete(head);
+      head = next;
+    }
+  }
+};
+thread_local ImplFreelist tl_impl_freelist;
+}  // namespace
+
+void* Value::Impl::operator new(std::size_t size) {
+  if (size == sizeof(Value::Impl) && tl_impl_freelist.head) {
+    Value::Impl* p = tl_impl_freelist.head;
+    tl_impl_freelist.head = p->next_free;
+    --tl_impl_freelist.count;
+    return p;
+  }
+  return ::operator new(size);
+}
+
+void Value::Impl::operator delete(void* ptr, std::size_t size) noexcept {
+  if (size == sizeof(Value::Impl) && ptr && tl_impl_freelist.count < ImplFreelist::MAX_CACHED) {
+    Value::Impl* p = static_cast<Value::Impl*>(ptr);
+    p->next_free = tl_impl_freelist.head;
+    tl_impl_freelist.head = p;
+    ++tl_impl_freelist.count;
+    return;
+  }
+  ::operator delete(ptr);
+}
+
+Value::Value() : p_(new Impl()) {}
 
 Kind Value::kind() const {
-  return p_->kind;
+  return p_ ? p_->kind : Kind::None;
 }
 
-bool Value::is_none() const { return kind() == Kind::None; }
-bool Value::is_text() const { return kind() == Kind::Text; }
-bool Value::is_bin() const { return kind() == Kind::Bin; }
-bool Value::is_bool() const { return kind() == Kind::Bool; }
+bool Value::is_none() const { return !p_ || kind() == Kind::None; }
+bool Value::is_text() const { return p_ && kind() == Kind::Text; }
+bool Value::is_bin() const { return p_ && kind() == Kind::Bin; }
+bool Value::is_bool() const { return p_ && kind() == Kind::Bool; }
 bool Value::is_list() const {
-  return p_->is_list;
+  return p_ && p_->is_list;
 }
 void Value::set_is_list(bool b) {
+  if (!p_) return;
   if (!b && p_->is_list && !p_->storage.empty()) {
     ensure_children();
     p_->storage.clear();
@@ -1175,7 +1365,10 @@ Value Value::clone_at(int depth, Pos pos) const {
   out.p_->scalar_computed = p_->scalar_computed;
   out.p_->boolean = p_->boolean;
   out.p_->is_list = p_->is_list;
-  out.p_->dec_val = p_->dec_val;
+  out.p_->has_dec = p_->has_dec;
+  if (p_->has_dec) {
+    out.p_->dec_val = p_->dec_val;
+  }
   if (!p_->shape && (!p_->is_list || p_->storage.empty()) && p_->children.empty()) {
     return out;
   }
@@ -1204,45 +1397,48 @@ Value Value::clone(Pos pos) const { return clone_at(1, pos); }
 
 // Iterative, for the reason Node's destructor is: destroying a child is usually
 // the last reference to it, so freeing a deep tree recursed once per level and
-// found the stack at about a hundred thousand of them. The language cannot build
-// one that deep any more -- resolve_target refuses the path and clone_at refuses
-// the copy -- but `set()` is public, an embedding application can still nest a
-// value by hand, and a destructor is the one operation that cannot refuse.
-//
-// Same shape as Node::~Node: take this value's children into a worklist, pop,
-// and take a popped value's own children first WHEN we are its last owner and it
-// is therefore about to be destroyed.
-Value::Impl::~Impl() {
-  std::vector<std::shared_ptr<Impl>> pending;
-  const auto steal = [&pending](Impl& impl) {
-    for (Entry& e : impl.children) {
-      if (e.second.p_) pending.push_back(std::move(e.second.p_));
+// found the stack at about a hundred thousand of them.
+void Value::destroy(Impl* p) {
+  if (!p) return;
+  std::vector<Impl*> pending;
+  const auto steal = [&pending](Impl* impl) {
+    for (Entry& e : impl->children) {
+      if (Impl* child = e.second.p_) {
+        e.second.p_ = nullptr;
+        if (--child->ref_count == 0) {
+          pending.push_back(child);
+        }
+      }
     }
-    impl.children.clear();
-    for (Value& value : impl.storage) {
-      if (value.p_) pending.push_back(std::move(value.p_));
+    impl->children.clear();
+    for (Value& val : impl->storage) {
+      if (Impl* child = val.p_) {
+        val.p_ = nullptr;
+        if (--child->ref_count == 0) {
+          pending.push_back(child);
+        }
+      }
     }
-    impl.storage.clear();
+    impl->storage.clear();
   };
 
-  steal(*this);
+  steal(p);
+  delete p;
   while (!pending.empty()) {
-    const std::shared_ptr<Impl> held = std::move(pending.back());
+    Impl* curr = pending.back();
     pending.pop_back();
-    if (held.use_count() == 1) steal(*held);
+    steal(curr);
+    delete curr;
   }
 }
 
-Value Value::num(std::shared_ptr<const Dec> d) {
-  Value v;
-  v.p_->kind = Kind::Text;
-  v.p_->dec_val = std::move(d);
-  v.p_->scalar_computed = false;
-  return v;
+Value Value::num(const Dec& d) {
+  return Internals::from_dec(d);
 }
 
-Value Value::num(const Dec& d) {
-  return Value::num(std::make_shared<Dec>(d));
+Value Value::num(std::shared_ptr<const Dec> d) {
+  if (!d) return Value::none();
+  return Value::num(*d);
 }
 
 namespace {
@@ -1252,8 +1448,11 @@ Value make_bin(std::string bytes) { return Internals::raw(Kind::Bin, std::move(b
 Value make_num(const Dec& d) {
   return Value::num(d);
 }
+Value make_num(Dec&& d) {
+  return Internals::from_dec(std::move(d));
+}
 Value make_int(long long n) {
-  return Value::integer(n);
+  return make_num(dec_from_int(n));
 }
 
 }  // namespace
@@ -1282,12 +1481,11 @@ Value Value::num(const std::string& decimal) {
   if (!sel::dec_parse(decimal, d)) {
     throw SelError("E_NOT_NUM", "not a number: " + decimal, Pos{});
   }
-  return Value::num(std::make_shared<Dec>(std::move(d)));
+  return make_num(std::move(d));
 }
 
 Value Value::integer(long long n) {
-  Dec d = dec_from_int(n);
-  return Value::num(std::make_shared<Dec>(std::move(d)));
+  return make_num(dec_from_int(n));
 }
 
 Value Value::list(std::vector<Value> values) {
@@ -1561,8 +1759,8 @@ const Value& Value::scalar_source(Pos pos) const {
 const std::string& Value::as_text(Pos pos) const {
   const Value& v = scalar_source(pos);
   if (v.p_->kind == Kind::Text) {
-    if (!v.p_->scalar_computed && v.p_->dec_val) {
-      v.p_->scalar = dec_format(*v.p_->dec_val);
+    if (!v.p_->scalar_computed && v.p_->has_dec) {
+      v.p_->scalar = dec_format(v.p_->dec_val);
       v.p_->scalar_computed = true;
     }
     return v.p_->scalar;
@@ -1577,8 +1775,8 @@ const std::string& Value::as_text(Pos pos) const {
 const std::string& Value::as_bytes(Pos pos) const {
   const Value& v = scalar_source(pos);
   if (v.p_->kind == Kind::Text) {
-    if (!v.p_->scalar_computed && v.p_->dec_val) {
-      v.p_->scalar = dec_format(*v.p_->dec_val);
+    if (!v.p_->scalar_computed && v.p_->has_dec) {
+      v.p_->scalar = dec_format(v.p_->dec_val);
       v.p_->scalar_computed = true;
     }
     return v.p_->scalar;
@@ -1594,8 +1792,8 @@ bool Value::as_bool(Pos pos) const {
 }
 
 const std::string& Value::scalar() const {
-  if (p_->kind == Kind::Text && !p_->scalar_computed && p_->dec_val) {
-    p_->scalar = dec_format(*p_->dec_val);
+  if (p_->kind == Kind::Text && !p_->scalar_computed && p_->has_dec) {
+    p_->scalar = dec_format(p_->dec_val);
     p_->scalar_computed = true;
   }
   return p_->scalar;
@@ -1609,7 +1807,7 @@ bool Value::looks_numeric() const {
   if (p_->kind == Kind::None && size() == 0) return false;
   try {
     const Value& v = scalar_source();
-    if (v.p_->dec_val) return true;
+    if (v.p_->has_dec) return true;
     Dec d;
     return v.p_->kind == Kind::Text && sel::dec_parse(v.scalar(), d);
   } catch (const SelError&) {
@@ -1627,9 +1825,9 @@ bool Value::eql_at(const Value& other, int depth, Pos pos) const {
   }
   if (p_->kind != other.p_->kind) return false;
   if (p_->kind == Kind::Text) {
-    if (p_->dec_val && other.p_->dec_val) {
-      const Dec& a = *p_->dec_val;
-      const Dec& b = *other.p_->dec_val;
+    if (p_->has_dec && other.p_->has_dec) {
+      const Dec& a = p_->dec_val;
+      const Dec& b = other.p_->dec_val;
       if (a.neg != b.neg || a.scale != b.scale) return false;
       if (a.small && b.small) {
         if (a.mantissa != b.mantissa) return false;
@@ -1722,9 +1920,9 @@ std::uint64_t Value::structural_hash(Pos pos) const {
     if (value.p_->kind == Kind::Text) {
       if (value.p_->scalar_computed) {
         h = mix(h, std::hash<std::string_view>{}(value.p_->scalar));
-      } else if (value.p_->dec_val) {
+      } else if (value.p_->has_dec) {
         char buf[64];
-        const std::size_t len = dec_format_buf(*value.p_->dec_val, buf);
+        const std::size_t len = dec_format_buf(value.p_->dec_val, buf);
         h = mix(h, std::hash<std::string_view>{}(std::string_view(buf, len)));
       } else {
         h = mix(h, std::hash<std::string_view>{}(value.p_->scalar));
@@ -2756,7 +2954,7 @@ class Args {
 
   Dec dec(int i) {
     const Value& v = val(i).scalar_source(pos_of(i));
-    if (v.dec_val()) return *v.dec_val();
+    if (v.has_dec()) return v.dec_ref();
     if (v.kind() != Kind::Text) {
       fail("E_NOT_NUM",
            std::string("expected a number, got ") +
@@ -2767,7 +2965,7 @@ class Args {
     if (!dec_parse(v.scalar(), d, pos_of(i))) {
       fail("E_NOT_NUM", "not a number: \"" + v.scalar() + "\"", pos_of(i));
     }
-    v.set_dec_val(std::make_shared<Dec>(d));
+    v.set_dec(d);
     return d;
   }
 
@@ -2888,23 +3086,12 @@ Value eval_list(const Node& node, Context& ctx) {
   return Value::list(std::move(out));
 }
 
-Value eval_unary(const Node& node, Context& ctx) {
-  const Value v = eval_node(*node.l, ctx);
-  if (node.s == "NOT") return Value::boolean(!v.as_bool(node.l->pos));
-  const Value& src = v.scalar_source(node.l->pos);
-  Dec d;
-  if (src.kind() != Kind::Text || !dec_parse(src.scalar(), d, node.l->pos)) {
-    fail("E_NOT_NUM", "expected a number", node.l->pos);
-  }
-  return make_num(dec_negate(d));
-}
-
 // Numeric coercion at an arbitrary position, used by the operators. Built-ins go
 // through Args::dec instead, which reports against the argument's own position.
 Dec as_dec(const Value& v, Pos pos) {
   const Value& src = v.scalar_source(pos);
-  if (src.dec_val()) {
-    return *src.dec_val();
+  if (src.has_dec()) {
+    return src.dec_ref();
   }
   if (src.kind() != Kind::Text) {
     fail("E_NOT_NUM",
@@ -2914,8 +3101,15 @@ Dec as_dec(const Value& v, Pos pos) {
   }
   Dec d;
   if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
-  src.set_dec_val(std::make_shared<Dec>(d));
+  src.set_dec(d);
   return d;
+}
+
+Value eval_unary(const Node& node, Context& ctx) {
+  const Value v = eval_node(*node.l, ctx);
+  if (node.s == "NOT") return Value::boolean(!v.as_bool(node.l->pos));
+  const Dec d = as_dec(v, node.l->pos);
+  return make_num(dec_negate(d));
 }
 
 Value eval_binary(const Node& node, Context& ctx) {
@@ -3075,6 +3269,45 @@ std::vector<std::string> resolve_target(const Node& target, Context& ctx) {
 }
 
 Value eval_assign(const Node& node, Context& ctx) {
+  if (node.l->t == NT::Var) {
+    const std::string& var_name = node.l->s;
+    if (ctx.is_bound(var_name)) {
+      fail("E_BAD_ASSIGN", var_name + " is an aggregate binder and cannot be assigned", node.l->pos);
+    }
+    Value value;
+    if (node.s == "=") {
+      value = eval_node(*node.r, ctx).clone(node.pos);
+      ctx.root->set(var_name, value);
+      return value;
+    } else {
+      Value* current = ctx.root->get(var_name);
+      if (!current) fail("E_UNDEF_VAR", node.s + " needs an existing target", node.l->pos);
+      const Value target_value = *current;
+
+      const Value rhs = eval_node(*node.r, ctx);
+      const Pos tp = node.l->pos, vp = node.r->pos;
+      const char binop = node.s[0];
+
+      if (binop == '&') {
+        value = concat(target_value, rhs, tp, vp);
+      } else {
+        const Dec a = as_dec(target_value, tp);
+        const Dec b = as_dec(rhs, vp);
+        Dec res;
+        switch (binop) {
+          case '+': res = dec_add(a, b, node.pos); break;
+          case '-': res = dec_sub(a, b, node.pos); break;
+          case '*': res = dec_mul(a, b, node.pos); break;
+          case '/': res = dec_div(a, b, node.pos); break;
+          default: res = dec_mod(a, b, node.pos); break;
+        }
+        value = make_num(std::move(res));
+      }
+      *current = value;
+      return value;
+    }
+  }
+
   // The target is resolved first, then the right-hand side — the order the other
   // hosts use, and observable: `A[1] = COUNT(A)` sees the A that resolving the
   // target just created.
@@ -3112,7 +3345,7 @@ Value eval_assign(const Node& node, Context& ctx) {
         case '/': res = dec_div(a, b, node.pos); break;
         default: res = dec_mod(a, b, node.pos); break;
       }
-      value = make_num(res);
+      value = make_num(std::move(res));
     }
   }
 
@@ -3128,7 +3361,7 @@ Value eval_dispatch(const Node& node, Context& ctx) {
   switch (node.t) {
     case NT::Num: {
       if (node.dec) {
-        return Value::num(node.dec);
+        return Value::num(*node.dec);
       }
       return Value::num(node.s);
     }
@@ -3272,7 +3505,7 @@ Value eval_math_plan(const MathPlan& plan, Context& ctx) {
       }
     }
   }
-  return make_num(scratchpad[plan.output_slot]);
+  return make_num(std::move(scratchpad[plan.output_slot]));
 }
 
 }  // namespace

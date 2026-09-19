@@ -100,10 +100,13 @@ final class Core
                 if ($count === 0 || $val->isNull()) {
                     return Value::list([]);
                 }
+                if ($val->isList && $val->storage !== null) {
+                    return Value::list(array_slice($val->storage, 0, $count));
+                }
                 $out = [];
                 $seen = 0;
                 self::forEachElement($val, static function (string $key, Value $item) use (&$out, &$seen, $count): void {
-                    if ($seen < $count) $out[] = $item->copy();
+                    if ($seen < $count) $out[] = $item;
                     $seen++;
                 });
                 return Value::list($out);
@@ -116,10 +119,13 @@ final class Core
                 if ($val->isNull()) {
                     return Value::list([]);
                 }
+                if ($val->isList && $val->storage !== null) {
+                    return Value::list(array_slice($val->storage, $count));
+                }
                 $out = [];
                 $index = 0;
                 self::forEachElement($val, static function (string $key, Value $item) use (&$out, &$index, $count): void {
-                    if ($index++ >= $count) $out[] = $item->copy();
+                    if ($index++ >= $count) $out[] = $item;
                 });
                 return Value::list($out);
             }]);
@@ -140,7 +146,7 @@ final class Core
                     $newRow = Value::none();
                     foreach ($cols as $c) {
                         if ($row->has($c)) {
-                            $newRow->set($c, $row->get($c)->copy());
+                            $newRow->set($c, $row->get($c));
                         }
                     }
                     $out[] = $newRow;
@@ -167,7 +173,7 @@ final class Core
                     }
                     if (!$seen) {
                         $buckets[$hash][] = $item;
-                        $out[] = $item->copy();
+                        $out[] = $item;
                     }
                 });
                 return Value::list($out);
@@ -307,7 +313,7 @@ final class Core
             return $c !== 0 ? $c : ($x['idx'] <=> $y['idx']);
         });
 
-        $out = array_map(static fn (array $x) => $x['item']->copy(), $indexed);
+        $out = array_map(static fn (array $x): Value => $x['item'], $indexed);
         return Value::list($out);
     }
 
@@ -345,8 +351,14 @@ final class Core
     {
         if ($value->isNull()) return;
         if ($value->isList && $value->storage !== null) {
-            foreach ($value->storage as $i => $item) {
-                $callback((string) ($i + 1), $item);
+            if ($value->listKeys !== null) {
+                foreach ($value->storage as $i => $item) {
+                    $callback($value->listKeys[$i], $item);
+                }
+            } else {
+                foreach ($value->storage as $i => $item) {
+                    $callback((string) ($i + 1), $item);
+                }
             }
             return;
         }
@@ -357,7 +369,7 @@ final class Core
             return;
         }
         if ($value->size() > 0) {
-            foreach ($value->entries() as [$key, $item]) $callback($key, $item);
+            foreach ($value->children as $key => $item) $callback((string) $key, $item);
             return;
         }
         if ($value->kind !== Value::NONE) $callback('1', $value);
@@ -376,30 +388,46 @@ final class Core
         $frame = [$binder => Value::none()];
         if ($needsK) $frame['_K'] = Value::none();
         $ctx->pushFrame($frame);
+        $topFrame = &$ctx->frames[count($ctx->frames) - 1];
         try {
             if ($value->isList && $value->storage !== null) {
-                foreach ($value->storage as $i => $item) {
-                    if ($result !== null) break;
-                    $key = (string) ($i + 1);
-                    $ctx->setFrameValue($binder, $item);
-                    if ($needsK) $ctx->setFrameValue('_K', Value::text($key));
-                    $result = $visit($a->evalNode($body), $key, $item, $body);
+                if ($value->listKeys !== null) {
+                    foreach ($value->storage as $i => $item) {
+                        if ($result !== null) break;
+                        $key = $value->listKeys[$i];
+                        $topFrame[$binder] = $item;
+                        if ($needsK) $topFrame['_K'] = Value::text($key);
+                        $result = $visit($a->evalNode($body), $key, $item, $body);
+                    }
+                } else {
+                    foreach ($value->storage as $i => $item) {
+                        if ($result !== null) break;
+                        $key = $needsK ? (string) ($i + 1) : ($i + 1);
+                        $topFrame[$binder] = $item;
+                        if ($needsK) $topFrame['_K'] = Value::text((string) $key);
+                        $result = $visit($a->evalNode($body), $key, $item, $body);
+                    }
                 }
             } elseif ($value->shape !== null && $value->storage !== null) {
                 foreach ($value->shape->keys as $i => $key) {
                     if ($result !== null) break;
                     $item = $value->storage[$i];
-                    $ctx->setFrameValue($binder, $item);
-                    if ($needsK) $ctx->setFrameValue('_K', Value::text($key));
+                    $topFrame[$binder] = $item;
+                    if ($needsK) $topFrame['_K'] = Value::text($key);
                     $result = $visit($a->evalNode($body), $key, $item, $body);
                 }
-            } else {
-                foreach (self::elements($value) as [$key, $item]) {
+            } elseif ($value->size() > 0) {
+                foreach ($value->children as $key => $item) {
                     if ($result !== null) break;
-                    $ctx->setFrameValue($binder, $item);
-                    if ($needsK) $ctx->setFrameValue('_K', Value::text($key));
-                    $result = $visit($a->evalNode($body), $key, $item, $body);
+                    $keyStr = (string) $key;
+                    $topFrame[$binder] = $item;
+                    if ($needsK) $topFrame['_K'] = Value::text($keyStr);
+                    $result = $visit($a->evalNode($body), $keyStr, $item, $body);
                 }
+            } elseif ($value->kind !== Value::NONE && !$value->isNull()) {
+                $topFrame[$binder] = $value;
+                if ($needsK) $topFrame['_K'] = Value::text('1');
+                $result = $visit($a->evalNode($body), '1', $value, $body);
             }
         } finally {
             $ctx->popFrame();
@@ -457,15 +485,30 @@ final class Core
         // addressable the way the original was.
         Registry::define(['name' => 'FILTER', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true,
             'fn' => static function (Args $a, Context $ctx): Value {
-                $out = Value::none();
-                $out->isList = true;
-                self::walk($a, $ctx, static function (Value $r, string $key, Value $item, array $body) use ($out): ?Value {
+                $storage = [];
+                $keys = [];
+                $needsCustomKeys = false;
+                $expectedIndex = 1;
+                self::walk($a, $ctx, static function (Value $r, string|int $key, Value $item, array $body) use (
+                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex
+                ): ?Value {
                     if ($r->asBool($body['pos'])) {
-                        $out->set($key, $item->copy());
+                        $storage[] = $item;
+                        $keyInt = is_int($key) ? $key : (int) $key;
+                        if (!$needsCustomKeys && $keyInt !== $expectedIndex) {
+                            $needsCustomKeys = true;
+                            for ($j = 0, $n = count($storage) - 1; $j < $n; $j++) {
+                                $keys[] = (string) ($j + 1);
+                            }
+                        }
+                        if ($needsCustomKeys) {
+                            $keys[] = is_string($key) ? $key : (string) $key;
+                        }
+                        $expectedIndex++;
                     }
                     return null;
                 });
-                return $out;
+                return Value::list($storage, $needsCustomKeys ? $keys : null);
             }]);
 
         Registry::define(['name' => 'SUM', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true,

@@ -36,6 +36,8 @@ final class RecordShape
     /** @var array<string,int> */
     public readonly array $keyMap;
     public readonly int $size;
+    /** @var list<string> */
+    public readonly array $keyHashParts;
     /** @var array<string,array{shape:self,oldSize:int,addLower:bool}> */
     public array $aliasCache = [];
 
@@ -85,10 +87,13 @@ final class RecordShape
     {
         $this->keys = array_is_list($keys) ? $keys : array_values($keys);
         $keyMap = [];
+        $keyHashParts = [];
         foreach ($this->keys as $i => $key) {
             $keyMap[$key] = $i;
+            $keyHashParts[] = strlen($key) . ':' . $key . '=';
         }
         $this->keyMap = $keyMap;
+        $this->keyHashParts = $keyHashParts;
         $this->size = count($this->keys);
     }
 
@@ -102,7 +107,7 @@ final class RecordShape
             return $cached;
         }
         $lower = strtolower($tableName);
-        $addLower = $lower !== $tableName && !array_key_exists($lower, $this->keyMap);
+        $addLower = $lower !== $tableName && !isset($this->keyMap[$lower]);
         $keys = $this->keys;
         $keys[] = $tableName;
         if ($addLower) {
@@ -135,6 +140,10 @@ final class Value
     public ?RecordShape $shape = null;
     /** @var list<Value>|null */
     public ?array $storage = null;
+    /** @var list<string>|null */
+    public ?array $listKeys = null;
+    /** @var array<string,int>|null */
+    private ?array $listKeyMap = null;
     /** @var array{neg:bool,digits:string,scale:int}|null */
     public ?array $decVal = null;
 
@@ -149,7 +158,11 @@ final class Value
     public function getScalar(): mixed
     {
         if ($this->scalar === null && $this->decVal !== null) {
-            $this->scalar = Dec::format($this->decVal);
+            if ($this->decVal['scale'] === 0) {
+                $this->scalar = ($this->decVal['neg'] ? '-' : '') . $this->decVal['digits'];
+            } else {
+                $this->scalar = Dec::format($this->decVal);
+            }
         }
         return $this->scalar;
     }
@@ -234,14 +247,15 @@ final class Value
         return $v;
     }
 
-    /** Builds a list keyed "1".."n". Used by `,` and by list-returning built-ins. */
-    /** @param list<Value> $values */
-    public static function list(array $values): self
+    /** Builds a list keyed "1".."n" (or preserved keys). Used by `,` and by list-returning built-ins. */
+    /** @param list<Value> $values @param list<string>|null $keys */
+    public static function list(array $values, ?array $keys = null): self
     {
         $v = new self(self::NONE, null, true);
         // Keep PHP's packed representation when the caller already supplied a
         // list. array_values() would eagerly duplicate a large COW array.
         $v->storage = array_is_list($values) ? $values : array_values($values);
+        $v->listKeys = $keys !== null ? (array_is_list($keys) ? $keys : array_values($keys)) : null;
         return $v;
     }
 
@@ -316,10 +330,19 @@ final class Value
     {
         if ($isList) {
             $values = [];
+            $keys = [];
+            $needsCustomKeys = false;
+            $expectedIndex = 1;
             foreach ($entries as $entry) {
+                $key = (string) $entry[0];
                 $values[] = $entry[1];
+                $keys[] = $key;
+                if (!$needsCustomKeys && (int) $key !== $expectedIndex) {
+                    $needsCustomKeys = true;
+                }
+                $expectedIndex++;
             }
-            return self::list($values);
+            return self::list($values, $needsCustomKeys ? $keys : null);
         }
         $keys = [];
         $values = [];
@@ -436,9 +459,15 @@ final class Value
     public function has(string $key): bool
     {
         if ($this->shape !== null) {
-            return array_key_exists($key, $this->shape->keyMap);
+            return isset($this->shape->keyMap[$key]);
         }
         if ($this->isList && $this->storage !== null) {
+            if ($this->listKeys !== null) {
+                if ($this->listKeyMap === null) {
+                    $this->listKeyMap = array_flip($this->listKeys);
+                }
+                return isset($this->listKeyMap[$key]);
+            }
             $index = self::listIndex($key, count($this->storage));
             return $index >= 0;
         }
@@ -452,6 +481,13 @@ final class Value
             return $index === null ? null : $this->storage[$index];
         }
         if ($this->isList && $this->storage !== null) {
+            if ($this->listKeys !== null) {
+                if ($this->listKeyMap === null) {
+                    $this->listKeyMap = array_flip($this->listKeys);
+                }
+                $index = $this->listKeyMap[$key] ?? null;
+                return $index === null ? null : $this->storage[$index];
+            }
             $index = self::listIndex($key, count($this->storage));
             return $index < 0 ? null : $this->storage[$index];
         }
@@ -468,6 +504,9 @@ final class Value
             return $this->shape->keys;
         }
         if ($this->isList && $this->storage !== null) {
+            if ($this->listKeys !== null) {
+                return $this->listKeys;
+            }
             return array_map(static fn (int $i): string => (string) ($i + 1), array_keys($this->storage));
         }
         return array_map('strval', array_keys($this->children));
@@ -493,6 +532,12 @@ final class Value
             return $out;
         }
         if ($this->isList && $this->storage !== null) {
+            if ($this->listKeys !== null) {
+                foreach ($this->storage as $i => $value) {
+                    $out[] = [$this->listKeys[$i], $value];
+                }
+                return $out;
+            }
             foreach ($this->storage as $i => $value) {
                 $out[] = [(string) ($i + 1), $value];
             }
@@ -520,16 +565,34 @@ final class Value
             $this->shape = null;
             $this->storage = null;
         } elseif ($this->isList && $this->storage !== null) {
-            $index = self::listIndex($key, count($this->storage));
-            if ($index >= 0) {
-                $this->storage[$index] = $value;
-                return $this;
+            if ($this->listKeys !== null) {
+                if ($this->listKeyMap === null) {
+                    $this->listKeyMap = array_flip($this->listKeys);
+                }
+                $index = $this->listKeyMap[$key] ?? null;
+                if ($index !== null) {
+                    $this->storage[$index] = $value;
+                    return $this;
+                }
+                $this->children = [];
+                foreach ($this->entries() as [$existingKey, $existingValue]) {
+                    $this->children[$existingKey] = $existingValue;
+                }
+                $this->storage = null;
+                $this->listKeys = null;
+                $this->listKeyMap = null;
+            } else {
+                $index = self::listIndex($key, count($this->storage));
+                if ($index >= 0) {
+                    $this->storage[$index] = $value;
+                    return $this;
+                }
+                $this->children = [];
+                foreach ($this->entries() as [$existingKey, $existingValue]) {
+                    $this->children[$existingKey] = $existingValue;
+                }
+                $this->storage = null;
             }
-            $this->children = [];
-            foreach ($this->entries() as [$existingKey, $existingValue]) {
-                $this->children[$existingKey] = $existingValue;
-            }
-            $this->storage = null;
         }
         $this->children[$key] = $value;
         return $this;
@@ -537,11 +600,12 @@ final class Value
 
     private static function listIndex(string $key, int $length): int
     {
-        if (!preg_match('/^[1-9][0-9]{0,8}$/D', $key)) {
+        $len = strlen($key);
+        if ($len === 0 || $len > 9 || $key[0] < '1' || $key[0] > '9' || !ctype_digit($key)) {
             return -1;
         }
         $index = (int) $key - 1;
-        return $index >= 0 && $index < $length ? $index : -1;
+        return $index < $length ? $index : -1;
     }
 
     // --- scalar context (§3.2) ----------------------------------------------
@@ -690,7 +754,7 @@ final class Value
             foreach ($this->storage as $value) {
                 $values[] = $value->copyAt($depth + 1, $pos);
             }
-            return self::list($values);
+            return self::list($values, $this->listKeys);
         }
         $out = new self($this->kind, $this->scalar, $this->isList);
         $out->decVal = $this->decVal;
@@ -710,16 +774,47 @@ final class Value
 
     public function structuralHash(): string
     {
-        $hash = hash_init('sha256');
+        $hash = hash_init('xxh3');
         $this->updateStructuralHash($hash, 1);
         return hash_final($hash);
     }
 
-    /** @param mixed $hash */
-    private function updateStructuralHash($hash, int $depth): void
+    private function updateStructuralHash(\HashContext $hash, int $depth): void
     {
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', null);
+        }
+        if ($this->shape !== null) {
+            hash_update($hash, 'NONE:0:;R;');
+            $storage = $this->storage;
+            $nextDepth = $depth + 1;
+            foreach ($this->shape->keyHashParts as $i => $part) {
+                hash_update($hash, $part);
+                $storage[$i]->updateStructuralHash($hash, $nextDepth);
+                hash_update($hash, ';');
+            }
+            return;
+        }
+        if ($this->isList && $this->storage !== null) {
+            hash_update($hash, 'NONE:0:;L;');
+            $storage = $this->storage;
+            $nextDepth = $depth + 1;
+            if ($this->listKeys === null) {
+                foreach ($storage as $i => $value) {
+                    $key = (string) ($i + 1);
+                    hash_update($hash, strlen($key) . ':' . $key . '=');
+                    $value->updateStructuralHash($hash, $nextDepth);
+                    hash_update($hash, ';');
+                }
+            } else {
+                foreach ($storage as $i => $value) {
+                    $key = $this->listKeys[$i];
+                    hash_update($hash, strlen($key) . ':' . $key . '=');
+                    $value->updateStructuralHash($hash, $nextDepth);
+                    hash_update($hash, ';');
+                }
+            }
+            return;
         }
         $scalar = match ($this->kind) {
             self::NONE => '',
@@ -728,23 +823,6 @@ final class Value
         };
         hash_update($hash, $this->kind . ':' . strlen($scalar) . ':' . $scalar . ';');
         hash_update($hash, $this->isList ? 'L;' : 'R;');
-        if ($this->shape !== null) {
-            foreach ($this->shape->keys as $i => $key) {
-                hash_update($hash, strlen($key) . ':' . $key . '=');
-                $this->storage[$i]->updateStructuralHash($hash, $depth + 1);
-                hash_update($hash, ';');
-            }
-            return;
-        }
-        if ($this->isList && $this->storage !== null) {
-            foreach ($this->storage as $i => $value) {
-                $key = (string) ($i + 1);
-                hash_update($hash, strlen($key) . ':' . $key . '=');
-                $value->updateStructuralHash($hash, $depth + 1);
-                hash_update($hash, ';');
-            }
-            return;
-        }
         foreach ($this->children as $key => $value) {
             $key = (string) $key;
             hash_update($hash, strlen($key) . ':' . $key . '=');
@@ -789,6 +867,9 @@ final class Value
             return true;
         }
         if ($this->isList && $other->isList && $this->storage !== null && $other->storage !== null) {
+            if ($this->listKeys !== null || $other->listKeys !== null) {
+                if ($this->keys() !== $other->keys()) return false;
+            }
             foreach ($this->storage as $i => $value) {
                 if (!$value->eqlAt($other->storage[$i], $depth + 1, $pos)) return false;
             }

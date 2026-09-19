@@ -219,20 +219,18 @@ final class Evaluator
      */
     private static function evalList(array $node, Context $ctx): Value
     {
-        $out = Value::none();
-        $out->isList = true;
-        $n = 0;
+        $out = [];
         foreach ($node['items'] as $item) {
             $v = self::evalNode($item, $ctx);
             if ($v->kind === Value::NONE && $v->size() > 0) {
                 foreach ($v->values() as $child) {
-                    $out->set((string) (++$n), $child->copy());
+                    $out[] = $child->copy();
                 }
             } else {
-                $out->set((string) (++$n), $v->copy());
+                $out[] = $v->copy();
             }
         }
-        return $out;
+        return Value::list($out);
     }
 
     /** @param array<string,mixed> $node */
