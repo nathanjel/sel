@@ -101,15 +101,44 @@ def _filter(args, ctx):
     """The one aggregate that preserves keys — a filtered list should still be
     addressable the way the original was.
     """
-    out = Value(NONE, None, is_list=True)
+    in_val = args.val(0)
+    is_dense = in_val.is_list and in_val.storage is not None and in_val.list_keys is None
+    storage = []
+    keys = None
+    needs_custom_keys = False
+    orig_idx = 1
 
-    def visit(r, key, item, body):
-        if r.as_bool(body.pos):
-            out.set(key, item)
-        return None
+    if is_dense:
+        def visit(r, key, item, body):
+            nonlocal needs_custom_keys, keys, orig_idx
+            if r.as_bool(body.pos):
+                storage.append(item)
+                if needs_custom_keys:
+                    keys.append(str(orig_idx))
+            else:
+                if not needs_custom_keys:
+                    needs_custom_keys = True
+                    keys = [str(j + 1) for j in range(len(storage))]
+            orig_idx += 1
+            return None
+    else:
+        expected_index = 1
+        def visit(r, key, item, body):
+            nonlocal needs_custom_keys, keys, expected_index
+            if r.as_bool(body.pos):
+                storage.append(item)
+                if not needs_custom_keys and str(key) != str(expected_index):
+                    needs_custom_keys = True
+                    keys = [str(j + 1) for j in range(len(storage) - 1)]
+                if needs_custom_keys:
+                    if keys is None:
+                        keys = []
+                    keys.append(str(key))
+                expected_index += 1
+            return None
 
     walk(args, ctx, visit)
-    return out
+    return Value.list(storage, keys if needs_custom_keys else None)
 
 
 def _sum(args, ctx):
@@ -412,11 +441,16 @@ def do_bucket(args, ctx):
         # projected spelling has no map to key and groups by identity instead.
         key_str = _bucket_key_text(group_key, key_node.pos) if agg_node is None else ''
         hashed = structural_hash(group_key)
-        bucket = table.setdefault(hashed, [])
-        existing = next((group for group in bucket if group['key'].eql(group_key)), None)
-        if existing is not None:
-            existing['rows'].append(item)
+        bucket = table.get(hashed)
+        if bucket is None:
+            group = {'key': group_key, 'key_str': key_str, 'rows': [item]}
+            table[hashed] = [group]
+            groups.append(group)
             return
+        for group in bucket:
+            if group['key'].eql(group_key):
+                group['rows'].append(item)
+                return
         group = {'key': group_key, 'key_str': key_str, 'rows': [item]}
         bucket.append(group)
         groups.append(group)

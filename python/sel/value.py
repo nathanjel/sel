@@ -9,7 +9,7 @@ from typing import Any, Iterator
 
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos, SelError, fail
-from .utf8 import bytes_to_hex, decode_utf8, encode_utf8, to_code_points
+from .utf8 import bytes_to_hex, decode_utf8, encode_utf8, to_code_points, validate_text
 
 NONE = 'NONE'
 TEXT = 'TEXT'
@@ -27,7 +27,7 @@ class RecordShape:
     longer allocates or hashes a dictionary entry for every row.
     """
 
-    __slots__ = ('keys', 'key_map', 'size', 'alias_cache')
+    __slots__ = ('keys', 'key_map', 'size', 'alias_cache', 'key_hashes')
 
     def __init__(self, keys: tuple[str, ...], key_map: dict[str, int] | None = None) -> None:
         self.keys = keys
@@ -35,6 +35,7 @@ class RecordShape:
                         else {key: i for i, key in enumerate(keys)})
         self.size = len(keys)
         self.alias_cache: dict[str, tuple[tuple[str, ...], int, bool]] = {}
+        self.key_hashes: tuple[int, ...] = tuple(hash(k) for k in keys)
 
 
 _SHAPES: dict[tuple[str, ...], RecordShape] = {}
@@ -90,6 +91,10 @@ def iter_entries(value: Any):
             yield key, value.storage[index]
         return
     if value.is_list and value.storage is not None:
+        if value.list_keys is not None:
+            for index, item in enumerate(value.storage):
+                yield value.list_keys[index], item
+            return
         for index, item in enumerate(value.storage):
             yield str(index + 1), item
         return
@@ -120,6 +125,10 @@ def iter_elements(value: Any):
             yield key, value.storage[index]
         return
     if value.is_list and value.storage is not None:
+        if value.list_keys is not None:
+            for index, item in enumerate(value.storage):
+                yield value.list_keys[index], item
+            return
         for index, item in enumerate(value.storage):
             yield str(index + 1), item
         return
@@ -133,7 +142,7 @@ def iter_elements(value: Any):
 
 class Value:
     __slots__ = ('kind', '_scalar', 'children', 'is_list', 'shape', 'storage',
-                 '_dec_val')
+                 '_dec_val', 'list_keys', '_list_key_map')
 
     # The kind constants, mirrored as class attributes so `Value.BOOL` works the
     # way `Value::BOOL` does in PHP. They are also exported from sel/__init__.py.
@@ -153,6 +162,8 @@ class Value:
         self.children: dict[str, Value] | None = None
         self.shape: RecordShape | None = None
         self.storage: list[Value] | None = None
+        self.list_keys: list[str] | None = None
+        self._list_key_map: dict[str, int] | None = None
         # Lisp's VALUE-DEC-VAL is the same useful cache in Python: the text
         # representation remains normative, while repeated numeric coercions
         # reuse the immutable parsed decimal rather than allocating another Dec.
@@ -214,7 +225,7 @@ class Value:
     def text(s: str) -> Value:
         # Validated at the boundary: a str carrying a lone surrogate has no UTF-8
         # encoding and cannot be a SEL TEXT value.
-        to_code_points(s, None)
+        validate_text(s, None)
         return Value(TEXT, s)
 
     @staticmethod
@@ -248,9 +259,24 @@ class Value:
         return v
 
     @staticmethod
+    def record(keys: list[str], values: list[Value]) -> Value:
+        if not keys:
+            return Value.none()
+        shape = _unique_record_shape(keys)
+        if shape is not None:
+            return Value._from_shape(shape, values)
+        v = Value.none()
+        for key, val in zip(keys, values):
+            v.set(key, val)
+        return v
+
+    @staticmethod
     def from_entries(entries: list[tuple[str, Value]], is_list: bool = False) -> Value:
         if is_list:
-            return Value.list([value for _, value in entries])
+            keys = [key for key, _ in entries]
+            values = [value for _, value in entries]
+            is_dense = all(keys[i] == str(i + 1) for i in range(len(keys)))
+            return Value.list(values, None if is_dense else keys)
         keys = [key for key, _ in entries]
         shape = _unique_record_shape(keys)
         if shape is not None:
@@ -288,12 +314,13 @@ class Value:
         return v
 
     @staticmethod
-    def list(values: list[Value]) -> Value:  # noqa: A003
-        """Builds a list keyed "1".."n". Used by `,` and by list-returning
-        built-ins.
+    def list(values: list[Value], keys: list[str] | None = None) -> Value:  # noqa: A003
+        """Builds a list keyed "1".."n" (or preserved keys). Used by `,` and by
+        list-returning built-ins.
         """
         v = Value(NONE, None, is_list=True)
         v.storage = values if isinstance(values, list) else list(values)
+        v.list_keys = keys
         return v
 
     # --- children -------------------------------------------------------------
@@ -311,6 +338,10 @@ class Value:
         if self.shape is not None:
             return key in self.shape.key_map
         if self.is_list and self.storage is not None:
+            if self.list_keys is not None:
+                if self._list_key_map is None:
+                    self._list_key_map = {k: i for i, k in enumerate(self.list_keys)}
+                return key in self._list_key_map
             return _list_index(key, len(self.storage)) >= 0
         return bool(self.children) and key in self.children
 
@@ -319,6 +350,11 @@ class Value:
             index = self.shape.key_map.get(key)
             return None if index is None else self.storage[index]
         if self.is_list and self.storage is not None:
+            if self.list_keys is not None:
+                if self._list_key_map is None:
+                    self._list_key_map = {k: i for i, k in enumerate(self.list_keys)}
+                index = self._list_key_map.get(key)
+                return None if index is None else self.storage[index]
             index = _list_index(key, len(self.storage))
             return None if index < 0 else self.storage[index]
         return self.children.get(key) if self.children else None
@@ -327,6 +363,8 @@ class Value:
         if self.shape is not None:
             return list(self.shape.keys)
         if self.is_list and self.storage is not None:
+            if self.list_keys is not None:
+                return list(self.list_keys)
             return [str(i + 1) for i in range(len(self.storage))]
         return list(self.children.keys()) if self.children else []
 
@@ -349,12 +387,22 @@ class Value:
             self.storage = None
             self.children = dict(entries)
         elif self.is_list and self.storage is not None:
-            index = _list_index(key, len(self.storage))
-            if index >= 0:
-                self.storage[index] = value
-                return self
+            if self.list_keys is not None:
+                if self._list_key_map is None:
+                    self._list_key_map = {k: i for i, k in enumerate(self.list_keys)}
+                index = self._list_key_map.get(key)
+                if index is not None:
+                    self.storage[index] = value
+                    return self
+            else:
+                index = _list_index(key, len(self.storage))
+                if index >= 0:
+                    self.storage[index] = value
+                    return self
             entries = self.entries()
             self.storage = None
+            self.list_keys = None
+            self._list_key_map = None
             self.children = dict(entries)
         if self.children is None:
             self.children = {}
@@ -464,10 +512,8 @@ as as_text().
     def _clone_at(self, depth: int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
-        if self.shape is None and self.storage is None and not self.children:
-            out = Value(self.kind, self._scalar, self.is_list)
-            out._dec_val = self._dec_val
-            return out
+        if depth > 1 and self.shape is None and self.storage is None and not self.children:
+            return self
         out = Value(self.kind, self._scalar, self.is_list)
         out._dec_val = self._dec_val
         if self.shape is not None:
@@ -475,6 +521,8 @@ as as_text().
             out.storage = [v._clone_at(depth + 1, pos) for v in self.storage]
         elif self.storage is not None:
             out.storage = [v._clone_at(depth + 1, pos) for v in self.storage]
+            if self.list_keys is not None:
+                out.list_keys = list(self.list_keys)
         elif self.children:
             out.children = {k: v._clone_at(depth + 1, pos)
                             for k, v in self.children.items()}
@@ -509,6 +557,12 @@ as as_text().
         if self.size() != other.size():
             return False
         if self.size() == 0:
+            return True
+        if (self.is_list and other.is_list and self.storage is not None and other.storage is not None
+                and self.list_keys is None and other.list_keys is None):
+            for i in range(len(self.storage)):
+                if not self.storage[i]._eql_at(other.storage[i], depth + 1, pos):
+                    return False
             return True
         a, b = self.entries(), other.entries()
         for i in range(len(a)):
@@ -624,26 +678,36 @@ def structural_hash(value: Value) -> int:
 def _structural_hash_at(value: Value, depth: int) -> int:
     if depth > MAX_DEPTH:
         fail('E_DEPTH', 'value nested too deeply', None)
-    h = 1469598103934665603
+    k = value.kind
+    if k == TEXT:
+        h = hash(value.scalar) ^ 1000003
+    elif k == BOOL:
+        h = 12345 if value.scalar else 67890
+    elif k == BIN:
+        h = hash(value.scalar) ^ 2000003
+    else:  # NONE
+        h = 0
 
-    def add(part: bytes) -> None:
-        nonlocal h
-        for byte in part:
-            h ^= byte
-            h = (h * 1099511628211) & 0xffffffffffffffff
+    if value.size() == 0:
+        return h
 
-    add(value.kind.encode('ascii'))
-    if value.kind == TEXT:
-        add(encode_utf8(value.scalar))
-    elif value.kind == BIN:
-        add(value.scalar)
-    elif value.kind == BOOL:
-        add(b'1' if value.scalar else b'0')
-    for key, child in value.entries():
-        add(b'k')
-        add(encode_utf8(key))
-        child_hash = _structural_hash_at(child, depth + 1)
-        add(child_hash.to_bytes(8, 'little'))
+    if value.shape is not None and value.storage is not None:
+        for kh, child in zip(value.shape.key_hashes, value.storage):
+            ch = _structural_hash_at(child, depth + 1)
+            h = ((h * 1000003) ^ kh ^ ch) & 0xffffffffffffffff
+    elif value.is_list and value.storage is not None:
+        if value.list_keys is None:
+            for i, child in enumerate(value.storage, 1):
+                ch = _structural_hash_at(child, depth + 1)
+                h = ((h * 1000003) ^ i ^ ch) & 0xffffffffffffffff
+        else:
+            for k, child in zip(value.list_keys, value.storage):
+                ch = _structural_hash_at(child, depth + 1)
+                h = ((h * 1000003) ^ hash(k) ^ ch) & 0xffffffffffffffff
+    elif value.children:
+        for k, child in value.children.items():
+            ch = _structural_hash_at(child, depth + 1)
+            h = ((h * 1000003) ^ hash(k) ^ ch) & 0xffffffffffffffff
     return h
 
 

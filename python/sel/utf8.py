@@ -17,6 +17,15 @@ from __future__ import annotations
 from .errors import Pos, fail
 
 
+def validate_text(s: str, pos: Pos | None = None) -> None:
+    if s.isascii():
+        return
+    try:
+        s.encode('utf-8')
+    except UnicodeEncodeError:
+        to_code_points(s, pos)
+
+
 def to_code_points(s: str, pos: Pos | None = None) -> list[int]:
     """Code points, rejecting the lone surrogates Python allows in a str.
 
@@ -24,14 +33,20 @@ def to_code_points(s: str, pos: Pos | None = None) -> list[int]:
     cannot be a SEL TEXT value. The other hosts hit the same wall from the other
     side: JS strings are UTF-16 and produce lone surrogates by slicing.
     """
-    out = []
-    for ch in s:
-        c = ord(ch)
-        if 0xD800 <= c <= 0xDFFF:
-            which = 'high' if c <= 0xDBFF else 'low'
-            fail('E_UTF8', f'unpaired {which} surrogate', pos)
-        out.append(c)
-    return out
+    if s.isascii():
+        return [ord(ch) for ch in s]
+    try:
+        s.encode('utf-8')
+        return [ord(ch) for ch in s]
+    except UnicodeEncodeError:
+        out = []
+        for ch in s:
+            c = ord(ch)
+            if 0xD800 <= c <= 0xDFFF:
+                which = 'high' if c <= 0xDBFF else 'low'
+                fail('E_UTF8', f'unpaired {which} surrogate', pos)
+            out.append(c)
+        return out
 
 
 def from_code_points(cps: list[int]) -> str:
@@ -39,19 +54,11 @@ def from_code_points(cps: list[int]) -> str:
 
 
 def encode_utf8(s: str, pos: Pos | None = None) -> bytes:
-    cps = to_code_points(s, pos)
-    out = bytearray()
-    for c in cps:
-        if c < 0x80:
-            out.append(c)
-        elif c < 0x800:
-            out += bytes((0xC0 | (c >> 6), 0x80 | (c & 0x3F)))
-        elif c < 0x10000:
-            out += bytes((0xE0 | (c >> 12), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F)))
-        else:
-            out += bytes((0xF0 | (c >> 18), 0x80 | ((c >> 12) & 0x3F),
-                          0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F)))
-    return bytes(out)
+    try:
+        return s.encode('utf-8')
+    except UnicodeEncodeError:
+        to_code_points(s, pos)
+        return s.encode('utf-8', errors='replace')
 
 
 def decode_utf8(data: bytes, pos: Pos | None = None) -> str:
@@ -109,18 +116,7 @@ def bytes_equal(a: bytes, b: bytes) -> bool:
 
 
 def bytes_compare(a: bytes, b: bytes) -> int:
-    """Bytewise, as the spec requires.
-
-    Python's own `<` on bytes is already bytewise and would give the same answer,
-    and on str it compares code points, which happens to agree with UTF-8 byte
-    order too. Neither shortcut is taken: the spec says bytes, the other three
-    hosts compare bytes explicitly because their shortcuts are *wrong*, and the
-    next reader should not have to work out that Python's are safe.
-    """
-    n = min(len(a), len(b))
-    for i in range(n):
-        if a[i] != b[i]:
-            return -1 if a[i] < b[i] else 1
-    if len(a) == len(b):
+    """Bytewise, as the spec requires."""
+    if a == b:
         return 0
-    return -1 if len(a) < len(b) else 1
+    return -1 if a < b else 1

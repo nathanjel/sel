@@ -276,6 +276,8 @@ def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 
 def cmp(a: Dec, b: Dec) -> int:
+    if a.scale == b.scale and a.int_val is not None and b.int_val is not None:
+        return 0 if a.int_val == b.int_val else (-1 if a.int_val < b.int_val else 1)
     if is_zero(a) and is_zero(b):
         return 0
     if a.neg != b.neg:
@@ -283,11 +285,7 @@ def cmp(a: Dec, b: Dec) -> int:
     fast = _fast_aligned(a, b)
     if fast is not None:
         A, B, _ = fast
-        c = 0 if A == B else (-1 if A < B else 1)
-        # The fast lane aligns signed mantissas, so their comparison already
-        # has the correct ordering for negative values.  The bigint fallback
-        # below compares magnitudes and therefore needs the sign inversion.
-        return c
+        return 0 if A == B else (-1 if A < B else 1)
     A, B, _ = _aligned(a, b)
     c = 0 if A == B else (-1 if A < B else 1)
     return -c if a.neg else c

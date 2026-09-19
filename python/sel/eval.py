@@ -26,10 +26,17 @@ class Context:
         self.depth = 0
 
     def lookup(self, name: str) -> Value | None:
-        for frame in reversed(self.frames):
-            v = frame.get(name)
+        frames = self.frames
+        n = len(frames)
+        if n == 1:
+            v = frames[0].get(name)
             if v is not None:
                 return v
+        elif n > 1:
+            for i in range(n - 1, -1, -1):
+                v = frames[i].get(name)
+                if v is not None:
+                    return v
         return self.root.get(name)
 
     def is_bound(self, name: str) -> bool:
@@ -224,8 +231,26 @@ def _dispatch(node: Node, ctx: Context) -> Value:
         return v
 
     if t == 'index':
-        obj = eval_node(node.obj, ctx)
+        obj_node = node.obj
+        if obj_node.t == 'var':
+            obj = ctx.lookup(obj_node.name)
+            if obj is None:
+                fail('E_UNDEF_VAR', f'undefined variable {obj_node.name}', obj_node.pos)
+        else:
+            obj = eval_node(obj_node, ctx)
+
+        cached = node._cached_slot
+        if cached is not None and obj.shape is cached[0]:
+            return obj.storage[cached[1]]
+
         key = node.idx.v if node.idx.t == 'text' else eval_node(node.idx, ctx).as_text(node.idx.pos)
+        if obj.shape is not None:
+            index = obj.shape.key_map.get(key)
+            if index is not None:
+                node._cached_slot = (obj.shape, index)
+                return obj.storage[index]
+            fail('E_NO_KEY', f'no key "{key}"', node.pos)
+
         child = obj.get(key)
         if child is None:
             fail('E_NO_KEY', f'no key "{key}"', node.pos)
@@ -355,9 +380,32 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
 
     if op in ('==', '!=', '<', '<=', '>', '>='):
         a = l.as_decimal(lp); b = r.as_decimal(rp)
+        if a.scale == b.scale and a.int_val is not None and b.int_val is not None:
+            if op == '==':
+                return Value.bool(a.int_val == b.int_val)
+            if op == '!=':
+                return Value.bool(a.int_val != b.int_val)
+            if op == '<':
+                return Value.bool(a.int_val < b.int_val)
+            if op == '<=':
+                return Value.bool(a.int_val <= b.int_val)
+            if op == '>':
+                return Value.bool(a.int_val > b.int_val)
+            if op == '>=':
+                return Value.bool(a.int_val >= b.int_val)
         return Value.bool(_compare_result(op, D.cmp(a, b), node.pos))
 
-    if op in ('$==', '$!=', '$<', '$<=', '$>', '$>='):
+    if op == '$==':
+        if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
+            return Value.bool(l.scalar == r.scalar)
+        a = l.as_bytes(lp); b = r.as_bytes(rp)
+        return Value.bool(a == b)
+    if op == '$!=':
+        if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
+            return Value.bool(l.scalar != r.scalar)
+        a = l.as_bytes(lp); b = r.as_bytes(rp)
+        return Value.bool(a != b)
+    if op in ('$<', '$<=', '$>', '$>='):
         a = l.as_bytes(lp); b = r.as_bytes(rp)
         return Value.bool(_compare_result(op[1:], bytes_compare(a, b), node.pos))
 

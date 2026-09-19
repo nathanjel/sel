@@ -1,7 +1,7 @@
 from .. import decimal as D
 from ..errors import fail
 from ..registry import INF, define
-from ..value import NONE, Value, iter_elements, iter_values, structural_hash
+from ..value import NONE, Value, iter_elements, iter_values, structural_hash, _record_shape
 
 
 def elements(value):
@@ -37,14 +37,16 @@ define('INDEXES', 1, 1,
 define('HAS', 2, 2, fn=lambda args, ctx: Value.bool(args.val(0).has(args.text(1))))
 
 define('LIST', 0, INF,
-       fn=lambda args, ctx: Value.list([args.val(i).clone() for i in range(args.count())]))
+       fn=lambda args, ctx: Value.list([args.val(i) for i in range(args.count())]))
 
 
 def _record(args, ctx):
-    entries = []
-    for i in range(0, args.count(), 2):
-        entries.append((args.text(i), args.val(i + 1).clone()))
-    return Value.from_entries(entries)
+    count = args.count()
+    if count == 0:
+        return Value.none()
+    keys = [args.text(i) for i in range(0, count, 2)]
+    values = [args.val(i + 1) for i in range(0, count, 2)]
+    return Value.record(keys, values)
 
 
 define('RECORD', 0, INF,
@@ -83,12 +85,22 @@ def _select_cols(args, ctx):
     if value.is_null():
         return Value.list([])
     columns = [args.text(i) for i in range(1, args.count())]
+    if (value.is_list and value.storage is not None
+            and value.storage and value.storage[0].shape is not None):
+        sample_shape = value.storage[0].shape
+        slots = [sample_shape.key_map.get(col) for col in columns]
+        if all(s is not None for s in slots):
+            all_uniform = all(r.shape is sample_shape for r in value.storage)
+            if all_uniform:
+                out_shape = _record_shape(tuple(columns))
+                return Value.list([Value._from_shape(out_shape, [r.storage[s] for s in slots])
+                                   for r in value.storage])
     rows = []
     for _, row in elements(value):
         entries = []
         for column in columns:
             if row.has(column):
-                entries.append((column, row.get(column).clone()))
+                entries.append((column, row.get(column)))
         rows.append(Value.from_entries(entries))
     return Value.list(rows)
 
@@ -104,8 +116,17 @@ def _dedupe(args, ctx):
     out = []
     for _, item in elements(value):
         key = structural_hash(item)
-        bucket = buckets.setdefault(key, [])
-        if not any(item.eql(existing) for existing in bucket):
+        bucket = buckets.get(key)
+        if bucket is None:
+            buckets[key] = [item]
+            out.append(item)
+            continue
+        found = False
+        for existing in bucket:
+            if item.eql(existing):
+                found = True
+                break
+        if not found:
             bucket.append(item)
             out.append(item)
     return Value.list(out)
@@ -163,19 +184,34 @@ def canonical_join_key(value, numeric):
     if value is None or value.is_null():
         return None
     if numeric:
-        # Positive integer text is already canonical.  Avoid a Dec allocation
-        # and formatting pass for the dominant integer-key join case; all other
-        # numeric spellings still use the exact cached decimal path.
-        if value.kind == 'TEXT':
-            text = value.scalar
-            if (text and text.isascii() and text.isdigit()
-                    and (len(text) == 1 or text[0] != '0')):
-                return text
-        try:
-            return D.format(value.as_decimal())
-        except Exception:
-            return None
-    return value.scalar if value.kind == 'TEXT' else None
+        d = value._dec_val
+        if d is None:
+            if value.kind == 'TEXT' and value._scalar is not None:
+                text = value._scalar
+                if text.isascii() and (text.isdigit() or (text.startswith('-') and text[1:].isdigit())):
+                    try:
+                        return int(text)
+                    except Exception:
+                        pass
+            try:
+                d = value.as_decimal()
+            except Exception:
+                return None
+
+        if d.scale == 0:
+            return d.int_val if d.int_val is not None else (-d.digits if d.neg else d.digits)
+        if d.digits == 0:
+            return 0
+        digits = d.digits
+        scale = d.scale
+        while scale > 0 and digits % 10 == 0:
+            digits //= 10
+            scale -= 1
+        if scale == 0:
+            return -digits if d.neg else digits
+        return (-digits if d.neg else digits, scale)
+
+    return value._scalar if value._scalar is not None else (value.scalar if value.kind == 'TEXT' else None)
 
 
 def ensure_row_table_alias(row, table_name):
@@ -188,14 +224,12 @@ def ensure_row_table_alias(row, table_name):
         if cached is None:
             add_lower = lower != table_name and lower not in old_shape.key_map
             keys = tuple(list(old_shape.keys) + [table_name] + ([lower] if add_lower else []))
-            cached = (keys, old_shape.size, add_lower)
+            target_shape = _record_shape(keys)
+            cached = (target_shape, old_shape.size, add_lower)
             old_shape.alias_cache[table_name] = cached
-        keys, old_size, add_lower = cached
-        storage = row.storage[:old_size]
-        storage.append(row)
-        if add_lower:
-            storage.append(row)
-        return Value.shaped(keys, storage)
+        target_shape, old_size, add_lower = cached
+        storage = [*row.storage, row, row] if add_lower else [*row.storage, row]
+        return Value._from_shape(target_shape, storage)
     entries = row.entries()
     entries.append((table_name, row))
     if lower != table_name and not row.has(lower):
@@ -279,13 +313,13 @@ def make_join_projector(sample_left, sample_right, b1, b2,
     sample = (make_joined_row(sample_left, sample_right, b1, b2,
                               promoted_left, promoted_right, table_left, null_right)
               if sample_left is not None and sample_right is not None else None)
-    if sample is None or sample.shape is None:
+    left_shape = sample_left.shape if sample_left is not None else None
+    right_shape = sample_right.shape if sample_right is not None else None
+    if sample is None or sample.shape is None or left_shape is None or right_shape is None:
         return lambda left, right: make_joined_row(
             left, right, b1, b2, promoted_left, promoted_right, table_left, null_right)
 
     output_shape = sample.shape
-    left_shape = sample_left.shape
-    right_shape = sample_right.shape
     left_aliases = {b1, b1.lower(), '_1'}
     right_aliases = {b2, b2.lower(), '_2'}
     actions = []
@@ -303,35 +337,37 @@ def make_join_projector(sample_left, sample_right, b1, b2,
         else:
             actions.append(('none', None))
 
-    def project(left, right):
-        if right is None:
-            return make_joined_row(left, None, b1, b2, promoted_left,
-                                   promoted_right, table_left, null_right)
-        # Rows with a different shape are legal (irregular input is supported),
-        # but cannot use the precompiled offsets.  The fallback is cold; regular
-        # rows take only integer slot reads and one destination allocation.
-        if left.shape is not left_shape or right.shape is not right_shape:
-            return make_joined_row(left, right, b1, b2, promoted_left,
-                                   promoted_right, table_left, null_right)
-        storage = [None] * len(actions)
-        for index, (kind, key) in enumerate(actions):
-            if kind == 'left':
-                storage[index] = left
-            elif kind == 'right':
-                storage[index] = right
-            elif kind == 'left-slot':
-                storage[index] = left.storage[key]
-            elif kind == 'right-slot':
-                storage[index] = right.storage[key]
-            elif kind == 'left-key':
-                storage[index] = left.get(key) or Value.none()
-            elif kind == 'right-key':
-                storage[index] = right.get(key) or Value.none()
-            else:
-                storage[index] = Value.none()
-        return Value._from_shape(output_shape, storage)
+    elements = []
+    none_val = Value.none()
+    for kind, key in actions:
+        if kind == 'left':
+            elements.append('left')
+        elif kind == 'right':
+            elements.append('right')
+        elif kind == 'left-slot':
+            elements.append(f'l_s[{key}]')
+        elif kind == 'right-slot':
+            elements.append(f'r_s[{key}]')
+        elif kind == 'left-key':
+            elements.append(f'(left.get({key!r}) or _none)')
+        elif kind == 'right-key':
+            elements.append(f'(right.get({key!r}) or _none)')
+        else:
+            elements.append('_none')
 
+    code = f"""def _compiled_project(left_shape, right_shape, output_shape, fallback, _from_shape, _none):
+    def project(left, right):
+        if right is None or left.shape is not left_shape or right.shape is not right_shape:
+            return fallback(left, right)
+        l_s = left.storage
+        r_s = right.storage
+        return _from_shape(output_shape, [{", ".join(elements)}])
     return project
+"""
+    local_ns = {}
+    exec(code, {}, local_ns)
+    fallback = lambda l, r: make_joined_row(l, r, b1, b2, promoted_left, promoted_right, table_left, null_right)
+    return local_ns['_compiled_project'](left_shape, right_shape, output_shape, fallback, Value._from_shape, none_val)
 
 
 def _link(args, ctx, left_join):
@@ -357,8 +393,9 @@ def _link(args, ctx, left_join):
     if first_left is None or first_right is None:
         if not left_join or first_left is None:
             return Value.list([])
-    sample_left = ensure_row_table_alias(first_left, b1) if first_left is not None else None
-    sample_right = ensure_row_table_alias(first_right, b2) if first_right is not None else None
+    needs_left_alias = bool(b1 and b1 != '_1' and (first_left is None or not first_left.has(b1)))
+    sample_left = ensure_row_table_alias(first_left, b1) if (first_left is not None and needs_left_alias) else first_left
+    sample_right = first_right
     null_right = make_null_record(sample_right, b2) if left_join else None
     left_keys = sample_left.keys() if sample_left is not None else []
     right_keys = sample_right.keys() if sample_right is not None else []
@@ -383,13 +420,12 @@ def _link(args, ctx, left_join):
         ctx.push_frame(frame_right)
         try:
             for item in iter_collection_items(right_value):
-                row = ensure_row_table_alias(item, b2)
-                frame_right[b2] = row
-                frame_right[b2.lower()] = row
-                frame_right['_2'] = row
+                frame_right[b2] = item
+                frame_right[b2.lower()] = item
+                frame_right['_2'] = item
                 key = canonical_join_key(args.eval_node(right_expr), numeric)
                 if key is not None:
-                    buckets.setdefault(key, []).insert(0, row)
+                    buckets.setdefault(key, []).append(item)
         finally:
             ctx.pop_frame()
 
@@ -397,7 +433,7 @@ def _link(args, ctx, left_join):
         ctx.push_frame(frame_left)
         try:
             for item in iter_collection_items(left_value):
-                row = ensure_row_table_alias(item, b1)
+                row = ensure_row_table_alias(item, b1) if needs_left_alias else item
                 frame_left[b1] = row
                 frame_left[b1.lower()] = row
                 frame_left['_1'] = row
@@ -405,7 +441,7 @@ def _link(args, ctx, left_join):
                 key = canonical_join_key(args.eval_node(left_expr), numeric)
                 matches = buckets.get(key) if key is not None else None
                 if matches:
-                    for right in reversed(matches):
+                    for right in matches:
                         output.append(project(row, right))
                 elif left_join:
                     output.append(project(row, None))
@@ -417,7 +453,7 @@ def _link(args, ctx, left_join):
         ctx.push_frame(frame)
         try:
             for left_item in iter_collection_items(left_value):
-                left = ensure_row_table_alias(left_item, b1)
+                left = ensure_row_table_alias(left_item, b1) if needs_left_alias else left_item
                 frame[b1] = left
                 frame[b1.lower()] = left
                 frame['_1'] = left
@@ -425,13 +461,12 @@ def _link(args, ctx, left_join):
                 matched = [False]
 
                 for right_item in iter_collection_items(right_value):
-                    right = ensure_row_table_alias(right_item, b2)
-                    frame[b2] = right
-                    frame[b2.lower()] = right
-                    frame['_2'] = right
+                    frame[b2] = right_item
+                    frame[b2.lower()] = right_item
+                    frame['_2'] = right_item
                     if args.eval_node(predicate).as_bool(predicate.pos):
                         matched[0] = True
-                        output.append(project(left, right))
+                        output.append(project(left, right_item))
 
                 if left_join and not matched[0]:
                     output.append(project(left, None))

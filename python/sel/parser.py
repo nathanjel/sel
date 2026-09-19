@@ -119,6 +119,7 @@ class Node:
     grouped: bool = False
     dec: Any = None
     math_plan: Any = None
+    _cached_slot: Any = None
 
 
 class Parser:
