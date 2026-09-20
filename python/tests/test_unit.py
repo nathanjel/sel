@@ -47,6 +47,29 @@ def test_utf8_strict_decoding(bad):
     raises('E_UTF8', decode_utf8, bad)
 
 
+@pytest.mark.parametrize('data,message', [
+    (b'abc\xff', 'invalid start byte 0xff at byte 3'),
+    (b'abc\xe2\x82', 'truncated sequence at byte 3'),
+    (b'abc\xe2(\xa1', 'invalid continuation byte at byte 4'),
+    (b'\xed\xa0\x80', 'invalid continuation byte at byte 1'),
+    (b'\xf4\x90\x80\x80', 'invalid continuation byte at byte 1'),
+])
+def test_utf8_native_failure_keeps_sel_diagnostics(data, message):
+    from sel import Pos
+    error = raises('E_UTF8', decode_utf8, data, Pos(3, 7, 21))
+    assert error.message == message
+    assert (error.line, error.col, error.offset) == (3, 7, 21)
+    assert error.__context__ is None
+
+
+def test_utf8_native_decoder_boundaries():
+    # Include a BOM and noncharacters: strict UTF-8 preserves these scalars.
+    text = ''.join(chr(c) for c in [0, 0x7f, 0x80, 0x7ff, 0x800, 0xd7ff,
+                                    0xe000, 0xfeff, 0xffff, 0x10000, 0x10ffff])
+    assert decode_utf8(text.encode('utf-8')) == text
+    assert decode_utf8(bytearray(text.encode('utf-8'))) == text
+
+
 def test_utf8_rejects_lone_surrogate():
     """Python str permits a lone surrogate; UTF-8 has no encoding for one."""
     raises('E_UTF8', encode_utf8, chr(0xD800))
@@ -116,7 +139,7 @@ def test_decimal_power():
 def test_decimal_cache_and_signed_fast_path():
     value = Value.num('12.50')
     assert value.as_decimal() is value.as_decimal()
-    assert value.as_decimal().int_val == 1250
+    assert (value.as_decimal().digits, value.as_decimal().scale) == (1250, 2)
     assert D.cmp(D.parse('-284.7418'), D.parse('-1785.77373')) == 1
 
 
@@ -180,6 +203,40 @@ def test_scalar_context_takes_first_child():
     assert evaluate('(7, 8)').as_text() == '7'
     raises('E_NULL', Value.none().as_text)
     raises('E_NO_SCALAR', Value.list([]).as_text)
+
+
+def test_scalar_context_storage_and_nested_errors():
+    leaf = Value.text('first')
+    wide = [leaf] + [Value.none()] * 100_000
+    values = [Value.list(wide), Value.record(['a', 'b'], [leaf, Value.none()]),
+              Value.none().set('a', leaf).set('b', Value.none())]
+    for value in values:
+        assert Value.list([value]).scalar_source() is leaf
+    for empty, code in [(Value.none(), 'E_NULL'), (Value.list([]), 'E_NO_SCALAR')]:
+        raises(code, Value.list([empty, leaf]).as_text)
+    nested = leaf
+    for _ in range(1001):
+        nested = Value.list([nested])
+    raises('E_DEPTH', nested.as_text)
+
+
+def test_structural_hash_representation_and_cache_invariance():
+    from sel.value import structural_hash
+    leaf = Value.text('x')
+    values = [Value.list([leaf]), Value.list([leaf], ['1']),
+              Value.record(['1'], [leaf]), Value.none().set('1', leaf)]
+    hashes = [structural_hash(v) for v in values]
+    assert len(set(hashes)) == 1
+    for v, h in zip(values, hashes):
+        assert v.eql(values[0])
+        v.entries()
+        assert structural_hash(v) == h
+    for spelling in ['1', '1.0', '01', '-0']:
+        value = Value.text(spelling)
+        before = structural_hash(value)
+        value.as_decimal()
+        assert structural_hash(value) == before
+        assert value.eql(Value.text(spelling))
 
 
 def test_dump_escapes():

@@ -16,6 +16,26 @@ from .utf8 import bytes_compare
 from .value import BIN, BOOL, NONE, TEXT, Value
 
 
+# Resolve enum attributes once; the hot interpreter loop compares cached opcodes.
+_LOAD_VAR = OpCode.LOAD_VAR
+_LOAD_CONST = OpCode.LOAD_CONST
+_LOAD_LEAF = OpCode.LOAD_LEAF
+_ADD = OpCode.ADD
+_SUB = OpCode.SUB
+_MUL = OpCode.MUL
+_DIV = OpCode.DIV
+_MOD = OpCode.MOD
+_NEG = OpCode.NEG
+_ABS = OpCode.ABS
+_SIGN = OpCode.SIGN
+_CEIL = OpCode.CEIL
+_FLOOR = OpCode.FLOOR
+_TRUNC = OpCode.TRUNC
+_ROUND = OpCode.ROUND
+_POWER = OpCode.POWER
+_MIN = OpCode.MIN
+_MAX = OpCode.MAX
+
 
 class Context:
     __slots__ = ('root', 'frames', 'depth')
@@ -145,40 +165,40 @@ def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
     scratchpad: list[Any] = [None] * plan.scratchpad_size
     for step in plan.steps:
         op = step.op
-        if op == OpCode.LOAD_VAR:
+        if op == _LOAD_VAR:
             val = ctx.lookup(step.name)
             if val is None:
                 fail('E_UNDEF_VAR', f'undefined variable {step.name}', step.pos)
             scratchpad[step.dst] = val.as_decimal(step.pos)
-        elif op == OpCode.LOAD_CONST:
+        elif op == _LOAD_CONST:
             scratchpad[step.dst] = step.const_val
-        elif op == OpCode.LOAD_LEAF:
+        elif op == _LOAD_LEAF:
             val = eval_node(step.leaf_node, ctx)
             scratchpad[step.dst] = val.as_decimal(step.leaf_node.pos)
-        elif op == OpCode.ADD:
+        elif op == _ADD:
             scratchpad[step.dst] = D.add(scratchpad[step.src1], scratchpad[step.src2], step.pos)
-        elif op == OpCode.SUB:
+        elif op == _SUB:
             scratchpad[step.dst] = D.sub(scratchpad[step.src1], scratchpad[step.src2], step.pos)
-        elif op == OpCode.MUL:
+        elif op == _MUL:
             scratchpad[step.dst] = D.mul(scratchpad[step.src1], scratchpad[step.src2], step.pos)
-        elif op == OpCode.DIV:
+        elif op == _DIV:
             scratchpad[step.dst] = D.div(scratchpad[step.src1], scratchpad[step.src2], step.pos)
-        elif op == OpCode.MOD:
+        elif op == _MOD:
             scratchpad[step.dst] = D.mod(scratchpad[step.src1], scratchpad[step.src2], step.pos)
-        elif op == OpCode.NEG:
+        elif op == _NEG:
             scratchpad[step.dst] = D.negate(scratchpad[step.src1])
-        elif op == OpCode.ABS:
+        elif op == _ABS:
             scratchpad[step.dst] = D.abs_(scratchpad[step.src1])
-        elif op == OpCode.SIGN:
+        elif op == _SIGN:
             s = D.sign(scratchpad[step.src1])
             scratchpad[step.dst] = D.make(s < 0, abs(s), 0)
-        elif op == OpCode.CEIL:
+        elif op == _CEIL:
             scratchpad[step.dst] = D.ceil(scratchpad[step.src1])
-        elif op == OpCode.FLOOR:
+        elif op == _FLOOR:
             scratchpad[step.dst] = D.floor(scratchpad[step.src1])
-        elif op == OpCode.TRUNC:
+        elif op == _TRUNC:
             scratchpad[step.dst] = D.trunc(scratchpad[step.src1])
-        elif op == OpCode.ROUND:
+        elif op == _ROUND:
             d2 = scratchpad[step.src2]
             if not D.is_integer(d2):
                 fail('E_NOT_INT', 'ROUND argument 2 must be a whole number', step.aux_pos)
@@ -188,7 +208,7 @@ def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
             if n > 1000000:
                 fail('E_RANGE', f'ROUND scale {n} exceeds the maximum of 1000000', step.aux_pos)
             scratchpad[step.dst] = D.round(scratchpad[step.src1], n, step.pos)
-        elif op == OpCode.POWER:
+        elif op == _POWER:
             d2 = scratchpad[step.src2]
             if not D.is_integer(d2):
                 fail('E_NOT_INT', 'POWER argument 2 must be a whole number', step.aux_pos)
@@ -198,11 +218,11 @@ def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
             if n > 100000:
                 fail('E_RANGE', f'POWER exponent {n} exceeds the maximum of 100000', step.aux_pos)
             scratchpad[step.dst] = D.power(scratchpad[step.src1], n, step.pos)
-        elif op == OpCode.MIN:
+        elif op == _MIN:
             a = scratchpad[step.src1]
             b = scratchpad[step.src2]
             scratchpad[step.dst] = b if D.cmp(b, a) < 0 else a
-        elif op == OpCode.MAX:
+        elif op == _MAX:
             a = scratchpad[step.src1]
             b = scratchpad[step.src2]
             scratchpad[step.dst] = b if D.cmp(b, a) > 0 else a
@@ -380,19 +400,20 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
 
     if op in ('==', '!=', '<', '<=', '>', '>='):
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        if a.scale == b.scale and a.int_val is not None and b.int_val is not None:
+        if a.scale == b.scale:
+            left = -a.digits if a.neg else a.digits
+            right = -b.digits if b.neg else b.digits
             if op == '==':
-                return Value.bool(a.int_val == b.int_val)
+                return Value.bool(left == right)
             if op == '!=':
-                return Value.bool(a.int_val != b.int_val)
+                return Value.bool(left != right)
             if op == '<':
-                return Value.bool(a.int_val < b.int_val)
+                return Value.bool(left < right)
             if op == '<=':
-                return Value.bool(a.int_val <= b.int_val)
+                return Value.bool(left <= right)
             if op == '>':
-                return Value.bool(a.int_val > b.int_val)
-            if op == '>=':
-                return Value.bool(a.int_val >= b.int_val)
+                return Value.bool(left > right)
+            return Value.bool(left >= right)
         return Value.bool(_compare_result(op, D.cmp(a, b), node.pos))
 
     if op == '$==':

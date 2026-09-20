@@ -422,10 +422,10 @@ class Value:
         while v.kind == NONE:
             if v.is_null():
                 fail('E_NULL', 'value is NULL', pos)
-            children = v.values()
-            if not children:
+            if v.size() == 0:
                 fail('E_NO_SCALAR', 'value has no scalar and no children', pos)
-            v = children[0]
+            # Scalar context follows one child, independent of collection width.
+            v = v.storage[0] if v.storage is not None else next(iter(v.children.values()))
             guard += 1
             if guard > 1000:
                 fail('E_DEPTH', 'scalar context nested too deeply', pos)
@@ -543,7 +543,8 @@ as as_text().
         if self.kind != other.kind:
             return False
         if self.kind == TEXT:
-            if self._dec_val is not None and other._dec_val is not None:
+            if (self._scalar is None and other._scalar is None
+                    and self._dec_val is not None and other._dec_val is not None):
                 if (self._dec_val.neg != other._dec_val.neg or
                     self._dec_val.scale != other._dec_val.scale or
                     self._dec_val.digits != other._dec_val.digits):
@@ -671,7 +672,7 @@ as as_text().
 
 
 def structural_hash(value: Value) -> int:
-    """Return a deterministic structural hash suitable for equality buckets."""
+    """Return a storage-independent hash suitable for equality buckets."""
     return _structural_hash_at(value, 1)
 
 
@@ -699,7 +700,7 @@ def _structural_hash_at(value: Value, depth: int) -> int:
         if value.list_keys is None:
             for i, child in enumerate(value.storage, 1):
                 ch = _structural_hash_at(child, depth + 1)
-                h = ((h * 1000003) ^ i ^ ch) & 0xffffffffffffffff
+                h = ((h * 1000003) ^ hash(str(i)) ^ ch) & 0xffffffffffffffff
         else:
             for k, child in zip(value.list_keys, value.storage):
                 ch = _structural_hash_at(child, depth + 1)

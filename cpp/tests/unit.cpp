@@ -123,6 +123,34 @@ void test_decimal() {
 void test_value() {
   selt::section("value");
 
+  Value scalar = Value::integer(17);
+  Value alias = scalar;
+  alias.set("label", Value::text("shared"));
+  selt::eq(scalar.get("label")->scalar(), std::string("shared"),
+           "adding collection state through a scalar alias is shared");
+  selt::eq(scalar.scalar(), std::string("17"), "numeric scalar survives collection allocation");
+  Value independent = scalar.clone();
+  independent.set("label", Value::text("separate"));
+  selt::eq(scalar.get("label")->scalar(), std::string("shared"), "clone owns independent collection state");
+  Value numeric_alias = scalar;
+  scalar.set_dec_val(nullptr);
+  selt::ok(!numeric_alias.has_dec() && independent.has_dec(), "decimal reset aliases but clone owns its cache");
+  Value lazy = Value::integer(42);
+  Value lazy_copy = lazy.clone();
+  lazy.set_dec(dec_from_int(43));
+  selt::eq(lazy_copy.scalar(), std::string("42"), "unformatted clone owns independent decimal state");
+  Value leaf = Value::boolean(true);
+  selt::ok(leaf.get("missing") == nullptr && leaf.size() == 0 && leaf.entries().empty(),
+           "leaf collection reads remain empty");
+  {
+    Value deep = Value::text("bottom");
+    for (int i = 0; i < 10000; ++i) deep = Value::list({deep});
+    Value shared_deep = deep;
+    deep = Value::none();
+    selt::eq(shared_deep.size(), 1u, "deep optional payload stays alive through its alias");
+    // Scope exit exercises iterative destruction beyond the language depth cap.
+  }
+
   Value v = Value::none();
   v.set("b", Value::text("1"));
   v.set("a", Value::text("2"));
@@ -510,6 +538,37 @@ void test_relational_optimizations() {
            "a relation name read after the LINK is not pushed");
 }
 
+void test_structural_hash_identity() {
+  selt::section("structural hash identity");
+  const auto leaf = Value::text("x");
+  auto packed = Value::list({leaf});
+  auto shaped = Value::record({"1"}, {leaf});
+  auto fallback = Value::none();
+  fallback.set("1", leaf);
+  const auto hash = packed.structural_hash();
+  selt::eq(hash, shaped.structural_hash(), "list/record hash identity");
+  selt::eq(hash, fallback.structural_hash(), "list/fallback hash identity");
+  selt::ok(packed.eql(shaped), "cross-storage equality");
+  packed.entries();
+  selt::eq(hash, packed.structural_hash(), "materialization preserves hash");
+  for (const auto& spelling : {std::string("1"), std::string("1.0"),
+                               std::string("01"), std::string("-0")}) {
+    auto value = Value::text(spelling);
+    const auto before = value.structural_hash();
+    as_dec(value, {});
+    selt::eq(before, value.structural_hash(), "decimal cache preserves hash");
+    selt::ok(value.eql(Value::text(spelling)), "decimal cache preserves identity");
+  }
+  for (const auto& spelling : {std::string("1") + std::string(100, '0'),
+                               std::string("0.") + std::string(100, '0')}) {
+    auto number = Value::num(spelling);
+    const auto before = number.structural_hash();
+    selt::eq(before, Value::text(spelling).structural_hash(), "large decimal hash identity");
+    number.as_text();
+    selt::eq(before, number.structural_hash(), "decimal rendering preserves hash");
+  }
+}
+
 void test_math_plan() {
   selt::section("math plan");
 
@@ -565,6 +624,7 @@ int main() {
   test_host_api();
   test_evaluation_order();
   test_relational_optimizations();
+  test_structural_hash_identity();
   test_math_plan();
   return selt::report("cpp unit");
 }

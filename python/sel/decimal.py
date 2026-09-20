@@ -13,11 +13,9 @@ too, `tools/check-decimal.sh` would be comparing that module against itself and
 would verify precisely nothing for Python while still printing a reassuring
 "0 mismatches".
 
-Where the other four hosts carry digit strings — because PHP has no bigint and
-JS has doubles — this carries Python `int`, which is arbitrary precision. Every
-digit-string routine there (addAbs, subAbs, mulAbs, divModAbs, scaleUp, strip)
-is exactly an integer operation, so the mapping is one-to-one and the leading-
-zero bookkeeping simply disappears.
+Mantissas use Python's arbitrary-precision `int` directly. Separate small-int
+and bigint representations would both use that same Python type; scale and sign
+are retained explicitly, without a second cached signed mantissa.
 
 The arithmetic is unbounded; the *conversions* are not. CPython refuses int/str
 above 4300 digits by default, and since a SEL number is text, that limit reached
@@ -29,7 +27,7 @@ str() is the conversion being guarded.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import re
 import sys
 
@@ -75,38 +73,22 @@ class Dec:
     neg: bool
     digits: int
     scale: int
-    # Signed unscaled mantissa for the small fixed-point fast path.  It is an
-    # implementation cache, not part of SEL equality: Python's arbitrary-size
-    # ``digits`` remains the exact fallback for values outside the 64-bit lane.
-    int_val: int | None = field(default=None, repr=False, compare=False)
 
 
-_FAST_SCALE = 18
-_FAST_BITS = 60
+# Small powers are shared; mantissas already use native arbitrary-size ints.
+_POW10_LIMIT = 18
 
 
-def _small_mantissa(digits: int, neg: bool, scale: int) -> int | None:
-    if scale <= _FAST_SCALE and digits.bit_length() <= _FAST_BITS:
-        return -digits if neg and digits else digits
-    return None
+def make(neg: bool, digits: int, scale: int) -> Dec:
+    return Dec(bool(neg and digits), digits, scale)
 
 
-def make(neg: bool, digits: int, scale: int,
-         int_val: int | None = None) -> Dec:
-    actual_neg = bool(neg and digits)
-    if int_val is None:
-        int_val = _small_mantissa(digits, actual_neg, scale)
-    elif scale > _FAST_SCALE or digits.bit_length() > _FAST_BITS:
-        int_val = None
-    return Dec(actual_neg, digits, scale, int_val)
-
-
-_POW10_SMALL = tuple(10 ** i for i in range(_FAST_SCALE + 1))
+_POW10_SMALL = tuple(10 ** i for i in range(_POW10_LIMIT + 1))
 _POW10: dict[int, int] = {}
 
 
 def _pow10(k: int) -> int:
-    if 0 <= k <= _FAST_SCALE:
+    if 0 <= k <= _POW10_LIMIT:
         return _POW10_SMALL[k]
     v = _POW10.get(k)
     if v is None:
@@ -137,8 +119,7 @@ def _guard(d: Dec, pos: Pos | None) -> Dec:
     through here, so power() — repeated squaring over mul() — trips on an
     intermediate and the enormous value is never allocated.
 
-    The four hosts that store digits as a string read the count with strlen.
-    Here it is an int, so the same question costs a bit_length gate and, only
+    With an integer magnitude, this costs a bit_length gate and, only
     for numbers near the cap, an exact count.
     """
     if d.scale > MAX_FRAC_DIGITS:
@@ -232,27 +213,14 @@ def to_safe_int(d: Dec) -> int:
 # --- arithmetic -------------------------------------------------------------
 
 def _aligned(a: Dec, b: Dec) -> tuple[int, int, int]:
-    s = max(a.scale, b.scale)
-    return a.digits * _pow10(s - a.scale), b.digits * _pow10(s - b.scale), s
-
-
-def _fast_aligned(a: Dec, b: Dec) -> tuple[int, int, int] | None:
-    """Align two cached small mantissas without entering the bigint fallback."""
-    if a.int_val is None or b.int_val is None:
-        return None
-    scale = max(a.scale, b.scale)
-    if scale > _FAST_SCALE:
-        return None
-    return (a.int_val * _POW10_SMALL[scale - a.scale],
-            b.int_val * _POW10_SMALL[scale - b.scale], scale)
+    if a.scale == b.scale:
+        return a.digits, b.digits, a.scale
+    if a.scale > b.scale:
+        return a.digits, b.digits * _pow10(a.scale - b.scale), a.scale
+    return a.digits * _pow10(b.scale - a.scale), b.digits, b.scale
 
 
 def add(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
-    fast = _fast_aligned(a, b)
-    if fast is not None:
-        A, B, scale = fast
-        total = A + B
-        return _guard(make(total < 0, abs(total), scale), pos)
     A, B, s = _aligned(a, b)
     # Only true addition can grow: a difference is never wider than its
     # operands, and the aligned scale is the larger of two already legal ones.
@@ -268,25 +236,18 @@ def sub(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 
 def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
-    if a.int_val is not None and b.int_val is not None:
-        product = a.int_val * b.int_val
-        return _guard(make(product < 0, abs(product),
-                           a.scale + b.scale), pos)
     return _guard(make(a.neg != b.neg, a.digits * b.digits, a.scale + b.scale), pos)
 
 
 def cmp(a: Dec, b: Dec) -> int:
-    if a.scale == b.scale and a.int_val is not None and b.int_val is not None:
-        return 0 if a.int_val == b.int_val else (-1 if a.int_val < b.int_val else 1)
-    if is_zero(a) and is_zero(b):
-        return 0
     if a.neg != b.neg:
         return -1 if a.neg else 1
-    fast = _fast_aligned(a, b)
-    if fast is not None:
-        A, B, _ = fast
-        return 0 if A == B else (-1 if A < B else 1)
-    A, B, _ = _aligned(a, b)
+    if a.scale == b.scale:
+        A, B = a.digits, b.digits
+    else:
+        if a.digits == 0 and b.digits == 0:
+            return 0
+        A, B, _ = _aligned(a, b)
     c = 0 if A == B else (-1 if A < B else 1)
     return -c if a.neg else c
 

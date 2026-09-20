@@ -20,6 +20,61 @@
   `(handler-case (progn ,@body (fail "expected ~a, nothing was signalled" ,code))
      (sel:sel-error (e) (is (string= ,code (sel:sel-error-code e))))))
 
+(test indexed-arguments
+  (let* ((root (sel:make-none))
+         (ctx (sel::make-context root))
+         (program (sel:compile-source "ABS((I += 1))"))
+         (a (sel::make-args (sel:program-ast program) ctx)))
+    (sel:value-set root "I" (sel:make-int 0))
+    (is (= 1 (sel::args-count a)))
+    (is (eq (first (sel::node-items (sel:program-ast program))) (sel::args-node a 0)))
+    (is (eq (sel::args-val a 0) (sel::args-val a 0)))
+    (is (string= "1" (sel::as-text (sel:value-get root "I"))))
+    (is (eq (sel::node-pos (sel::args-node a 0)) (sel::args-pos-of a 0))))
+  (is (string= "t\"0\""
+        (dump-of "I=0; COALESCE(NULL, 7, (I += 1)); I")))
+  (let* ((node (sel::make-node :call nil))
+         (items (loop repeat 1000 collect (sel::make-node :text nil))))
+    (setf (sel::node-items node) items)
+    (let ((a (sel::make-args node (sel::make-context (sel:make-none)))))
+      (is (= 1000 (sel::args-count a)))
+      (is (loop for item in items for i from 0
+                always (eq item (sel::args-node a i)))))))
+
+(test assignment-path-side-effects
+  (let ((root (sel:make-none)))
+    (sel:run (sel:compile-source
+      "I=0; A[(I+=1; \"x\")][(I+=1; A=RECORD(\"kept\",9); \"y\")][(I+=1; \"z\")] = (I+=1;7)") root)
+    (is (string= "4" (sel::as-text (sel:value-get root "I"))))
+    (let ((a (sel:value-get root "A")))
+      (is (string= "9" (sel::as-text (sel:value-get a "kept"))))
+      (is (string= "7" (sel::as-text
+        (sel:value-get (sel:value-get (sel:value-get a "x") "y") "z"))))))
+  (is (string= "t\"7\"{\"x\"=-{\"y\"=t\"7\"}}"
+        (dump-of "A[\"x\"][\"y\"] = (A=7); A")))
+  (is (string= "-{\"kept\"=t\"9\", \"x\"=-{\"y\"=t\"7\"}}"
+        (dump-of "A=RECORD(\"x\",RECORD(\"y\",2)); A[\"x\"][\"y\"] += (A=RECORD(\"kept\",9);5); A")))
+  (let ((root (sel:make-none)))
+    (raises "E_DIV_ZERO"
+      (sel:run (sel:compile-source "I=0; A[(I+=1;\"x\")][1/0][(I+=1;\"z\")] = 7") root))
+    (is (string= "1" (sel::as-text (sel:value-get root "I"))))))
+
+(test assignment-path-boundaries
+  (let* ((root (sel:make-none))
+         (ctx (sel::make-context root))
+         (path '("A" "B" "C")))
+    (is (eq root (sel::walk-create ctx path 0)))
+    (let ((a (sel::walk-create ctx path 1)))
+      (is (eq a (sel:value-get root "A")))
+      (is (= 0 (sel:value-size a))))
+    (let ((b (sel::walk-create ctx path 2)))
+      (is (eq b (sel:value-get (sel:value-get root "A") "B")))
+      (is (= 0 (sel:value-size b)))))
+  (let ((source (format nil "A~{~a~} = 7" (make-list 199 :initial-element "[1]"))))
+    (is (string= "t\"7\"" (dump-of source))))
+  (raises "E_DEPTH"
+    (sel:evaluate (format nil "A~{~a~} = 7" (make-list 200 :initial-element "[1]")))))
+
 (test utf8
   (is (= 0 (length (sel::decode-utf8 (sel::encode-utf8 "")))))
   (is (= 3 (length (sel::decode-utf8 (sel::encode-utf8 "abc")))))
@@ -1294,3 +1349,22 @@ identity, and a snapshot is compared by value."
       ;; 3.14159 + 4 = 7.14159 -> round to 2 = 7.14
       (is (string= "7.14" (sel:as-text (sel:run prog ctx)))))))
 
+
+(test structural-hash-identity
+  (let* ((leaf (sel:make-text "x"))
+         (packed (sel::%make-list-value-fast (vector leaf)))
+         (record (sel:evaluate "RECORD(\"1\", \"x\")"))
+         (fallback (sel:make-none))
+         (hash (sel::value-hash packed)))
+    (sel:value-set fallback "1" leaf)
+    (is (= hash (sel::value-hash record)))
+    (is (= hash (sel::value-hash fallback)))
+    (is (sel:value-eql packed record))
+    (sel::value-children packed)
+    (is (= hash (sel::value-hash packed))))
+  (dolist (spelling '("1" "1.0" "01" "-0"))
+    (let* ((value (sel:make-text spelling))
+           (hash (sel::value-hash value)))
+      (sel::as-dec value)
+      (is (= hash (sel::value-hash value)))
+      (is (sel:value-eql value (sel:make-text spelling))))))

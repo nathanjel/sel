@@ -243,25 +243,36 @@ class Value {
   const Dec* dec_val() const;
   void set_dec_val(std::shared_ptr<const Dec> d) const;
 
-  struct Impl {
-    uint32_t ref_count = 1;
-    Kind kind = Kind::None;
-    mutable std::string scalar;   // TEXT: UTF-8 bytes. BIN: raw bytes. Otherwise empty.
-    mutable bool scalar_computed = false;
-    bool boolean = false;  // BOOL only.
-    bool is_list = false;
-    mutable bool has_dec = false;
-    mutable Dec dec_val;
+  // Optional state belongs to the shared implementation, not to a handle:
+  // allocating it through any alias must remain visible through every alias.
+  struct Collection {
     std::vector<Entry> children;
     std::unordered_map<std::string, std::size_t> index;
     std::shared_ptr<const RecordShape> shape;
     std::vector<Value> storage;
+  };
+
+  struct Impl {
+    uint32_t ref_count = 1;
+    Kind kind = Kind::None;
+    mutable std::string scalar;
+    mutable bool scalar_computed = false;
+    bool boolean = false;
+    bool is_list = false;
+    mutable std::unique_ptr<Dec> decimal;
+    std::unique_ptr<Collection> collection;
     Impl* next_free = nullptr;
 
-    Impl() = default;
-    Impl(const Impl&) = default;
-    Impl& operator=(const Impl&) = default;
-    ~Impl() = default;
+    const Collection& coll() const {
+      // Read-only leaf access must not allocate collection containers.
+      if (collection) return *collection;
+      static const Collection empty;
+      return empty;
+    }
+    Collection& mutable_coll() {
+      if (!collection) collection = std::make_unique<Collection>();
+      return *collection;
+    }
 
     static void* operator new(std::size_t size);
     static void operator delete(void* ptr, std::size_t size) noexcept;
@@ -324,26 +335,20 @@ inline Value::~Value() {
   if (p_ && --p_->ref_count == 0) destroy(p_);
 }
 
-inline bool Value::has_dec() const { return p_ && p_->has_dec; }
-inline const Dec& Value::dec_ref() const { return p_->dec_val; }
+inline bool Value::has_dec() const { return p_ && bool(p_->decimal); }
+inline const Dec& Value::dec_ref() const { return *p_->decimal; }
 inline void Value::set_dec(const Dec& d) const {
   if (p_) {
-    p_->dec_val = d;
-    p_->has_dec = true;
+    if (p_->decimal) *p_->decimal = d;
+    else p_->decimal = std::make_unique<Dec>(d);
   }
 }
 inline const Dec* Value::dec_val() const {
-  return (p_ && p_->has_dec) ? &p_->dec_val : nullptr;
+  return p_ ? p_->decimal.get() : nullptr;
 }
 inline void Value::set_dec_val(std::shared_ptr<const Dec> d) const {
-  if (p_) {
-    if (d) {
-      p_->dec_val = *d;
-      p_->has_dec = true;
-    } else {
-      p_->has_dec = false;
-    }
-  }
+  if (d) set_dec(*d);
+  else if (p_) p_->decimal.reset();
 }
 
 // --- programs ---------------------------------------------------------------

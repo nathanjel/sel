@@ -133,9 +133,10 @@ Publishing details, and why SRELL is vendored rather than resolved, are in
 [PACKAGING.md](PACKAGING.md).
 
 PHP needs no `mbstring`, no `bcmath`, no `gmp`; C++ never touches `std::regex`
-or `<locale>`; and Python never touches `decimal` — the UTF-8 codec and the
-decimal arithmetic are hand-written in all five precisely so the hosts cannot
-drift apart. In Python's case there is a second reason: `tools/decimal-oracle.py`
+or `<locale>`; and Python never touches `decimal`. Each host implements SEL's
+decimal rules and strict UTF-8 validation. Python uses its native UTF-8 codec
+for valid input and retains SEL's explicit validator for error diagnostics.
+For decimal arithmetic, Python has a second reason: `tools/decimal-oracle.py`
 generates the decimal test cases *from* the `decimal` module, and a host built on
 it would be marking its own homework.
 
@@ -449,8 +450,9 @@ and is still not used: it is the oracle the other cores are checked against, so 
 host built on it would be marking its own homework. Scale is part of the value,
 so `2.50 + 2.50` is `5.00` and `0.10 + 0.20 > 0.30` is false everywhere.
 
-**Text.** UTF-8 is encoded and decoded by hand, so every length and offset counts
-code points rather than PHP's bytes, JS's UTF-16 units or C++'s `char`s. Text
+**Text.** Every host validates UTF-8 strictly, and every length and offset counts
+code points rather than PHP's bytes, JS's UTF-16 units or C++'s `char`s. Python
+uses its native codec on valid input and SEL's validator on invalid input. Text
 comparison is specified as UTF-8 byte order, because JS's native comparison is
 UTF-16 order and Lisp's is code-point order, and both disagree with it above
 U+FFFF. `UPPER`/`LOWER` are ASCII-only on purpose — `strtoupper`,

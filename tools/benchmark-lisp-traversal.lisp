@@ -1,0 +1,61 @@
+;;;; SEL_LISP_BENCH_ROOT=/path/to/lisp/ sbcl --script tools/benchmark-lisp-traversal.lisp
+;;;; SBCL timing/allocation probe; optional root selects a matching baseline tree.
+(require :asdf)
+(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(let ((*standard-output* (make-broadcast-stream))
+      (root (or (uiop:getenv "SEL_LISP_BENCH_ROOT") "lisp/")))
+  (asdf:load-asd (truename (merge-pathnames "sel-lang.asd" (uiop:ensure-directory-pathname root))))
+  (funcall (find-symbol "QUICKLOAD" "QL") :sel-lang))
+
+(defvar *bench-result* nil)
+(defun measure-traversal (name n count fn)
+  (dotimes (i 10) (setf *bench-result* (funcall fn)))
+  (dotimes (sample 5)
+    (sb-ext:gc :full t)
+    (let ((bytes (sb-ext:get-bytes-consed))
+          (start (get-internal-real-time)))
+      (dotimes (i count) (setf *bench-result* (funcall fn)))
+      (format t "~a ~d ~d ~,6f ~,2f~%" name n sample
+              (/ (* 1000000d0 (- (get-internal-real-time) start))
+                 (* count internal-time-units-per-second))
+              (/ (- (sb-ext:get-bytes-consed) bytes) (float count 1d0))))))
+
+(format t "# ~a ~a; columns: operation size sample microseconds bytes-consed~%"
+        (lisp-implementation-type) (lisp-implementation-version))
+(let ((ctx (sel::make-context (sel:make-none))))
+  (dolist (n '(2 10 100 1000))
+    (let* ((node (sel::make-node :call nil))
+           (literal (sel::make-node :text nil)))
+      (setf (sel::node-items node) (make-list n :initial-element literal))
+      (let ((a (sel::make-args node ctx)))
+        (measure-traversal "indexed-sweep" n (max 1000 (floor 1000000 n))
+          (lambda () (loop for i below (sel::args-count a)
+                          count (eq literal (sel::args-node a i))))))
+      (measure-traversal "args-construction" n 10000
+        (lambda () (sel::make-args node ctx))))))
+
+(dolist (n '(2 10 100 1000))
+  (let* ((source (format nil "COALESCE(~{~a~^,~})"
+                         (append (make-list (1- n) :initial-element "N") '("X"))))
+         (program (sel:compile-source source))
+         (root (sel:make-none)))
+    (sel:value-set root "N" (sel:make-null))
+    (sel:value-set root "X" (sel:make-int 7))
+    (measure-traversal "coalesce" n (max 1000 (floor 100000 n))
+      (lambda () (sel:run program root)))))
+
+(dolist (n '(10 50 100 199))
+  (let* ((source (format nil "A~{~a~} = X" (make-list (1- n) :initial-element "[\"k\"]")))
+         (program (sel:compile-source source))
+         (target (sel::node-l (sel::program-ast program)))
+         (root (sel:make-none))
+         (ctx (sel::make-context root)))
+    (sel:value-set root "X" (sel:make-int 7))
+    (let ((path (sel::resolve-target target ctx)))
+      (sel::walk-create ctx path (length path))
+      (measure-traversal "walk-create" n 10000
+        (lambda () (sel::walk-create ctx path (length path)))))
+    (measure-traversal "resolve-target" n (max 100 (floor 20000 n))
+      (lambda () (sel::resolve-target target ctx)))
+    (measure-traversal "assignment" n (max 100 (floor 20000 n))
+      (lambda () (sel:run program root)))))

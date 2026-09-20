@@ -1,12 +1,13 @@
 <?php
 // Exact decimal arithmetic on digit strings. See spec/SPEC.md §4.
 //
-// Ported line for line from js/src/decimal.mjs. PHP has no bigint and BCMath is
-// an optional extension, so this is written from scratch — which is also what
-// guarantees the two hosts round identically rather than merely similarly.
+// Checked native mantissas accelerate small arithmetic. GMP is optional;
+// digit-string arithmetic preserves exact results without extensions.
 //
 // A decimal is ['neg' => bool, 'digits' => string, 'scale' => int], meaning
 // (neg ? -1 : 1) * digits / 10^scale.
+// Additional native/nativeDigits/nativeNeg fields cache checked conversion;
+// callers may still supply the original three-field descriptors.
 
 declare(strict_types=1);
 
@@ -332,20 +333,29 @@ final class Dec
      */
     private static function intMantissa(array $d): ?int
     {
-        $digits = $d['digits'];
+        // Decimal arrays are also accepted from host code. Validate the cache
+        // against its source fields so edits to those arrays cannot stale it.
+        if (array_key_exists('native', $d)
+            && ($d['nativeDigits'] ?? null) === $d['digits']
+            && ($d['nativeNeg'] ?? null) === $d['neg']) {
+            return $d['native'];
+        }
+        return self::parseMantissa($d['neg'], $d['digits']);
+    }
+
+    private static function parseMantissa(bool $neg, string $digits): ?int
+    {
         $max = (string) PHP_INT_MAX;
-        if (strlen($digits) > strlen($max)
-            || (strlen($digits) === strlen($max) && $digits > $max)) {
-            // The negative side has one extra native value. Keep it on the
-            // integer fast path; positive values with this magnitude still
-            // use the exact digit-string fallback.
-            if ($d['neg'] && $digits === self::addAbs($max, '1')) {
-                return PHP_INT_MIN;
-            }
-            return null;
+        $length = strlen($digits);
+        $maxLength = strlen($max);
+        if ($length > $maxLength
+            || ($length === $maxLength && strcmp($digits, $max) > 0)) {
+            // Compare lexically, never via PHP's numeric-string float coercion.
+            return $neg && $digits === substr((string) PHP_INT_MIN, 1)
+                ? PHP_INT_MIN : null;
         }
         $value = (int) $digits;
-        return $d['neg'] ? -$value : $value;
+        return $neg ? -$value : $value;
     }
 
     private static function intPow10(int $scale): ?int
@@ -368,6 +378,7 @@ final class Dec
         $left = self::intMantissa($a);
         $right = self::intMantissa($b);
         if ($left === null || $right === null) return null;
+        if ($a['scale'] === $b['scale']) return [$left, $right, $a['scale']];
         $scale = max($a['scale'], $b['scale']);
         $lf = self::intPow10($scale - $a['scale']);
         $rf = self::intPow10($scale - $b['scale']);
@@ -381,19 +392,20 @@ final class Dec
     /** @return array{neg:bool,digits:string,scale:int}|null */
     private static function fromIntFast(int $value, int $scale): ?array
     {
-        if ($value === PHP_INT_MIN) {
-            return self::make(true, self::addAbs((string) PHP_INT_MAX, '1'), $scale);
-        }
         $neg = $value < 0;
-        return self::make($neg, (string) ($neg ? -$value : $value), $scale);
+        $text = (string) $value;
+        return self::make($neg, $neg ? substr($text, 1) : $text, $scale, $value);
     }
 
     // --- construction -------------------------------------------------------
 
     /** @return array{neg:bool,digits:string,scale:int} */
-    private static function make(bool $neg, string $digits, int $scale): array
+    private static function make(bool $neg, string $digits, int $scale, ?int $native = null): array
     {
-        return ['neg' => $digits === '0' ? false : $neg, 'digits' => $digits, 'scale' => $scale];
+        $neg = $digits === '0' ? false : $neg;
+        return ['neg' => $neg, 'digits' => $digits, 'scale' => $scale,
+                'native' => $native ?? self::parseMantissa($neg, $digits),
+                'nativeDigits' => $digits, 'nativeNeg' => $neg];
     }
 
     /**
@@ -479,10 +491,7 @@ final class Dec
     /** @return array{neg:bool,digits:string,scale:int} */
     public static function fromInt(int $n): array
     {
-        if ($n === PHP_INT_MIN) {
-            return self::make(true, self::addAbs((string) PHP_INT_MAX, '1'), 0);
-        }
-        return self::make($n < 0, (string) ($n < 0 ? -$n : $n), 0);
+        return self::fromIntFast($n, 0);
     }
 
     /** @param array{neg:bool,digits:string,scale:int} $d */

@@ -12,6 +12,80 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Common Lisp indexed arguments and sequential assignment paths (2026-09-20).
+
+  - **Vector-backed argument access.** Call wrappers convert argument nodes to a simple vector, making indexed lookup and argument counts constant-time while retaining per-invocation value caching and lazy evaluation. A local 1,000-argument COALESCE improves from 838 to 104 µs. The extra vector increases call allocation; small calls can regress.
+  - **Sequential path traversal.** `walk-create` walks list keys in order. `resolve-target` maintains a tail and length instead of repeatedly copying growing prefixes. It still re-resolves after index side effects, and assignment still re-resolves after the RHS. The path-traversal component falls from cubic to quadratic across repeated prefixes. At 199 keys, the local assignment benchmark improves from 3.01 to 0.91 ms and allocated bytes fall about 93%.
+  - **Reproducible scaling measurements.** `tools/benchmark-lisp-traversal.lisp` covers argument access/construction, variadic execution, individual path walks, target resolution and full assignments. [Method, raw samples and allocation tradeoffs](docs/interim/lisp-traversal-optimizations.md) accompany the change.
+
+Validation: 483 Lisp unit checks pass against both current and pre-change sources,
+including new assignment side-effect and depth-boundary checks. All 911 conformance
+cases, 852 SQL cases and 39,990 decimal-oracle cases pass; 4,000 differential
+programs and 54 API probes agree with JavaScript. The full repository gate was
+not rerun.
+
+C++ optional value payloads and aggregate visitor specialization (2026-09-20).
+
+  - **Smaller shared value implementation.** Decimal and collection state allocate only when needed. On the measured x86-64 build, `Value::Impl` shrinks from 272 to 72 bytes; the aliasing handle stays 8 bytes. Ordinary copies still share subsequent mutations, explicit clones own independent state, and deep destruction remains iterative.
+  - **Measured footprint and construction gains.** For 200,000 short-text values, retained allocator memory falls from 57.6 to 16.0 MB and construction from 48.2 to 23.1 ms. Two-field rows fall from 179.2 to 102.4 MB and 158.6 to 122.8 ms. Separate decimal allocation has a cost: integer destruction is about 32% slower, and the measured SUM/arithmetic-MAP workloads regress about 6%/9% overall.
+  - **Templated aggregate visitor.** `walk()` exposes its callback to compiler specialization. Against the smaller-payload build with its original `std::function`, measured SUM, FILTER and ALL improve about 1.6%, 2.3% and 3.9%; MAP is essentially unchanged. Benchmark executable text grows about 4.4 KB. [Method, samples and tradeoffs](docs/interim/cpp-value-payload.md) accompany the reproducible C++ benchmark.
+
+Validation: 167 C++ unit checks, 911 conformance cases, 85 SQL unit checks,
+852 SQL cases and 39,990 decimal-oracle cases pass. All 4,000 differential
+programs and 54 API probes agree with JavaScript. Ownership tests pass address,
+undefined-behavior and leak sanitizers; sanitized conformance passes with leak
+checking disabled in the sandbox. The full repository gate was not rerun.
+
+PHP scalar access, checked decimal mantissas and JavaScript range guards (2026-09-20).
+
+  - **Direct PHP scalar reads.** Scalar context reads the first packed slot or ordinary child without materializing all children. A local 100,000-field record benchmark drops from about 1.41 ms to 0.40 µs per read; packed lists were already constant-time.
+  - **Cached PHP native mantissas.** Decimal descriptors retain checked native integers between operations, validate cached source fields and bypass scale alignment for equal scales. Legacy descriptors, integer-overflow fallback and execution without GMP remain supported. Canonical digit strings remain available. Local addition, multiplication and comparison improve; division regresses and the measured full expression is essentially unchanged.
+  - **Cheaper JavaScript range checks.** A conservative BigInt magnitude shift bypasses hexadecimal conversion below the million-digit boundary. Exact digit counting remains at the boundary. The local 100,000-digit addition sample improves from 195 to 10.7 µs without changing arithmetic precision.
+  - **Representation measurements.** A declared-property PHP object uses less memory than a three-field array but takes longer to construct in the local probe. Arrays remain the production representation. Reproducible benchmarks, tradeoffs and validation are recorded in [the PHP/JS measurement report](docs/interim/php-js-runtime-optimizations.md).
+
+Validation: 21 focused PHP checks and 14 JavaScript guard checks; 39,990 decimal
+oracle cases per lane, also passing in PHP with optional extensions disabled;
+911 conformance cases each in PHP, JavaScript, both rebuilt JS bundles and PHP
+without GMP. All 4,000 differential programs and 54 host API probes agree across
+the affected lanes. The full repository gate was not rerun for this change.
+
+Python UTF-8 and arithmetic runtime optimizations (2026-09-20).
+
+  - **Native decoding with SEL diagnostics.** Valid UTF-8 uses Python's strict native decoder. Invalid input falls back to the original validator, preserving `E_UTF8`, the first invalid-byte diagnostic and SEL source positions without chaining a host Unicode exception. A 75,792-input comparison with the original decoder produced identical results and diagnostics.
+  - **One Python integer representation for decimals.** Removed the redundant signed small-mantissa cache and its 60-bit/18-scale eligibility checks. Arithmetic uses native arbitrary-precision magnitudes directly; scale alignment changes only the operand that needs it. Same-scale comparisons retain a direct integer path. Decimal objects shrink from 64 to 56 bytes on the measured CPython build, while scale, rounding and range limits remain unchanged.
+  - **Cheaper math-plan dispatch.** Opcode constants are resolved once instead of looking up `IntEnum` attributes for every instruction. Plans remain faster than recursive AST evaluation on the measured arithmetic workloads, with separate scratch storage for each invocation. A fixed-expression fusion probe measures remaining dispatch overhead; no new instruction or production fusion compiler is introduced.
+  - **Reproducible measurements.** `tools/benchmark-python-runtime.py` compares individual decimal operations, recursive AST evaluation, math plans and compiled-program execution. Local CPython 3.14.7 measurements show about 176× faster decoding on the repeated Polish-text sample and 1.2–1.3× faster arithmetic-expression execution. Tiny positive same-scale decimal comparisons regress by about 19 ns, while the full comparison-expression benchmark remains essentially unchanged. Inputs, timings and the fusion assessment are recorded in [the runtime measurement report](docs/interim/python-runtime-optimizations.md).
+
+Validation: **585 Python unit tests**, including 25 plan-versus-AST cases over
+multiple contexts; **911 Python conformance cases**; **39,990 decimal-oracle
+cases**, with zero mismatches; and 54 host API probes agreeing with JavaScript.
+All 4,000 fuzz outputs match the pre-change Python snapshot byte for byte. The
+11 existing Python/JavaScript join-alias disagreements remain.
+
+Relational execution optimizations (commits from 2026-09-18 through 2026-09-20).
+Reviewed from the four most recent commits, oldest first:
+
+  - **Common Lisp aggregate allocation and lookup (`3e871cf`).** Aggregate walks construct keys only when the body or result needs them, with cached index strings and values for the first 10,000 positions. Sort and top-N entries use structs instead of property lists, and sorted results retain member values without redundant deep copies. Inlined context lookups check string identity before string equality.
+  - **C++ join execution (`5220ea3`).** Typed integer, decimal and text join keys avoid intermediate string keys. Direct packed-storage traversal, reserved context frames and shaped output construction reduce temporary entry allocation in relational pipelines.
+  - **C++ value ownership (`a913f20`).** Value handles use intrusive reference counts, iterative destruction and a bounded thread-local allocation freelist. Decimal caches live directly in the value implementation, and ordinary child lookup starts building its index at four entries instead of sixteen.
+  - **PHP join specialization and storage (`a913f20`).** Equijoins compile key extractors, table-alias builders and output projectors for regular row shapes, with fallbacks for other layouts. Packed collection traversal and direct field slots avoid repeated evaluator dispatch and entry-array construction. Packed lists can retain their original keys, building a lookup map on demand. Structural hashing switches from SHA-256 to xxh3 and reuses record-shape key fragments.
+  - **Python execution and storage (`1614eed`).** Join projectors specialize regular shapes; context/schema column information guides join-filter pushdown, and physical plans rebuild when the supplied context object changes. Literal field access caches a slot guarded by record-shape identity. Packed lists with preserved keys, shared record layouts and direct collection iteration reduce temporary values and dictionaries. UTF-8 encoding and valid-text checks use native operations, retaining SEL error handling for invalid text; byte comparison uses Python's native byte ordering.
+  - **Benchmark harness corrections (`3e871cf`).** Pure-memory, pure-SQL and hybrid expectations are derived from SQL and continuation presence. Dynamic-host runners no longer call the removed `force()` method; database benchmark failures are reported as skips so in-memory measurements can still complete.
+
+Subsequent structural identity and scalar-access corrections (2026-09-20):
+
+  - **Structural hashes agree with equality in all five hosts.** Lists, shaped records and ordinary records now hash the same logical keys and values. Materializing entries or populating a decimal cache no longer changes a value's hash. Numeric equality fast paths apply only to unformatted numeric values: coercing text such as `"01"` or `"-0"` to a number preserves its original spelling for structural equality. This fixes missed duplicates and split groups in `DISTINCT` and projected `BUCKET`. C++ also avoids its fixed-size formatting buffer for large or high-scale decimal hashes. Thirteen shared conformance cases and host unit tests cover these boundaries.
+  - **Constant-time Python scalar access.** Scalar context reads the first packed slot or dictionary value directly instead of materializing every child. A local CPython measurement is approximately 0.5 microseconds per read for collections of 10, 1,000 and 100,000 elements; null, empty-list and depth errors retain their behavior.
+
+Validation: **911 conformance cases** pass in all five hosts and both JavaScript
+bundles; **852 SQL translation cases** pass in every lane; **185 mutations** are
+caught, with seven database-dependent cases skipped because no DSNs were set.
+The decimal oracle reports zero mismatches across 39,990 cases per language.
+C++ address, undefined-behavior and leak sanitizer runs pass all 160 unit checks
+and 911 conformance cases. The full gate remains non-green: its 4,000-program
+differential fuzz run reports 11 pre-existing join-alias disagreements, reproduced
+against the original Python and JavaScript sources. Database oracles were skipped.
+
 Universal lazy decimal-to-string representation and cross-lane execution acceleration across all five host implementations (Common Lisp, C++, JavaScript, PHP, Python).
 
   - **Universal lazy decimal representation (Aster concept).** Values produced by decimal operations (`Value::num`, `integer`, arithmetic operators, and `MathPlan` execution) retain their native arbitrary-precision decimal structures (`dec_val` / `_decimal` / `decVal` / `_dec_val`), leaving their scalar string representation uncomputed. String formatting is deferred lazily on-demand until explicitly observed in string context (`as_text()`, string concatenation `&`, canonical dump, or host interop).

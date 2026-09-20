@@ -457,7 +457,7 @@ same keys in the same order, pairwise EQL."
          (:text
           (let ((da (value-dec-val a))
                 (db (value-dec-val b)))
-            (if (and da db)
+            (if (and da db (null (value-%scalar a)) (null (value-%scalar b)))
                 (and (= (dec-digits da) (dec-digits db))
                      (= (dec-scale da) (dec-scale db))
                      (eq (dec-neg da) (dec-neg db)))
@@ -494,16 +494,9 @@ same keys in the same order, pairwise EQL."
   (let ((h (sxhash (value-kind v))))
     (case (value-kind v)
       (:text
-       (let ((dec (value-dec-val v)))
-         (if dec
-             (setf h (logand most-positive-fixnum
-                             (logxor h
-                                     (if (dec-neg dec) 1 0)
-                                     (sxhash (dec-scale dec))
-                                     (sxhash (dec-digits dec)))))
-             (let ((s (value-scalar v)))
-               (when (stringp s)
-                 (setf h (logand most-positive-fixnum (logxor h (sxhash s)))))))))
+       ;; Text identity includes spelling and scale, not the decimal cache.
+       (setf h (logand most-positive-fixnum
+                       (logxor h (sxhash (value-scalar v))))))
       (:bool
        (setf h (logand most-positive-fixnum (logxor h (if (value-scalar v) 12345 67890)))))
       (:bin
@@ -526,6 +519,8 @@ same keys in the same order, pairwise EQL."
               (n (length storage)))
          (loop for i from 0 below n
                do (setf h (logand most-positive-fixnum
+                                  (logxor h (sxhash (format nil "~d" (1+ i))))))
+                  (setf h (logand most-positive-fixnum
                                   (logxor (ash (logand h #x1ffffffffffffff) 3)
                                           (value-hash (svref storage i) (1+ depth))))))))
       ((value-children-internal v)

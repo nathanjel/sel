@@ -26,6 +26,7 @@ export const MAX_INT_DIGITS = 1000000;
 export const MAX_FRAC_DIGITS = 1000000;
 
 const _MAX_INT_BITS = 3321929;
+const _INT_LIMIT_SHIFT = BigInt(_MAX_INT_BITS - 1);
 const _FAST_BOUND = 10n ** 18n;
 
 const POW10_TABLE = [1n];
@@ -72,8 +73,9 @@ function guard(d, pos) {
     fail('E_RANGE', `number has more than ${MAX_FRAC_DIGITS} fractional digits`, pos);
   }
   if (d.digits > _FAST_BOUND) {
-    const bLen = bitLength(d.digits);
-    if (bLen >= _MAX_INT_BITS && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
+    // A shift past the magnitude returns zero without rendering its digits.
+    // Only values near the cap need the exact digit count (and its hex string).
+    if ((d.digits >> _INT_LIMIT_SHIFT) !== 0n && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
       fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
     }
   }

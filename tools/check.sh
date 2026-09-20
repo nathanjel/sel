@@ -111,6 +111,8 @@ done
 # and with js on the roster the PHP check never ran (review 2026-09-15).
 case " $IMPLS " in *" js "*) step "JS optimizer" sel_slot node tools/check-js-optimizer.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP optimizer" sel_slot sel_php tools/check-php-optimizer.php ;; esac
+case " $IMPLS " in *" js "*) step "JS decimal guard" sel_slot node tools/check-js-decimal-guard.mjs ;; esac
+case " $IMPLS " in *" php "*) step "PHP runtime" sel_slot sel_php tools/check-php-runtime.php ;; esac
 
 # A more basic question than the cases: can this host's own API build the map
 # it ships? If it cannot, the map is data rather than code, and a host with no

@@ -45,18 +45,19 @@
 ;;; built-in body can read the same argument repeatedly without thinking about
 ;;; it, and typed accessors report failures against the argument's own position.
 (defstruct (args (:constructor %make-args (nodes name pos ctx cache)))
-  (nodes nil :type list)
+  (nodes #() :type simple-vector)
   (name "" :type string)
   (pos nil)
   (ctx nil)
   (cache #() :type vector))
 
 (defun make-args (node ctx)
-  (%make-args (node-items node) (node-s node) (node-pos node) ctx
-              (make-array (length (node-items node)) :initial-element :unset)))
+  (let ((nodes (coerce (node-items node) 'simple-vector)))
+    (%make-args nodes (node-s node) (node-pos node) ctx
+                (make-array (length nodes) :initial-element :unset))))
 
 (defun args-count (a) (length (args-nodes a)))
-(defun args-node (a i) (nth i (args-nodes a)))
+(defun args-node (a i) (svref (args-nodes a) i))
 (defun args-pos-of (a i) (node-pos (args-node a i)))
 
 (defun args-val (a i)
@@ -429,11 +430,12 @@
 ;;; RESOLVE-TARGET.
 (defun walk-create (ctx path upto)
   (let ((cur (context-root ctx)))
-    (loop for i from 0 below upto
-          do (let ((next (value-get cur (nth i path))))
+    (loop repeat upto
+          for key in path
+          do (let ((next (value-get cur key)))
                (unless next
                  (setf next (make-none))
-                 (value-set cur (nth i path) next))
+                 (value-set cur key next))
                (setf cur next)))
     cur))
 
@@ -466,7 +468,9 @@
     (when (> (1+ (length chain)) +max-depth+)
       (fail "E_DEPTH" "value nested too deeply" (node-pos target)))
 
-    (let ((path (list (node-s n))))
+    (let* ((path (list (node-s n)))
+           (path-tail path)
+           (path-length 1))
       (when (null chain)
         (return-from resolve-target path))
 
@@ -474,15 +478,20 @@
         (value-set (context-root ctx) (node-s n) (make-none)))
 
       (loop for tail on chain
-            while (rest tail)
             do (let* ((key-node (first tail))
-                      (k (as-text (eval-node key-node ctx) (node-pos key-node)))
-                      (cur (walk-create ctx path (length path))))
-                 (unless (value-get cur k)
-                   (value-set cur k (make-none)))
-                 (setf path (append path (list k)))))
-      (let ((last (car (last chain))))
-        (append path (list (as-text (eval-node last ctx) (node-pos last))))))))
+                      (k (as-text (eval-node key-node ctx) (node-pos key-node))))
+                 ;; An index expression can replace an earlier container.
+                 ;; Re-resolve the prefix after it runs; never retain CUR.
+                 (when (rest tail)
+                   (let ((cur (walk-create ctx path path-length)))
+                     (unless (value-get cur k)
+                       (value-set cur k (make-none)))))
+                 ;; PATH is fresh and private: extend it without copying its
+                 ;; growing prefix, retaining forward order for re-resolution.
+                 (setf (cdr path-tail) (list k)
+                       path-tail (cdr path-tail))
+                 (incf path-length)))
+      path)))
 
 (defun eval-assign (node ctx)
   (let* ((path (resolve-target (node-l node) ctx))

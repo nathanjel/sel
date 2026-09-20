@@ -1250,25 +1250,24 @@ struct Internals {
     v.p_->scalar_computed = true;
     v.p_->boolean = false;
     v.p_->is_list = is_list;
-    v.p_->children = std::move(entries);
+    v.p_->mutable_coll().children = std::move(entries);
     return v;
   }
   static Value shaped_direct(std::shared_ptr<const RecordShape> shape, std::size_t reserve_size) {
     Value v;
-    v.p_->shape = std::move(shape);
-    v.p_->storage.reserve(reserve_size);
+    v.p_->mutable_coll().shape = std::move(shape);
+    v.p_->mutable_coll().storage.reserve(reserve_size);
     return v;
   }
   static Value from_dec(Dec d) {
     Value v;
     v.p_->kind = Kind::Text;
-    v.p_->has_dec = true;
-    v.p_->dec_val = std::move(d);
+    v.p_->decimal = std::make_unique<Dec>(std::move(d));
     v.p_->scalar_computed = false;
     return v;
   }
   static std::vector<Value>& storage(Value& v) {
-    return v.p_->storage;
+    return v.p_->mutable_coll().storage;
   }
 };
 
@@ -1324,14 +1323,14 @@ bool Value::is_list() const {
 }
 void Value::set_is_list(bool b) {
   if (!p_) return;
-  if (!b && p_->is_list && !p_->storage.empty()) {
+  if (!b && p_->is_list && !p_->coll().storage.empty()) {
     ensure_children();
-    p_->storage.clear();
+    p_->mutable_coll().storage.clear();
   }
   p_->is_list = b;
   if (b) {
-    p_->shape.reset();
-    p_->storage.clear();
+    p_->mutable_coll().shape.reset();
+    p_->mutable_coll().storage.clear();
   }
 }
 
@@ -1365,30 +1364,27 @@ Value Value::clone_at(int depth, Pos pos) const {
   out.p_->scalar_computed = p_->scalar_computed;
   out.p_->boolean = p_->boolean;
   out.p_->is_list = p_->is_list;
-  out.p_->has_dec = p_->has_dec;
-  if (p_->has_dec) {
-    out.p_->dec_val = p_->dec_val;
-  }
-  if (!p_->shape && (!p_->is_list || p_->storage.empty()) && p_->children.empty()) {
+  if (p_->decimal) out.p_->decimal = std::make_unique<Dec>(*p_->decimal);
+  if (!p_->coll().shape && (!p_->is_list || p_->coll().storage.empty()) && p_->coll().children.empty()) {
     return out;
   }
-  if (p_->shape) {
-    out.p_->shape = p_->shape;
-    out.p_->storage.reserve(p_->storage.size());
-    for (const Value& value : p_->storage) {
-      out.p_->storage.push_back(value.clone_at(depth + 1, pos));
+  if (p_->coll().shape) {
+    out.p_->mutable_coll().shape = p_->coll().shape;
+    out.p_->mutable_coll().storage.reserve(p_->coll().storage.size());
+    for (const Value& value : p_->coll().storage) {
+      out.p_->mutable_coll().storage.push_back(value.clone_at(depth + 1, pos));
     }
-  } else if (p_->is_list && p_->children.empty()) {
-    out.p_->storage.reserve(p_->storage.size());
-    for (const Value& value : p_->storage) {
-      out.p_->storage.push_back(value.clone_at(depth + 1, pos));
+  } else if (p_->is_list && p_->coll().children.empty()) {
+    out.p_->mutable_coll().storage.reserve(p_->coll().storage.size());
+    for (const Value& value : p_->coll().storage) {
+      out.p_->mutable_coll().storage.push_back(value.clone_at(depth + 1, pos));
     }
   } else {
-    out.p_->children.reserve(p_->children.size());
-    for (const Entry& e : p_->children) {
-      out.p_->children.emplace_back(e.first, e.second.clone_at(depth + 1, pos));
+    out.p_->mutable_coll().children.reserve(p_->coll().children.size());
+    for (const Entry& e : p_->coll().children) {
+      out.p_->mutable_coll().children.emplace_back(e.first, e.second.clone_at(depth + 1, pos));
     }
-    out.p_->index = p_->index;
+    out.p_->mutable_coll().index = p_->coll().index;
   }
   return out;
 }
@@ -1402,7 +1398,8 @@ void Value::destroy(Impl* p) {
   if (!p) return;
   std::vector<Impl*> pending;
   const auto steal = [&pending](Impl* impl) {
-    for (Entry& e : impl->children) {
+    if (!impl->collection) return;
+    for (Entry& e : impl->collection->children) {
       if (Impl* child = e.second.p_) {
         e.second.p_ = nullptr;
         if (--child->ref_count == 0) {
@@ -1410,8 +1407,8 @@ void Value::destroy(Impl* p) {
         }
       }
     }
-    impl->children.clear();
-    for (Value& val : impl->storage) {
+    impl->collection->children.clear();
+    for (Value& val : impl->collection->storage) {
       if (Impl* child = val.p_) {
         val.p_ = nullptr;
         if (--child->ref_count == 0) {
@@ -1419,7 +1416,7 @@ void Value::destroy(Impl* p) {
         }
       }
     }
-    impl->storage.clear();
+    impl->collection->storage.clear();
   };
 
   steal(p);
@@ -1491,7 +1488,7 @@ Value Value::integer(long long n) {
 Value Value::list(std::vector<Value> values) {
   Value v = none();
   v.p_->is_list = true;
-  v.p_->storage = std::move(values);
+  v.p_->mutable_coll().storage = std::move(values);
   return v;
 }
 
@@ -1531,181 +1528,183 @@ Value Value::shaped(std::shared_ptr<const RecordShape> shape, std::vector<Value>
     throw std::invalid_argument("SEL shaped value needs one slot per record key");
   }
   Value v = none();
-  v.p_->shape = std::move(shape);
-  v.p_->storage = std::move(storage);
+  v.p_->mutable_coll().shape = std::move(shape);
+  v.p_->mutable_coll().storage = std::move(storage);
   return v;
 }
 
 void Value::ensure_children() const {
-  if (p_->shape) {
-    if (p_->children.size() == p_->shape->keys.size()) return;
-    p_->children.clear();
-    p_->children.reserve(p_->shape->keys.size());
-    for (std::size_t i = 0; i < p_->shape->keys.size(); i++) {
-      p_->children.emplace_back(p_->shape->keys[i], p_->storage[i]);
+  if (p_->coll().shape) {
+    if (p_->coll().children.size() == p_->coll().shape->keys.size()) return;
+    p_->mutable_coll().children.clear();
+    p_->mutable_coll().children.reserve(p_->coll().shape->keys.size());
+    for (std::size_t i = 0; i < p_->coll().shape->keys.size(); i++) {
+      p_->mutable_coll().children.emplace_back(p_->coll().shape->keys[i], p_->coll().storage[i]);
     }
     return;
   }
-  if (p_->is_list && !p_->storage.empty() &&
-      p_->children.size() != p_->storage.size()) {
-    p_->children.clear();
-    p_->children.reserve(p_->storage.size());
-    for (std::size_t i = 0; i < p_->storage.size(); i++) {
-      p_->children.emplace_back(std::to_string(i + 1), p_->storage[i]);
+  if (p_->is_list && !p_->coll().storage.empty() &&
+      p_->coll().children.size() != p_->coll().storage.size()) {
+    p_->mutable_coll().children.clear();
+    p_->mutable_coll().children.reserve(p_->coll().storage.size());
+    for (std::size_t i = 0; i < p_->coll().storage.size(); i++) {
+      p_->mutable_coll().children.emplace_back(std::to_string(i + 1), p_->coll().storage[i]);
     }
-    if (p_->children.size() >= INDEX_THRESHOLD) build_index();
+    if (p_->coll().children.size() >= INDEX_THRESHOLD) build_index();
   }
 }
 
 void Value::build_index() const {
-  p_->index.clear();
-  p_->index.reserve(p_->children.size() * 2);
-  for (std::size_t i = 0; i < p_->children.size(); i++) p_->index.emplace(p_->children[i].first, i);
+  p_->mutable_coll().index.clear();
+  p_->mutable_coll().index.reserve(p_->coll().children.size() * 2);
+  for (std::size_t i = 0; i < p_->coll().children.size(); i++) p_->mutable_coll().index.emplace(p_->coll().children[i].first, i);
 }
 
 std::vector<Value::Entry>::iterator Value::find(const std::string& key) {
   ensure_children();
-  if (p_->index.empty() && p_->children.size() >= INDEX_THRESHOLD) {
+  if (p_->mutable_coll().index.empty() && p_->mutable_coll().children.size() >= INDEX_THRESHOLD) {
     build_index();
   }
-  if (!p_->index.empty()) {
-    auto it = p_->index.find(key);
-    return it == p_->index.end() ? p_->children.end()
-                              : p_->children.begin() + static_cast<std::ptrdiff_t>(it->second);
+  if (!p_->mutable_coll().index.empty()) {
+    auto it = p_->mutable_coll().index.find(key);
+    return it == p_->mutable_coll().index.end() ? p_->mutable_coll().children.end()
+                              : p_->mutable_coll().children.begin() + static_cast<std::ptrdiff_t>(it->second);
   }
-  return std::find_if(p_->children.begin(), p_->children.end(),
+  return std::find_if(p_->mutable_coll().children.begin(), p_->mutable_coll().children.end(),
                       [&](const Entry& e) { return e.first == key; });
 }
 
 std::vector<Value::Entry>::const_iterator Value::find(const std::string& key) const {
   ensure_children();
-  if (p_->index.empty() && p_->children.size() >= INDEX_THRESHOLD) {
+  if (p_->coll().index.empty() && p_->coll().children.size() >= INDEX_THRESHOLD) {
     build_index();
   }
-  if (!p_->index.empty()) {
-    auto it = p_->index.find(key);
-    return it == p_->index.end() ? p_->children.end()
-                              : p_->children.begin() + static_cast<std::ptrdiff_t>(it->second);
+  if (!p_->coll().index.empty()) {
+    auto it = p_->coll().index.find(key);
+    return it == p_->coll().index.end() ? p_->coll().children.end()
+                              : p_->coll().children.begin() + static_cast<std::ptrdiff_t>(it->second);
   }
-  return std::find_if(p_->children.begin(), p_->children.end(),
+  return std::find_if(p_->coll().children.begin(), p_->coll().children.end(),
                       [&](const Entry& e) { return e.first == key; });
 }
 
 std::size_t Value::size() const {
-  if (p_->shape) return p_->shape->keys.size();
-  if (p_->is_list && !p_->storage.empty()) return p_->storage.size();
-  return p_->children.size();
+  if (p_->coll().shape) return p_->coll().shape->keys.size();
+  if (p_->is_list && !p_->coll().storage.empty()) return p_->coll().storage.size();
+  return p_->coll().children.size();
 }
 
 const std::vector<Value::Entry>& Value::entries() const {
   ensure_children();
-  return p_->children;
+  return p_->coll().children;
 }
 
 const std::shared_ptr<const RecordShape>& Value::shape() const {
-  return p_->shape;
+  return p_->coll().shape;
 }
 
 const std::vector<Value>& Value::storage() const {
-  return p_->storage;
+  return p_->coll().storage;
 }
 
 const Value* Value::slot(std::size_t index) const {
-  return index < p_->storage.size() ? &p_->storage[index] : nullptr;
+  return index < p_->coll().storage.size() ? &p_->coll().storage[index] : nullptr;
 }
 
 bool Value::has(const std::string& key) const {
-  if (p_->shape) return p_->shape->key_map.find(key) != p_->shape->key_map.end();
-  if (p_->is_list && !p_->storage.empty()) {
+  if (p_->coll().shape) return p_->coll().shape->key_map.find(key) != p_->coll().shape->key_map.end();
+  if (p_->is_list && !p_->coll().storage.empty()) {
     const auto index = parse_list_slot(key);
-    return index && *index < p_->storage.size();
+    return index && *index < p_->coll().storage.size();
   }
-  return find(key) != p_->children.end();
+  return find(key) != p_->coll().children.end();
 }
 
 const Value* Value::get(const std::string& key) const {
-  if (p_->shape) {
-    const auto it = p_->shape->key_map.find(key);
-    return it == p_->shape->key_map.end() ? nullptr : &p_->storage[it->second];
+  if (!p_->collection) return nullptr;
+  if (p_->coll().shape) {
+    const auto it = p_->coll().shape->key_map.find(key);
+    return it == p_->coll().shape->key_map.end() ? nullptr : &p_->coll().storage[it->second];
   }
-  if (p_->is_list && !p_->storage.empty()) {
+  if (p_->is_list && !p_->coll().storage.empty()) {
     const auto index = parse_list_slot(key);
-    return index && *index < p_->storage.size() ? &p_->storage[*index] : nullptr;
+    return index && *index < p_->coll().storage.size() ? &p_->coll().storage[*index] : nullptr;
   }
   auto it = find(key);
-  return it == p_->children.end() ? nullptr : &it->second;
+  return it == p_->coll().children.end() ? nullptr : &it->second;
 }
 
 Value* Value::get(const std::string& key) {
-  if (p_->shape) {
-    const auto it = p_->shape->key_map.find(key);
-    return it == p_->shape->key_map.end() ? nullptr : &p_->storage[it->second];
+  if (!p_->collection) return nullptr;
+  if (p_->mutable_coll().shape) {
+    const auto it = p_->mutable_coll().shape->key_map.find(key);
+    return it == p_->mutable_coll().shape->key_map.end() ? nullptr : &p_->mutable_coll().storage[it->second];
   }
-  if (p_->is_list && !p_->storage.empty()) {
+  if (p_->is_list && !p_->mutable_coll().storage.empty()) {
     const auto index = parse_list_slot(key);
-    return index && *index < p_->storage.size() ? &p_->storage[*index] : nullptr;
+    return index && *index < p_->mutable_coll().storage.size() ? &p_->mutable_coll().storage[*index] : nullptr;
   }
   auto it = find(key);
-  return it == p_->children.end() ? nullptr : &it->second;
+  return it == p_->mutable_coll().children.end() ? nullptr : &it->second;
 }
 
 std::vector<std::string> Value::keys() const {
-  if (p_->shape) return p_->shape->keys;
-  if (p_->is_list && !p_->storage.empty()) {
+  if (p_->coll().shape) return p_->coll().shape->keys;
+  if (p_->is_list && !p_->coll().storage.empty()) {
     std::vector<std::string> out;
-    out.reserve(p_->storage.size());
-    for (std::size_t i = 0; i < p_->storage.size(); i++) {
+    out.reserve(p_->coll().storage.size());
+    for (std::size_t i = 0; i < p_->coll().storage.size(); i++) {
       out.push_back(std::to_string(i + 1));
     }
     return out;
   }
   std::vector<std::string> out;
-  out.reserve(p_->children.size());
-  for (const auto& e : p_->children) out.push_back(e.first);
+  out.reserve(p_->coll().children.size());
+  for (const auto& e : p_->coll().children) out.push_back(e.first);
   return out;
 }
 
 // Re-assigning an existing key keeps its original position — order is normative.
 Value& Value::set(std::string key, Value value) {
-  if (p_->shape) {
-    const auto shape_it = p_->shape->key_map.find(key);
-    if (shape_it != p_->shape->key_map.end()) {
-      p_->storage[shape_it->second] = std::move(value);
-      if (p_->children.size() == p_->shape->keys.size()) {
-        p_->children[shape_it->second].second = p_->storage[shape_it->second];
+  if (p_->mutable_coll().shape) {
+    const auto shape_it = p_->mutable_coll().shape->key_map.find(key);
+    if (shape_it != p_->mutable_coll().shape->key_map.end()) {
+      p_->mutable_coll().storage[shape_it->second] = std::move(value);
+      if (p_->mutable_coll().children.size() == p_->mutable_coll().shape->keys.size()) {
+        p_->mutable_coll().children[shape_it->second].second = p_->mutable_coll().storage[shape_it->second];
       }
       return *this;
     }
     // Adding a field changes the layout. Materialize the ordered fallback only
     // at this uncommon mutation boundary, then discard the immutable shape.
     ensure_children();
-    p_->shape.reset();
-    p_->storage.clear();
-    p_->index.clear();
+    p_->mutable_coll().shape.reset();
+    p_->mutable_coll().storage.clear();
+    p_->mutable_coll().index.clear();
   }
-  if (p_->is_list && !p_->storage.empty()) {
+  if (p_->is_list && !p_->mutable_coll().storage.empty()) {
     const auto list_index = parse_list_slot(key);
-    if (list_index && *list_index < p_->storage.size()) {
-      p_->storage[*list_index] = std::move(value);
-      if (p_->children.size() == p_->storage.size()) {
-        p_->children[*list_index].second = p_->storage[*list_index];
+    if (list_index && *list_index < p_->mutable_coll().storage.size()) {
+      p_->mutable_coll().storage[*list_index] = std::move(value);
+      if (p_->mutable_coll().children.size() == p_->mutable_coll().storage.size()) {
+        p_->mutable_coll().children[*list_index].second = p_->mutable_coll().storage[*list_index];
       }
       return *this;
     }
     // A non-index field turns the packed list into the ordinary ordered
     // representation, matching Lisp's value-set fallback.
     ensure_children();
-    p_->storage.clear();
+    p_->mutable_coll().storage.clear();
   }
   auto it = find(key);
-  if (it != p_->children.end()) {
+  if (it != p_->mutable_coll().children.end()) {
     it->second = std::move(value);   // re-assignment keeps the original position
     return *this;
   }
-  p_->children.emplace_back(std::move(key), std::move(value));
-  if (!p_->index.empty()) {
-    p_->index.emplace(p_->children.back().first, p_->children.size() - 1);
-  } else if (p_->children.size() >= INDEX_THRESHOLD) {
+  p_->mutable_coll().children.emplace_back(std::move(key), std::move(value));
+  if (!p_->mutable_coll().index.empty()) {
+    p_->mutable_coll().index.emplace(p_->mutable_coll().children.back().first, p_->mutable_coll().children.size() - 1);
+  } else if (p_->mutable_coll().children.size() >= INDEX_THRESHOLD) {
     build_index();
   }
   return *this;
@@ -1745,7 +1744,7 @@ const Value& Value::scalar_source(Pos pos) const {
     const Value* first = v->slot(0);
     if (!first) {
       v->ensure_children();
-      first = v->p_->children.empty() ? nullptr : &v->p_->children.front().second;
+      first = v->p_->coll().children.empty() ? nullptr : &v->p_->coll().children.front().second;
     }
     if (!first) {
       throw SelError("E_NO_SCALAR", "value has no scalar and no children", pos);
@@ -1759,8 +1758,8 @@ const Value& Value::scalar_source(Pos pos) const {
 const std::string& Value::as_text(Pos pos) const {
   const Value& v = scalar_source(pos);
   if (v.p_->kind == Kind::Text) {
-    if (!v.p_->scalar_computed && v.p_->has_dec) {
-      v.p_->scalar = dec_format(v.p_->dec_val);
+    if (!v.p_->scalar_computed && v.p_->decimal) {
+      v.p_->scalar = dec_format((*v.p_->decimal));
       v.p_->scalar_computed = true;
     }
     return v.p_->scalar;
@@ -1775,8 +1774,8 @@ const std::string& Value::as_text(Pos pos) const {
 const std::string& Value::as_bytes(Pos pos) const {
   const Value& v = scalar_source(pos);
   if (v.p_->kind == Kind::Text) {
-    if (!v.p_->scalar_computed && v.p_->has_dec) {
-      v.p_->scalar = dec_format(v.p_->dec_val);
+    if (!v.p_->scalar_computed && v.p_->decimal) {
+      v.p_->scalar = dec_format((*v.p_->decimal));
       v.p_->scalar_computed = true;
     }
     return v.p_->scalar;
@@ -1792,8 +1791,8 @@ bool Value::as_bool(Pos pos) const {
 }
 
 const std::string& Value::scalar() const {
-  if (p_->kind == Kind::Text && !p_->scalar_computed && p_->has_dec) {
-    p_->scalar = dec_format(p_->dec_val);
+  if (p_->kind == Kind::Text && !p_->scalar_computed && p_->decimal) {
+    p_->scalar = dec_format((*p_->decimal));
     p_->scalar_computed = true;
   }
   return p_->scalar;
@@ -1807,7 +1806,7 @@ bool Value::looks_numeric() const {
   if (p_->kind == Kind::None && size() == 0) return false;
   try {
     const Value& v = scalar_source();
-    if (v.p_->has_dec) return true;
+    if (v.p_->decimal) return true;
     Dec d;
     return v.p_->kind == Kind::Text && sel::dec_parse(v.scalar(), d);
   } catch (const SelError&) {
@@ -1825,9 +1824,10 @@ bool Value::eql_at(const Value& other, int depth, Pos pos) const {
   }
   if (p_->kind != other.p_->kind) return false;
   if (p_->kind == Kind::Text) {
-    if (p_->has_dec && other.p_->has_dec) {
-      const Dec& a = p_->dec_val;
-      const Dec& b = other.p_->dec_val;
+    if (!p_->scalar_computed && !other.p_->scalar_computed &&
+        p_->decimal && other.p_->decimal) {
+      const Dec& a = (*p_->decimal);
+      const Dec& b = (*other.p_->decimal);
       if (a.neg != b.neg || a.scale != b.scale) return false;
       if (a.small && b.small) {
         if (a.mantissa != b.mantissa) return false;
@@ -1843,23 +1843,23 @@ bool Value::eql_at(const Value& other, int depth, Pos pos) const {
     if (p_->boolean != other.p_->boolean) return false;
   }
   if (size() != other.size()) return false;
-  if (p_->shape && other.p_->shape && p_->shape == other.p_->shape) {
-    for (std::size_t i = 0; i < p_->storage.size(); i++) {
-      if (!p_->storage[i].eql_at(other.p_->storage[i], depth + 1, pos)) return false;
+  if (p_->coll().shape && other.p_->coll().shape && p_->coll().shape == other.p_->coll().shape) {
+    for (std::size_t i = 0; i < p_->coll().storage.size(); i++) {
+      if (!p_->coll().storage[i].eql_at(other.p_->coll().storage[i], depth + 1, pos)) return false;
     }
     return true;
   }
-  if (p_->is_list && other.p_->is_list && p_->children.empty() && other.p_->children.empty()) {
-    for (std::size_t i = 0; i < p_->storage.size(); i++) {
-      if (!p_->storage[i].eql_at(other.p_->storage[i], depth + 1, pos)) return false;
+  if (p_->is_list && other.p_->is_list && p_->coll().children.empty() && other.p_->coll().children.empty()) {
+    for (std::size_t i = 0; i < p_->coll().storage.size(); i++) {
+      if (!p_->coll().storage[i].eql_at(other.p_->coll().storage[i], depth + 1, pos)) return false;
     }
     return true;
   }
   ensure_children();
   other.ensure_children();
-  for (std::size_t i = 0; i < p_->children.size(); i++) {
-    if (p_->children[i].first != other.p_->children[i].first) return false;  // order is normative
-    if (!p_->children[i].second.eql_at(other.p_->children[i].second, depth + 1, pos)) {
+  for (std::size_t i = 0; i < p_->coll().children.size(); i++) {
+    if (p_->coll().children[i].first != other.p_->coll().children[i].first) return false;  // order is normative
+    if (!p_->coll().children[i].second.eql_at(other.p_->coll().children[i].second, depth + 1, pos)) {
       return false;
     }
   }
@@ -1881,27 +1881,27 @@ std::string Value::dump_at(int depth) const {
   }
   if (size() == 0) return s;
   s += "{";
-  if (p_->shape) {
-    for (std::size_t i = 0; i < p_->shape->keys.size(); i++) {
+  if (p_->coll().shape) {
+    for (std::size_t i = 0; i < p_->coll().shape->keys.size(); i++) {
       if (i > 0) s += ", ";
-      s += sel::quote_dump(p_->shape->keys[i]) + "=" +
-           p_->storage[i].dump_at(depth + 1);
+      s += sel::quote_dump(p_->coll().shape->keys[i]) + "=" +
+           p_->coll().storage[i].dump_at(depth + 1);
     }
     return s + "}";
   }
-  if (p_->is_list && p_->children.empty()) {
-    for (std::size_t i = 0; i < p_->storage.size(); i++) {
+  if (p_->is_list && p_->coll().children.empty()) {
+    for (std::size_t i = 0; i < p_->coll().storage.size(); i++) {
       if (i > 0) s += ", ";
       s += sel::quote_dump(std::to_string(i + 1)) + "=" +
-           p_->storage[i].dump_at(depth + 1);
+           p_->coll().storage[i].dump_at(depth + 1);
     }
     return s + "}";
   }
   ensure_children();
-  for (std::size_t i = 0; i < p_->children.size(); i++) {
+  for (std::size_t i = 0; i < p_->coll().children.size(); i++) {
     if (i > 0) s += ", ";
-    s += sel::quote_dump(p_->children[i].first) + "=" +
-         p_->children[i].second.dump_at(depth + 1);
+    s += sel::quote_dump(p_->coll().children[i].first) + "=" +
+         p_->coll().children[i].second.dump_at(depth + 1);
   }
   return s + "}";
 }
@@ -1920,27 +1920,32 @@ std::uint64_t Value::structural_hash(Pos pos) const {
     if (value.p_->kind == Kind::Text) {
       if (value.p_->scalar_computed) {
         h = mix(h, std::hash<std::string_view>{}(value.p_->scalar));
-      } else if (value.p_->has_dec) {
+      } else if (value.p_->decimal && value.p_->decimal->small && value.p_->decimal->scale <= 38) {
+        // Only bounded native decimals fit in this allocation-free buffer.
         char buf[64];
-        const std::size_t len = dec_format_buf(value.p_->dec_val, buf);
+        const std::size_t len = dec_format_buf((*value.p_->decimal), buf);
         h = mix(h, std::hash<std::string_view>{}(std::string_view(buf, len)));
       } else {
-        h = mix(h, std::hash<std::string_view>{}(value.p_->scalar));
+        h = mix(h, std::hash<std::string_view>{}(value.scalar()));
       }
     } else {
       h = mix(h, std::hash<std::string_view>{}(value.p_->scalar));
     }
-    if (value.p_->shape) {
-      for (std::size_t i = 0; i < value.p_->shape->keys.size(); i++) {
-        h = mix(h, std::hash<std::string>{}(value.p_->shape->keys[i]));
-        h = mix(h, self(self, value.p_->storage[i], depth + 1));
+    if (value.p_->coll().shape) {
+      for (std::size_t i = 0; i < value.p_->coll().shape->keys.size(); i++) {
+        h = mix(h, std::hash<std::string>{}(value.p_->coll().shape->keys[i]));
+        h = mix(h, self(self, value.p_->coll().storage[i], depth + 1));
       }
-    } else if (value.p_->is_list && value.p_->children.empty()) {
-      // List keys are derived positions and are not part of Lisp's list hash.
-      for (const Value& item : value.p_->storage) h = mix(h, self(self, item, depth + 1));
+    } else if (value.p_->is_list && value.p_->coll().children.empty()) {
+      // Derived keys are still logical keys, just as in materialized records.
+      std::size_t index = 0;
+      for (const Value& item : value.p_->coll().storage) {
+        h = mix(h, std::hash<std::string>{}(std::to_string(++index)));
+        h = mix(h, self(self, item, depth + 1));
+      }
     } else {
       value.ensure_children();
-      for (const auto& entry : value.p_->children) {
+      for (const auto& entry : value.p_->coll().children) {
         h = mix(h, std::hash<std::string>{}(entry.first));
         h = mix(h, self(self, entry.second, depth + 1));
       }
@@ -4440,9 +4445,8 @@ void register_structure() {
 
 // Runs `visit` per element with the binder and _K in scope. Returning a value
 // from `visit` stops the walk and becomes the result.
-std::optional<Value> walk(Args& a, Context& ctx,
-                          const std::function<std::optional<Value>(const Value&, std::size_t,
-                                                                   const Value&, const Node&)>& visit) {
+template <typename Visitor>
+std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit) {
   const bool three = a.count() == 3;
   const std::string binder = three ? a.symbol(1) : std::string("_");
   const Node& body = a.node(three ? 2 : 1);

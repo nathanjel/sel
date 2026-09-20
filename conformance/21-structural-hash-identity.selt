@@ -1,0 +1,92 @@
+# Hash buckets must use structural identity, independent of storage and caches.
+
+### name: hash.distinct.list-record-fallback
+--- source
+R = NULL; R["1"] = "x"; COUNT(DISTINCT(LIST(LIST("x"), RECORD("1", "x"), R)))
+--- expect
+text "1"
+===
+
+### name: hash.bucket.list-record-fallback
+--- source
+R = NULL; R["1"] = "x"; JOIN(BUCKET(LIST(LIST("x"), RECORD("1", "x"), R), _, COUNT(_)), ",")
+--- expect
+text "3"
+===
+
+### name: hash.distinct.empty-representations
+--- source
+COUNT(DISTINCT(LIST(NULL, LIST(), RECORD())))
+--- expect
+text "1"
+===
+
+### name: hash.bucket.empty-representations
+--- source
+JOIN(BUCKET(LIST(NULL, LIST(), RECORD()), _, COUNT(_)), ",")
+--- expect
+text "3"
+===
+
+### name: hash.distinct.numeric-cache
+--- source
+COUNT(DISTINCT(LIST("1", 1, "1.0", 1.0, "01", "-0", 0)))
+--- expect
+text "5"
+===
+
+### name: hash.bucket.numeric-cache
+--- source
+JOIN(BUCKET(LIST("1", 1, "1.0", 1.0, "01", "-0", 0), _, COUNT(_)), ",")
+--- expect
+text "2,2,1,1,1"
+===
+
+### name: hash.distinct.parsed-noncanonical-text
+--- source
+A = "01"; B = A + 0; COUNT(DISTINCT(LIST(A, "01", B, "1")))
+--- expect
+text "2"
+===
+
+### name: hash.distinct.nested-representations
+--- source
+COUNT(DISTINCT(LIST(RECORD("v", LIST("x")), RECORD("v", RECORD("1", "x")))))
+--- expect
+text "1"
+===
+
+### name: hash.distinct.key-order-and-scale
+--- source
+COUNT(DISTINCT(LIST(RECORD("a", 1, "b", 2), RECORD("b", 2, "a", 1), RECORD("a", 1.0, "b", 2))))
+--- expect
+text "3"
+===
+
+### name: hash.distinct.large-decimal
+--- source
+COUNT(DISTINCT(LIST(POWER(10, 100), "1" & REPEAT("0", 100))))
+--- expect
+text "1"
+===
+
+### name: hash.eql.parsed-text-keeps-spelling
+--- source
+A = "01"; B = "1"; C = A + B; A EQL B
+--- expect
+bool FALSE
+===
+
+### name: hash.eql.parsed-negative-zero
+--- source
+A = "-0"; B = "0"; C = A + B; A EQL B
+--- expect
+bool FALSE
+===
+
+### name: hash.distinct.high-scale-decimal
+--- source
+COUNT(DISTINCT(LIST(ROUND(0, 100), "0." & REPEAT("0", 100))))
+--- expect
+text "1"
+===

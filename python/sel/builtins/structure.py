@@ -199,7 +199,7 @@ def canonical_join_key(value, numeric):
                 return None
 
         if d.scale == 0:
-            return d.int_val if d.int_val is not None else (-d.digits if d.neg else d.digits)
+            return -d.digits if d.neg else d.digits
         if d.digits == 0:
             return 0
         digits = d.digits

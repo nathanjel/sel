@@ -1,10 +1,8 @@
-"""UTF-8 codec, hand-written on purpose.
+"""Native UTF-8 conversion with SEL diagnostics on invalid input.
 
-The host's own facilities are not used. `bytes.decode('utf-8')` raises
-UnicodeDecodeError rather than E_UTF8 and its error positions are byte offsets
-into a message string; `str.encode` refuses lone surrogates with a different
-exception again. Both would leak a host exception type through an API whose
-whole contract is that every failure is a SelError.
+Valid input uses Python's strict codec. Invalid input goes through the explicit
+validator so callers receive E_UTF8 with SEL's messages and source position,
+rather than a host Unicode exception.
 
 Python does give one thing free that the other hosts pay for: `str` is a
 sequence of code points, so `len()` and slicing already count what SEL counts.
@@ -65,6 +63,16 @@ def decode_utf8(data: bytes, pos: Pos | None = None) -> str:
     """Strict: rejects overlong forms, surrogates, values above U+10FFFF and
     truncated sequences. No replacement characters, ever.
     """
+    try:
+        return data.decode('utf-8', errors='strict')
+    except UnicodeDecodeError:
+        pass
+    # Outside the except block: do not chain a host exception into SelError.
+    return _decode_utf8_diagnostic(data, pos)
+
+
+def _decode_utf8_diagnostic(data: bytes, pos: Pos | None) -> str:
+    """Original decoder, retained for the precise first invalid byte diagnostic."""
     cps: list[int] = []
     n = len(data)
     i = 0

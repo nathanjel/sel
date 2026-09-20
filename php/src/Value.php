@@ -625,7 +625,9 @@ final class Value
             if ($v->size() === 0) {
                 fail('E_NO_SCALAR', 'value has no scalar and no children', $pos);
             }
-            $v = $v->values()[0];
+            $v = $v->storage !== null
+                ? $v->storage[0]
+                : $v->children[array_key_first($v->children)];
             if (++$guard > 1000) {
                 fail('E_DEPTH', 'scalar context nested too deeply', $pos);
             }
@@ -784,8 +786,15 @@ final class Value
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', null);
         }
+        // Hash logical scalar/children only: eqlAt ignores the storage layout
+        // and list marker. Packed storage may also carry a host-set scalar.
+        $scalar = match ($this->kind) {
+            self::NONE => '',
+            self::TEXT, self::BIN => (string) $this->getScalar(),
+            self::BOOL => $this->scalar ? '1' : '0',
+        };
+        hash_update($hash, $this->kind . ':' . strlen($scalar) . ':' . $scalar . ';');
         if ($this->shape !== null) {
-            hash_update($hash, 'NONE:0:;R;');
             $storage = $this->storage;
             $nextDepth = $depth + 1;
             foreach ($this->shape->keyHashParts as $i => $part) {
@@ -796,7 +805,6 @@ final class Value
             return;
         }
         if ($this->isList && $this->storage !== null) {
-            hash_update($hash, 'NONE:0:;L;');
             $storage = $this->storage;
             $nextDepth = $depth + 1;
             if ($this->listKeys === null) {
@@ -816,13 +824,6 @@ final class Value
             }
             return;
         }
-        $scalar = match ($this->kind) {
-            self::NONE => '',
-            self::TEXT, self::BIN => (string) $this->getScalar(),
-            self::BOOL => $this->scalar ? '1' : '0',
-        };
-        hash_update($hash, $this->kind . ':' . strlen($scalar) . ':' . $scalar . ';');
-        hash_update($hash, $this->isList ? 'L;' : 'R;');
         foreach ($this->children as $key => $value) {
             $key = (string) $key;
             hash_update($hash, strlen($key) . ':' . $key . '=');
@@ -841,7 +842,8 @@ final class Value
             return false;
         }
         if ($this->kind === self::TEXT) {
-            if ($this->decVal !== null && $other->decVal !== null) {
+            if ($this->scalar === null && $other->scalar === null
+                && $this->decVal !== null && $other->decVal !== null) {
                 if ($this->decVal['neg'] !== $other->decVal['neg']
                     || $this->decVal['scale'] !== $other->decVal['scale']
                     || $this->decVal['digits'] !== $other->decVal['digits']) {

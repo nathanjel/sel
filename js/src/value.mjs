@@ -435,7 +435,8 @@ export class Value {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
     if (this.kind !== other.kind) return false;
     if (this.kind === TEXT) {
-      if (this._decimal !== null && other._decimal !== null) {
+      if (this._scalar === null && other._scalar === null &&
+          this._decimal !== null && other._decimal !== null) {
         if (this._decimal.neg !== other._decimal.neg ||
             this._decimal.scale !== other._decimal.scale ||
             this._decimal.digits !== other._decimal.digits) {
@@ -546,7 +547,10 @@ export function structuralHash(value, depth = 1) {
       h = mixHash(h, structuralHash(value.storage[i], depth + 1));
     }
   } else if (value.isList && value.storage !== null) {
-    for (const child of value.storage) h = mixHash(h, structuralHash(child, depth + 1));
+    for (let i = 0; i < value.storage.length; i++) {
+      h = mixHash(h, stringHash(String(i + 1)));
+      h = mixHash(h, structuralHash(value.storage[i], depth + 1));
+    }
   } else {
     for (const [key, child] of value.entries()) {
       h = mixHash(h, stringHash(key));
