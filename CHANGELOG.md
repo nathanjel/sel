@@ -12,6 +12,28 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+C++ container allocation and regression measurements (2026-09-20).
+
+  - **Allocate container headers and payloads together.** Lists, records and container clones share one allocation, while scalar headers remain 72 bytes and decimals remain optional. Alias mutation, independent cloning and iterative deep destruction are preserved. No additional cache is introduced.
+  - **Recover part of the join-throughput loss.** Against `c5a8991`, repeated measurements improve S1 by 3–5%, S5 by 3–5% and S6 by 6%, with S2/S3 also improving. S4 regresses 2–7% and Mandelbrot about 1%; these remain explicit tradeoffs. Live allocator memory is unchanged in the 200,000-value probes; row construction/destruction improve about 4%/11%. A bounded collection-block pool failed to recover the join losses and was rejected. [Benchmarks, raw samples and ownership details](docs/interim/cpp-collection-improvements.md).
+
+Validation: 171 C++ unit checks, 85 SQL unit checks, 911 conformance cases,
+852 SQL cases, metadata checks and 39,990 decimal-oracle cases pass. Address,
+undefined-behavior and leak sanitizers pass the ownership tests. All 4,000
+differential programs and 54 API probes agree with PHP. All six scenario checks
+and Mandelbrot outputs agree; the full five-language gate was not rerun.
+
+JavaScript import isolation and prepared record allocation (2026-09-20).
+
+  - **Preserve the host environment.** Importing SEL no longer installs `BigInt.prototype.toJSON`, so frozen prototypes work and host JSON behavior remains intact. AST test snapshots serialize BigInts with local replacers. Source, SQL imports and both bundles have regression checks in the repository gate.
+  - **Reduce prepared projection allocations.** Literal-key `RECORD` calls use packed key/value arrays instead of temporary field pairs. Evaluation order, cloning, stale-layout fallback, dynamic/duplicate keys and error positions are preserved. Focused measurements show 5–10% lower prepared-record latency and 7–9% lower latency for a complete 10,000-row projection. Dynamic records and Mandelbrot remain near baseline; the six larger scenarios vary by roughly −1% to +3%, without a general query-speedup claim. [Results and reproduction](docs/interim/js-runtime-improvements.md).
+  - **Retain arithmetic gains.** Native BigInts, the shift-based magnitude guard and bounded metadata caches are unchanged.
+
+Validation: 911 conformance cases pass for source and both rebuilt bundles;
+852 SQL cases, 135 optimizer checks, 31 focused runtime checks, 14 guard checks,
+metadata checks and 39,990 decimal-oracle cases pass. All 4,000 differential
+programs and 54 API probes agree with PHP. The full five-language gate was not rerun.
+
 Bounded metadata caches and prepared record layouts across all five lanes (2026-09-20).
 
   - **Bound shape and alias retention.** Shape interners and flat alias-plan caches retain at most 256 entries each, excluding layouts above 256 keys or 16,384 total key bytes/characters. Cache eviction preserves layouts owned by live values and compiled programs. Flat alias ownership prevents per-shape caches from retaining chains of other layouts.

@@ -80,7 +80,8 @@ const TILDE_RE = /~\d+~/g;
 // operator, grouping, children -- is in here, so two snapshots are equal
 // exactly when the caller would see the same tree.
 function snapshotAst(ast) {
-  return JSON.stringify(ast, (key, value) => (key === 'spec' ? undefined : value));
+  return JSON.stringify(ast, (key, value) =>
+    key === 'spec' ? undefined : typeof value === 'bigint' ? value.toString() : value);
 }
 
 // Report what went wrong with a planner case, or null.

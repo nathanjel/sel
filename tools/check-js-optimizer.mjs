@@ -166,7 +166,8 @@ check(unfoldedVar.t === 'call' && unfoldedVar.name === 'IF',
 // cannot observe through the runner: an optimiser option reaching the
 // optimiser, the run() cache, and immutability across a real run().
 
-const snapshot = (ast) => JSON.stringify(ast, (k, v) => (k === 'spec' ? undefined : v));
+const snapshot = (ast) => JSON.stringify(ast, (k, v) =>
+  k === 'spec' ? undefined : typeof v === 'bigint' ? v.toString() : v);
 const orders = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', 'o', 'NUM') }) };
 
 const helper = compile('X = ORDERS; X .> TAKE(1)');

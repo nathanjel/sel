@@ -1,0 +1,12 @@
+{
+  "ef836bf": {
+    "returncode": 0,
+    "stdout": "3\n",
+    "stderr": ""
+  },
+  "c5a8991": {
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "TypeError: Cannot add property toJSON, object is not extensible\n"
+  }
+}

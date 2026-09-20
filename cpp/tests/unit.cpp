@@ -123,6 +123,27 @@ void test_decimal() {
 void test_value() {
   selt::section("value");
 
+  {
+    auto shape = std::make_shared<RecordShape>(std::vector<std::string>{"x"});
+    std::weak_ptr<const RecordShape> weak = shape;
+    Value row = Value::shaped(shape, {Value::list({Value::integer(1)})});
+    shape.reset();
+    Value alias = row;
+    Value copy = row.clone();
+    row = Value::none();
+    alias.entries();  // Materialize the second, aliasing view before release.
+    copy.get("x")->set("1", Value::integer(2));
+    selt::eq(alias.get("x")->get("1")->scalar(), std::string("1"),
+             "container clone owns independent nested payloads");
+    alias.set("extra", Value::text("fallback"));
+    selt::eq(alias.get("x")->get("1")->scalar(), std::string("1"),
+             "inline payload survives shaped-to-fallback conversion");
+    alias = Value::none();
+    selt::ok(!weak.expired(), "cloned container keeps its shape alive");
+    copy = Value::none();
+    selt::ok(weak.expired(), "last container releases its shape owner");
+  }
+
   Value scalar = Value::integer(17);
   Value alias = scalar;
   alias.set("label", Value::text("shared"));

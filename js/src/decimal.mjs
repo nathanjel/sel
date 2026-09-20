@@ -9,10 +9,6 @@
 
 import { fail } from './errors.mjs';
 
-if (typeof BigInt !== 'undefined' && BigInt.prototype.toJSON === undefined) {
-  BigInt.prototype.toJSON = function () { return this.toString(); };
-}
-
 export const DIV_SCALE = 10;
 
 // spec/SPEC.md §6.4. These bound the *value*; ROUND's scale cap and POWER's

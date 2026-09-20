@@ -259,6 +259,7 @@ class Value {
     mutable bool scalar_computed = false;
     bool boolean = false;
     bool is_list = false;
+    bool inline_collection = false;  // Dispatch destruction without a vptr.
     mutable std::unique_ptr<Dec> decimal;
     std::unique_ptr<Collection> collection;
     Impl* next_free = nullptr;
@@ -280,6 +281,9 @@ class Value {
 
  private:
   friend struct Internals;
+
+  explicit Value(Impl* impl) : p_(impl) {}
+  static Impl* make_collection_impl();
 
   static constexpr std::size_t INDEX_THRESHOLD = 4;
 

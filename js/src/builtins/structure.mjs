@@ -53,15 +53,29 @@ define({
   fn: (args) => Value.listOwned(Array.from({ length: args.count() }, (_, i) => args.val(i).clone())),
 });
 
+function recordWithShape(args, shape) {
+  // Keep key/value evaluation and cloning interleaved. Packed arrays avoid
+  // allocating a pair for every field in a prepared projection. Verify the
+  // actual keys after evaluation so stale metadata still uses the fallback.
+  const keys = [];
+  const values = [];
+  for (let i = 0; i < args.count(); i += 2) {
+    keys.push(args.text(i));
+    values.push(args.val(i + 1).clone());
+  }
+  if (shape.size === keys.length) {
+    let i = 0;
+    while (i < keys.length && keys[i] === shape.keys[i]) i++;
+    if (i === keys.length) return Value.shapedFromShape(shape, values);
+  }
+  return Value.fromEntries(keys.map((key, i) => [key, values[i]]));
+}
+
 function recordFromArgs(args) {
+  if (args.recordShape) return recordWithShape(args, args.recordShape);
   const entries = [];
   for (let i = 0; i < args.count(); i += 2) {
     entries.push([args.text(i), args.val(i + 1).clone()]);
-  }
-  const shape = args.recordShape;
-  if (shape && shape.size === entries.length &&
-      entries.every(([key], i) => key === shape.keys[i])) {
-    return Value.shapedFromShape(shape, entries.map(([, value]) => value));
   }
   return Value.fromEntries(entries);
 }

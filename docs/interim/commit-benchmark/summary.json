@@ -1,0 +1,4488 @@
+{
+  "rows": [
+    {
+      "commit": "ef836bf",
+      "lane": "cpp",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 76.622808,
+          "min": 74.701437,
+          "max": 77.729265
+        },
+        "program_run_ms": {
+          "median": 1254.053617,
+          "min": 1249.87966,
+          "max": 1278.332553
+        },
+        "materialize_ms": {
+          "median": 0.024059,
+          "min": 0.02374,
+          "max": 0.025062
+        },
+        "prepared_total_ms": {
+          "median": 1254.077676,
+          "min": 1249.904331,
+          "max": 1278.356382
+        },
+        "elapsed_ms": {
+          "median": 1254.077676,
+          "min": 1249.904331,
+          "max": 1278.356382
+        }
+      },
+      "compile_ms": 0.175429,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "cpp",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 75.780629,
+          "min": 75.455794,
+          "max": 76.788444
+        },
+        "program_run_ms": {
+          "median": 13.04592,
+          "min": 12.649716,
+          "max": 13.698003
+        },
+        "materialize_ms": {
+          "median": 0.01029,
+          "min": 0.009486,
+          "max": 0.010719
+        },
+        "prepared_total_ms": {
+          "median": 13.05621,
+          "min": 12.66025,
+          "max": 13.708722
+        },
+        "elapsed_ms": {
+          "median": 13.05621,
+          "min": 12.66025,
+          "max": 13.708722
+        }
+      },
+      "compile_ms": 0.025232,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "cpp",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 77.075372,
+          "min": 74.548818,
+          "max": 79.232624
+        },
+        "program_run_ms": {
+          "median": 348.624172,
+          "min": 344.782554,
+          "max": 357.726208
+        },
+        "materialize_ms": {
+          "median": 0.010085,
+          "min": 0.009449,
+          "max": 0.010605
+        },
+        "prepared_total_ms": {
+          "median": 348.634777,
+          "min": 344.792697,
+          "max": 357.736293
+        },
+        "elapsed_ms": {
+          "median": 348.634777,
+          "min": 344.792697,
+          "max": 357.736293
+        }
+      },
+      "compile_ms": 0.05833,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "cpp",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 77.816159,
+          "min": 76.126203,
+          "max": 78.637522
+        },
+        "program_run_ms": {
+          "median": 21.219786,
+          "min": 20.438301,
+          "max": 22.742034
+        },
+        "materialize_ms": {
+          "median": 0.014403,
+          "min": 0.013298,
+          "max": 0.014729
+        },
+        "prepared_total_ms": {
+          "median": 21.234189,
+          "min": 20.451599,
+          "max": 22.756553
+        },
+        "elapsed_ms": {
+          "median": 21.234189,
+          "min": 20.451599,
+          "max": 22.756553
+        }
+      },
+      "compile_ms": 0.022957,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "cpp",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 75.946035,
+          "min": 75.270847,
+          "max": 77.610916
+        },
+        "program_run_ms": {
+          "median": 2362.240151,
+          "min": 2347.288415,
+          "max": 2449.267122
+        },
+        "materialize_ms": {
+          "median": 0.036098,
+          "min": 0.033548,
+          "max": 0.037059
+        },
+        "prepared_total_ms": {
+          "median": 2362.27721,
+          "min": 2347.324513,
+          "max": 2449.303789
+        },
+        "elapsed_ms": {
+          "median": 2362.27721,
+          "min": 2347.324513,
+          "max": 2449.303789
+        }
+      },
+      "compile_ms": 0.050739,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "cpp",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 76.833661,
+          "min": 75.487413,
+          "max": 78.031104
+        },
+        "program_run_ms": {
+          "median": 343.227981,
+          "min": 339.610949,
+          "max": 348.222242
+        },
+        "materialize_ms": {
+          "median": 0.015276,
+          "min": 0.014625,
+          "max": 0.015416
+        },
+        "prepared_total_ms": {
+          "median": 343.242606,
+          "min": 339.625649,
+          "max": 348.23755
+        },
+        "elapsed_ms": {
+          "median": 343.242606,
+          "min": 339.625649,
+          "max": 348.23755
+        }
+      },
+      "compile_ms": 0.036009,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "cpp",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 15942.3,
+          "min": 15942.3,
+          "max": 15942.3
+        }
+      },
+      "compile_ms": 0.206992,
+      "warmups": 0,
+      "samples": 1,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "1614eed",
+      "lane": "cpp",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.058532,
+          "min": 84.011335,
+          "max": 85.553606
+        },
+        "program_run_ms": {
+          "median": 525.76929,
+          "min": 522.826899,
+          "max": 554.6518
+        },
+        "materialize_ms": {
+          "median": 0.028388,
+          "min": 0.02686,
+          "max": 0.030756
+        },
+        "prepared_total_ms": {
+          "median": 525.800046,
+          "min": 522.854792,
+          "max": 554.67866
+        },
+        "elapsed_ms": {
+          "median": 525.800046,
+          "min": 522.854792,
+          "max": 554.67866
+        }
+      },
+      "compile_ms": 0.152782,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "cpp",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.852307,
+          "min": 83.553889,
+          "max": 88.311755
+        },
+        "program_run_ms": {
+          "median": 8.033803,
+          "min": 7.959289,
+          "max": 8.137101
+        },
+        "materialize_ms": {
+          "median": 0.010797,
+          "min": 0.010057,
+          "max": 0.011011
+        },
+        "prepared_total_ms": {
+          "median": 8.04451,
+          "min": 7.970131,
+          "max": 8.147158
+        },
+        "elapsed_ms": {
+          "median": 8.04451,
+          "min": 7.970131,
+          "max": 8.147158
+        }
+      },
+      "compile_ms": 0.022887,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "cpp",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.105453,
+          "min": 83.484377,
+          "max": 84.866793
+        },
+        "program_run_ms": {
+          "median": 205.936456,
+          "min": 203.706559,
+          "max": 211.371986
+        },
+        "materialize_ms": {
+          "median": 0.011095,
+          "min": 0.010436,
+          "max": 0.011608
+        },
+        "prepared_total_ms": {
+          "median": 205.946945,
+          "min": 203.718167,
+          "max": 211.382422
+        },
+        "elapsed_ms": {
+          "median": 205.946945,
+          "min": 203.718167,
+          "max": 211.382422
+        }
+      },
+      "compile_ms": 0.056496,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "cpp",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.213254,
+          "min": 83.721169,
+          "max": 84.76289
+        },
+        "program_run_ms": {
+          "median": 11.933511,
+          "min": 11.879971,
+          "max": 12.21972
+        },
+        "materialize_ms": {
+          "median": 0.015075,
+          "min": 0.014764,
+          "max": 0.015721
+        },
+        "prepared_total_ms": {
+          "median": 11.948935,
+          "min": 11.895046,
+          "max": 12.235441
+        },
+        "elapsed_ms": {
+          "median": 11.948935,
+          "min": 11.895046,
+          "max": 12.235441
+        }
+      },
+      "compile_ms": 0.021054,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "cpp",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 85.024462,
+          "min": 84.386968,
+          "max": 85.475521
+        },
+        "program_run_ms": {
+          "median": 520.344957,
+          "min": 508.782578,
+          "max": 530.147252
+        },
+        "materialize_ms": {
+          "median": 0.21192,
+          "min": 0.039655,
+          "max": 0.223564
+        },
+        "prepared_total_ms": {
+          "median": 520.557939,
+          "min": 508.994498,
+          "max": 530.370816
+        },
+        "elapsed_ms": {
+          "median": 520.557939,
+          "min": 508.994498,
+          "max": 530.370816
+        }
+      },
+      "compile_ms": 0.054816,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "cpp",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.83235,
+          "min": 84.699987,
+          "max": 88.652031
+        },
+        "program_run_ms": {
+          "median": 247.457185,
+          "min": 246.971854,
+          "max": 251.396198
+        },
+        "materialize_ms": {
+          "median": 0.01527,
+          "min": 0.014521,
+          "max": 0.022679
+        },
+        "prepared_total_ms": {
+          "median": 247.471706,
+          "min": 246.987124,
+          "max": 251.412311
+        },
+        "elapsed_ms": {
+          "median": 247.471706,
+          "min": 246.987124,
+          "max": 251.412311
+        }
+      },
+      "compile_ms": 0.034047,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "cpp",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 152.402,
+          "min": 147.506,
+          "max": 152.684
+        }
+      },
+      "compile_ms": 0.220527,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "619bc31",
+      "lane": "cpp",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.985863,
+          "min": 83.845495,
+          "max": 86.051267
+        },
+        "program_run_ms": {
+          "median": 581.524058,
+          "min": 579.053486,
+          "max": 588.269489
+        },
+        "materialize_ms": {
+          "median": 0.318054,
+          "min": 0.034225,
+          "max": 0.910519
+        },
+        "prepared_total_ms": {
+          "median": 581.701604,
+          "min": 579.37154,
+          "max": 588.41064
+        },
+        "elapsed_ms": {
+          "median": 581.701604,
+          "min": 579.37154,
+          "max": 588.41064
+        }
+      },
+      "compile_ms": 0.178254,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "cpp",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.314601,
+          "min": 81.978061,
+          "max": 87.0078
+        },
+        "program_run_ms": {
+          "median": 5.419187,
+          "min": 5.253285,
+          "max": 5.592088
+        },
+        "materialize_ms": {
+          "median": 0.011136,
+          "min": 0.01102,
+          "max": 0.01158
+        },
+        "prepared_total_ms": {
+          "median": 5.430767,
+          "min": 5.264305,
+          "max": 5.603587
+        },
+        "elapsed_ms": {
+          "median": 5.430767,
+          "min": 5.264305,
+          "max": 5.603587
+        }
+      },
+      "compile_ms": 0.024248,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "cpp",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 85.928246,
+          "min": 82.122586,
+          "max": 86.788353
+        },
+        "program_run_ms": {
+          "median": 192.156778,
+          "min": 188.529912,
+          "max": 198.904051
+        },
+        "materialize_ms": {
+          "median": 0.011974,
+          "min": 0.010481,
+          "max": 0.015819
+        },
+        "prepared_total_ms": {
+          "median": 192.169045,
+          "min": 188.545731,
+          "max": 198.916025
+        },
+        "elapsed_ms": {
+          "median": 192.169045,
+          "min": 188.545731,
+          "max": 198.916025
+        }
+      },
+      "compile_ms": 0.046225,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "cpp",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.630243,
+          "min": 83.701934,
+          "max": 86.333625
+        },
+        "program_run_ms": {
+          "median": 9.161864,
+          "min": 8.834862,
+          "max": 9.247381
+        },
+        "materialize_ms": {
+          "median": 0.016154,
+          "min": 0.015095,
+          "max": 0.02641
+        },
+        "prepared_total_ms": {
+          "median": 9.177433,
+          "min": 8.851016,
+          "max": 9.263585
+        },
+        "elapsed_ms": {
+          "median": 9.177433,
+          "min": 8.851016,
+          "max": 9.263585
+        }
+      },
+      "compile_ms": 0.022636,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "cpp",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 85.502453,
+          "min": 84.609209,
+          "max": 87.506383
+        },
+        "program_run_ms": {
+          "median": 543.800337,
+          "min": 539.98147,
+          "max": 547.369093
+        },
+        "materialize_ms": {
+          "median": 0.131834,
+          "min": 0.035648,
+          "max": 0.293233
+        },
+        "prepared_total_ms": {
+          "median": 543.855221,
+          "min": 540.244242,
+          "max": 547.662326
+        },
+        "elapsed_ms": {
+          "median": 543.855221,
+          "min": 540.244242,
+          "max": 547.662326
+        }
+      },
+      "compile_ms": 0.06849,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "cpp",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 85.231189,
+          "min": 84.023212,
+          "max": 87.524078
+        },
+        "program_run_ms": {
+          "median": 270.265948,
+          "min": 267.899963,
+          "max": 273.551569
+        },
+        "materialize_ms": {
+          "median": 0.016512,
+          "min": 0.016155,
+          "max": 0.017092
+        },
+        "prepared_total_ms": {
+          "median": 270.28246,
+          "min": 267.916118,
+          "max": 273.568661
+        },
+        "elapsed_ms": {
+          "median": 270.28246,
+          "min": 267.916118,
+          "max": 273.568661
+        }
+      },
+      "compile_ms": 0.03547,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "cpp",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 147.015,
+          "min": 145.795,
+          "max": 151.65
+        }
+      },
+      "compile_ms": 0.240465,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "cpp",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 82.861885,
+          "min": 82.612787,
+          "max": 84.651114
+        },
+        "program_run_ms": {
+          "median": 581.773892,
+          "min": 570.336166,
+          "max": 596.335895
+        },
+        "materialize_ms": {
+          "median": 0.175085,
+          "min": 0.040818,
+          "max": 0.206207
+        },
+        "prepared_total_ms": {
+          "median": 581.81471,
+          "min": 570.502008,
+          "max": 596.542102
+        },
+        "elapsed_ms": {
+          "median": 581.81471,
+          "min": 570.502008,
+          "max": 596.542102
+        }
+      },
+      "compile_ms": 0.184762,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "cpp",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 85.165629,
+          "min": 82.424569,
+          "max": 86.251227
+        },
+        "program_run_ms": {
+          "median": 5.685914,
+          "min": 5.48869,
+          "max": 5.742178
+        },
+        "materialize_ms": {
+          "median": 0.01077,
+          "min": 0.010518,
+          "max": 0.01131
+        },
+        "prepared_total_ms": {
+          "median": 5.696798,
+          "min": 5.499208,
+          "max": 5.752948
+        },
+        "elapsed_ms": {
+          "median": 5.696798,
+          "min": 5.499208,
+          "max": 5.752948
+        }
+      },
+      "compile_ms": 0.025729,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "cpp",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 83.4159,
+          "min": 81.431921,
+          "max": 85.685714
+        },
+        "program_run_ms": {
+          "median": 185.677278,
+          "min": 183.931576,
+          "max": 192.330687
+        },
+        "materialize_ms": {
+          "median": 0.011453,
+          "min": 0.010668,
+          "max": 0.011672
+        },
+        "prepared_total_ms": {
+          "median": 185.687946,
+          "min": 183.943239,
+          "max": 192.342359
+        },
+        "elapsed_ms": {
+          "median": 185.687946,
+          "min": 183.943239,
+          "max": 192.342359
+        }
+      },
+      "compile_ms": 0.067127,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "cpp",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.977706,
+          "min": 80.892405,
+          "max": 85.911742
+        },
+        "program_run_ms": {
+          "median": 8.83961,
+          "min": 8.663624,
+          "max": 8.970809
+        },
+        "materialize_ms": {
+          "median": 0.014653,
+          "min": 0.014497,
+          "max": 0.01554
+        },
+        "prepared_total_ms": {
+          "median": 8.854801,
+          "min": 8.678277,
+          "max": 8.985306
+        },
+        "elapsed_ms": {
+          "median": 8.854801,
+          "min": 8.678277,
+          "max": 8.985306
+        }
+      },
+      "compile_ms": 0.024028,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "cpp",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 84.526242,
+          "min": 82.431589,
+          "max": 85.049419
+        },
+        "program_run_ms": {
+          "median": 553.913326,
+          "min": 548.108655,
+          "max": 557.159751
+        },
+        "materialize_ms": {
+          "median": 0.071267,
+          "min": 0.050404,
+          "max": 0.152357
+        },
+        "prepared_total_ms": {
+          "median": 554.033985,
+          "min": 548.159059,
+          "max": 557.211888
+        },
+        "elapsed_ms": {
+          "median": 554.033985,
+          "min": 548.159059,
+          "max": 557.211888
+        }
+      },
+      "compile_ms": 0.050902,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "cpp",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "context_clone_ms": {
+          "median": 85.885283,
+          "min": 82.835182,
+          "max": 87.137809
+        },
+        "program_run_ms": {
+          "median": 274.482478,
+          "min": 273.402138,
+          "max": 278.238766
+        },
+        "materialize_ms": {
+          "median": 0.016462,
+          "min": 0.015608,
+          "max": 0.016646
+        },
+        "prepared_total_ms": {
+          "median": 274.498086,
+          "min": 273.4186,
+          "max": 278.255234
+        },
+        "elapsed_ms": {
+          "median": 274.498086,
+          "min": 273.4186,
+          "max": 278.255234
+        }
+      },
+      "compile_ms": 0.032514,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "cpp",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 151.582,
+          "min": 147.656,
+          "max": 158.551
+        }
+      },
+      "compile_ms": 0.232892,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "js",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 713.1717210000002,
+          "min": 676.929674,
+          "max": 777.2024940000001
+        },
+        "materialize_ms": {
+          "median": 0.024738000000070315,
+          "min": 0.02231000000028871,
+          "max": 0.03511100000014267
+        },
+        "prepared_total_ms": {
+          "median": 713.1980380000005,
+          "min": 676.9576939999997,
+          "max": 777.2402849999999
+        },
+        "elapsed_ms": {
+          "median": 713.1980380000005,
+          "min": 676.9576939999997,
+          "max": 777.2402849999999
+        }
+      },
+      "compile_ms": 4.012871000000018,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "js",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 11.628866000000016,
+          "min": 11.006357000000207,
+          "max": 12.39074999999957
+        },
+        "materialize_ms": {
+          "median": 0.017383999999765365,
+          "min": 0.015811999999641557,
+          "max": 0.02010100000006787
+        },
+        "prepared_total_ms": {
+          "median": 11.6503330000005,
+          "min": 11.026542999999947,
+          "max": 12.409375000000182
+        },
+        "elapsed_ms": {
+          "median": 11.6503330000005,
+          "min": 11.026542999999947,
+          "max": 12.409375000000182
+        }
+      },
+      "compile_ms": 0.28507700000000114,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "js",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 266.3298739999991,
+          "min": 263.36015099999895,
+          "max": 280.9148870000008
+        },
+        "materialize_ms": {
+          "median": 0.015272000000550179,
+          "min": 0.014223999998648651,
+          "max": 0.015636000000085915
+        },
+        "prepared_total_ms": {
+          "median": 266.34614800000054,
+          "min": 263.3767480000006,
+          "max": 280.93190200000026
+        },
+        "elapsed_ms": {
+          "median": 266.34614800000054,
+          "min": 263.3767480000006,
+          "max": 280.93190200000026
+        }
+      },
+      "compile_ms": 0.44130599999994047,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "js",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 12.223651000000245,
+          "min": 11.18305700000019,
+          "max": 13.679710000000341
+        },
+        "materialize_ms": {
+          "median": 0.02969899999879999,
+          "min": 0.01325399999950605,
+          "max": 0.05513000000064494
+        },
+        "prepared_total_ms": {
+          "median": 12.2551710000007,
+          "min": 11.215690000000905,
+          "max": 13.736281000001327
+        },
+        "elapsed_ms": {
+          "median": 12.2551710000007,
+          "min": 11.215690000000905,
+          "max": 13.736281000001327
+        }
+      },
+      "compile_ms": 0.24386299999991934,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "js",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 604.1934779999992,
+          "min": 588.2920320000012,
+          "max": 783.2709839999989
+        },
+        "materialize_ms": {
+          "median": 0.018363000001045293,
+          "min": 0.017727000000377302,
+          "max": 0.029557999998360174
+        },
+        "prepared_total_ms": {
+          "median": 604.2128400000001,
+          "min": 588.3118539999996,
+          "max": 783.302800999998
+        },
+        "elapsed_ms": {
+          "median": 604.2128400000001,
+          "min": 588.3118539999996,
+          "max": 783.302800999998
+        }
+      },
+      "compile_ms": 0.6767690000000357,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "js",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 275.8283679999986,
+          "min": 272.05937600000107,
+          "max": 286.1833349999979
+        },
+        "materialize_ms": {
+          "median": 0.013151999999536201,
+          "min": 0.012354000002233079,
+          "max": 0.014489000001049135
+        },
+        "prepared_total_ms": {
+          "median": 275.84244500000204,
+          "min": 272.07456000000093,
+          "max": 286.1976059999979
+        },
+        "elapsed_ms": {
+          "median": 275.84244500000204,
+          "min": 272.07456000000093,
+          "max": 286.1976059999979
+        }
+      },
+      "compile_ms": 0.5083319999999958,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "js",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 43442.497448,
+          "min": 43442.497448,
+          "max": 43442.497448
+        }
+      },
+      "compile_ms": 8.260393999999998,
+      "warmups": 0,
+      "samples": 1,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "1614eed",
+      "lane": "js",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 687.8987339999999,
+          "min": 675.2777729999998,
+          "max": 702.64498
+        },
+        "materialize_ms": {
+          "median": 0.02969299999949726,
+          "min": 0.026006000000052154,
+          "max": 0.05584400000043388
+        },
+        "prepared_total_ms": {
+          "median": 687.9263390000001,
+          "min": 675.3090839999995,
+          "max": 702.6766769999995
+        },
+        "elapsed_ms": {
+          "median": 687.9263390000001,
+          "min": 675.3090839999995,
+          "max": 702.6766769999995
+        }
+      },
+      "compile_ms": 3.8877049999999826,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "js",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 12.699321999999484,
+          "min": 12.240786999999727,
+          "max": 13.003257999999732
+        },
+        "materialize_ms": {
+          "median": 0.018320000000130676,
+          "min": 0.016617000000223925,
+          "max": 0.018806000000040513
+        },
+        "prepared_total_ms": {
+          "median": 12.719348000000537,
+          "min": 12.259268000000702,
+          "max": 13.02310099999977
+        },
+        "elapsed_ms": {
+          "median": 12.719348000000537,
+          "min": 12.259268000000702,
+          "max": 13.02310099999977
+        }
+      },
+      "compile_ms": 0.28050899999993817,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "js",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 268.7687559999995,
+          "min": 255.96473499999956,
+          "max": 333.988695
+        },
+        "materialize_ms": {
+          "median": 0.017092000000047847,
+          "min": 0.016362000000299304,
+          "max": 0.018517000000429107
+        },
+        "prepared_total_ms": {
+          "median": 268.78775400000086,
+          "min": 255.98237700000027,
+          "max": 334.0090080000009
+        },
+        "elapsed_ms": {
+          "median": 268.78775400000086,
+          "min": 255.98237700000027,
+          "max": 334.0090080000009
+        }
+      },
+      "compile_ms": 0.4255879999999479,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "js",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 10.45867200000066,
+          "min": 9.831507000000784,
+          "max": 10.982399000000441
+        },
+        "materialize_ms": {
+          "median": 0.02854499999921245,
+          "min": 0.02026800000021467,
+          "max": 0.06035800000063318
+        },
+        "prepared_total_ms": {
+          "median": 10.521010999998907,
+          "min": 9.854393999999957,
+          "max": 11.02726100000109
+        },
+        "elapsed_ms": {
+          "median": 10.521010999998907,
+          "min": 9.854393999999957,
+          "max": 11.02726100000109
+        }
+      },
+      "compile_ms": 0.23783599999990201,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "js",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 593.3178200000002,
+          "min": 578.6885480000001,
+          "max": 736.1413410000005
+        },
+        "materialize_ms": {
+          "median": 0.022639999999228166,
+          "min": 0.019755999997869367,
+          "max": 0.022863000000143074
+        },
+        "prepared_total_ms": {
+          "median": 593.3423459999995,
+          "min": 578.7132409999995,
+          "max": 736.166154999999
+        },
+        "elapsed_ms": {
+          "median": 593.3423459999995,
+          "min": 578.7132409999995,
+          "max": 736.166154999999
+        }
+      },
+      "compile_ms": 0.6297570000000405,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "js",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 280.02474900000016,
+          "min": 273.9877149999993,
+          "max": 290.65753100000074
+        },
+        "materialize_ms": {
+          "median": 0.013331999998626998,
+          "min": 0.012220000000525033,
+          "max": 0.014784999999392312
+        },
+        "prepared_total_ms": {
+          "median": 280.0395700000008,
+          "min": 274.0040000000008,
+          "max": 290.6725069999993
+        },
+        "elapsed_ms": {
+          "median": 280.0395700000008,
+          "min": 274.0040000000008,
+          "max": 290.6725069999993
+        }
+      },
+      "compile_ms": 0.5121510000000171,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "js",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 95.34988899999996,
+          "min": 91.717941,
+          "max": 96.45381099999997
+        }
+      },
+      "compile_ms": 6.203470000000003,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "619bc31",
+      "lane": "js",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 688.6292570000005,
+          "min": 643.0826740000002,
+          "max": 807.4790939999993
+        },
+        "materialize_ms": {
+          "median": 0.028954000000339875,
+          "min": 0.028037999999924068,
+          "max": 0.030106000000159838
+        },
+        "prepared_total_ms": {
+          "median": 688.6609930000004,
+          "min": 643.1152169999996,
+          "max": 807.5100429999993
+        },
+        "elapsed_ms": {
+          "median": 688.6609930000004,
+          "min": 643.1152169999996,
+          "max": 807.5100429999993
+        }
+      },
+      "compile_ms": 3.8553009999999404,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "js",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 13.213764999999512,
+          "min": 12.26955799999996,
+          "max": 15.147487999999612
+        },
+        "materialize_ms": {
+          "median": 0.021085999999741034,
+          "min": 0.016335999999682826,
+          "max": 0.031146000000262575
+        },
+        "prepared_total_ms": {
+          "median": 13.23714099999961,
+          "min": 12.289984000000004,
+          "max": 15.165140999999494
+        },
+        "elapsed_ms": {
+          "median": 13.23714099999961,
+          "min": 12.289984000000004,
+          "max": 15.165140999999494
+        }
+      },
+      "compile_ms": 0.2650710000000345,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "js",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 265.6693690000011,
+          "min": 257.7818499999994,
+          "max": 274.05982700000095
+        },
+        "materialize_ms": {
+          "median": 0.016826000000946806,
+          "min": 0.016037999999753083,
+          "max": 0.017936999998710235
+        },
+        "prepared_total_ms": {
+          "median": 265.68736400000125,
+          "min": 257.80010799999945,
+          "max": 274.07761199999914
+        },
+        "elapsed_ms": {
+          "median": 265.68736400000125,
+          "min": 257.80010799999945,
+          "max": 274.07761199999914
+        }
+      },
+      "compile_ms": 0.4380220000000463,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "js",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 10.123493000000963,
+          "min": 9.946275000000242,
+          "max": 10.3754540000009
+        },
+        "materialize_ms": {
+          "median": 0.02447299999948882,
+          "min": 0.01829600000019127,
+          "max": 0.06768100000044797
+        },
+        "prepared_total_ms": {
+          "median": 10.19320400000106,
+          "min": 9.97153999999864,
+          "max": 10.433376999999382
+        },
+        "elapsed_ms": {
+          "median": 10.19320400000106,
+          "min": 9.97153999999864,
+          "max": 10.433376999999382
+        }
+      },
+      "compile_ms": 0.24129600000003393,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "js",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 595.5588549999993,
+          "min": 580.1874769999995,
+          "max": 788.643016
+        },
+        "materialize_ms": {
+          "median": 0.02200300000185962,
+          "min": 0.02158399999825633,
+          "max": 0.059121000000232016
+        },
+        "prepared_total_ms": {
+          "median": 595.5825830000031,
+          "min": 580.2113199999985,
+          "max": 788.6664010000004
+        },
+        "elapsed_ms": {
+          "median": 595.5825830000031,
+          "min": 580.2113199999985,
+          "max": 788.6664010000004
+        }
+      },
+      "compile_ms": 0.6338819999999714,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "js",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 280.40068600000086,
+          "min": 275.64700900000025,
+          "max": 299.3276850000002
+        },
+        "materialize_ms": {
+          "median": 0.013014000000111992,
+          "min": 0.01179000000047381,
+          "max": 0.02155000000129803
+        },
+        "prepared_total_ms": {
+          "median": 280.41417499999807,
+          "min": 275.66957900000125,
+          "max": 299.34235700000136
+        },
+        "elapsed_ms": {
+          "median": 280.41417499999807,
+          "min": 275.66957900000125,
+          "max": 299.34235700000136
+        }
+      },
+      "compile_ms": 0.5187449999999671,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "js",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 64.60685399999994,
+          "min": 63.43885,
+          "max": 66.25572700000001
+        }
+      },
+      "compile_ms": 5.059281999999996,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "js",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 605.4368140000001,
+          "min": 569.9942449999999,
+          "max": 652.0084470000002
+        },
+        "materialize_ms": {
+          "median": 0.030048000000533648,
+          "min": 0.02868799999987459,
+          "max": 0.030871999999362743
+        },
+        "prepared_total_ms": {
+          "median": 605.4674050000003,
+          "min": 570.0261009999995,
+          "max": 652.0394079999996
+        },
+        "elapsed_ms": {
+          "median": 605.4674050000003,
+          "min": 570.0261009999995,
+          "max": 652.0394079999996
+        }
+      },
+      "compile_ms": 3.9772030000000314,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "js",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 12.375461000000541,
+          "min": 11.87045500000022,
+          "max": 14.891020999999455
+        },
+        "materialize_ms": {
+          "median": 0.02044599999953789,
+          "min": 0.018132000000150583,
+          "max": 0.020986000000448257
+        },
+        "prepared_total_ms": {
+          "median": 12.39803800000027,
+          "min": 11.892016000000694,
+          "max": 14.910538999999517
+        },
+        "elapsed_ms": {
+          "median": 12.39803800000027,
+          "min": 11.892016000000694,
+          "max": 14.910538999999517
+        }
+      },
+      "compile_ms": 0.3106629999999768,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "js",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 230.39287200000035,
+          "min": 221.6156200000005,
+          "max": 237.8489470000004
+        },
+        "materialize_ms": {
+          "median": 0.018044000000372762,
+          "min": 0.01739100000122562,
+          "max": 0.018710999998802436
+        },
+        "prepared_total_ms": {
+          "median": 230.41168199999993,
+          "min": 221.6360360000017,
+          "max": 237.8686630000011
+        },
+        "elapsed_ms": {
+          "median": 230.41168199999993,
+          "min": 221.6360360000017,
+          "max": 237.8686630000011
+        }
+      },
+      "compile_ms": 0.45900300000005245,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "js",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 9.202424999999494,
+          "min": 8.8709889999991,
+          "max": 9.32319599999937
+        },
+        "materialize_ms": {
+          "median": 0.025905999998940388,
+          "min": 0.018636000000697095,
+          "max": 0.07305599999926926
+        },
+        "prepared_total_ms": {
+          "median": 9.255825000000186,
+          "min": 8.895392999998876,
+          "max": 9.349288999999771
+        },
+        "elapsed_ms": {
+          "median": 9.255825000000186,
+          "min": 8.895392999998876,
+          "max": 9.349288999999771
+        }
+      },
+      "compile_ms": 0.2571890000000394,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "js",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 496.4735470000014,
+          "min": 494.8072940000002,
+          "max": 663.7866249999988
+        },
+        "materialize_ms": {
+          "median": 0.022315999998681946,
+          "min": 0.02100599999903352,
+          "max": 0.022511999999551335
+        },
+        "prepared_total_ms": {
+          "median": 496.4978140000003,
+          "min": 494.8311819999999,
+          "max": 663.8110750000014
+        },
+        "elapsed_ms": {
+          "median": 496.4978140000003,
+          "min": 494.8311819999999,
+          "max": 663.8110750000014
+        }
+      },
+      "compile_ms": 0.6440039999999954,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "js",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 223.48155499999848,
+          "min": 212.85951899999782,
+          "max": 236.37866399999984
+        },
+        "materialize_ms": {
+          "median": 0.013403000000835164,
+          "min": 0.013123999997333158,
+          "max": 0.01448299999901792
+        },
+        "prepared_total_ms": {
+          "median": 223.4982400000008,
+          "min": 212.87452699999994,
+          "max": 236.39463399999659
+        },
+        "elapsed_ms": {
+          "median": 223.4982400000008,
+          "min": 212.87452699999994,
+          "max": 236.39463399999659
+        }
+      },
+      "compile_ms": 0.5112839999999323,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "js",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 65.08332000000007,
+          "min": 63.700590000000034,
+          "max": 67.45629499999998
+        }
+      },
+      "compile_ms": 8.551548999999994,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "lisp",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 709.0050048828125,
+          "min": 681.0050048828125,
+          "max": 1040.0079345703125
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "prepared_total_ms": {
+          "median": 709.0050048828125,
+          "min": 681.0050048828125,
+          "max": 1041.008056640625
+        },
+        "elapsed_ms": {
+          "median": 709.0050048828125,
+          "min": 681.0050048828125,
+          "max": 1041.008056640625
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "lisp",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 14.0,
+          "min": 14.0,
+          "max": 17.000999450683594
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 14.0,
+          "min": 14.0,
+          "max": 17.000999450683594
+        },
+        "elapsed_ms": {
+          "median": 14.0,
+          "min": 14.0,
+          "max": 17.000999450683594
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "lisp",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 368.0019836425781,
+          "min": 292.0019836425781,
+          "max": 443.0039978027344
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 368.0019836425781,
+          "min": 292.0019836425781,
+          "max": 443.0039978027344
+        },
+        "elapsed_ms": {
+          "median": 368.0019836425781,
+          "min": 292.0019836425781,
+          "max": 443.0039978027344
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "lisp",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 25.0,
+          "min": 22.0,
+          "max": 27.0
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 25.0,
+          "min": 22.0,
+          "max": 27.0
+        },
+        "elapsed_ms": {
+          "median": 25.0,
+          "min": 22.0,
+          "max": 27.0
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "lisp",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 514.0039672851562,
+          "min": 499.0039978027344,
+          "max": 1147.009033203125
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "prepared_total_ms": {
+          "median": 514.0039672851562,
+          "min": 500.0039978027344,
+          "max": 1147.009033203125
+        },
+        "elapsed_ms": {
+          "median": 514.0039672851562,
+          "min": 500.0039978027344,
+          "max": 1147.009033203125
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "lisp",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 213.00099182128906,
+          "min": 210.0019989013672,
+          "max": 301.0030212402344
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 213.00099182128906,
+          "min": 210.0019989013672,
+          "max": 301.0030212402344
+        },
+        "elapsed_ms": {
+          "median": 213.00099182128906,
+          "min": 210.0019989013672,
+          "max": 301.0030212402344
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "lisp",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 241445.873,
+          "min": 241445.873,
+          "max": 241445.873
+        }
+      },
+      "compile_ms": 1.0,
+      "warmups": 0,
+      "samples": 1,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "1614eed",
+      "lane": "lisp",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 494.0039978027344,
+          "min": 481.00299072265625,
+          "max": 770.0070190429688
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 494.0039978027344,
+          "min": 481.00299072265625,
+          "max": 770.0070190429688
+        },
+        "elapsed_ms": {
+          "median": 494.0039978027344,
+          "min": 481.00299072265625,
+          "max": 770.0070190429688
+        }
+      },
+      "compile_ms": 1.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "1614eed",
+      "lane": "lisp",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 12.0,
+          "min": 11.0,
+          "max": 12.0
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 12.0,
+          "min": 11.0,
+          "max": 12.0
+        },
+        "elapsed_ms": {
+          "median": 12.0,
+          "min": 11.0,
+          "max": 12.0
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "1614eed",
+      "lane": "lisp",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 247.0030059814453,
+          "min": 234.00099182128906,
+          "max": 298.00299072265625
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 247.0030059814453,
+          "min": 234.00099182128906,
+          "max": 298.00299072265625
+        },
+        "elapsed_ms": {
+          "median": 247.0030059814453,
+          "min": 234.00099182128906,
+          "max": 298.00299072265625
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "1614eed",
+      "lane": "lisp",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 16.000999450683594,
+          "min": 15.0,
+          "max": 19.0
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 16.000999450683594,
+          "min": 15.0,
+          "max": 19.0
+        },
+        "elapsed_ms": {
+          "median": 16.000999450683594,
+          "min": 15.0,
+          "max": 19.0
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "1614eed",
+      "lane": "lisp",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 428.0039978027344,
+          "min": 406.00201416015625,
+          "max": 683.0050048828125
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 428.0039978027344,
+          "min": 406.00201416015625,
+          "max": 683.0050048828125
+        },
+        "elapsed_ms": {
+          "median": 428.0039978027344,
+          "min": 406.00201416015625,
+          "max": 683.0050048828125
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "1614eed",
+      "lane": "lisp",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 216.0030059814453,
+          "min": 182.0019989013672,
+          "max": 316.0010070800781
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 216.0030059814453,
+          "min": 182.0019989013672,
+          "max": 316.0010070800781
+        },
+        "elapsed_ms": {
+          "median": 216.0030059814453,
+          "min": 182.0019989013672,
+          "max": 316.0010070800781
+        }
+      },
+      "compile_ms": 1.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "1614eed",
+      "lane": "lisp",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 78.001,
+          "min": 75.999,
+          "max": 79.001
+        }
+      },
+      "compile_ms": 0.0,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "619bc31",
+      "lane": "lisp",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 499.0039978027344,
+          "min": 485.0039978027344,
+          "max": 809.0059814453125
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 499.0039978027344,
+          "min": 485.0039978027344,
+          "max": 809.0059814453125
+        },
+        "elapsed_ms": {
+          "median": 499.0039978027344,
+          "min": 485.0039978027344,
+          "max": 809.0059814453125
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "619bc31",
+      "lane": "lisp",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 13.0,
+          "min": 12.0,
+          "max": 16.0
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 13.0,
+          "min": 12.0,
+          "max": 16.0
+        },
+        "elapsed_ms": {
+          "median": 13.0,
+          "min": 12.0,
+          "max": 16.0
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "619bc31",
+      "lane": "lisp",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 243.00099182128906,
+          "min": 239.0019989013672,
+          "max": 256.00299072265625
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 243.00099182128906,
+          "min": 239.0019989013672,
+          "max": 256.00299072265625
+        },
+        "elapsed_ms": {
+          "median": 243.00099182128906,
+          "min": 239.0019989013672,
+          "max": 256.00299072265625
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "619bc31",
+      "lane": "lisp",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 16.0,
+          "min": 15.0,
+          "max": 19.0
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 16.0,
+          "min": 15.0,
+          "max": 19.0
+        },
+        "elapsed_ms": {
+          "median": 16.0,
+          "min": 15.0,
+          "max": 19.0
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "619bc31",
+      "lane": "lisp",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 424.0039978027344,
+          "min": 396.0039978027344,
+          "max": 695.0060424804688
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 424.0039978027344,
+          "min": 396.0039978027344,
+          "max": 695.0060424804688
+        },
+        "elapsed_ms": {
+          "median": 424.0039978027344,
+          "min": 396.0039978027344,
+          "max": 695.0060424804688
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "619bc31",
+      "lane": "lisp",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 214.00100708007812,
+          "min": 179.0,
+          "max": 370.0039978027344
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 214.00100708007812,
+          "min": 179.0,
+          "max": 370.0039978027344
+        },
+        "elapsed_ms": {
+          "median": 214.00100708007812,
+          "min": 179.0,
+          "max": 370.0039978027344
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "619bc31",
+      "lane": "lisp",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 79.0,
+          "min": 78.001,
+          "max": 80.0
+        }
+      },
+      "compile_ms": 1.0,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "lisp",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 503.0050354003906,
+          "min": 480.00299072265625,
+          "max": 802.0059814453125
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 503.0050354003906,
+          "min": 480.00299072265625,
+          "max": 802.0059814453125
+        },
+        "elapsed_ms": {
+          "median": 503.0050354003906,
+          "min": 480.00299072265625,
+          "max": 802.0059814453125
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "lisp",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 12.00100040435791,
+          "min": 11.0,
+          "max": 15.0
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 12.00100040435791,
+          "min": 11.0,
+          "max": 15.0
+        },
+        "elapsed_ms": {
+          "median": 12.00100040435791,
+          "min": 11.0,
+          "max": 15.0
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "lisp",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 227.0019989013672,
+          "min": 224.0019989013672,
+          "max": 251.00299072265625
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 227.0019989013672,
+          "min": 224.0019989013672,
+          "max": 251.00299072265625
+        },
+        "elapsed_ms": {
+          "median": 227.0019989013672,
+          "min": 224.0019989013672,
+          "max": 251.00299072265625
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "lisp",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 16.0,
+          "min": 15.0,
+          "max": 19.0
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 16.0,
+          "min": 15.0,
+          "max": 19.0
+        },
+        "elapsed_ms": {
+          "median": 16.0,
+          "min": 15.0,
+          "max": 19.0
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "lisp",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 426.0050048828125,
+          "min": 401.0019836425781,
+          "max": 528.0039672851562
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 426.0050048828125,
+          "min": 401.0019836425781,
+          "max": 528.0039672851562
+        },
+        "elapsed_ms": {
+          "median": 426.0050048828125,
+          "min": 401.0019836425781,
+          "max": 528.0039672851562
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "lisp",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 271.0019836425781,
+          "min": 181.0019989013672,
+          "max": 314.00201416015625
+        },
+        "materialize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "prepared_total_ms": {
+          "median": 271.0019836425781,
+          "min": 181.0019989013672,
+          "max": 314.00201416015625
+        },
+        "elapsed_ms": {
+          "median": 271.0019836425781,
+          "min": 181.0019989013672,
+          "max": 314.00201416015625
+        }
+      },
+      "compile_ms": 0.0,
+      "passed": true,
+      "failures": null
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "lisp",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 80.001,
+          "min": 80.0,
+          "max": 81.0
+        }
+      },
+      "compile_ms": 1.0,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "php",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.00088,
+          "min": 0.000563,
+          "max": 0.001057
+        },
+        "program_run_ms": {
+          "median": 3879.112624,
+          "min": 3601.703227,
+          "max": 4246.305011
+        },
+        "materialize_ms": {
+          "median": 0.012682,
+          "min": 0.012388,
+          "max": 0.284423
+        },
+        "end_to_end_ms": {
+          "median": 3879.128031,
+          "min": 3601.71824,
+          "max": 4246.591346
+        },
+        "prepared_total_ms": {
+          "median": 3879.128031,
+          "min": 3601.71824,
+          "max": 4246.591346
+        },
+        "elapsed_ms": {
+          "median": 3879.128031,
+          "min": 3601.71824,
+          "max": 4246.591346
+        }
+      },
+      "compile_ms": 9.220122,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "php",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.001057,
+          "min": 0.000319,
+          "max": 0.003601
+        },
+        "program_run_ms": {
+          "median": 43.161585,
+          "min": 40.090888,
+          "max": 43.590953
+        },
+        "materialize_ms": {
+          "median": 0.008723,
+          "min": 0.008042,
+          "max": 0.009766
+        },
+        "end_to_end_ms": {
+          "median": 43.174516,
+          "min": 40.100407,
+          "max": 43.602134
+        },
+        "prepared_total_ms": {
+          "median": 43.174516,
+          "min": 40.100407,
+          "max": 43.602134
+        },
+        "elapsed_ms": {
+          "median": 43.174516,
+          "min": 40.100407,
+          "max": 43.602134
+        }
+      },
+      "compile_ms": 0.539877,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "php",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000779,
+          "min": 0.000473,
+          "max": 0.001195
+        },
+        "program_run_ms": {
+          "median": 1210.132339,
+          "min": 1191.647527,
+          "max": 1547.427649
+        },
+        "materialize_ms": {
+          "median": 0.008257,
+          "min": 0.007794,
+          "max": 0.008794
+        },
+        "end_to_end_ms": {
+          "median": 1210.143419,
+          "min": 1191.658144,
+          "max": 1547.437815
+        },
+        "prepared_total_ms": {
+          "median": 1210.143419,
+          "min": 1191.658144,
+          "max": 1547.437815
+        },
+        "elapsed_ms": {
+          "median": 1210.143419,
+          "min": 1191.658144,
+          "max": 1547.437815
+        }
+      },
+      "compile_ms": 6.223711,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "php",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000787,
+          "min": 0.000415,
+          "max": 0.001187
+        },
+        "program_run_ms": {
+          "median": 85.586086,
+          "min": 84.176955,
+          "max": 87.385881
+        },
+        "materialize_ms": {
+          "median": 0.013767,
+          "min": 0.013173,
+          "max": 0.015613
+        },
+        "end_to_end_ms": {
+          "median": 85.60183,
+          "min": 84.194368,
+          "max": 87.402092
+        },
+        "prepared_total_ms": {
+          "median": 85.60183,
+          "min": 84.194368,
+          "max": 87.402092
+        },
+        "elapsed_ms": {
+          "median": 85.60183,
+          "min": 84.194368,
+          "max": 87.402092
+        }
+      },
+      "compile_ms": 0.796913,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "php",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000879,
+          "min": 0.000692,
+          "max": 0.001128
+        },
+        "program_run_ms": {
+          "median": 14643.181611,
+          "min": 13787.324388,
+          "max": 15705.943372
+        },
+        "materialize_ms": {
+          "median": 0.019662,
+          "min": 0.017302,
+          "max": 0.023537
+        },
+        "end_to_end_ms": {
+          "median": 14643.218537,
+          "min": 13787.349032,
+          "max": 15705.966118
+        },
+        "prepared_total_ms": {
+          "median": 14643.218537,
+          "min": 13787.349032,
+          "max": 15705.966118
+        },
+        "elapsed_ms": {
+          "median": 14643.218537,
+          "min": 13787.349032,
+          "max": 15705.966118
+        }
+      },
+      "compile_ms": 2.683233,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "php",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.001015,
+          "min": 0.00048,
+          "max": 0.001245
+        },
+        "program_run_ms": {
+          "median": 990.02224,
+          "min": 979.514316,
+          "max": 992.881264
+        },
+        "materialize_ms": {
+          "median": 0.010797,
+          "min": 0.010398,
+          "max": 0.028436
+        },
+        "end_to_end_ms": {
+          "median": 990.035886,
+          "min": 979.545516,
+          "max": 992.89427
+        },
+        "prepared_total_ms": {
+          "median": 990.035886,
+          "min": 979.545516,
+          "max": 992.89427
+        },
+        "elapsed_ms": {
+          "median": 990.035886,
+          "min": 979.545516,
+          "max": 992.89427
+        }
+      },
+      "compile_ms": 1.984206,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "php",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 271601.449455,
+          "min": 271601.449455,
+          "max": 271601.449455
+        }
+      },
+      "compile_ms": 10.600696,
+      "warmups": 0,
+      "samples": 1,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "1614eed",
+      "lane": "php",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000955,
+          "min": 0.000848,
+          "max": 0.105213
+        },
+        "program_run_ms": {
+          "median": 3079.145215,
+          "min": 2825.478145,
+          "max": 3314.273185
+        },
+        "materialize_ms": {
+          "median": 0.023166,
+          "min": 0.021469,
+          "max": 0.880955
+        },
+        "end_to_end_ms": {
+          "median": 3080.02906,
+          "min": 2825.503908,
+          "max": 3314.404398
+        },
+        "prepared_total_ms": {
+          "median": 3080.02906,
+          "min": 2825.503908,
+          "max": 3314.404398
+        },
+        "elapsed_ms": {
+          "median": 3080.02906,
+          "min": 2825.503908,
+          "max": 3314.404398
+        }
+      },
+      "compile_ms": 9.110673,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "php",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000844,
+          "min": 0.000344,
+          "max": 0.001584
+        },
+        "program_run_ms": {
+          "median": 26.860092,
+          "min": 24.657696,
+          "max": 27.641822
+        },
+        "materialize_ms": {
+          "median": 0.009768,
+          "min": 0.006035,
+          "max": 0.316202
+        },
+        "end_to_end_ms": {
+          "median": 27.179663,
+          "min": 24.664756,
+          "max": 27.65451
+        },
+        "prepared_total_ms": {
+          "median": 27.179663,
+          "min": 24.664756,
+          "max": 27.65451
+        },
+        "elapsed_ms": {
+          "median": 27.179663,
+          "min": 24.664756,
+          "max": 27.65451
+        }
+      },
+      "compile_ms": 1.072948,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "php",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000808,
+          "min": 0.000456,
+          "max": 0.000844
+        },
+        "program_run_ms": {
+          "median": 929.729989,
+          "min": 926.728989,
+          "max": 1252.877282
+        },
+        "materialize_ms": {
+          "median": 0.009062,
+          "min": 0.008375,
+          "max": 0.009424
+        },
+        "end_to_end_ms": {
+          "median": 929.741841,
+          "min": 926.741113,
+          "max": 1252.888192
+        },
+        "prepared_total_ms": {
+          "median": 929.741841,
+          "min": 926.741113,
+          "max": 1252.888192
+        },
+        "elapsed_ms": {
+          "median": 929.741841,
+          "min": 926.741113,
+          "max": 1252.888192
+        }
+      },
+      "compile_ms": 1.039728,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "php",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000786,
+          "min": 0.000521,
+          "max": 0.001231
+        },
+        "program_run_ms": {
+          "median": 58.6517,
+          "min": 56.965851,
+          "max": 60.05162
+        },
+        "materialize_ms": {
+          "median": 0.019369,
+          "min": 0.018775,
+          "max": 0.022767
+        },
+        "end_to_end_ms": {
+          "median": 58.677114,
+          "min": 56.986143,
+          "max": 60.074906
+        },
+        "prepared_total_ms": {
+          "median": 58.677114,
+          "min": 56.986143,
+          "max": 60.074906
+        },
+        "elapsed_ms": {
+          "median": 58.677114,
+          "min": 56.986143,
+          "max": 60.074906
+        }
+      },
+      "compile_ms": 1.468224,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "php",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000858,
+          "min": 0.000513,
+          "max": 0.001165
+        },
+        "program_run_ms": {
+          "median": 2154.725481,
+          "min": 2116.128523,
+          "max": 2181.109219
+        },
+        "materialize_ms": {
+          "median": 0.025187,
+          "min": 0.02423,
+          "max": 0.027024
+        },
+        "end_to_end_ms": {
+          "median": 2154.753021,
+          "min": 2116.154294,
+          "max": 2181.139208
+        },
+        "prepared_total_ms": {
+          "median": 2154.753021,
+          "min": 2116.154294,
+          "max": 2181.139208
+        },
+        "elapsed_ms": {
+          "median": 2154.753021,
+          "min": 2116.154294,
+          "max": 2181.139208
+        }
+      },
+      "compile_ms": 1.398585,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "php",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.00079,
+          "min": 0.000425,
+          "max": 0.001058
+        },
+        "program_run_ms": {
+          "median": 1041.950606,
+          "min": 708.805389,
+          "max": 1059.343198
+        },
+        "materialize_ms": {
+          "median": 0.008574,
+          "min": 0.007878,
+          "max": 0.008812
+        },
+        "end_to_end_ms": {
+          "median": 1041.961482,
+          "min": 708.815616,
+          "max": 1059.354289
+        },
+        "prepared_total_ms": {
+          "median": 1041.961482,
+          "min": 708.815616,
+          "max": 1059.354289
+        },
+        "elapsed_ms": {
+          "median": 1041.961482,
+          "min": 708.815616,
+          "max": 1059.354289
+        }
+      },
+      "compile_ms": 2.478294,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "php",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 392.25857,
+          "min": 390.560185,
+          "max": 404.094171
+        }
+      },
+      "compile_ms": 13.50516,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "619bc31",
+      "lane": "php",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000746,
+          "min": 0.000412,
+          "max": 0.000791
+        },
+        "program_run_ms": {
+          "median": 3084.12431,
+          "min": 2791.109454,
+          "max": 3285.98642
+        },
+        "materialize_ms": {
+          "median": 0.023729,
+          "min": 0.021752,
+          "max": 0.327408
+        },
+        "end_to_end_ms": {
+          "median": 3084.454676,
+          "min": 2791.137521,
+          "max": 3286.011903
+        },
+        "prepared_total_ms": {
+          "median": 3084.454676,
+          "min": 2791.137521,
+          "max": 3286.011903
+        },
+        "elapsed_ms": {
+          "median": 3084.454676,
+          "min": 2791.137521,
+          "max": 3286.011903
+        }
+      },
+      "compile_ms": 8.564803,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "php",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000738,
+          "min": 0.00026,
+          "max": 0.000841
+        },
+        "program_run_ms": {
+          "median": 25.823344,
+          "min": 23.042052,
+          "max": 25.9667
+        },
+        "materialize_ms": {
+          "median": 0.007578,
+          "min": 0.006557,
+          "max": 0.291849
+        },
+        "end_to_end_ms": {
+          "median": 25.856079,
+          "min": 23.049621,
+          "max": 26.118208
+        },
+        "prepared_total_ms": {
+          "median": 25.856079,
+          "min": 23.049621,
+          "max": 26.118208
+        },
+        "elapsed_ms": {
+          "median": 25.856079,
+          "min": 23.049621,
+          "max": 26.118208
+        }
+      },
+      "compile_ms": 1.266085,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "php",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.00085,
+          "min": 0.000472,
+          "max": 0.001476
+        },
+        "program_run_ms": {
+          "median": 923.266414,
+          "min": 900.194788,
+          "max": 1232.085741
+        },
+        "materialize_ms": {
+          "median": 0.008672,
+          "min": 0.008028,
+          "max": 0.008787
+        },
+        "end_to_end_ms": {
+          "median": 923.276699,
+          "min": 900.206009,
+          "max": 1232.096667
+        },
+        "prepared_total_ms": {
+          "median": 923.276699,
+          "min": 900.206009,
+          "max": 1232.096667
+        },
+        "elapsed_ms": {
+          "median": 923.276699,
+          "min": 900.206009,
+          "max": 1232.096667
+        }
+      },
+      "compile_ms": 2.969889,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "php",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000626,
+          "min": 0.000465,
+          "max": 0.000845
+        },
+        "program_run_ms": {
+          "median": 56.633208,
+          "min": 51.307362,
+          "max": 60.167571
+        },
+        "materialize_ms": {
+          "median": 0.019941,
+          "min": 0.016508,
+          "max": 0.02133
+        },
+        "end_to_end_ms": {
+          "median": 56.656714,
+          "min": 51.325567,
+          "max": 60.191599
+        },
+        "prepared_total_ms": {
+          "median": 56.656714,
+          "min": 51.325567,
+          "max": 60.191599
+        },
+        "elapsed_ms": {
+          "median": 56.656714,
+          "min": 51.325567,
+          "max": 60.191599
+        }
+      },
+      "compile_ms": 2.704932,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "php",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000782,
+          "min": 0.000356,
+          "max": 0.000883
+        },
+        "program_run_ms": {
+          "median": 2140.203891,
+          "min": 2084.074071,
+          "max": 2201.853525
+        },
+        "materialize_ms": {
+          "median": 0.025635,
+          "min": 0.02374,
+          "max": 0.027856
+        },
+        "end_to_end_ms": {
+          "median": 2140.232999,
+          "min": 2084.101256,
+          "max": 2201.884157
+        },
+        "prepared_total_ms": {
+          "median": 2140.232999,
+          "min": 2084.101256,
+          "max": 2201.884157
+        },
+        "elapsed_ms": {
+          "median": 2140.232999,
+          "min": 2084.101256,
+          "max": 2201.884157
+        }
+      },
+      "compile_ms": 2.551571,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "php",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000723,
+          "min": 0.000479,
+          "max": 0.001074
+        },
+        "program_run_ms": {
+          "median": 1068.97265,
+          "min": 725.206448,
+          "max": 1087.86764
+        },
+        "materialize_ms": {
+          "median": 0.009272,
+          "min": 0.007715,
+          "max": 0.009907
+        },
+        "end_to_end_ms": {
+          "median": 1068.983599,
+          "min": 725.217285,
+          "max": 1087.879879
+        },
+        "prepared_total_ms": {
+          "median": 1068.983599,
+          "min": 725.217285,
+          "max": 1087.879879
+        },
+        "elapsed_ms": {
+          "median": 1068.983599,
+          "min": 725.217285,
+          "max": 1087.879879
+        }
+      },
+      "compile_ms": 2.308652,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "php",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 382.861098,
+          "min": 380.987639,
+          "max": 388.375528
+        }
+      },
+      "compile_ms": 14.719164,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "php",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.00095,
+          "min": 0.000594,
+          "max": 0.001108
+        },
+        "program_run_ms": {
+          "median": 3063.522865,
+          "min": 2781.202992,
+          "max": 3324.30465
+        },
+        "materialize_ms": {
+          "median": 0.023984,
+          "min": 0.022272,
+          "max": 0.296302
+        },
+        "end_to_end_ms": {
+          "median": 3063.549161,
+          "min": 2781.242057,
+          "max": 3324.330893
+        },
+        "prepared_total_ms": {
+          "median": 3063.549161,
+          "min": 2781.242057,
+          "max": 3324.330893
+        },
+        "elapsed_ms": {
+          "median": 3063.549161,
+          "min": 2781.242057,
+          "max": 3324.330893
+        }
+      },
+      "compile_ms": 9.502661,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "php",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.001062,
+          "min": 0.00037,
+          "max": 0.001406
+        },
+        "program_run_ms": {
+          "median": 26.062645,
+          "min": 25.013287,
+          "max": 28.337415
+        },
+        "materialize_ms": {
+          "median": 0.008849,
+          "min": 0.007888,
+          "max": 0.010045
+        },
+        "end_to_end_ms": {
+          "median": 26.07527,
+          "min": 25.022919,
+          "max": 28.349882
+        },
+        "prepared_total_ms": {
+          "median": 26.07527,
+          "min": 25.022919,
+          "max": 28.349882
+        },
+        "elapsed_ms": {
+          "median": 26.07527,
+          "min": 25.022919,
+          "max": 28.349882
+        }
+      },
+      "compile_ms": 0.313768,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "php",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.001085,
+          "min": 0.00064,
+          "max": 0.001376
+        },
+        "program_run_ms": {
+          "median": 906.789929,
+          "min": 901.242911,
+          "max": 1218.658414
+        },
+        "materialize_ms": {
+          "median": 0.008736,
+          "min": 0.008315,
+          "max": 0.009276
+        },
+        "end_to_end_ms": {
+          "median": 906.80194,
+          "min": 901.253786,
+          "max": 1218.669855
+        },
+        "prepared_total_ms": {
+          "median": 906.80194,
+          "min": 901.253786,
+          "max": 1218.669855
+        },
+        "elapsed_ms": {
+          "median": 906.80194,
+          "min": 901.253786,
+          "max": 1218.669855
+        }
+      },
+      "compile_ms": 4.440558,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "php",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.000983,
+          "min": 0.00051,
+          "max": 0.001126
+        },
+        "program_run_ms": {
+          "median": 60.317737,
+          "min": 54.884581,
+          "max": 61.641441
+        },
+        "materialize_ms": {
+          "median": 0.020239,
+          "min": 0.019544,
+          "max": 0.020876
+        },
+        "end_to_end_ms": {
+          "median": 60.342399,
+          "min": 54.906974,
+          "max": 61.665372
+        },
+        "prepared_total_ms": {
+          "median": 60.342399,
+          "min": 54.906974,
+          "max": 61.665372
+        },
+        "elapsed_ms": {
+          "median": 60.342399,
+          "min": 54.906974,
+          "max": 61.665372
+        }
+      },
+      "compile_ms": 0.641903,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "php",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.001042,
+          "min": 0.000536,
+          "max": 0.00105
+        },
+        "program_run_ms": {
+          "median": 2148.881638,
+          "min": 2098.931022,
+          "max": 2162.998883
+        },
+        "materialize_ms": {
+          "median": 0.024977,
+          "min": 0.02359,
+          "max": 0.026702
+        },
+        "end_to_end_ms": {
+          "median": 2148.908263,
+          "min": 2098.957914,
+          "max": 2163.029136
+        },
+        "prepared_total_ms": {
+          "median": 2148.908263,
+          "min": 2098.957914,
+          "max": 2163.029136
+        },
+        "elapsed_ms": {
+          "median": 2148.908263,
+          "min": 2098.957914,
+          "max": 2163.029136
+        }
+      },
+      "compile_ms": 1.765443,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "php",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "scenario_prepare_ms": {
+          "median": 0.001038,
+          "min": 0.000398,
+          "max": 0.001256
+        },
+        "program_run_ms": {
+          "median": 1074.702616,
+          "min": 716.394939,
+          "max": 1096.559764
+        },
+        "materialize_ms": {
+          "median": 0.007779,
+          "min": 0.007554,
+          "max": 0.008515
+        },
+        "end_to_end_ms": {
+          "median": 1074.71375,
+          "min": 716.404332,
+          "max": 1096.571124
+        },
+        "prepared_total_ms": {
+          "median": 1074.71375,
+          "min": 716.404332,
+          "max": 1096.571124
+        },
+        "elapsed_ms": {
+          "median": 1074.71375,
+          "min": 716.404332,
+          "max": 1096.571124
+        }
+      },
+      "compile_ms": 3.25634,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "php",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 397.577537,
+          "min": 390.77014,
+          "max": 399.349012
+        }
+      },
+      "compile_ms": 13.314647,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "python",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 5747.612950392067,
+          "min": 5717.545277439058,
+          "max": 6148.046541027725
+        },
+        "materialize_ms": {
+          "median": 0.026863068342208862,
+          "min": 0.02461392432451248,
+          "max": 0.02830103039741516
+        },
+        "prepared_total_ms": {
+          "median": 5747.639335691929,
+          "min": 5717.575358226895,
+          "max": 6148.073912598193
+        },
+        "elapsed_ms": {
+          "median": 5747.639335691929,
+          "min": 5717.575358226895,
+          "max": 6148.073912598193
+        }
+      },
+      "compile_ms": 2.1562865003943443,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "python",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 82.74401444941759,
+          "min": 80.62240574508905,
+          "max": 85.03944799304008
+        },
+        "materialize_ms": {
+          "median": 0.018186867237091064,
+          "min": 0.016899779438972473,
+          "max": 0.018552877008914948
+        },
+        "prepared_total_ms": {
+          "median": 82.76387490332127,
+          "min": 80.64036630094051,
+          "max": 85.06012801080942
+        },
+        "elapsed_ms": {
+          "median": 82.76387490332127,
+          "min": 80.64036630094051,
+          "max": 85.06012801080942
+        }
+      },
+      "compile_ms": 0.5778493359684944,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "python",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 2577.637791633606,
+          "min": 2231.7219004034996,
+          "max": 2633.019150234759
+        },
+        "materialize_ms": {
+          "median": 0.018399208784103394,
+          "min": 0.017644837498664856,
+          "max": 0.04263315349817276
+        },
+        "prepared_total_ms": {
+          "median": 2577.6828778907657,
+          "min": 2231.741873547435,
+          "max": 2633.0453818663955
+        },
+        "elapsed_ms": {
+          "median": 2577.6828778907657,
+          "min": 2231.741873547435,
+          "max": 2633.0453818663955
+        }
+      },
+      "compile_ms": 1.2722983956336975,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "python",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 144.14209872484207,
+          "min": 141.89757965505123,
+          "max": 148.01222644746304
+        },
+        "materialize_ms": {
+          "median": 0.02474989742040634,
+          "min": 0.023880042135715485,
+          "max": 0.026605091989040375
+        },
+        "prepared_total_ms": {
+          "median": 144.1673506051302,
+          "min": 141.92395377904177,
+          "max": 148.04079569876194
+        },
+        "elapsed_ms": {
+          "median": 144.1673506051302,
+          "min": 141.92395377904177,
+          "max": 148.04079569876194
+        }
+      },
+      "compile_ms": 0.4993937909603119,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "python",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 3997.7311743423343,
+          "min": 3875.419858843088,
+          "max": 4289.026807062328
+        },
+        "materialize_ms": {
+          "median": 0.03606081008911133,
+          "min": 0.03360863775014877,
+          "max": 0.037085264921188354
+        },
+        "prepared_total_ms": {
+          "median": 3997.7689161896706,
+          "min": 3875.455562956631,
+          "max": 4289.065930992365
+        },
+        "elapsed_ms": {
+          "median": 3997.7689161896706,
+          "min": 3875.455562956631,
+          "max": 4289.065930992365
+        }
+      },
+      "compile_ms": 1.3861069455742836,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "python",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 1841.98416210711,
+          "min": 1832.8899964690208,
+          "max": 1857.6790103688836
+        },
+        "materialize_ms": {
+          "median": 0.02326909452676773,
+          "min": 0.020653940737247467,
+          "max": 0.02386234700679779
+        },
+        "prepared_total_ms": {
+          "median": 1842.0090395957232,
+          "min": 1832.9151459038258,
+          "max": 1857.7012801542878
+        },
+        "elapsed_ms": {
+          "median": 1842.0090395957232,
+          "min": 1832.9151459038258,
+          "max": 1857.7012801542878
+        }
+      },
+      "compile_ms": 0.8731735870242119,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "ef836bf",
+      "lane": "python",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 1321.1136041209102,
+          "min": 1318.7127960845828,
+          "max": 1334.623604081571
+        }
+      },
+      "compile_ms": 2.9508015140891075,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "1614eed",
+      "lane": "python",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 2792.325341142714,
+          "min": 2761.4502841606736,
+          "max": 3316.795961931348
+        },
+        "materialize_ms": {
+          "median": 0.04859268665313721,
+          "min": 0.04507880657911301,
+          "max": 0.09068381041288376
+        },
+        "prepared_total_ms": {
+          "median": 2792.3757806420326,
+          "min": 2761.4971762523055,
+          "max": 3316.868344321847
+        },
+        "elapsed_ms": {
+          "median": 2792.3757806420326,
+          "min": 2761.4971762523055,
+          "max": 3316.868344321847
+        }
+      },
+      "compile_ms": 2.0534461364150047,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "python",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 38.62158115953207,
+          "min": 37.360346876084805,
+          "max": 38.9647763222456
+        },
+        "materialize_ms": {
+          "median": 0.0229785218834877,
+          "min": 0.022300519049167633,
+          "max": 0.0238809734582901
+        },
+        "prepared_total_ms": {
+          "median": 38.64686656743288,
+          "min": 37.385270930826664,
+          "max": 38.98966684937477
+        },
+        "elapsed_ms": {
+          "median": 38.64686656743288,
+          "min": 37.385270930826664,
+          "max": 38.98966684937477
+        }
+      },
+      "compile_ms": 0.48479530960321426,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "python",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 1555.5409379303455,
+          "min": 1022.8447699919343,
+          "max": 1622.622617520392
+        },
+        "materialize_ms": {
+          "median": 0.0224187970161438,
+          "min": 0.020454637706279755,
+          "max": 0.031628645956516266
+        },
+        "prepared_total_ms": {
+          "median": 1555.564844980836,
+          "min": 1022.8786189109087,
+          "max": 1622.6473776623607
+        },
+        "elapsed_ms": {
+          "median": 1555.564844980836,
+          "min": 1022.8786189109087,
+          "max": 1622.6473776623607
+        }
+      },
+      "compile_ms": 1.2527601793408394,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "python",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 68.68776213377714,
+          "min": 67.5300620496273,
+          "max": 88.68897520005703
+        },
+        "materialize_ms": {
+          "median": 0.03425590693950653,
+          "min": 0.033253803849220276,
+          "max": 0.03744941204786301
+        },
+        "prepared_total_ms": {
+          "median": 68.72373260557652,
+          "min": 67.56518594920635,
+          "max": 88.72589841485023
+        },
+        "elapsed_ms": {
+          "median": 68.72373260557652,
+          "min": 67.56518594920635,
+          "max": 88.72589841485023
+        }
+      },
+      "compile_ms": 0.514758750796318,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "python",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 505.90342562645674,
+          "min": 494.0496236085892,
+          "max": 545.8278795704246
+        },
+        "materialize_ms": {
+          "median": 0.053948722779750824,
+          "min": 0.05042366683483124,
+          "max": 0.07504597306251526
+        },
+        "prepared_total_ms": {
+          "median": 505.96294086426497,
+          "min": 494.1022340208292,
+          "max": 545.8834525197744
+        },
+        "elapsed_ms": {
+          "median": 505.96294086426497,
+          "min": 494.1022340208292,
+          "max": 545.8834525197744
+        }
+      },
+      "compile_ms": 1.3385424390435219,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "python",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 710.9056450426579,
+          "min": 700.3867775201797,
+          "max": 1276.5397168695927
+        },
+        "materialize_ms": {
+          "median": 0.02399832010269165,
+          "min": 0.023663975298404694,
+          "max": 0.02505723387002945
+        },
+        "prepared_total_ms": {
+          "median": 710.9315544366837,
+          "min": 700.4138585180044,
+          "max": 1276.5652043744922
+        },
+        "elapsed_ms": {
+          "median": 710.9315544366837,
+          "min": 700.4138585180044,
+          "max": 1276.5652043744922
+        }
+      },
+      "compile_ms": 0.8349074050784111,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "1614eed",
+      "lane": "python",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 406.9378534331918,
+          "min": 402.05690171569586,
+          "max": 414.53492548316717
+        }
+      },
+      "compile_ms": 2.6768380776047707,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "619bc31",
+      "lane": "python",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 2658.080236054957,
+          "min": 2637.1696498245,
+          "max": 3190.172386355698
+        },
+        "materialize_ms": {
+          "median": 0.04698336124420166,
+          "min": 0.04384014755487442,
+          "max": 0.04833191633224487
+        },
+        "prepared_total_ms": {
+          "median": 2658.1264678388834,
+          "min": 2637.2181847691536,
+          "max": 3190.221155062318
+        },
+        "elapsed_ms": {
+          "median": 2658.1264678388834,
+          "min": 2637.2181847691536,
+          "max": 3190.221155062318
+        }
+      },
+      "compile_ms": 2.0270897075533867,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "python",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 38.565377704799175,
+          "min": 37.90588025003672,
+          "max": 39.10290077328682
+        },
+        "materialize_ms": {
+          "median": 0.022890977561473846,
+          "min": 0.01960713416337967,
+          "max": 0.02413615584373474
+        },
+        "prepared_total_ms": {
+          "median": 38.590031675994396,
+          "min": 37.92941104620695,
+          "max": 39.12879712879658
+        },
+        "elapsed_ms": {
+          "median": 38.590031675994396,
+          "min": 37.92941104620695,
+          "max": 39.12879712879658
+        }
+      },
+      "compile_ms": 0.5415566265583038,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "python",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 1524.670016951859,
+          "min": 1010.910109616816,
+          "max": 1595.184549689293
+        },
+        "materialize_ms": {
+          "median": 0.022592954337596893,
+          "min": 0.021585263311862946,
+          "max": 0.029443763196468353
+        },
+        "prepared_total_ms": {
+          "median": 1524.7012414038181,
+          "min": 1010.9347440302372,
+          "max": 1595.2100958675146
+        },
+        "elapsed_ms": {
+          "median": 1524.7012414038181,
+          "min": 1010.9347440302372,
+          "max": 1595.2100958675146
+        }
+      },
+      "compile_ms": 1.2438297271728516,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "python",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 66.0418039187789,
+          "min": 64.41027298569679,
+          "max": 68.32253653556108
+        },
+        "materialize_ms": {
+          "median": 0.03437325358390808,
+          "min": 0.032534822821617126,
+          "max": 0.03750994801521301
+        },
+        "prepared_total_ms": {
+          "median": 66.07990711927414,
+          "min": 64.44643344730139,
+          "max": 68.35639849305153
+        },
+        "elapsed_ms": {
+          "median": 66.07990711927414,
+          "min": 64.44643344730139,
+          "max": 68.35639849305153
+        }
+      },
+      "compile_ms": 0.4818867892026901,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "python",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 509.18363500386477,
+          "min": 492.35933367162943,
+          "max": 534.5329260453582
+        },
+        "materialize_ms": {
+          "median": 0.05445443093776703,
+          "min": 0.054162926971912384,
+          "max": 0.05638971924781799
+        },
+        "prepared_total_ms": {
+          "median": 509.239848703146,
+          "min": 492.41562746465206,
+          "max": 534.5898745581508
+        },
+        "elapsed_ms": {
+          "median": 509.239848703146,
+          "min": 492.41562746465206,
+          "max": 534.5898745581508
+        }
+      },
+      "compile_ms": 1.2466879561543465,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "python",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 740.806688554585,
+          "min": 726.398984901607,
+          "max": 1304.6507751569152
+        },
+        "materialize_ms": {
+          "median": 0.02351868897676468,
+          "min": 0.02157781273126602,
+          "max": 0.025999732315540314
+        },
+        "prepared_total_ms": {
+          "median": 740.8347707241774,
+          "min": 726.4246018603444,
+          "max": 1304.6741131693125
+        },
+        "elapsed_ms": {
+          "median": 740.8347707241774,
+          "min": 726.4246018603444,
+          "max": 1304.6741131693125
+        }
+      },
+      "compile_ms": 0.8281636983156204,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "619bc31",
+      "lane": "python",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 362.50974610447884,
+          "min": 357.6559256762266,
+          "max": 367.08020605146885
+        }
+      },
+      "compile_ms": 2.751050516963005,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "python",
+      "workload": "scenario1",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 2632.8069791197777,
+          "min": 2560.054018162191,
+          "max": 3133.8622448965907
+        },
+        "materialize_ms": {
+          "median": 0.0471482053399086,
+          "min": 0.04599243402481079,
+          "max": 0.048541463911533356
+        },
+        "prepared_total_ms": {
+          "median": 2632.855510339141,
+          "min": 2560.102691873908,
+          "max": 3133.9103439822793
+        },
+        "elapsed_ms": {
+          "median": 2632.855510339141,
+          "min": 2560.102691873908,
+          "max": 3133.9103439822793
+        }
+      },
+      "compile_ms": 2.174246124923229,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "python",
+      "workload": "scenario2",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 38.819337263703346,
+          "min": 37.351624108850956,
+          "max": 42.13799722492695
+        },
+        "materialize_ms": {
+          "median": 0.023311935365200043,
+          "min": 0.02269260585308075,
+          "max": 0.023890286684036255
+        },
+        "prepared_total_ms": {
+          "median": 38.84487692266703,
+          "min": 37.3763982206583,
+          "max": 42.162864468991756
+        },
+        "elapsed_ms": {
+          "median": 38.84487692266703,
+          "min": 37.3763982206583,
+          "max": 42.162864468991756
+        }
+      },
+      "compile_ms": 0.5651330575346947,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "python",
+      "workload": "scenario3",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 1547.0949430018663,
+          "min": 985.4445215314627,
+          "max": 1566.1206198856235
+        },
+        "materialize_ms": {
+          "median": 0.022158026695251465,
+          "min": 0.021315179765224457,
+          "max": 0.02273544669151306
+        },
+        "prepared_total_ms": {
+          "median": 1547.120075672865,
+          "min": 985.4692192748189,
+          "max": 1566.1449562758207
+        },
+        "elapsed_ms": {
+          "median": 1547.120075672865,
+          "min": 985.4692192748189,
+          "max": 1566.1449562758207
+        }
+      },
+      "compile_ms": 1.3623936101794243,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "python",
+      "workload": "scenario4",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 65.06054941564798,
+          "min": 64.42142184823751,
+          "max": 66.21869094669819
+        },
+        "materialize_ms": {
+          "median": 0.03404822200536728,
+          "min": 0.032763928174972534,
+          "max": 0.03733299672603607
+        },
+        "prepared_total_ms": {
+          "median": 65.09631685912609,
+          "min": 64.45806939154863,
+          "max": 66.25752802938223
+        },
+        "elapsed_ms": {
+          "median": 65.09631685912609,
+          "min": 64.45806939154863,
+          "max": 66.25752802938223
+        }
+      },
+      "compile_ms": 0.5415342748165131,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "python",
+      "workload": "scenario5",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 502.3199561983347,
+          "min": 496.62972055375576,
+          "max": 511.48007437586784
+        },
+        "materialize_ms": {
+          "median": 0.053316354751586914,
+          "min": 0.0524008646607399,
+          "max": 0.058848410844802856
+        },
+        "prepared_total_ms": {
+          "median": 502.37452425062656,
+          "min": 496.68517243117094,
+          "max": 511.5407984703779
+        },
+        "elapsed_ms": {
+          "median": 502.37452425062656,
+          "min": 496.68517243117094,
+          "max": 511.5407984703779
+        }
+      },
+      "compile_ms": 1.424260437488556,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "python",
+      "workload": "scenario6",
+      "round": 1,
+      "phases": {
+        "program_run_ms": {
+          "median": 733.1406762823462,
+          "min": 711.8069734424353,
+          "max": 1314.072584733367
+        },
+        "materialize_ms": {
+          "median": 0.023672357201576233,
+          "min": 0.021884217858314514,
+          "max": 0.023676082491874695
+        },
+        "prepared_total_ms": {
+          "median": 733.1661647185683,
+          "min": 711.8325028568506,
+          "max": 1314.0980917960405
+        },
+        "elapsed_ms": {
+          "median": 733.1661647185683,
+          "min": 711.8325028568506,
+          "max": 1314.0980917960405
+        }
+      },
+      "compile_ms": 0.7797935977578163,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "commit": "c5a8991",
+      "lane": "python",
+      "workload": "mandelbrot",
+      "round": 1,
+      "phases": {
+        "prepared_total_ms": {
+          "median": 358.5732923820615,
+          "min": 357.28685557842255,
+          "max": 375.7230415940285
+        }
+      },
+      "compile_ms": 2.554740756750107,
+      "warmups": 2,
+      "samples": 5,
+      "passed": true,
+      "output_sha256": [
+        "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+      ]
+    }
+  ],
+  "validation_failures": [],
+  "mandelbrot_output_hashes": [
+    "3d50a84d3774807aaaa132e9b6c826a89ad11548ab4e53ced220b0a00854bcba"
+  ]
+}

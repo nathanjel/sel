@@ -1,0 +1,112 @@
+{
+  "schema_version": 2,
+  "implementation": "cpp",
+  "passed": false,
+  "metadata": {
+    "fixture": {"path": "/home/nathan/workspaces/nth/sel/tools/scale-test/dataset-10x.json", "sha256": "2ba130fc0d13b3ac92e857edcc0e6c31f9559dbd69ad3c702c986042cf45486e", "table_rows": {"CATEGORIES": 100, "PRODUCTS": 2000, "CUSTOMERS": 10000, "ORDERS": 35000, "ORDER_ITEMS": 90000}, "total_source_rows": 137100, "schema_version": 1},
+    "reference_path": "/tmp/sel-commit-benchmark/ef836bf/tools/scale-test/benchmark_results.json",
+    "reference_sha256": "4d01e9f437aae5a49572c9199d5d211d538c570b011470f3f104afcba888b1c2",
+    "reference_scenario_ids": ["scenario1", "scenario2", "scenario3", "scenario4", "scenario5", "scenario6"],
+    "runtime": {"os": "Linux 7.1.3-200.fc44.x86_64", "machine": "x86_64", "cpu": "Intel(R) Xeon(R) D-2141I CPU @ 2.20GHz", "logical_cpus": 16, "available_memory_bytes": 36841484288, "compiler_driver": "c++", "compiler_version": "16.2.1 20260819 (Red Hat 16.2.1-2)", "cxxflags": "-std=c++23 -O2 -Wall -Wextra -Wpedantic", "binary_path": "cpp/build/scale-bench", "binary_sha256": "731e534e6cf059405b5d6a8efe469b02b65454e832a73740941575e90c82a7eb"},
+    "representation": {"shaped_records": 137100, "fallback_records": 1, "lists": 5},
+    "timing_mode": "steady-state", "context_mode": "isolated", "gc_policy": "not applicable (native C++)", "runs": 5, "warmups": 2
+  },
+  "scenarios": [
+    {
+      "id": "scenario1",
+      "rows": 10,
+      "compile_ms": 0.167106,
+      "samples": [
+        {"context_clone_ms": 76.161043, "program_run_ms": 1248.517523, "materialize_ms": 0.025158, "prepared_total_ms": 1248.542681, "elapsed_ms": 1248.542681},
+        {"context_clone_ms": 75.806146, "program_run_ms": 1269.654703, "materialize_ms": 0.021684, "prepared_total_ms": 1269.676387, "elapsed_ms": 1269.676387},
+        {"context_clone_ms": 75.79066, "program_run_ms": 1295.761317, "materialize_ms": 0.024497, "prepared_total_ms": 1295.785814, "elapsed_ms": 1295.785814},
+        {"context_clone_ms": 77.810452, "program_run_ms": 1249.589198, "materialize_ms": 0.024239, "prepared_total_ms": 1249.613437, "elapsed_ms": 1249.613437},
+        {"context_clone_ms": 77.720709, "program_run_ms": 1256.277667, "materialize_ms": 0.0241, "prepared_total_ms": 1256.301767, "elapsed_ms": 1256.301767}
+      ],
+      "context_unchanged": true,
+      "passed": false,
+      "failures": ["postgresql SQL differs from Lisp reference", "mariadb SQL differs from Lisp reference"],
+      "parity": {"passed": false, "failures": ["postgresql SQL differs from Lisp reference", "mariadb SQL differs from Lisp reference"]}
+    },
+    {
+      "id": "scenario2",
+      "rows": 5,
+      "compile_ms": 0.025525,
+      "samples": [
+        {"context_clone_ms": 78.487558, "program_run_ms": 13.049481, "materialize_ms": 0.010596, "prepared_total_ms": 13.060077, "elapsed_ms": 13.060077},
+        {"context_clone_ms": 76.539934, "program_run_ms": 13.226566, "materialize_ms": 0.01035, "prepared_total_ms": 13.236916, "elapsed_ms": 13.236916},
+        {"context_clone_ms": 76.631782, "program_run_ms": 12.689094, "materialize_ms": 0.009784, "prepared_total_ms": 12.698878, "elapsed_ms": 12.698878},
+        {"context_clone_ms": 79.044794, "program_run_ms": 13.344317, "materialize_ms": 0.008529, "prepared_total_ms": 13.352846, "elapsed_ms": 13.352846},
+        {"context_clone_ms": 76.426753, "program_run_ms": 13.50953, "materialize_ms": 0.009742, "prepared_total_ms": 13.519272, "elapsed_ms": 13.519272}
+      ],
+      "context_unchanged": true,
+      "passed": false,
+      "failures": ["mariadb SQL differs from Lisp reference"],
+      "parity": {"passed": false, "failures": ["mariadb SQL differs from Lisp reference"]}
+    },
+    {
+      "id": "scenario3",
+      "rows": 5,
+      "compile_ms": 0.069971,
+      "samples": [
+        {"context_clone_ms": 78.850742, "program_run_ms": 342.576887, "materialize_ms": 0.009227, "prepared_total_ms": 342.586114, "elapsed_ms": 342.586114},
+        {"context_clone_ms": 77.734883, "program_run_ms": 343.307776, "materialize_ms": 0.009392, "prepared_total_ms": 343.317168, "elapsed_ms": 343.317168},
+        {"context_clone_ms": 77.158708, "program_run_ms": 341.429698, "materialize_ms": 0.009376, "prepared_total_ms": 341.439074, "elapsed_ms": 341.439074},
+        {"context_clone_ms": 75.83227, "program_run_ms": 339.386967, "materialize_ms": 0.009486, "prepared_total_ms": 339.396453, "elapsed_ms": 339.396453},
+        {"context_clone_ms": 77.310253, "program_run_ms": 350.238586, "materialize_ms": 0.009715, "prepared_total_ms": 350.248301, "elapsed_ms": 350.248301}
+      ],
+      "context_unchanged": true,
+      "passed": false,
+      "failures": ["mariadb SQL differs from Lisp reference"],
+      "parity": {"passed": false, "failures": ["mariadb SQL differs from Lisp reference"]}
+    },
+    {
+      "id": "scenario4",
+      "rows": 5,
+      "compile_ms": 0.03345,
+      "samples": [
+        {"context_clone_ms": 77.597114, "program_run_ms": 21.077847, "materialize_ms": 0.011938, "prepared_total_ms": 21.089785, "elapsed_ms": 21.089785},
+        {"context_clone_ms": 76.396653, "program_run_ms": 21.272824, "materialize_ms": 0.011952, "prepared_total_ms": 21.284776, "elapsed_ms": 21.284776},
+        {"context_clone_ms": 76.606029, "program_run_ms": 24.105572, "materialize_ms": 0.014581, "prepared_total_ms": 24.120153, "elapsed_ms": 24.120153},
+        {"context_clone_ms": 76.506413, "program_run_ms": 22.381004, "materialize_ms": 0.013517, "prepared_total_ms": 22.394521, "elapsed_ms": 22.394521},
+        {"context_clone_ms": 77.83183, "program_run_ms": 20.722085, "materialize_ms": 0.013191, "prepared_total_ms": 20.735276, "elapsed_ms": 20.735276}
+      ],
+      "context_unchanged": true,
+      "passed": true,
+      "failures": [],
+      "parity": {"passed": true, "failures": []}
+    },
+    {
+      "id": "scenario5",
+      "rows": 9,
+      "compile_ms": 0.060165,
+      "samples": [
+        {"context_clone_ms": 77.069962, "program_run_ms": 2376.246414, "materialize_ms": 0.034664, "prepared_total_ms": 2376.281078, "elapsed_ms": 2376.281078},
+        {"context_clone_ms": 77.71315, "program_run_ms": 2699.872255, "materialize_ms": 0.033764, "prepared_total_ms": 2699.906019, "elapsed_ms": 2699.906019},
+        {"context_clone_ms": 78.172915, "program_run_ms": 2357.369603, "materialize_ms": 0.040879, "prepared_total_ms": 2357.410482, "elapsed_ms": 2357.410482},
+        {"context_clone_ms": 78.00658, "program_run_ms": 2374.920499, "materialize_ms": 0.034665, "prepared_total_ms": 2374.955164, "elapsed_ms": 2374.955164},
+        {"context_clone_ms": 76.929807, "program_run_ms": 2348.427127, "materialize_ms": 0.035158, "prepared_total_ms": 2348.462285, "elapsed_ms": 2348.462285}
+      ],
+      "context_unchanged": true,
+      "passed": false,
+      "failures": ["mariadb SQL differs from Lisp reference"],
+      "parity": {"passed": false, "failures": ["mariadb SQL differs from Lisp reference"]}
+    },
+    {
+      "id": "scenario6",
+      "rows": 10,
+      "compile_ms": 0.036345,
+      "samples": [
+        {"context_clone_ms": 75.407872, "program_run_ms": 341.825556, "materialize_ms": 0.013547, "prepared_total_ms": 341.839103, "elapsed_ms": 341.839103},
+        {"context_clone_ms": 76.996659, "program_run_ms": 353.069041, "materialize_ms": 0.015142, "prepared_total_ms": 353.084183, "elapsed_ms": 353.084183},
+        {"context_clone_ms": 77.71844, "program_run_ms": 334.539746, "materialize_ms": 0.014991, "prepared_total_ms": 334.554737, "elapsed_ms": 334.554737},
+        {"context_clone_ms": 76.059028, "program_run_ms": 334.763496, "materialize_ms": 0.0139, "prepared_total_ms": 334.777396, "elapsed_ms": 334.777396},
+        {"context_clone_ms": 76.781508, "program_run_ms": 339.228963, "materialize_ms": 0.01486, "prepared_total_ms": 339.243823, "elapsed_ms": 339.243823}
+      ],
+      "context_unchanged": true,
+      "passed": false,
+      "failures": ["postgresql SQL presence differs", "postgresql pureSql flag differs", "postgresql continuation presence differs", "mariadb SQL presence differs", "mariadb pureSql flag differs", "mariadb continuation presence differs"],
+      "parity": {"passed": false, "failures": ["postgresql SQL presence differs", "postgresql pureSql flag differs", "postgresql continuation presence differs", "mariadb SQL presence differs", "mariadb pureSql flag differs", "mariadb continuation presence differs"]}
+    }
+  ]
+}

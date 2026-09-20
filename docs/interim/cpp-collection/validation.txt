@@ -1,0 +1,34 @@
+unit-final
+cpp unit: 171/171 checks passed
+
+sqlunit-final
+cpp SQL advanced: 85/85 checks passed
+
+conformance-final
+
+911 passed, 0 failed, 0 suite errors
+
+sql-final
+
+852 passed (559 also checked against a mirrored dialect, 12 refused by the type system), 0 failed, 0 suite errors
+
+metadata-final
+C++ metadata checks passed
+
+differential
+generating 4000 programs (seed 20260813)...
+running cpp...
+running php...
+
+4000 programs across 2 implementations, 1511 agreed on a SEL error, 0 disagreements, 0 host crashes
+
+api
+54 API probes, cpp php agree on every one
+
+decimal
+cpp: 39990 cases, 0 mismatches
+
+asan
+cpp unit: 171/171 checks passed
+
+The same unit-asan binary also passed with leak detection enabled outside the sandbox.

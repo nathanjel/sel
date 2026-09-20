@@ -112,6 +112,9 @@ done
 case " $IMPLS " in *" js "*) step "JS optimizer" sel_slot node tools/check-js-optimizer.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP optimizer" sel_slot sel_php tools/check-php-optimizer.php ;; esac
 case " $IMPLS " in *" js "*) step "JS decimal guard" sel_slot node tools/check-js-decimal-guard.mjs ;; esac
+case " $IMPLS " in *" js "*) step "JS runtime isolation and records" sel_slot node tools/check-js-runtime.mjs ;; esac
+case " $IMPLS " in *" js-bundle "*) step "JS bundle runtime isolation" sel_slot node tools/check-js-runtime.mjs dist/sel.mjs ;; esac
+case " $IMPLS " in *" js-bundle-min "*) step "JS minified runtime isolation" sel_slot node tools/check-js-runtime.mjs dist/sel.min.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP runtime" sel_slot sel_php tools/check-php-runtime.php ;; esac
 case " $IMPLS " in *" js "*) step "JS metadata" sel_slot node tools/metadata/js.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP metadata" sel_slot sel_php tools/metadata/php.php ;; esac

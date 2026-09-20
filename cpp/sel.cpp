@@ -1274,7 +1274,7 @@ struct Internals {
     return v;
   }
   static Value with_children(Kind kind, std::vector<Value::Entry> entries, bool is_list = false) {
-    Value v;
+    Value v(Value::make_collection_impl());
     v.p_->kind = kind;
     v.p_->scalar_computed = true;
     v.p_->boolean = false;
@@ -1283,7 +1283,7 @@ struct Internals {
     return v;
   }
   static Value shaped_direct(std::shared_ptr<const RecordShape> shape, std::size_t reserve_size) {
-    Value v;
+    Value v(Value::make_collection_impl());
     v.p_->mutable_coll().shape = std::move(shape);
     v.p_->mutable_coll().storage.reserve(reserve_size);
     return v;
@@ -1301,6 +1301,24 @@ struct Internals {
 };
 
 namespace {
+// Containers have one allocation for their header and payload. Scalars retain
+// the small header and can still acquire a separate payload through an alias.
+struct CollectionImpl : Value::Impl {
+  Value::Collection payload;
+  CollectionImpl() {
+    inline_collection = true;
+    collection.reset(&payload);
+  }
+  // The derived object owns this payload. Release the base's pointer before
+  // member destruction so it cannot delete the embedded Collection a second time.
+  ~CollectionImpl() { collection.release(); }
+};
+
+void delete_impl(Value::Impl* impl) {
+  if (impl->inline_collection) delete static_cast<CollectionImpl*>(impl);
+  else delete impl;
+}
+
 struct ImplFreelist {
   Value::Impl* head = nullptr;
   std::size_t count = 0;
@@ -1338,6 +1356,8 @@ void Value::Impl::operator delete(void* ptr, std::size_t size) noexcept {
 }
 
 Value::Value() : p_(new Impl()) {}
+
+Value::Impl* Value::make_collection_impl() { return new CollectionImpl(); }
 
 Kind Value::kind() const {
   return p_ ? p_->kind : Kind::None;
@@ -1387,7 +1407,7 @@ Value Value::clone_at(int depth, Pos pos) const {
   if (depth > MAX_DEPTH) {
     fail("E_DEPTH", "value nested too deeply", pos);
   }
-  Value out;
+  Value out(p_->collection ? make_collection_impl() : new Impl());
   out.p_->kind = p_->kind;
   out.p_->scalar = p_->scalar;
   out.p_->scalar_computed = p_->scalar_computed;
@@ -1449,12 +1469,12 @@ void Value::destroy(Impl* p) {
   };
 
   steal(p);
-  delete p;
+  delete_impl(p);
   while (!pending.empty()) {
     Impl* curr = pending.back();
     pending.pop_back();
     steal(curr);
-    delete curr;
+    delete_impl(curr);
   }
 }
 
@@ -1515,7 +1535,8 @@ Value Value::integer(long long n) {
 }
 
 Value Value::list(std::vector<Value> values) {
-  Value v = none();
+  Value v(make_collection_impl());
+  v.p_->scalar_computed = true;
   v.p_->is_list = true;
   v.p_->mutable_coll().storage = std::move(values);
   return v;
@@ -1545,7 +1566,8 @@ Value Value::record(std::vector<std::string> keys, std::vector<Value> values) {
     }
   }
   if (duplicate) {
-    Value out = none();
+    Value out(make_collection_impl());
+    out.p_->scalar_computed = true;
     for (std::size_t i = 0; i < keys.size(); ++i) out.set(keys[i], values[i]);
     return out;
   }
@@ -1556,7 +1578,8 @@ Value Value::shaped(std::shared_ptr<const RecordShape> shape, std::vector<Value>
   if (!shape || shape->keys.size() != storage.size()) {
     throw std::invalid_argument("SEL shaped value needs one slot per record key");
   }
-  Value v = none();
+  Value v(make_collection_impl());
+  v.p_->scalar_computed = true;
   v.p_->mutable_coll().shape = std::move(shape);
   v.p_->mutable_coll().storage = std::move(storage);
   return v;

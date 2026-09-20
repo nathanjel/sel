@@ -1,0 +1,112 @@
+{
+  "schema_version": 2,
+  "implementation": "cpp",
+  "passed": true,
+  "metadata": {
+    "fixture": {"path": "/home/nathan/workspaces/nth/sel/tools/scale-test/dataset-10x.json", "sha256": "2ba130fc0d13b3ac92e857edcc0e6c31f9559dbd69ad3c702c986042cf45486e", "table_rows": {"CATEGORIES": 100, "PRODUCTS": 2000, "CUSTOMERS": 10000, "ORDERS": 35000, "ORDER_ITEMS": 90000}, "total_source_rows": 137100, "schema_version": 1},
+    "reference_path": "/tmp/sel-commit-benchmark/c5a8991/tools/scale-test/benchmark_results.json",
+    "reference_sha256": "a5ea93edfa673fd555f3a9f11b948769c44ee609ec149f329f35d5247c533285",
+    "reference_scenario_ids": ["scenario1", "scenario2", "scenario3", "scenario4", "scenario5", "scenario6"],
+    "runtime": {"os": "Linux 7.1.3-200.fc44.x86_64", "machine": "x86_64", "cpu": "Intel(R) Xeon(R) D-2141I CPU @ 2.20GHz", "logical_cpus": 16, "available_memory_bytes": 38910988288, "compiler_driver": "c++", "compiler_version": "16.2.1 20260819 (Red Hat 16.2.1-2)", "cxxflags": "-std=c++23 -O2 -Wall -Wextra -Wpedantic", "binary_path": "cpp/build/scale-bench", "binary_sha256": "f5b54e5d0fb9e3fe3d9d91ab19c4860313f312a35d4291b082af5d4d06c64fc4"},
+    "representation": {"shaped_records": 137100, "fallback_records": 1, "lists": 5},
+    "timing_mode": "steady-state", "context_mode": "isolated", "gc_policy": "not applicable (native C++)", "runs": 5, "warmups": 2
+  },
+  "scenarios": [
+    {
+      "id": "scenario1",
+      "rows": 10,
+      "compile_ms": 0.184762,
+      "samples": [
+        {"context_clone_ms": 84.651114, "program_run_ms": 581.900519, "materialize_ms": 0.17853, "prepared_total_ms": 582.079049, "elapsed_ms": 582.079049},
+        {"context_clone_ms": 82.861885, "program_run_ms": 580.681995, "materialize_ms": 0.175085, "prepared_total_ms": 580.85708, "elapsed_ms": 580.85708},
+        {"context_clone_ms": 82.754888, "program_run_ms": 596.335895, "materialize_ms": 0.206207, "prepared_total_ms": 596.542102, "elapsed_ms": 596.542102},
+        {"context_clone_ms": 82.612787, "program_run_ms": 581.773892, "materialize_ms": 0.040818, "prepared_total_ms": 581.81471, "elapsed_ms": 581.81471},
+        {"context_clone_ms": 83.326481, "program_run_ms": 570.336166, "materialize_ms": 0.165842, "prepared_total_ms": 570.502008, "elapsed_ms": 570.502008}
+      ],
+      "context_unchanged": true,
+      "passed": true,
+      "failures": [],
+      "parity": {"passed": true, "failures": []}
+    },
+    {
+      "id": "scenario2",
+      "rows": 5,
+      "compile_ms": 0.025729,
+      "samples": [
+        {"context_clone_ms": 82.424569, "program_run_ms": 5.685914, "materialize_ms": 0.010884, "prepared_total_ms": 5.696798, "elapsed_ms": 5.696798},
+        {"context_clone_ms": 85.872601, "program_run_ms": 5.732604, "materialize_ms": 0.010614, "prepared_total_ms": 5.743218, "elapsed_ms": 5.743218},
+        {"context_clone_ms": 85.165629, "program_run_ms": 5.742178, "materialize_ms": 0.01077, "prepared_total_ms": 5.752948, "elapsed_ms": 5.752948},
+        {"context_clone_ms": 82.998408, "program_run_ms": 5.48869, "materialize_ms": 0.010518, "prepared_total_ms": 5.499208, "elapsed_ms": 5.499208},
+        {"context_clone_ms": 86.251227, "program_run_ms": 5.62885, "materialize_ms": 0.01131, "prepared_total_ms": 5.64016, "elapsed_ms": 5.64016}
+      ],
+      "context_unchanged": true,
+      "passed": true,
+      "failures": [],
+      "parity": {"passed": true, "failures": []}
+    },
+    {
+      "id": "scenario3",
+      "rows": 5,
+      "compile_ms": 0.067127,
+      "samples": [
+        {"context_clone_ms": 84.902061, "program_run_ms": 185.677278, "materialize_ms": 0.010668, "prepared_total_ms": 185.687946, "elapsed_ms": 185.687946},
+        {"context_clone_ms": 85.685714, "program_run_ms": 189.800979, "materialize_ms": 0.011154, "prepared_total_ms": 189.812133, "elapsed_ms": 189.812133},
+        {"context_clone_ms": 81.431921, "program_run_ms": 185.316448, "materialize_ms": 0.011453, "prepared_total_ms": 185.327901, "elapsed_ms": 185.327901},
+        {"context_clone_ms": 83.4159, "program_run_ms": 192.330687, "materialize_ms": 0.011672, "prepared_total_ms": 192.342359, "elapsed_ms": 192.342359},
+        {"context_clone_ms": 83.391594, "program_run_ms": 183.931576, "materialize_ms": 0.011663, "prepared_total_ms": 183.943239, "elapsed_ms": 183.943239}
+      ],
+      "context_unchanged": true,
+      "passed": true,
+      "failures": [],
+      "parity": {"passed": true, "failures": []}
+    },
+    {
+      "id": "scenario4",
+      "rows": 5,
+      "compile_ms": 0.024028,
+      "samples": [
+        {"context_clone_ms": 85.911742, "program_run_ms": 8.8221, "materialize_ms": 0.014521, "prepared_total_ms": 8.836621, "elapsed_ms": 8.836621},
+        {"context_clone_ms": 84.191866, "program_run_ms": 8.970809, "materialize_ms": 0.014497, "prepared_total_ms": 8.985306, "elapsed_ms": 8.985306},
+        {"context_clone_ms": 84.977706, "program_run_ms": 8.889378, "materialize_ms": 0.01554, "prepared_total_ms": 8.904918, "elapsed_ms": 8.904918},
+        {"context_clone_ms": 80.892405, "program_run_ms": 8.83961, "materialize_ms": 0.015191, "prepared_total_ms": 8.854801, "elapsed_ms": 8.854801},
+        {"context_clone_ms": 85.137183, "program_run_ms": 8.663624, "materialize_ms": 0.014653, "prepared_total_ms": 8.678277, "elapsed_ms": 8.678277}
+      ],
+      "context_unchanged": true,
+      "passed": true,
+      "failures": [],
+      "parity": {"passed": true, "failures": []}
+    },
+    {
+      "id": "scenario5",
+      "rows": 9,
+      "compile_ms": 0.050902,
+      "samples": [
+        {"context_clone_ms": 82.68093, "program_run_ms": 548.108655, "materialize_ms": 0.050404, "prepared_total_ms": 548.159059, "elapsed_ms": 548.159059},
+        {"context_clone_ms": 84.933114, "program_run_ms": 551.80449, "materialize_ms": 0.071267, "prepared_total_ms": 551.875757, "elapsed_ms": 551.875757},
+        {"context_clone_ms": 85.049419, "program_run_ms": 555.255517, "materialize_ms": 0.152357, "prepared_total_ms": 555.407874, "elapsed_ms": 555.407874},
+        {"context_clone_ms": 84.526242, "program_run_ms": 557.159751, "materialize_ms": 0.052137, "prepared_total_ms": 557.211888, "elapsed_ms": 557.211888},
+        {"context_clone_ms": 82.431589, "program_run_ms": 553.913326, "materialize_ms": 0.120659, "prepared_total_ms": 554.033985, "elapsed_ms": 554.033985}
+      ],
+      "context_unchanged": true,
+      "passed": true,
+      "failures": [],
+      "parity": {"passed": true, "failures": []}
+    },
+    {
+      "id": "scenario6",
+      "rows": 10,
+      "compile_ms": 0.032514,
+      "samples": [
+        {"context_clone_ms": 87.137809, "program_run_ms": 274.67022, "materialize_ms": 0.016449, "prepared_total_ms": 274.686669, "elapsed_ms": 274.686669},
+        {"context_clone_ms": 82.948809, "program_run_ms": 273.609587, "materialize_ms": 0.016646, "prepared_total_ms": 273.626233, "elapsed_ms": 273.626233},
+        {"context_clone_ms": 85.910077, "program_run_ms": 278.238766, "materialize_ms": 0.016468, "prepared_total_ms": 278.255234, "elapsed_ms": 278.255234},
+        {"context_clone_ms": 85.885283, "program_run_ms": 274.482478, "materialize_ms": 0.015608, "prepared_total_ms": 274.498086, "elapsed_ms": 274.498086},
+        {"context_clone_ms": 82.835182, "program_run_ms": 273.402138, "materialize_ms": 0.016462, "prepared_total_ms": 273.4186, "elapsed_ms": 273.4186}
+      ],
+      "context_unchanged": true,
+      "passed": true,
+      "failures": [],
+      "parity": {"passed": true, "failures": []}
+    }
+  ]
+}

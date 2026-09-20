@@ -1,0 +1,25 @@
+{
+  "baseline": "c5a8991f3c3e884b3836d75e40b801e6eab344ef",
+  "source_sha256": {
+    "cpp/sel.cpp": "6f0354a547479374898518256dad814bf5aacc2f56dbc5754ab180446785316b",
+    "cpp/sel.hpp": "628422c4236c76cba77c1d4427f37453dc2194834a6411b74ba8bf4efd24845e",
+    "cpp/tests/unit.cpp": "a32346e48974e630d976d2a056a8e3ec37b47ce149fb74459e9d67a8ecc4e932",
+    "tools/scale-test/sel_benchmarks.cpp": "fd2ce7d0d6f09a453fe43bffd8b2bafda36b379420d37172ef0fb75410e71804",
+    "tools/cpp-collection/memory.cpp": "14fce32ef8b4d5a54773a0abc19dcc519e1c922425c32a06acb292740fa6b2c5",
+    "tools/commit-benchmark/mandelbrot.cpp": "daad264b1cad421bf909ed1f9f1675b01b5facbb730f3d6131c6405971a31c58"
+  },
+  "compiler": "c++ (GCC) 16.2.1 20260819 (Red Hat 16.2.1-2)",
+  "flags": "-std=c++23 -O2 -Wall -Wextra -Wpedantic (scale); -std=c++23 -O2 (memory and Mandelbrot)",
+  "order": [
+    "before",
+    "pool (rejected)",
+    "combined",
+    "combined-repeat",
+    "before-repeat"
+  ],
+  "scale_runs": 7,
+  "scale_warmups": 3,
+  "mandelbrot_runs": 11,
+  "mandelbrot_warmups": 3,
+  "memory_fresh_processes_per_mode": 5
+}
