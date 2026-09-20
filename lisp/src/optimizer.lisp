@@ -20,6 +20,7 @@
           (node-r copy) (node-r n)
           (node-items copy) (copy-list (node-items n))
           (node-spec copy) (node-spec n)
+          (node-record-shape copy) (node-record-shape n)
           (node-math-plan copy) (node-math-plan n))
     copy))
 

@@ -39,6 +39,18 @@ class RecordShape:
 
 
 _SHAPES: dict[tuple[str, ...], RecordShape] = {}
+_SHAPE_CACHE_ENTRIES = 256
+_SHAPE_CACHE_MAX_KEYS = 256
+_SHAPE_CACHE_MAX_CHARS = 16384
+
+
+def _cache_record_shape(signature: tuple[str, ...], shape: RecordShape) -> None:
+    if len(signature) > _SHAPE_CACHE_MAX_KEYS or sum(map(len, signature)) > _SHAPE_CACHE_MAX_CHARS:
+        return
+    if len(_SHAPES) >= _SHAPE_CACHE_ENTRIES:
+        _SHAPES.clear()
+    _SHAPES[signature] = shape
+
 _LIST_KEY = re.compile(r'[1-9][0-9]{0,8}\Z')
 
 
@@ -47,7 +59,7 @@ def _record_shape(keys: list[str] | tuple[str, ...]) -> RecordShape:
     shape = _SHAPES.get(signature)
     if shape is None:
         shape = RecordShape(signature)
-        _SHAPES[signature] = shape
+        _cache_record_shape(signature, shape)
     return shape
 
 
@@ -68,7 +80,7 @@ def _unique_record_shape(keys: list[str] | tuple[str, ...]) -> RecordShape | Non
             return None
         key_map[key] = index
     shape = RecordShape(signature, key_map)
-    _SHAPES[signature] = shape
+    _cache_record_shape(signature, shape)
     return shape
 
 

@@ -46,6 +46,9 @@ def _record(args, ctx):
         return Value.none()
     keys = [args.text(i) for i in range(0, count, 2)]
     values = [args.val(i + 1) for i in range(0, count, 2)]
+    shape = args.record_shape
+    if shape is not None and shape.keys == tuple(keys):
+        return Value._from_shape(shape, values)
     return Value.record(keys, values)
 
 
@@ -214,19 +217,27 @@ def canonical_join_key(value, numeric):
     return value._scalar if value._scalar is not None else (value.scalar if value.kind == 'TEXT' else None)
 
 
+# Flat bounded ownership prevents alias layouts retaining chains of other caches.
+_ALIAS_PLANS = {}
+
+
 def ensure_row_table_alias(row, table_name):
     if not table_name or table_name == '_1' or row.has(table_name):
         return row
     lower = table_name.lower()
     if row.shape is not None:
         old_shape = row.shape
-        cached = old_shape.alias_cache.get(table_name)
+        cache_key = (old_shape, table_name)
+        cached = _ALIAS_PLANS.get(cache_key)
         if cached is None:
             add_lower = lower != table_name and lower not in old_shape.key_map
             keys = tuple(list(old_shape.keys) + [table_name] + ([lower] if add_lower else []))
             target_shape = _record_shape(keys)
             cached = (target_shape, old_shape.size, add_lower)
-            old_shape.alias_cache[table_name] = cached
+            if len(keys) <= 256 and sum(map(len, keys)) <= 16384:
+                if len(_ALIAS_PLANS) >= 256:
+                    _ALIAS_PLANS.clear()
+                _ALIAS_PLANS[cache_key] = cached
         target_shape, old_size, add_lower = cached
         storage = [*row.storage, row, row] if add_lower else [*row.storage, row]
         return Value._from_shape(target_shape, storage)

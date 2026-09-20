@@ -90,6 +90,9 @@ final class Core
                     $keys[] = $a->text($i);
                     $values[] = $a->val($i + 1)->copy();
                 }
+                if ($a->recordShape !== null && $a->recordShape->keys === $keys) {
+                    return Value::fromShape($a->recordShape, $values);
+                }
                 return Value::record($keys, $values);
             }]);
 

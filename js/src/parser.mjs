@@ -20,6 +20,18 @@
 // E_DEPTH at 1:101 for 100 parens, 1:200 for a `-` chain and 1:797 for a NOT
 // chain. Prefix operators are counted only when actually consumed.
 
+import { RecordShape } from './value.mjs';
+
+function prepareRecordShape(name, args) {
+  if (name !== 'RECORD' || args.length === 0 || args.length % 2) return null;
+  const keys = [];
+  for (let i = 0; i < args.length; i += 2) {
+    if (args[i].t !== 'text') return null;
+    keys.push(args[i].v);
+  }
+  return new Set(keys).size === keys.length ? new RecordShape(keys) : null;
+}
+
 import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { tokenize, RESERVED } from './lexer.mjs';
@@ -331,7 +343,8 @@ class Parser {
       const problem = spec.arityError(finalCount);
       if (problem) fail('E_ARITY', problem, nameTok);
     }
-    return { t: 'call', name: spec.name, spec, args, pos: nameTok };
+    return { t: 'call', name: spec.name, spec, args, pos: nameTok,
+      recordShape: prepareRecordShape(spec.name, args) };
   }
 
   parsePrimary() {
@@ -401,7 +414,8 @@ class Parser {
       const problem = spec.arityError(args.length);
       if (problem) fail('E_ARITY', problem, nameTok);
     }
-    return { t: 'call', name: spec.name, spec, args, pos: nameTok };
+    return { t: 'call', name: spec.name, spec, args, pos: nameTok,
+      recordShape: prepareRecordShape(spec.name, args) };
   }
 }
 

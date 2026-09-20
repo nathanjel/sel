@@ -19,6 +19,10 @@ final class RecordShape
 {
     /** @var array<string,self> */
     private static array $cache = [];
+    private static array $aliasPlans = [];
+    private const CACHE_ENTRIES = 256;
+    private const CACHE_MAX_KEYS = 256;
+    private const CACHE_MAX_BYTES = 16384;
     private static bool $instrumentation = false;
     /** @var array<string,int> */
     private static array $stats = [
@@ -58,7 +62,13 @@ final class RecordShape
             return self::$cache[$signature];
         }
         if (self::$instrumentation) self::$stats['new_shapes']++;
-        return self::$cache[$signature] = new self($keys);
+        $shape = new self($keys);
+        if (count($keys) <= self::CACHE_MAX_KEYS &&
+            array_sum(array_map('strlen', $keys)) <= self::CACHE_MAX_BYTES) {
+            if (count(self::$cache) >= self::CACHE_ENTRIES) self::$cache = [];
+            self::$cache[$signature] = $shape;
+        }
+        return $shape;
     }
 
     public static function enableInstrumentation(bool $enabled): void
@@ -76,9 +86,7 @@ final class RecordShape
     {
         $stats = self::$stats;
         $stats['cache_size'] = count(self::$cache);
-        $aliases = 0;
-        foreach (self::$cache as $shape) $aliases += count($shape->aliasCache);
-        $stats['alias_cache_entries'] = $aliases;
+        $stats['alias_cache_entries'] = count(self::$aliasPlans);
         return $stats;
     }
 
@@ -101,7 +109,9 @@ final class RecordShape
     public function alias(string $tableName): array
     {
         if (self::$instrumentation) self::$stats['alias_calls']++;
-        $cached = $this->aliasCache[$tableName] ?? null;
+        $id = spl_object_id($this);
+        $entry = self::$aliasPlans[$id] ?? null;
+        $cached = $entry !== null && $entry[1] === $tableName ? $entry[2] : null;
         if ($cached !== null) {
             if (self::$instrumentation) self::$stats['alias_hits']++;
             return $cached;
@@ -118,7 +128,12 @@ final class RecordShape
             'oldSize' => $this->size,
             'addLower' => $addLower,
         ];
-        $this->aliasCache[$tableName] = $cached;
+        if (count($keys) <= self::CACHE_MAX_KEYS &&
+            array_sum(array_map('strlen', $keys)) <= self::CACHE_MAX_BYTES) {
+            if (count(self::$aliasPlans) >= self::CACHE_ENTRIES) self::$aliasPlans = [];
+            // Retain the source so an object id cannot be recycled under a plan.
+            self::$aliasPlans[$id] = [$this, $tableName, $cached];
+        }
         if (self::$instrumentation) self::$stats['alias_builds']++;
         return $cached;
     }

@@ -12,6 +12,20 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Bounded metadata caches and prepared record layouts across all five lanes (2026-09-20).
+
+  - **Bound shape and alias retention.** Shape interners and flat alias-plan caches retain at most 256 entries each, excluding layouts above 256 keys or 16,384 total key bytes/characters. Cache eviction preserves layouts owned by live values and compiled programs. Flat alias ownership prevents per-shape caches from retaining chains of other layouts.
+  - **Prepare stable projections once.** Literal-key `RECORD` calls retain a prepared layout on the call node. Builtins verify the key sequence before reuse, preserving dynamic/duplicate-key fallbacks and evaluation order. JS aliases reuse resolved shapes directly. The two-field record benchmark improves in every lane, from about 4% less time in Python/C++ to 32% in JS.
+  - **Bound large-power caches by size.** Python, JS and Lisp retain at most 64 dynamic powers, with exponent at most 1,000,000 and summed exponents at most 1,048,576. Larger powers remain exact but uncached. This bounds numeric cache payload while retaining useful large powers; fixed small-power tables remain unchanged.
+  - **Measured retention.** After 20,000 changing schemas and 5,000 changing-schema joins, measured retained heap deltas fall from roughly 24–48 MB to 0.3–0.7 MB across the lanes. The large-power workload falls from roughly 9–11 MB to 0.03–0.10 MB. [The benchmark report](docs/interim/metadata-cache-optimizations.md) records raw samples, runtime-specific accounting, limits and reproduction commands.
+  - **Constructor and build checks.** Fixed JS `Value.shaped()` passing a layout to a keys-based helper, retaining its array-copy behavior. C++ SQL targets now depend on the shared AST header, preventing stale objects after layout changes. Metadata checks run under the repository gate.
+
+Validation: 911 conformance cases per lane and both JS bundles, 852 SQL cases per
+lane, and 39,990 decimal-oracle cases per lane pass. All 54 host API probes agree.
+Four lanes agree on 4,000 fuzz programs; Python matches its pre-change outputs
+exactly, retaining 11 existing join-alias differences. Focused metadata and C++
+sanitizer checks pass. The full repository gate was not rerun.
+
 Common Lisp indexed arguments and sequential assignment paths (2026-09-20).
 
   - **Vector-backed argument access.** Call wrappers convert argument nodes to a simple vector, making indexed lookup and argument counts constant-time while retaining per-invocation value caching and lazy evaluation. A local 1,000-argument COALESCE improves from 838 to 104 µs. The extra vector increases call allocation; small calls can regress.

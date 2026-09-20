@@ -99,6 +99,13 @@ INFIX_WORDS: dict[str, tuple[int, str]] = {
 }
 
 
+def _prepare_record_shape(name, args):
+    if name != 'RECORD' or not args or len(args) % 2 or any(n.t != 'text' for n in args[::2]):
+        return None
+    from .value import _unique_record_shape
+    return _unique_record_shape([n.v for n in args[::2]])
+
+
 @dataclass(slots=True)
 class Node:
     t: str
@@ -120,6 +127,7 @@ class Node:
     dec: Any = None
     math_plan: Any = None
     _cached_slot: Any = None
+    record_shape: Any = None
 
 
 class Parser:
@@ -372,7 +380,8 @@ class Parser:
             problem = spec.arity_error(len(args))
             if problem:
                 fail('E_ARITY', problem, name_tok.pos)
-        return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args)
+        return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args,
+                    record_shape=_prepare_record_shape(spec.name, args))
 
     def parse_primary(self) -> Node:
         t = self.peek()
@@ -439,7 +448,8 @@ class Parser:
             problem = spec.arity_error(len(args))
             if problem:
                 fail('E_ARITY', problem, name_tok.pos)
-        return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args)
+        return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args,
+                    record_shape=_prepare_record_shape(spec.name, args))
 
 
 def arity_text(spec: Spec) -> str:

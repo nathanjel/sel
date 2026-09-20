@@ -21,6 +21,18 @@ namespace Sel;
 
 final class Parser
 {
+    private static function prepareRecordShape(string $name, array $args): ?RecordShape
+    {
+        if ($name !== 'RECORD' || $args === [] || count($args) % 2 !== 0) return null;
+        $keys = [];
+        for ($i = 0; $i < count($args); $i += 2) {
+            if ($args[$i]['t'] !== 'text') return null;
+            $keys[] = $args[$i]['v'];
+        }
+        return count(array_unique($keys, SORT_STRING)) === count($keys)
+            ? RecordShape::intern($keys) : null;
+    }
+
 
     private const ASSIGN_OPS = ['=', '+=', '-=', '*=', '/=', '%=', '&='];
     private const COMPARE_OPS = [
@@ -549,7 +561,8 @@ final class Parser
                 fail('E_ARITY', $problem, $nameTok);
             }
         }
-        return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args, 'pos' => $nameTok];
+        return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args, 'pos' => $nameTok,
+            'recordShape' => self::prepareRecordShape($spec['name'], $args)];
     }
 
     /** @return array<string,mixed> */
@@ -634,7 +647,8 @@ final class Parser
                 fail('E_ARITY', $problem, $nameTok);
             }
         }
-        return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args, 'pos' => $nameTok];
+        return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args, 'pos' => $nameTok,
+            'recordShape' => self::prepareRecordShape($spec['name'], $args)];
     }
 
     /** @param array<string,mixed> $spec */

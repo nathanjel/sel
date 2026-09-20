@@ -63,6 +63,7 @@ struct Node {
   const Spec* spec = nullptr;             // Call
   std::shared_ptr<const MathPlan> math_plan;
   std::shared_ptr<const Dec> dec;
+  std::shared_ptr<const RecordShape> record_shape;
 
   Node() = default;
   // Kept explicitly: declaring a destructor makes the implicit copy deprecated,

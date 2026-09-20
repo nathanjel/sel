@@ -15,6 +15,7 @@ final class Args
     /** @var list<array<string,mixed>> */
     private array $nodes;
     public string $name;
+    public ?RecordShape $recordShape;
     /** @var array<string,mixed> */
     public array $pos;
     private Context $ctx;
@@ -25,6 +26,7 @@ final class Args
     public function __construct(array $node, Context $ctx)
     {
         $this->nodes = $node['args'];
+        $this->recordShape = $node['recordShape'] ?? null;
         $this->name = $node['name'];
         $this->pos = $node['pos'];
         $this->ctx = $ctx;

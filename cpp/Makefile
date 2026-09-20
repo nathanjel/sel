@@ -33,7 +33,7 @@ SQL_SRCS := sel_sql.cpp sel_sql_binding.cpp sel_sql_emit.cpp sel_sql_map.cpp \
             sel_sql_map_data.cpp sel_sql_node.cpp sel_sql_stage1.cpp \
             sel_sql_translator.cpp sel_sql_hybrid.cpp
 SQL_OBJS := $(addprefix $(BUILD)/,$(SQL_SRCS:.cpp=.o))
-SQL_HDRS := sel_sql.hpp sel_sql_emit.hpp sel_sql_map.hpp sel_sql_node.hpp \
+SQL_HDRS := sel_ast.hpp sel_sql.hpp sel_sql_emit.hpp sel_sql_map.hpp sel_sql_node.hpp \
             sel_sql_stage1.hpp sel_sql_translator.hpp
 # Tools over that layer.
 SQLTOOLS := sqlmap sqlfuzz sqlt sqlreplay
@@ -61,10 +61,13 @@ EXAMPLE_BINS := $(addprefix $(BUILD)/example-,$(EXAMPLES)) \
 # to be lying there, and once tests/unit.cpp stopped compiling against sel.cpp a
 # stale binary went on reporting 81 green checks for 27 commits.
 BINS := $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL) $(WHITEBOX) $(SQLTOOLS) $(SCALETOOLS) unit sqlunit) \
-        $(EXAMPLE_BINS)
+        $(EXAMPLE_BINS) $(BUILD)/metadata
 
 .PHONY: all test clean
 all: $(BINS)
+
+$(BUILD)/metadata: ../tools/metadata/cpp.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) -I. -o $@ $< $(BUILD)/sel.o
 
 $(BUILD)/sel.o: sel.cpp sel_optimizer.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ sel.cpp

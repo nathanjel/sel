@@ -85,15 +85,26 @@ def make(neg: bool, digits: int, scale: int) -> Dec:
 
 _POW10_SMALL = tuple(10 ** i for i in range(_POW10_LIMIT + 1))
 _POW10: dict[int, int] = {}
+# Keep common scales hot without retaining arbitrarily large host integers.
+_POW10_CACHE_ENTRIES = 64
+_POW10_CACHE_MAX_EXPONENT = 1000000
+_POW10_CACHE_DIGITS = 1048576
+_POW10_WEIGHT = 0
 
 
 def _pow10(k: int) -> int:
+    global _POW10_WEIGHT
     if 0 <= k <= _POW10_LIMIT:
         return _POW10_SMALL[k]
     v = _POW10.get(k)
     if v is None:
         v = 10 ** k
-        _POW10[k] = v
+        if 0 <= k <= _POW10_CACHE_MAX_EXPONENT:
+            if len(_POW10) >= _POW10_CACHE_ENTRIES or _POW10_WEIGHT + k > _POW10_CACHE_DIGITS:
+                _POW10.clear()
+                _POW10_WEIGHT = 0
+            _POW10[k] = v
+            _POW10_WEIGHT += k
     return v
 
 

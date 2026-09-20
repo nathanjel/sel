@@ -1,4 +1,4 @@
-import { Value, NONE, structuralHash } from '../value.mjs';
+import { Value, RecordShape, NONE, structuralHash } from '../value.mjs';
 import * as D from '../decimal.mjs';
 import { define } from '../registry.mjs';
 import { fail } from '../errors.mjs';
@@ -57,6 +57,11 @@ function recordFromArgs(args) {
   const entries = [];
   for (let i = 0; i < args.count(); i += 2) {
     entries.push([args.text(i), args.val(i + 1).clone()]);
+  }
+  const shape = args.recordShape;
+  if (shape && shape.size === entries.length &&
+      entries.every(([key], i) => key === shape.keys[i])) {
+    return Value.shapedFromShape(shape, entries.map(([, value]) => value));
   }
   return Value.fromEntries(entries);
 }
@@ -176,24 +181,29 @@ function canonicalJoinKey(value, numeric) {
   return value.kind === 'TEXT' ? value.scalar : null;
 }
 
+const ALIAS_PLANS = new Map();
+
 function ensureRowTableAlias(row, tableName) {
   if (!tableName || tableName === '_1' || row.has(tableName)) return row;
   const lower = tableName.toLowerCase();
   if (row.shape) {
     const oldShape = row.shape;
-    let cached = oldShape.aliasCache.get(tableName);
+    let cached = ALIAS_PLANS.get(oldShape);
+    if (cached?.tableName !== tableName) cached = null;
     if (!cached) {
       const addLower = lower !== tableName && !oldShape.keyMap.has(lower);
       const keys = [...oldShape.keys, tableName];
       if (addLower) keys.push(lower);
-      cached = { keys, oldSize: oldShape.size, addLower };
-      oldShape.aliasCache.set(tableName, cached);
+      cached = { shape: new RecordShape(keys), oldSize: oldShape.size, addLower, tableName };
+      if (keys.length <= 256 && keys.reduce((n, key) => n + key.length, 0) <= 16384) {
+        if (ALIAS_PLANS.size >= 256) ALIAS_PLANS.clear();
+        ALIAS_PLANS.set(oldShape, cached);
+      }
     }
-    const keys = cached.keys;
     const storage = row.storage.slice(0, cached.oldSize);
     storage.push(row);
     if (cached.addLower) storage.push(row);
-    return Value.shapedOwned(keys, storage);
+    return Value.shapedFromShape(cached.shape, storage);
   }
   const entries = row.entries();
   entries.push([tableName, row]);

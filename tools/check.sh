@@ -113,6 +113,11 @@ case " $IMPLS " in *" js "*) step "JS optimizer" sel_slot node tools/check-js-op
 case " $IMPLS " in *" php "*) step "PHP optimizer" sel_slot sel_php tools/check-php-optimizer.php ;; esac
 case " $IMPLS " in *" js "*) step "JS decimal guard" sel_slot node tools/check-js-decimal-guard.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP runtime" sel_slot sel_php tools/check-php-runtime.php ;; esac
+case " $IMPLS " in *" js "*) step "JS metadata" sel_slot node tools/metadata/js.mjs ;; esac
+case " $IMPLS " in *" php "*) step "PHP metadata" sel_slot sel_php tools/metadata/php.php ;; esac
+case " $IMPLS " in *" python "*) step "Python metadata" sel_slot python3 tools/metadata/python.py ;; esac
+case " $IMPLS " in *" lisp "*) step "Lisp metadata" sel_slot sbcl --script tools/metadata/lisp.lisp ;; esac
+case " $IMPLS " in *" cpp "*) step "C++ metadata" sel_slot cpp/build/metadata ;; esac
 
 # A more basic question than the cases: can this host's own API build the map
 # it ships? If it cannot, the map is data rather than code, and a host with no

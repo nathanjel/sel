@@ -23,6 +23,7 @@
   (r nil)                  ; bin/index/assign right
   (items nil :type list)   ; seq/list items, call arguments
   (spec nil)               ; call
+  (record-shape nil)       ; prepared literal-key RECORD layout
   (dec-val nil)            ; cached DEC struct for :num nodes
   (math-plan nil))         ; compiled MathPlan when physical AST is optimized
 
@@ -119,6 +120,15 @@
           ((= (spec-min spec) (spec-max spec))
            (format nil "~d argument~a" (spec-min spec) plural))
           (t (format nil "~d to ~d arguments" (spec-min spec) (spec-max spec))))))
+
+(defun prepare-record-shape (node)
+  (let ((items (node-items node)))
+    (when (and (string= (node-s node) "RECORD") items (evenp (length items))
+               (loop for tail on items by #'cddr
+                     always (eq (node-kind (first tail)) :text)))
+      (let ((keys (loop for tail on items by #'cddr collect (node-s (first tail)))))
+        (when (= (length keys) (length (remove-duplicates keys :test #'string=)))
+          (get-record-shape keys))))))
 
 (defstruct (parser (:constructor %make-parser (toks)))
   (toks #() :type vector)
@@ -357,6 +367,7 @@
               (setf (node-s n) (spec-name spec)
                     (node-spec n) spec
                     (node-items n) new-args)
+              (setf (node-record-shape n) (prepare-record-shape n))
               n)))))))
 
 (defun parse-primary (p)
@@ -448,6 +459,7 @@
             (setf (node-s n) (spec-name spec)
                   (node-spec n) spec
                   (node-items n) args)
+            (setf (node-record-shape n) (prepare-record-shape n))
             n))))))
 
 ;;; The target must be an identifier followed by zero or more index operations.

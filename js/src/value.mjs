@@ -25,6 +25,9 @@ export class RecordShape {
 }
 
 const SHAPES = new Map();
+const SHAPE_CACHE_ENTRIES = 256;
+const SHAPE_CACHE_MAX_KEYS = 256;
+const SHAPE_CACHE_MAX_CHARS = 16384;
 
 function recordShape(keys) {
   // Keys are arbitrary SEL text.  A delimiter-joined signature would alias
@@ -33,7 +36,11 @@ function recordShape(keys) {
   let shape = SHAPES.get(signature);
   if (!shape) {
     shape = new RecordShape(keys);
-    SHAPES.set(signature, shape);
+    if (keys.length <= SHAPE_CACHE_MAX_KEYS &&
+        keys.reduce((n, key) => n + key.length, 0) <= SHAPE_CACHE_MAX_CHARS) {
+      if (SHAPES.size >= SHAPE_CACHE_ENTRIES) SHAPES.clear();
+      SHAPES.set(signature, shape);
+    }
   }
   return shape;
 }
@@ -105,7 +112,7 @@ export class Value {
 
   static shaped(keys, values) {
     if (keys.length === 0) return Value.none();
-    return Value.shapedOwned(recordShape(keys), values.slice());
+    return Value.shapedFromShape(recordShape(keys), values.slice());
   }
 
   // Internal constructors take ownership of freshly allocated packed arrays.

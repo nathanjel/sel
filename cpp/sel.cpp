@@ -1203,6 +1203,20 @@ namespace {
 // layout can share one immutable key map.  Keep the C++ cache process-local and
 // synchronized: shapes are tiny, long-lived metadata, while rows only retain a
 // shared_ptr<const RecordShape> and their flat slots.
+constexpr std::size_t SHAPE_CACHE_ENTRIES = 256;
+constexpr std::size_t SHAPE_CACHE_MAX_KEYS = 256;
+constexpr std::size_t SHAPE_CACHE_MAX_BYTES = 16384;
+
+bool cacheable_record_keys(const std::vector<std::string>& keys) {
+  if (keys.size() > SHAPE_CACHE_MAX_KEYS) return false;
+  std::size_t bytes = 0;
+  for (const auto& key : keys) {
+    if (key.size() > SHAPE_CACHE_MAX_BYTES - bytes) return false;
+    bytes += key.size();
+  }
+  return true;
+}
+
 std::shared_ptr<const RecordShape> intern_record_shape(std::vector<std::string> keys) {
   static std::mutex cache_mutex;
   static std::map<std::vector<std::string>, std::shared_ptr<const RecordShape>> cache;
@@ -1210,8 +1224,23 @@ std::shared_ptr<const RecordShape> intern_record_shape(std::vector<std::string> 
   const auto found = cache.find(keys);
   if (found != cache.end()) return found->second;
   auto shape = std::make_shared<RecordShape>(std::move(keys));
-  cache.emplace(shape->keys, shape);
+  if (cacheable_record_keys(shape->keys)) {
+    if (cache.size() >= SHAPE_CACHE_ENTRIES) cache.clear();
+    cache.emplace(shape->keys, shape);
+  }
   return shape;
+}
+
+std::shared_ptr<const RecordShape> prepare_record_shape(const Node& node) {
+  if (node.s != "RECORD" || node.items.empty() || node.items.size() % 2) return {};
+  std::vector<std::string> keys;
+  for (std::size_t i = 0; i < node.items.size(); i += 2) {
+    if (node.items[i]->t != NT::Text) return {};
+    const auto& key = node.items[i]->s;
+    if (std::find(keys.begin(), keys.end(), key) != keys.end()) return {};
+    keys.push_back(key);
+  }
+  return intern_record_shape(std::move(keys));
 }
 
 // Match Lisp's list-key contract: decimal keys 1..9 digits, no leading zero,
@@ -2784,6 +2813,7 @@ class Parser {
     n->s = spec->name;
     n->spec = spec;
     n->items = std::move(args);
+    n->record_shape = prepare_record_shape(*n);
     return n;
   }
 
@@ -2873,6 +2903,7 @@ class Parser {
     n->s = spec->name;
     n->spec = spec;
     n->items = std::move(args);
+    n->record_shape = prepare_record_shape(*n);
     return n;
   }
 };
@@ -2935,10 +2966,11 @@ Value eval_node(const Node& node, Context& ctx);
 class Args {
  public:
   Args(const Node& node, Context& ctx)
-      : nodes_(node.items), name_(node.s), pos_(node.pos), ctx_(ctx), vals_(node.items.size()) {}
+      : nodes_(node.items), record_shape_(node.record_shape), name_(node.s), pos_(node.pos), ctx_(ctx), vals_(node.items.size()) {}
 
   int count() const { return static_cast<int>(nodes_.size()); }
   const Node& node(int i) const { return *nodes_[i]; }
+  const std::shared_ptr<const RecordShape>& record_shape() const { return record_shape_; }
   NodePtr node_ptr(int i) const { return nodes_[i]; }
   Pos pos_of(int i) const { return nodes_[i]->pos; }
   Pos pos() const { return pos_; }
@@ -3010,6 +3042,7 @@ class Args {
 
  private:
   const std::vector<NodePtr>& nodes_;
+  const std::shared_ptr<const RecordShape>& record_shape_;
   const std::string& name_;
   Pos pos_;
   Context& ctx_;
@@ -3712,7 +3745,10 @@ std::shared_ptr<const AliasPlan> alias_plan_for(
   plan->destination = intern_record_shape(std::move(keys));
   plan->append_lower = append_lower;
 
+  if (!cacheable_record_keys(source->keys) ||
+      !cacheable_record_keys(plan->destination->keys)) return plan;
   std::lock_guard<std::mutex> lock(cache_mutex);
+  if (cache.size() >= SHAPE_CACHE_ENTRIES) cache.clear();
   const auto [it, inserted] = cache.emplace(std::move(lookup), plan);
   return inserted ? std::move(plan) : it->second;
 }
@@ -4336,6 +4372,12 @@ void register_structure() {
                 const int n = a.count();
                 for (int i = 0; i < n; i += 2) {
                   rec.set(a.text(i), a.val(i + 1).clone());
+                }
+                if (a.record_shape() && a.record_shape()->keys == rec.keys()) {
+                  std::vector<Value> values;
+                  values.reserve(rec.size());
+                  for (const auto& entry : rec.entries()) values.push_back(entry.second);
+                  return Value::shaped(a.record_shape(), std::move(values));
                 }
                 return shape_record(rec);
               }});

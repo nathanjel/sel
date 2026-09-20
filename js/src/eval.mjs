@@ -51,6 +51,7 @@ export class Context {
 export class Args {
   constructor(node, ctx) {
     this.nodes = node.args;
+    this.recordShape = node.recordShape ?? null;
     this.name = node.name;
     this.pos = node.pos;
     this.ctx = ctx;

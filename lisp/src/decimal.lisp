@@ -33,6 +33,10 @@
   (coerce (loop for i from 0 to 18 collect (expt 10 i)) 'simple-vector))
 
 (defvar *pow10-cache* (make-hash-table :test 'eql))
+(defconstant +pow10-cache-entries+ 64)
+(defconstant +pow10-cache-max-exponent+ 1000000)
+(defconstant +pow10-cache-digits+ 1048576)
+(defvar *pow10-cache-weight* 0)
 
 (declaim (inline pow10))
 (defun pow10 (k)
@@ -41,7 +45,17 @@
   (if (and (>= k 0) (<= k 18))
       (svref *pow10-table* k)
       (or (gethash k *pow10-cache*)
-          (setf (gethash k *pow10-cache*) (expt 10 k)))))
+          (let ((value (expt 10 k)))
+            (when (<= 0 k +pow10-cache-max-exponent+)
+              ;; A bounded generation avoids maintaining an LRU list in the
+              ;; arithmetic hot path. Oversized powers are never retained.
+              (when (or (>= (hash-table-count *pow10-cache*) +pow10-cache-entries+)
+                        (> (+ *pow10-cache-weight* k) +pow10-cache-digits+))
+                (clrhash *pow10-cache*)
+                (setf *pow10-cache-weight* 0))
+              (setf (gethash k *pow10-cache*) value)
+              (incf *pow10-cache-weight* k))
+            value))))
 
 (defun num-digits (n)
   (if (zerop n)

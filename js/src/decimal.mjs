@@ -32,13 +32,24 @@ const _FAST_BOUND = 10n ** 18n;
 const POW10_TABLE = [1n];
 for (let i = 1; i <= 64; i++) POW10_TABLE.push(POW10_TABLE[i - 1] * 10n);
 const POW10_CACHE = new Map();
+const POW10_CACHE_ENTRIES = 64;
+const POW10_CACHE_MAX_EXPONENT = 1000000;
+const POW10_CACHE_DIGITS = 1048576;
+let pow10Weight = 0;
 
 export function pow10(k) {
   if (k <= 64) return POW10_TABLE[k];
   let v = POW10_CACHE.get(k);
   if (!v) {
     v = 10n ** BigInt(k);
-    POW10_CACHE.set(k, v);
+    if (k <= POW10_CACHE_MAX_EXPONENT) {
+      if (POW10_CACHE.size >= POW10_CACHE_ENTRIES || pow10Weight + k > POW10_CACHE_DIGITS) {
+        POW10_CACHE.clear();
+        pow10Weight = 0;
+      }
+      POW10_CACHE.set(k, v);
+      pow10Weight += k;
+    }
   }
   return v;
 }

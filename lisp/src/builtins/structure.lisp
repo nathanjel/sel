@@ -36,9 +36,11 @@
            (num-fields (ash n -1)))
       (if (zerop n)
           (make-none)
-          (let ((keys (loop for i from 0 below n by 2 collect (args-text a i))))
-            (if (= (length (remove-duplicates keys :test #'string=)) num-fields)
-                (let* ((shape (get-record-shape keys))
+          (let* ((keys (loop for i from 0 below n by 2 collect (args-text a i)))
+                 (prepared (args-record-shape a))
+                 (matches (and prepared (equal keys (record-shape-keys prepared)))))
+            (if (or matches (= (length (remove-duplicates keys :test #'string=)) num-fields))
+                (let* ((shape (if matches prepared (get-record-shape keys)))
                        (storage (make-array num-fields)))
                   (loop for i from 0 below n by 2
                         for slot-idx from 0
@@ -252,6 +254,8 @@ Returns (values left-expr right-expr is-numeric) or NIL."
           (value-set null-rec low (make-none)))))
     null-rec))
 
+(defvar *alias-plan-cache* (make-hash-table :test #'equal))
+
 (defun ensure-row-table-alias (row tbl-name)
   (if (or (null tbl-name) (string= tbl-name "_1") (value-has row tbl-name))
       row
@@ -260,7 +264,8 @@ Returns (values left-expr right-expr is-numeric) or NIL."
         (cond
           ((value-shape row)
            (let* ((old-shape (value-shape row))
-                  (cached (gethash tbl-name (record-shape-alias-cache old-shape))))
+                  (cache-key (cons old-shape tbl-name))
+                  (cached (gethash cache-key *alias-plan-cache*)))
              (multiple-value-bind (new-shape is-diff old-len)
                  (if cached
                      (values (first cached) (second cached) (third cached))
@@ -270,8 +275,12 @@ Returns (values left-expr right-expr is-numeric) or NIL."
                                           (append old-keys (list tbl-name))))
                             (ns (get-record-shape new-keys))
                             (olen (record-shape-size old-shape)))
-                       (setf (gethash tbl-name (record-shape-alias-cache old-shape))
-                             (list ns diff olen))
+                       (when (and (<= (length new-keys) +shape-cache-max-keys+)
+                                  (<= (loop for key in new-keys sum (length key))
+                                      +shape-cache-max-chars+))
+                         (when (>= (hash-table-count *alias-plan-cache*) +shape-cache-entries+)
+                           (clrhash *alias-plan-cache*))
+                         (setf (gethash cache-key *alias-plan-cache*) (list ns diff olen)))
                        (values ns diff olen)))
                (let* ((old-storage (value-storage row))
                       (new-storage (make-array (record-shape-size new-shape))))

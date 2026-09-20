@@ -78,10 +78,11 @@ class Args:
     position.
     """
 
-    __slots__ = ('nodes', 'name', 'pos', 'ctx', '_vals')
+    __slots__ = ('nodes', 'name', 'pos', 'ctx', '_vals', 'record_shape')
 
     def __init__(self, node: Node, ctx: Context) -> None:
         self.nodes = node.args
+        self.record_shape = node.record_shape
         self.name = node.name
         self.pos = node.pos
         self.ctx = ctx

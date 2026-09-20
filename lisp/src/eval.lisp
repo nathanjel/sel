@@ -49,12 +49,15 @@
   (name "" :type string)
   (pos nil)
   (ctx nil)
-  (cache #() :type vector))
+  (cache #() :type vector)
+  (record-shape nil))
 
 (defun make-args (node ctx)
   (let ((nodes (coerce (node-items node) 'simple-vector)))
-    (%make-args nodes (node-s node) (node-pos node) ctx
-                (make-array (length nodes) :initial-element :unset))))
+    (let ((a (%make-args nodes (node-s node) (node-pos node) ctx
+                         (make-array (length nodes) :initial-element :unset))))
+      (setf (args-record-shape a) (node-record-shape node))
+      a)))
 
 (defun args-count (a) (length (args-nodes a)))
 (defun args-node (a i) (svref (args-nodes a) i))
