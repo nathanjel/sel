@@ -209,7 +209,7 @@ final class Structure
                 $cut = $len - $scale;
                 return $sign . substr($digits, 0, $cut) . '.' . substr($digits, $cut);
             }
-            $scalar = $v->scalar;
+            $scalar = $v->getScalar();
             if (is_string($scalar)) {
                 $len = strlen($scalar);
                 if ($len > 0) {
@@ -236,7 +236,7 @@ final class Structure
             }
         }
         if ($value->kind === Value::TEXT) {
-            $s = $value->scalar;
+            $s = $value->getScalar();
             if ($s === null && $value->decVal !== null) {
                 $s = $value->getScalar();
             }
@@ -805,7 +805,7 @@ final class Structure
         if ($aNull) return -1;
         if ($bNull) return 1;
         if ($a->looksNumeric() && $b->looksNumeric()) return Dec::cmp($a->asDecimal(), $b->asDecimal());
-        if ($a->kind === Value::BOOL && $b->kind === Value::BOOL) return ((int) $a->scalar) <=> ((int) $b->scalar);
+        if ($a->kind === Value::BOOL && $b->kind === Value::BOOL) return ((int) $a->getScalar()) <=> ((int) $b->getScalar());
         if (in_array($a->kind, [Value::TEXT, Value::BIN], true)
             && in_array($b->kind, [Value::TEXT, Value::BIN], true)) {
             return strcmp($a->asBytes(), $b->asBytes()) <=> 0;

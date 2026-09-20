@@ -1,0 +1,202 @@
+{
+  "gmp-before": {
+    "scenario1": {
+      "median_ms": 2982.668192,
+      "mean_ms": 2839.0368672857144
+    },
+    "scenario2": {
+      "median_ms": 26.494427,
+      "mean_ms": 26.388463571428574
+    },
+    "scenario3": {
+      "median_ms": 902.112219,
+      "mean_ms": 902.9106104285714
+    },
+    "scenario4": {
+      "median_ms": 59.18567,
+      "mean_ms": 58.83995014285714
+    },
+    "scenario5": {
+      "median_ms": 2003.099226,
+      "mean_ms": 1973.1391387142858
+    },
+    "scenario6": {
+      "median_ms": 1095.921342,
+      "mean_ms": 1040.7318885714285
+    },
+    "mandelbrot": {
+      "median_ms": 390.565874,
+      "mean_ms": 392.1048548181818
+    }
+  },
+  "gmp-after": {
+    "scenario1": {
+      "median_ms": 2928.047744,
+      "mean_ms": 2803.0050492857144
+    },
+    "scenario2": {
+      "median_ms": 26.437458,
+      "mean_ms": 26.149321571428572
+    },
+    "scenario3": {
+      "median_ms": 881.175134,
+      "mean_ms": 883.5277855714286
+    },
+    "scenario4": {
+      "median_ms": 57.634602,
+      "mean_ms": 56.93491671428571
+    },
+    "scenario5": {
+      "median_ms": 1983.440846,
+      "mean_ms": 1961.7232474285715
+    },
+    "scenario6": {
+      "median_ms": 1092.41262,
+      "mean_ms": 1037.394871
+    },
+    "mandelbrot": {
+      "median_ms": 388.970188,
+      "mean_ms": 391.69083118181817
+    }
+  },
+  "gmp-after-repeat": {
+    "scenario1": {
+      "median_ms": 2980.890016,
+      "mean_ms": 2856.014689142857
+    },
+    "scenario2": {
+      "median_ms": 26.182102,
+      "mean_ms": 26.220071714285716
+    },
+    "scenario3": {
+      "median_ms": 896.696396,
+      "mean_ms": 897.6428005714286
+    },
+    "scenario4": {
+      "median_ms": 58.68708,
+      "mean_ms": 58.009785
+    },
+    "scenario5": {
+      "median_ms": 2025.629494,
+      "mean_ms": 1989.8786031428572
+    },
+    "scenario6": {
+      "median_ms": 1099.017361,
+      "mean_ms": 1052.3388945714285
+    },
+    "mandelbrot": {
+      "median_ms": 388.238908,
+      "mean_ms": 389.0002651818182
+    }
+  },
+  "gmp-before-repeat": {
+    "scenario1": {
+      "median_ms": 2971.437091,
+      "mean_ms": 2836.861568
+    },
+    "scenario2": {
+      "median_ms": 27.019438,
+      "mean_ms": 26.699718285714287
+    },
+    "scenario3": {
+      "median_ms": 888.383129,
+      "mean_ms": 891.9513622857143
+    },
+    "scenario4": {
+      "median_ms": 57.800111,
+      "mean_ms": 57.602253142857144
+    },
+    "scenario5": {
+      "median_ms": 2026.569597,
+      "mean_ms": 1980.6338031428572
+    },
+    "scenario6": {
+      "median_ms": 1090.198612,
+      "mean_ms": 1040.886807857143
+    },
+    "mandelbrot": {
+      "median_ms": 396.695179,
+      "mean_ms": 397.803114
+    }
+  },
+  "targeted-before": {
+    "scenario4": {
+      "median_ms": 42.99634,
+      "mean_ms": 43.15742573333333
+    },
+    "scenario6": {
+      "median_ms": 887.33942,
+      "mean_ms": 885.5547736
+    }
+  },
+  "targeted-after": {
+    "scenario4": {
+      "median_ms": 42.50584,
+      "mean_ms": 42.819640066666665
+    },
+    "scenario6": {
+      "median_ms": 886.324315,
+      "mean_ms": 881.3315513333333
+    }
+  },
+  "fallback-before": {
+    "scenario1": {
+      "median_ms": 2945.032599,
+      "mean_ms": 2823.5824270000003
+    },
+    "scenario2": {
+      "median_ms": 26.833197,
+      "mean_ms": 26.831087714285715
+    },
+    "scenario3": {
+      "median_ms": 883.424845,
+      "mean_ms": 887.2964604285714
+    },
+    "scenario4": {
+      "median_ms": 58.102064,
+      "mean_ms": 57.766833285714284
+    },
+    "scenario5": {
+      "median_ms": 2006.412687,
+      "mean_ms": 1968.3904222857143
+    },
+    "scenario6": {
+      "median_ms": 1101.656921,
+      "mean_ms": 1042.5638331428572
+    },
+    "mandelbrot": {
+      "median_ms": 1362.67516,
+      "mean_ms": 1365.4420325454546
+    }
+  },
+  "fallback-after": {
+    "scenario1": {
+      "median_ms": 2931.996564,
+      "mean_ms": 2819.3522464285716
+    },
+    "scenario2": {
+      "median_ms": 26.600951,
+      "mean_ms": 26.25970242857143
+    },
+    "scenario3": {
+      "median_ms": 886.752095,
+      "mean_ms": 889.3888535714286
+    },
+    "scenario4": {
+      "median_ms": 56.929892,
+      "mean_ms": 57.005218142857146
+    },
+    "scenario5": {
+      "median_ms": 2006.142083,
+      "mean_ms": 1971.884855142857
+    },
+    "scenario6": {
+      "median_ms": 1090.758354,
+      "mean_ms": 1037.0354975714286
+    },
+    "mandelbrot": {
+      "median_ms": 1361.232955,
+      "mean_ms": 1360.4625549090908
+    }
+  }
+}

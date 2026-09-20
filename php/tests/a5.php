@@ -137,4 +137,30 @@ check_a5($joined->storage !== null && array_is_list($joined->storage), 'join res
 check_a5($joined->storage[0]->shape !== null && $joined->storage[1]->shape !== null, 'join rows use shared shapes');
 check_a5($joined->storage[0]->shape !== $joined->storage[1]->shape, 'left miss keeps null-row shape semantics');
 
+// Explicit internal reads must preserve the public lazy scalar API and writes.
+$lazy = Value::num('1.00');
+check_a5(isset($lazy->scalar), 'lazy numeric scalar remains publicly set');
+check_a5($lazy->getScalar() === '1.00' && $lazy->scalar === '1.00', 'getter/property preserve numeric scale');
+$lazy->scalar = '2.50';
+check_a5($lazy->decVal === null, 'public scalar write invalidates decimal cache');
+check_a5(Dec::format($lazy->asDecimal()) === '2.50', 'decimal reparses public scalar write');
+check_a5((new ReflectionProperty(Value::class, 'scalar'))->isPrivate(), 'backing scalar remains private');
+
+foreach (['==', '$=='] as $operator) {
+    $initial = $operator === '==' ? '1' : '1.00';
+    $changed = $operator === '==' ? '2' : '2.00';
+    $key = Value::num($initial);
+    $ctx = Value::none();
+    $ctx->set('L', Value::list([Value::record(['id'], [$key])]));
+    $ctx->set('R', Value::list([Value::record(['id'], [Value::text($initial)])]));
+    $join = Sel::compile('LINK(L, R, A, B, A["id"] ' . $operator . ' B["id"])');
+    check_a5($join->run($ctx)->size() === 1, 'lazy join key '.$operator);
+    $key->scalar = $changed;
+    check_a5($join->run($ctx)->size() === 0, 'reused join observes scalar mutation '.$operator);
+    $ctx->get('R')->get('1')->get('id')->scalar = $changed;
+    check_a5($join->run($ctx)->size() === 1, 'join sees updated matching key '.$operator);
+}
+check_a5(Sel::compile('SORT(LIST(TRUE, FALSE, TRUE, FALSE))')->run()->toNative()
+    === [false, false, true, true], 'explicit getter sorts boolean scalars');
+
 echo "PHP A5 checks: {$checks} passed\n";

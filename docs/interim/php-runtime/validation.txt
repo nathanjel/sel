@@ -1,0 +1,20 @@
+a5: PHP A5 checks: 43 passed
+a5-no-gmp: PHP A5 checks: 43 passed
+runtime: PHP runtime: 21 checks passed
+runtime-no-gmp: PHP runtime: 21 checks passed
+optimizer: PHP optimizer checks: 135 passed
+optimizer-no-gmp: PHP optimizer checks: 135 passed
+metadata: PHP metadata checks passed
+metadata-no-gmp: PHP metadata checks passed
+conformance: 911 passed, 0 failed, 0 suite errors
+conformance-no-gmp: 911 passed, 0 failed, 0 suite errors
+sql: 852 passed (564 also checked against a mirrored dialect, 1 leaf pair compared entry by entry), 0 failed, 0 suite errors
+decimal: php: 39990 cases, 0 mismatches
+decimal-no-gmp: php: 39990 cases, 0 mismatches
+fuzz: 4000 programs across 3 implementations, 1511 agreed on a SEL error, 0 disagreements, 0 host crashes
+api: 54 API probes, php cpp js agree on every one
+Benchmark audit: 312 timed scenario samples and 66 Mandelbrot frames pass.
+GMP/fallback extension sets differ only by GMP; JIT is active in both.
+Measured source fingerprints match; completed Python work fingerprints also unchanged.
+Pre-existing cold numeric join-key normalization defect reproduced identically in baseline/candidate; see scaled-key-control.json.
+Full five-language repository gate not run.

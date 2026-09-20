@@ -158,6 +158,8 @@ Another unmeasured opportunity is to prepare the simple-vector argument list on 
 
 ### 3. PHP: S6 is sensitive to preceding workloads; the small scalar-access experiment is not a regression fix
 
+Follow-up: [explicit scalar reads, repeated application tests and matched GMP/fallback measurements](php-runtime-improvements.md).
+
 The fixed-order full batch shows S6 worsening 990 → 1,075 ms from `ef836bf` to `c5a8991`. Repeating only S4/S6 with three warmups and ten samples reverses that result. The newer full-batch S4 regression also disappears:
 
 | Revision / variant | Repeated S4 ms | Repeated S6 ms |
@@ -228,6 +230,8 @@ Use SEL's own value serialization for SEL results; this replacer is not a replac
 A further unmeasured layout opportunity is visible in `recordFromArgs`: even with a prepared shape, it constructs `[key, value]` pairs, traverses them to validate keys, then maps them into a second values array. A specialized prepared-layout path could avoid those temporary pairs. Preserve interleaved key/value evaluation, cloning and the dynamic-key fallback; benchmark the complete projection before adding more complexity.
 
 ### 5. Python: the native-integer simplification helps; bounded powers do not churn in this example
+
+Follow-up: [native arithmetic simplifications, repeated benchmarks and heterogeneous cache probes](python-runtime-improvements.md).
 
 The latest Python implementation improves all seven workloads over `ef836bf`: S1/S2/S4 roughly halve, S5 falls from 3,998 to 502 ms, and Mandelbrot falls from 1,321 to 359 ms. From `1614eed` to `619bc31`, Mandelbrot improves another 10.9%; `c5a8991` is close to that result.
 

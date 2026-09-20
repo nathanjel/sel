@@ -243,7 +243,13 @@ def add(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 
 def sub(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
-    return add(a, negate(b), pos)
+    A, B, s = _aligned(a, b)
+    # Subtraction needs no temporary Dec merely to reverse b's sign.
+    if a.neg != b.neg:
+        return _guard(make(a.neg, A + B, s), pos)
+    if A == B:
+        return make(False, 0, s)
+    return make(a.neg, A - B, s) if A > B else make(not a.neg, B - A, s)
 
 
 def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
@@ -270,8 +276,13 @@ def div(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     """
     if is_zero(b):
         fail('E_DIV_ZERO', 'division by zero', pos)
-    N = a.digits * _pow10(b.scale)
-    D = b.digits * _pow10(a.scale)
+    # Cancel the shared scale before constructing large powers/products.
+    # The remaining ratio is exact; rounding below is unchanged.
+    N, D = a.digits, b.digits
+    if b.scale > a.scale:
+        N *= _pow10(b.scale - a.scale)
+    elif a.scale > b.scale:
+        D *= _pow10(a.scale - b.scale)
     q, r = divmod(N * _POW10_SMALL[DIV_SCALE], D)
     neg = a.neg != b.neg
 

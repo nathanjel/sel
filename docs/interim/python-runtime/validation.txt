@@ -1,0 +1,11 @@
+unit: 624 passed in 1.60s
+conformance: 911 passed, 0 failed, 0 suite errors
+sql: 852 passed (564 also checked against a mirrored dialect), 0 failed, 0 suite errors
+metadata: Python metadata checks passed
+decimal: python: 39990 cases, 0 mismatches
+api: 54 API probes, python cpp js agree on every one
+Fuzz: 4000 programs; 1511 agreed SEL errors; 11 pre-existing join-output disagreements; 0 host crashes.
+Complete Python baseline/candidate batch outputs match byte-for-byte; see fuzz-baseline-comparison.json.
+Benchmark audit: 228 scenario samples and 44 Mandelbrot frames pass.
+Runtime source fingerprints match measurements; git diff --check and version check pass.
+Full five-language repository gate not run.

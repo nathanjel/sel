@@ -12,6 +12,33 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+PHP explicit scalar reads and matched-extension measurements (2026-09-20).
+
+  - **Use the existing getter in four internal reads.** Numeric/literal join keys and boolean sorting call `getScalar()` directly, avoiding `__get` dispatch while preserving private storage, lazy decimal formatting, the compatible public property API and decimal-cache invalidation on writes. Native integer, GMP and packed-limb arithmetic paths remain unchanged.
+  - **Measure the local gain without claiming a regression fix.** Repeated GMP probes improve numeric-text joins 4–14%, literal joins 5–6% and boolean sorting about 2%. Full application shifts are small and mixed; S6 changes from 0.3% faster to 0.8% slower across full batches, and is nearly flat in the separate repeat. Matched ctype/OPcache/JIT configurations with and without GMP pass all six scenarios and Mandelbrot. Mandelbrot remains about 0.39 s with GMP and 1.36 s without it. [Results, limitations and reproduction](docs/interim/php-runtime-improvements.md).
+  - **Record a pre-existing cold-key defect.** Mixed cached-decimal/text numeric join keys can miss before normalization caches warm. Baseline and candidate reproduce it identically; the report preserves the reproducer and recommends shared decimal-key normalization as a separate correctness fix.
+
+Validation: 43 layout/API, 21 runtime and 135 optimizer checks, 911 conformance
+cases, metadata checks and 39,990 decimal-oracle cases pass with and without
+GMP. All 852 SQL cases pass with GMP; 4,000 differential programs and 54 API
+probes agree across PHP/C++/JS. All 312 scenario samples and 66 Mandelbrot frames
+pass. The full five-language repository gate was not rerun.
+
+
+Python native arithmetic and heterogeneous metadata measurements (2026-09-20).
+
+  - **Remove redundant decimal work.** Subtraction handles aligned magnitudes/signs directly, avoiding a temporary negated decimal. Division cancels common scales before constructing powers/products; exact integer arithmetic, rounding, zero normalization and range checks are preserved. Native UTF-8 and bounded metadata ownership remain unchanged.
+  - **Measure gains and small tradeoffs.** Subtraction probes improve 38–44%, small equal-scale division 14–16%, and shared-scale-10,000 division about 86%. Repeated S1/Mandelbrot medians improve 1.7–4.1%/1.9–2.4%. Full-batch S4/S6 medians worsen 3–4%/about 1%; a separate repeat reverses S4 but retains a roughly 1.4% S6 cost. Neither prepared query calls the changed functions; the small S6 cost remains unresolved. [Results and reproduction](docs/interim/python-runtime-improvements.md).
+  - **Expose churn without removing bounds.** Cycles exceeding 64 powers, the weighted power budget, or 256 shapes miss on every lookup. New probes retain raw latency, activity and memory results alongside the six scenarios and Mandelbrot. Cache activity/retention is identical before and after; Mandelbrot makes 14.5% fewer power calls with unchanged misses.
+
+Validation: 624 Python unit tests, 911 conformance cases, 852 SQL cases,
+metadata checks and 39,990 decimal-oracle cases pass; 54 API probes agree across
+Python/C++/JS. All 228 scenario samples and 44 Mandelbrot frames pass parity.
+The 4,000-program fuzzer has 11 pre-existing join-output disagreements and no
+host crashes; complete Python baseline/candidate outputs are identical. The
+full five-language repository gate was not rerun.
+
+
 Common Lisp alias lookups, prepared arguments and GC-aware measurements (2026-09-20).
 
   - **Remove recurring lookup and argument allocations.** Alias plans use a global EQ shape index and EQUAL name tables, preserving alternating aliases and the 256-total-plan/key-size bounds. Hits avoid composite keys and lowercase strings. Executed call nodes share a prepared argument vector, with list identity and vector published together; evaluated-value caches remain private to each invocation, and rewritten argument lists rebuild the metadata.

@@ -1,0 +1,1475 @@
+{
+    "schema_version": 2,
+    "implementation": "php",
+    "scenarios": [
+        {
+            "id": "scenario1",
+            "query": "ORDERS .> FILTER(_['status'] $== 'COMPLETED')\n                        .> FILTER(_['order_year'] >= 2025)\n                        .> MAP(RECORD('order_id', _['id'], 'discount', _['discount']))\n                        .> LINK(ORDER_ITEMS, _1['order_id'] == _2['order_id'])\n                        .> LINK(PRODUCTS, _['order_items']['product_id'] == _2['id'])\n                        .> FILTER(_['products']['is_active'] == 1)\n                        .> MAP(RECORD('order_id', _['order_items']['order_id'],\n                                      'category_id', _['products']['category_id'],\n                                      'line_net', (_['order_items']['unit_price'] * _['order_items']['quantity']) - _['discount']))\n                        .> FILTER(_['line_net'] > 10)\n                        .> LINK(CATEGORIES, _1['category_id'] == _2['id'])\n                         .> BUCKET(_['categories']['name'],\n                                   RECORD('category', _K,\n                                          'item_lines', COUNT(_),\n                                          'total_net', SUM(_, r, r['line_net'])))\n                        .> FILTER(_['total_net'] >= 500)\n                        .> SORT_BY(_['total_net'], 'DESC')\n                        .> TAKE(10)",
+            "rows": 10,
+            "compile_ms": 9.761472,
+            "samples": [
+                {
+                    "scenario_prepare_ms": 0.000318,
+                    "program_run_ms": 3168.280111,
+                    "materialize_ms": 0.023705,
+                    "end_to_end_ms": 3168.305534,
+                    "prepared_total_ms": 3168.305534,
+                    "elapsed_ms": 3168.305534,
+                    "memory": {
+                        "usage_bytes": 560488424,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 758755328,
+                        "peak_rss_bytes": 758755328
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.0009,
+                    "program_run_ms": 3002.139867,
+                    "materialize_ms": 0.526516,
+                    "end_to_end_ms": 3002.669301,
+                    "prepared_total_ms": 3002.669301,
+                    "elapsed_ms": 3002.669301,
+                    "memory": {
+                        "usage_bytes": 560489392,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 759193600,
+                        "peak_rss_bytes": 759193600
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000741,
+                    "program_run_ms": 3013.055345,
+                    "materialize_ms": 0.706402,
+                    "end_to_end_ms": 3013.764585,
+                    "prepared_total_ms": 3013.764585,
+                    "elapsed_ms": 3013.764585,
+                    "memory": {
+                        "usage_bytes": 560490144,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 759549952,
+                        "peak_rss_bytes": 759549952
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.001104,
+                    "program_run_ms": 2776.423393,
+                    "materialize_ms": 0.034476,
+                    "end_to_end_ms": 2776.460618,
+                    "prepared_total_ms": 2776.460618,
+                    "elapsed_ms": 2776.460618,
+                    "memory": {
+                        "usage_bytes": 560490896,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 759881728,
+                        "peak_rss_bytes": 759881728
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000715,
+                    "program_run_ms": 2982.643341,
+                    "materialize_ms": 0.022386,
+                    "end_to_end_ms": 2982.668192,
+                    "prepared_total_ms": 2982.668192,
+                    "elapsed_ms": 2982.668192,
+                    "memory": {
+                        "usage_bytes": 560491648,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 760238080,
+                        "peak_rss_bytes": 760238080
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000664,
+                    "program_run_ms": 2476.615982,
+                    "materialize_ms": 0.022501,
+                    "end_to_end_ms": 2476.640815,
+                    "prepared_total_ms": 2476.640815,
+                    "elapsed_ms": 2476.640815,
+                    "memory": {
+                        "usage_bytes": 560492400,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 760487936,
+                        "peak_rss_bytes": 760487936
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000711,
+                    "program_run_ms": 2452.722064,
+                    "materialize_ms": 0.024611,
+                    "end_to_end_ms": 2452.749026,
+                    "prepared_total_ms": 2452.749026,
+                    "elapsed_ms": 2452.749026,
+                    "memory": {
+                        "usage_bytes": 560493152,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 760729600,
+                        "peak_rss_bytes": 760729600
+                    }
+                }
+            ],
+            "statistics": {
+                "scenario_prepare_ms": {
+                    "count": 7,
+                    "mean_ms": 0.0007361428571428571,
+                    "median_ms": 0.000715,
+                    "min_ms": 0.000318,
+                    "max_ms": 0.001104,
+                    "stdev_ms": 0.00023920662516704994,
+                    "cv": 0.3249459297825247,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.000318,
+                        0.000664,
+                        0.000711,
+                        0.000715,
+                        0.000741,
+                        0.0009,
+                        0.001104
+                    ]
+                },
+                "program_run_ms": {
+                    "count": 7,
+                    "mean_ms": 2838.8400147142856,
+                    "median_ms": 2982.643341,
+                    "min_ms": 2452.722064,
+                    "max_ms": 3168.280111,
+                    "stdev_ms": 280.0051050607521,
+                    "cv": 0.0986336333183373,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        2452.722064,
+                        2476.615982,
+                        2776.423393,
+                        2982.643341,
+                        3002.139867,
+                        3013.055345,
+                        3168.280111
+                    ]
+                },
+                "materialize_ms": {
+                    "count": 7,
+                    "mean_ms": 0.194371,
+                    "median_ms": 0.024611,
+                    "min_ms": 0.022386,
+                    "max_ms": 0.706402,
+                    "stdev_ms": 0.2930090827067766,
+                    "cv": 1.5074732481017057,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.022386,
+                        0.022501,
+                        0.023705,
+                        0.024611,
+                        0.034476,
+                        0.526516,
+                        0.706402
+                    ]
+                },
+                "end_to_end_ms": {
+                    "count": 7,
+                    "mean_ms": 2839.0368672857144,
+                    "median_ms": 2982.668192,
+                    "min_ms": 2452.749026,
+                    "max_ms": 3168.305534,
+                    "stdev_ms": 280.12441968763403,
+                    "cv": 0.09866882072420897,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        2452.749026,
+                        2476.640815,
+                        2776.460618,
+                        2982.668192,
+                        3002.669301,
+                        3013.764585,
+                        3168.305534
+                    ]
+                },
+                "prepared_total_ms": {
+                    "count": 7,
+                    "mean_ms": 2839.0368672857144,
+                    "median_ms": 2982.668192,
+                    "min_ms": 2452.749026,
+                    "max_ms": 3168.305534,
+                    "stdev_ms": 280.12441968763403,
+                    "cv": 0.09866882072420897,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        2452.749026,
+                        2476.640815,
+                        2776.460618,
+                        2982.668192,
+                        3002.669301,
+                        3013.764585,
+                        3168.305534
+                    ]
+                }
+            },
+            "context_unchanged": true,
+            "parity": {
+                "passed": true,
+                "failures": []
+            },
+            "passed": true,
+            "failures": []
+        },
+        {
+            "id": "scenario2",
+            "query": "CUSTOMERS .> MAP(RECORD('id', _['id'],\n                                         'country', _['country'],\n                                         'vip_score', CUSTOM_VIP_SCORE(_['tier'], _['created_year'])))\n                           .> FILTER(_['country'] $== 'DE')\n                           .> SORT_BY(_['id'], 'ASC')\n                           .> TAKE(5)",
+            "rows": 5,
+            "compile_ms": 0.334556,
+            "samples": [
+                {
+                    "scenario_prepare_ms": 0.00026,
+                    "program_run_ms": 25.137081,
+                    "materialize_ms": 0.006186,
+                    "end_to_end_ms": 25.144501,
+                    "prepared_total_ms": 25.144501,
+                    "elapsed_ms": 25.144501,
+                    "memory": {
+                        "usage_bytes": 560500520,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761118720,
+                        "peak_rss_bytes": 761118720
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000637,
+                    "program_run_ms": 26.129988,
+                    "materialize_ms": 0.00745,
+                    "end_to_end_ms": 26.139942,
+                    "prepared_total_ms": 26.139942,
+                    "elapsed_ms": 26.139942,
+                    "memory": {
+                        "usage_bytes": 560501488,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761196544,
+                        "peak_rss_bytes": 761196544
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000701,
+                    "program_run_ms": 26.952965,
+                    "materialize_ms": 0.276226,
+                    "end_to_end_ms": 27.231924,
+                    "prepared_total_ms": 27.231924,
+                    "elapsed_ms": 27.231924,
+                    "memory": {
+                        "usage_bytes": 560502240,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761278464,
+                        "peak_rss_bytes": 761278464
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000642,
+                    "program_run_ms": 26.407523,
+                    "materialize_ms": 0.008355,
+                    "end_to_end_ms": 26.418172,
+                    "prepared_total_ms": 26.418172,
+                    "elapsed_ms": 26.418172,
+                    "memory": {
+                        "usage_bytes": 560502992,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761356288,
+                        "peak_rss_bytes": 761356288
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000713,
+                    "program_run_ms": 26.484646,
+                    "materialize_ms": 0.007556,
+                    "end_to_end_ms": 26.494427,
+                    "prepared_total_ms": 26.494427,
+                    "elapsed_ms": 26.494427,
+                    "memory": {
+                        "usage_bytes": 560503744,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761438208,
+                        "peak_rss_bytes": 761438208
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.001328,
+                    "program_run_ms": 26.590699,
+                    "materialize_ms": 0.007263,
+                    "end_to_end_ms": 26.757448,
+                    "prepared_total_ms": 26.757448,
+                    "elapsed_ms": 26.757448,
+                    "memory": {
+                        "usage_bytes": 560504496,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761516032,
+                        "peak_rss_bytes": 761516032
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000801,
+                    "program_run_ms": 26.523872,
+                    "materialize_ms": 0.006712,
+                    "end_to_end_ms": 26.532831,
+                    "prepared_total_ms": 26.532831,
+                    "elapsed_ms": 26.532831,
+                    "memory": {
+                        "usage_bytes": 560505248,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761597952,
+                        "peak_rss_bytes": 761597952
+                    }
+                }
+            ],
+            "statistics": {
+                "scenario_prepare_ms": {
+                    "count": 7,
+                    "mean_ms": 0.000726,
+                    "median_ms": 0.000701,
+                    "min_ms": 0.00026,
+                    "max_ms": 0.001328,
+                    "stdev_ms": 0.00031647959386559715,
+                    "cv": 0.43592230559999606,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.00026,
+                        0.000637,
+                        0.000642,
+                        0.000701,
+                        0.000713,
+                        0.000801,
+                        0.001328
+                    ]
+                },
+                "program_run_ms": {
+                    "count": 7,
+                    "mean_ms": 26.318110571428573,
+                    "median_ms": 26.484646,
+                    "min_ms": 25.137081,
+                    "max_ms": 26.952965,
+                    "stdev_ms": 0.5752726808766022,
+                    "cv": 0.021858433921967364,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        25.137081,
+                        26.129988,
+                        26.407523,
+                        26.484646,
+                        26.523872,
+                        26.590699,
+                        26.952965
+                    ]
+                },
+                "materialize_ms": {
+                    "count": 7,
+                    "mean_ms": 0.04567828571428572,
+                    "median_ms": 0.00745,
+                    "min_ms": 0.006186,
+                    "max_ms": 0.276226,
+                    "stdev_ms": 0.1016642619486879,
+                    "cv": 2.2256584361460123,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.006186,
+                        0.006712,
+                        0.007263,
+                        0.00745,
+                        0.007556,
+                        0.008355,
+                        0.276226
+                    ]
+                },
+                "end_to_end_ms": {
+                    "count": 7,
+                    "mean_ms": 26.38846357142857,
+                    "median_ms": 26.494427,
+                    "min_ms": 25.144501,
+                    "max_ms": 27.231924,
+                    "stdev_ms": 0.6441704804151498,
+                    "cv": 0.02441106427706571,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        25.144501,
+                        26.139942,
+                        26.418172,
+                        26.494427,
+                        26.532831,
+                        26.757448,
+                        27.231924
+                    ]
+                },
+                "prepared_total_ms": {
+                    "count": 7,
+                    "mean_ms": 26.38846357142857,
+                    "median_ms": 26.494427,
+                    "min_ms": 25.144501,
+                    "max_ms": 27.231924,
+                    "stdev_ms": 0.6441704804151498,
+                    "cv": 0.02441106427706571,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        25.144501,
+                        26.139942,
+                        26.418172,
+                        26.494427,
+                        26.532831,
+                        26.757448,
+                        27.231924
+                    ]
+                }
+            },
+            "context_unchanged": true,
+            "parity": {
+                "passed": true,
+                "failures": []
+            },
+            "passed": true,
+            "failures": []
+        },
+        {
+            "id": "scenario3",
+            "query": "ORDERS .> LINK(CUSTOMERS, _['customer_id'] == _2['id'])\n                        .> FILTER(_['orders']['status'] $== 'COMPLETED')\n                        .> MAP(RECORD('cust_id', _['customers']['id'],\n                                      'country', _['customers']['country'],\n                                      'discount', _['orders']['discount']))\n                        .> MAP(RECORD('cust_id', _['cust_id'],\n                                      'country', _['country'],\n                                      'score', HOST_RISK_SCORE(_['country'], _['discount'])))\n                        .> FILTER(_['score'] > 50)\n                        .> BUCKET(_['country'], RECORD('country', _K, 'high_risk_count', COUNT(_)))\n                        .> SORT_BY(_['high_risk_count'], 'DESC')\n                        .> TAKE(5)",
+            "rows": 5,
+            "compile_ms": 4.54763,
+            "samples": [
+                {
+                    "scenario_prepare_ms": 0.000572,
+                    "program_run_ms": 911.548395,
+                    "materialize_ms": 0.007824,
+                    "end_to_end_ms": 911.558231,
+                    "prepared_total_ms": 911.558231,
+                    "elapsed_ms": 911.558231,
+                    "memory": {
+                        "usage_bytes": 560535408,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761917440,
+                        "peak_rss_bytes": 761917440
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000895,
+                    "program_run_ms": 903.872686,
+                    "materialize_ms": 0.009007,
+                    "end_to_end_ms": 903.884327,
+                    "prepared_total_ms": 903.884327,
+                    "elapsed_ms": 903.884327,
+                    "memory": {
+                        "usage_bytes": 560536376,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 761999360,
+                        "peak_rss_bytes": 761999360
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000773,
+                    "program_run_ms": 896.573239,
+                    "materialize_ms": 0.008936,
+                    "end_to_end_ms": 896.584643,
+                    "prepared_total_ms": 896.584643,
+                    "elapsed_ms": 896.584643,
+                    "memory": {
+                        "usage_bytes": 560537128,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762077184,
+                        "peak_rss_bytes": 762077184
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.001197,
+                    "program_run_ms": 893.601376,
+                    "materialize_ms": 0.008017,
+                    "end_to_end_ms": 893.612282,
+                    "prepared_total_ms": 893.612282,
+                    "elapsed_ms": 893.612282,
+                    "memory": {
+                        "usage_bytes": 560537880,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762159104,
+                        "peak_rss_bytes": 762159104
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000856,
+                    "program_run_ms": 902.100596,
+                    "materialize_ms": 0.00859,
+                    "end_to_end_ms": 902.112219,
+                    "prepared_total_ms": 902.112219,
+                    "elapsed_ms": 902.112219,
+                    "memory": {
+                        "usage_bytes": 560538632,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762236928,
+                        "peak_rss_bytes": 762236928
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000838,
+                    "program_run_ms": 911.877653,
+                    "materialize_ms": 0.009404,
+                    "end_to_end_ms": 911.889759,
+                    "prepared_total_ms": 911.889759,
+                    "elapsed_ms": 911.889759,
+                    "memory": {
+                        "usage_bytes": 560539384,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762318848,
+                        "peak_rss_bytes": 762318848
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000817,
+                    "program_run_ms": 900.721707,
+                    "materialize_ms": 0.008303,
+                    "end_to_end_ms": 900.732812,
+                    "prepared_total_ms": 900.732812,
+                    "elapsed_ms": 900.732812,
+                    "memory": {
+                        "usage_bytes": 560540136,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762396672,
+                        "peak_rss_bytes": 762396672
+                    }
+                }
+            ],
+            "statistics": {
+                "scenario_prepare_ms": {
+                    "count": 7,
+                    "mean_ms": 0.0008497142857142858,
+                    "median_ms": 0.000838,
+                    "min_ms": 0.000572,
+                    "max_ms": 0.001197,
+                    "stdev_ms": 0.00018570380922831053,
+                    "cv": 0.21854853137158264,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.000572,
+                        0.000773,
+                        0.000817,
+                        0.000838,
+                        0.000856,
+                        0.000895,
+                        0.001197
+                    ]
+                },
+                "program_run_ms": {
+                    "count": 7,
+                    "mean_ms": 902.8993788571427,
+                    "median_ms": 902.100596,
+                    "min_ms": 893.601376,
+                    "max_ms": 911.877653,
+                    "stdev_ms": 6.930793906086383,
+                    "cv": 0.007676153144394817,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        893.601376,
+                        896.573239,
+                        900.721707,
+                        902.100596,
+                        903.872686,
+                        911.548395,
+                        911.877653
+                    ]
+                },
+                "materialize_ms": {
+                    "count": 7,
+                    "mean_ms": 0.008582999999999999,
+                    "median_ms": 0.00859,
+                    "min_ms": 0.007824,
+                    "max_ms": 0.009404,
+                    "stdev_ms": 0.0005705716431790138,
+                    "cv": 0.066476947824655,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.007824,
+                        0.008017,
+                        0.008303,
+                        0.00859,
+                        0.008936,
+                        0.009007,
+                        0.009404
+                    ]
+                },
+                "end_to_end_ms": {
+                    "count": 7,
+                    "mean_ms": 902.9106104285714,
+                    "median_ms": 902.112219,
+                    "min_ms": 893.612282,
+                    "max_ms": 911.889759,
+                    "stdev_ms": 6.930747734050618,
+                    "cv": 0.007676006521576816,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        893.612282,
+                        896.584643,
+                        900.732812,
+                        902.112219,
+                        903.884327,
+                        911.558231,
+                        911.889759
+                    ]
+                },
+                "prepared_total_ms": {
+                    "count": 7,
+                    "mean_ms": 902.9106104285714,
+                    "median_ms": 902.112219,
+                    "min_ms": 893.612282,
+                    "max_ms": 911.889759,
+                    "stdev_ms": 6.930747734050618,
+                    "cv": 0.007676006521576816,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        893.612282,
+                        896.584643,
+                        900.732812,
+                        902.112219,
+                        903.884327,
+                        911.558231,
+                        911.889759
+                    ]
+                }
+            },
+            "context_unchanged": true,
+            "parity": {
+                "passed": true,
+                "failures": []
+            },
+            "passed": true,
+            "failures": []
+        },
+        {
+            "id": "scenario4",
+            "query": "CUSTOMERS .> FILTER(_['dist_berlin'] < 5.0)\n                           .> MAP(RECORD('id', _['id'], 'name', _['name'], 'dist_berlin', ROUND(_['dist_berlin'], 6)))\n                           .> SORT_BY(_['dist_berlin'], 'ASC')\n                           .> TAKE(5)",
+            "rows": 5,
+            "compile_ms": 1.276861,
+            "samples": [
+                {
+                    "scenario_prepare_ms": 0.000443,
+                    "program_run_ms": 55.949774,
+                    "materialize_ms": 0.020372,
+                    "end_to_end_ms": 55.971985,
+                    "prepared_total_ms": 55.971985,
+                    "elapsed_ms": 55.971985,
+                    "memory": {
+                        "usage_bytes": 564689520,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762433536,
+                        "peak_rss_bytes": 762433536
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000742,
+                    "program_run_ms": 59.713503,
+                    "materialize_ms": 0.030572,
+                    "end_to_end_ms": 59.746873,
+                    "prepared_total_ms": 59.746873,
+                    "elapsed_ms": 59.746873,
+                    "memory": {
+                        "usage_bytes": 564690488,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762433536,
+                        "peak_rss_bytes": 762433536
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000723,
+                    "program_run_ms": 59.161166,
+                    "materialize_ms": 0.021962,
+                    "end_to_end_ms": 59.18567,
+                    "prepared_total_ms": 59.18567,
+                    "elapsed_ms": 59.18567,
+                    "memory": {
+                        "usage_bytes": 564691240,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762433536,
+                        "peak_rss_bytes": 762433536
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000705,
+                    "program_run_ms": 58.390351,
+                    "materialize_ms": 0.021465,
+                    "end_to_end_ms": 58.414494,
+                    "prepared_total_ms": 58.414494,
+                    "elapsed_ms": 58.414494,
+                    "memory": {
+                        "usage_bytes": 564691992,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762433536,
+                        "peak_rss_bytes": 762433536
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000762,
+                    "program_run_ms": 60.536101,
+                    "materialize_ms": 0.022921,
+                    "end_to_end_ms": 60.561401,
+                    "prepared_total_ms": 60.561401,
+                    "elapsed_ms": 60.561401,
+                    "memory": {
+                        "usage_bytes": 564692744,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762433536,
+                        "peak_rss_bytes": 762433536
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000611,
+                    "program_run_ms": 58.760599,
+                    "materialize_ms": 0.020525,
+                    "end_to_end_ms": 58.783466,
+                    "prepared_total_ms": 58.783466,
+                    "elapsed_ms": 58.783466,
+                    "memory": {
+                        "usage_bytes": 564693496,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762433536,
+                        "peak_rss_bytes": 762433536
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.00072,
+                    "program_run_ms": 59.192729,
+                    "materialize_ms": 0.020507,
+                    "end_to_end_ms": 59.215762,
+                    "prepared_total_ms": 59.215762,
+                    "elapsed_ms": 59.215762,
+                    "memory": {
+                        "usage_bytes": 564694248,
+                        "allocated_bytes": 738205696,
+                        "peak_usage_bytes": 719130544,
+                        "peak_allocated_bytes": 738205696,
+                        "rss_bytes": 762433536,
+                        "peak_rss_bytes": 762433536
+                    }
+                }
+            ],
+            "statistics": {
+                "scenario_prepare_ms": {
+                    "count": 7,
+                    "mean_ms": 0.0006722857142857143,
+                    "median_ms": 0.00072,
+                    "min_ms": 0.000443,
+                    "max_ms": 0.000762,
+                    "stdev_ms": 0.00011191918853308741,
+                    "cv": 0.1664756310521912,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.000443,
+                        0.000611,
+                        0.000705,
+                        0.00072,
+                        0.000723,
+                        0.000742,
+                        0.000762
+                    ]
+                },
+                "program_run_ms": {
+                    "count": 7,
+                    "mean_ms": 58.81488900000001,
+                    "median_ms": 59.161166,
+                    "min_ms": 55.949774,
+                    "max_ms": 60.536101,
+                    "stdev_ms": 1.4390281776855531,
+                    "cv": 0.024467072915593753,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        55.949774,
+                        58.390351,
+                        58.760599,
+                        59.161166,
+                        59.192729,
+                        59.713503,
+                        60.536101
+                    ]
+                },
+                "materialize_ms": {
+                    "count": 7,
+                    "mean_ms": 0.022617714285714286,
+                    "median_ms": 0.021465,
+                    "min_ms": 0.020372,
+                    "max_ms": 0.030572,
+                    "stdev_ms": 0.003628570779902453,
+                    "cv": 0.16043048090824621,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.020372,
+                        0.020507,
+                        0.020525,
+                        0.021465,
+                        0.021962,
+                        0.022921,
+                        0.030572
+                    ]
+                },
+                "end_to_end_ms": {
+                    "count": 7,
+                    "mean_ms": 58.83995014285714,
+                    "median_ms": 59.18567,
+                    "min_ms": 55.971985,
+                    "max_ms": 60.561401,
+                    "stdev_ms": 1.4408380861204166,
+                    "cv": 0.024487411743589434,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        55.971985,
+                        58.414494,
+                        58.783466,
+                        59.18567,
+                        59.215762,
+                        59.746873,
+                        60.561401
+                    ]
+                },
+                "prepared_total_ms": {
+                    "count": 7,
+                    "mean_ms": 58.83995014285714,
+                    "median_ms": 59.18567,
+                    "min_ms": 55.971985,
+                    "max_ms": 60.561401,
+                    "stdev_ms": 1.4408380861204166,
+                    "cv": 0.024487411743589434,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        55.971985,
+                        58.414494,
+                        58.783466,
+                        59.18567,
+                        59.215762,
+                        59.746873,
+                        60.561401
+                    ]
+                }
+            },
+            "context_unchanged": true,
+            "parity": {
+                "passed": true,
+                "failures": []
+            },
+            "passed": true,
+            "failures": []
+        },
+        {
+            "id": "scenario5",
+            "query": "ORDERS .> LINK(CUSTOMERS, _['customer_id'] == _2['id'])\n                        .> LINK(ORDER_ITEMS, _['orders']['id'] == _2['order_id'])\n                        .> LINK(PRODUCTS, _['order_items']['product_id'] == _2['id'])\n                        .> FILTER(_['status'] $== 'COMPLETED' AND _['tier'] $== 'PLATINUM' AND _['orders']['order_year'] == 2026)\n                        .> MAP(RECORD('order_id', _['orders']['id'], 'customer', _['customers']['name'], 'sku', _['sku'], 'line_total', _['quantity'] * _['unit_price']))\n                        .> SORT_BY(_['line_total'], 'DESC')\n                        .> TAKE(9)",
+            "rows": 9,
+            "compile_ms": 2.215625,
+            "samples": [
+                {
+                    "scenario_prepare_ms": 0.000494,
+                    "program_run_ms": 2190.107622,
+                    "materialize_ms": 0.024166,
+                    "end_to_end_ms": 2190.133458,
+                    "prepared_total_ms": 2190.133458,
+                    "elapsed_ms": 2190.133458,
+                    "memory": {
+                        "usage_bytes": 564813840,
+                        "allocated_bytes": 796925952,
+                        "peak_usage_bytes": 751745272,
+                        "peak_allocated_bytes": 801124352,
+                        "rss_bytes": 823263232,
+                        "peak_rss_bytes": 825409536
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000664,
+                    "program_run_ms": 2073.23713,
+                    "materialize_ms": 0.0242,
+                    "end_to_end_ms": 2073.263928,
+                    "prepared_total_ms": 2073.263928,
+                    "elapsed_ms": 2073.263928,
+                    "memory": {
+                        "usage_bytes": 564814808,
+                        "allocated_bytes": 796925952,
+                        "peak_usage_bytes": 751746240,
+                        "peak_allocated_bytes": 801124352,
+                        "rss_bytes": 823422976,
+                        "peak_rss_bytes": 825618432
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.001239,
+                    "program_run_ms": 2159.229861,
+                    "materialize_ms": 0.029399,
+                    "end_to_end_ms": 2159.262648,
+                    "prepared_total_ms": 2159.262648,
+                    "elapsed_ms": 2159.262648,
+                    "memory": {
+                        "usage_bytes": 564815560,
+                        "allocated_bytes": 799023104,
+                        "peak_usage_bytes": 751746992,
+                        "peak_allocated_bytes": 801124352,
+                        "rss_bytes": 824872960,
+                        "peak_rss_bytes": 825839616
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000624,
+                    "program_run_ms": 1740.048157,
+                    "materialize_ms": 0.02474,
+                    "end_to_end_ms": 1740.075381,
+                    "prepared_total_ms": 1740.075381,
+                    "elapsed_ms": 1740.075381,
+                    "memory": {
+                        "usage_bytes": 564816312,
+                        "allocated_bytes": 799023104,
+                        "peak_usage_bytes": 751747744,
+                        "peak_allocated_bytes": 801124352,
+                        "rss_bytes": 825032704,
+                        "peak_rss_bytes": 825839616
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.001053,
+                    "program_run_ms": 2003.072651,
+                    "materialize_ms": 0.023311,
+                    "end_to_end_ms": 2003.099226,
+                    "prepared_total_ms": 2003.099226,
+                    "elapsed_ms": 2003.099226,
+                    "memory": {
+                        "usage_bytes": 564817064,
+                        "allocated_bytes": 799023104,
+                        "peak_usage_bytes": 751748496,
+                        "peak_allocated_bytes": 801124352,
+                        "rss_bytes": 825114624,
+                        "peak_rss_bytes": 826064896
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000831,
+                    "program_run_ms": 1761.38151,
+                    "materialize_ms": 0.025466,
+                    "end_to_end_ms": 1761.409745,
+                    "prepared_total_ms": 1761.409745,
+                    "elapsed_ms": 1761.409745,
+                    "memory": {
+                        "usage_bytes": 564817816,
+                        "allocated_bytes": 799023104,
+                        "peak_usage_bytes": 751749248,
+                        "peak_allocated_bytes": 801124352,
+                        "rss_bytes": 825274368,
+                        "peak_rss_bytes": 826093568
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.001594,
+                    "program_run_ms": 1884.702065,
+                    "materialize_ms": 0.024084,
+                    "end_to_end_ms": 1884.729585,
+                    "prepared_total_ms": 1884.729585,
+                    "elapsed_ms": 1884.729585,
+                    "memory": {
+                        "usage_bytes": 564818568,
+                        "allocated_bytes": 799023104,
+                        "peak_usage_bytes": 751750000,
+                        "peak_allocated_bytes": 801124352,
+                        "rss_bytes": 825352192,
+                        "peak_rss_bytes": 826171392
+                    }
+                }
+            ],
+            "statistics": {
+                "scenario_prepare_ms": {
+                    "count": 7,
+                    "mean_ms": 0.0009284285714285714,
+                    "median_ms": 0.000831,
+                    "min_ms": 0.000494,
+                    "max_ms": 0.001594,
+                    "stdev_ms": 0.00039067840872976205,
+                    "cv": 0.42079533176001455,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.000494,
+                        0.000624,
+                        0.000664,
+                        0.000831,
+                        0.001053,
+                        0.001239,
+                        0.001594
+                    ]
+                },
+                "program_run_ms": {
+                    "count": 7,
+                    "mean_ms": 1973.111285142857,
+                    "median_ms": 2003.072651,
+                    "min_ms": 1740.048157,
+                    "max_ms": 2190.107622,
+                    "stdev_ms": 182.3981507257035,
+                    "cv": 0.09244189727114024,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        1740.048157,
+                        1761.38151,
+                        1884.702065,
+                        2003.072651,
+                        2073.23713,
+                        2159.229861,
+                        2190.107622
+                    ]
+                },
+                "materialize_ms": {
+                    "count": 7,
+                    "mean_ms": 0.025052285714285714,
+                    "median_ms": 0.0242,
+                    "min_ms": 0.023311,
+                    "max_ms": 0.029399,
+                    "stdev_ms": 0.0020266620104896394,
+                    "cv": 0.08089728951693873,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.023311,
+                        0.024084,
+                        0.024166,
+                        0.0242,
+                        0.02474,
+                        0.025466,
+                        0.029399
+                    ]
+                },
+                "end_to_end_ms": {
+                    "count": 7,
+                    "mean_ms": 1973.139138714286,
+                    "median_ms": 2003.099226,
+                    "min_ms": 1740.075381,
+                    "max_ms": 2190.133458,
+                    "stdev_ms": 182.3985453529612,
+                    "cv": 0.09244079232639095,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        1740.075381,
+                        1761.409745,
+                        1884.729585,
+                        2003.099226,
+                        2073.263928,
+                        2159.262648,
+                        2190.133458
+                    ]
+                },
+                "prepared_total_ms": {
+                    "count": 7,
+                    "mean_ms": 1973.139138714286,
+                    "median_ms": 2003.099226,
+                    "min_ms": 1740.075381,
+                    "max_ms": 2190.133458,
+                    "stdev_ms": 182.3985453529612,
+                    "cv": 0.09244079232639095,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        1740.075381,
+                        1761.409745,
+                        1884.729585,
+                        2003.099226,
+                        2073.263928,
+                        2159.262648,
+                        2190.133458
+                    ]
+                }
+            },
+            "context_unchanged": true,
+            "parity": {
+                "passed": true,
+                "failures": []
+            },
+            "passed": true,
+            "failures": []
+        },
+        {
+            "id": "scenario6",
+            "query": "PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _['products']['id'] == _2['product_id'])\n                          .> FILTER(IS_NULL(_['order_items']['id']))\n                          .> MAP(RECORD('category_id', _['products']['category_id'], 'status', IF(_['products']['is_active'] == 1, 'ACTIVE_UNSOLD', 'INACTIVE_UNSOLD')))\n                          .> DEDUPE()\n                          .> SORT_BY(_['category_id'] * 2 + IF(_['status'] $== 'ACTIVE_UNSOLD', 0, 1), 'ASC')\n                          .> TAKE(10)",
+            "rows": 10,
+            "compile_ms": 1.486029,
+            "samples": [
+                {
+                    "scenario_prepare_ms": 0.000526,
+                    "program_run_ms": 729.523415,
+                    "materialize_ms": 0.014985,
+                    "end_to_end_ms": 729.540039,
+                    "prepared_total_ms": 729.540039,
+                    "elapsed_ms": 729.540039,
+                    "memory": {
+                        "usage_bytes": 564841632,
+                        "allocated_bytes": 801120256,
+                        "peak_usage_bytes": 751750000,
+                        "peak_allocated_bytes": 803221504,
+                        "rss_bytes": 828268544,
+                        "peak_rss_bytes": 829325312
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000763,
+                    "program_run_ms": 1095.911991,
+                    "materialize_ms": 0.007023,
+                    "end_to_end_ms": 1095.921342,
+                    "prepared_total_ms": 1095.921342,
+                    "elapsed_ms": 1095.921342,
+                    "memory": {
+                        "usage_bytes": 564842600,
+                        "allocated_bytes": 801120256,
+                        "peak_usage_bytes": 751750000,
+                        "peak_allocated_bytes": 803221504,
+                        "rss_bytes": 828350464,
+                        "peak_rss_bytes": 829325312
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000793,
+                    "program_run_ms": 1088.221259,
+                    "materialize_ms": 0.007879,
+                    "end_to_end_ms": 1088.231844,
+                    "prepared_total_ms": 1088.231844,
+                    "elapsed_ms": 1088.231844,
+                    "memory": {
+                        "usage_bytes": 564843352,
+                        "allocated_bytes": 801120256,
+                        "peak_usage_bytes": 751750000,
+                        "peak_allocated_bytes": 803221504,
+                        "rss_bytes": 828428288,
+                        "peak_rss_bytes": 829407232
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000724,
+                    "program_run_ms": 1106.668094,
+                    "materialize_ms": 0.008036,
+                    "end_to_end_ms": 1106.678485,
+                    "prepared_total_ms": 1106.678485,
+                    "elapsed_ms": 1106.678485,
+                    "memory": {
+                        "usage_bytes": 564844104,
+                        "allocated_bytes": 801120256,
+                        "peak_usage_bytes": 751750000,
+                        "peak_allocated_bytes": 803221504,
+                        "rss_bytes": 828510208,
+                        "peak_rss_bytes": 829485056
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000734,
+                    "program_run_ms": 1101.983581,
+                    "materialize_ms": 0.007519,
+                    "end_to_end_ms": 1101.993269,
+                    "prepared_total_ms": 1101.993269,
+                    "elapsed_ms": 1101.993269,
+                    "memory": {
+                        "usage_bytes": 564844856,
+                        "allocated_bytes": 801120256,
+                        "peak_usage_bytes": 751750000,
+                        "peak_allocated_bytes": 803221504,
+                        "rss_bytes": 828588032,
+                        "peak_rss_bytes": 829616128
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000754,
+                    "program_run_ms": 1050.986315,
+                    "materialize_ms": 0.008762,
+                    "end_to_end_ms": 1050.99736,
+                    "prepared_total_ms": 1050.99736,
+                    "elapsed_ms": 1050.99736,
+                    "memory": {
+                        "usage_bytes": 564845608,
+                        "allocated_bytes": 801120256,
+                        "peak_usage_bytes": 751750000,
+                        "peak_allocated_bytes": 803221504,
+                        "rss_bytes": 828669952,
+                        "peak_rss_bytes": 829644800
+                    }
+                },
+                {
+                    "scenario_prepare_ms": 0.000763,
+                    "program_run_ms": 1111.751712,
+                    "materialize_ms": 0.006861,
+                    "end_to_end_ms": 1111.760881,
+                    "prepared_total_ms": 1111.760881,
+                    "elapsed_ms": 1111.760881,
+                    "memory": {
+                        "usage_bytes": 564846360,
+                        "allocated_bytes": 801120256,
+                        "peak_usage_bytes": 751750000,
+                        "peak_allocated_bytes": 803221504,
+                        "rss_bytes": 828751872,
+                        "peak_rss_bytes": 829726720
+                    }
+                }
+            ],
+            "statistics": {
+                "scenario_prepare_ms": {
+                    "count": 7,
+                    "mean_ms": 0.0007224285714285715,
+                    "median_ms": 0.000754,
+                    "min_ms": 0.000526,
+                    "max_ms": 0.000793,
+                    "stdev_ms": 8.943313543807862e-5,
+                    "cv": 0.12379512518618753,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.000526,
+                        0.000724,
+                        0.000734,
+                        0.000754,
+                        0.000763,
+                        0.000763,
+                        0.000793
+                    ]
+                },
+                "program_run_ms": {
+                    "count": 7,
+                    "mean_ms": 1040.7209095714286,
+                    "median_ms": 1095.911991,
+                    "min_ms": 729.523415,
+                    "max_ms": 1111.751712,
+                    "stdev_ms": 138.68376423810798,
+                    "cv": 0.1332574016363506,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        729.523415,
+                        1050.986315,
+                        1088.221259,
+                        1095.911991,
+                        1101.983581,
+                        1106.668094,
+                        1111.751712
+                    ]
+                },
+                "materialize_ms": {
+                    "count": 7,
+                    "mean_ms": 0.008723571428571428,
+                    "median_ms": 0.007879,
+                    "min_ms": 0.006861,
+                    "max_ms": 0.014985,
+                    "stdev_ms": 0.002834464314889315,
+                    "cv": 0.324920170379517,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        0.006861,
+                        0.007023,
+                        0.007519,
+                        0.007879,
+                        0.008036,
+                        0.008762,
+                        0.014985
+                    ]
+                },
+                "end_to_end_ms": {
+                    "count": 7,
+                    "mean_ms": 1040.7318885714285,
+                    "median_ms": 1095.921342,
+                    "min_ms": 729.540039,
+                    "max_ms": 1111.760881,
+                    "stdev_ms": 138.68122725441444,
+                    "cv": 0.13325355817123724,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        729.540039,
+                        1050.99736,
+                        1088.231844,
+                        1095.921342,
+                        1101.993269,
+                        1106.678485,
+                        1111.760881
+                    ]
+                },
+                "prepared_total_ms": {
+                    "count": 7,
+                    "mean_ms": 1040.7318885714285,
+                    "median_ms": 1095.921342,
+                    "min_ms": 729.540039,
+                    "max_ms": 1111.760881,
+                    "stdev_ms": 138.68122725441444,
+                    "cv": 0.13325355817123724,
+                    "p95_ms": null,
+                    "samples_ms": [
+                        729.540039,
+                        1050.99736,
+                        1088.231844,
+                        1095.921342,
+                        1101.993269,
+                        1106.678485,
+                        1111.760881
+                    ]
+                }
+            },
+            "context_unchanged": true,
+            "parity": {
+                "passed": true,
+                "failures": []
+            },
+            "passed": true,
+            "failures": []
+        }
+    ],
+    "passed": true,
+    "metadata": {
+        "fixture": {
+            "path": "\/home\/nathan\/workspaces\/nth\/sel\/tools\/scale-test\/dataset-10x.json",
+            "sha256": "2ba130fc0d13b3ac92e857edcc0e6c31f9559dbd69ad3c702c986042cf45486e",
+            "table_rows": {
+                "CATEGORIES": 100,
+                "PRODUCTS": 2000,
+                "CUSTOMERS": 10000,
+                "ORDERS": 35000,
+                "ORDER_ITEMS": 90000
+            },
+            "total_source_rows": 137100,
+            "schema_version": 1
+        },
+        "reference_path": "\/home\/nathan\/workspaces\/nth\/sel\/tools\/scale-test\/benchmark_results.json",
+        "reference_sha256": "a5ea93edfa673fd555f3a9f11b948769c44ee609ec149f329f35d5247c533285",
+        "reference_scenario_ids": [
+            "scenario1",
+            "scenario2",
+            "scenario3",
+            "scenario4",
+            "scenario5",
+            "scenario6"
+        ],
+        "runtime": {
+            "php": "8.5.10",
+            "sapi": "cli",
+            "os": "Linux 7.1.3-200.fc44.x86_64",
+            "machine": "x86_64",
+            "cpu": "Intel(R) Xeon(R) D-2141I CPU @ 2.20GHz",
+            "logical_cpus": 16,
+            "available_memory_bytes": 122646622208,
+            "opcache_requested": {
+                "opcache.enable_cli": "1",
+                "opcache.jit_buffer_size": "128M",
+                "opcache.jit": "1255"
+            },
+            "opcache_effective": {
+                "opcache.enable_cli": true,
+                "opcache.jit_buffer_size": 134217728,
+                "opcache.jit": "1255"
+            },
+            "jit_available": true,
+            "jit_status": {
+                "enabled": true,
+                "on": true,
+                "kind": 5,
+                "opt_level": 5,
+                "opt_flags": 6,
+                "buffer_size": 134217712,
+                "buffer_free": 133772120
+            },
+            "memory_limit": "-1",
+            "gc_status": {
+                "running": false,
+                "protected": false,
+                "full": false,
+                "runs": 24,
+                "collected": 0,
+                "threshold": 250001,
+                "buffer_size": 262144,
+                "roots": 47708,
+                "application_time": 2.421599596,
+                "collector_time": 0.906338172,
+                "destructor_time": 0,
+                "free_time": 0
+            }
+        },
+        "representation": {
+            "shaped_records": 137100,
+            "fallback_records": 1,
+            "lists": 5
+        },
+        "context_prepare_ms": 925.52525,
+        "memory_before_context": {
+            "usage_bytes": 89958152,
+            "allocated_bytes": 92278784,
+            "peak_usage_bytes": 103402456,
+            "peak_allocated_bytes": 105775104,
+            "rss_bytes": 113922048,
+            "peak_rss_bytes": 127115264
+        },
+        "memory_after_context": {
+            "usage_bytes": 520634512,
+            "allocated_bytes": 530587648,
+            "peak_usage_bytes": 525298472,
+            "peak_allocated_bytes": 532684800,
+            "rss_bytes": 552951808,
+            "peak_rss_bytes": 553443328
+        },
+        "memory_at_report": {
+            "usage_bytes": 536941784,
+            "allocated_bytes": 547364864,
+            "peak_usage_bytes": 537525352,
+            "peak_allocated_bytes": 547364864,
+            "rss_bytes": 571412480,
+            "peak_rss_bytes": 571412480
+        },
+        "shape_interning": {
+            "intern_calls": 6,
+            "intern_hits": 0,
+            "new_shapes": 6,
+            "signature_ns": 25166,
+            "alias_calls": 0,
+            "alias_hits": 0,
+            "alias_builds": 0,
+            "cache_size": 6,
+            "alias_cache_entries": 0
+        },
+        "materialization_strategy": "Value::toNative direct packed\/shape\/children traversal",
+        "context_mode": "shared",
+        "scenario_order": [
+            "scenario1",
+            "scenario2",
+            "scenario3",
+            "scenario4",
+            "scenario5",
+            "scenario6"
+        ],
+        "timing_mode": "steady-state",
+        "gc_policy": "not forced",
+        "runs": 7,
+        "warmups": 3
+    }
+}

@@ -1,0 +1,138 @@
+{
+  "runtime": "3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)]",
+  "results": {
+    "powers.stable": {
+      "median_us": 0.1694293071826299,
+      "samples_us": [
+        0.18273169795672098,
+        0.17094115416208902,
+        0.1694293071826299,
+        0.16888914008935293,
+        0.16854144632816315
+      ],
+      "diagnostic": {
+        "calls": 300,
+        "misses": 3,
+        "clears": 0,
+        "entries": 3,
+        "weight": 11100
+      },
+      "retained_bytes": 5736,
+      "peak_bytes": 16648
+    },
+    "powers.entry_churn": {
+      "median_us": 0.9264309818928058,
+      "samples_us": [
+        0.9264309818928058,
+        0.9222572239545676,
+        0.8959480776236608,
+        0.9317610126275283,
+        0.9351968765258789
+      ],
+      "diagnostic": {
+        "calls": 650,
+        "misses": 650,
+        "clears": 10,
+        "entries": 10,
+        "weight": 1595
+      },
+      "retained_bytes": 1308,
+      "peak_bytes": 8160
+    },
+    "powers.weight_churn": {
+      "median_us": 14245.950578091046,
+      "samples_us": [
+        14161.58901217083,
+        14245.950578091046,
+        14143.393840640783,
+        14254.168840125203,
+        14459.728845395148
+      ],
+      "diagnostic": {
+        "calls": 24,
+        "misses": 24,
+        "clears": 3,
+        "entries": 6,
+        "weight": 960027
+      },
+      "retained_bytes": 426252,
+      "peak_bytes": 893136
+    },
+    "powers.hot_and_cold": {
+      "median_us": 3.0188790212074914,
+      "samples_us": [
+        2.72924080491066,
+        2.813024135927359,
+        3.0188790212074914,
+        3.042804698149363,
+        3.042082923154036
+      ],
+      "diagnostic": {
+        "calls": 600,
+        "misses": 305,
+        "clears": 4,
+        "entries": 49,
+        "weight": 61324
+      },
+      "retained_bytes": 30792,
+      "peak_bytes": 39208
+    },
+    "shapes.stable": {
+      "median_us": 0.7834689070781072,
+      "samples_us": [
+        0.8076149970293045,
+        0.8047837764024734,
+        0.7741649945576986,
+        0.7834689070781072,
+        0.7635634392499924
+      ],
+      "diagnostic": {
+        "calls": 300,
+        "misses": 3,
+        "clears": 0,
+        "entries": 3,
+        "weight": null
+      },
+      "retained_bytes": 1560,
+      "peak_bytes": 2432
+    },
+    "shapes.entry_churn": {
+      "median_us": 2.23052662576219,
+      "samples_us": [
+        2.251936173508603,
+        2.15239011128125,
+        2.1826461363395366,
+        2.250326108839725,
+        2.23052662576219
+      ],
+      "diagnostic": {
+        "calls": 2570,
+        "misses": 2570,
+        "clears": 10,
+        "entries": 10,
+        "weight": null
+      },
+      "retained_bytes": 4960,
+      "peak_bytes": 130356
+    },
+    "shapes.hot_and_cold": {
+      "median_us": 1.529785804450512,
+      "samples_us": [
+        1.529785804450512,
+        1.5799417160451412,
+        1.547832041978836,
+        1.4460771344602108,
+        1.4327284879982471
+      ],
+      "diagnostic": {
+        "calls": 2000,
+        "misses": 1004,
+        "clears": 3,
+        "entries": 236,
+        "weight": null
+      },
+      "retained_bytes": 119592,
+      "peak_bytes": 130392
+    }
+  }
+}
