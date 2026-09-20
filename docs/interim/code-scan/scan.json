@@ -1,0 +1,898 @@
+{
+  "revision": "6ca2fadc03c3b44988de2ce2170934e9fae78fae",
+  "method": "lexical single-reference declarations; Python AST imports; exact normalized eight-line windows. No reachability proof.",
+  "lanes": {
+    "python": {
+      "files": 36,
+      "lines": 14447,
+      "generated_excluded": [
+        "python/sel/sql/_map.py"
+      ],
+      "single_reference_declarations": [
+        {
+          "file": "python/sel/sql/__init__.py",
+          "line": 73,
+          "name": "try_translate_statement"
+        },
+        {
+          "file": "python/sel/sql/binding.py",
+          "line": 51,
+          "name": "with_unique_key"
+        },
+        {
+          "file": "python/sel/sql/hybrid.py",
+          "line": 64,
+          "name": "sql_query"
+        },
+        {
+          "file": "python/sel/sql/hybrid.py",
+          "line": 68,
+          "name": "sqlQuery"
+        },
+        {
+          "file": "python/sel/sql/hybrid.py",
+          "line": 92,
+          "name": "isHybrid"
+        },
+        {
+          "file": "python/sel/sql/hybrid.py",
+          "line": 96,
+          "name": "pureSql"
+        },
+        {
+          "file": "python/sel/sql/hybrid.py",
+          "line": 100,
+          "name": "pureMemory"
+        },
+        {
+          "file": "python/sel/sql/hybrid.py",
+          "line": 104,
+          "name": "pure_sql_execution"
+        },
+        {
+          "file": "python/sel/sql/hybrid.py",
+          "line": 108,
+          "name": "pure_memory_execution"
+        },
+        {
+          "file": "python/sel/sql/map.py",
+          "line": 173,
+          "name": "reset"
+        },
+        {
+          "file": "python/sel/utf8.py",
+          "line": 122,
+          "name": "bytes_equal"
+        },
+        {
+          "file": "python/sel/value.py",
+          "line": 648,
+          "name": "to_native"
+        },
+        {
+          "file": "python/sel/value.py",
+          "line": 667,
+          "name": "__repr__"
+        },
+        {
+          "file": "python/sel/value.py",
+          "line": 670,
+          "name": "__iter__"
+        },
+        {
+          "file": "python/sel/value.py",
+          "line": 673,
+          "name": "__len__"
+        },
+        {
+          "file": "python/sel/value.py",
+          "line": 676,
+          "name": "__contains__"
+        },
+        {
+          "file": "python/sel/value.py",
+          "line": 679,
+          "name": "__getitem__"
+        }
+      ],
+      "unused_import_candidates": [
+        {
+          "file": "python/sel/__init__.py",
+          "line": 19,
+          "name": "_builtins"
+        },
+        {
+          "file": "python/sel/__init__.py",
+          "line": 20,
+          "name": "Pos"
+        },
+        {
+          "file": "python/sel/__init__.py",
+          "line": 20,
+          "name": "SelError"
+        },
+        {
+          "file": "python/sel/__init__.py",
+          "line": 24,
+          "name": "BIN"
+        },
+        {
+          "file": "python/sel/__init__.py",
+          "line": 24,
+          "name": "BOOL"
+        },
+        {
+          "file": "python/sel/__init__.py",
+          "line": 24,
+          "name": "NONE"
+        },
+        {
+          "file": "python/sel/__init__.py",
+          "line": 24,
+          "name": "TEXT"
+        },
+        {
+          "file": "python/sel/builtins/__init__.py",
+          "line": 9,
+          "name": "control"
+        },
+        {
+          "file": "python/sel/builtins/__init__.py",
+          "line": 10,
+          "name": "structure"
+        },
+        {
+          "file": "python/sel/builtins/__init__.py",
+          "line": 11,
+          "name": "aggregate"
+        },
+        {
+          "file": "python/sel/builtins/__init__.py",
+          "line": 12,
+          "name": "text"
+        },
+        {
+          "file": "python/sel/builtins/__init__.py",
+          "line": 13,
+          "name": "number"
+        },
+        {
+          "file": "python/sel/builtins/__init__.py",
+          "line": 14,
+          "name": "binary"
+        },
+        {
+          "file": "python/sel/builtins/__init__.py",
+          "line": 15,
+          "name": "regex"
+        },
+        {
+          "file": "python/sel/builtins/__init__.py",
+          "line": 16,
+          "name": "null"
+        },
+        {
+          "file": "python/sel/builtins/structure.py",
+          "line": 1,
+          "name": "D"
+        },
+        {
+          "file": "python/sel/eval.py",
+          "line": 9,
+          "name": "Callable"
+        },
+        {
+          "file": "python/sel/eval.py",
+          "line": 16,
+          "name": "BIN"
+        },
+        {
+          "file": "python/sel/optimizer.py",
+          "line": 14,
+          "name": "SelError"
+        },
+        {
+          "file": "python/sel/sql/__init__.py",
+          "line": 18,
+          "name": "DIALECTS"
+        },
+        {
+          "file": "python/sel/sql/__init__.py",
+          "line": 19,
+          "name": "Binding"
+        },
+        {
+          "file": "python/sel/sql/__init__.py",
+          "line": 23,
+          "name": "RelationalPlan"
+        },
+        {
+          "file": "python/sel/sql/constants.py",
+          "line": 27,
+          "name": "Any"
+        },
+        {
+          "file": "python/sel/value.py",
+          "line": 12,
+          "name": "decode_utf8"
+        },
+        {
+          "file": "python/sel/value.py",
+          "line": 12,
+          "name": "to_code_points"
+        }
+      ],
+      "duplicate_windows": [
+        {
+          "locations": [
+            {
+              "file": "python/sel/errors.py",
+              "line": 24
+            },
+            {
+              "file": "python/sel/sql/errors.py",
+              "line": 18
+            }
+          ],
+          "sample": "__slots__ = ('code', 'message', 'line', 'col', 'offset')\ndef __init__(self, code: str, message: str, pos: Pos | None = None) -> None:\nsuper().__init__(message)\nself.code = code\nself.message = message\nself.line = pos.line if pos else 0\nself.col = pos.col if pos else 0\nself.offset = pos.offset if pos else 0"
+        },
+        {
+          "locations": [
+            {
+              "file": "python/sel/parser.py",
+              "line": 376
+            },
+            {
+              "file": "python/sel/parser.py",
+              "line": 444
+            }
+          ],
+          "sample": "if len(args) < spec.min or len(args) > spec.max:\nfail('E_ARITY', f'{spec.name} takes {arity_text(spec)}, got {len(args)}',\nname_tok.pos)\nif spec.arity_error is not None:\nproblem = spec.arity_error(len(args))\nif problem:\nfail('E_ARITY', problem, name_tok.pos)\nreturn Node('call', name_tok.pos, name=spec.name, spec=spec, args=args,"
+        },
+        {
+          "locations": [
+            {
+              "file": "python/sel/sql/translator.py",
+              "line": 162
+            },
+            {
+              "file": "python/sel/sql/translator.py",
+              "line": 188
+            }
+          ],
+          "sample": "self.param_kinds = []\nself.caveats = {}\nself.frames = []\nself.depth = 0\nself.subquery_counter = 0\nself.statement_plan = None\nself.const_names, self.const_ctx = _constants.scope(self.bindings)\nnorm = _normalise.run(ast, self.const_names, self.const_ctx)"
+        },
+        {
+          "locations": [
+            {
+              "file": "python/sel/sql/translator.py",
+              "line": 518
+            },
+            {
+              "file": "python/sel/sql/translator.py",
+              "line": 529
+            }
+          ],
+          "sample": "if self.emit.lex('sargablePrefilter') == 'true':\ncoarse = self._apply('ops', '$==', [l, r], n.pos, variant)\nresidual = self._apply('ops', '$==',\n[self.emit.text_operand(l), self.emit.text_operand(r)],\nn.pos, variant)\nres = self._apply('ops', 'AND', [coarse, residual], n.pos)\nres.prefilter = coarse\nres.separate_prefilter = bool(getattr(l, 'separate_prefilter', False)"
+        },
+        {
+          "locations": [
+            {
+              "file": "python/sel/value.py",
+              "line": 101
+            },
+            {
+              "file": "python/sel/value.py",
+              "line": 135
+            }
+          ],
+          "sample": "if value.shape is not None:\nfor index, key in enumerate(value.shape.keys):\nyield key, value.storage[index]\nreturn\nif value.is_list and value.storage is not None:\nif value.list_keys is not None:\nfor index, item in enumerate(value.storage):\nyield value.list_keys[index], item"
+        }
+      ],
+      "source_sha256": {
+        "python/sel/__init__.py": "f9204f3f65379b960d76c1d83df9b7b81280d23bd493a17f8fe216ab45a88de9",
+        "python/sel/__main__.py": "5cc06d2267085fef065c170d7655028d8067a704600b276e8917dcee41ce7ce4",
+        "python/sel/_cli.py": "2970dc7d685452a02b55da5defde9878cf5ee5ad06c38c78653464451c2dd5bb",
+        "python/sel/builtins/__init__.py": "0f5230510a71e35277146d2820af06eec30f79912256d956695480dfd5f8d7c3",
+        "python/sel/builtins/aggregate.py": "b81555f4488c1f1b8662a61926c0b0df9fe9f29f3bbfc7e3b441de49f91b6961",
+        "python/sel/builtins/binary.py": "7406157f8c1f6a33d27788e364846b274b1c61350102c511cc806fb65f0bc3a2",
+        "python/sel/builtins/control.py": "0a008f3f4921a960e86edec8b66d4b73cd965a3bc97665a6a25c045947af9957",
+        "python/sel/builtins/null.py": "cd5572d58398af20d9f483c5e5e6bc3054036c1c263d63f59fe994809dc6597c",
+        "python/sel/builtins/number.py": "ca7ddb9ef88a916cfe47e1adc7e6e3785b6ee05416f0d30ce75d781ecdbe707f",
+        "python/sel/builtins/regex.py": "9843d92d3fa23c62b34060f52310760cc27f1b57c1781573ff6597d7c0b24268",
+        "python/sel/builtins/structure.py": "1e80131c687b718e50add032e9e05e065e089efe80f4b4dd320694263b5f0bf5",
+        "python/sel/builtins/text.py": "439df2296dc0f6a0608433f821bfc306c2ffd8c940d378b320cc05e0184bd0e6",
+        "python/sel/decimal.py": "1af90cdad108a9bc6f829968d12a9bc99e954619b961034b5152285ae25acf82",
+        "python/sel/errors.py": "3fded6fb623b877e3b01613da21009d7d22f3fd72c65d82577ae6791f808e962",
+        "python/sel/eval.py": "d675d828ce75ede119777c342c3e1d03c95756943ece76866f719ce2502fdd96",
+        "python/sel/lexer.py": "17650e4460b37ba208a860797fb9927ef5d4db0cd29e1bf607e27ff9dfd74c4f",
+        "python/sel/math_plan.py": "353eb30956864ecaa360ed5d199cf2e36b039e78e38e83d29f6d2ce35cce47bd",
+        "python/sel/optimizer.py": "1562b707378878ab9f81702242ebe964d9d8b2f4596a3fd4969e6086490913ea",
+        "python/sel/parser.py": "3b297aa9d0a6544955730a9ec2206da803cd1ab57ce8f5053e35ad0ca6532a66",
+        "python/sel/registry.py": "26ac641cb30ab9fe34d99e7c43e487faba5fb5c5e18f1b8f9527f672174d8557",
+        "python/sel/sql/__init__.py": "2a6e0f129d76598e1eb0b952a177c260fdd9bae243e5faa9da7e8f589eee9bc7",
+        "python/sel/sql/_map.py": "7a0b093b7cdd8547a2a22655500a55d4c3222e1ea16469b41cf6b077e69537c4",
+        "python/sel/sql/binder.py": "3b8e400abbc3da60eca8b8a93e769b203af864a2fc75d1b53bcf275aceb6659e",
+        "python/sel/sql/binding.py": "ffcf85f6aba73f759c3bfce60c8aa5e271a5e17bb799fec2feae92069035ad85",
+        "python/sel/sql/bindings.py": "846b6f7c446c8e1ac7e90e102f3e093abc77df763aec59a569ebda0550aa5458",
+        "python/sel/sql/constants.py": "ab8bf812c1f254c2f2df82328664eefe92720d8d591d9aae4b1307a2f2a22c44",
+        "python/sel/sql/emit.py": "9f4e9717b066979c2d008aeecf56be5a5bf3bcfd5990bbd973a6097581f41400",
+        "python/sel/sql/errors.py": "bddbd71f64ae1107eba441ee9bb46bd3c9ac77c2bcd385efac5d324e6e567f05",
+        "python/sel/sql/fragment.py": "23a87c95f0dac60f86f1d1f3554c134c1421e1f7bcd24dbca8b2f8aeaed63920",
+        "python/sel/sql/hybrid.py": "237af62542861cb7b0733651737855482ce8d3d397b78e406ef7e7a4ed03ee27",
+        "python/sel/sql/map.py": "de19b16a3730a11d2ec77b13860ff1ea213da72859563144cb6d1a2a8ecd4444",
+        "python/sel/sql/normalise.py": "38413138dbe7e5555b3e226ccb076fb5ba83c800466dd5a38dad510ae6e095c9",
+        "python/sel/sql/relational_plan.py": "af47eeb0cd574532d6cebc0931e70f12c91b2325056b4110c5d51d1c470da801",
+        "python/sel/sql/translator.py": "c6f89cba0233042ce1efb8fbc6909dd51f6eeac06f32288ef44aa90337095586",
+        "python/sel/utf8.py": "864641542933e610365361e0ea301fc256f4e482bdd3982ff66301720e5937c8",
+        "python/sel/value.py": "fbac3652ad24781ef1d9abf02213ab3df39fcb22bdc060050db42eb2e28fbb49"
+      }
+    },
+    "javascript": {
+      "files": 34,
+      "lines": 14026,
+      "generated_excluded": [
+        "js/src/sql/_map.mjs"
+      ],
+      "single_reference_declarations": [
+        {
+          "file": "js/src/sel.mjs",
+          "line": 213,
+          "name": "functionNames"
+        },
+        {
+          "file": "js/src/sql/map.mjs",
+          "line": 168,
+          "name": "reset"
+        }
+      ],
+      "unused_import_candidates": [],
+      "duplicate_windows": [
+        {
+          "locations": [
+            {
+              "file": "js/src/sql/translator.mjs",
+              "line": 550
+            },
+            {
+              "file": "js/src/sql/translator.mjs",
+              "line": 560
+            }
+          ],
+          "sample": "if (this.emit.lex('sargablePrefilter') === 'true') {\nconst coarse = this.apply('ops', '$==', [l, r], n.pos, variant);\nconst residual = this.apply('ops', '$==',\n[this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, variant);\nconst res = this.apply('ops', 'AND', [coarse, residual], n.pos);\nres.prefilter = coarse;\nres.separatePrefilter = l.separatePrefilter || r.separatePrefilter;\nreturn res;"
+        },
+        {
+          "locations": [
+            {
+              "file": "js/src/sql/translator.mjs",
+              "line": 1932
+            },
+            {
+              "file": "js/src/sql/translator.mjs",
+              "line": 2209
+            }
+          ],
+          "sample": "}\nconst projections = [];\nfor (let i = 0; i < recArgs.length; i += 2) {\nconst kNode = recArgs[i];\nconst vNode = recArgs[i + 1];\nif (kNode.t !== 'text') {\nrefuse('E_BAD_ARG', 'RECORD field names must be string literals', kNode.pos);\n}"
+        },
+        {
+          "locations": [
+            {
+              "file": "js/src/value.mjs",
+              "line": 136
+            },
+            {
+              "file": "js/src/value.mjs",
+              "line": 161
+            }
+          ],
+          "sample": "const keys = new Array(entries.length);\nconst values = new Array(entries.length);\nconst seen = new Set();\nlet unique = true;\nfor (let i = 0; i < entries.length; i++) {\nconst [key, value] = entries[i];\nkeys[i] = key;\nvalues[i] = value;"
+        }
+      ],
+      "source_sha256": {
+        "js/src/builtins/aggregate.mjs": "032c3c4bcc4cf93ed92010dcfc853aabf54d9b85e8f8b5483990687cf68a62d7",
+        "js/src/builtins/binary.mjs": "34c7ecd2030dfcd191ac9f7ae7421c6c76bfecb627ab18df7b60bd5c1cc3a263",
+        "js/src/builtins/control.mjs": "883cd84aa34484070bc6530d942e24378c769af590c36742bf657d981a536c13",
+        "js/src/builtins/index.mjs": "bd0793f57bf65a9c787d976eb7a9865aee6fa52aebc0190990f541ba95ca4ee9",
+        "js/src/builtins/null.mjs": "c5ef85160163cef2dd13ffc269b3b7837bd0f748962ffc7f10555dc16dd7ea25",
+        "js/src/builtins/number.mjs": "5f82726ad7178b8ca2fd83b0eee39f0b2bd00b2950fd9551ea71a3d991ca7796",
+        "js/src/builtins/regex.mjs": "508f145088caee23501cfc2a5f57e88b6a3ab6560df1fd4a0f31d2278f05588e",
+        "js/src/builtins/structure.mjs": "2aeea29eb1748ee969a0482feb4358015ec39af5cfcd3ac5864d359e970d98a5",
+        "js/src/builtins/text.mjs": "fc62a9ed7d41347e07ada6b3e2710d13117ce752b1e0ebaf5e434e5a335ed525",
+        "js/src/decimal.mjs": "36c7754791585df177f1ac0e6f52860c50b5873992461bfba19906f3e548e306",
+        "js/src/errors.mjs": "3819f5f8e3efba2eb0999039d8437a7aa3e592689bde1de1a98b369225778683",
+        "js/src/eval.mjs": "2bfe59d82eeffb51ab45e9c6182e731f2ee0b7afa40ebca913f72407656a99e1",
+        "js/src/lexer.mjs": "2860cdfd6eda829f3b92335b5ee90be0841b74d56cf332673c56755ec402f29e",
+        "js/src/math_plan.mjs": "ad9b6d459fe828dbd3ab104841ace35d7820cd39e5663d0cbf863da578cb214b",
+        "js/src/optimizer.mjs": "9a23fe8610c2ce2aeb80206ec5d4fa0d554ea30ee4c473a7797f8d9d0dc113af",
+        "js/src/parser.mjs": "fd487e489c20e1b12eeda00cfbe149caccd3216206487b0272f524c13ff3e1ad",
+        "js/src/registry.mjs": "c73aefeb38377e973411570eccbfde058524c0238190bfeeb2e1ae15ed1f515d",
+        "js/src/sel.mjs": "fe1a452c393e3b3508c5cee02023165d5c7885a9905179692ec35530c6103f0d",
+        "js/src/sql/_map.mjs": "cbc832494302f2e524727edca8fb63039e161a34b00cb4ebda8007bb3873293e",
+        "js/src/sql/binder.mjs": "9ceb1d7cdfdc6845eb363398b12cf6d09679f3b647d1d6e3060e55d86e3880a6",
+        "js/src/sql/binding.mjs": "2a254f925564ec96cf01a68da62e3e8fb2a845769e30a1ef0b8aaf12a9e981d1",
+        "js/src/sql/bindings.mjs": "40cb758e3644cc212f9c0df2c273970c0237b57bad13689f2f3ebe5791148100",
+        "js/src/sql/constants.mjs": "2898a4b4b21b9b563e5f880874e537899e39e17001056c446ac8bb29f6b5c160",
+        "js/src/sql/emit.mjs": "ca0171a59a2924cbda8b609616e2678e2eeb0f5d74d923a68ce0f1305b76c133",
+        "js/src/sql/errors.mjs": "c8d6f675760f0db65d9eb58b3200f973d5b9481845f0dd4dbc12746f8326f0ab",
+        "js/src/sql/fragment.mjs": "a7d47a6074b2619fc153765727625e609b2d556ef2fb3dd86df793d84048b465",
+        "js/src/sql/hybrid.mjs": "7d9127333e797f89878f0eeb42559d0b915b93b6578862f59dc29e854752e04f",
+        "js/src/sql/index.mjs": "b1a17322ce639229ff8f149ee31c3187da06c6408ae64b1a2d278ae41e32b8cd",
+        "js/src/sql/map.mjs": "fa9b8ef91f03d63f1f4dbc3e3ba9f28d1b9f5f720b990e0c0f518164fe070eb6",
+        "js/src/sql/normalise.mjs": "a7d036f3c2e383b0fe70a9b82e3c8a2e7c582e28652664a9ea1233ba0f6c370c",
+        "js/src/sql/relational-plan.mjs": "ef643044ec6320b03dbeed66ab1817390859fa876c3036bbfd4e2fb47a390962",
+        "js/src/sql/translator.mjs": "5a4ebd5aa3dfed3706212bb696d6da920b0a9d0b28fb85fd3e8d450a94eee2f8",
+        "js/src/utf8.mjs": "0cd782a3c705fce54b0b52c5804c9ff52409ef029583c8213ebfc06012d9e14b",
+        "js/src/value.mjs": "400e2d0e2fade6b1ec6131b29278d5a37dd1c6aef3f9313419f0db59647796bf"
+      }
+    },
+    "php": {
+      "files": 36,
+      "lines": 18028,
+      "generated_excluded": [
+        "php/src/Sql/MapData.php"
+      ],
+      "single_reference_declarations": [],
+      "unused_import_candidates": [],
+      "duplicate_windows": [
+        {
+          "locations": [
+            {
+              "file": "php/src/Builtins/Core.php",
+              "line": 226
+            },
+            {
+              "file": "php/src/Builtins/Structure.php",
+              "line": 812
+            }
+          ],
+          "sample": "}\n$rank = static function (Value $v): int {\nif ($v->isNull()) return 0;\nif ($v->kind === Value::BOOL) return 1;\nif ($v->looksNumeric()) return 2;\nif ($v->kind === Value::TEXT) return 3;\nif ($v->kind === Value::BIN) return 4;\nreturn 5;"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/Builtins/Core.php",
+              "line": 350
+            },
+            {
+              "file": "php/src/Builtins/Structure.php",
+              "line": 60
+            }
+          ],
+          "sample": "}\nprivate static function forEachElement(Value $value, callable $callback): void\n{\nif ($value->isNull()) return;\nif ($value->isList && $value->storage !== null) {\nif ($value->listKeys !== null) {\nforeach ($value->storage as $i => $item) {\n$callback($value->listKeys[$i], $item);"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/Builtins/Structure.php",
+              "line": 712
+            },
+            {
+              "file": "php/src/Builtins/Structure.php",
+              "line": 723
+            }
+          ],
+          "sample": "$row = $aliasLeft($item);\n$key = $leftExtractor($row);\n$matches = $key === null ? null : ($buckets[$key] ?? null);\nif ($matches !== null) {\nforeach ($matches as $right) $output[] = $project($row, $right);\n} elseif ($leftJoin) {\n$output[] = $project($row, null);\n}"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/Optimizer.php",
+              "line": 584
+            },
+            {
+              "file": "php/src/Optimizer.php",
+              "line": 617
+            }
+          ],
+          "sample": "}\nforeach (['args', 'items'] as $key) {\nforeach ($item[$key] ?? [] as $child) $visit($child);\n}\nforeach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {\nif (isset($item[$key]) && is_array($item[$key])) $visit($item[$key]);\n}\n};"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/Parser.php",
+              "line": 552
+            },
+            {
+              "file": "php/src/Parser.php",
+              "line": 639
+            }
+          ],
+          "sample": "}\n$count = count($args);\nif ($count < $spec['min'] || $count > $spec['max']) {\nfail('E_ARITY', \"{$spec['name']} takes \" . self::arityText($spec) . \", got {$count}\", $nameTok);\n}\nif ($spec['arityError'] !== null) {\n$problem = ($spec['arityError'])($count);\nif ($problem !== null) {"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/Sel.php",
+              "line": 199
+            },
+            {
+              "file": "php/src/Sel.php",
+              "line": 227
+            }
+          ],
+          "sample": "return;\n}\nif ($n === 3) {\nself::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);\n$inner = $bound;\n$inner['_'] = true;\n$inner['_K'] = true;\nself::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/SelError.php",
+              "line": 23
+            },
+            {
+              "file": "php/src/Sql/SqlError.php",
+              "line": 15
+            }
+          ],
+          "sample": "public int $line;\npublic int $col;\npublic int $offset;\npublic function __construct(string $code, string $message, ?array $pos = null)\n{\nparent::__construct($message);\n$this->code = $code;\n$this->line = $pos['line'] ?? 0;"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/Sql/Translator.php",
+              "line": 74
+            },
+            {
+              "file": "php/src/Sql/Translator.php",
+              "line": 98
+            }
+          ],
+          "sample": "$this->bindings->checkAliases();\n$this->params = [];\n$this->paramKinds = [];\n$this->caveats = [];\n$this->frames = [];\n$this->depth = 0;\n$this->subqueryCounter = 0;\n[$this->constNames, $this->constCtx] = Constants::scope($this->bindings);"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/Sql/Translator.php",
+              "line": 468
+            },
+            {
+              "file": "php/src/Sql/Translator.php",
+              "line": 478
+            }
+          ],
+          "sample": "if ($this->emit->lex('sargablePrefilter') === 'true') {\n$coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);\n$residual = $this->apply('ops', '$==',\n[$this->emit->textOperand($l), $this->emit->textOperand($r)], $n['pos'], $variant);\n$res = $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);\n$res->prefilter = $coarse;\n$res->separatePrefilter = $l->separatePrefilter || $r->separatePrefilter;\nreturn $res;"
+        },
+        {
+          "locations": [
+            {
+              "file": "php/src/Sql/Translator.php",
+              "line": 2702
+            },
+            {
+              "file": "php/src/Sql/Translator.php",
+              "line": 3001
+            }
+          ],
+          "sample": "}\n$projections = [];\nfor ($i = 0; $i < count($recArgs); $i += 2) {\n$kNode = $recArgs[$i];\n$vNode = $recArgs[$i + 1];\nif ($kNode['t'] !== 'text') {\nrefuse('E_BAD_ARG', 'RECORD field names must be string literals', $kNode['pos']);\n}"
+        }
+      ],
+      "source_sha256": {
+        "php/src/Args.php": "debf02bb0e981ce68a47032035bc2c76890fab8c8628cb5a77da93169903a63a",
+        "php/src/Builtins/Binary.php": "b11d10d2fd088cd13a24e4225672670ceec86aebe7e09eb2dc961891d538ae28",
+        "php/src/Builtins/Core.php": "8cb80738040582563e571c3c3bf692077ed88ac01127eaf70b92ca0e7c160928",
+        "php/src/Builtins/NullOps.php": "703ee2f3717f366681cad293a9be6595c71ad56c18b69a691062b33f88ec5f1d",
+        "php/src/Builtins/Number.php": "b7f20be81a10bc35457bacbb7f6b5c86418046a378d185158c882c002ca9b967",
+        "php/src/Builtins/Regex.php": "428c282a1c40645950c8a71d3fb2debcbce23e7e78760529843d89ba718f7b22",
+        "php/src/Builtins/Structure.php": "dc5fd189343f95cba35f3f1ee5398c1c369c6cbe504b39597e5fc62e19b6873b",
+        "php/src/Builtins/Text.php": "52149dc4fb5f5d31803c114cdfa50573472daa6ffb41182a18d1cd66e988472b",
+        "php/src/Context.php": "ad5746f5e1c25c8ab678dee94f5c6300703b931eef17f00be45a8531bc7c12a9",
+        "php/src/Dec.php": "2b3c74571f7d8a0d139612073be7bbacb89d9681b2cb252bc1e7392c5ebdfd48",
+        "php/src/Evaluator.php": "59f2768e5b38713a407c845596044c31e17dde616ce1b3280973817e54e74fe3",
+        "php/src/Lexer.php": "04511efca56f92dc64a0d85bfe5ab05fc6bfc8b2db580a1d79cfa05a49b48b3f",
+        "php/src/MathPlan.php": "0ed4e4185f9c12276e5f907775b02b33d1b96db29552704c232c31080bffb259",
+        "php/src/Optimizer.php": "242bd8d49ee1e61369f4498543c0fffb62d9f5dfae525ebc5a53a989840a95cb",
+        "php/src/Parser.php": "951968d382a6cc73f263ff655329cd4b96e9cbc2aef57b05149efb45cc8c82ca",
+        "php/src/Registry.php": "ad39f3b064c462b91c6a5d1c074275040d66f217d8f577de295df958f59ffcaa",
+        "php/src/Sel.php": "2a3d7b5a3876812a94ce4af916e1600780a4fd7424003cb02d9494842672bb9c",
+        "php/src/SelError.php": "6684ab171fa8519b1b8624d05746220b19e415aa9ece19eb31cb3de907be954a",
+        "php/src/Sql/Binder.php": "675cd6a52f1c8e1d5312911b14f4f7389042e52b2c5c838ff385ad32ea95cf5d",
+        "php/src/Sql/Binding.php": "62acc9b04c0df65126a10db4a1493dcb6a363cdba0c03ee82ff6a52d86b353d7",
+        "php/src/Sql/Bindings.php": "7ed6881f5d4bbe8ff8a3fea8509a6b46cd3fecb5d107ff91558469526e82cef8",
+        "php/src/Sql/Constants.php": "1d7e45c3b7b91ed6a42279d6f0ef3e8a996abacb4472782a6434e7f7bd34def0",
+        "php/src/Sql/Emit.php": "50da3b9738a3a91d920d179e3dded6309acae458c515100400c0b92d1d86304c",
+        "php/src/Sql/Fragment.php": "7be59eeb17463b73e51ee5a9537e54f8590d1adcf643c35397ee349057837173",
+        "php/src/Sql/Hybrid.php": "3c27b6e71f318aabf1df24ca3829bb331eaa97a0242f7b5a1f5169346e1c5d6f",
+        "php/src/Sql/Map.php": "8027b94b76cdd53f4b2abce02e14698d79b274dfaf970cdb23f4f6e9334bd6df",
+        "php/src/Sql/MapData.php": "d9596072133d66dd51d57796c37ea6a5e4458424a033a1584b7a6d57233ac51f",
+        "php/src/Sql/Normalise.php": "f3b3c3ddef09b4386c7be648e114921048ddf44cf70700b5ebe3db373af7382d",
+        "php/src/Sql/RelationalPlan.php": "1bbb10fa4112dad6a8ab128b3bbc2d4cdbda3d71a94971c2aa33a2da5820db0f",
+        "php/src/Sql/Sql.php": "b84bf2445cf2938fb6c7f8eff2e2fcf84e89e920e91022aed8596ff7d93d2840",
+        "php/src/Sql/SqlError.php": "64ee082afe31e8f1072ee6803d6497261dab65ad783aa0624fc47e5b3df4c15a",
+        "php/src/Sql/Translator.php": "2b90d5635ae148a3f4772e02d491782338530358aca5ccf18fb1bc8894bd8151",
+        "php/src/Sql/bootstrap.php": "b9b9dea12039eb94f7b3e7a9435fd2d53c834a362e2eeba8cf7a07508db901d9",
+        "php/src/Utf8.php": "305edb7e9443f87e3378041b4669845ca9682cfb64bffbe759181a32ebff9863",
+        "php/src/Value.php": "01bec3233d177cea23cec0d5297a0d4fc32a476203e97f7349ad82255c415139",
+        "php/src/bootstrap.php": "627ef9a4524fbe9905155288c2e4c45ac9d32e9d782dbd5519a02d33fd443098"
+      }
+    },
+    "lisp": {
+      "files": 31,
+      "lines": 12276,
+      "generated_excluded": [
+        "lisp/src/sql/map-data.lisp"
+      ],
+      "single_reference_declarations": [
+        {
+          "file": "lisp/src/sql/hybrid.lisp",
+          "line": 507,
+          "name": "collect-all-step-field-references"
+        }
+      ],
+      "unused_import_candidates": [],
+      "duplicate_windows": [
+        {
+          "locations": [
+            {
+              "file": "lisp/src/builtins/aggregate.lisp",
+              "line": 63
+            },
+            {
+              "file": "lisp/src/builtins/aggregate.lisp",
+              "line": 434
+            }
+          ],
+          "sample": "(ctx-push-frame ctx frame)\n(unwind-protect\n(cond\n((and (value-is-list val) (value-storage val))\n(let ((storage (value-storage val)))\n(loop for i from 0 below (length storage)\nfor item = (svref storage i)\ndo (setf (cdr binder-cell) item)"
+        },
+        {
+          "locations": [
+            {
+              "file": "lisp/src/builtins/aggregate.lisp",
+              "line": 286
+            },
+            {
+              "file": "lisp/src/builtins/aggregate.lisp",
+              "line": 397
+            }
+          ],
+          "sample": "(setf binder \"_\"\nbody (args-node a 1)\ndirection (string-upcase (args-text a 2))))))\n(t ; 4\n(setf binder (args-symbol a 1)\nbody (args-node a 2)\ndirection (string-upcase (args-text a 3)))))\n(unless (or (string= direction \"ASC\") (string= direction \"DESC\"))"
+        },
+        {
+          "locations": [
+            {
+              "file": "lisp/src/parser.lisp",
+              "line": 363
+            },
+            {
+              "file": "lisp/src/parser.lisp",
+              "line": 455
+            }
+          ],
+          "sample": "(when (or (< count (spec-min spec)) (> count (spec-max spec)))\n(fail \"E_ARITY\"\n(format nil \"~a takes ~a, got ~d\" (spec-name spec) (arity-text spec) count)\n(token-pos name-tok)))\n(when (spec-arity-error spec)\n(let ((problem (funcall (spec-arity-error spec) count)))\n(when problem (fail \"E_ARITY\" problem (token-pos name-tok)))))\n(let ((n (make-node :call (token-pos name-tok))))"
+        },
+        {
+          "locations": [
+            {
+              "file": "lisp/src/sel.lisp",
+              "line": 120
+            },
+            {
+              "file": "lisp/src/sel.lisp",
+              "line": 145
+            }
+          ],
+          "sample": "((= n 2)\n(collect-deps (first items) bound reads assigned (1+ depth))\n(let ((inner (copy-name-table bound)))\n(setf (gethash \"_\" inner) t)\n(setf (gethash \"_K\" inner) t)\n(collect-deps (second items) inner reads assigned (1+ depth))))\n(t\n(dolist (arg items) (collect-deps arg bound reads assigned (1+ depth)))))))"
+        },
+        {
+          "locations": [
+            {
+              "file": "lisp/src/sql/binding.lisp",
+              "line": 101
+            },
+            {
+              "file": "lisp/src/sql/binding.lisp",
+              "line": 127
+            }
+          ],
+          "sample": "(check-binding-type type)\n(when collation\n(let ((c (string-downcase (string collation))))\n(cond\n((or (string= c \"binary\") (string= c \"exact\")) (setf exact t))\n((or (string= c \"sargable\") (string= c \"prefilter\")) (setf sargable t))\n((or (string= c \"default\") (string= c \"none\")))\n(t (refuse \"E_SQL_BINDING\" (format nil \"unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'\" collation))))))"
+        },
+        {
+          "locations": [
+            {
+              "file": "lisp/src/sql/hybrid.lisp",
+              "line": 151
+            },
+            {
+              "file": "lisp/src/sql/stage1.lisp",
+              "line": 254
+            }
+          ],
+          "sample": "(:call\n(let* ((args (sel::node-items node))\n(spec (sel::node-spec node))\n(binds (and spec (sel::spec-binds spec)))\n(inner (copy-list bound)))\n(when binds\n(push \"_K\" inner)\n(push (if (and (= (length args) 3) (is-binder-name (second args)))"
+        },
+        {
+          "locations": [
+            {
+              "file": "lisp/src/sql/translator.lisp",
+              "line": 828
+            },
+            {
+              "file": "lisp/src/sql/translator.lisp",
+              "line": 840
+            }
+          ],
+          "sample": "(when (equal (dialect-lexical (translator-dialect tr) \"sargablePrefilter\") \"true\")\n(let* ((coarse (apply-entry tr :ops \"$==\" (list l r) (snode-pos n) variant))\n(residual (apply-entry tr :ops \"$==\"\n(list (emit-text-operand (translator-dialect tr) l)\n(emit-text-operand (translator-dialect tr) r))\n(snode-pos n) variant))\n(res (apply-entry tr :ops \"AND\" (list coarse residual) (snode-pos n))))\n(setf (fragment-prefilter res) coarse)"
+        }
+      ],
+      "source_sha256": {
+        "lisp/src/builtins/aggregate.lisp": "578ff872851c715548085b3aa776f3a1ff9e568df4205920177a0e3a2a22ef9d",
+        "lisp/src/builtins/binary.lisp": "b080e29bb0427031aae28b4ac066abfac87eae2b15b82da4de4b558c54bdb518",
+        "lisp/src/builtins/control.lisp": "8502013f191c40f0415b080d10b2226b10304dff90dc127c13bdc18e0f0d504a",
+        "lisp/src/builtins/null.lisp": "0e1e018704ad817bb6e178375d50bea5c52f78162cbe7702834c173e41ccac31",
+        "lisp/src/builtins/number.lisp": "d1bbaac6f1e13b619ca883d9a2ef28d431dfb472c549ff1136284375d093844f",
+        "lisp/src/builtins/regex.lisp": "ea38494f02a3ea25d878034ddb96283c73625f79acc139196c3a3ce563d5601b",
+        "lisp/src/builtins/structure.lisp": "e12e4b0e3677baf11d0c8ef90b8638d0c9a726f10c528303056663d6442ff82c",
+        "lisp/src/builtins/text.lisp": "1049547f4684edbdfde29e2f6a83a53126ebbc3479eb6c3cd7318c6585c2e070",
+        "lisp/src/decimal.lisp": "fcd210d540cd98e12a4555820fc3c50ec2e08339e7334fe778fa3028e3c87650",
+        "lisp/src/errors.lisp": "b0adee2002bff6a04b1ed99158fa15a16717e6448f44ef9a9cebbf5e34202789",
+        "lisp/src/eval.lisp": "4f0416f9b0ce468a0be9ead1a305796b2eed328e1ea4dff7e4299334441cdf65",
+        "lisp/src/lexer.lisp": "a8aada7d168bee3d64611580597118e7553e222eb36b238bb00697404f2a0efd",
+        "lisp/src/math-plan.lisp": "84b28ac160611335f8688ff4e67b8f507b53d04e5759238b6ed5fcd580bd5355",
+        "lisp/src/optimizer.lisp": "dbf47c1f2032af15089b871b70f188dc57d6d5035f6f896767f452ee826ef8d1",
+        "lisp/src/package.lisp": "f504753f9b3dbed548e3dea10fcb3a5c1a86651c1cff901d0e9e5d4e36d10e19",
+        "lisp/src/parser.lisp": "a6a81e649b7ed5098033386d686b3d29622b1941cde7641756b5184e56115ed3",
+        "lisp/src/registry.lisp": "959cbade4c8b5329f44579abc00bbbae04ecbf3afd404298ddb93d56b7f5d849",
+        "lisp/src/sel.lisp": "a005febd5fc6ed7c48176b356c0542147a6fef26e78da320ae7ac7200da759cd",
+        "lisp/src/sql/binding.lisp": "7d7a5b3a577114222ef770152a8bcd01a01de77fa31ea1eaea94917be5b2bf1f",
+        "lisp/src/sql/emit.lisp": "6d1223069d1ad69608d7c2df2b4af33e8fc9bdaf144b12d75d347cb0421d2cd4",
+        "lisp/src/sql/errors.lisp": "014664ef38adbbf5ca05b0cd775855a86e7eeea042ee515ba73c6754852d1c48",
+        "lisp/src/sql/fragment.lisp": "4e59be4b91aa7e379db91ff7ded72248fbb1639af109875650a6af02e2d19a49",
+        "lisp/src/sql/hybrid.lisp": "fc731544a472a3338c3e44db8d4284a53a6ddba05c4431e19c2354e195538a81",
+        "lisp/src/sql/map-data.lisp": "1d49d39889d5c467b9db968eb0d5c1bf07c83873d94f0cec3013469b58e1cb3d",
+        "lisp/src/sql/map.lisp": "dbcd933dff219765dbac7af761160a3a1792baad498a9b91b0ae113506052fb5",
+        "lisp/src/sql/package.lisp": "d2937dbab0b9a6c6b59708087202087187e91bedd61ce8e01233ad400a986f64",
+        "lisp/src/sql/relational-plan.lisp": "0eaba8c8b2eb7310c4f55520be62b323bda594ad05469c4b7382556986ba744f",
+        "lisp/src/sql/stage1.lisp": "d89b42dbc5288fc84033ae69b903379f4b3415b9aaa0faa25d51a060151a62dc",
+        "lisp/src/sql/translator.lisp": "b8c82d2ce0bcde4cff17b093ec4064dbaa0703865ccc99760f3c8f896d32aa56",
+        "lisp/src/utf8.lisp": "658ff7588f407e4c99bf62c6ef1f0aad62713ff0474e3e42fa2553df26570348",
+        "lisp/src/value.lisp": "94e71c9d177fc6221bc6f4a2a2ca95b1cdf6a2ddeffa120ec9ba969f308021a8"
+      }
+    },
+    "cpp": {
+      "files": 19,
+      "lines": 17328,
+      "generated_excluded": [
+        "cpp/sel_sql_map_data.cpp"
+      ],
+      "single_reference_declarations": [
+        {
+          "file": "cpp/sel.cpp",
+          "line": 184,
+          "name": "cp_length"
+        },
+        {
+          "file": "cpp/sel.cpp",
+          "line": 510,
+          "name": "mul_abs"
+        },
+        {
+          "file": "cpp/sel.cpp",
+          "line": 3692,
+          "name": "for_each_collection_item"
+        },
+        {
+          "file": "cpp/sel_sql.hpp",
+          "line": 145,
+          "name": "set_sargable"
+        },
+        {
+          "file": "cpp/sel_sql.hpp",
+          "line": 146,
+          "name": "set_guard"
+        }
+      ],
+      "unused_import_candidates": [],
+      "duplicate_windows": [
+        {
+          "locations": [
+            {
+              "file": "cpp/sel.cpp",
+              "line": 876
+            },
+            {
+              "file": "cpp/sel.cpp",
+              "line": 943
+            }
+          ],
+          "sample": "if (a.small && b.small) {\nconst long long target_scale = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));\nif (target_scale <= 38 && (target_scale - a.scale) <= 38 && (target_scale - b.scale) <= 38) {\n__int128_t sa = a.mantissa;\n__int128_t sb = b.mantissa;\nbool ov = false;\nif (target_scale > a.scale) {\nif (__builtin_mul_overflow(sa, POW10_128[target_scale - a.scale], &sa)) ov = true;"
+        },
+        {
+          "locations": [
+            {
+              "file": "cpp/sel.cpp",
+              "line": 3348
+            },
+            {
+              "file": "cpp/sel.cpp",
+              "line": 3392
+            }
+          ],
+          "sample": "const Value rhs = eval_node(*node.r, ctx);\nconst Pos tp = node.l->pos, vp = node.r->pos;\nconst char binop = node.s[0];\nif (binop == '&') {\nvalue = concat(target_value, rhs, tp, vp);\n} else {\nconst Dec a = as_dec(target_value, tp);\nconst Dec b = as_dec(rhs, vp);"
+        },
+        {
+          "locations": [
+            {
+              "file": "cpp/sel.cpp",
+              "line": 6036
+            },
+            {
+              "file": "cpp/sel.cpp",
+              "line": 6065
+            }
+          ],
+          "sample": "return;\n}\nif (n == 3) {\ncollect(node->items[0].get(), bound, reads, assigned, depth + 1);\nstd::set<std::string> inner = bound;\ninner.insert(\"_\");\ninner.insert(\"_K\");\ncollect(node->items[1].get(), inner, reads, assigned, depth + 1);"
+        },
+        {
+          "locations": [
+            {
+              "file": "cpp/sel.hpp",
+              "line": 51
+            },
+            {
+              "file": "cpp/sel_sql.hpp",
+              "line": 43
+            }
+          ],
+          "sample": "const std::string& code() const noexcept { return code_; }\nconst std::string& message() const noexcept { return message_; }\nint line() const noexcept { return pos_.line; }\nint col() const noexcept { return pos_.col; }\nint offset() const noexcept { return pos_.offset; }\nPos pos() const noexcept { return pos_; }\nstd::string str() const;\nconst char* what() const noexcept override { return message_.c_str(); }"
+        },
+        {
+          "locations": [
+            {
+              "file": "cpp/sel_sql_translator.cpp",
+              "line": 146
+            },
+            {
+              "file": "cpp/sel_sql_translator.cpp",
+              "line": 177
+            }
+          ],
+          "sample": "caveats_.clear();\nframes_.clear();\ndepth_ = 0;\nsubquery_counter_ = 0;\nConstScope scope = const_scope(&bindings_);\nconst_names_ = std::move(scope.names);\nconst_root_ = std::move(scope.root);\nconst SNodePtr normalised = normalise(ast, const_names_, const_root_);"
+        },
+        {
+          "locations": [
+            {
+              "file": "cpp/sel_sql_translator.cpp",
+              "line": 1159
+            },
+            {
+              "file": "cpp/sel_sql_translator.cpp",
+              "line": 1171
+            }
+          ],
+          "sample": "if (sargable_prefilter) {\nconst Fragment coarse_args[] = {l, r};\nconst Fragment coarse = apply(Section::Ops, \"$==\", coarse_args, n.pos(), variant);\nconst Fragment res_args[] = {emit_.text_operand(l), emit_.text_operand(r)};\nconst Fragment residual = apply(Section::Ops, \"$==\", res_args, n.pos(), variant);\nconst Fragment and_args[] = {coarse, residual};\nFragment res = apply(Section::Ops, \"AND\", and_args, n.pos());\nres.set_prefilter(std::make_shared<Fragment>(coarse));"
+        },
+        {
+          "locations": [
+            {
+              "file": "cpp/sel_sql_translator.cpp",
+              "line": 2526
+            },
+            {
+              "file": "cpp/sel_sql_translator.cpp",
+              "line": 2801
+            }
+          ],
+          "sample": "}\nstd::vector<RelationalProjection> projections;\nfor (std::size_t i = 0; i < rec_args.size(); i += 2) {\nconst auto& k_node = rec_args[i];\nconst auto& v_node = rec_args[i + 1];\nif (k_node->t() != SNode::T::Text) {\nrefuse(\"E_BAD_ARG\", \"RECORD field names must be string literals\", k_node->pos());\n}"
+        }
+      ],
+      "source_sha256": {
+        "cpp/sel.cpp": "6f0354a547479374898518256dad814bf5aacc2f56dbc5754ab180446785316b",
+        "cpp/sel.hpp": "628422c4236c76cba77c1d4427f37453dc2194834a6411b74ba8bf4efd24845e",
+        "cpp/sel_ast.hpp": "10699f4a93b2b024d69f6693244a09a3116abb60989d8b824c813b8427db63cc",
+        "cpp/sel_optimizer.cpp": "9c974184a0240aa80c4a5a91c753f20b0da4b2e87fe32cf3bead1f4393aa8a47",
+        "cpp/sel_sql.cpp": "3543a5328cc42f81cb52355a5a2c30a29f3af040b377f3c34c5fe3884698ce26",
+        "cpp/sel_sql.hpp": "ea83132c2a12d8bf8d654d69a8acfdda77178b3b397a31f932e445321d499f9d",
+        "cpp/sel_sql_binding.cpp": "3c74ce25fb0abd25663244bc2b03fb30e650c2a1583136877fe43837879633ca",
+        "cpp/sel_sql_emit.cpp": "93b7919161df957515eeb243af4083160ac13ff365f8b6e397e9df93621e2602",
+        "cpp/sel_sql_emit.hpp": "9d1588f3838077ee327e85eb8d616fb06a724965e00dd2dc9b5c2b715191584b",
+        "cpp/sel_sql_hybrid.cpp": "661e87b44f10b2ff27a20c5e0bc9fbced70bb3f699927801dd8ca76345ad3ed3",
+        "cpp/sel_sql_map.cpp": "1e51c5e39ca177dda91ac98c944be42497bdcaf485b8db0898a049cbd65ccc42",
+        "cpp/sel_sql_map.hpp": "d21ce11aa5c6390af01066b79cb40ab3a7b90f8556a60539afc274903a9c88ab",
+        "cpp/sel_sql_map_data.cpp": "623a50a3fc035205d428a2baac7cc732d7d7ecd7ca19d80d84edd44dd6d3bcd7",
+        "cpp/sel_sql_node.cpp": "3dc1930ace55d0a7a7763687b6cc492dc651063e6b6c7cd5dd14ca5a87a55fcd",
+        "cpp/sel_sql_node.hpp": "797278e3899abc44b06a7d49fc91e1820fdd5a0f4c11fe537938ebf3b73cedc2",
+        "cpp/sel_sql_stage1.cpp": "78cc86754d2ec554e93d30eda1a91f7475860e1976a0e1dbc2b56357fe09090a",
+        "cpp/sel_sql_stage1.hpp": "c3e4471174ffe18a92ded252329b8a0c730bef0137f004b0a3847fdaf0af35c7",
+        "cpp/sel_sql_translator.cpp": "2baa9903278fea8884df99d869ace1566c26919b539ae2cfef1181d2d60ac342",
+        "cpp/sel_sql_translator.hpp": "a54de37a6e6cc3348292919d17900f104176fbba5d61777ae6bc25ad6e421de7"
+      }
+    }
+  }
+}
