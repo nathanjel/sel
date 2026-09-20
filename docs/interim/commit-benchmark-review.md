@@ -123,6 +123,8 @@ Exact experiments: [collection patch](commit-benchmark/inline-collection.patch),
 
 ### 2. Common Lisp: the apparent 27% S6 regression is not robust
 
+Follow-up: [Lisp alias lookup and prepared arguments](lisp-runtime-improvements.md) records the implemented cache/vector changes, cold and retained-memory costs, and separate GC/validation diagnostics. The historical measurements below remain unchanged.
+
 The first full batch suggests 214 → 271 ms from `619bc31` to `c5a8991`. Individual samples span 179–370 ms and 181–314 ms, respectively. Ten-sample isolated repeats with three warmups do not reproduce that slowdown:
 
 | Variant | Normal GC median / mean ms | Collect-before-sample median / mean ms |

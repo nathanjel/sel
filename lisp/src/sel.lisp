@@ -10,7 +10,8 @@
   ;; (sql/cases/25-hybrid-plans.sqlt asserts so) -- and a caller who builds a
   ;; program from an AST of their own is held to the same rule. Setting the
   ;; slot to a new tree is fine and drops the cache below; writing into its
-  ;; nodes is not.
+  ;; nodes is not. Private argument-vector metadata may be filled lazily; it
+  ;; never changes the tree's structure or stores invocation-specific values.
   (ast nil)
   ;; The physical tree RUN evaluates: AST after the in-memory optimiser, built
   ;; on the first run and kept, because the rewrite and the copy it makes cost

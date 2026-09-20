@@ -254,48 +254,60 @@ Returns (values left-expr right-expr is-numeric) or NIL."
           (value-set null-rec low (make-none)))))
     null-rec))
 
-(defvar *alias-plan-cache* (make-hash-table :test #'equal))
+;; Keep ownership global, not on record shapes: source/destination chains must
+;; remain bounded. Two lookup levels avoid a fresh composite key on every hit
+;; while preserving multiple table names per source shape.
+;; Rebuild derived metadata on reload, including upgrades from older layouts.
+(defparameter *alias-plan-cache* (make-hash-table :test #'eq))
+(defparameter *alias-plan-cache-count* 0)
 
 (defun ensure-row-table-alias (row tbl-name)
   (if (or (null tbl-name) (string= tbl-name "_1") (value-has row tbl-name))
       row
-      (let* ((low (string-downcase tbl-name))
-             (diff (string/= tbl-name low)))
-        (cond
-          ((value-shape row)
-           (let* ((old-shape (value-shape row))
-                  (cache-key (cons old-shape tbl-name))
-                  (cached (gethash cache-key *alias-plan-cache*)))
-             (multiple-value-bind (new-shape is-diff old-len)
-                 (if cached
-                     (values (first cached) (second cached) (third cached))
-                     (let* ((old-keys (record-shape-keys old-shape))
-                            (new-keys (if diff
-                                          (append old-keys (list tbl-name low))
-                                          (append old-keys (list tbl-name))))
-                            (ns (get-record-shape new-keys))
-                            (olen (record-shape-size old-shape)))
-                       (when (and (<= (length new-keys) +shape-cache-max-keys+)
-                                  (<= (loop for key in new-keys sum (length key))
-                                      +shape-cache-max-chars+))
-                         (when (>= (hash-table-count *alias-plan-cache*) +shape-cache-entries+)
-                           (clrhash *alias-plan-cache*))
-                         (setf (gethash cache-key *alias-plan-cache*) (list ns diff olen)))
-                       (values ns diff olen)))
-               (let* ((old-storage (value-storage row))
-                      (new-storage (make-array (record-shape-size new-shape))))
-                 (loop for i from 0 below old-len
-                       do (setf (svref new-storage i) (svref old-storage i)))
-                 (setf (svref new-storage old-len) row)
-                 (when is-diff
-                   (setf (svref new-storage (1+ old-len)) row))
-                 (%make-shaped-value new-shape new-storage)))))
-          (t
-           (let* ((extra (if diff
-                             (list (cons tbl-name row) (cons low row))
-                             (list (cons tbl-name row))))
-                  (new-children (append (value-children row) extra)))
-             (%value-with-children (value-kind row) (value-scalar row) new-children (value-is-list row))))))))
+      (cond
+        ((value-shape row)
+         (let* ((old-shape (value-shape row))
+                (plans (gethash old-shape *alias-plan-cache*))
+                (cached (and plans (gethash tbl-name plans))))
+           (multiple-value-bind (new-shape is-diff old-len)
+               (if cached
+                   (values (first cached) (second cached) (third cached))
+                   (let* ((low (string-downcase tbl-name))
+                          (diff (string/= tbl-name low))
+                          (old-keys (record-shape-keys old-shape))
+                          (new-keys (if diff
+                                        (append old-keys (list tbl-name low))
+                                        (append old-keys (list tbl-name))))
+                          (ns (get-record-shape new-keys))
+                          (olen (record-shape-size old-shape)))
+                     (when (and (<= (length new-keys) +shape-cache-max-keys+)
+                                (<= (loop for key in new-keys sum (length key))
+                                    +shape-cache-max-chars+))
+                       (when (>= *alias-plan-cache-count* +shape-cache-entries+)
+                         (clrhash *alias-plan-cache*)
+                         (setf *alias-plan-cache-count* 0 plans nil))
+                       (unless plans
+                         (setf plans (make-hash-table :test #'equal)
+                               (gethash old-shape *alias-plan-cache*) plans))
+                       (setf (gethash tbl-name plans) (list ns diff olen))
+                       (incf *alias-plan-cache-count*))
+                     (values ns diff olen)))
+             (let* ((old-storage (value-storage row))
+                    (new-storage (make-array (record-shape-size new-shape))))
+               (loop for i from 0 below old-len
+                     do (setf (svref new-storage i) (svref old-storage i)))
+               (setf (svref new-storage old-len) row)
+               (when is-diff
+                 (setf (svref new-storage (1+ old-len)) row))
+               (%make-shaped-value new-shape new-storage)))))
+        (t
+         (let* ((low (string-downcase tbl-name))
+                (diff (string/= tbl-name low))
+                (extra (if diff
+                           (list (cons tbl-name row) (cons low row))
+                           (list (cons tbl-name row))))
+                (new-children (append (value-children row) extra)))
+           (%value-with-children (value-kind row) (value-scalar row) new-children (value-is-list row)))))))
 
 (defun make-joined-row (r1 r2 b1 b2 &optional pre-promoted-k1 pre-promoted-k2 pre-table-k1)
   "One joined row. Each key once, where it first occurred (spec §7.4): a

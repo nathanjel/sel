@@ -71,6 +71,10 @@
           (sel:run (sel:compile-source "RECORD(\"id\", X, \"id\", Y)") ctx) "id"))))
         (aliases 1000)
         (assert (<= (hash-table-count (symbol-value 'sel::*alias-plan-cache*)) 256))
+        (assert (<= sel::*alias-plan-cache-count* 256))
+        (assert (= sel::*alias-plan-cache-count*
+                   (loop for plans being the hash-values of sel::*alias-plan-cache*
+                         sum (hash-table-count plans))))
         (loop for n from 65 below 300 do (assert (= (sel::pow10 n) (expt 10 n))))
         (assert (= (sel::pow10 10000) (expt 10 10000)))
         (loop for n from 100000 below 400000 by 20000

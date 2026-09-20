@@ -1,0 +1,94 @@
+--- before/lisp/src/builtins/structure.lisp
++++ stack-key/lisp/src/builtins/structure.lisp
+@@ -259,17 +259,20 @@
+ (defun ensure-row-table-alias (row tbl-name)
+   (if (or (null tbl-name) (string= tbl-name "_1") (value-has row tbl-name))
+       row
+-      (let* ((low (string-downcase tbl-name))
+-             (diff (string/= tbl-name low)))
+-        (cond
++      (cond
+           ((value-shape row)
+            (let* ((old-shape (value-shape row))
+                   (cache-key (cons old-shape tbl-name))
+                   (cached (gethash cache-key *alias-plan-cache*)))
++             ;; This probe key never escapes. Cache misses insert a separate
++             ;; heap key below; implementations may stack-allocate this cons.
++             (declare (dynamic-extent cache-key))
+              (multiple-value-bind (new-shape is-diff old-len)
+                  (if cached
+                      (values (first cached) (second cached) (third cached))
+-                     (let* ((old-keys (record-shape-keys old-shape))
++                     (let* ((low (string-downcase tbl-name))
++                            (diff (string/= tbl-name low))
++                            (old-keys (record-shape-keys old-shape))
+                             (new-keys (if diff
+                                           (append old-keys (list tbl-name low))
+                                           (append old-keys (list tbl-name))))
+@@ -280,7 +283,8 @@
+                                       +shape-cache-max-chars+))
+                          (when (>= (hash-table-count *alias-plan-cache*) +shape-cache-entries+)
+                            (clrhash *alias-plan-cache*))
+-                         (setf (gethash cache-key *alias-plan-cache*) (list ns diff olen)))
++                         (setf (gethash (cons old-shape tbl-name) *alias-plan-cache*)
++                               (list ns diff olen)))
+                        (values ns diff olen)))
+                (let* ((old-storage (value-storage row))
+                       (new-storage (make-array (record-shape-size new-shape))))
+@@ -291,11 +295,13 @@
+                    (setf (svref new-storage (1+ old-len)) row))
+                  (%make-shaped-value new-shape new-storage)))))
+           (t
+-           (let* ((extra (if diff
++           (let* ((low (string-downcase tbl-name))
++                  (diff (string/= tbl-name low))
++                  (extra (if diff
+                              (list (cons tbl-name row) (cons low row))
+                              (list (cons tbl-name row))))
+                   (new-children (append (value-children row) extra)))
+-             (%value-with-children (value-kind row) (value-scalar row) new-children (value-is-list row))))))))
++             (%value-with-children (value-kind row) (value-scalar row) new-children (value-is-list row)))))))
+ 
+ (defun make-joined-row (r1 r2 b1 b2 &optional pre-promoted-k1 pre-promoted-k2 pre-table-k1)
+   "One joined row. Each key once, where it first occurred (spec §7.4): a
+--- before/lisp/src/parser.lisp
++++ stack-key/lisp/src/parser.lisp
+@@ -22,6 +22,10 @@
+   (l nil)                  ; bin/index/assign left; un operand
+   (r nil)                  ; bin/index/assign right
+   (items nil :type list)   ; seq/list items, call arguments
++  ;; Prepared lazily on the final call node. The optimizer's explicit shallow
++  ;; copy omits these slots; replacing an argument list also invalidates them.
++  (argument-nodes nil)
++  (argument-nodes-of nil)
+   (spec nil)               ; call
+   (record-shape nil)       ; prepared literal-key RECORD layout
+   (dec-val nil)            ; cached DEC struct for :num nodes
+--- before/lisp/src/eval.lisp
++++ stack-key/lisp/src/eval.lisp
+@@ -53,7 +53,12 @@
+   (record-shape nil))
+ 
+ (defun make-args (node ctx)
+-  (let ((nodes (coerce (node-items node) 'simple-vector)))
++  (let ((nodes (if (and (node-argument-nodes node)
++                       (eq (node-argument-nodes-of node) (node-items node)))
++                  (node-argument-nodes node)
++                  (let ((prepared (coerce (node-items node) 'simple-vector)))
++                    (setf (node-argument-nodes-of node) (node-items node)
++                          (node-argument-nodes node) prepared)))))
+     (let ((a (%make-args nodes (node-s node) (node-pos node) ctx
+                          (make-array (length nodes) :initial-element :unset))))
+       (setf (args-record-shape a) (node-record-shape node))
+--- before/lisp/src/sel.lisp
++++ stack-key/lisp/src/sel.lisp
+@@ -10,7 +10,8 @@
+   ;; (sql/cases/25-hybrid-plans.sqlt asserts so) -- and a caller who builds a
+   ;; program from an AST of their own is held to the same rule. Setting the
+   ;; slot to a new tree is fine and drops the cache below; writing into its
+-  ;; nodes is not.
++  ;; nodes is not. Private argument-vector metadata may be filled lazily; it
++  ;; never changes the tree's structure or stores invocation-specific values.
+   (ast nil)
+   ;; The physical tree RUN evaluates: AST after the in-memory optimiser, built
+   ;; on the first run and kept, because the rewrite and the copy it makes cost

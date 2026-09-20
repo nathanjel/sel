@@ -53,7 +53,13 @@
   (record-shape nil))
 
 (defun make-args (node ctx)
-  (let ((nodes (coerce (node-items node) 'simple-vector)))
+  (let* ((items (node-items node))
+         (plan (node-argument-plan node))
+         (nodes (if (and plan (eq (car plan) items))
+                    (cdr plan)
+                    (let ((prepared (coerce items 'simple-vector)))
+                      (setf (node-argument-plan node) (cons items prepared))
+                      prepared))))
     (let ((a (%make-args nodes (node-s node) (node-pos node) ctx
                          (make-array (length nodes) :initial-element :unset))))
       (setf (args-record-shape a) (node-record-shape node))

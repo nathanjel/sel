@@ -12,6 +12,18 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Common Lisp alias lookups, prepared arguments and GC-aware measurements (2026-09-20).
+
+  - **Remove recurring lookup and argument allocations.** Alias plans use a global EQ shape index and EQUAL name tables, preserving alternating aliases and the 256-total-plan/key-size bounds. Hits avoid composite keys and lowercase strings. Executed call nodes share a prepared argument vector, with list identity and vector published together; evaluated-value caches remain private to each invocation, and rewritten argument lists rebuild the metadata.
+  - **Measure application gains and tradeoffs.** Repeated S3/S5 medians improve 3–6%/10–11%. S6 allocates about 14% less, but its standard full-batch mean regresses about 17%; a separate normal-GC probe with context validation around the batch improves mean latency about 10%. Mandelbrot is about 1% slower. The measurements expose GC interference from untimed input serialization rather than claiming a universal speedup or a confirmed historical 27% regression. [Results, diagnostics and reproduction](docs/interim/lisp-runtime-improvements.md).
+  - **Keep retention bounded and account for cold costs.** Alias/schema churn retains about 47 KB more; 5,000 executed ten-argument programs retain about 0.56 MB more for shared vectors. AST node allocation size stays unchanged on SBCL. Changing schemas is about 14% slower in the focused probe, and compile-and-run about 2% slower. Cache eviction, oversized layouts and live-value ownership remain covered by tests.
+
+Validation: 532 Lisp unit checks, 911 conformance cases, 852 SQL cases,
+metadata checks and 39,990 decimal-oracle cases pass. All 4,000 differential
+programs and 54 API probes agree across Lisp, C++ and JavaScript. Six-scenario
+results and generated SQL match the shared reference; all final Mandelbrot
+frames match. The full five-language repository gate was not rerun.
+
 C++ container allocation and regression measurements (2026-09-20).
 
   - **Allocate container headers and payloads together.** Lists, records and container clones share one allocation, while scalar headers remain 72 bytes and decimals remain optional. Alias mutation, independent cloning and iterative deep destruction are preserved. No additional cache is introduced.

@@ -22,6 +22,10 @@
   (l nil)                  ; bin/index/assign left; un operand
   (r nil)                  ; bin/index/assign right
   (items nil :type list)   ; seq/list items, call arguments
+  ;; Prepared lazily on the final call node. The optimizer's explicit shallow
+  ;; copy omits this slot; replacing an argument list also invalidates it.
+  ;; Keep (source-list . vector) together so readers see one coherent snapshot.
+  (argument-plan nil)
   (spec nil)               ; call
   (record-shape nil)       ; prepared literal-key RECORD layout
   (dec-val nil)            ; cached DEC struct for :num nodes
