@@ -35,6 +35,11 @@ export class RecordShape {
   readonly keys: readonly string[];
   readonly keyMap: Map<string, number>;
   readonly size: number;
+  /**
+   * @deprecated Always empty: alias plans live in a bounded module-level
+   * cache and nothing writes here. Kept as a lazily created Map for one
+   * minor release; removed in the next.
+   */
   readonly aliasCache: Map<string, RecordShapeAlias>;
 }
 

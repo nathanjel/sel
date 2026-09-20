@@ -1,0 +1,825 @@
+{
+  "$comment": "The authored builtin manifest: one entry per SEL builtin, the single source for names, arities, extra arity rules and lazy/binds flags. Format in spec/builtins.md. Rendered into every host by tools/gen-builtins.mjs; each host checks its own table against the rendering at startup.",
+  "builtins": {
+    "ABORT": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "ABORT(message)"
+      ],
+      "spec": "§7.2"
+    },
+    "ABS": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "ABS(x)"
+      ],
+      "spec": "§7.6"
+    },
+    "ALL": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "ALL(list, [binder,] body)"
+      ],
+      "spec": "§7.3"
+    },
+    "ANY": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "ANY(list, [binder,] body)"
+      ],
+      "spec": "§7.3"
+    },
+    "BACKWARDS": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "BACKWARDS(x)"
+      ],
+      "spec": "§7.5"
+    },
+    "BLEN": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "BLEN(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "BTL": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "BTL(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "BUCKET": {
+      "arity": {
+        "min": 2,
+        "max": 4
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "BUCKET(list, [binder,] key)",
+        "BUCKET(list, [binder,] key, proj)"
+      ],
+      "spec": "§7.3"
+    },
+    "CEIL": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "CEIL(x)"
+      ],
+      "spec": "§7.6"
+    },
+    "CHAR": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "CHAR(n)"
+      ],
+      "spec": "§7.5"
+    },
+    "COALESCE": {
+      "arity": {
+        "min": 1,
+        "max": "variadic"
+      },
+      "lazy": true,
+      "signatures": [
+        "COALESCE(a, b, …)"
+      ],
+      "spec": "§7.9"
+    },
+    "CODE": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "CODE(x)"
+      ],
+      "spec": "§7.5"
+    },
+    "COND": {
+      "arity": {
+        "min": 3,
+        "max": "variadic",
+        "parity": "odd",
+        "message": "COND takes condition/result pairs and a final default (an odd number of arguments), got {count}"
+      },
+      "lazy": true,
+      "signatures": [
+        "COND(c1, r1, …, default)"
+      ],
+      "spec": "§7.2"
+    },
+    "COUNT": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "COUNT(x)"
+      ],
+      "spec": "§7.4"
+    },
+    "CRC32": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "CRC32(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "DECODE_BASE64": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "DECODE_BASE64(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "DEDUPE": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "DEDUPE(list)"
+      ],
+      "spec": "§7.4"
+    },
+    "DISTINCT": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "DISTINCT(list)"
+      ],
+      "spec": "§7.4"
+    },
+    "DROP": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "DROP(list, n)"
+      ],
+      "spec": "§7.4"
+    },
+    "ENCODE_BASE64": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "ENCODE_BASE64(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "FILTER": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "FILTER(list, [binder,] body)"
+      ],
+      "spec": "§7.3"
+    },
+    "FIND": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "signatures": [
+        "FIND(needle, hay [, from])"
+      ],
+      "spec": "§7.5"
+    },
+    "FLOOR": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "FLOOR(x)"
+      ],
+      "spec": "§7.6"
+    },
+    "FROM_HEX": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "FROM_HEX(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "FROM_UTF8": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "FROM_UTF8(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "GET": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "lazy": true,
+      "signatures": [
+        "GET(target, key [, default])"
+      ],
+      "spec": "§7.9"
+    },
+    "HAS": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "HAS(x, key)"
+      ],
+      "spec": "§7.4"
+    },
+    "IF": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "lazy": true,
+      "signatures": [
+        "IF(cond, then [, else])"
+      ],
+      "spec": "§7.2"
+    },
+    "INDEXES": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "INDEXES(x)"
+      ],
+      "spec": "§7.4"
+    },
+    "ISNUM": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "ISNUM(x)"
+      ],
+      "spec": "§7.6"
+    },
+    "IS_BLANK": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "IS_BLANK(x)"
+      ],
+      "spec": "§7.9"
+    },
+    "IS_NOT_NULL": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "IS_NOT_NULL(x)"
+      ],
+      "spec": "§7.9"
+    },
+    "IS_NULL": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "IS_NULL(x)"
+      ],
+      "spec": "§7.9"
+    },
+    "IS_PRESENT": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "IS_PRESENT(x)"
+      ],
+      "spec": "§7.9"
+    },
+    "JOIN": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "JOIN(list, sep)"
+      ],
+      "spec": "§7.3"
+    },
+    "LEFT": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "LEFT(x, n)"
+      ],
+      "spec": "§7.5"
+    },
+    "LEN": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "LEN(x)"
+      ],
+      "spec": "§7.5"
+    },
+    "LINK": {
+      "arity": {
+        "min": 3,
+        "max": 5,
+        "allowed": [
+          3,
+          5
+        ],
+        "message": "LINK takes 3 or 5 arguments, got {count}"
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "LINK(left, right, pred)",
+        "LINK(left, right, L, R, pred)"
+      ],
+      "spec": "§7.4"
+    },
+    "LINK_LEFT": {
+      "arity": {
+        "min": 3,
+        "max": 5,
+        "allowed": [
+          3,
+          5
+        ],
+        "message": "LINK_LEFT takes 3 or 5 arguments, got {count}"
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "LINK_LEFT(left, right, pred)",
+        "LINK_LEFT(left, right, L, R, pred)"
+      ],
+      "spec": "§7.4"
+    },
+    "LIST": {
+      "arity": {
+        "min": 0,
+        "max": "variadic"
+      },
+      "signatures": [
+        "LIST(v1, v2, …)"
+      ],
+      "spec": "§7.4"
+    },
+    "LOWER": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "LOWER(x)"
+      ],
+      "spec": "§7.5"
+    },
+    "LTB": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "LTB(list)"
+      ],
+      "spec": "§7.7"
+    },
+    "LTRIM": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "LTRIM(x)"
+      ],
+      "spec": "§7.5"
+    },
+    "MAP": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "MAP(list, [binder,] body)"
+      ],
+      "spec": "§7.3"
+    },
+    "MAX": {
+      "arity": {
+        "min": 1,
+        "max": "variadic"
+      },
+      "signatures": [
+        "MAX(a, b, …)"
+      ],
+      "spec": "§7.6"
+    },
+    "MIN": {
+      "arity": {
+        "min": 1,
+        "max": "variadic"
+      },
+      "signatures": [
+        "MIN(a, b, …)"
+      ],
+      "spec": "§7.6"
+    },
+    "PADL": {
+      "arity": {
+        "min": 3,
+        "max": 3
+      },
+      "signatures": [
+        "PADL(x, n, fill)"
+      ],
+      "spec": "§7.5"
+    },
+    "PADR": {
+      "arity": {
+        "min": 3,
+        "max": 3
+      },
+      "signatures": [
+        "PADR(x, n, fill)"
+      ],
+      "spec": "§7.5"
+    },
+    "PATH": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "lazy": true,
+      "signatures": [
+        "PATH(target, path_str [, default])"
+      ],
+      "spec": "§7.9"
+    },
+    "POWER": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "POWER(x, n)"
+      ],
+      "spec": "§7.6"
+    },
+    "RECORD": {
+      "arity": {
+        "min": 0,
+        "max": "variadic",
+        "parity": "even",
+        "message": "RECORD takes an even number of arguments (key-value pairs), got {count}"
+      },
+      "signatures": [
+        "RECORD(k1, v1, k2, v2, …)"
+      ],
+      "spec": "§7.4"
+    },
+    "REPEAT": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "REPEAT(x, n)"
+      ],
+      "spec": "§7.5"
+    },
+    "REPLACE": {
+      "arity": {
+        "min": 3,
+        "max": 3
+      },
+      "signatures": [
+        "REPLACE(needle, repl, hay)"
+      ],
+      "spec": "§7.5"
+    },
+    "RFIND": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "signatures": [
+        "RFIND(pat, subj [, flags])"
+      ],
+      "spec": "§7.8"
+    },
+    "RGROUPS": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "signatures": [
+        "RGROUPS(pat, subj [, flags])"
+      ],
+      "spec": "§7.8"
+    },
+    "RIGHT": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "RIGHT(x, n)"
+      ],
+      "spec": "§7.5"
+    },
+    "RMATCH": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "signatures": [
+        "RMATCH(pat, subj [, flags])"
+      ],
+      "spec": "§7.8"
+    },
+    "ROUND": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "ROUND(x, n)"
+      ],
+      "spec": "§7.6"
+    },
+    "RREPLACE": {
+      "arity": {
+        "min": 3,
+        "max": 4
+      },
+      "signatures": [
+        "RREPLACE(pat, repl, subj [, flags])"
+      ],
+      "spec": "§7.8"
+    },
+    "RTRIM": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "RTRIM(x)"
+      ],
+      "spec": "§7.5"
+    },
+    "SELECT_COLS": {
+      "arity": {
+        "min": 2,
+        "max": "variadic"
+      },
+      "signatures": [
+        "SELECT_COLS(rel, c1, c2, …)"
+      ],
+      "spec": "§7.4"
+    },
+    "SIGN": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "SIGN(x)"
+      ],
+      "spec": "§7.6"
+    },
+    "SORT": {
+      "arity": {
+        "min": 1,
+        "max": 3
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "SORT(list, [binder,] [body])"
+      ],
+      "spec": "§7.3"
+    },
+    "SORT_BY": {
+      "arity": {
+        "min": 2,
+        "max": 4
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "SORT_BY(list, [binder,] key [, dir])"
+      ],
+      "spec": "§7.3"
+    },
+    "SORT_DESC": {
+      "arity": {
+        "min": 1,
+        "max": 3
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "SORT_DESC(list, [binder,] [body])"
+      ],
+      "spec": "§7.3"
+    },
+    "SPLIT": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "SPLIT(x, sep)"
+      ],
+      "spec": "§7.5"
+    },
+    "SUBSTR": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "signatures": [
+        "SUBSTR(x, start [, len])"
+      ],
+      "spec": "§7.5"
+    },
+    "SUM": {
+      "arity": {
+        "min": 2,
+        "max": 3
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "SUM(list, [binder,] body)"
+      ],
+      "spec": "§7.3"
+    },
+    "TAKE": {
+      "arity": {
+        "min": 2,
+        "max": 2
+      },
+      "signatures": [
+        "TAKE(list, n)"
+      ],
+      "spec": "§7.4"
+    },
+    "TOP": {
+      "arity": {
+        "min": 2,
+        "max": 4
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "TOP(list, [binder,] [body,] n)"
+      ],
+      "spec": "§7.4"
+    },
+    "TOP_BY": {
+      "arity": {
+        "min": 3,
+        "max": 5
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "TOP_BY(list, [binder,] key, n [, dir])"
+      ],
+      "spec": "§7.4"
+    },
+    "TOP_DESC": {
+      "arity": {
+        "min": 2,
+        "max": 4
+      },
+      "lazy": true,
+      "binds": true,
+      "signatures": [
+        "TOP_DESC(list, [binder,] [body,] n)"
+      ],
+      "spec": "§7.4"
+    },
+    "TO_HEX": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "TO_HEX(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "TO_UTF8": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "TO_UTF8(x)"
+      ],
+      "spec": "§7.7"
+    },
+    "TRIM": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "TRIM(x)"
+      ],
+      "spec": "§7.5"
+    },
+    "TRUNC": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "TRUNC(x)"
+      ],
+      "spec": "§7.6"
+    },
+    "UPPER": {
+      "arity": {
+        "min": 1,
+        "max": 1
+      },
+      "signatures": [
+        "UPPER(x)"
+      ],
+      "spec": "§7.5"
+    }
+  }
+}

@@ -11,7 +11,7 @@ from dataclasses import replace
 from typing import Any
 
 from . import decimal as D
-from .errors import MAX_DEPTH, SelError
+from .errors import MAX_DEPTH
 from .eval import bytes_compare
 from .math_plan import compile_math_plan, is_math_op
 from .parser import Node

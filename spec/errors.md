@@ -29,7 +29,7 @@ argument's, not the call's.
 | `E_RESERVED` | a reserved word used as a variable name or aggregate binder |
 | `E_BAD_ASSIGN` | assignment target is not an identifier followed by zero or more index operations |
 | `E_UNKNOWN_FUNC` | a call to a name that is not in the function table |
-| `E_ARITY` | argument count outside the function's declared minimum and maximum, or failing an extra rule it declares — `COND` requires an odd count |
+| `E_ARITY` | argument count outside the function's declared minimum and maximum, or failing an extra rule it declares — `COND` requires an odd count, `LINK` and `LINK_LEFT` exactly three or five |
 | `E_DEPTH` | parser nesting exceeded the implementation limit; every nesting construct counts, prefix `NOT` and `-` included (§6.4) |
 | `E_REGEX_SYNTAX` | a regex literal pattern uses syntax outside the portable subset |
 

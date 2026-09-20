@@ -85,6 +85,17 @@ and all five have the SEL→SQL layer; `docs/SQL-TRANSLATION.md` is the design a
 Most extensions are a function, and a function is cheap: one table entry per host
 plus cases. No grammar changes, no new node types, no parser work.
 
+**A shipped builtin is declared once, in `spec/builtins.json`** (format:
+`spec/builtins.md`): its name, min/max, any extra arity rule, and the lazy/binds
+flags. `node tools/gen-builtins.mjs` renders that into each host's native table
+and into `docs/BUILTINS.md`; commit the renderings with the entry
+(`tools/check-generated.sh` fails while they are stale). Each host's `define`
+then holds the definition to the manifest at startup — a min/max/lazy/binds
+that disagrees, or a manifest name no module defined, refuses to load — and
+installs the extra arity rule from it, so `COND`'s odd count is written once
+for five hosts. A function that is *not* in the manifest (the examples below,
+an application's own) passes through `define` untouched.
+
 There are **two lanes**, and picking the right one is most of the design work.
 
 | | Lane A — strict | Lane B — lazy (AST) |
@@ -223,6 +234,15 @@ arityError: (n) => (n % 2 === 0
   ? `COND takes condition/result pairs and a final default (an odd number of arguments), got ${n}`
   : null),
 ```
+
+A count check inside the function body is not the same thing: it runs only
+when the call is reached, so `IF(TRUE, 1, LINK(1, 1, 1, 1))` answered `1` in
+the four hosts that checked "3 or 5" in `doLink` and `E_ARITY` in the one that
+declared it. For a shipped builtin the rule is now written in
+`spec/builtins.json` (`arity.allowed` or `arity.parity`, with its message) and
+installed by the registry; `conformance/11-arity.selt` pins the compile-time
+position with a call that is never reached. `arityError` on `define` remains
+the way a host's own function declares one.
 
 ---
 
@@ -434,6 +454,17 @@ UTF-16 units, C++ `std::string` counts bytes, SEL counts code points. Use
 offsets and JS returns UTF-16 offsets — convert both with `cpIndex`. Lisp and the
 C++ `u32string` paths are already code points, which is exactly why it is easy to
 forget that the others are not.
+
+**Never hash a join key from a formatted decimal.** An equi-join on `==` pairs
+elements as `==` compares them, so `1.50`, `"1.5"` and `1.5` are one key. JS and
+Lisp keyed on `format(asDecimal(x))`, which keeps the written scale, and PHP
+keyed a cached decimal one way and a not-yet-parsed text another — so a fresh
+process joined `1.00` to `"1.00"` only *after* some other comparison had parsed
+the text. Strip trailing fraction zeros, fold negative zero, and build the key
+from the same helper whichever path produced the decimal
+(`rel.link.numeric-key-*` in `15-relational.selt`). The `_1`/`_2` binders are
+positions, not names: an unnamed argument is bound bare, and four hosts added a
+`_2` key holding the element to itself.
 
 **Never use the host's case mapping.** `strtoupper` is byte- and locale-based;
 `toUpperCase` and `string-upcase` are full Unicode; `std::toupper` is

@@ -28,10 +28,7 @@
       (loop for i from 0 below last by 2
             do (when (args-bool a i) (return (args-val a (1+ i))))
             finally (return (args-val a last)))))
-  :lazy t
-  :arity-error (lambda (n)
-                 (when (evenp n)
-                   (format nil "COND takes condition/result pairs and a final default (an odd number of arguments), got ~d" n))))
+  :lazy t)   ; odd count: spec/builtins.json
 
 ;;; The one error a rule author raises deliberately.
 (define-builtin "ABORT" 1 1

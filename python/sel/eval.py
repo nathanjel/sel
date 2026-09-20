@@ -6,14 +6,14 @@ failed, carrying that node's position, and no layer rewrites it.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos, SelError, fail
 from .math_plan import MathPlan, OpCode
 from .parser import Node
 from .utf8 import bytes_compare
-from .value import BIN, BOOL, NONE, TEXT, Value
+from .value import BOOL, NONE, TEXT, Value
 
 
 # Resolve enum attributes once; the hot interpreter loop compares cached opcodes.

@@ -53,6 +53,8 @@ final class Structure
         Registry::define(['name' => 'BUCKET', 'min' => 2, 'max' => 4, 'lazy' => true, 'binds' => true,
             'fn' => static fn (Args $a, Context $ctx): Value => self::doBucket($a, $ctx)]);
 
+        // Three or five arguments, refused at compile time like every E_ARITY
+        // (spec §7.4); the rule is spec/builtins.json's and the registry installs it.
         Registry::define(['name' => 'LINK', 'min' => 3, 'max' => 5, 'lazy' => true, 'binds' => true,
             'fn' => static fn (Args $a, Context $ctx): Value => self::doLink($a, $ctx, false)]);
         Registry::define(['name' => 'LINK_LEFT', 'min' => 3, 'max' => 5, 'lazy' => true, 'binds' => true,
@@ -166,6 +168,43 @@ final class Structure
         return null;
     }
 
+    /**
+     * One key per number, as `==` compares it (spec §7.4): trailing fraction
+     * zeros and a negative zero are representation, not value. Integers that
+     * fit a native int are the int (the text shortcut in canonicalJoinKey
+     * agrees), anything else the canonical decimal text.
+     *
+     * @param array{neg:bool,digits:string,scale:int} $dec
+     */
+    private static function canonicalDecimalKey(array $dec): int|string
+    {
+        $scale = $dec['scale'];
+        $digits = $dec['digits'];
+        $neg = $dec['neg'];
+        while ($scale > 0 && str_ends_with($digits, '0')) {
+            $digits = substr($digits, 0, -1);
+            $scale--;
+        }
+        if ($scale === 0) {
+            if ($digits === '0' || $digits === '') return 0;
+            $len = strlen($digits);
+            if ($len < 19) {
+                $int = (int) $digits;
+                return $neg ? -$int : $int;
+            }
+            return ($neg ? '-' : '') . $digits;
+        }
+        $sign = $neg ? '-' : '';
+        $len = strlen($digits);
+        if ($len <= $scale) {
+            $padded = str_repeat('0', $scale - $len + 1) . $digits;
+            $cut = strlen($padded) - $scale;
+            return $sign . substr($padded, 0, $cut) . '.' . substr($padded, $cut);
+        }
+        $cut = $len - $scale;
+        return $sign . substr($digits, 0, $cut) . '.' . substr($digits, $cut);
+    }
+
     private static function canonicalJoinKey(Value $value, bool $numeric): int|string|null
     {
         if ($value->isNull()) return null;
@@ -182,32 +221,7 @@ final class Structure
                 return null;
             }
             if ($v->decVal !== null) {
-                $dec = $v->decVal;
-                $scale = $dec['scale'];
-                $digits = $dec['digits'];
-                $neg = $dec['neg'];
-                while ($scale > 0 && str_ends_with($digits, '0')) {
-                    $digits = substr($digits, 0, -1);
-                    $scale--;
-                }
-                if ($scale === 0) {
-                    if ($digits === '0' || $digits === '') return 0;
-                    $len = strlen($digits);
-                    if ($len < 19) {
-                        $int = (int) $digits;
-                        return $neg ? -$int : $int;
-                    }
-                    return ($neg ? '-' : '') . $digits;
-                }
-                $sign = $neg ? '-' : '';
-                $len = strlen($digits);
-                if ($len <= $scale) {
-                    $padded = str_repeat('0', $scale - $len + 1) . $digits;
-                    $cut = strlen($padded) - $scale;
-                    return $sign . substr($padded, 0, $cut) . '.' . substr($padded, $cut);
-                }
-                $cut = $len - $scale;
-                return $sign . substr($digits, 0, $cut) . '.' . substr($digits, $cut);
+                return self::canonicalDecimalKey($v->decVal);
             }
             $scalar = $v->getScalar();
             if (is_string($scalar)) {
@@ -229,17 +243,19 @@ final class Structure
                     }
                 }
             }
+            // The same key whichever path built it: a text parsed here and a
+            // decimal cached earlier must hash alike, or a join answers
+            // differently before and after the text is parsed elsewhere.
             try {
-                return Dec::format($v->asDecimal());
+                return self::canonicalDecimalKey($v->asDecimal());
             } catch (\Throwable) {
                 return null;
             }
         }
         if ($value->kind === Value::TEXT) {
+            // getScalar() formats a cached decimal on its first call, so one
+            // read is the whole contract; a null here means no scalar at all.
             $s = $value->getScalar();
-            if ($s === null && $value->decVal !== null) {
-                $s = $value->getScalar();
-            }
             return is_string($s) ? $s : null;
         }
         return null;
@@ -339,9 +355,15 @@ final class Structure
         return null;
     }
 
+    /** `_1` and `_2` name a position, not a relation: an argument with no name is bound bare (spec §7.4). */
+    private static function isPositionalBinder(string $name): bool
+    {
+        return $name === '_1' || $name === '_2';
+    }
+
     private static function compileRowTableAliaser(string $tableName, ?Value $sample): callable
     {
-        if ($tableName === '' || $tableName === '_1' || ($sample !== null && $sample->has($tableName))) {
+        if ($tableName === '' || self::isPositionalBinder($tableName) || ($sample !== null && $sample->has($tableName))) {
             return static fn (Value $row): Value => $row;
         }
         if ($sample !== null && $sample->shape !== null) {
@@ -364,7 +386,7 @@ final class Structure
 
     private static function ensureRowTableAlias(Value $row, string $tableName): Value
     {
-        if ($tableName === '' || $tableName === '_1' || $row->has($tableName)) return $row;
+        if ($tableName === '' || self::isPositionalBinder($tableName) || $row->has($tableName)) return $row;
         $lower = strtolower($tableName);
         if ($row->shape !== null) {
             // The shape owns the interned aliased shape. Assigning the old
@@ -399,7 +421,7 @@ final class Structure
                 $values[] = Value::none();
             }
         }
-        if ($tableName !== '') {
+        if ($tableName !== '' && !self::isPositionalBinder($tableName)) {
             $keys[] = $tableName;
             $values[] = Value::none();
             $lower = strtolower($tableName);
@@ -797,30 +819,6 @@ final class Structure
         return Value::list($output);
     }
 
-    private static function compareValues(Value $a, Value $b): int
-    {
-        $aNull = $a->isNull();
-        $bNull = $b->isNull();
-        if ($aNull && $bNull) return 0;
-        if ($aNull) return -1;
-        if ($bNull) return 1;
-        if ($a->looksNumeric() && $b->looksNumeric()) return Dec::cmp($a->asDecimal(), $b->asDecimal());
-        if ($a->kind === Value::BOOL && $b->kind === Value::BOOL) return ((int) $a->getScalar()) <=> ((int) $b->getScalar());
-        if (in_array($a->kind, [Value::TEXT, Value::BIN], true)
-            && in_array($b->kind, [Value::TEXT, Value::BIN], true)) {
-            return strcmp($a->asBytes(), $b->asBytes()) <=> 0;
-        }
-        $rank = static function (Value $v): int {
-            if ($v->isNull()) return 0;
-            if ($v->kind === Value::BOOL) return 1;
-            if ($v->looksNumeric()) return 2;
-            if ($v->kind === Value::TEXT) return 3;
-            if ($v->kind === Value::BIN) return 4;
-            return 5;
-        };
-        return $rank($a) <=> $rank($b);
-    }
-
     private static function doTop(Args $a, Context $ctx, ?string $forcedDir): Value
     {
         $value = $a->val(0);
@@ -860,8 +858,10 @@ final class Structure
             fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($directionIndex));
         }
 
+        // The one ordering SORT uses too (Core::compareValues); only the
+        // bounded selection below is TOP's own.
         $compare = static function (array $left, array $right) use ($dir): int {
-            $c = self::compareValues($left['key'], $right['key']);
+            $c = Core::compareValues($left['key'], $right['key']);
             if ($dir === 'DESC') $c = -$c;
             return $c !== 0 ? $c : ($left['idx'] <=> $right['idx']);
         };

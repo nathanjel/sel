@@ -33,10 +33,7 @@ def _cond(args, ctx):
     return args.val(last)
 
 
-define('COND', 3, INF, lazy=True, fn=_cond,
-       arity_error=lambda n: (
-           f'COND takes condition/result pairs and a final default '
-           f'(an odd number of arguments), got {n}') if n % 2 == 0 else None)
+define('COND', 3, INF, lazy=True, fn=_cond)   # odd count: spec/builtins.json
 
 
 # The one error a rule author raises deliberately.

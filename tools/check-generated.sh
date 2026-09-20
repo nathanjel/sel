@@ -130,6 +130,17 @@ check_group "sql dialect map" "node tools/gen-sql-map.mjs" \
   php/bin/MapReplay.php python/bin/map_replay.py js/bin/map-replay.mjs \
   cpp/bin/map_replay.cpp lisp/bin/map-replay.lisp
 
+# The builtin manifest: names, arities, extra arity rules and lazy/binds flags,
+# authored once and rendered into the table each host checks itself against at
+# startup. A stale rendering is a host holding its builtins to yesterday's
+# manifest.
+check_group "builtin manifest" "node tools/gen-builtins.mjs" \
+  spec/builtins.json tools/gen-builtins.mjs \
+  -- \
+  js/src/_builtin_manifest.mjs python/sel/_builtin_manifest.py \
+  php/src/BuiltinManifest.php cpp/sel_builtin_manifest.hpp \
+  lisp/src/builtin-manifest.lisp docs/BUILTINS.md
+
 # The SQL case tables, so a clone can run the suite without Node.
 check_group "sql case data" "node tools/gen-sql-cases.mjs" \
   sql/cases/*.sqlt tools/gen-sql-cases.mjs \

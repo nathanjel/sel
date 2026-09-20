@@ -14,3 +14,7 @@ from . import number       # noqa: F401
 from . import binary       # noqa: F401
 from . import regex        # noqa: F401
 from . import null         # noqa: F401
+
+from ..registry import assert_manifest_covered
+
+assert_manifest_covered()

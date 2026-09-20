@@ -1,4 +1,3 @@
-from .. import decimal as D
 from ..errors import fail
 from ..registry import INF, define
 from ..value import NONE, Value, iter_elements, iter_values, structural_hash, _record_shape
@@ -53,7 +52,6 @@ def _record(args, ctx):
 
 
 define('RECORD', 0, INF,
-       arity_error=lambda count: f"RECORD takes an even number of arguments (key-value pairs), got {count}" if count % 2 != 0 else None,
        fn=_record)
 
 
@@ -221,8 +219,14 @@ def canonical_join_key(value, numeric):
 _ALIAS_PLANS = {}
 
 
+# `_1` and `_2` name a position, not a relation: an argument with no name is
+# bound bare (spec §7.4).
+def is_positional_binder(name):
+    return name == '_1' or name == '_2'
+
+
 def ensure_row_table_alias(row, table_name):
-    if not table_name or table_name == '_1' or row.has(table_name):
+    if not table_name or is_positional_binder(table_name) or row.has(table_name):
         return row
     lower = table_name.lower()
     if row.shape is not None:
@@ -252,7 +256,7 @@ def make_null_record(sample, table_name):
     entries = []
     if sample is not None:
         entries.extend((key, Value.none()) for key in sample.keys())
-    if table_name:
+    if table_name and not is_positional_binder(table_name):
         entries.append((table_name, Value.none()))
         lower = table_name.lower()
         if lower != table_name:
@@ -406,7 +410,10 @@ def _link(args, ctx, left_join):
             return Value.list([])
     needs_left_alias = bool(b1 and b1 != '_1' and (first_left is None or not first_left.has(b1)))
     sample_left = ensure_row_table_alias(first_left, b1) if (first_left is not None and needs_left_alias) else first_left
-    sample_right = first_right
+    # The right binders hold the element extended with its name too (spec
+    # §7.4); the other four hosts always did, this one bound the bare element.
+    needs_right_alias = bool(b2 and b2 != '_2' and (first_right is None or not first_right.has(b2)))
+    sample_right = ensure_row_table_alias(first_right, b2) if (first_right is not None and needs_right_alias) else first_right
     null_right = make_null_record(sample_right, b2) if left_join else None
     left_keys = sample_left.keys() if sample_left is not None else []
     right_keys = sample_right.keys() if sample_right is not None else []
@@ -431,12 +438,13 @@ def _link(args, ctx, left_join):
         ctx.push_frame(frame_right)
         try:
             for item in iter_collection_items(right_value):
-                frame_right[b2] = item
-                frame_right[b2.lower()] = item
-                frame_right['_2'] = item
+                row = ensure_row_table_alias(item, b2) if needs_right_alias else item
+                frame_right[b2] = row
+                frame_right[b2.lower()] = row
+                frame_right['_2'] = row
                 key = canonical_join_key(args.eval_node(right_expr), numeric)
                 if key is not None:
-                    buckets.setdefault(key, []).append(item)
+                    buckets.setdefault(key, []).append(row)
         finally:
             ctx.pop_frame()
 
@@ -472,12 +480,13 @@ def _link(args, ctx, left_join):
                 matched = [False]
 
                 for right_item in iter_collection_items(right_value):
-                    frame[b2] = right_item
-                    frame[b2.lower()] = right_item
-                    frame['_2'] = right_item
+                    right = ensure_row_table_alias(right_item, b2) if needs_right_alias else right_item
+                    frame[b2] = right
+                    frame[b2.lower()] = right
+                    frame['_2'] = right
                     if args.eval_node(predicate).as_bool(predicate.pos):
                         matched[0] = True
-                        output.append(project(left, right_item))
+                        output.append(project(left, right))
 
                 if left_join and not matched[0]:
                     output.append(project(left, None))
@@ -487,8 +496,6 @@ def _link(args, ctx, left_join):
 
 
 define('LINK', 3, 5, lazy=True, binds=True,
-       arity_error=lambda count: None if count in (3, 5) else f'LINK takes 3 or 5 arguments, got {count}',
        fn=lambda args, ctx: _link(args, ctx, False))
 define('LINK_LEFT', 3, 5, lazy=True, binds=True,
-       arity_error=lambda count: None if count in (3, 5) else f'LINK_LEFT takes 3 or 5 arguments, got {count}',
        fn=lambda args, ctx: _link(args, ctx, True))

@@ -393,6 +393,61 @@ LEN(1, 1)
 --- expect
 error E_ARITY at 1:1
 ===
+### name: arity.link.too-few
+--- source
+LINK(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.link.four
+--- note
+LINK takes exactly three or five arguments (spec §7.4): four is inside the
+declared 3..5 range and is refused by the function's extra arity rule, at
+compile time like every other E_ARITY. Only Python declared the rule; the
+other four hosts compiled the call and failed it when it ran.
+--- source
+LINK(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.link.four-is-compile-time
+--- note
+The call is never reached, so a run-time check would answer 1.
+--- source
+IF(TRUE, 1, LINK(1, 1, 1, 1))
+--- expect
+error E_ARITY at 1:13
+===
+### name: arity.link.too-many
+--- source
+LINK(1, 1, 1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.link-left.too-few
+--- source
+LINK_LEFT(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.link-left.four
+--- source
+LINK_LEFT(1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.link-left.four-is-compile-time
+--- source
+IF(TRUE, 1, LINK_LEFT(1, 1, 1, 1))
+--- expect
+error E_ARITY at 1:13
+===
+### name: arity.link-left.too-many
+--- source
+LINK_LEFT(1, 1, 1, 1, 1, 1)
+--- expect
+error E_ARITY at 1:1
+===
 ### name: arity.lower.too-few
 --- source
 LOWER()

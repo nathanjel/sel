@@ -726,7 +726,8 @@ failure.
 | `DROP(list, n)` | list after dropping first `n` elements (`n >= 0`, `E_RANGE` if negative, `E_NOT_INT` if non-integer) |
 | `SELECT_COLS(rel, c1, c2, …)` | list of records with only specified column keys preserved |
 | `DISTINCT(list)` | list of unique elements preserving order of first occurrence via `EQL` |
-| `LINK(left, right, pred)`, `LINK(left, right, L, R, pred)` | inner join: one joined row (below) per pair of a `left` element and a `right` element for which `pred` is `TRUE`, in `left` order then `right` order; within `pred`, `_1` (or `L`) is the left element and `_2` (or `R`) the right |
+| `DEDUPE(list)` | the same as `DISTINCT`: the relational spelling of the one operation |
+| `LINK(left, right, pred)`, `LINK(left, right, L, R, pred)` | inner join: one joined row (below) per pair of a `left` element and a `right` element for which `pred` is `TRUE`, in `left` order then `right` order; within `pred`, `_1` (or `L`) is the left element and `_2` (or `R`) the right; any other argument count is a compile-time `E_ARITY` |
 | `LINK_LEFT(…)` | the same, plus one row per `left` element that matched nothing, whose right side is empty |
 | `TOP(list, [binder,] [body,] n)`, `TOP_DESC(…)` | the first `n` of `SORT(list, [binder,] [body])` / `SORT_DESC(…)`, as one step |
 | `TOP_BY(list, [binder,] key, n [, dir])` | the first `n` of `SORT_BY(list, [binder,] key [, dir])`, as one step |
@@ -752,7 +753,9 @@ five-argument form, and — when the argument is a bare name, or a pipeline whos
 source is one — that name and its ASCII lowercase; the right binders are `_2`
 and likewise. A binder holds the element as `pred` saw it, which for a named
 argument is the element extended with the name and its lowercase as keys
-holding the element. Each key appears once, where it first occurred: a binder
+holding the element, and for an argument with no name (a literal, or any
+other expression) is the bare element — `_1` and `_2` are never added as
+keys. Each key appears once, where it first occurred: a binder
 key holds the row *this* `LINK` bound even when the left element carried a
 nested record of the same name from an earlier one (the earlier `_1`, or a
 relation joined twice), and every other key holds its first value. An

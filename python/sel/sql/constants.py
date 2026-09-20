@@ -24,8 +24,6 @@ translation time. See docs/SQL-TRANSLATION.md §11.4.
 
 from __future__ import annotations
 
-from typing import Any
-
 from ..errors import Pos, SelError
 from ..eval import Context, eval_node
 from ..parser import Node

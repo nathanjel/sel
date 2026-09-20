@@ -20,9 +20,20 @@ export class RecordShape {
     this.keys = Object.freeze([...keys]);
     this.keyMap = new Map(this.keys.map((key, i) => [key, i]));
     this.size = this.keys.length;
-    this.aliasCache = new Map();
+  }
+
+  // Declared in sel.d.ts and kept for readers of it; alias plans moved to a
+  // bounded module-level cache (builtins/structure.mjs) and nothing writes
+  // here. Built on first read so a shape carries no per-instance Map.
+  /** @deprecated always empty; removed in the next minor release */
+  get aliasCache() {
+    let cache = LEGACY_ALIAS_CACHES.get(this);
+    if (!cache) LEGACY_ALIAS_CACHES.set(this, cache = new Map());
+    return cache;
   }
 }
+
+const LEGACY_ALIAS_CACHES = new WeakMap();
 
 const SHAPES = new Map();
 const SHAPE_CACHE_ENTRIES = 256;
@@ -51,6 +62,26 @@ function listIndex(key, length) {
   if (typeof key !== 'string' || !LIST_KEY.test(key)) return -1;
   const n = Number(key);
   return n <= length ? n - 1 : -1;
+}
+
+// The shared half of fromEntries and fromEntriesPreserveDuplicates: split the
+// pairs into key and value arrays and, when every key is distinct, the packed
+// record they shape. Null means a duplicate key, and the two callers then
+// diverge on purpose -- ordinary records overwrite, joined rows keep the
+// ordered duplicates -- so that fallback is theirs, not this helper's. Measured
+// against the inlined loop the call boundary costs nothing (WL-001 SEL-0016).
+function shapedFromUniqueEntries(entries) {
+  const keys = new Array(entries.length);
+  const values = new Array(entries.length);
+  const seen = new Set();
+  for (let i = 0; i < entries.length; i++) {
+    const [key, value] = entries[i];
+    keys[i] = key;
+    values[i] = value;
+    if (seen.has(key)) return null;
+    seen.add(key);
+  }
+  return Value.shapedOwned(keys, values);
 }
 
 export class Value {
@@ -133,18 +164,8 @@ export class Value {
   static fromEntries(entries, isList = false) {
     if (isList) return Value.listOwned(entries.map(([, value]) => value));
     if (entries.length > 0) {
-      const keys = new Array(entries.length);
-      const values = new Array(entries.length);
-      const seen = new Set();
-      let unique = true;
-      for (let i = 0; i < entries.length; i++) {
-        const [key, value] = entries[i];
-        keys[i] = key;
-        values[i] = value;
-        if (seen.has(key)) unique = false;
-        else seen.add(key);
-      }
-      if (unique) return Value.shapedOwned(keys, values);
+      const shaped = shapedFromUniqueEntries(entries);
+      if (shaped) return shaped;
     }
     const v = Value.none();
     for (const [key, value] of entries) v.set(key, value);
@@ -158,18 +179,8 @@ export class Value {
   // alist only where the relational operator needs it.
   static fromEntriesPreserveDuplicates(entries) {
     if (entries.length === 0) return Value.none();
-    const keys = new Array(entries.length);
-    const values = new Array(entries.length);
-    const seen = new Set();
-    let unique = true;
-    for (let i = 0; i < entries.length; i++) {
-      const [key, value] = entries[i];
-      keys[i] = key;
-      values[i] = value;
-      if (seen.has(key)) unique = false;
-      else seen.add(key);
-    }
-    if (unique) return Value.shapedOwned(keys, values);
+    const shaped = shapedFromUniqueEntries(entries);
+    if (shaped) return shaped;
     const v = Value.none();
     v._entries = entries;
     return v;

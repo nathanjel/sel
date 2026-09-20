@@ -49,10 +49,7 @@
                 (let ((rec (make-none)))
                   (loop for i from 0 below n by 2
                         do (value-set rec (args-text a i) (value-copy (args-val a (1+ i)))))
-                  rec))))))
-  :arity-error (lambda (count)
-                 (when (oddp count)
-                   (format nil "RECORD takes an even number of arguments (key-value pairs), got ~d" count))))
+                  rec)))))))   ; even count: spec/builtins.json
 
 (define-builtin "TAKE" 2 2
   (lambda (a ctx)
@@ -218,16 +215,33 @@ Returns (values left-expr right-expr is-numeric) or NIL."
          (values r l is-numeric))
         (t nil)))))
 
+;; One key per number, as `==` compares it (spec §7.4): trailing fraction
+;; zeros and a negative zero are representation, not value. The plain-integer
+;; shortcut is an ASCII check, never DIGIT-CHAR-P, which accepts other scripts.
 (defun canonical-numeric-string (sc)
   (declare (type string sc))
   (let ((len (length sc)))
     (if (and (plusp len)
              (or (char/= (char sc 0) #\0) (= len 1))
              (loop for i from 0 below len
-                   always (digit-char-p (char sc i))))
+                   always (char<= #\0 (char sc i) #\9)))
         sc
         (let ((d (dec-parse sc)))
-          (when d (dec-format d))))))
+          (when d
+            (let ((digits (dec-digits d))
+                  (scale (dec-scale d)))
+              (if (zerop digits)
+                  "0"
+                  (progn
+                    (loop while (and (> scale 0) (zerop (mod digits 10)))
+                          do (setf digits (floor digits 10))
+                             (decf scale))
+                    (dec-format (%make-dec (dec-neg d) digits scale))))))))))
+
+;; `_1` and `_2` name a position, not a relation: an argument with no name is
+;; bound bare (spec §7.4).
+(defun positional-binder-p (name)
+  (or (string= name "_1") (string= name "_2")))
 
 (defun extract-join-key (val is-numeric)
   (when (and val (not (value-null-p val)))
@@ -247,7 +261,7 @@ Returns (values left-expr right-expr is-numeric) or NIL."
     (when sample-row
       (dolist (k (value-keys sample-row))
         (value-set null-rec k (make-none))))
-    (when tbl-name
+    (when (and tbl-name (not (positional-binder-p tbl-name)))
       (let ((low (string-downcase tbl-name)))
         (value-set null-rec tbl-name (make-none))
         (when (string/= tbl-name low)
@@ -262,7 +276,7 @@ Returns (values left-expr right-expr is-numeric) or NIL."
 (defparameter *alias-plan-cache-count* 0)
 
 (defun ensure-row-table-alias (row tbl-name)
-  (if (or (null tbl-name) (string= tbl-name "_1") (value-has row tbl-name))
+  (if (or (null tbl-name) (positional-binder-p tbl-name) (value-has row tbl-name))
       row
       (cond
         ((value-shape row)
@@ -582,6 +596,8 @@ and C++ agreed with it on that path, while JS and Lisp built `X` twice."
                         (ctx-pop-frame ctx))))))
             (make-list-value (nreverse out))))))))
 
+;; Three or five arguments, refused at compile time like every E_ARITY (spec
+;; §7.4); the rule is spec/builtins.json's and DEFINE-BUILTIN installs it.
 (define-builtin "LINK" 3 5
   (lambda (a ctx) (do-link a ctx nil))
   :lazy t :binds t)

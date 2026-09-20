@@ -14,6 +14,7 @@
 
 #include "sel.hpp"
 #include "sel_ast.hpp"
+#include "sel_builtin_manifest.hpp"
 
 // SEL rejects \p{...} at compile time as non-portable, so SRELL's Unicode
 // property tables are unreachable from this language. Leaving them out cuts the
@@ -179,10 +180,6 @@ bool is_valid_utf8(std::string_view bytes) {
   } catch (const SelError&) {
     return false;
   }
-}
-
-std::size_t cp_length(std::string_view text, Pos pos = {}) {
-  return decode_utf8(text, pos).size();
 }
 
 std::string to_hex(std::string_view bytes) {
@@ -507,27 +504,6 @@ std::string sub_abs(const std::string& a, const std::string& b) {
   return limbs_to_string(sub_limbs(string_to_limbs(a), string_to_limbs(b)));
 }
 
-[[maybe_unused]] std::string mul_abs(const std::string& a, const std::string& b) {
-  if (a == "0" || b == "0") return "0";
-  if (a == "1") return b;
-  if (b == "1") return a;
-  if (a.size() <= 9 && b.size() <= 9) {
-    unsigned long long va = std::stoull(a);
-    unsigned long long vb = std::stoull(b);
-    return std::to_string(va * vb);
-  }
-  if (a.size() <= 18 && b.size() <= 18) {
-    unsigned __int128 va = 0, vb = 0;
-    for (char c : a) va = va * 10 + (c - '0');
-    for (char c : b) vb = vb * 10 + (c - '0');
-    unsigned __int128 prod;
-    if (!__builtin_mul_overflow(va, vb, &prod)) {
-      return dec_digits_from_magnitude(prod);
-    }
-  }
-  return limbs_to_string(mul_limbs(string_to_limbs(a), string_to_limbs(b)));
-}
-
 // Schoolbook long division with power-of-10 and single-digit fast paths.
 bool divmod_abs(const std::string& a, const std::string& b, std::string& q, std::string& r) {
   if (b == "0") return false;
@@ -720,11 +696,6 @@ Dec dec_guard(Dec&& d, Pos pos) {
   return std::move(d);
 }
 
-[[maybe_unused]] Dec dec_guard(const Dec& d, Pos pos) {
-  Dec copy = d;
-  return dec_guard(std::move(copy), pos);
-}
-
 const Dec DEC_ZERO = dec_from_mantissa(0, 0);
 
 bool dec_is_number(std::string_view text) {
@@ -872,24 +843,31 @@ void dec_aligned(const Dec& a, const Dec& b, std::string& A, std::string& B, lon
   B = scale_up(dec_get_digits(b), s - b.scale);
 }
 
+// The checked native fast path shared by addition and comparison: both small
+// mantissas brought to the larger scale in __int128, or false when the scale
+// gap is past the power table or the multiply overflows. The caller falls
+// through to the limb path on false exactly as each did with its own copy;
+// signed bounds are __builtin_mul_overflow's. Two callers, one rule (WL-001
+// SEL-0018); it is not a small-integer abstraction for the other hosts.
+inline bool align_small(const Dec& a, const Dec& b, __int128_t& sa, __int128_t& sb,
+                        long long& target_scale) {
+  target_scale = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
+  if (target_scale > 38 || (target_scale - a.scale) > 38 || (target_scale - b.scale) > 38) return false;
+  sa = a.mantissa;
+  sb = b.mantissa;
+  if (target_scale > a.scale && __builtin_mul_overflow(sa, POW10_128[target_scale - a.scale], &sa)) return false;
+  if (target_scale > b.scale && __builtin_mul_overflow(sb, POW10_128[target_scale - b.scale], &sb)) return false;
+  return true;
+}
+
 Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small) {
-    const long long target_scale = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
-    if (target_scale <= 38 && (target_scale - a.scale) <= 38 && (target_scale - b.scale) <= 38) {
-      __int128_t sa = a.mantissa;
-      __int128_t sb = b.mantissa;
-      bool ov = false;
-      if (target_scale > a.scale) {
-        if (__builtin_mul_overflow(sa, POW10_128[target_scale - a.scale], &sa)) ov = true;
-      }
-      if (target_scale > b.scale) {
-        if (__builtin_mul_overflow(sb, POW10_128[target_scale - b.scale], &sb)) ov = true;
-      }
-      if (!ov) {
-        __int128_t sum;
-        if (!__builtin_add_overflow(sa, sb, &sum)) {
-          return dec_guard(dec_from_mantissa(sum, target_scale), pos);
-        }
+    __int128_t sa, sb;
+    long long target_scale;
+    if (align_small(a, b, sa, sb, target_scale)) {
+      __int128_t sum;
+      if (!__builtin_add_overflow(sa, sb, &sum)) {
+        return dec_guard(dec_from_mantissa(sum, target_scale), pos);
       }
     }
   }
@@ -941,21 +919,9 @@ int dec_cmp(const Dec& a, const Dec& b) {
   if (dec_is_zero(a) && dec_is_zero(b)) return 0;
   if (a.neg != b.neg) return a.neg ? -1 : 1;
   if (a.small && b.small) {
-    const long long target_scale = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
-    if (target_scale <= 38 && (target_scale - a.scale) <= 38 && (target_scale - b.scale) <= 38) {
-      __int128_t sa = a.mantissa;
-      __int128_t sb = b.mantissa;
-      bool ov = false;
-      if (target_scale > a.scale) {
-        if (__builtin_mul_overflow(sa, POW10_128[target_scale - a.scale], &sa)) ov = true;
-      }
-      if (target_scale > b.scale) {
-        if (__builtin_mul_overflow(sb, POW10_128[target_scale - b.scale], &sb)) ov = true;
-      }
-      if (!ov) {
-        return (sa > sb) - (sa < sb);
-      }
-    }
+    __int128_t sa, sb;
+    long long target_scale;
+    if (align_small(a, b, sa, sb, target_scale)) return (sa > sb) - (sa < sb);
   }
   const std::vector<uint32_t>& ref_a = dec_get_limbs(a);
   const std::vector<uint32_t>& ref_b = dec_get_limbs(b);
@@ -2049,11 +2015,53 @@ std::map<std::string, Spec>& table() {
   return t;
 }
 
+// The shipped table is authored once, in spec/builtins.json, and rendered into
+// sel_builtin_manifest.hpp. A name the manifest knows is held to it:
+// min/max/lazy/binds must agree, and the extra arity rule (COND's odd count,
+// LINK's three-or-five) comes from the manifest rather than from the caller —
+// one body for all five hosts. A name it does not know is a host's own
+// function (examples/fn-*) and passes.
+const sel_builtin_manifest::Entry* manifest_entry(const std::string& name) {
+  using sel_builtin_manifest::ENTRIES;
+  using sel_builtin_manifest::COUNT;
+  const auto* end = ENTRIES + COUNT;
+  const auto* it = std::lower_bound(ENTRIES, end, name,
+                                    [](const sel_builtin_manifest::Entry& e, const std::string& n) { return n.compare(e.name) > 0; });
+  return it != end && name == it->name ? it : nullptr;
+}
+
 void define(Spec spec) {
   if (table().count(spec.name)) {
     throw std::runtime_error("SEL function " + spec.name + " defined twice");
   }
+  if (const auto* m = manifest_entry(spec.name)) {
+    const int m_max = m->max < 0 ? VARIADIC : m->max;
+    std::string wrong;
+    auto note = [&](const std::string& s) { wrong += (wrong.empty() ? "" : "; ") + s; };
+    if (spec.min != m->min) note("min " + std::to_string(spec.min) + " vs " + std::to_string(m->min));
+    if (spec.max != m_max) note("max " + std::to_string(spec.max) + " vs " + std::to_string(m_max));
+    if (spec.lazy != m->lazy) note(std::string("lazy ") + (spec.lazy ? "true" : "false") + " vs " + (m->lazy ? "true" : "false"));
+    if (spec.binds != m->binds) note(std::string("binds ") + (spec.binds ? "true" : "false") + " vs " + (m->binds ? "true" : "false"));
+    if (spec.arity_error != nullptr) note("an arity rule of its own, which the manifest owns");
+    if (!wrong.empty()) {
+      throw std::logic_error("SEL function " + spec.name + " disagrees with spec/builtins.json: " + wrong);
+    }
+    spec.arity_error = m->arity_error;
+  }
   table()[spec.name] = std::move(spec);
+}
+
+// Called once the shipped builtins have registered: a manifest entry with no
+// definition is a host that would silently lack a builtin the others have.
+void assert_manifest_covered() {
+  std::string missing;
+  for (int i = 0; i < sel_builtin_manifest::COUNT; i++) {
+    const char* name = sel_builtin_manifest::ENTRIES[i].name;
+    if (!table().count(name)) missing += (missing.empty() ? "" : ", ") + std::string(name);
+  }
+  if (!missing.empty()) {
+    throw std::logic_error("spec/builtins.json names builtins this host never defined: " + missing);
+  }
 }
 
 const Spec* registry_lookup(const std::string& name) {
@@ -2068,6 +2076,7 @@ void register_builtins();   // defined after the built-ins themselves
 void ensure_registered() {
   static bool done = [] {
     register_builtins();
+    assert_manifest_covered();
     return true;
   }();
   (void)done;
@@ -3638,14 +3647,7 @@ void register_control() {
   // count a single miscounted comma would shift every pair by one and still
   // compile, so requiring the default turns that into a compile-time E_ARITY
   // rather than a wrong answer at run time.
-  define(Spec{"COND", 3, VARIADIC, true, false,
-              [](int n) -> std::string {
-                if (n % 2 == 0) {
-                  return "COND takes condition/result pairs and a final default (an odd number "
-                         "of arguments), got " + std::to_string(n);
-                }
-                return "";
-              },
+  define(Spec{"COND", 3, VARIADIC, true, false, nullptr,   // odd count: spec/builtins.json
               [](Args& a, Context&) -> Value {
                 const int last = a.count() - 1;
                 for (int i = 0; i < last; i += 2) {
@@ -3686,14 +3688,6 @@ std::string collection_key(const Value& value, std::size_t index) {
     return value.entries()[index].first;
   }
   return "1";
-}
-
-template <typename Fn>
-void for_each_collection_item(const Value& value, Fn&& fn) {
-  const std::size_t count = collection_size(value);
-  for (std::size_t i = 0; i < count; i++) {
-    fn(collection_key(value, i), collection_item(value, i));
-  }
 }
 
 template <typename Fn>
@@ -3776,8 +3770,12 @@ std::shared_ptr<const AliasPlan> alias_plan_for(
   return inserted ? std::move(plan) : it->second;
 }
 
+// `_1` and `_2` name a position, not a relation: an argument with no name is
+// bound bare (spec §7.4).
+bool is_positional_binder(const std::string& name) { return name == "_1" || name == "_2"; }
+
 Value ensure_row_table_alias(const Value& row, const std::string& table) {
-  if (table.empty() || table == "_1" || row.has(table)) return row;
+  if (table.empty() || is_positional_binder(table) || row.has(table)) return row;
   if (const auto old_shape = row.shape()) {
     const std::shared_ptr<const AliasPlan> plan = alias_plan_for(old_shape, table);
     std::vector<Value> storage;
@@ -3805,7 +3803,7 @@ Value make_null_record(const Value& sample, const std::string& table) {
   if (!sample.is_null()) {
     for (const std::string& key : sample.keys()) out.set(key, Value::none());
   }
-  if (!table.empty()) {
+  if (!table.empty() && !is_positional_binder(table)) {
     out.set(table, Value::none());
     const std::string lower = [&] {
       std::string v = table;
@@ -4382,14 +4380,7 @@ void register_structure() {
                 return Value::list(std::move(out));
               }});
 
-  define(Spec{"RECORD", 0, VARIADIC, false, false,
-              [](int n) -> std::string {
-                if (n % 2 != 0) {
-                  return "RECORD takes an even number of arguments (key-value pairs), got " +
-                         std::to_string(n);
-                }
-                return "";
-              },
+  define(Spec{"RECORD", 0, VARIADIC, false, false, nullptr,   // even count: spec/builtins.json
               [](Args& a, Context&) -> Value {
                 Value rec = Value::none();
                 const int n = a.count();
@@ -4499,6 +4490,8 @@ void register_structure() {
                 return Value::list(std::move(out));
               }});
 
+  // Three or five arguments, refused at compile time like every E_ARITY (spec
+  // §7.4); the rule is spec/builtins.json's and define() installs it.
   define(Spec{"LINK", 3, 5, true, true, nullptr,
               [](Args& a, Context& ctx) -> Value { return do_link(a, ctx, false); }});
   define(Spec{"LINK_LEFT", 3, 5, true, true, nullptr,

@@ -38,10 +38,6 @@ final class Core
         // compile. Requiring the default turns that into a compile-time E_ARITY
         // instead of a wrong answer.
         Registry::define(['name' => 'COND', 'min' => 3, 'max' => PHP_INT_MAX, 'lazy' => true,
-            'arityError' => static fn (int $n): ?string => $n % 2 === 0
-                ? 'COND takes condition/result pairs and a final default '
-                    . "(an odd number of arguments), got {$n}"
-                : null,
             'fn' => static function (Args $a): Value {
                 $last = $a->count() - 1;
                 for ($i = 0; $i < $last; $i += 2) {
@@ -80,8 +76,6 @@ final class Core
             }]);
 
         Registry::define(['name' => 'RECORD', 'min' => 0, 'max' => PHP_INT_MAX,
-            'arityError' => static fn (int $count): ?string =>
-                $count % 2 !== 0 ? "RECORD takes an even number of arguments (key-value pairs), got {$count}" : null,
             'fn' => static function (Args $a): Value {
                 $keys = [];
                 $values = [];
@@ -200,6 +194,11 @@ final class Core
         self::registerAggregates();
     }
 
+    /**
+     * The ordering of SORT, SORT_BY, TOP and TOP_BY (spec §7.4): NULL first,
+     * then numbers by value, booleans, text/binary bytewise, then by kind.
+     * Structure::doTop shares it — one routine, so the two cannot drift.
+     */
     public static function compareValues(Value $a, Value $b): int
     {
         $aNull = $a->isNull();
@@ -215,9 +214,7 @@ final class Core
         }
 
         if ($a->kind === Value::BOOL && $b->kind === Value::BOOL) {
-            $av = (int) (bool) $a->scalar;
-            $bv = (int) (bool) $b->scalar;
-            return $av <=> $bv;
+            return ((int) (bool) $a->getScalar()) <=> ((int) (bool) $b->getScalar());
         }
 
         if (($a->kind === Value::TEXT || $a->kind === Value::BIN) &&

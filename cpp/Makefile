@@ -69,7 +69,7 @@ all: $(BINS)
 $(BUILD)/metadata: ../tools/metadata/cpp.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -I. -o $@ $< $(BUILD)/sel.o
 
-$(BUILD)/sel.o: sel.cpp sel_optimizer.cpp sel.hpp sel_ast.hpp | $(BUILD)
+$(BUILD)/sel.o: sel.cpp sel_optimizer.cpp sel.hpp sel_ast.hpp sel_builtin_manifest.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ sel.cpp
 
 $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp sel.hpp sel_ast.hpp $(BUILD)/sel.o | $(BUILD)

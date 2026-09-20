@@ -55,4 +55,25 @@ $changed['scale'] = 3;
 verify(Dec::format(Dec::add($changed, Dec::parse('1'))) === '0.544', 'mutated scale');
 errorAt(fn()=>Dec::div(Dec::fromInt(1),Dec::zero(),$pos), 'E_DIV_ZERO');
 errorAt(fn()=>Dec::round(Dec::fromInt(1),Dec::MAX_FRAC_DIGITS+1,$pos), 'E_RANGE');
+// Numeric join keys are one key per number whichever path builds them: a
+// cached decimal (Value::num) against a text nobody has parsed yet, in a fresh
+// process, before and after an equality parses the text, and in both orders.
+$join = \Sel\Sel::compile('LINK(L, R, _1["id"] == _2["id"])');
+$equal = \Sel\Sel::compile('L[1]["id"] == R[1]["id"]');
+foreach ([['1.00','1.00'],['1.50','1.5'],['-0.0','0'],['0','-0'],['7','007'],['0.5','.5'],
+          ['123456789012345678901.50','123456789012345678901.5'],
+          ['-123456789012345678901','-123456789012345678901.0']] as [$num, $text]) {
+    if (Dec::parse($text) === null) continue; // not every spelling above is a SEL number
+    foreach ([false, true] as $swap) {
+        $ctx = Value::none();
+        $a = Value::list([Value::record(['id'], [Value::num($num)])]);
+        $b = Value::list([Value::record(['id'], [Value::text($text)])]);
+        $ctx->set('L', $swap ? $b : $a);
+        $ctx->set('R', $swap ? $a : $b);
+        $cold = $join->run($ctx)->size();
+        $eq = $equal->run($ctx)->asBool();
+        $warm = $join->run($ctx)->size();
+        verify($cold === 1 && $eq && $warm === 1, "join key $num/$text cold=$cold warm=$warm");
+    }
+}
 echo "PHP runtime: $checks checks passed\n";

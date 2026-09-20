@@ -12,6 +12,71 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+The builtin table is authored once (2026-09-21; WL-001 SEL-0020).
+
+  - **`spec/builtins.json` is the manifest of the 77 builtins** — name, min/max, the extra arity rules (`COND` odd, `RECORD` even, `LINK`/`LINK_LEFT` three or five) with their messages, lazy/binds, spec forms and section; `spec/builtins.md` is the format. `tools/gen-builtins.mjs` validates and renders it into a native table per host and into `docs/BUILTINS.md`, all committed and held current by `tools/check-generated.sh`.
+  - **Every host holds its own table to the manifest at startup**, natively and without reading JSON: `define` refuses a shipped builtin whose min/max/lazy/binds disagree, takes the extra arity rule from the manifest (the four hand-written copies per host are gone), and registration refuses to finish with a manifest name no module defined. A function outside the manifest — `register`, the worked examples, an application's own — passes through as before.
+  - **`DEDUPE` is in the spec.** Seeding the manifest found it defined and tested in every host but missing from §7.4; it is now listed as the relational spelling of `DISTINCT`.
+
+Validation: `tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php,
+cpp, lisp and python (47 layers, the builtin-manifest renderings now among the
+generated artifacts it checks), and the database layers against pinned Docker
+servers (mariadb 11.8, mysql 8.4, postgres 17, sqlite): semantic oracle 0
+differing on every dialect, mutation catalogue 192 caught, 0 survived, 0 skipped.
+
+Raw scan inventory triaged (2026-09-20; WL-001 SEL-0019).
+
+  - **Every raw scan entry now has a disposition** in `docs/worklists/001-scan-triage.md`: 32 clone windows, 25 single-reference declarations and 25 import candidates, each checked against the current tree. Thirteen windows were already closed by earlier items or belong to the binding-forms work; seven are kept on purpose (deliberate exception-type boundaries, per-lane fast paths); twelve are tracked as three new items — the parser's twice-written arity check (all five hosts), the SQL translators' repeated arms (sargable prefilter in all five, RECORD projection and entry-point reset in three, a Lisp collation check), and PHP's duplicated element iterator and optimizer child visits. Every flagged declaration is either already removed or a live surface: mirrored host API, a caller in tools, examples or generated case data, or a Python protocol method. No runtime code changed.
+
+Validation: unchanged runtime, re-run in full as the rule requires —
+`tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php, cpp, lisp and
+python (47 layers), and the database layers against pinned Docker servers
+(mariadb 11.8, mysql 8.4, postgres 17, sqlite): semantic oracle 0 differing on
+every dialect, mutation catalogue 192 caught, 0 survived, 0 skipped.
+
+Duplication assessed and settled with measurements (2026-09-20; WL-001 SEL-0013–0018).
+
+  - **C++: one checked alignment for the native fast path.** `dec_add` and `dec_cmp` carried the same `__int128` scale-alignment block; `align_small` now owns it, with the limb fallback, signed bounds and overflow builtins unchanged. Decimal oracle 199,942 cases agree; Mandelbrot is unchanged within noise. The `const Dec&` overload of `dec_guard` is gone — deleting it and rebuilding proved every call site passes an rvalue.
+  - **JS: one entry-splitting helper.** `fromEntries` and `fromEntriesPreserveDuplicates` share `shapedFromUniqueEntries`; the overwrite-versus-ordered-duplicates fallback stays with each caller. The call boundary measured free.
+  - **PHP: the second `getScalar()` read in the text join-key branch is gone**; the first call already formats a cached decimal.
+  - **Kept on purpose, with numbers.** Python's `iter_entries`/`iter_elements` stay separate: sharing them through `yield from` costs 4.8% on packed lists and 11.9% on shaped records in the aggregate loops. The Lisp hybrid/stage-1 copiers stay separate: they encode different refusal, node-kind and depth contracts, and the walkers already share `walk-node-children`.
+
+Validation: the full repository gate, `tools/check.sh`, ALL GREEN on js,
+js-bundle, js-bundle-min, php, cpp, lisp and python (47 layers) on the working
+tree carrying SEL-0001–0018, and the database layers against pinned Docker
+servers (mariadb 11.8, mysql 8.4, postgres 17, sqlite): semantic oracle 0
+differing expressions, rows or statements on every dialect; mutation
+catalogue 192 caught, 0 survived, 0 skipped. `make asan` was not part of the run.
+
+Dead per-shape alias caches and unused helpers removed (2026-09-20; WL-001 SEL-0005–0012).
+
+  - **Record shapes no longer carry an alias cache.** Alias plans have lived in one bounded per-host cache since the metadata work; the per-shape container each host still allocated was never read or written. Python drops the `alias_cache` slot, Lisp the `alias-cache` hash-table slot, and PHP the public `RecordShape::$aliasCache` array — measured at 16 bytes per shape on PHP 8.5 (1078.7 to 1062.7 bytes over 20,000 shapes), so a reader of that property now sees PHP's undefined-property warning. JS keeps `RecordShape.aliasCache` in `sel.d.ts` as `@deprecated`: it is served lazily from a module `WeakMap`, so a shape owns only `keys`, `keyMap` and `size`; it goes away in the next minor release.
+  - **Unused code out.** Python: seven unused imports across five modules and `utf8.bytes_equal` (no caller; `Value` compares bytes directly). Lisp: `collect-all-step-field-references` in the hybrid planner. C++: `cp_length`, `mul_abs` and the `for_each_collection_item` template. Each had exactly one occurrence in the tree, its definition, checked against `tools/`, tests, headers and package exports.
+
+Validation: the full repository gate, `tools/check.sh`, ALL GREEN on
+js, js-bundle, js-bundle-min, php, cpp, lisp and python (47 layers, including
+925 conformance cases per host, the SQL cases, differential and SQL fuzz, the
+SQL mutation catalogue, decimal oracle, documented and worked examples,
+metadata and generated-artifact checks) on the working tree carrying
+SEL-0001–0012. The database layers then ran against pinned Docker servers
+(`tools/oracle-db.sh`: mariadb 11.8, mysql 8.4, postgres 17, plus sqlite):
+the semantic oracle reports 0 differing expressions, rows or statements on
+every dialect, and the mutation catalogue is 192 caught, 0 survived, 0 skipped.
+`make asan` was not part of the run.
+
+Join keys, join-row shape and LINK arity agree in every host (2026-09-20; WL-001 SEL-0001–0004).
+
+  - **One numeric join key per number.** An equi-join on `==` pairs elements as `==` compares them (spec §7.4). PHP built the key from the cached decimal on one path and from `Dec::format` of a freshly parsed text on the other, so a fresh process joined `1.00` to `"1.00"` only after some other comparison had parsed the text; JS and Lisp keyed on the formatted decimal, so `1.50` never met `"1.5"`. All three now strip trailing fraction zeros and fold negative zero through one helper, as C++ and Python did. The PHP runtime check runs the cold/warm/both-orders probe; `rel.link.numeric-key-matches-as-equality-does` and `rel.link.numeric-key-repeated-run-agrees` pin it suite-wide.
+  - **`LINK`/`LINK_LEFT` refuse four arguments at compile time everywhere.** Only Python declared the "3 or 5" rule through the registry's extra arity hook; the other four checked it inside the builtin, so `IF(TRUE, 1, LINK(1, 1, 1, 1))` answered `1` there and `E_ARITY` in Python. Eight `arity.link*` cases, two of them never-reached calls that pin the compile-time position.
+  - **The right binders hold the element extended with its name.** Python bound the bare right element (`Y`/`y`/`_2` with two keys where the other hosts had four), the eleven disagreements in the saved seed-20260813 differential corpus; `rel.link.row-shape-named-right` and its five-argument twin cover it. In the other direction, JS, PHP, C++ and Lisp gave an unnamed right argument a `_2` key holding itself; `_1`/`_2` are positions, not names, and are never added (`rel.link.literal-binders-are-bare`, `rel.link-left.literal-right-null-row-is-bare`; spec §7.4 now says so).
+  - **PHP `TOP` orders with `SORT`'s comparator.** `Structure::doTop` had a private copy of `Core::compareValues` that had drifted (explicit boolean getters on one side only); the copy is gone and the one routine uses the getter. Bounded selection and the sort itself stay separate.
+
+Validation: 925 conformance cases on all five hosts; the seed-20260813 4,000-program
+corpus that carried the eleven disagreements and a second seed both agree across
+five hosts with zero host crashes; C++ unit, Lisp FiveAM and 624 Python tests;
+PHP runtime (35 checks) and PHP/JS optimizer (135 each) checks. Scoped run —
+the full repository gate was not rerun.
+
 PHP explicit scalar reads and matched-extension measurements (2026-09-20).
 
   - **Use the existing getter in four internal reads.** Numeric/literal join keys and boolean sorting call `getScalar()` directly, avoiding `__get` dispatch while preserving private storage, lazy decimal formatting, the compatible public property API and decimal-cache invalidation on writes. Native integer, GMP and packed-limb arithmetic paths remain unchanged.

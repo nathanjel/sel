@@ -119,10 +119,6 @@ def bytes_to_hex(data: bytes) -> str:
     return data.hex()
 
 
-def bytes_equal(a: bytes, b: bytes) -> bool:
-    return a == b
-
-
 def bytes_compare(a: bytes, b: bytes) -> int:
     """Bytewise, as the spec requires."""
     if a == b:

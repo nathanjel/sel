@@ -193,3 +193,6 @@ re-trigger which rule."
     (sort (loop for name being the hash-keys of reads
                 unless (gethash name assigned) collect name)
           #'string<)))
+
+;;; Every shipped builtin is loaded by now; the manifest must not name one more.
+(assert-builtin-manifest-covered)

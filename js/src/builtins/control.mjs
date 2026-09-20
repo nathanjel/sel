@@ -23,10 +23,7 @@ define({
 // miscounted comma would shift every pair by one and still compile. Requiring
 // the default turns that into a compile-time E_ARITY instead of a wrong answer.
 define({
-  name: 'COND', min: 3, max: Infinity, lazy: true,
-  arityError: (n) => (n % 2 === 0
-    ? `COND takes condition/result pairs and a final default (an odd number of arguments), got ${n}`
-    : null),
+  name: 'COND', min: 3, max: Infinity, lazy: true,   // odd count: spec/builtins.json
   fn: (args) => {
     const last = args.count() - 1;
     for (let i = 0; i < last; i += 2) {

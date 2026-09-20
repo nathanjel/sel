@@ -42,8 +42,6 @@ final class RecordShape
     public readonly int $size;
     /** @var list<string> */
     public readonly array $keyHashParts;
-    /** @var array<string,array{shape:self,oldSize:int,addLower:bool}> */
-    public array $aliasCache = [];
 
     /** @param list<string> $keys */
     public static function intern(array $keys): self

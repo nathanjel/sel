@@ -9,7 +9,7 @@ from typing import Any, Iterator
 
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos, SelError, fail
-from .utf8 import bytes_to_hex, decode_utf8, encode_utf8, to_code_points, validate_text
+from .utf8 import bytes_to_hex, encode_utf8, validate_text
 
 NONE = 'NONE'
 TEXT = 'TEXT'
@@ -27,14 +27,13 @@ class RecordShape:
     longer allocates or hashes a dictionary entry for every row.
     """
 
-    __slots__ = ('keys', 'key_map', 'size', 'alias_cache', 'key_hashes')
+    __slots__ = ('keys', 'key_map', 'size', 'key_hashes')
 
     def __init__(self, keys: tuple[str, ...], key_map: dict[str, int] | None = None) -> None:
         self.keys = keys
         self.key_map = (key_map if key_map is not None
                         else {key: i for i, key in enumerate(keys)})
         self.size = len(keys)
-        self.alias_cache: dict[str, tuple[tuple[str, ...], int, bool]] = {}
         self.key_hashes: tuple[int, ...] = tuple(hash(k) for k in keys)
 
 

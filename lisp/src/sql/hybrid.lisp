@@ -504,13 +504,6 @@ Name are two fields. A null BINDER counts a read under any name."
       (walk node))
     (nreverse refs)))
 
-(defun collect-all-step-field-references (steps)
-  (let ((all-refs '()))
-    (dolist (step steps)
-      (dolist (ref (collect-field-references step))
-        (pushnew ref all-refs :test #'string-equal)))
-    all-refs))
-
 (defparameter +sql-special-calls+
   '("IF" "COND" "COALESCE" "COUNT" "SUM" "AVG" "MIN" "MAX" "RECORD" "LIST"))
 

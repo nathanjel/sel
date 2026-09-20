@@ -81,9 +81,7 @@ function recordFromArgs(args) {
 }
 
 define({
-  name: 'RECORD', min: 0, max: Infinity,
-  arityError: (count) => count % 2 !== 0
-    ? `RECORD takes an even number of arguments (key-value pairs), got ${count}` : null,
+  name: 'RECORD', min: 0, max: Infinity,   // even count: spec/builtins.json
   fn: recordFromArgs,
 });
 
@@ -190,15 +188,29 @@ function singleRelationName(node) {
 function canonicalJoinKey(value, numeric) {
   if (!value || value.isNull()) return null;
   if (numeric) {
-    try { return D.format(value.asDecimal()); } catch (_) { return null; }
+    let d;
+    try { d = value.asDecimal(); } catch (_) { return null; }
+    // One key per number, as `==` compares it (spec §7.4): trailing fraction
+    // zeros and a negative zero are representation, not value.
+    let digits = d.digits;
+    let scale = d.scale;
+    if (digits === 0n) return '0';
+    while (scale > 0 && digits % 10n === 0n) { digits /= 10n; scale--; }
+    return D.format({ neg: d.neg, digits, scale });
   }
   return value.kind === 'TEXT' ? value.scalar : null;
+}
+
+// `_1` and `_2` name a position, not a relation: an argument with no name is
+// bound bare (spec §7.4).
+function isPositionalBinder(name) {
+  return name === '_1' || name === '_2';
 }
 
 const ALIAS_PLANS = new Map();
 
 function ensureRowTableAlias(row, tableName) {
-  if (!tableName || tableName === '_1' || row.has(tableName)) return row;
+  if (!tableName || isPositionalBinder(tableName) || row.has(tableName)) return row;
   const lower = tableName.toLowerCase();
   if (row.shape) {
     const oldShape = row.shape;
@@ -228,7 +240,7 @@ function ensureRowTableAlias(row, tableName) {
 function makeNullRecord(sample, tableName) {
   const entries = [];
   if (sample) for (const key of sample.keys()) entries.push([key, Value.none()]);
-  if (tableName) {
+  if (tableName && !isPositionalBinder(tableName)) {
     entries.push([tableName, Value.none()]);
     const lower = tableName.toLowerCase();
     if (lower !== tableName) entries.push([lower, Value.none()]);
@@ -510,6 +522,8 @@ function doLink(args, ctx, leftJoin) {
   return Value.listOwned(output);
 }
 
+// Three or five arguments, refused at compile time like every E_ARITY (spec
+// §7.4); the rule is spec/builtins.json's and the registry installs it.
 define({ name: 'LINK', min: 3, max: 5, lazy: true, binds: true,
   fn: (args, ctx) => doLink(args, ctx, false) });
 define({ name: 'LINK_LEFT', min: 3, max: 5, lazy: true, binds: true,

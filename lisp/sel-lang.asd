@@ -31,6 +31,7 @@
      (:file "decimal")
      (:file "value")
      (:file "registry")
+     (:file "builtin-manifest")
      (:file "lexer")
      (:file "parser")
      (:file "math-plan")

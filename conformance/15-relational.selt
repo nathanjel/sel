@@ -527,6 +527,71 @@ LIST(RECORD("id", 1, "cid", 7)) .> LINK(LIST(RECORD("id", 7, "name", "ann")), _1
 tree -{"1"=-{"1"=t"_1", "2"=t"_2", "3"=t"cid", "4"=t"name"}}
 ===
 
+### name: rel.link.row-shape-named-right
+--- note
+The right side of the same rule: `Y` and `_2` are the same value, the right
+element extended with `Y` and `y` holding the bare element. Python bound the
+bare element on the right (four keys on the left, two on the right); the
+seeded differential fuzz showed it as eleven join-output disagreements.
+--- source
+X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7, "name", "ann")); J = X .> LINK(Y, _1["cid"] == _2["id"]); LIST(INDEXES(J[1]["Y"]), INDEXES(J[1]["_2"]), J[1]["Y"]["y"]["name"], COUNT(J[1]["Y"]["y"]))
+--- expect
+tree -{"1"=-{"1"=t"id", "2"=t"name", "3"=t"Y", "4"=t"y"}, "2"=-{"1"=t"id", "2"=t"name", "3"=t"Y", "4"=t"y"}, "3"=t"ann", "4"=t"2"}
+===
+
+### name: rel.link.row-shape-named-right-five-argument-form
+--- source
+X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7, "name", "ann")); J = LINK(X, Y, L, R, L["cid"] == R["id"]); LIST(INDEXES(J[1]), INDEXES(J[1]["R"]), INDEXES(J[1]["_2"]))
+--- expect
+tree -{"1"=-{"1"=t"L", "2"=t"l", "3"=t"_1", "4"=t"R", "5"=t"r", "6"=t"_2", "7"=t"cid", "8"=t"name"}, "2"=-{"1"=t"id", "2"=t"name", "3"=t"R", "4"=t"r"}, "3"=-{"1"=t"id", "2"=t"name", "3"=t"R", "4"=t"r"}}
+===
+
+### name: rel.link.literal-binders-are-bare
+--- note
+An argument with no name is bound bare: neither `_1` nor `_2` is added as a
+key of its own element. JS, PHP, C++ and Lisp extended the right literal
+with a `_2` key holding itself (the left was already bare).
+--- source
+LIST(RECORD("id", 1, "cid", 7)) .> LINK(LIST(RECORD("id", 7, "name", "ann")), _1["cid"] == _2["id"]) .> MAP(LIST(INDEXES(_["_1"]), INDEXES(_["_2"])))
+--- expect
+tree -{"1"=-{"1"=-{"1"=t"id", "2"=t"cid"}, "2"=-{"1"=t"id", "2"=t"name"}}}
+===
+
+### name: rel.link-left.literal-right-null-row-is-bare
+--- note
+The unmatched row's right binder is shaped like the right elements, which for
+a literal right side carry no `_2` key.
+--- source
+LIST(RECORD("id", 1, "cid", 8)) .> LINK_LEFT(LIST(RECORD("id", 7, "name", "ann")), _1["cid"] == _2["id"]) .> MAP(_["_2"])
+--- expect
+tree -{"1"=-{"id"=-, "name"=-}}
+===
+
+### name: rel.link.numeric-key-matches-as-equality-does
+--- note
+An equi-join on `==` pairs elements "as the comparison would compare them"
+(spec §7.4), so every representation of one number is one key: trailing
+fraction zeros, a negative zero, leading zeros and a number literal against a
+text all pair. The hosts hashed the key from their formatted decimal (JS,
+Lisp) or from whichever of the cached-decimal and parsed-text paths ran first
+(PHP), so `1.50` missed `"1.5"` and a fresh PHP process joined `1.00` to
+`"1.00"` only after some other comparison had parsed the text.
+--- source
+L = LIST(RECORD("id", 1.00), RECORD("id", 1.50), RECORD("id", "-0.0"), RECORD("id", "007"), RECORD("id", "1.00")); R = LIST(RECORD("id", "1.00"), RECORD("id", "1.5"), RECORD("id", "0"), RECORD("id", 7), RECORD("id", 1)); LINK(L, R, _1["id"] == _2["id"]) .> MAP(LIST(_["_1"]["id"], _["_2"]["id"]))
+--- expect
+tree -{"1"=-{"1"=t"1.00", "2"=t"1.00"}, "2"=-{"1"=t"1.00", "2"=t"1"}, "3"=-{"1"=t"1.50", "2"=t"1.5"}, "4"=-{"1"=t"-0.0", "2"=t"0"}, "5"=-{"1"=t"007", "2"=t"7"}, "6"=-{"1"=t"1.00", "2"=t"1.00"}, "7"=-{"1"=t"1.00", "2"=t"1"}}
+===
+
+### name: rel.link.numeric-key-repeated-run-agrees
+--- note
+The same join twice in one program, with an equality between the runs that
+parses the text key: both runs answer the same count.
+--- source
+L = LIST(RECORD("id", 1.00)); R = LIST(RECORD("id", "1.00")); A = COUNT(LINK(L, R, _1["id"] == _2["id"])); E = L[1]["id"] == R[1]["id"]; B = COUNT(LINK(L, R, _1["id"] == _2["id"])); LIST(A, E, B)
+--- expect
+tree -{"1"=t"1", "2"=TRUE, "3"=t"1"}
+===
+
 ### name: rel.link.chained-binders-hold-this-links-rows
 --- note
 A second LINK carries the first's binders as nested records and binds `_1`

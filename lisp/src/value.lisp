@@ -30,8 +30,7 @@
 (defstruct (record-shape (:constructor %make-record-shape (keys key-map size)))
   (keys nil :type list)
   (key-map (make-hash-table :test #'equal) :type hash-table)
-  (size 0 :type fixnum)
-  (alias-cache (make-hash-table :test #'equal) :type hash-table))
+  (size 0 :type fixnum))
 
 (defvar *shape-cache* (make-hash-table :test #'equal))
 (defconstant +shape-cache-entries+ 256)
