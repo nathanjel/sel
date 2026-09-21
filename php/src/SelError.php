@@ -5,6 +5,10 @@ declare(strict_types=1);
 
 namespace Sel;
 
+// The limits this file's MAX_DEPTH is defined from. Required here, not only
+// from the bootstrap, because tools load this file on its own.
+require_once __DIR__ . '/Limits.php';
+
 /**
  * spec/SPEC.md §6.4's three caps, which are one number. The parser's nesting, the
  * evaluator's, and a value's -- each is a recursion over a structure the input can
@@ -13,7 +17,7 @@ namespace Sel;
  * every other requires and none requires back, and because the number and the
  * E_DEPTH it raises are the same fact.
  */
-const MAX_DEPTH = 200;
+const MAX_DEPTH = Limits::MAX_DEPTH;   // spec/limits.json, checked against the spec text
 
 final class SelError extends \Exception
 {

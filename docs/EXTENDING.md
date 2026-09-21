@@ -93,8 +93,14 @@ and into `docs/BUILTINS.md`; commit the renderings with the entry
 then holds the definition to the manifest at startup — a min/max/lazy/binds
 that disagrees, or a manifest name no module defined, refuses to load — and
 installs the extra arity rule from it, so `COND`'s odd count is written once
-for five hosts. A function that is *not* in the manifest (the examples below,
-an application's own) passes through `define` untouched.
+for five hosts. A binding builtin also declares its *forms* there — which
+argument is the source, a binder name, a per-element body or an outer
+expression, and how a count that admits two forms is disambiguated — and the
+dependency walker and the SQL layer's stage 1 classify arguments through the
+one generated classifier (`bindingForm` and its four twins) rather than
+retyping the rules. A function that is *not* in the manifest (the examples
+below, an application's own) passes through `define` untouched; a binding one
+gets the two classic shapes, `F(list, body)` and `F(list, NAME, body)`.
 
 There are **two lanes**, and picking the right one is most of the design work.
 

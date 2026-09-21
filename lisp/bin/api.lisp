@@ -83,6 +83,19 @@
   ;; docs/EXTENDING.md.
   (say "program.deps.grouped.binder"
        (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "ALL(I, (IT), IT > 0)"))))
+  ;; The binding forms of spec/builtins.json (see tools/api.mjs).
+  (say "program.deps.forms.top.binder-and-limit"
+       (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "TOP(L, X, X[\"a\"], N)"))))
+  (say "program.deps.forms.top.limit-is-outer"
+       (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "TOP(L, COUNT(_))"))))
+  (say "program.deps.forms.sort-by.text-direction-wins"
+       (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "SORT_BY(L, K, \"DESC\")"))))
+  (say "program.deps.forms.top-by.direction-is-outer"
+       (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "TOP_BY(L, _[\"a\"], N, D)"))))
+  (say "program.deps.forms.bucket.projection-inside"
+       (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "BUCKET(L, G, G[\"k\"], COUNT(G) + _K)"))))
+  (say "program.deps.forms.link.named-binders"
+       (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "LINK(A, B, X, Y, X[\"a\"] == Y[\"b\"] AND Z)"))))
   (let ((ctx (sel:make-none)))
     (sel:value-set ctx "TOTAL" (sel:make-num "59.97"))
     (say "program.run.reads.context" (sel:value-dump (sel:evaluate "TOTAL > 10.00" ctx)))

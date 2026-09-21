@@ -85,3 +85,78 @@ BUILTIN_MANIFEST = {
     'TRUNC': (1, 1, False, False, None),
     'UPPER': (1, 1, False, False, None),
 }
+
+# The binding forms (spec/builtins.md): per accepted count, in the order the
+# evaluator tries them, (scopes, when, binds) with scopes a tuple of
+# 'outer' | 'binder' | 'inner', when None or (arg, 'name' | 'text'), and binds
+# the implicit names bound inside. registry.py turns these into binding_form().
+BINDING_FORMS = {
+    'ALL': (
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner'), None, ('_K',)),
+    ),
+    'ANY': (
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner'), None, ('_K',)),
+    ),
+    'BUCKET': (
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner'), (1, 'name'), ('_K',)),
+        (('outer', 'inner', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner', 'inner'), None, ('_K',)),
+    ),
+    'FILTER': (
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner'), None, ('_K',)),
+    ),
+    'LINK': (
+        (('outer', 'outer', 'inner'), None, ('_', '_1', '_2', '_K')),
+        (('outer', 'outer', 'binder', 'binder', 'inner'), None, ('_', '_1', '_2', '_K')),
+    ),
+    'LINK_LEFT': (
+        (('outer', 'outer', 'inner'), None, ('_', '_1', '_2', '_K')),
+        (('outer', 'outer', 'binder', 'binder', 'inner'), None, ('_', '_1', '_2', '_K')),
+    ),
+    'MAP': (
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner'), None, ('_K',)),
+    ),
+    'SORT': (
+        (('outer',), None, ('_', '_K')),
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner'), None, ('_K',)),
+    ),
+    'SORT_BY': (
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'inner', 'outer'), (2, 'text'), ('_', '_K')),
+        (('outer', 'binder', 'inner'), (1, 'name'), ('_K',)),
+        (('outer', 'inner', 'outer'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner', 'outer'), None, ('_K',)),
+    ),
+    'SORT_DESC': (
+        (('outer',), None, ('_', '_K')),
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner'), None, ('_K',)),
+    ),
+    'SUM': (
+        (('outer', 'inner'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner'), None, ('_K',)),
+    ),
+    'TOP': (
+        (('outer', 'outer'), None, ('_', '_K')),
+        (('outer', 'inner', 'outer'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner', 'outer'), None, ('_K',)),
+    ),
+    'TOP_BY': (
+        (('outer', 'inner', 'outer'), None, ('_', '_K')),
+        (('outer', 'inner', 'outer', 'outer'), (2, 'text'), ('_', '_K')),
+        (('outer', 'binder', 'inner', 'outer'), (1, 'name'), ('_K',)),
+        (('outer', 'inner', 'outer', 'outer'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner', 'outer', 'outer'), None, ('_K',)),
+    ),
+    'TOP_DESC': (
+        (('outer', 'outer'), None, ('_', '_K')),
+        (('outer', 'inner', 'outer'), None, ('_', '_K')),
+        (('outer', 'binder', 'inner', 'outer'), None, ('_K',)),
+    ),
+}

@@ -26,4 +26,6 @@ export function fail(code, message, pos) {
 // an error if it is not counted. It lives here, with fail(), because this module
 // is the one every other imports and none imports back, and because the number
 // and the E_DEPTH it raises are the same fact.
-export const MAX_DEPTH = 200;
+import { MAX_DEPTH as LIMIT_MAX_DEPTH } from './_limits.mjs';
+
+export const MAX_DEPTH = LIMIT_MAX_DEPTH;   // spec/limits.json, checked against the spec text

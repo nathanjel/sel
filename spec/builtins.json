@@ -28,6 +28,28 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "body"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "ALL(list, [binder,] body)"
       ],
@@ -40,6 +62,28 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "body"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "ANY(list, [binder,] body)"
       ],
@@ -82,6 +126,54 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "key"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "key"
+          ],
+          "when": {
+            "arg": 1,
+            "is": "name"
+          },
+          "binds": [
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "key",
+            "proj"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "key",
+            "proj"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "BUCKET(list, [binder,] key)",
         "BUCKET(list, [binder,] key, proj)"
@@ -219,6 +311,28 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "body"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "FILTER(list, [binder,] body)"
       ],
@@ -398,6 +512,36 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "source",
+            "pred"
+          ],
+          "binds": [
+            "_",
+            "_1",
+            "_2",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "source",
+            "binder",
+            "binder",
+            "pred"
+          ],
+          "binds": [
+            "_",
+            "_1",
+            "_2",
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "LINK(left, right, pred)",
         "LINK(left, right, L, R, pred)"
@@ -416,6 +560,36 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "source",
+            "pred"
+          ],
+          "binds": [
+            "_",
+            "_1",
+            "_2",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "source",
+            "binder",
+            "binder",
+            "pred"
+          ],
+          "binds": [
+            "_",
+            "_1",
+            "_2",
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "LINK_LEFT(left, right, pred)",
         "LINK_LEFT(left, right, L, R, pred)"
@@ -469,6 +643,28 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "body"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "MAP(list, [binder,] body)"
       ],
@@ -664,6 +860,37 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "body"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "SORT(list, [binder,] [body])"
       ],
@@ -676,6 +903,69 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "key"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "key",
+            "outer"
+          ],
+          "when": {
+            "arg": 2,
+            "is": "text"
+          },
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "key"
+          ],
+          "when": {
+            "arg": 1,
+            "is": "name"
+          },
+          "binds": [
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "key",
+            "outer"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "key",
+            "outer"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "SORT_BY(list, [binder,] key [, dir])"
       ],
@@ -688,6 +978,37 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "body"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "SORT_DESC(list, [binder,] [body])"
       ],
@@ -720,6 +1041,28 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "body"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "SUM(list, [binder,] body)"
       ],
@@ -742,6 +1085,40 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "outer"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "body",
+            "outer"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body",
+            "outer"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "TOP(list, [binder,] [body,] n)"
       ],
@@ -754,6 +1131,74 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "key",
+            "outer"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "key",
+            "outer",
+            "outer"
+          ],
+          "when": {
+            "arg": 2,
+            "is": "text"
+          },
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "key",
+            "outer"
+          ],
+          "when": {
+            "arg": 1,
+            "is": "name"
+          },
+          "binds": [
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "key",
+            "outer",
+            "outer"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "key",
+            "outer",
+            "outer"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "TOP_BY(list, [binder,] key, n [, dir])"
       ],
@@ -766,6 +1211,40 @@
       },
       "lazy": true,
       "binds": true,
+      "forms": [
+        {
+          "roles": [
+            "source",
+            "outer"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "body",
+            "outer"
+          ],
+          "binds": [
+            "_",
+            "_K"
+          ]
+        },
+        {
+          "roles": [
+            "source",
+            "binder",
+            "body",
+            "outer"
+          ],
+          "binds": [
+            "_K"
+          ]
+        }
+      ],
       "signatures": [
         "TOP_DESC(list, [binder,] [body,] n)"
       ],

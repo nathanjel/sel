@@ -88,6 +88,16 @@ say('program.deps.excludes.binder', compile('ALL(I, IT, IT > 0)').dependencies()
 // agree on it and nothing else records it -- not endorsed. See the note in
 // docs/EXTENDING.md.
 say('program.deps.grouped.binder', compile('ALL(I, (IT), IT > 0)').dependencies().join(' '));
+// The binding forms of spec/builtins.json, one probe per shape the old walkers
+// retyped differently: a binder is not a read, TOP's limit and SORT_BY's
+// direction are outer, a text literal in the direction slot wins over a bare
+// name, BUCKET's projection sees the group, LINK's named binders are names.
+say('program.deps.forms.top.binder-and-limit', compile('TOP(L, X, X["a"], N)').dependencies().join(' '));
+say('program.deps.forms.top.limit-is-outer', compile('TOP(L, COUNT(_))').dependencies().join(' '));
+say('program.deps.forms.sort-by.text-direction-wins', compile('SORT_BY(L, K, "DESC")').dependencies().join(' '));
+say('program.deps.forms.top-by.direction-is-outer', compile('TOP_BY(L, _["a"], N, D)').dependencies().join(' '));
+say('program.deps.forms.bucket.projection-inside', compile('BUCKET(L, G, G["k"], COUNT(G) + _K)').dependencies().join(' '));
+say('program.deps.forms.link.named-binders', compile('LINK(A, B, X, Y, X["a"] == Y["b"] AND Z)').dependencies().join(' '));
 const ctx = Value.none();
 ctx.set('TOTAL', Value.num('59.97'));
 say('program.run.reads.context', evaluate('TOTAL > 10.00', ctx).dump());

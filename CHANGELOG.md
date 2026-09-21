@@ -12,6 +12,61 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Limits and error codes are stated once and held to the spec (2026-09-21; WL-001 SEL-0023).
+
+  - **`spec/limits.json` restates the four normative numbers and the 25 error codes**, and its generator refuses to render unless `spec/SPEC.md` and `spec/errors.md` still say the same — the prose stays the authority. Each host's `MAX_DEPTH`, decimal digit caps and division scale are now defined from its rendering rather than as literals; `docs/LIMITS.md` lists them.
+  - **A new gate holds every host to the catalogue.** `tools/check-error-codes.sh` reads each host's sources and requires the codes it raises to be exactly the language catalogue plus the SQL layer's own: all five raise exactly the 33. Host budgets stay out of the manifest, and the limit fixtures keep their literal numbers as independent oracles.
+
+Validation, for this entry and the two below it: `tools/check.sh` ALL GREEN on
+js, js-bundle, js-bundle-min, php, cpp, lisp and python (48 layers, the new
+error-code gate among them), and the database layers against pinned Docker
+servers (mariadb 11.8, mysql 8.4, postgres 17, sqlite): semantic oracle 0
+differing on every dialect, mutation catalogue 192 caught, 0 survived, 0
+skipped. A first gate run found the decimal-oracle tool loading `SelError.php`
+without the bootstrap; the two PHP files that use the limits now require them
+themselves.
+
+Performance, the `6568201` baseline (a separate worktree) against this tree on
+an idle box, interleaved, medians of 7 Mandelbrot runs, best of 3 batches of
+10 startups, best of 2 conformance runs (the current tree runs 934 cases to
+the baseline's 925):
+
+| Host | Mandelbrot baseline → current | Startup, per process | Conformance wall time |
+|---|---|---|---|
+| C++ | 145.3 / 147.6 ms → 147.7 / 145.3 ms | 2 → 2 ms | 124 → 126 ms |
+| JS | 63.9 / 64.8 ms → 63.8 / 67.0 ms | 68 → 68 ms | 2085 → 2067 ms |
+| Python | 354.8 / 346.1 ms → 345.2 / 349.4 ms | 58 → 58 ms | 4983 → 5019 ms |
+| PHP | 483.3 / 478.7 ms → 487.4 / 484.9 ms | 65 → 66 ms | 2469 → 2475 ms |
+| Lisp | 91.0 / 80.0 ms → 78.0 / 78.0 ms | 643 → 644 ms | 30225 → 30226 ms |
+
+Every difference is inside the run-to-run spread of its own column (the two
+Mandelbrot rounds of one tree differ by more than the trees do); the
+manifest checks at startup cost nothing measurable, and compile-heavy work
+is flat. No regression to reject.
+
+The math plans share one vocabulary (2026-09-21; WL-001 SEL-0022).
+
+  - **`spec/math-ops.json` names the 15 operations the native math plans compile** — five binary operators, the `NEG` prefix and nine builtins — with each one's source token, operand count (or left fold for `MIN`/`MAX`) and the argument that carries its auxiliary error position (`ROUND`'s scale, `POWER`'s exponent). The generator cross-checks every builtin's arity against `spec/builtins.json` and renders a table per host and `docs/MATH-OPS.md`; `tools/check-generated.sh` keeps them current.
+  - **Each host's compiler classifies through its table and keeps its own opcodes.** The hand-written operator switches and the three builtin arms per host are one table-driven arm; Python and JS keep their numbered opcodes, PHP its constants, C++ its enum, Lisp its keywords, and a host refuses to load if the manifest names an operation its executor lacks. Executors, scratchpads and the copy-propagation rules are untouched.
+
+Validation: 934 conformance cases on all five hosts, decimal oracle 199,942
+cases with 0 mismatches on all five, JS/PHP optimizer checks, and the database
+layers against pinned Docker servers (mariadb 11.8, mysql 8.4, postgres 17,
+sqlite): semantic oracle 0 differing on every dialect, mutation catalogue 192
+caught, 0 survived, 0 skipped. The full gate for this entry is the one recorded
+under SEL-0023 below, which ran on the tree carrying both.
+
+Binding forms are declared once, and `dependencies()` agrees everywhere (2026-09-21; WL-001 SEL-0021).
+
+  - **`spec/builtins.json` now carries the binding forms** of the 14 binding builtins: for each accepted argument count, in the evaluator's order, which argument is the source, a binder name, a body run per element, or an outer expression (TOP's limit, SORT_BY's direction), the guard that picks between two forms of one count, and the names bound inside. Rendered into every host's table and into a "Binding forms" table in `docs/BUILTINS.md`; each host exposes one classifier over it.
+  - **The dependency walkers and the SQL layer's stage 1 classify through it**, replacing five hand-typed copies of the SORT/TOP/BUCKET/LINK arms. This fixes a live divergence: `dependencies()` disagreed across hosts on TOP's binder and limit, LINK's named binders and TOP_BY's direction (nine of thirteen probed forms), and every host hid `K` in `SORT_BY(L, K, "DESC")`, which the evaluator reads as the key. Stage 1 had also inlined a same-named helper into LINK's binder slots and substituted TOP's limit inside the binder. Six new `program.deps.forms.*` API probes and nine `agg.forms.*` conformance cases pin the evaluator's scoping and both guard orders.
+
+Validation: `tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php,
+cpp, lisp and python (47 layers; 60 API probes agree), and the database
+layers against pinned Docker servers (mariadb 11.8, mysql 8.4, postgres 17,
+sqlite): semantic oracle 0 differing on every dialect, mutation catalogue 192
+caught, 0 survived, 0 skipped.
+
 The builtin table is authored once (2026-09-21; WL-001 SEL-0020).
 
   - **`spec/builtins.json` is the manifest of the 77 builtins** — name, min/max, the extra arity rules (`COND` odd, `RECORD` even, `LINK`/`LINK_LEFT` three or five) with their messages, lazy/binds, spec forms and section; `spec/builtins.md` is the format. `tools/gen-builtins.mjs` validates and renders it into a native table per host and into `docs/BUILTINS.md`, all committed and held current by `tools/check-generated.sh`.

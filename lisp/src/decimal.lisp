@@ -8,7 +8,7 @@
 
 (in-package #:sel)
 
-(defconstant +div-scale+ 10)
+(defconstant +div-scale+ +limit-div-scale+)   ; spec/limits.json
 
 ;;; spec/SPEC.md 6.4. These bound the *value*; ROUND's scale cap and POWER's
 ;;; exponent cap bound *arguments*, and an argument cap is not a value cap --
@@ -17,8 +17,8 @@
 ;;; numbers rather than one shared budget, because ROUND(99.5, 1000000) is
 ;;; 1 000 002 digits and legal under the scale cap: a shared budget would have
 ;;; shrunk what the spec already sanctions.
-(defconstant +max-int-digits+ 1000000)
-(defconstant +max-frac-digits+ 1000000)
+(defconstant +max-int-digits+ +limit-max-int-digits+)
+(defconstant +max-frac-digits+ +limit-max-frac-digits+)
 (defconstant +max-int-bits+ 3321929)
 (defconstant +fast-scale+ 18)
 (defconstant +fast-bits+ 60)

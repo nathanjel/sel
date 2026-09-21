@@ -53,9 +53,9 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0018](#sel-0018) | Assess shared checked native scale alignment | C++ | Resolved | P3 |
 | [SEL-0019](#sel-0019) | Triage remaining scan candidates and clone groups | All five | Resolved | P3 |
 | [SEL-0020](#sel-0020) | Create an authored builtin manifest | All five | Resolved | P2 |
-| [SEL-0021](#sel-0021) | Model overloaded binding forms once | All five | Proposed | P2 |
-| [SEL-0022](#sel-0022) | Generate shared math-operation metadata | All five | Proposed | P3 |
-| [SEL-0023](#sel-0023) | Centralize normative limits and error identifiers | All five | Proposed | P3 |
+| [SEL-0021](#sel-0021) | Model overloaded binding forms once | All five | Resolved | P2 |
+| [SEL-0022](#sel-0022) | Generate shared math-operation metadata | All five | Resolved | P3 |
+| [SEL-0023](#sel-0023) | Centralize normative limits and error identifiers | All five | Resolved | P3 |
 | [SEL-0024](#sel-0024) | Assess remaining SQL capability/category duplication | All five / SQL | Deferred | P3 |
 | [SEL-0025](#sel-0025) | Remove JS registry as the implicit SQL-generator authority | Tooling / all five | Proposed | P2 |
 | [SEL-0026](#sel-0026) | Add generation freshness and semantic gates | Tooling / all five | Proposed | P2 |
@@ -519,38 +519,110 @@ the JS registry for arities; SEL-0025 moves it to the manifest.
 <a id="sel-0021"></a>
 ### SEL-0021 — Model overloaded binding forms once
 
-**Proposed · P2 · All five · Owner: unassigned.**
+**Resolved 2026-09-21 · P2 · All five · Owner: unassigned.**
 Source: [Structured scan, retained as history](../interim/structured-code-scan.md) — Generation priority 2.
 
 **Next action:** Build on SEL-0020 with per-form argument roles, binder/body indices, syntactic disambiguation and _K scope for SORT/TOP/BUCKET/LINK. A single binds boolean is insufficient.
 
 **Close when:** Generated classifications agree across dependency, optimizer and SQL consumers; scope/error-position cases cover every overload and outer-context argument.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-21, working tree on `6568201` (commit pending).
+The 14 binding builtins now declare `forms` in `spec/builtins.json` (format in
+`spec/builtins.md`): per accepted count, in the evaluator's order, each
+argument's role (`source`/`outer` evaluated where the call is, `binder` a bare
+name, `body`/`key`/`proj`/`pred` inside), a `when` guard where two forms share
+a count (a text literal in the direction slot before a bare name in the
+binder slot — the evaluator's order, which no walker had), and the implicit
+names bound inside (`_`, `_K`, and `_1`/`_2` for LINK). The generator
+validates them (every accepted count has a form, guards only where needed,
+the last form for a count unguarded) and renders them into the five host
+tables and a "Binding forms" table in `docs/BUILTINS.md`. Each host has one
+classifier — `bindingForm` (JS), `binding_form` (Python, C++ inline in
+`sel_ast.hpp` so both translation units share it), `Registry::bindingForm`,
+`BINDING-FORM` — with a generic two-form fallback for a host's own binding
+function. Consumers switched to it: the five dependency walkers (the
+SORT/TOP/BUCKET/LINK arms they each retyped are gone) and the five SQL stage-1
+substitutions (which had treated every non-first argument as inner and LINK's
+binder names as reads).
+Found on the way: `--deps` disagreed across hosts on 9 of 13 probed forms
+(TOP's binder and limit, LINK's binders, TOP_BY's direction were reads in
+JS/PHP/C++/Lisp; Python alone had per-form logic), and all five hid `K` in
+`SORT_BY(L, K, "DESC")`, which the evaluator reads as the key. After the
+change all 15 probed forms agree on all five hosts and match the evaluator.
+Pinned: six `program.deps.forms.*` API probes (60 probes agree across the
+seven roster entries) and nine `agg.forms.*` conformance cases covering every
+overload's outer-context argument and both guard orders (positions included).
+Optimizer: its rewrites are per-builtin by design (join pushdown, sort/take
+fusion) and do not classify forms; the JS/PHP optimizer checks (135 each) and
+852 SQL cases per host are unchanged, which is the agreement the closure asks
+for. Evidence: 925 conformance and 852 SQL cases on all five hosts, 624
+pytest, 171 C++ unit, 532 FiveAM.
 
 <a id="sel-0022"></a>
 ### SEL-0022 — Generate shared math-operation metadata
 
-**Proposed · P3 · All five · Owner: unassigned.**
+**Resolved 2026-09-21 · P3 · All five · Owner: unassigned.**
 Source: [Structured scan, retained as history](../interim/structured-code-scan.md) — Generation priority 3.
 
 **Next action:** Define symbolic operations, operator/builtin mappings, arities and position sources. Preserve lane-native opcode numbers/enums/keywords, register storage and arithmetic execution.
 
 **Close when:** Each native compiler/executor agrees with the manifest; math-plan/AST parity, decimal oracle and benchmarks pass without forcing common binary encodings.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-21, working tree on `6568201` (commit pending).
+`spec/math-ops.json` (format `spec/math-ops.md`) names the 15 operations the
+math plans compile — five binary operators, the `NEG` prefix, nine builtins —
+each with its source token, operand count (1, 2 or a left fold) and the
+auxiliary error-position argument (`ROUND`'s scale, `POWER`'s exponent).
+`tools/gen-math-ops.mjs` validates it, cross-checks every builtin's arity
+against `spec/builtins.json` (the two authored sources cannot disagree), and
+renders a vocabulary table per host plus `docs/MATH-OPS.md`; `--check` is in
+`tools/check-generated.sh`. Each host's compiler now classifies source nodes
+through its table and maps the symbolic name to its own opcode — Python and
+JS keep their numbered `OpCode`, PHP its `MathOpCode` constants, C++ its
+`MathOp` enum, Lisp its keywords — and refuses to load if the manifest names
+an operation its executor lacks. The three hand-written builtin arms per
+host (unary five, `ROUND`/`POWER`, `MIN`/`MAX`) are one table-driven arm; the
+executors, scratchpad, loads and copy-propagation rules are untouched, and
+no common binary encoding was introduced.
+Evidence: 934 conformance on all five hosts (plan/AST parity is what the
+suite exercises, every arithmetic case running through the plan), decimal
+oracle 199,942 cases with 0 mismatches on all five, JS/PHP optimizer 135
+each, `ROUND(1.5, "x")` reports its error at the scale's position (1:12) on
+all five. Performance: Mandelbrot on all five hosts is measured against the
+`6568201` baseline in the batch's closing benchmark (see SEL-0023's entry
+and the changelog).
 
 <a id="sel-0023"></a>
 ### SEL-0023 — Centralize normative limits and error identifiers
 
-**Proposed · P3 · All five · Owner: unassigned.**
+**Resolved 2026-09-21 · P3 · All five · Owner: unassigned.**
 Source: [Structured scan, retained as history](../interim/structured-code-scan.md) — Generation priority 4.
 
 **Next action:** Migrate normative limit/error facts to one authored authority and generate constants/catalogues/boundary fixtures. Avoid creating a second authority beside the spec; keep host/cache budgets separate.
 
 **Close when:** Generated facts and normative docs agree; independent boundary/error-position tests remain effective and host-specific policies are preserved.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-21, working tree on `6568201` (commit pending).
+`spec/limits.json` (format `spec/limits.md`) restates the four normative
+numbers (`MAX_DEPTH` 200, `MAX_INT_DIGITS` and `MAX_FRAC_DIGITS` 1 000 000,
+`DIV_SCALE` 10) and the 25 language error codes with their phase. It is not a
+second authority: `tools/gen-limits.mjs` refuses to render unless
+`spec/SPEC.md` still states each number in its own words ("at least 200)",
+the §6.4 cap rows, "`DIV_SCALE` is **10**") and `spec/errors.md` lists each
+code under the phase claimed — so the spec leads and the manifest can only
+follow. Rendered into constants per host and `docs/LIMITS.md`; every host's
+`MAX_DEPTH`, decimal caps and division scale are now defined from its
+rendering instead of a literal. New gate `tools/check-error-codes.sh` (in
+`tools/check.sh` after the generated-artifacts step) reads every host's
+sources and requires the codes it raises to be exactly the catalogue plus the
+SQL layer's `sql/errors.md` codes: all five raise exactly the 33. Kept apart,
+as asked: host budgets (shape/alias caches, pools, SQL dialect limits) are not
+language facts and are not here; `conformance/10-limits.selt` and the API
+probes keep their literal 200s as independent oracles rather than reading
+the manifest they check — the fixtures were not regenerated, on purpose.
+Evidence: `10-limits.selt` 39/39 and 934 conformance on all five hosts, 624
+pytest, 171 C++ unit, 532 FiveAM, generated-artifacts and error-code gates
+green.
 
 <a id="sel-0024"></a>
 ### SEL-0024 — Assess remaining SQL capability/category duplication
@@ -679,8 +751,11 @@ mysql, postgresql, sqlite; mutations 192 caught, 0 survived, 0 skipped.
 Decision recorded 2026-09-20: database-backed checks run against Docker
 servers, never skipped. Repeated later the same day on the tree carrying
 SEL-0001–0018: gate ALL GREEN (47 layers), oracle 0 differ on all four
-dialects, mutations 192 caught / 0 skipped. Not yet the closure: no committed
-revision to pin, and `make asan` / performance checks were not run.
+dialects, mutations 192 caught / 0 skipped. 2026-09-21, tree carrying
+SEL-0001–0023: gate ALL GREEN (48 layers), database layers green, and a
+baseline-versus-current benchmark on all five hosts (Mandelbrot, startup,
+conformance wall time; table in the changelog) with no regression. Not yet
+the closure: no committed revision to pin, and `make asan` was not run.
 
 <a id="sel-0034"></a>
 ### SEL-0034 — Revalidate and resolve SQL depth/error-policy boundary C1

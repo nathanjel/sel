@@ -26,6 +26,9 @@
 ;;; the caller -- one body for all five hosts. A name it does not know is a
 ;;; host's own function (examples/fn-*) and passes.
 (defvar *builtin-manifest-data* nil)
+(defvar *builtin-form-data* nil)
+;; Filled by math-ops.lisp, the rendering of spec/math-ops.json; read by math-plan.lisp.
+(defvar *math-op-data* nil)
 
 (defun manifest-entry (upper)
   (assoc upper *builtin-manifest-data* :test #'string=))

@@ -9,7 +9,9 @@
 
 import { fail } from './errors.mjs';
 
-export const DIV_SCALE = 10;
+import * as LIMITS from './_limits.mjs';
+
+export const DIV_SCALE = LIMITS.DIV_SCALE;   // spec/limits.json
 
 // spec/SPEC.md §6.4. These bound the *value*; ROUND's scale cap and POWER's
 // exponent cap bound *arguments*, and an argument cap is not a value cap —
@@ -18,8 +20,8 @@ export const DIV_SCALE = 10;
 // rather than one shared budget, because ROUND(99.5, 1000000) is 1 000 002
 // digits and legal under the scale cap: a shared budget would have shrunk what
 // the spec already sanctions.
-export const MAX_INT_DIGITS = 1000000;
-export const MAX_FRAC_DIGITS = 1000000;
+export const MAX_INT_DIGITS = LIMITS.MAX_INT_DIGITS;
+export const MAX_FRAC_DIGITS = LIMITS.MAX_FRAC_DIGITS;
 
 const _MAX_INT_BITS = 3321929;
 const _INT_LIMIT_SHIFT = BigInt(_MAX_INT_BITS - 1);

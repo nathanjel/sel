@@ -1,7 +1,40 @@
 // The function table. Fixed at startup — SEL has no DEFUN — which is what lets
 // unknown names and wrong argument counts be caught at compile time.
 
-import { BUILTIN_MANIFEST } from './_builtin_manifest.mjs';
+import { BUILTIN_MANIFEST, BINDING_FORMS } from './_builtin_manifest.mjs';
+
+// A host's own binding function (register(..., { binds: true }), examples/
+// fn-complex) has no manifest forms; it gets the two classic shapes.
+const GENERIC_FORMS = Object.freeze([
+  { scopes: ['outer', 'inner'], when: null, binds: ['_', '_K'] },
+  { scopes: ['outer', 'binder', 'inner'], when: { arg: 1, is: 'name' }, binds: ['_K'] },
+]);
+
+// Which argument of a binding call runs where (spec/builtins.md, "Binding
+// forms"): for each argument 'outer' (evaluated where the call is), 'binder' (a
+// bare name, never evaluated) or 'inner' (once per element, with `binds` and
+// every binder's name in scope). Null when the call is not a binding builtin
+// or no form takes this count — the evaluator would refuse it, and a static
+// consumer treats every argument as outer. The dependency walker and the SQL
+// layer's stage 1 both classify through here, so they cannot disagree.
+export function bindingForm(name, args, spec = lookup(name)) {
+  const forms = BINDING_FORMS[name.toUpperCase()] || (spec && spec.binds ? GENERIC_FORMS : null);
+  if (!forms) return null;
+  for (const form of forms) {
+    if (form.scopes.length !== args.length) continue;
+    if (form.when) {
+      const a = args[form.when.arg];
+      const ok = form.when.is === 'name' ? (a.t === 'var' && !a.grouped) : a.t === 'text';
+      if (!ok) continue;
+    }
+    const binds = [...form.binds];
+    form.scopes.forEach((scope, i) => {
+      if (scope === 'binder' && args[i].t === 'var') binds.push(args[i].name);
+    });
+    return { scopes: form.scopes, binds };
+  }
+  return null;
+}
 
 const table = new Map();
 

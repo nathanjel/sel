@@ -1,5 +1,6 @@
 import * as D from './decimal.mjs';
 import { MAX_DEPTH } from './errors.mjs';
+import { MATH_OPERATORS, MATH_PREFIX, MATH_BUILTINS as MANIFEST_BUILTINS, MATH_OPS } from './_math_ops.mjs';
 
 export const OpCode = {
   LOAD_VAR: 1,
@@ -22,11 +23,18 @@ export const OpCode = {
   MAX: 18,
 };
 
-const MATH_BINARY_OPS = new Set(['+', '-', '*', '/', '%']);
-const MATH_UNARY_OPS = new Set(['NEG']);
-const MATH_BUILTINS = new Set([
-  'ROUND', 'ABS', 'SIGN', 'CEIL', 'FLOOR', 'TRUNC', 'POWER', 'MIN', 'MAX'
-]);
+// The vocabulary -- which source nodes compile, to which operation, with how
+// many operands and which error positions -- is spec/math-ops.json's, rendered
+// into _math_ops.mjs. The opcode NUMBERS are this host's own (OpCode above);
+// the manifest names each operation and this maps the name to the number,
+// refusing to load if the executor lacks one.
+const NATIVE = Object.freeze(Object.fromEntries(MATH_OPS.map((name) => {
+  if (!(name in OpCode)) throw new Error(`spec/math-ops.json names ${name}, which this host's math plan has no opcode for`);
+  return [name, OpCode[name]];
+})));
+const MATH_BINARY_OPS = new Set(Object.keys(MATH_OPERATORS));
+const MATH_UNARY_OPS = new Set(Object.keys(MATH_PREFIX));
+const MATH_BUILTINS = new Set(Object.keys(MANIFEST_BUILTINS));
 
 export function isMathOp(node) {
   if (!node || typeof node !== 'object') return false;
@@ -107,71 +115,59 @@ export function compileMathPlan(root) {
       }
 
       const dst = allocSlot();
-      let opCode;
-      switch (op) {
-        case '+': opCode = OpCode.ADD; break;
-        case '-': opCode = OpCode.SUB; break;
-        case '*': opCode = OpCode.MUL; break;
-        case '/': opCode = OpCode.DIV; break;
-        case '%': opCode = OpCode.MOD; break;
-      }
+      const opCode = NATIVE[MATH_OPERATORS[op]];
       steps.push({ op: opCode, dst, src1: resL.slot, src2: resR.slot, pos: node.pos });
       return { slot: dst, constVal: null };
     }
 
-    if (node.t === 'un' && node.op === 'NEG') {
+    if (node.t === 'un' && MATH_UNARY_OPS.has(node.op)) {
       if (!node.x) return null;
       const resX = emit(node.x, depth + 1);
       if (!resX) return null;
       const dst = allocSlot();
-      steps.push({ op: OpCode.NEG, dst, src1: resX.slot, pos: node.pos });
+      steps.push({ op: NATIVE[MATH_PREFIX[node.op]], dst, src1: resX.slot, pos: node.pos });
       return { slot: dst, constVal: null };
     }
 
+    // Math builtins: operand count, fold and error positions from the manifest
+    // entry; a count the entry cannot serve derails the plan.
     if (node.t === 'call' && MATH_BUILTINS.has(node.name)) {
-      const name = node.name;
-      if (name === 'ABS' || name === 'SIGN' || name === 'CEIL' || name === 'FLOOR' || name === 'TRUNC') {
-        if (!node.args || node.args.length !== 1) return null;
-        const resArg = emit(node.args[0], depth + 1);
+      const { op, arity, aux } = MANIFEST_BUILTINS[node.name];
+      const opCode = NATIVE[op];
+      const args = node.args || [];
+      if (arity === 1) {
+        if (args.length !== 1) return null;
+        const resArg = emit(args[0], depth + 1);
         if (!resArg) return null;
         const dst = allocSlot();
-        let opCode;
-        switch (name) {
-          case 'ABS': opCode = OpCode.ABS; break;
-          case 'SIGN': opCode = OpCode.SIGN; break;
-          case 'CEIL': opCode = OpCode.CEIL; break;
-          case 'FLOOR': opCode = OpCode.FLOOR; break;
-          case 'TRUNC': opCode = OpCode.TRUNC; break;
-        }
         steps.push({ op: opCode, dst, src1: resArg.slot, pos: node.pos });
         return { slot: dst, constVal: null };
       }
-      if (name === 'ROUND' || name === 'POWER') {
-        if (!node.args || node.args.length !== 2) return null;
-        const res0 = emit(node.args[0], depth + 1);
+      if (arity === 2) {
+        if (args.length !== 2) return null;
+        const res0 = emit(args[0], depth + 1);
         if (!res0) return null;
-        const res1 = emit(node.args[1], depth + 1);
+        const res1 = emit(args[1], depth + 1);
         if (!res1) return null;
         const dst = allocSlot();
-        const opCode = name === 'ROUND' ? OpCode.ROUND : OpCode.POWER;
-        steps.push({ op: opCode, dst, src1: res0.slot, src2: res1.slot, pos: node.pos, auxPos: node.args[1].pos });
+        const step = { op: opCode, dst, src1: res0.slot, src2: res1.slot, pos: node.pos };
+        if (aux !== null) step.auxPos = args[aux].pos;
+        steps.push(step);
         return { slot: dst, constVal: null };
       }
-      if (name === 'MIN' || name === 'MAX') {
-        if (!node.args || node.args.length < 1) return null;
-        const res0 = emit(node.args[0], depth + 1);
-        if (!res0) return null;
-        let currSlot = res0.slot;
-        const opCode = name === 'MIN' ? OpCode.MIN : OpCode.MAX;
-        for (let k = 1; k < node.args.length; k++) {
-          const resNext = emit(node.args[k], depth + 1);
-          if (!resNext) return null;
-          const dst = allocSlot();
-          steps.push({ op: opCode, dst, src1: currSlot, src2: resNext.slot, pos: node.pos });
-          currSlot = dst;
-        }
-        return { slot: currSlot, constVal: null };
+      // fold: one or more operands, combined pairwise left to right
+      if (args.length < 1) return null;
+      const res0 = emit(args[0], depth + 1);
+      if (!res0) return null;
+      let currSlot = res0.slot;
+      for (let k = 1; k < args.length; k++) {
+        const resNext = emit(args[k], depth + 1);
+        if (!resNext) return null;
+        const dst = allocSlot();
+        steps.push({ op: opCode, dst, src1: currSlot, src2: resNext.slot, pos: node.pos });
+        currSlot = dst;
       }
+      return { slot: currSlot, constVal: null };
     }
 
     if (node.t === 'bin' || node.t === 'un') return null;

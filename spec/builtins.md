@@ -41,3 +41,33 @@ from this file; it can only fail to load.
 Adding a builtin: add its entry here, run `node tools/gen-builtins.mjs`, commit
 the five renderings and `docs/BUILTINS.md` with it, then define it in every
 host. `tools/check-generated.sh` fails while a rendering is stale.
+
+## Binding forms
+
+A builtin with `binds` also declares `forms`: one entry per accepted argument
+list, in the order the evaluator tries them.
+
+```jsonc
+"SORT_BY": {
+  "forms": [
+    { "roles": ["source", "key"],                                   "binds": ["_", "_K"] },
+    { "roles": ["source", "key", "outer"],  "when": { "arg": 2, "is": "text" }, "binds": ["_", "_K"] },
+    { "roles": ["source", "binder", "key"], "when": { "arg": 1, "is": "name" }, "binds": ["_K"] },
+    { "roles": ["source", "key", "outer"],                          "binds": ["_", "_K"] },
+    { "roles": ["source", "binder", "key", "outer"],                "binds": ["_K"] }
+  ]
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `roles` | one per argument: `source`/`outer` are evaluated where the call is; `binder` is a bare name, never evaluated; `body`/`key`/`proj`/`pred` run inside the binder scope |
+| `when` | `{ "arg": i, "is": "name" \| "text" }`: this form applies when argument *i* is a bare (ungrouped) name or a text literal; the last form for a count has no guard |
+| `binds` | the implicit names bound inside (`_`, `_K`, `_1`, `_2`); every `binder` argument's own name is bound as well |
+
+Every count the arity accepts has a form. Hosts render the forms into the same
+tables as the rest of the manifest and expose one classifier
+(`bindingForm` / `binding_form` / `Registry::bindingForm` / `binding_form()` /
+`BINDING-FORM`) that the dependency walker and the SQL layer's stage 1 use —
+so "which argument runs inside the binder, and what does it see" is decided in
+one place per host, from one authored table.

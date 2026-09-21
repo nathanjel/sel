@@ -13,9 +13,11 @@ declare(strict_types=1);
 
 namespace Sel;
 
+require_once __DIR__ . '/Limits.php';   // the caps below are defined from it
+
 final class Dec
 {
-    public const DIV_SCALE = 10;
+    public const DIV_SCALE = Limits::DIV_SCALE;   // spec/limits.json
     /** @var list<int>|null */
     private static ?array $nativePow10 = null;
 
@@ -40,8 +42,8 @@ final class Dec
     // numbers rather than one shared budget, because ROUND(99.5, 1000000) is
     // 1 000 002 digits and legal under the scale cap: a shared budget would have
     // shrunk what the spec already sanctions.
-    public const MAX_INT_DIGITS = 1000000;
-    public const MAX_FRAC_DIGITS = 1000000;
+    public const MAX_INT_DIGITS = Limits::MAX_INT_DIGITS;
+    public const MAX_FRAC_DIGITS = Limits::MAX_FRAC_DIGITS;
 
     // --- digit-string primitives (non-negative, no leading zeros) ------------
 

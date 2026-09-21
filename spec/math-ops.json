@@ -1,0 +1,20 @@
+{
+  "$comment": "The authored math-operation manifest: the operations the native math plans compile, what source syntax each comes from, its argument count and where its errors point. Format in spec/math-ops.md. Rendered into every host by tools/gen-math-ops.mjs; each host's math-plan compiler classifies through the rendering and checks its own opcode vocabulary against it at load time.",
+  "operations": {
+    "ADD":   { "source": { "operator": "+" },    "arity": 2 },
+    "SUB":   { "source": { "operator": "-" },    "arity": 2 },
+    "MUL":   { "source": { "operator": "*" },    "arity": 2 },
+    "DIV":   { "source": { "operator": "/" },    "arity": 2 },
+    "MOD":   { "source": { "operator": "%" },    "arity": 2 },
+    "NEG":   { "source": { "prefix": "NEG" },    "arity": 1 },
+    "ABS":   { "source": { "builtin": "ABS" },   "arity": 1 },
+    "SIGN":  { "source": { "builtin": "SIGN" },  "arity": 1 },
+    "CEIL":  { "source": { "builtin": "CEIL" },  "arity": 1 },
+    "FLOOR": { "source": { "builtin": "FLOOR" }, "arity": 1 },
+    "TRUNC": { "source": { "builtin": "TRUNC" }, "arity": 1 },
+    "ROUND": { "source": { "builtin": "ROUND" }, "arity": 2, "auxPosition": 1 },
+    "POWER": { "source": { "builtin": "POWER" }, "arity": 2, "auxPosition": 1 },
+    "MIN":   { "source": { "builtin": "MIN" },   "arity": "fold" },
+    "MAX":   { "source": { "builtin": "MAX" },   "arity": "fold" }
+  }
+}

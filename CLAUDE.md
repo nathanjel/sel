@@ -67,12 +67,14 @@ REPLs: `node js/bin/sel.mjs`, `php php/bin/sel`, `cpp/build/sel`, `lisp/bin/sel`
 
 ## Generated, committed artifacts — regenerate, don't hand-edit
 
-Three things are authored once and rendered into every host's source language by Node scripts. The renderings are **committed** (a PHP/Python/C++/Lisp consumer must never need Node), and `tools/check.sh` fails if they are stale.
+Five things are authored once and rendered into every host's source language by Node scripts. The renderings are **committed** (a PHP/Python/C++/Lisp consumer must never need Node), and `tools/check.sh` fails if they are stale.
 
 | Authored source | Generator | Outputs |
 |---|---|---|
 | `sql/dialects/*.json` (format: `sql/MAP.md`) | `node tools/gen-sql-map.mjs` | `php/src/Sql/MapData.php`, `python/sel/sql/_map.py`, `js/src/sql/_map.mjs`, `cpp/sel_sql_map_data.cpp`, `lisp/src/sql/map-data.lisp`, plus each host's `*map_replay*` |
 | `sql/cases/*.sqlt` | `node tools/gen-sql-cases.mjs` | `php/bin/CaseData.php`, `python/bin/case_data.py`, `js/bin/case-data.mjs`, `cpp/bin/case_data.cpp`, `lisp/bin/case-data.lisp` |
+| `spec/limits.json` (format: `spec/limits.md`) | `node tools/gen-limits.mjs` | `js/src/_limits.mjs`, `python/sel/_limits.py`, `php/src/Limits.php`, `cpp/sel_limits.hpp`, `lisp/src/limits.lisp`, `docs/LIMITS.md` — the generator refuses to render unless the spec text states every value and code; each host's `MAX_DEPTH`/decimal caps are defined from its rendering; `tools/check-error-codes.sh` requires every host to raise exactly the catalogued codes |
+| `spec/math-ops.json` (format: `spec/math-ops.md`) | `node tools/gen-math-ops.mjs` | `js/src/_math_ops.mjs`, `python/sel/_math_ops.py`, `php/src/MathOps.php`, `cpp/sel_math_ops.hpp`, `lisp/src/math-ops.lisp`, `docs/MATH-OPS.md` — each host's math-plan compiler classifies through its rendering; opcode numbers stay native |
 | `spec/builtins.json` (format: `spec/builtins.md`) | `node tools/gen-builtins.mjs` | `js/src/_builtin_manifest.mjs`, `python/sel/_builtin_manifest.py`, `php/src/BuiltinManifest.php`, `cpp/sel_builtin_manifest.hpp`, `lisp/src/builtin-manifest.lisp`, `docs/BUILTINS.md` — each host's `define` checks itself against its rendering at startup |
 
 Editing a dialect or a `.sqlt` case means running the generator afterwards. `tools/check-generated.sh` verifies both (`--check` diffs content).

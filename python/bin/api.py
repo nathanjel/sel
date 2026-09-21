@@ -103,6 +103,13 @@ say('program.deps.excludes.binder', ' '.join(sel_compile('ALL(I, IT, IT > 0)').d
 # agree on it and nothing else records it -- not endorsed. See the note in
 # docs/EXTENDING.md.
 say('program.deps.grouped.binder', ' '.join(sel_compile('ALL(I, (IT), IT > 0)').dependencies()))
+# The binding forms of spec/builtins.json (see tools/api.mjs).
+say('program.deps.forms.top.binder-and-limit', ' '.join(sel_compile('TOP(L, X, X["a"], N)').dependencies()))
+say('program.deps.forms.top.limit-is-outer', ' '.join(sel_compile('TOP(L, COUNT(_))').dependencies()))
+say('program.deps.forms.sort-by.text-direction-wins', ' '.join(sel_compile('SORT_BY(L, K, "DESC")').dependencies()))
+say('program.deps.forms.top-by.direction-is-outer', ' '.join(sel_compile('TOP_BY(L, _["a"], N, D)').dependencies()))
+say('program.deps.forms.bucket.projection-inside', ' '.join(sel_compile('BUCKET(L, G, G["k"], COUNT(G) + _K)').dependencies()))
+say('program.deps.forms.link.named-binders', ' '.join(sel_compile('LINK(A, B, X, Y, X["a"] == Y["b"] AND Z)').dependencies()))
 ctx = Value.none()
 ctx.set('TOTAL', Value.num('59.97'))
 say('program.run.reads.context', evaluate('TOTAL > 10.00', ctx).dump())

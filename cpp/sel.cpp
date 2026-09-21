@@ -15,6 +15,7 @@
 #include "sel.hpp"
 #include "sel_ast.hpp"
 #include "sel_builtin_manifest.hpp"
+#include "sel_math_ops.hpp"
 
 // SEL rejects \p{...} at compile time as non-portable, so SRELL's Unicode
 // property tables are unreachable from this language. Leaving them out cuts the
@@ -220,7 +221,7 @@ int bytes_compare(std::string_view a, std::string_view b) {
 // never negative. Scale is part of the value: 2.50 is "250" at scale 2.
 // ============================================================================
 
-constexpr long long DIV_SCALE = 10;
+constexpr long long DIV_SCALE = sel_limits::DIV_SCALE;   // spec/limits.json
 
 // spec/SPEC.md §6.4. These bound the *value*; MAX_SCALE and MAX_POWER below
 // bound *arguments*, and an argument cap is not a value cap — POWER's base is
@@ -228,8 +229,8 @@ constexpr long long DIV_SCALE = 10;
 // steps straight over MAX_POWER. Two independent numbers rather than one shared
 // budget, because ROUND(99.5, 1000000) is 1 000 002 digits and legal under the
 // scale cap: a shared budget would have shrunk what the spec already sanctions.
-constexpr long long MAX_INT_DIGITS = 1000000;
-constexpr long long MAX_FRAC_DIGITS = 1000000;
+constexpr long long MAX_INT_DIGITS = sel_limits::MAX_INT_DIGITS;
+constexpr long long MAX_FRAC_DIGITS = sel_limits::MAX_FRAC_DIGITS;
 
 // Upper bounds on the arguments that name a size, from spec/SPEC.md §6.4's
 // first table. These are not the same as the value caps above: they bound what
@@ -2070,6 +2071,7 @@ const Spec* registry_lookup(const std::string& name) {
 }
 
 void register_builtins();   // defined after the built-ins themselves
+void math_ops_check();      // defined with the math plan; every manifest operation has an opcode
 
 // Every entry point that can parse must go through this first: the table has to
 // be complete before any source is read.
@@ -2077,6 +2079,7 @@ void ensure_registered() {
   static bool done = [] {
     register_builtins();
     assert_manifest_covered();
+    math_ops_check();
     return true;
   }();
   (void)done;
@@ -6004,95 +6007,29 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
     }
 
     case NT::Call: {
-      const std::string name = node->s;
-      if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY") {
-        const std::size_t n = node->items.size();
-        if (n == 1) {
-          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-          return;
-        }
-        if (n == 4 && node->items[1]->t == NT::Var) {
-          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-          std::set<std::string> inner = bound;
-          inner.insert(node->items[1]->s);
-          inner.insert("_K");
-          collect(node->items[2].get(), inner, reads, assigned, depth + 1);
-          collect(node->items[3].get(), bound, reads, assigned, depth + 1);
-          return;
-        }
-        if (n == 3 && node->items[1]->t == NT::Var) {
-          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-          std::set<std::string> inner = bound;
-          inner.insert(node->items[1]->s);
-          inner.insert("_K");
-          collect(node->items[2].get(), inner, reads, assigned, depth + 1);
-          return;
-        }
-        if (n == 3) {
-          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-          std::set<std::string> inner = bound;
-          inner.insert("_");
-          inner.insert("_K");
-          collect(node->items[1].get(), inner, reads, assigned, depth + 1);
-          collect(node->items[2].get(), bound, reads, assigned, depth + 1);
-          return;
-        }
-        if (n == 2) {
-          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-          std::set<std::string> inner = bound;
-          inner.insert("_");
-          inner.insert("_K");
-          collect(node->items[1].get(), inner, reads, assigned, depth + 1);
-          return;
-        }
-      }
-      if (name == "BUCKET") {
-        const std::size_t n = node->items.size();
-        if (n == 4 && node->items[1]->t == NT::Var) {
-          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-          std::set<std::string> inner = bound;
-          inner.insert(node->items[1]->s);
-          inner.insert("_K");
-          collect(node->items[2].get(), inner, reads, assigned, depth + 1);
-          collect(node->items[3].get(), inner, reads, assigned, depth + 1);
-          return;
-        }
-        if (n == 3) {
-          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-          std::set<std::string> inner = bound;
-          inner.insert("_");
-          inner.insert("_K");
-          collect(node->items[1].get(), inner, reads, assigned, depth + 1);
-          collect(node->items[2].get(), inner, reads, assigned, depth + 1);
-          return;
-        }
-        if (n == 2) {
-          collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-          std::set<std::string> inner = bound;
-          inner.insert("_");
-          inner.insert("_K");
-          collect(node->items[1].get(), inner, reads, assigned, depth + 1);
-          return;
-        }
-      }
-      if (node->spec && node->spec->binds && node->items.size() == 3 &&
-          node->items[1]->t == NT::Var) {
-        collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-        std::set<std::string> inner = bound;
-        inner.insert(node->items[1]->s);
-        inner.insert("_K");
-        collect(node->items[2].get(), inner, reads, assigned, depth + 1);
+      // Which arguments run inside the binder, and what they see, is decided
+      // once, by binding_form() over the manifest's forms (spec/builtins.md).
+      // No form -- a strict function, or a count the evaluator would refuse --
+      // and every argument is read where the call stands.
+      const auto form = binding_form(node->s, node->items, node->spec);
+      if (!form) {
+        for (const auto& arg : node->items) collect(arg.get(), bound, reads, assigned, depth + 1);
         return;
       }
-      if (node->spec && node->spec->binds && node->items.size() == 2) {
-        collect(node->items[0].get(), bound, reads, assigned, depth + 1);
-        std::set<std::string> inner = bound;
-        inner.insert("_");
-        inner.insert("_K");
-        collect(node->items[1].get(), inner, reads, assigned, depth + 1);
-        return;
+      std::optional<std::set<std::string>> inner;
+      for (std::size_t i = 0; i < node->items.size(); i++) {
+        const auto scope = form->scopes[i];
+        if (scope == sel_builtin_manifest::Scope::Binder) continue;
+        if (scope == sel_builtin_manifest::Scope::Inner) {
+          if (!inner) {
+            inner = bound;
+            for (const auto& b : form->binds) inner->insert(b);
+          }
+          collect(node->items[i].get(), *inner, reads, assigned, depth + 1);
+        } else {
+          collect(node->items[i].get(), bound, reads, assigned, depth + 1);
+        }
       }
-      for (const auto& arg : node->items) collect(arg.get(), bound, reads, assigned, depth + 1);
       return;
     }
 
@@ -6853,14 +6790,45 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
   return rewritten;
 }
 
-bool is_math_op(const Node& node) {
-  if (node.t == NT::Bin && (node.s == "+" || node.s == "-" || node.s == "*" || node.s == "/" || node.s == "%")) return true;
-  if (node.t == NT::Un && node.s == "NEG") return true;
-  if (node.t == NT::Call && (node.s == "ROUND" || node.s == "ABS" || node.s == "SIGN" ||
-                             node.s == "CEIL" || node.s == "FLOOR" || node.s == "TRUNC" ||
-                             node.s == "POWER" || node.s == "MIN" || node.s == "MAX")) return true;
-  return false;
+// The vocabulary -- which source nodes compile, to which operation, with how
+// many operands and which error positions -- is spec/math-ops.json's, rendered
+// into sel_math_ops.hpp. The opcode ENUM is this host's own (MathOp);
+// math_op_native maps the manifest's name to it, and math_ops_check refuses to
+// start if the executor lacks one.
+MathOp math_op_native(const std::string& name) {
+  static const std::map<std::string, MathOp> table = {
+    {"ADD", MathOp::Add}, {"SUB", MathOp::Sub}, {"MUL", MathOp::Mul}, {"DIV", MathOp::Div},
+    {"MOD", MathOp::Mod}, {"NEG", MathOp::Neg}, {"ABS", MathOp::Abs}, {"SIGN", MathOp::Sign},
+    {"CEIL", MathOp::Ceil}, {"FLOOR", MathOp::Floor}, {"TRUNC", MathOp::Trunc},
+    {"ROUND", MathOp::Round}, {"POWER", MathOp::Power}, {"MIN", MathOp::Min}, {"MAX", MathOp::Max},
+  };
+  const auto it = table.find(name);
+  if (it == table.end()) {
+    throw std::logic_error("spec/math-ops.json names " + name + ", which this host's math plan has no opcode for");
+  }
+  return it->second;
 }
+
+void math_ops_check() {
+  for (int i = 0; i < sel_math_ops::COUNT; i++) (void)math_op_native(sel_math_ops::OPS[i].name);
+}
+
+// The manifest entry for a source node, or nullptr when the node is not one
+// the plan compiles.
+const sel_math_ops::Op* math_op_for(const Node& node) {
+  int kind;
+  if (node.t == NT::Bin) kind = 1;
+  else if (node.t == NT::Un) kind = 2;
+  else if (node.t == NT::Call) kind = 3;
+  else return nullptr;
+  for (int i = 0; i < sel_math_ops::COUNT; i++) {
+    const auto& op = sel_math_ops::OPS[i];
+    if (op.kind == kind && node.s == op.token) return &op;
+  }
+  return nullptr;
+}
+
+bool is_math_op(const Node& node) { return math_op_for(node) != nullptr; }
 
 struct EmitResult {
   uint16_t slot = 0;
@@ -6947,11 +6915,7 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       }
 
       const uint16_t dst = alloc_slot();
-      MathOp op_code = MathOp::Add;
-      if (op == "-") op_code = MathOp::Sub;
-      else if (op == "*") op_code = MathOp::Mul;
-      else if (op == "/") op_code = MathOp::Div;
-      else if (op == "%") op_code = MathOp::Mod;
+      const MathOp op_code = math_op_native(math_op_for(*node)->name);
 
       MathStep step;
       step.op = op_code;
@@ -6963,13 +6927,13 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       return EmitResult{dst, false, {}};
     }
 
-    if (node->t == NT::Un && node->s == "NEG") {
+    if (node->t == NT::Un && is_math_op(*node)) {
       if (!node->l) return std::nullopt;
       const auto res_x = self(self, node->l, depth + 1);
       if (!res_x) return std::nullopt;
       const uint16_t dst = alloc_slot();
       MathStep step;
-      step.op = MathOp::Neg;
+      step.op = math_op_native(math_op_for(*node)->name);
       step.dst = dst;
       step.src1 = res_x->slot;
       step.pos = node->pos;
@@ -6977,19 +6941,17 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       return EmitResult{dst, false, {}};
     }
 
+    // Math builtins: operand count, fold and error positions from the manifest
+    // entry; a count the entry cannot serve derails the plan.
     if (node->t == NT::Call && is_math_op(*node)) {
-      const std::string& name = node->s;
-      if (name == "ABS" || name == "SIGN" || name == "CEIL" || name == "FLOOR" || name == "TRUNC") {
-        if (node->items.size() != 1) return std::nullopt;
-        const auto res_arg = self(self, node->items[0], depth + 1);
+      const auto* entry = math_op_for(*node);
+      const MathOp op_code = math_op_native(entry->name);
+      const auto& args = node->items;
+      if (entry->arity == 1) {
+        if (args.size() != 1) return std::nullopt;
+        const auto res_arg = self(self, args[0], depth + 1);
         if (!res_arg) return std::nullopt;
         const uint16_t dst = alloc_slot();
-        MathOp op_code = MathOp::Abs;
-        if (name == "SIGN") op_code = MathOp::Sign;
-        else if (name == "CEIL") op_code = MathOp::Ceil;
-        else if (name == "FLOOR") op_code = MathOp::Floor;
-        else if (name == "TRUNC") op_code = MathOp::Trunc;
-
         MathStep step;
         step.op = op_code;
         step.dst = dst;
@@ -6998,44 +6960,42 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         plan->steps.push_back(std::move(step));
         return EmitResult{dst, false, {}};
       }
-      if (name == "ROUND" || name == "POWER") {
-        if (node->items.size() != 2) return std::nullopt;
-        const auto res0 = self(self, node->items[0], depth + 1);
+      if (entry->arity == 2) {
+        if (args.size() != 2) return std::nullopt;
+        const auto res0 = self(self, args[0], depth + 1);
         if (!res0) return std::nullopt;
-        const auto res1 = self(self, node->items[1], depth + 1);
+        const auto res1 = self(self, args[1], depth + 1);
         if (!res1) return std::nullopt;
         const uint16_t dst = alloc_slot();
         MathStep step;
-        step.op = (name == "ROUND" ? MathOp::Round : MathOp::Power);
+        step.op = op_code;
         step.dst = dst;
         step.src1 = res0->slot;
         step.src2 = res1->slot;
         step.pos = node->pos;
-        step.aux_pos = node->items[1]->pos;
+        if (entry->aux >= 0) step.aux_pos = args[static_cast<std::size_t>(entry->aux)]->pos;
         plan->steps.push_back(std::move(step));
         return EmitResult{dst, false, {}};
       }
-      if (name == "MIN" || name == "MAX") {
-        if (node->items.empty()) return std::nullopt;
-        const auto res0 = self(self, node->items[0], depth + 1);
-        if (!res0) return std::nullopt;
-        uint16_t curr_slot = res0->slot;
-        const MathOp op_code = (name == "MIN" ? MathOp::Min : MathOp::Max);
-        for (std::size_t k = 1; k < node->items.size(); k++) {
-          const auto res_next = self(self, node->items[k], depth + 1);
-          if (!res_next) return std::nullopt;
-          const uint16_t dst = alloc_slot();
-          MathStep step;
-          step.op = op_code;
-          step.dst = dst;
-          step.src1 = curr_slot;
-          step.src2 = res_next->slot;
-          step.pos = node->pos;
-          plan->steps.push_back(std::move(step));
-          curr_slot = dst;
-        }
-        return EmitResult{curr_slot, false, {}};
+      // fold: one or more operands, combined pairwise left to right
+      if (args.empty()) return std::nullopt;
+      const auto res0 = self(self, args[0], depth + 1);
+      if (!res0) return std::nullopt;
+      uint16_t curr_slot = res0->slot;
+      for (std::size_t k = 1; k < args.size(); k++) {
+        const auto res_next = self(self, args[k], depth + 1);
+        if (!res_next) return std::nullopt;
+        const uint16_t dst = alloc_slot();
+        MathStep step;
+        step.op = op_code;
+        step.dst = dst;
+        step.src1 = curr_slot;
+        step.src2 = res_next->slot;
+        step.pos = node->pos;
+        plan->steps.push_back(std::move(step));
+        curr_slot = dst;
       }
+      return EmitResult{curr_slot, false, {}};
     }
 
     if (node->t == NT::Bin || node->t == NT::Un) return std::nullopt;

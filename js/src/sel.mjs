@@ -5,7 +5,7 @@ import { parse } from './parser.mjs';
 import { Context, evalNode, MAX_DEPTH } from './eval.mjs';
 import { RecordShape, Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { SelError, fail } from './errors.mjs';
-import { names, register, registerBuiltin } from './registry.mjs';
+import { names, register, registerBuiltin, bindingForm } from './registry.mjs';
 import { optimizeAst, optimizeAstLogical, optimizeAstInMemory } from './optimizer.mjs';
 
 export class Program {
@@ -91,94 +91,29 @@ function collect(node, bound, reads, assigned, depth) {
     }
 
     case 'call': {
-      const name = node.name || '';
-      if (name === 'SORT' || name === 'SORT_DESC' || name === 'SORT_BY') {
-        const n = node.args.length;
-        if (n === 1) {
-          collect(node.args[0], bound, reads, assigned, depth + 1);
-          return;
-        }
-        if (n === 4 && node.args[1].t === 'var') {
-          collect(node.args[0], bound, reads, assigned, depth + 1);
-          const inner = new Set(bound);
-          inner.add(node.args[1].name);
-          inner.add('_K');
-          collect(node.args[2], inner, reads, assigned, depth + 1);
-          collect(node.args[3], bound, reads, assigned, depth + 1);
-          return;
-        }
-        if (n === 3 && node.args[1].t === 'var') {
-          collect(node.args[0], bound, reads, assigned, depth + 1);
-          const inner = new Set(bound);
-          inner.add(node.args[1].name);
-          inner.add('_K');
-          collect(node.args[2], inner, reads, assigned, depth + 1);
-          return;
-        }
-        if (n === 3) {
-          collect(node.args[0], bound, reads, assigned, depth + 1);
-          const inner = new Set(bound);
-          inner.add('_');
-          inner.add('_K');
-          collect(node.args[1], inner, reads, assigned, depth + 1);
-          collect(node.args[2], bound, reads, assigned, depth + 1);
-          return;
-        }
-        if (n === 2) {
-          collect(node.args[0], bound, reads, assigned, depth + 1);
-          const inner = new Set(bound);
-          inner.add('_');
-          inner.add('_K');
-          collect(node.args[1], inner, reads, assigned, depth + 1);
-          return;
-        }
-      }
-      if (name === 'BUCKET') {
-        const n = node.args.length;
-        if (n === 4 && node.args[1].t === 'var') {
-          collect(node.args[0], bound, reads, assigned, depth + 1);
-          const inner = new Set(bound);
-          inner.add(node.args[1].name);
-          inner.add('_K');
-          collect(node.args[2], inner, reads, assigned, depth + 1);
-          collect(node.args[3], inner, reads, assigned, depth + 1);
-          return;
-        }
-        if (n === 3) {
-          collect(node.args[0], bound, reads, assigned, depth + 1);
-          const inner = new Set(bound);
-          inner.add('_');
-          inner.add('_K');
-          collect(node.args[1], inner, reads, assigned, depth + 1);
-          collect(node.args[2], inner, reads, assigned, depth + 1);
-          return;
-        }
-        if (n === 2) {
-          collect(node.args[0], bound, reads, assigned, depth + 1);
-          const inner = new Set(bound);
-          inner.add('_');
-          inner.add('_K');
-          collect(node.args[1], inner, reads, assigned, depth + 1);
-          return;
-        }
-      }
-      if (node.spec && node.spec.binds && node.args.length === 3 && node.args[1].t === 'var') {
-        collect(node.args[0], bound, reads, assigned, depth + 1);
-        const inner = new Set(bound);
-        inner.add(node.args[1].name);
-        inner.add('_K');
-        collect(node.args[2], inner, reads, assigned, depth + 1);
+      // Which arguments run inside the binder, and what they see, is decided
+      // once, by bindingForm() over the manifest's forms (spec/builtins.md).
+      // No form -- a strict function, or a count the evaluator would refuse --
+      // and every argument is read where the call stands.
+      const form = bindingForm(node.name || '', node.args, node.spec);
+      if (!form) {
+        for (const a of node.args) collect(a, bound, reads, assigned, depth + 1);
         return;
       }
-      if (node.spec && node.spec.binds && node.args.length === 2) {
-        collect(node.args[0], bound, reads, assigned, depth + 1);
-        const inner = new Set(bound);
-        inner.add('_');
-        inner.add('_K');
-        collect(node.args[1], inner, reads, assigned, depth + 1);
-        return;
-      }
-      for (const a of node.args) collect(a, bound, reads, assigned, depth + 1);
+      let inner = null;
+      node.args.forEach((arg, i) => {
+        const scope = form.scopes[i];
+        if (scope === 'binder') return;
+        if (scope === 'inner') {
+          if (!inner) {
+            inner = new Set(bound);
+            for (const b of form.binds) inner.add(b);
+          }
+          collect(arg, inner, reads, assigned, depth + 1);
+        } else {
+          collect(arg, bound, reads, assigned, depth + 1);
+        }
+      });
       return;
     }
 

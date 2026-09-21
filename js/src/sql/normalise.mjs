@@ -6,6 +6,7 @@
 // expression it held, and anything that cannot be is refused with a position.
 
 import { MAX_DEPTH } from '../eval.mjs';
+import { bindingForm } from '../registry.mjs';
 import * as constants from './constants.mjs';
 import { refuse } from './errors.mjs';
 
@@ -183,22 +184,15 @@ function substitute(node, defs, bound, depth = 0) {
   }
 
   if (t === 'call') {
-    const inner = [...bound];
-    const binds = node.spec != null && node.spec.binds;
-    if (binds) {
-      const n = node.args.length;
-      inner.push('_K');
-      inner.push(n === 3 && constants.isBinderName(node.args[1])
-        ? node.args[1].name : '_');
-    }
-    const args = [];
-    node.args.forEach((arg, i) => {
-      // An aggregate's binder argument is a name, not a read of one.
-      if (binds && i === 1 && node.args.length === 3 && constants.isBinderName(arg)) {
-        args.push(arg);
-        return;
-      }
-      args.push(substitute(arg, defs, i === 0 ? bound : inner, d));
+    // Which arguments a binding call runs inside the binder, and what they
+    // see, is the manifest's decision (bindingForm), shared with dependencies().
+    // A binder argument is a name, not a read of one, and stays as written.
+    const form = bindingForm(node.name, node.args, node.spec);
+    const inner = form ? [...bound, ...form.binds] : bound;
+    const args = node.args.map((arg, i) => {
+      const scope = form ? form.scopes[i] : 'outer';
+      if (scope === 'binder') return arg;
+      return substitute(arg, defs, scope === 'inner' ? inner : bound, d);
     });
     return { ...node, args };
   }

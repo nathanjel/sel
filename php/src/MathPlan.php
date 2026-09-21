@@ -27,12 +27,33 @@ final class MathOpCode
 
 final class MathPlan
 {
-    private const MATH_BINARY_OPS = ['+' => true, '-' => true, '*' => true, '/' => true, '%' => true];
-    private const MATH_UNARY_OPS = ['NEG' => true];
-    private const MATH_BUILTINS = [
-        'ROUND' => true, 'ABS' => true, 'SIGN' => true, 'CEIL' => true,
-        'FLOOR' => true, 'TRUNC' => true, 'POWER' => true, 'MIN' => true, 'MAX' => true,
-    ];
+    // The vocabulary -- which source nodes compile, to which operation, with
+    // how many operands and which error positions -- is spec/math-ops.json's,
+    // rendered into MathOps.php. The opcode NUMBERS are this host's own
+    // (MathOpCode); native() maps the manifest's name to the number, refusing
+    // to load if the executor lacks one.
+    private const MATH_BINARY_OPS = MathOps::OPERATORS;
+    private const MATH_UNARY_OPS = MathOps::PREFIX;
+    private const MATH_BUILTINS = MathOps::BUILTINS;
+
+    /** @var array<string,int>|null */
+    private static ?array $native = null;
+
+    private static function native(string $symbolic): int
+    {
+        if (self::$native === null) {
+            $map = [];
+            foreach (MathOps::OPS as $name) {
+                $constant = MathOpCode::class . '::' . $name;
+                if (!defined($constant)) {
+                    throw new \LogicException("spec/math-ops.json names {$name}, which this host's math plan has no opcode for");
+                }
+                $map[$name] = constant($constant);
+            }
+            self::$native = $map;
+        }
+        return self::$native[$symbolic];
+    }
 
     /** @param array<string,mixed>|null $node */
     public static function isMathOp(?array $node): bool
@@ -136,13 +157,7 @@ final class MathPlan
                 }
 
                 $dst = $allocSlot();
-                $opCode = match ($op) {
-                    '+' => MathOpCode::ADD,
-                    '-' => MathOpCode::SUB,
-                    '*' => MathOpCode::MUL,
-                    '/' => MathOpCode::DIV,
-                    '%' => MathOpCode::MOD,
-                };
+                $opCode = self::native(self::MATH_BINARY_OPS[$op]);
                 $steps[] = [
                     'op' => $opCode,
                     'dst' => $dst,
@@ -153,13 +168,13 @@ final class MathPlan
                 return ['slot' => $dst, 'constVal' => null];
             }
 
-            if ($t === 'un' && $node['op'] === 'NEG') {
+            if ($t === 'un' && isset(self::MATH_UNARY_OPS[$node['op']])) {
                 if (!isset($node['x'])) return null;
                 $resX = $emit($node['x'], $depth + 1);
                 if ($resX === null) return null;
                 $dst = $allocSlot();
                 $steps[] = [
-                    'op' => MathOpCode::NEG,
+                    'op' => self::native(self::MATH_UNARY_OPS[$node['op']]),
                     'dst' => $dst,
                     'src1' => $resX['slot'],
                     'pos' => $node['pos'],
@@ -167,67 +182,45 @@ final class MathPlan
                 return ['slot' => $dst, 'constVal' => null];
             }
 
+            // Math builtins: operand count, fold and error positions from the
+            // manifest entry; a count the entry cannot serve derails the plan.
             if ($t === 'call' && isset(self::MATH_BUILTINS[$node['name']])) {
-                $name = $node['name'];
-                if (in_array($name, ['ABS', 'SIGN', 'CEIL', 'FLOOR', 'TRUNC'], true)) {
-                    if (!isset($node['args']) || count($node['args']) !== 1) return null;
-                    $resArg = $emit($node['args'][0], $depth + 1);
+                [$symbolic, $arity, $aux] = self::MATH_BUILTINS[$node['name']];
+                $opCode = self::native($symbolic);
+                $args = $node['args'] ?? [];
+                if ($arity === 1) {
+                    if (count($args) !== 1) return null;
+                    $resArg = $emit($args[0], $depth + 1);
                     if ($resArg === null) return null;
                     $dst = $allocSlot();
-                    $opCode = match ($name) {
-                        'ABS' => MathOpCode::ABS,
-                        'SIGN' => MathOpCode::SIGN,
-                        'CEIL' => MathOpCode::CEIL,
-                        'FLOOR' => MathOpCode::FLOOR,
-                        'TRUNC' => MathOpCode::TRUNC,
-                    };
-                    $steps[] = [
-                        'op' => $opCode,
-                        'dst' => $dst,
-                        'src1' => $resArg['slot'],
-                        'pos' => $node['pos'],
-                    ];
+                    $steps[] = ['op' => $opCode, 'dst' => $dst, 'src1' => $resArg['slot'], 'pos' => $node['pos']];
                     return ['slot' => $dst, 'constVal' => null];
                 }
-                if ($name === 'ROUND' || $name === 'POWER') {
-                    if (!isset($node['args']) || count($node['args']) !== 2) return null;
-                    $res0 = $emit($node['args'][0], $depth + 1);
+                if ($arity === 2) {
+                    if (count($args) !== 2) return null;
+                    $res0 = $emit($args[0], $depth + 1);
                     if ($res0 === null) return null;
-                    $res1 = $emit($node['args'][1], $depth + 1);
+                    $res1 = $emit($args[1], $depth + 1);
                     if ($res1 === null) return null;
                     $dst = $allocSlot();
-                    $opCode = $name === 'ROUND' ? MathOpCode::ROUND : MathOpCode::POWER;
-                    $steps[] = [
-                        'op' => $opCode,
-                        'dst' => $dst,
-                        'src1' => $res0['slot'],
-                        'src2' => $res1['slot'],
-                        'pos' => $node['pos'],
-                        'auxPos' => $node['args'][1]['pos'],
-                    ];
+                    $step = ['op' => $opCode, 'dst' => $dst, 'src1' => $res0['slot'], 'src2' => $res1['slot'], 'pos' => $node['pos']];
+                    if ($aux !== null) $step['auxPos'] = $args[$aux]['pos'];
+                    $steps[] = $step;
                     return ['slot' => $dst, 'constVal' => null];
                 }
-                if ($name === 'MIN' || $name === 'MAX') {
-                    if (!isset($node['args']) || count($node['args']) < 1) return null;
-                    $res0 = $emit($node['args'][0], $depth + 1);
-                    if ($res0 === null) return null;
-                    $currSlot = $res0['slot'];
-                    $opCode = $name === 'MIN' ? MathOpCode::MIN : MathOpCode::MAX;
-                    for ($k = 1, $numArgs = count($node['args']); $k < $numArgs; $k++) {
-                        $resNext = $emit($node['args'][$k], $depth + 1);
-                        if ($resNext === null) return null;
-                        $dst = $allocSlot();
-                        $steps[] = [
-                            'op' => $opCode,
-                            'dst' => $dst,
-                            'src1' => $currSlot,
-                            'src2' => $resNext['slot'],
-                            'pos' => $node['pos'],
-                        ];
-                        $currSlot = $dst;
-                    }
-                    return ['slot' => $currSlot, 'constVal' => null];
+                // fold: one or more operands, combined pairwise left to right
+                if (count($args) < 1) return null;
+                $res0 = $emit($args[0], $depth + 1);
+                if ($res0 === null) return null;
+                $currSlot = $res0['slot'];
+                for ($k = 1, $numArgs = count($args); $k < $numArgs; $k++) {
+                    $resNext = $emit($args[$k], $depth + 1);
+                    if ($resNext === null) return null;
+                    $dst = $allocSlot();
+                    $steps[] = ['op' => $opCode, 'dst' => $dst, 'src1' => $currSlot, 'src2' => $resNext['slot'], 'pos' => $node['pos']];
+                    $currSlot = $dst;
                 }
+                return ['slot' => $currSlot, 'constVal' => null];
             }
 
             if ($t === 'bin' || $t === 'un') return null;

@@ -6,12 +6,14 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/Limits.php';
 require_once __DIR__ . '/SelError.php';
 require_once __DIR__ . '/Utf8.php';
 require_once __DIR__ . '/Dec.php';
 require_once __DIR__ . '/Value.php';
 require_once __DIR__ . '/BuiltinManifest.php';
 require_once __DIR__ . '/Registry.php';
+require_once __DIR__ . '/MathOps.php';
 require_once __DIR__ . '/MathPlan.php';
 require_once __DIR__ . '/Optimizer.php';
 require_once __DIR__ . '/Lexer.php';

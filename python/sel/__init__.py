@@ -20,7 +20,7 @@ from . import builtins as _builtins   # noqa: F401  registers the function table
 from .errors import Pos, SelError, fail
 from .eval import MAX_DEPTH, Context as _Context, eval_node
 from .parser import Node, parse
-from .registry import names as _names
+from .registry import names as _names, binding_form as _binding_form
 from .value import BIN, BOOL, NONE, TEXT, Value
 
 __all__ = [
@@ -126,125 +126,27 @@ computed is exactly a program that could not have been evaluated.
         return
 
     if t == 'call':
-        name = node.name or ''
-        if name in ('SORT', 'SORT_DESC', 'SORT_BY'):
-            n = len(node.args)
-            if n == 1:
-                _collect(node.args[0], bound, reads, assigned, depth + 1)
-                return
-            if n == 4 and node.args[1].t == 'var':
-                _collect(node.args[0], bound, reads, assigned, depth + 1)
-                inner = bound | {node.args[1].name, '_K'}
-                _collect(node.args[2], inner, reads, assigned, depth + 1)
-                _collect(node.args[3], bound, reads, assigned, depth + 1)
-                return
-            if n == 3 and node.args[1].t == 'var':
-                _collect(node.args[0], bound, reads, assigned, depth + 1)
-                inner = bound | {node.args[1].name, '_K'}
-                _collect(node.args[2], inner, reads, assigned, depth + 1)
-                return
-            if n == 3:
-                _collect(node.args[0], bound, reads, assigned, depth + 1)
-                inner = bound | {'_', '_K'}
-                _collect(node.args[1], inner, reads, assigned, depth + 1)
-                _collect(node.args[2], bound, reads, assigned, depth + 1)
-                return
-            if n == 2:
-                _collect(node.args[0], bound, reads, assigned, depth + 1)
-                inner = bound | {'_', '_K'}
-                _collect(node.args[1], inner, reads, assigned, depth + 1)
-                return
-        if name in ('TOP', 'TOP_DESC', 'TOP_BY'):
-            n = len(node.args)
-            if name in ('TOP', 'TOP_DESC'):
-                if n == 2:
-                    _collect(node.args[0], bound, reads, assigned, depth + 1)
-                    _collect(node.args[1], bound, reads, assigned, depth + 1)
-                    return
-                if n == 3:
-                    _collect(node.args[0], bound, reads, assigned, depth + 1)
-                    inner = bound | {'_', '_K'}
-                    _collect(node.args[1], inner, reads, assigned, depth + 1)
-                    _collect(node.args[2], bound, reads, assigned, depth + 1)
-                    return
-                if n == 4 and node.args[1].t == 'var':
-                    _collect(node.args[0], bound, reads, assigned, depth + 1)
-                    inner = bound | {node.args[1].name, '_K'}
-                    _collect(node.args[2], inner, reads, assigned, depth + 1)
-                    _collect(node.args[3], bound, reads, assigned, depth + 1)
-                    return
+        # Which arguments run inside the binder, and what they see, is decided
+        # once, by binding_form() over the manifest's forms (spec/builtins.md).
+        # No form -- a strict function, or a count the evaluator would refuse
+        # -- and every argument is read where the call stands.
+        form = _binding_form(node.name or '', node.args, node.spec)
+        if form is None:
+            for a in node.args:
+                _collect(a, bound, reads, assigned, depth + 1)
+            return
+        scopes, binds = form
+        inner = None
+        for i, arg in enumerate(node.args):
+            scope = scopes[i]
+            if scope == 'binder':
+                continue
+            if scope == 'inner':
+                if inner is None:
+                    inner = bound | frozenset(binds)
+                _collect(arg, inner, reads, assigned, depth + 1)
             else:
-                # TOP_BY has the same key/direction forms as SORT_BY, with the
-                # final argument reserved for the limit.
-                if n == 3:
-                    _collect(node.args[0], bound, reads, assigned, depth + 1)
-                    inner = bound | {'_', '_K'}
-                    _collect(node.args[1], inner, reads, assigned, depth + 1)
-                    _collect(node.args[2], bound, reads, assigned, depth + 1)
-                    return
-                if n == 4:
-                    _collect(node.args[0], bound, reads, assigned, depth + 1)
-                    if node.args[2].t == 'text':
-                        _collect(node.args[1], bound | {'_', '_K'}, reads, assigned, depth + 1)
-                        _collect(node.args[2], bound, reads, assigned, depth + 1)
-                    elif node.args[1].t == 'var' and not node.args[1].grouped:
-                        inner = bound | {node.args[1].name, '_K'}
-                        _collect(node.args[2], inner, reads, assigned, depth + 1)
-                    else:
-                        _collect(node.args[1], bound | {'_', '_K'}, reads, assigned, depth + 1)
-                        _collect(node.args[2], bound, reads, assigned, depth + 1)
-                    _collect(node.args[3], bound, reads, assigned, depth + 1)
-                    return
-                if n == 5:
-                    _collect(node.args[0], bound, reads, assigned, depth + 1)
-                    inner = bound | {node.args[1].name, '_K'}
-                    _collect(node.args[2], inner, reads, assigned, depth + 1)
-                    _collect(node.args[3], bound, reads, assigned, depth + 1)
-                    _collect(node.args[4], bound, reads, assigned, depth + 1)
-                    return
-        if name == 'BUCKET':
-            n = len(node.args)
-            if n == 4 and node.args[1].t == 'var':
-                _collect(node.args[0], bound, reads, assigned, depth + 1)
-                inner = bound | {node.args[1].name, '_K'}
-                _collect(node.args[2], inner, reads, assigned, depth + 1)
-                _collect(node.args[3], inner, reads, assigned, depth + 1)
-                return
-            if n == 3:
-                _collect(node.args[0], bound, reads, assigned, depth + 1)
-                inner = bound | {'_', '_K'}
-                _collect(node.args[1], inner, reads, assigned, depth + 1)
-                _collect(node.args[2], inner, reads, assigned, depth + 1)
-                return
-            if n == 2:
-                _collect(node.args[0], bound, reads, assigned, depth + 1)
-                inner = bound | {'_', '_K'}
-                _collect(node.args[1], inner, reads, assigned, depth + 1)
-                return
-        if name in ('LINK', 'LINK_LEFT') and len(node.args) in (3, 5):
-            _collect(node.args[0], bound, reads, assigned, depth + 1)
-            _collect(node.args[1], bound, reads, assigned, depth + 1)
-            if len(node.args) == 5:
-                left_name = node.args[2].name if node.args[2].t == 'var' else '_1'
-                right_name = node.args[3].name if node.args[3].t == 'var' else '_2'
-                inner = bound | {left_name, right_name, '_', '_1', '_2', '_K'}
-                _collect(node.args[4], inner, reads, assigned, depth + 1)
-            else:
-                inner = bound | {'_', '_1', '_2', '_K'}
-                _collect(node.args[2], inner, reads, assigned, depth + 1)
-            return
-        if node.spec and node.spec.binds and len(node.args) == 3 and node.args[1].t == 'var':
-            _collect(node.args[0], bound, reads, assigned, depth + 1)
-            inner = bound | {node.args[1].name, '_K'}
-            _collect(node.args[2], inner, reads, assigned, depth + 1)
-            return
-        if node.spec and node.spec.binds and len(node.args) == 2:
-            _collect(node.args[0], bound, reads, assigned, depth + 1)
-            inner = bound | {'_', '_K'}
-            _collect(node.args[1], inner, reads, assigned, depth + 1)
-            return
-        for a in node.args:
-            _collect(a, bound, reads, assigned, depth + 1)
+                _collect(arg, bound, reads, assigned, depth + 1)
         return
 
     if t in ('seq', 'list'):

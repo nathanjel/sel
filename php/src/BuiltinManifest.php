@@ -92,4 +92,83 @@ final class BuiltinManifest
         'TRUNC' => [1, 1, false, false, null],
         'UPPER' => [1, 1, false, false, null],
     ];
+
+    /**
+     * The binding forms (spec/builtins.md): per accepted count, in the order
+     * the evaluator tries them, [scopes, when, binds] with scopes a list of
+     * 'outer' | 'binder' | 'inner', when null or [arg, 'name' | 'text'], and
+     * binds the implicit names bound inside. Registry::bindingForm reads it.
+     *
+     * @var array<string, list<array{0:list<string>,1:array{0:int,1:string}|null,2:list<string>}>>
+     */
+    public const FORMS = [
+        'ALL' => [
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner'], null, ['_K']],
+        ],
+        'ANY' => [
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner'], null, ['_K']],
+        ],
+        'BUCKET' => [
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner'], [1, 'name'], ['_K']],
+            [['outer', 'inner', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner', 'inner'], null, ['_K']],
+        ],
+        'FILTER' => [
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner'], null, ['_K']],
+        ],
+        'LINK' => [
+            [['outer', 'outer', 'inner'], null, ['_', '_1', '_2', '_K']],
+            [['outer', 'outer', 'binder', 'binder', 'inner'], null, ['_', '_1', '_2', '_K']],
+        ],
+        'LINK_LEFT' => [
+            [['outer', 'outer', 'inner'], null, ['_', '_1', '_2', '_K']],
+            [['outer', 'outer', 'binder', 'binder', 'inner'], null, ['_', '_1', '_2', '_K']],
+        ],
+        'MAP' => [
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner'], null, ['_K']],
+        ],
+        'SORT' => [
+            [['outer'], null, ['_', '_K']],
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner'], null, ['_K']],
+        ],
+        'SORT_BY' => [
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'inner', 'outer'], [2, 'text'], ['_', '_K']],
+            [['outer', 'binder', 'inner'], [1, 'name'], ['_K']],
+            [['outer', 'inner', 'outer'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner', 'outer'], null, ['_K']],
+        ],
+        'SORT_DESC' => [
+            [['outer'], null, ['_', '_K']],
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner'], null, ['_K']],
+        ],
+        'SUM' => [
+            [['outer', 'inner'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner'], null, ['_K']],
+        ],
+        'TOP' => [
+            [['outer', 'outer'], null, ['_', '_K']],
+            [['outer', 'inner', 'outer'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner', 'outer'], null, ['_K']],
+        ],
+        'TOP_BY' => [
+            [['outer', 'inner', 'outer'], null, ['_', '_K']],
+            [['outer', 'inner', 'outer', 'outer'], [2, 'text'], ['_', '_K']],
+            [['outer', 'binder', 'inner', 'outer'], [1, 'name'], ['_K']],
+            [['outer', 'inner', 'outer', 'outer'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner', 'outer', 'outer'], null, ['_K']],
+        ],
+        'TOP_DESC' => [
+            [['outer', 'outer'], null, ['_', '_K']],
+            [['outer', 'inner', 'outer'], null, ['_', '_K']],
+            [['outer', 'binder', 'inner', 'outer'], null, ['_K']],
+        ],
+    ];
 }

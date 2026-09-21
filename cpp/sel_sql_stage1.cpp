@@ -118,24 +118,24 @@ SNodePtr substitute(const NodePtr& node, Defs& defs,
       return SNode::rewritten(node, flatten(node->items, defs, bound, depth));
 
     case NT::Call: {
+      // Which arguments a binding call runs inside the binder, and what they
+      // see, is the manifest's decision (binding_form, sel_ast.hpp), shared
+      // with dependencies(). A binder argument is a NAME, not a read of one,
+      // and stays as written.
+      const auto form = binding_form(node->s, node->items, node->spec);
       std::vector<std::string> inner = bound;
-      const bool binds = node->spec != nullptr && node->spec->binds;
+      if (form) inner.insert(inner.end(), form->binds.begin(), form->binds.end());
       const std::size_t n = node->items.size();
-      if (binds) {
-        inner.emplace_back("_K");
-        inner.push_back(n == 3 && is_binder_name(*node->items[1])
-                            ? node->items[1]->s
-                            : std::string("_"));
-      }
       std::vector<SNodePtr> args;
       args.reserve(n);
       for (std::size_t i = 0; i < n; ++i) {
-        // An aggregate's binder argument is a NAME, not a read of one.
-        if (binds && i == 1 && n == 3 && node->items[i]->t == NT::Var) {
+        const auto scope = form ? form->scopes[i] : sel_builtin_manifest::Scope::Outer;
+        if (scope == sel_builtin_manifest::Scope::Binder) {
           args.push_back(SNode::leaf(node->items[i]));
           continue;
         }
-        args.push_back(substitute(node->items[i], defs, i == 0 ? bound : inner, depth));
+        args.push_back(substitute(node->items[i], defs,
+                                  scope == sel_builtin_manifest::Scope::Inner ? inner : bound, depth));
       }
       return SNode::rewritten(node, std::move(args));
     }

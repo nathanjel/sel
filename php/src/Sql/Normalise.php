@@ -210,20 +210,16 @@ final class Normalise
                 return $node;
 
             case 'call':
-                $inner = $bound;
-                if (!empty($node['spec']['binds'])) {
-                    $n = count($node['args']);
-                    $inner[] = '_K';
-                    $inner[] = $n === 3 && Constants::isBinderName($node['args'][1])
-                        ? $node['args'][1]['name'] : '_';
-                }
+                // Which arguments a binding call runs inside the binder, and
+                // what they see, is the manifest's decision
+                // (Registry::bindingForm), shared with dependencies(). A binder
+                // argument is a name, not a read of one, and stays as written.
+                $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
+                $inner = $form === null ? $bound : array_merge($bound, $form['binds']);
                 foreach ($node['args'] as $i => $arg) {
-                    // An aggregate's binder argument is a name, not a read of one.
-                    if (!empty($node['spec']['binds']) && $i === 1
-                        && count($node['args']) === 3 && $arg['t'] === 'var') {
-                        continue;
-                    }
-                    $node['args'][$i] = self::substitute($arg, $defs, $i === 0 ? $bound : $inner, $depth);
+                    $scope = $form === null ? 'outer' : $form['scopes'][$i];
+                    if ($scope === 'binder') continue;
+                    $node['args'][$i] = self::substitute($arg, $defs, $scope === 'inner' ? $inner : $bound, $depth);
                 }
                 return $node;
 

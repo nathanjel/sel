@@ -33,7 +33,9 @@ import sys
 
 from .errors import Pos, fail
 
-DIV_SCALE = 10
+from . import _limits as _limits
+
+DIV_SCALE = _limits.DIV_SCALE   # spec/limits.json
 
 # spec/SPEC.md §6.4. These bound the *value*; ROUND's scale cap and POWER's
 # exponent cap bound *arguments*, and an argument cap is not a value cap —
@@ -42,8 +44,8 @@ DIV_SCALE = 10
 # rather than one shared budget, because ROUND(99.5, 1000000) is 1 000 002
 # digits and legal under the scale cap: a shared budget would have shrunk what
 # the spec already sanctions.
-MAX_INT_DIGITS = 1000000
-MAX_FRAC_DIGITS = 1000000
+MAX_INT_DIGITS = _limits.MAX_INT_DIGITS
+MAX_FRAC_DIGITS = _limits.MAX_FRAC_DIGITS
 
 # The bit length at or above which a magnitude *may* have more than
 # MAX_INT_DIGITS digits: floor(MAX_INT_DIGITS * log2(10)) + 1. Below it, it

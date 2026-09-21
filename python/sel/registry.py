@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from ._builtin_manifest import BUILTIN_MANIFEST
+from ._builtin_manifest import BUILTIN_MANIFEST, BINDING_FORMS
 from .lexer import ascii_upper
 
 INF = float('inf')
@@ -75,6 +75,47 @@ def _manifest_arity_error(rule):
         return lambda n: None if (n % 2 == 1) == odd else message.replace('{count}', str(n))
     allowed = frozenset(detail)
     return lambda n: None if n in allowed else message.replace('{count}', str(n))
+
+
+# A host's own binding function (define(..., binds=True) outside the manifest,
+# examples/fn-complex) has no manifest forms; it gets the two classic shapes.
+_GENERIC_FORMS = (
+    (('outer', 'inner'), None, ('_', '_K')),
+    (('outer', 'binder', 'inner'), (1, 'name'), ('_K',)),
+)
+
+
+def binding_form(name: str, args, spec=None):
+    """Which argument of a binding call runs where (spec/builtins.md, "Binding
+    forms"): a tuple of per-argument scopes -- 'outer' (evaluated where the
+    call is), 'binder' (a bare name, never evaluated) or 'inner' (once per
+    element) -- and the names bound inside. None when the call is not a
+    binding builtin or no form takes this count: the evaluator would refuse
+    it, and a static consumer reads every argument where the call stands. The
+    dependency walker and the SQL layer's stage 1 both classify through here,
+    so they cannot disagree."""
+    key = ascii_upper(name)
+    forms = BINDING_FORMS.get(key)
+    if forms is None:
+        if spec is None:
+            spec = _table.get(key)
+        if spec is None or not spec.binds:
+            return None
+        forms = _GENERIC_FORMS
+    for scopes, when, binds in forms:
+        if len(scopes) != len(args):
+            continue
+        if when is not None:
+            a = args[when[0]]
+            ok = (a.t == 'var' and not a.grouped) if when[1] == 'name' else a.t == 'text'
+            if not ok:
+                continue
+        bound = list(binds)
+        for i, scope in enumerate(scopes):
+            if scope == 'binder' and args[i].t == 'var':
+                bound.append(args[i].name)
+        return scopes, bound
+    return None
 
 
 def assert_manifest_covered() -> None:

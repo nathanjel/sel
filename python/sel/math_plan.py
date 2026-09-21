@@ -7,6 +7,8 @@ from typing import Any
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos
 from .parser import Node
+from ._math_ops import MATH_OPERATORS as _OPERATORS, MATH_PREFIX as _PREFIX, \
+    MATH_BUILTINS as _BUILTINS, MATH_OPS as _OPS
 
 
 class OpCode(IntEnum):
@@ -50,11 +52,15 @@ class MathPlan:
     scratchpad_size: int
 
 
-MATH_BINARY_OPS = frozenset({'+', '-', '*', '/', '%'})
-MATH_UNARY_OPS = frozenset({'NEG'})
-MATH_BUILTINS = frozenset({
-    'ROUND', 'ABS', 'SIGN', 'CEIL', 'FLOOR', 'TRUNC', 'POWER', 'MIN', 'MAX'
-})
+# The vocabulary -- which source nodes compile, to which operation, with how
+# many operands and which error positions -- is spec/math-ops.json's, rendered
+# into _math_ops.py. The opcode NUMBERS are this host's own (OpCode above); the
+# manifest names each operation and this maps the name to the number, refusing
+# to import if the executor lacks one.
+_NATIVE = {name: OpCode[name] for name in _OPS}
+MATH_BINARY_OPS = frozenset(_OPERATORS)
+MATH_UNARY_OPS = frozenset(_PREFIX)
+MATH_BUILTINS = frozenset(_BUILTINS)
 
 
 def is_math_op(node: Node | None) -> bool:
@@ -150,18 +156,12 @@ def compile_math_plan(root: Node) -> MathPlan | None:
                 return slot_r, const_r
 
             dst = alloc_slot()
-            op_code = {
-                '+': OpCode.ADD,
-                '-': OpCode.SUB,
-                '*': OpCode.MUL,
-                '/': OpCode.DIV,
-                '%': OpCode.MOD,
-            }[op]
+            op_code = _NATIVE[_OPERATORS[op]]
             steps.append(Step(op=op_code, dst=dst, src1=slot_l, src2=slot_r, pos=node.pos))
             return dst, None
 
-        # 4. Unary NEG
-        if node.t == 'un' and node.op == 'NEG':
+        # 4. Prefix operator
+        if node.t == 'un' and node.op in MATH_UNARY_OPS:
             if node.x is None:
                 return None
             res_x = emit(node.x, depth + 1)
@@ -169,67 +169,52 @@ def compile_math_plan(root: Node) -> MathPlan | None:
                 return None
             slot_x, _ = res_x
             dst = alloc_slot()
-            steps.append(Step(op=OpCode.NEG, dst=dst, src1=slot_x, pos=node.pos))
+            steps.append(Step(op=_NATIVE[_PREFIX[node.op]], dst=dst, src1=slot_x, pos=node.pos))
             return dst, None
 
-        # 5. Math builtins
+        # 5. Math builtins: operand count, fold and error positions from the
+        #    manifest entry; a count the entry cannot serve derails the plan.
         if node.t == 'call' and node.name in MATH_BUILTINS:
-            name = node.name
-            if name in ('ABS', 'SIGN', 'CEIL', 'FLOOR', 'TRUNC'):
-                if len(node.args) != 1:
+            sym, arity, aux = _BUILTINS[node.name]
+            op_code = _NATIVE[sym]
+            args = node.args
+            if arity == 1:
+                if len(args) != 1:
                     return None
-                res_arg = emit(node.args[0], depth + 1)
+                res_arg = emit(args[0], depth + 1)
                 if res_arg is None:
                     return None
-                slot_arg, _ = res_arg
                 dst = alloc_slot()
-                op_code = {
-                    'ABS': OpCode.ABS,
-                    'SIGN': OpCode.SIGN,
-                    'CEIL': OpCode.CEIL,
-                    'FLOOR': OpCode.FLOOR,
-                    'TRUNC': OpCode.TRUNC,
-                }[name]
-                steps.append(Step(op=op_code, dst=dst, src1=slot_arg, pos=node.pos))
+                steps.append(Step(op=op_code, dst=dst, src1=res_arg[0], pos=node.pos))
                 return dst, None
-
-            if name in ('ROUND', 'POWER'):
-                if len(node.args) != 2:
+            if arity == 2:
+                if len(args) != 2:
                     return None
-                res_arg0 = emit(node.args[0], depth + 1)
+                res_arg0 = emit(args[0], depth + 1)
                 if res_arg0 is None:
                     return None
-                slot_arg0, _ = res_arg0
-
-                res_arg1 = emit(node.args[1], depth + 1)
+                res_arg1 = emit(args[1], depth + 1)
                 if res_arg1 is None:
                     return None
-                slot_arg1, _ = res_arg1
-
                 dst = alloc_slot()
-                op_code = OpCode.ROUND if name == 'ROUND' else OpCode.POWER
-                steps.append(Step(op=op_code, dst=dst, src1=slot_arg0, src2=slot_arg1,
-                                  pos=node.pos, aux_pos=node.args[1].pos))
+                steps.append(Step(op=op_code, dst=dst, src1=res_arg0[0], src2=res_arg1[0],
+                                  pos=node.pos, aux_pos=args[aux].pos if aux is not None else None))
                 return dst, None
-
-            if name in ('MIN', 'MAX'):
-                if len(node.args) < 1:
+            # fold: one or more operands, combined pairwise left to right
+            if len(args) < 1:
+                return None
+            res_prev = emit(args[0], depth + 1)
+            if res_prev is None:
+                return None
+            curr_slot = res_prev[0]
+            for k in range(1, len(args)):
+                res_next = emit(args[k], depth + 1)
+                if res_next is None:
                     return None
-                res_prev = emit(node.args[0], depth + 1)
-                if res_prev is None:
-                    return None
-                curr_slot, _ = res_prev
-
-                op_code = OpCode.MIN if name == 'MIN' else OpCode.MAX
-                for k in range(1, len(node.args)):
-                    res_next = emit(node.args[k], depth + 1)
-                    if res_next is None:
-                        return None
-                    next_slot, _ = res_next
-                    dst = alloc_slot()
-                    steps.append(Step(op=op_code, dst=dst, src1=curr_slot, src2=next_slot, pos=node.pos))
-                    curr_slot = dst
-                return curr_slot, None
+                dst = alloc_slot()
+                steps.append(Step(op=op_code, dst=dst, src1=curr_slot, src2=res_next[0], pos=node.pos))
+                curr_slot = dst
+            return curr_slot, None
 
         # 6. Derailing constructs:
         if node.t == 'bin':

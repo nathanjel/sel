@@ -114,6 +114,13 @@ int main() {
   // agree on it and nothing else records it -- not endorsed. See the note in
   // docs/EXTENDING.md.
   say("program.deps.grouped.binder", join(compile("ALL(I, (IT), IT > 0)").dependencies(), " "));
+  // The binding forms of spec/builtins.json (see tools/api.mjs).
+  say("program.deps.forms.top.binder-and-limit", join(compile("TOP(L, X, X[\"a\"], N)").dependencies(), " "));
+  say("program.deps.forms.top.limit-is-outer", join(compile("TOP(L, COUNT(_))").dependencies(), " "));
+  say("program.deps.forms.sort-by.text-direction-wins", join(compile("SORT_BY(L, K, \"DESC\")").dependencies(), " "));
+  say("program.deps.forms.top-by.direction-is-outer", join(compile("TOP_BY(L, _[\"a\"], N, D)").dependencies(), " "));
+  say("program.deps.forms.bucket.projection-inside", join(compile("BUCKET(L, G, G[\"k\"], COUNT(G) + _K)").dependencies(), " "));
+  say("program.deps.forms.link.named-binders", join(compile("LINK(A, B, X, Y, X[\"a\"] == Y[\"b\"] AND Z)").dependencies(), " "));
   Value ctx = Value::none();
   ctx.set("TOTAL", Value::num("59.97"));
   say("program.run.reads.context", evaluate("TOTAL > 10.00", ctx).dump());

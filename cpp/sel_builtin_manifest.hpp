@@ -121,4 +121,65 @@ inline const Entry ENTRIES[] = {
 
 inline constexpr int COUNT = 77;
 
+// The binding forms (spec/builtins.md): per accepted count, in the order the
+// evaluator tries them, each argument's scope, an optional guard on one
+// argument (kind 0 = none, 1 = a bare name, 2 = a text literal) and the
+// implicit names bound inside. sel.cpp turns these into binding_form().
+enum class Scope : unsigned char { Outer, Binder, Inner };
+
+struct Form {
+  const char* name;
+  int count;
+  Scope scopes[5];
+  int when_arg;        // -1 when unguarded
+  int when_kind;       // 1 name, 2 text
+  const char* binds[4];
+  int bind_count;
+};
+
+inline const Form FORMS[] = {
+  {"ALL", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"ALL", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"ANY", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"ANY", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"BUCKET", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"BUCKET", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, 1, 1, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"BUCKET", 3, {Scope::Outer, Scope::Inner, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"BUCKET", 4, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Inner, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"FILTER", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"FILTER", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"LINK", 3, {Scope::Outer, Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_1", "_2", "_K"}, 4},
+  {"LINK", 5, {Scope::Outer, Scope::Outer, Scope::Binder, Scope::Binder, Scope::Inner}, -1, 0, {"_", "_1", "_2", "_K"}, 4},
+  {"LINK_LEFT", 3, {Scope::Outer, Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_1", "_2", "_K"}, 4},
+  {"LINK_LEFT", 5, {Scope::Outer, Scope::Outer, Scope::Binder, Scope::Binder, Scope::Inner}, -1, 0, {"_", "_1", "_2", "_K"}, 4},
+  {"MAP", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"MAP", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"SORT", 1, {Scope::Outer, Scope::Outer, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"SORT", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"SORT", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"SORT_BY", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"SORT_BY", 3, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, 2, 2, {"_", "_K", nullptr, nullptr}, 2},
+  {"SORT_BY", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, 1, 1, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"SORT_BY", 3, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"SORT_BY", 4, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"SORT_DESC", 1, {Scope::Outer, Scope::Outer, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"SORT_DESC", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"SORT_DESC", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"SUM", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"SUM", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"TOP", 2, {Scope::Outer, Scope::Outer, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"TOP", 3, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"TOP", 4, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"TOP_BY", 3, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"TOP_BY", 4, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, 2, 2, {"_", "_K", nullptr, nullptr}, 2},
+  {"TOP_BY", 4, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, 1, 1, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"TOP_BY", 4, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"TOP_BY", 5, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+  {"TOP_DESC", 2, {Scope::Outer, Scope::Outer, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"TOP_DESC", 3, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
+  {"TOP_DESC", 4, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
+};
+
+inline constexpr int FORM_COUNT = 40;
+
 }  // namespace sel_builtin_manifest

@@ -474,3 +474,42 @@
       (fail "E_BAD_ASSIGN"
             (format nil "cannot assign with ~a to this expression" (token-value op-tok))
             (node-pos node)))))
+
+;;; --- binding forms ---------------------------------------------------------
+
+;;; A host's own binding function (DEFINE-BUILTIN with :binds outside the
+;;; manifest, examples/fn-complex) has no manifest forms; it gets the two
+;;; classic shapes.
+(defparameter *generic-binding-forms*
+  '(("" (:outer :inner) nil ("_" "_K"))
+    ("" (:outer :binder :inner) (1 :name) ("_K"))))
+
+(defun binding-form (name args &optional (spec (registry-lookup name)))
+  "Which argument of a binding call runs where (spec/builtins.md, \"Binding
+forms\"): two values, the per-argument scopes -- :OUTER (evaluated where the
+call is), :BINDER (a bare name, never evaluated) or :INNER (once per element)
+-- and the names bound inside. NIL when the call is not a binding builtin or no
+form takes this count: the evaluator would refuse it, and a static consumer
+reads every argument where the call stands. The dependency walker and the SQL
+layer's stage 1 both classify through here, so they cannot disagree."
+  (let* ((upper (string-upcase name))
+         (forms (or (remove-if-not (lambda (f) (string= (first f) upper)) *builtin-form-data*)
+                    (and spec (spec-binds spec) *generic-binding-forms*)))
+         (count (length args)))
+    (dolist (form forms nil)
+      (destructuring-bind (nm scopes when binds) form
+        (declare (ignore nm))
+        (when (and (= (length scopes) count)
+                   (or (null when)
+                       (let ((a (nth (first when) args)))
+                         (and (node-p a)
+                              (ecase (second when)
+                                (:name (and (eq (node-kind a) :var) (not (node-grouped a))))
+                                (:text (eq (node-kind a) :text)))))))
+          (let ((bound (copy-list binds)))
+            (loop for scope in scopes
+                  for a in args
+                  when (and (eq scope :binder) (node-p a) (eq (node-kind a) :var))
+                    do (push (node-s a) bound))
+            (return (values scopes bound))))))))
+

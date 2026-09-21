@@ -43,7 +43,10 @@ function fail(msg) {
   process.exit(1);
 }
 
-const ENTRY_KEYS = new Set(['arity', 'lazy', 'binds', 'signatures', 'spec']);
+const ENTRY_KEYS = new Set(['arity', 'lazy', 'binds', 'forms', 'signatures', 'spec']);
+const ROLES = new Set(['source', 'outer', 'binder', 'body', 'key', 'proj', 'pred']);
+const INNER = new Set(['body', 'key', 'proj', 'pred']);
+const WHEN_KINDS = new Set(['name', 'text']);
 const ARITY_KEYS = new Set(['min', 'max', 'allowed', 'parity', 'message']);
 
 function load() {
@@ -93,6 +96,44 @@ function load() {
       if (e[k] !== undefined && e[k] !== true) fail(`${where(k)}: true or absent`);
     }
     if (e.binds && !e.lazy) fail(`${where('binds')}: a binding builtin is lazy`);
+    // Binding forms: one entry per accepted count, in the order the evaluator
+    // tries them; a `when` guard disambiguates counts that admit two forms and
+    // the last form for a count carries none.
+    let forms = null;
+    if (e.forms !== undefined) {
+      if (!e.binds) fail(`${where('forms')}: only a binding builtin has forms`);
+      if (!Array.isArray(e.forms) || e.forms.length === 0) fail(`${where('forms')}: a non-empty array`);
+      forms = [];
+      const allowed = (c) => c >= a.min && (variadic || c <= a.max) && (!a.allowed || a.allowed.includes(c))
+        && (!a.parity || (c % 2 === 1) === (a.parity === 'odd'));
+      const lastForCount = new Map();
+      e.forms.forEach((f, i) => {
+        const fw = `${where('forms')}[${i}]`;
+        for (const k of Object.keys(f)) if (!['roles', 'when', 'binds'].includes(k)) fail(`${fw}.${k}: unknown key`);
+        if (!Array.isArray(f.roles) || f.roles.length === 0) fail(`${fw}.roles: a non-empty array`);
+        for (const r of f.roles) if (!ROLES.has(r)) fail(`${fw}.roles: unknown role "${r}"`);
+        if (!allowed(f.roles.length)) fail(`${fw}: ${f.roles.length} arguments is not an accepted count`);
+        if (f.roles.filter((r) => r === 'binder').length > 2) fail(`${fw}: at most two binders`);
+        if (f.when !== undefined) {
+          if (!Number.isInteger(f.when.arg) || f.when.arg < 0 || f.when.arg >= f.roles.length) fail(`${fw}.when.arg: an argument index`);
+          if (!WHEN_KINDS.has(f.when.is)) fail(`${fw}.when.is: "name" or "text"`);
+          if (Object.keys(f.when).length !== 2) fail(`${fw}.when: {arg, is}`);
+        }
+        if (!Array.isArray(f.binds) || f.binds.length === 0) fail(`${fw}.binds: the names bound inside, at least _K`);
+        for (const b of f.binds) if (!/^_[A-Z0-9]*$/.test(b)) fail(`${fw}.binds: "${b}" is not an implicit binder name`);
+        if (!f.binds.includes('_K')) fail(`${fw}.binds: _K is bound in every body`);
+        lastForCount.set(f.roles.length, f.when === undefined);
+        forms.push({ roles: f.roles, when: f.when ?? null, binds: f.binds });
+      });
+      for (const [count, unguarded] of lastForCount) {
+        if (!unguarded) fail(`${where('forms')}: the last form with ${count} arguments must have no guard`);
+      }
+      for (let c = a.min; c <= (variadic ? a.min : a.max); c++) {
+        if (allowed(c) && !lastForCount.has(c)) fail(`${where('forms')}: no form with ${c} arguments`);
+      }
+    } else if (e.binds) {
+      fail(`${where('forms')}: a binding builtin declares its forms`);
+    }
     if (!Array.isArray(e.signatures) || e.signatures.length === 0) fail(`${where('signatures')}: at least one form`);
     for (const s of e.signatures) {
       if (typeof s !== 'string' || !s.startsWith(name + '(') || !s.endsWith(')')) {
@@ -103,7 +144,7 @@ function load() {
     out.push({
       name, min: a.min, max: variadic ? null : a.max,
       allowed: a.allowed ?? null, parity: a.parity ?? null, message: a.message ?? null,
-      lazy: !!e.lazy, binds: !!e.binds, signatures: e.signatures, spec: e.spec,
+      lazy: !!e.lazy, binds: !!e.binds, forms, signatures: e.signatures, spec: e.spec,
     });
   }
   return out;
@@ -111,6 +152,10 @@ function load() {
 
 // ---------------------------------------------------------------------------
 // Renderers. Every string literal goes through the host's own escaping.
+
+// What a consumer needs from a role: where the argument is evaluated. The
+// descriptive role names stay in the manifest and the docs.
+const scopeOf = (role) => (role === 'binder' ? 'binder' : INNER.has(role) ? 'inner' : 'outer');
 
 const jsStr = (s) => JSON.stringify(s);
 const pyStr = (s) => "'" + s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
@@ -134,6 +179,17 @@ function renderJs(entries) {
     else if (e.allowed) rule = `{ allowed: [${e.allowed.join(', ')}], message: ${jsStr(e.message)} }`;
     lines.push(`  ${e.name}: { min: ${e.min}, max: ${e.max === null ? 'Infinity' : e.max}, lazy: ${e.lazy}, binds: ${e.binds}, arity: ${rule} },`);
   }
+  lines.push('});', '',
+    '// The binding forms (spec/builtins.md): per accepted count, in the order the',
+    '// evaluator tries them, each argument\'s scope (outer | binder | inner), an',
+    '// optional guard { arg, is: \'name\' | \'text\' } and the implicit names bound',
+    '// inside. registry.mjs turns these into bindingForm().',
+    'export const BINDING_FORMS = Object.freeze({');
+  for (const e of entries) {
+    if (!e.forms) continue;
+    const fs = e.forms.map((f) => `{ scopes: [${f.roles.map((r) => jsStr(scopeOf(r))).join(', ')}], when: ${f.when ? `{ arg: ${f.when.arg}, is: ${jsStr(f.when.is)} }` : 'null'}, binds: [${f.binds.map(jsStr).join(', ')}] }`);
+    lines.push(`  ${e.name}: [`, ...fs.map((s) => `    ${s},`), '  ],');
+  }
   lines.push('});', '');
   return lines.join('\n');
 }
@@ -155,6 +211,17 @@ function renderPython(entries) {
     if (e.parity) rule = `('parity', ${pyStr(e.parity)}, ${pyStr(e.message)})`;
     else if (e.allowed) rule = `('allowed', (${e.allowed.join(', ')}), ${pyStr(e.message)})`;
     lines.push(`    ${pyStr(e.name)}: (${e.min}, ${e.max === null ? 'INF' : e.max}, ${e.lazy ? 'True' : 'False'}, ${e.binds ? 'True' : 'False'}, ${rule}),`);
+  }
+  lines.push('}', '',
+    '# The binding forms (spec/builtins.md): per accepted count, in the order the',
+    "# evaluator tries them, (scopes, when, binds) with scopes a tuple of",
+    "# 'outer' | 'binder' | 'inner', when None or (arg, 'name' | 'text'), and binds",
+    '# the implicit names bound inside. registry.py turns these into binding_form().',
+    'BINDING_FORMS = {');
+  for (const e of entries) {
+    if (!e.forms) continue;
+    const fs = e.forms.map((f) => `((${f.roles.map((r) => pyStr(scopeOf(r))).join(', ')}${f.roles.length === 1 ? ',' : ''}), ${f.when ? `(${f.when.arg}, ${pyStr(f.when.is)})` : 'None'}, (${f.binds.map(pyStr).join(', ')}${f.binds.length === 1 ? ',' : ''}))`);
+    lines.push(`    ${pyStr(e.name)}: (`, ...fs.map((s) => `        ${s},`), '    ),');
   }
   lines.push('}', '');
   return lines.join('\n');
@@ -184,6 +251,21 @@ function renderPhp(entries) {
     if (e.parity) rule = `['parity', ${phpStr(e.parity)}, ${phpStr(e.message)}]`;
     else if (e.allowed) rule = `['allowed', [${e.allowed.join(', ')}], ${phpStr(e.message)}]`;
     lines.push(`        ${phpStr(e.name)} => [${e.min}, ${e.max === null ? 'PHP_INT_MAX' : e.max}, ${e.lazy}, ${e.binds}, ${rule}],`);
+  }
+  lines.push('    ];', '',
+    '    /**',
+    '     * The binding forms (spec/builtins.md): per accepted count, in the order',
+    "     * the evaluator tries them, [scopes, when, binds] with scopes a list of",
+    "     * 'outer' | 'binder' | 'inner', when null or [arg, 'name' | 'text'], and",
+    '     * binds the implicit names bound inside. Registry::bindingForm reads it.',
+    '     *',
+    '     * @var array<string, list<array{0:list<string>,1:array{0:int,1:string}|null,2:list<string>}>>',
+    '     */',
+    '    public const FORMS = [');
+  for (const e of entries) {
+    if (!e.forms) continue;
+    const fs = e.forms.map((f) => `[[${f.roles.map((r) => phpStr(scopeOf(r))).join(', ')}], ${f.when ? `[${f.when.arg}, ${phpStr(f.when.is)}]` : 'null'}, [${f.binds.map(phpStr).join(', ')}]]`);
+    lines.push(`        ${phpStr(e.name)} => [`, ...fs.map((s) => `            ${s},`), '        ],');
   }
   lines.push('    ];', '}', '');
   return lines.join('\n');
@@ -232,7 +314,38 @@ function renderCpp(entries) {
     const rule = e.parity || e.allowed ? `arity_${e.name}` : 'nullptr';
     lines.push(`  {${cppStr(e.name)}, ${e.min}, ${e.max === null ? -1 : e.max}, ${e.lazy}, ${e.binds}, ${rule}},`);
   }
-  lines.push('};', '', `inline constexpr int COUNT = ${entries.length};`, '', '}  // namespace sel_builtin_manifest', '');
+  lines.push('};', '', `inline constexpr int COUNT = ${entries.length};`, '');
+  lines.push(
+    '// The binding forms (spec/builtins.md): per accepted count, in the order the',
+    '// evaluator tries them, each argument\'s scope, an optional guard on one',
+    '// argument (kind 0 = none, 1 = a bare name, 2 = a text literal) and the',
+    '// implicit names bound inside. sel.cpp turns these into binding_form().',
+    "enum class Scope : unsigned char { Outer, Binder, Inner };",
+    '',
+    'struct Form {',
+    '  const char* name;',
+    '  int count;',
+    '  Scope scopes[5];',
+    '  int when_arg;        // -1 when unguarded',
+    '  int when_kind;       // 1 name, 2 text',
+    '  const char* binds[4];',
+    '  int bind_count;',
+    '};',
+    '',
+    'inline const Form FORMS[] = {');
+  let formCount = 0;
+  for (const e of entries) {
+    if (!e.forms) continue;
+    for (const f of e.forms) {
+      const scopes = f.roles.map((r) => `Scope::${{ outer: 'Outer', binder: 'Binder', inner: 'Inner' }[scopeOf(r)]}`);
+      while (scopes.length < 5) scopes.push('Scope::Outer');
+      const binds = f.binds.map(cppStr);
+      while (binds.length < 4) binds.push('nullptr');
+      lines.push(`  {${cppStr(e.name)}, ${f.roles.length}, {${scopes.join(', ')}}, ${f.when ? f.when.arg : -1}, ${f.when ? (f.when.is === 'name' ? 1 : 2) : 0}, {${binds.join(', ')}}, ${f.binds.length}},`);
+      formCount++;
+    }
+  }
+  lines.push('};', '', `inline constexpr int FORM_COUNT = ${formCount};`, '', '}  // namespace sel_builtin_manifest', '');
   return lines.join('\n');
 }
 
@@ -255,6 +368,21 @@ function renderLisp(entries) {
     if (e.parity) rule = `(:parity :${e.parity} ${lispStr(e.message)})`;
     else if (e.allowed) rule = `(:allowed (${e.allowed.join(' ')}) ${lispStr(e.message)})`;
     lines.push(`        (${lispStr(e.name)} ${e.min} ${e.max === null ? ':variadic' : e.max} ${e.lazy ? 't' : 'nil'} ${e.binds ? 't' : 'nil'} ${rule})`);
+  }
+  lines[lines.length - 1] += '))';
+  lines.push('',
+    ';;;; The binding forms (spec/builtins.md): per accepted count, in the order the',
+    ';;;; evaluator tries them, (name scopes when binds) with scopes a list of',
+    ';;;; :outer | :binder | :inner, when NIL or (arg :name|:text), and binds the',
+    ';;;; implicit names bound inside. registry.lisp turns these into BINDING-FORM.',
+    '',
+    '(setf *builtin-form-data*',
+    "      '(");
+  for (const e of entries) {
+    if (!e.forms) continue;
+    for (const f of e.forms) {
+      lines.push(`        (${lispStr(e.name)} (${f.roles.map((r) => ':' + scopeOf(r)).join(' ')}) ${f.when ? `(${f.when.arg} :${f.when.is})` : 'nil'} (${f.binds.map(lispStr).join(' ')}))`);
+    }
   }
   lines[lines.length - 1] += '))';
   lines.push('');
@@ -285,6 +413,20 @@ function renderDocs(entries) {
     const sig = e.signatures.map((s) => '`' + s + '`').join('<br>');
     const how = e.binds ? 'lazy, binds' : e.lazy ? 'lazy' : 'strict';
     lines.push(`| \`${e.name}\` | ${sig} | ${arityText(e)} | ${how} | ${e.spec} |`);
+  }
+  lines.push('', '## Binding forms', '',
+    'For each binding builtin, the accepted argument lists in the order the',
+    'evaluator tries them. *outer* arguments are evaluated where the call is;',
+    'a *binder* is a bare name, not evaluated; *body*, *key*, *proj* and *pred*',
+    'run once per element with the listed names bound (plus every binder). A',
+    'guard says which form a count takes when two would fit.', '',
+    '| Name | Arguments | Guard | Bound inside |', '|---|---|---|---|');
+  for (const e of entries) {
+    if (!e.forms) continue;
+    for (const f of e.forms) {
+      const guard = f.when ? `argument ${f.when.arg + 1} is a ${f.when.is === 'name' ? 'bare name' : 'text literal'}` : '';
+      lines.push(`| \`${e.name}\` | ${f.roles.join(', ')} | ${guard} | ${f.binds.map((b) => '`' + b + '`').join(' ')} |`);
+    }
   }
   const lazy = entries.filter((e) => e.lazy).length;
   const binds = entries.filter((e) => e.binds).length;

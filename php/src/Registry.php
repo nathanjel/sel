@@ -74,6 +74,55 @@ final class Registry
     }
 
     /**
+     * A host's own binding function (define with 'binds' outside the manifest,
+     * examples/fn-complex) has no manifest forms; it gets the two classic shapes.
+     */
+    private const GENERIC_FORMS = [
+        [['outer', 'inner'], null, ['_', '_K']],
+        [['outer', 'binder', 'inner'], [1, 'name'], ['_K']],
+    ];
+
+    /**
+     * Which argument of a binding call runs where (spec/builtins.md, "Binding
+     * forms"): ['scopes' => per-argument 'outer' (evaluated where the call is),
+     * 'binder' (a bare name, never evaluated) or 'inner' (once per element),
+     * 'binds' => the names bound inside]. Null when the call is not a binding
+     * builtin or no form takes this count: the evaluator would refuse it, and
+     * a static consumer reads every argument where the call stands. The
+     * dependency walker and the SQL layer's stage 1 both classify through
+     * here, so they cannot disagree.
+     *
+     * @param list<array<string,mixed>> $args
+     * @return array{scopes:list<string>,binds:list<string>}|null
+     */
+    public static function bindingForm(string $name, array $args): ?array
+    {
+        $upper = strtoupper($name);
+        $forms = BuiltinManifest::FORMS[$upper] ?? null;
+        if ($forms === null) {
+            $spec = self::$table[$upper] ?? null;
+            if ($spec === null || !$spec['binds']) return null;
+            $forms = self::GENERIC_FORMS;
+        }
+        $count = count($args);
+        foreach ($forms as [$scopes, $when, $binds]) {
+            if (count($scopes) !== $count) continue;
+            if ($when !== null) {
+                $a = $args[$when[0]];
+                $ok = $when[1] === 'name'
+                    ? ($a['t'] === 'var' && empty($a['grouped']))
+                    : $a['t'] === 'text';
+                if (!$ok) continue;
+            }
+            foreach ($scopes as $i => $scope) {
+                if ($scope === 'binder' && $args[$i]['t'] === 'var') $binds[] = $args[$i]['name'];
+            }
+            return ['scopes' => $scopes, 'binds' => $binds];
+        }
+        return null;
+    }
+
+    /**
      * Called once the shipped modules have registered: a manifest entry with
      * no definition is a host that would silently lack a builtin the others
      * have.

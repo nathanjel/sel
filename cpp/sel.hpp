@@ -17,6 +17,8 @@
 #ifndef SEL_HPP
 #define SEL_HPP
 
+#include "sel_limits.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -79,7 +81,7 @@ class SelError : public std::exception {
 // expression that nests deeper than SEL will evaluate rather than emitting SQL
 // for a rule that could never run. It reads this rather than repeating 200, so
 // the two cannot drift.
-inline constexpr int MAX_DEPTH = 200;
+inline constexpr int MAX_DEPTH = static_cast<int>(sel_limits::MAX_DEPTH);   // spec/limits.json
 
 // --- values -----------------------------------------------------------------
 

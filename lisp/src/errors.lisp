@@ -41,4 +41,4 @@
 ;;; instead of an error if it is not counted. It lives here, with FAIL, because
 ;;; this file loads before every other and none loads before it, and because the
 ;;; number and the E_DEPTH it raises are the same fact.
-(defconstant +max-depth+ 200)
+(defconstant +max-depth+ +limit-max-depth+)   ; spec/limits.json, checked against the spec text

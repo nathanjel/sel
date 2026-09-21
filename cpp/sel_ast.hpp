@@ -23,10 +23,14 @@
 
 #include "sel.hpp"
 
+#include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "sel_builtin_manifest.hpp"
 
 namespace sel {
 
@@ -170,6 +174,65 @@ inline Node::~Node() {
     // `held` is released here. Either it was the last reference, and the node is
     // freed with its children already taken, or another owner keeps it alive.
   }
+}
+
+// Which argument of a binding call runs where (spec/builtins.md, "Binding
+// forms"): per argument Outer (evaluated where the call is), Binder (a bare
+// name, never evaluated) or Inner (once per element, with `binds` and every
+// binder's name in scope). Empty when the call is not a binding builtin or no
+// form takes this count -- the evaluator would refuse it, and a static
+// consumer reads every argument where the call stands. The dependency walker
+// and the SQL layer's stage 1 both classify through here, so they cannot
+// disagree. Inline in the shared header because those two live in different
+// translation units.
+struct BindingForm {
+  std::vector<sel_builtin_manifest::Scope> scopes;
+  std::vector<std::string> binds;
+};
+
+// A host's own binding function (define with binds outside the manifest,
+// examples/fn-complex) has no manifest forms; it gets the two classic shapes.
+inline const sel_builtin_manifest::Form GENERIC_BINDING_FORMS[] = {
+  {"", 2, {sel_builtin_manifest::Scope::Outer, sel_builtin_manifest::Scope::Inner}, -1, 0, {"_", "_K"}, 2},
+  {"", 3, {sel_builtin_manifest::Scope::Outer, sel_builtin_manifest::Scope::Binder, sel_builtin_manifest::Scope::Inner}, 1, 1, {"_K"}, 1},
+};
+
+inline std::optional<BindingForm> binding_form(const std::string& name, const std::vector<NodePtr>& args,
+                                               const Spec* spec) {
+  using namespace sel_builtin_manifest;
+  const Form* first = nullptr;
+  const Form* last = nullptr;
+  for (int i = 0; i < FORM_COUNT; i++) {
+    if (std::strcmp(FORMS[i].name, name.c_str()) == 0) {
+      if (!first) first = &FORMS[i];
+      last = &FORMS[i] + 1;
+    } else if (first) {
+      break;
+    }
+  }
+  if (!first) {
+    if (!spec || !spec->binds) return std::nullopt;
+    first = GENERIC_BINDING_FORMS;
+    last = GENERIC_BINDING_FORMS + 2;
+  }
+  for (const Form* f = first; f != last; ++f) {
+    if (static_cast<std::size_t>(f->count) != args.size()) continue;
+    if (f->when_arg >= 0) {
+      const Node& a = *args[static_cast<std::size_t>(f->when_arg)];
+      const bool ok = f->when_kind == 1 ? (a.t == NT::Var && !a.grouped) : a.t == NT::Text;
+      if (!ok) continue;
+    }
+    BindingForm out;
+    out.scopes.assign(f->scopes, f->scopes + f->count);
+    for (int b = 0; b < f->bind_count; b++) out.binds.emplace_back(f->binds[b]);
+    for (int i = 0; i < f->count; i++) {
+      if (f->scopes[i] == Scope::Binder && args[static_cast<std::size_t>(i)]->t == NT::Var) {
+        out.binds.push_back(args[static_cast<std::size_t>(i)]->s);
+      }
+    }
+    return out;
+  }
+  return std::nullopt;
 }
 
 }  // namespace sel

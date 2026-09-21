@@ -1,0 +1,36 @@
+{
+  "$comment": "The normative limits and error identifiers, machine-readable. NOT a second authority: spec/SPEC.md and spec/errors.md remain the text that defines them, and tools/gen-limits.mjs refuses to render this file unless every value and every code here is stated there. Rendered into each host's constants (see spec/limits.md).",
+  "limits": {
+    "MAX_DEPTH":       { "value": 200,     "spec": "§6.4", "meaning": "parser nesting and evaluation nesting, each; exceeding either is E_DEPTH" },
+    "MAX_INT_DIGITS":  { "value": 1000000, "spec": "§6.4", "meaning": "integer digits of a number; beyond it E_RANGE" },
+    "MAX_FRAC_DIGITS": { "value": 1000000, "spec": "§6.4", "meaning": "fractional digits of a number; beyond it E_RANGE" },
+    "DIV_SCALE":       { "value": 10,      "spec": "§5.3", "meaning": "fractional digits long division runs to before rounding half away from zero" }
+  },
+  "errors": {
+    "E_SYNTAX":        { "phase": "compile" },
+    "E_UNTERMINATED":  { "phase": "compile" },
+    "E_ESCAPE":        { "phase": "compile" },
+    "E_RESERVED":      { "phase": "compile" },
+    "E_BAD_ASSIGN":    { "phase": "compile" },
+    "E_UNKNOWN_FUNC":  { "phase": "compile" },
+    "E_ARITY":         { "phase": "compile" },
+    "E_DEPTH":         { "phase": "both" },
+    "E_REGEX_SYNTAX":  { "phase": "compile" },
+    "E_UNDEF_VAR":     { "phase": "run" },
+    "E_NO_KEY":        { "phase": "run" },
+    "E_NO_SCALAR":     { "phase": "run" },
+    "E_NOT_NUM":       { "phase": "run" },
+    "E_NOT_TEXT":      { "phase": "run" },
+    "E_NOT_BIN":       { "phase": "run" },
+    "E_NOT_BOOL":      { "phase": "run" },
+    "E_NOT_INT":       { "phase": "run" },
+    "E_NULL":          { "phase": "run" },
+    "E_EXPECT_SYMBOL": { "phase": "run" },
+    "E_DIV_ZERO":      { "phase": "run" },
+    "E_UTF8":          { "phase": "run" },
+    "E_RANGE":         { "phase": "run" },
+    "E_BAD_ARG":       { "phase": "run" },
+    "E_LEN_MISMATCH":  { "phase": "run" },
+    "E_ABORT":         { "phase": "run" }
+  }
+}

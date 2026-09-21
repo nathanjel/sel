@@ -100,6 +100,7 @@ done
 # downstream user needs Node, and the machine cutting the release is exactly
 # where a stale one would go unnoticed.
 step "generated artifacts" sel_slot ./tools/check-generated.sh
+step "error codes" sel_slot ./tools/check-error-codes.sh
 step "sql dialect map" sel_slot ./tools/check-sql-map.sh
 step "sql case data" sel_slot ./tools/check-sql-cases.sh
 

@@ -45,4 +45,6 @@ def fail(code: str, message: str, pos: Pos | None = None) -> NoReturn:
 # it is not counted. It lives here, with fail(), because this module is the one
 # every other imports and none imports back, and because the number and the
 # E_DEPTH it raises are the same fact.
-MAX_DEPTH = 200
+from . import _limits as _limits
+
+MAX_DEPTH = _limits.MAX_DEPTH   # spec/limits.json, checked against the spec text

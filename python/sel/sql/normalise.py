@@ -14,6 +14,7 @@ from typing import Any
 from ..errors import Pos
 from ..eval import MAX_DEPTH
 from ..parser import Node
+from .. import registry as _registry
 from . import constants as _constants
 from .errors import refuse
 
@@ -191,21 +192,20 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
                                 for k, v in node.entries])
 
     if t == 'call':
-        inner = list(bound)
-        binds = node.spec is not None and node.spec.binds
-        if binds:
-            n = len(node.args)
-            inner.append('_K')
-            inner.append(node.args[1].name
-                         if n == 3 and _constants.is_binder_name(node.args[1])
-                         else '_')
+        # Which arguments a binding call runs inside the binder, and what they
+        # see, is the manifest's decision (binding_form), shared with
+        # dependencies(). A binder argument is a name, not a read of one, and
+        # stays as written.
+        form = _registry.binding_form(node.name, node.args, node.spec)
+        scopes, binds = form if form is not None else (None, ())
+        inner = list(bound) + list(binds)
         args = []
         for i, arg in enumerate(node.args):
-            # An aggregate's binder argument is a name, not a read of one.
-            if binds and i == 1 and len(node.args) == 3 and arg.t == 'var':
+            scope = scopes[i] if scopes is not None else 'outer'
+            if scope == 'binder':
                 args.append(arg)
-                continue
-            args.append(_substitute(arg, defs, bound if i == 0 else inner, depth))
+            else:
+                args.append(_substitute(arg, defs, inner if scope == 'inner' else bound, depth))
         return dataclasses.replace(node, args=args)
 
     return node

@@ -204,3 +204,88 @@ LIST(RECORD("n", 1), RECORD("n", 2)) .> SORT_BY(_["n"], IF(TRUE, "DESC", "ASC"))
 --- expect
 tree -{"1"=t"2", "2"=t"1"}
 ===
+
+% --- binding forms: which argument runs where (spec/builtins.json `forms`) ---
+% Each overloaded binding builtin has arguments that run OUTSIDE the binder
+% (TOP's limit, SORT_BY's and TOP_BY's direction) and a disambiguation order
+% the evaluator applies (a text literal in the direction slot before a bare
+% name in the binder slot). These pin the evaluator; the dependency walkers and
+% the SQL layer's stage 1 classify from the same manifest table, and the API
+% probes program.deps.forms.* pin what they answer.
+
+### name: agg.forms.top.limit-is-outer
+--- note
+The limit is evaluated where the call is: `_` in it is the enclosing MAP's
+element, not TOP's.
+--- source
+MAP((1, 2), TOP((5, 6, 7), _))
+--- expect
+tree -{"1"=-{"1"=t"5"}, "2"=-{"1"=t"5", "2"=t"6"}}
+===
+
+### name: agg.forms.top.binder-body-limit
+--- source
+N = 2; TOP((3, 1, 2), X, X, N)
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: agg.forms.sort-by.text-direction-wins-over-bare-name
+--- note
+Three arguments with a text literal last is key + direction, whatever the
+second argument looks like: K is read as the key, and is undefined. Every
+dependency walker used to take K for a binder here and hide it.
+--- source
+SORT_BY((3, 1, 2), K, "DESC")
+--- expect
+error E_UNDEF_VAR at 1:20
+===
+
+### name: agg.forms.sort-by.direction-is-outer
+--- note
+The direction is an expression evaluated outside the binder: `_` in it is the
+enclosing MAP's element.
+--- source
+MAP(("DESC", "ASC"), SORT_BY((1, 2), 0 - _, _))
+--- expect
+tree -{"1"=-{"1"=t"1", "2"=t"2"}, "2"=-{"1"=t"2", "2"=t"1"}}
+===
+
+### name: agg.forms.sort-by.direction-can-be-computed-outside
+--- source
+MAP((1, 2), SORT_BY((3, 1, 2), G, G, IF(_ == 1, "ASC", "DESC")))
+--- expect
+tree -{"1"=-{"1"=t"1", "2"=t"2", "3"=t"3"}, "2"=-{"1"=t"3", "2"=t"2", "3"=t"1"}}
+===
+
+### name: agg.forms.top-by.direction-and-limit-are-outer
+--- source
+MAP((1, 2), TOP_BY((3, 1, 2), 0 - _, "DESC", _))
+--- expect
+tree -{"1"=-{"1"=t"1"}, "2"=-{"1"=t"1", "2"=t"2"}}
+===
+
+### name: agg.forms.top-by.bare-name-second-is-a-binder
+--- note
+Four arguments whose third is not a text literal and whose second is a bare
+name: binder, key, limit. The text literal is then the limit, and not a
+number. The order of the two guards is what this pins.
+--- source
+MAP((1, 2), TOP_BY((3, 1, 2), _K, _, "DESC"))
+--- expect
+error E_NOT_NUM at 1:38
+===
+
+### name: agg.forms.bucket.projection-sees-group-and-key
+--- source
+BUCKET((1, 2, 3), G, IF(G > 1, "big", "small"), COUNT(G) & ":" & _K)
+--- expect
+tree -{"1"=t"1:small", "2"=t"2:big"}
+===
+
+### name: agg.forms.link.named-binders-still-see-outer-variables
+--- source
+Q = 1; COUNT(LINK(LIST(RECORD("a", 1)), LIST(RECORD("b", 1)), X, Y, X["a"] == Q))
+--- expect
+num 1
+===

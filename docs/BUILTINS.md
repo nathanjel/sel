@@ -87,4 +87,55 @@ defines the semantics; this table only says what the function table knows.
 | `TRUNC` | `TRUNC(x)` | 1 | strict | §7.6 |
 | `UPPER` | `UPPER(x)` | 1 | strict | §7.5 |
 
+## Binding forms
+
+For each binding builtin, the accepted argument lists in the order the
+evaluator tries them. *outer* arguments are evaluated where the call is;
+a *binder* is a bare name, not evaluated; *body*, *key*, *proj* and *pred*
+run once per element with the listed names bound (plus every binder). A
+guard says which form a count takes when two would fit.
+
+| Name | Arguments | Guard | Bound inside |
+|---|---|---|---|
+| `ALL` | source, body |  | `_` `_K` |
+| `ALL` | source, binder, body |  | `_K` |
+| `ANY` | source, body |  | `_` `_K` |
+| `ANY` | source, binder, body |  | `_K` |
+| `BUCKET` | source, key |  | `_` `_K` |
+| `BUCKET` | source, binder, key | argument 2 is a bare name | `_K` |
+| `BUCKET` | source, key, proj |  | `_` `_K` |
+| `BUCKET` | source, binder, key, proj |  | `_K` |
+| `FILTER` | source, body |  | `_` `_K` |
+| `FILTER` | source, binder, body |  | `_K` |
+| `LINK` | source, source, pred |  | `_` `_1` `_2` `_K` |
+| `LINK` | source, source, binder, binder, pred |  | `_` `_1` `_2` `_K` |
+| `LINK_LEFT` | source, source, pred |  | `_` `_1` `_2` `_K` |
+| `LINK_LEFT` | source, source, binder, binder, pred |  | `_` `_1` `_2` `_K` |
+| `MAP` | source, body |  | `_` `_K` |
+| `MAP` | source, binder, body |  | `_K` |
+| `SORT` | source |  | `_` `_K` |
+| `SORT` | source, body |  | `_` `_K` |
+| `SORT` | source, binder, body |  | `_K` |
+| `SORT_BY` | source, key |  | `_` `_K` |
+| `SORT_BY` | source, key, outer | argument 3 is a text literal | `_` `_K` |
+| `SORT_BY` | source, binder, key | argument 2 is a bare name | `_K` |
+| `SORT_BY` | source, key, outer |  | `_` `_K` |
+| `SORT_BY` | source, binder, key, outer |  | `_K` |
+| `SORT_DESC` | source |  | `_` `_K` |
+| `SORT_DESC` | source, body |  | `_` `_K` |
+| `SORT_DESC` | source, binder, body |  | `_K` |
+| `SUM` | source, body |  | `_` `_K` |
+| `SUM` | source, binder, body |  | `_K` |
+| `TOP` | source, outer |  | `_` `_K` |
+| `TOP` | source, body, outer |  | `_` `_K` |
+| `TOP` | source, binder, body, outer |  | `_K` |
+| `TOP_BY` | source, key, outer |  | `_` `_K` |
+| `TOP_BY` | source, key, outer, outer | argument 3 is a text literal | `_` `_K` |
+| `TOP_BY` | source, binder, key, outer | argument 2 is a bare name | `_K` |
+| `TOP_BY` | source, key, outer, outer |  | `_` `_K` |
+| `TOP_BY` | source, binder, key, outer, outer |  | `_K` |
+| `TOP_DESC` | source, outer |  | `_` `_K` |
+| `TOP_DESC` | source, body, outer |  | `_` `_K` |
+| `TOP_DESC` | source, binder, body, outer |  | `_K` |
+
 77 builtins: 19 lazy, of which 14 bind; extra arity rules on `COND`, `LINK`, `LINK_LEFT`, `RECORD`.

@@ -83,3 +83,78 @@ export const BUILTIN_MANIFEST = Object.freeze({
   TRUNC: { min: 1, max: 1, lazy: false, binds: false, arity: null },
   UPPER: { min: 1, max: 1, lazy: false, binds: false, arity: null },
 });
+
+// The binding forms (spec/builtins.md): per accepted count, in the order the
+// evaluator tries them, each argument's scope (outer | binder | inner), an
+// optional guard { arg, is: 'name' | 'text' } and the implicit names bound
+// inside. registry.mjs turns these into bindingForm().
+export const BINDING_FORMS = Object.freeze({
+  ALL: [
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: null, binds: ["_K"] },
+  ],
+  ANY: [
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: null, binds: ["_K"] },
+  ],
+  BUCKET: [
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: { arg: 1, is: "name" }, binds: ["_K"] },
+    { scopes: ["outer", "inner", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner", "inner"], when: null, binds: ["_K"] },
+  ],
+  FILTER: [
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: null, binds: ["_K"] },
+  ],
+  LINK: [
+    { scopes: ["outer", "outer", "inner"], when: null, binds: ["_", "_1", "_2", "_K"] },
+    { scopes: ["outer", "outer", "binder", "binder", "inner"], when: null, binds: ["_", "_1", "_2", "_K"] },
+  ],
+  LINK_LEFT: [
+    { scopes: ["outer", "outer", "inner"], when: null, binds: ["_", "_1", "_2", "_K"] },
+    { scopes: ["outer", "outer", "binder", "binder", "inner"], when: null, binds: ["_", "_1", "_2", "_K"] },
+  ],
+  MAP: [
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: null, binds: ["_K"] },
+  ],
+  SORT: [
+    { scopes: ["outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: null, binds: ["_K"] },
+  ],
+  SORT_BY: [
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "inner", "outer"], when: { arg: 2, is: "text" }, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: { arg: 1, is: "name" }, binds: ["_K"] },
+    { scopes: ["outer", "inner", "outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner", "outer"], when: null, binds: ["_K"] },
+  ],
+  SORT_DESC: [
+    { scopes: ["outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: null, binds: ["_K"] },
+  ],
+  SUM: [
+    { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner"], when: null, binds: ["_K"] },
+  ],
+  TOP: [
+    { scopes: ["outer", "outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "inner", "outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner", "outer"], when: null, binds: ["_K"] },
+  ],
+  TOP_BY: [
+    { scopes: ["outer", "inner", "outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "inner", "outer", "outer"], when: { arg: 2, is: "text" }, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner", "outer"], when: { arg: 1, is: "name" }, binds: ["_K"] },
+    { scopes: ["outer", "inner", "outer", "outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner", "outer", "outer"], when: null, binds: ["_K"] },
+  ],
+  TOP_DESC: [
+    { scopes: ["outer", "outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "inner", "outer"], when: null, binds: ["_", "_K"] },
+    { scopes: ["outer", "binder", "inner", "outer"], when: null, binds: ["_K"] },
+  ],
+});

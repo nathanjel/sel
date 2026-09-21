@@ -171,97 +171,29 @@ final class Program
                 return;
 
             case 'call':
-                // An aggregate's three-argument form binds its second argument as
-                // a name for the duration of the third.
-                $binds = !empty($node['spec']['binds']);
-                $n = count($node['args']);
-                $name = $node['name'] ?? '';
-                if ($name === 'SORT' || $name === 'SORT_DESC' || $name === 'SORT_BY') {
-                    if ($n === 1) {
-                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                        return;
-                    }
-                    if ($n === 4 && $node['args'][1]['t'] === 'var') {
-                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                        $inner = $bound;
-                        $inner[$node['args'][1]['name']] = true;
-                        $inner['_K'] = true;
-                        self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
-                        self::collect($node['args'][3], $bound, $reads, $assigned, $depth + 1);
-                        return;
-                    }
-                    if ($n === 3 && $node['args'][1]['t'] === 'var') {
-                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                        $inner = $bound;
-                        $inner[$node['args'][1]['name']] = true;
-                        $inner['_K'] = true;
-                        self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
-                        return;
-                    }
-                    if ($n === 3) {
-                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                        $inner = $bound;
-                        $inner['_'] = true;
-                        $inner['_K'] = true;
-                        self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
-                        self::collect($node['args'][2], $bound, $reads, $assigned, $depth + 1);
-                        return;
-                    }
-                    if ($n === 2) {
-                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                        $inner = $bound;
-                        $inner['_'] = true;
-                        $inner['_K'] = true;
-                        self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
-                        return;
-                    }
-                }
-                if ($name === 'BUCKET') {
-                    if ($n === 4 && $node['args'][1]['t'] === 'var') {
-                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                        $inner = $bound;
-                        $inner[$node['args'][1]['name']] = true;
-                        $inner['_K'] = true;
-                        self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
-                        self::collect($node['args'][3], $inner, $reads, $assigned, $depth + 1);
-                        return;
-                    }
-                    if ($n === 3) {
-                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                        $inner = $bound;
-                        $inner['_'] = true;
-                        $inner['_K'] = true;
-                        self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
-                        self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
-                        return;
-                    }
-                    if ($n === 2) {
-                        self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                        $inner = $bound;
-                        $inner['_'] = true;
-                        $inner['_K'] = true;
-                        self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
-                        return;
-                    }
-                }
-                if ($binds && $n === 3 && $node['args'][1]['t'] === 'var') {
-                    self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                    $inner = $bound;
-                    $inner[$node['args'][1]['name']] = true;
-                    $inner['_K'] = true;
-                    self::collect($node['args'][2], $inner, $reads, $assigned, $depth + 1);
+                // Which arguments run inside the binder, and what they see, is
+                // decided once, by Registry::bindingForm over the manifest's
+                // forms (spec/builtins.md). No form -- a strict function, or a
+                // count the evaluator would refuse -- and every argument is
+                // read where the call stands.
+                $form = Registry::bindingForm($node['name'] ?? '', $node['args']);
+                if ($form === null) {
+                    foreach ($node['args'] as $arg) self::collect($arg, $bound, $reads, $assigned, $depth + 1);
                     return;
                 }
-                if ($binds && $n === 2) {
-                    self::collect($node['args'][0], $bound, $reads, $assigned, $depth + 1);
-                    $inner = $bound;
-                    $inner['_'] = true;
-                    $inner['_K'] = true;
-                    self::collect($node['args'][1], $inner, $reads, $assigned, $depth + 1);
-                    return;
-                }
-                foreach ($node['args'] as $arg) {
-                    self::collect($arg, $bound, $reads, $assigned, $depth + 1);
+                $inner = null;
+                foreach ($node['args'] as $i => $arg) {
+                    $scope = $form['scopes'][$i];
+                    if ($scope === 'binder') continue;
+                    if ($scope === 'inner') {
+                        if ($inner === null) {
+                            $inner = $bound;
+                            foreach ($form['binds'] as $b) $inner[$b] = true;
+                        }
+                        self::collect($arg, $inner, $reads, $assigned, $depth + 1);
+                    } else {
+                        self::collect($arg, $bound, $reads, $assigned, $depth + 1);
+                    }
                 }
                 return;
 

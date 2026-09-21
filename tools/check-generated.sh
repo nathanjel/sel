@@ -141,6 +141,22 @@ check_group "builtin manifest" "node tools/gen-builtins.mjs" \
   php/src/BuiltinManifest.php cpp/sel_builtin_manifest.hpp \
   lisp/src/builtin-manifest.lisp docs/BUILTINS.md
 
+# The math-operation manifest: what the native math plans compile, authored
+# once and rendered into each host's vocabulary table.
+check_group "math-operation manifest" "node tools/gen-math-ops.mjs" \
+  spec/math-ops.json spec/builtins.json tools/gen-math-ops.mjs \
+  -- \
+  js/src/_math_ops.mjs python/sel/_math_ops.py php/src/MathOps.php \
+  cpp/sel_math_ops.hpp lisp/src/math-ops.lisp docs/MATH-OPS.md
+
+# The limits and error catalogue, checked against the spec text and rendered
+# into each host's constants.
+check_group "limits and error catalogue" "node tools/gen-limits.mjs" \
+  spec/limits.json spec/SPEC.md spec/errors.md tools/gen-limits.mjs \
+  -- \
+  js/src/_limits.mjs python/sel/_limits.py php/src/Limits.php \
+  cpp/sel_limits.hpp lisp/src/limits.lisp docs/LIMITS.md
+
 # The SQL case tables, so a clone can run the suite without Node.
 check_group "sql case data" "node tools/gen-sql-cases.mjs" \
   sql/cases/*.sqlt tools/gen-sql-cases.mjs \

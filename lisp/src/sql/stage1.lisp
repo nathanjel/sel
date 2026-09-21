@@ -252,26 +252,22 @@ SQL expression cannot do" (snode-pos node)))
                             (clist-entries node)))
               out))
     (:call
-     (let* ((args (sel::node-items node))
-            (spec (sel::node-spec node))
-            (binds (and spec (sel::spec-binds spec)))
-            (inner (copy-list bound)))
-       (when binds
-         (push "_K" inner)
-         (push (if (and (= (length args) 3) (is-binder-name (second args)))
-                   (sel::node-s (second args))
-                   "_")
-               inner))
-       (replace-items
-        node
-        (loop for arg in args
-              for i from 0
-              collect (if (and binds (= i 1) (= (length args) 3)
-                               (eq (snode-kind arg) :var))
-                          ;; An aggregate's binder argument is a NAME, not a read
-                          ;; of one.
-                          arg
-                          (substitute-node arg defs (if (= i 0) bound inner) depth))))))
+     ;; Which arguments a binding call runs inside the binder, and what they
+     ;; see, is the manifest's decision (SEL::BINDING-FORM), shared with
+     ;; DEPENDENCIES. A binder argument is a NAME, not a read of one, and stays
+     ;; as written.
+     (let ((args (sel::node-items node)))
+       (multiple-value-bind (scopes binds)
+           (sel::binding-form (sel::node-s node) args (sel::node-spec node))
+         (let ((inner (append bound binds)))
+           (replace-items
+            node
+            (loop for arg in args
+                  for scope in (or scopes (make-list (length args) :initial-element :outer))
+                  collect (case scope
+                            (:binder arg)
+                            (:inner (substitute-node arg defs inner depth))
+                            (t (substitute-node arg defs bound depth)))))))))
     (t node)))
 
 (defun flatten-items (items defs bound depth)

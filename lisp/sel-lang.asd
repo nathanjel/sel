@@ -26,12 +26,14 @@
     :serial t
     :components
     ((:file "package")
+     (:file "limits")
      (:file "errors")
      (:file "utf8")
      (:file "decimal")
      (:file "value")
      (:file "registry")
      (:file "builtin-manifest")
+     (:file "math-ops")
      (:file "lexer")
      (:file "parser")
      (:file "math-plan")

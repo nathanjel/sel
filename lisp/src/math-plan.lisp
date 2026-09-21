@@ -6,9 +6,32 @@
 
 (in-package #:sel)
 
-(defparameter +math-binary-ops+ '("+" "-" "*" "/" "%"))
-(defparameter +math-unary-ops+ '("NEG"))
-(defparameter +math-builtins+ '("ROUND" "ABS" "SIGN" "CEIL" "FLOOR" "TRUNC" "POWER" "MIN" "MAX"))
+;;; The vocabulary -- which source nodes compile, to which operation, with how
+;;; many operands and which error positions -- is spec/math-ops.json's, rendered
+;;; into math-ops.lisp. The opcode KEYWORDS are this host's own: the executor in
+;;; eval.lisp dispatches on the ones below, and loading refuses to continue if
+;;; the manifest names an operation the executor lacks.
+(defparameter +math-executor-ops+
+  '(:add :sub :mul :div :mod :neg :abs :sign :ceil :floor :trunc :round :power :min :max))
+
+(defun math-op-keyword (name)
+  (let ((kw (intern name :keyword)))
+    (unless (member kw +math-executor-ops+)
+      (error "spec/math-ops.json names ~a, which this host's math plan has no opcode for" name))
+    kw))
+
+(dolist (entry *math-op-data*) (math-op-keyword (first entry)))
+
+(defun math-op-entry (kind token)
+  "The manifest entry (name kind token arity aux) for a source node, or NIL."
+  (find-if (lambda (e) (and (eq (second e) kind) (string= (third e) token))) *math-op-data*))
+
+(defparameter +math-binary-ops+
+  (loop for (nil kind token) in *math-op-data* when (eq kind :operator) collect token))
+(defparameter +math-unary-ops+
+  (loop for (nil kind token) in *math-op-data* when (eq kind :prefix) collect token))
+(defparameter +math-builtins+
+  (loop for (nil kind token) in *math-op-data* when (eq kind :builtin) collect token))
 
 (defstruct (math-step (:constructor make-math-step (op dst &key (src1 0) (src2 0) pos aux-pos (name "") const-val leaf-node)))
   (op :add :type keyword)
@@ -126,11 +149,7 @@
                                 (return-from emit (values slot-r const-r)))
 
                               (let ((dst (alloc-slot))
-                                    (opcode (cond ((string= op "+") :add)
-                                                  ((string= op "-") :sub)
-                                                  ((string= op "*") :mul)
-                                                  ((string= op "/") :div)
-                                                  (t :mod))))
+                                    (opcode (math-op-keyword (first (math-op-entry :operator op)))))
                                 (push (make-math-step opcode dst
                                                       :src1 slot-l
                                                       :src2 slot-r
@@ -140,13 +159,13 @@
                       (return-from compile-math-plan nil)))
 
                  (:un
-                  (if (string= (node-s node) "NEG")
+                  (if (member (node-s node) +math-unary-ops+ :test #'string=)
                       (progn
                         (unless (node-l node) (return-from compile-math-plan nil))
                         (multiple-value-bind (slot-x const-x) (emit (node-l node) (1+ depth))
                           (declare (ignore const-x))
                           (let ((dst (alloc-slot)))
-                            (push (make-math-step :neg dst
+                            (push (make-math-step (math-op-keyword (first (math-op-entry :prefix (node-s node)))) dst
                                                   :src1 slot-x
                                                   :pos (node-pos node))
                                   steps)
@@ -154,57 +173,52 @@
                       (return-from compile-math-plan nil)))
 
                  (:call
-                  (let ((name (node-s node))
-                        (args (node-items node)))
+                  ;; Math builtins: operand count, fold and error positions from
+                  ;; the manifest entry; a count the entry cannot serve derails
+                  ;; the plan.
+                  (let* ((name (node-s node))
+                         (args (node-items node))
+                         (entry (math-op-entry :builtin name)))
                     (cond
-                      ((member name '("ABS" "SIGN" "CEIL" "FLOOR" "TRUNC") :test #'string=)
-                       (unless (= (length args) 1) (return-from compile-math-plan nil))
-                       (multiple-value-bind (slot-arg const-arg) (emit (first args) (1+ depth))
-                         (declare (ignore const-arg))
-                         (let ((dst (alloc-slot))
-                               (opcode (cond ((string= name "ABS") :abs)
-                                             ((string= name "SIGN") :sign)
-                                             ((string= name "CEIL") :ceil)
-                                             ((string= name "FLOOR") :floor)
-                                             (t :trunc))))
-                           (push (make-math-step opcode dst
-                                                 :src1 slot-arg
-                                                 :pos (node-pos node))
-                                 steps)
-                           (values dst nil))))
-
-                      ((member name '("ROUND" "POWER") :test #'string=)
-                       (unless (= (length args) 2) (return-from compile-math-plan nil))
-                       (multiple-value-bind (slot-0 const-0) (emit (first args) (1+ depth))
-                         (declare (ignore const-0))
-                         (multiple-value-bind (slot-1 const-1) (emit (second args) (1+ depth))
-                           (declare (ignore const-1))
-                           (let ((dst (alloc-slot))
-                                 (opcode (if (string= name "ROUND") :round :power)))
-                             (push (make-math-step opcode dst
-                                                   :src1 slot-0
-                                                   :src2 slot-1
-                                                   :pos (node-pos node)
-                                                   :aux-pos (node-pos (second args)))
-                                   steps)
-                             (values dst nil)))))
-
-                      ((member name '("MIN" "MAX") :test #'string=)
-                       (unless (>= (length args) 1) (return-from compile-math-plan nil))
-                       (multiple-value-bind (curr-slot const-0) (emit (first args) (1+ depth))
-                         (declare (ignore const-0))
-                         (let ((opcode (if (string= name "MIN") :min :max)))
-                           (loop for arg in (rest args)
-                                 do (multiple-value-bind (next-slot const-next) (emit arg (1+ depth))
-                                      (declare (ignore const-next))
-                                      (let ((dst (alloc-slot)))
-                                        (push (make-math-step opcode dst
-                                                              :src1 curr-slot
-                                                              :src2 next-slot
-                                                              :pos (node-pos node))
-                                              steps)
-                                        (setf curr-slot dst))))
-                           (values curr-slot nil))))
+                      (entry
+                       (destructuring-bind (op-name kind token arity aux) entry
+                         (declare (ignore kind token))
+                         (let ((opcode (math-op-keyword op-name)))
+                           (cond
+                             ((eql arity 1)
+                              (unless (= (length args) 1) (return-from compile-math-plan nil))
+                              (multiple-value-bind (slot-arg const-arg) (emit (first args) (1+ depth))
+                                (declare (ignore const-arg))
+                                (let ((dst (alloc-slot)))
+                                  (push (make-math-step opcode dst :src1 slot-arg :pos (node-pos node)) steps)
+                                  (values dst nil))))
+                             ((eql arity 2)
+                              (unless (= (length args) 2) (return-from compile-math-plan nil))
+                              (multiple-value-bind (slot-0 const-0) (emit (first args) (1+ depth))
+                                (declare (ignore const-0))
+                                (multiple-value-bind (slot-1 const-1) (emit (second args) (1+ depth))
+                                  (declare (ignore const-1))
+                                  (let ((dst (alloc-slot)))
+                                    (push (make-math-step opcode dst
+                                                          :src1 slot-0 :src2 slot-1
+                                                          :pos (node-pos node)
+                                                          :aux-pos (and aux (node-pos (nth aux args))))
+                                          steps)
+                                    (values dst nil)))))
+                             (t ; fold: one or more operands, combined pairwise left to right
+                              (unless (>= (length args) 1) (return-from compile-math-plan nil))
+                              (multiple-value-bind (curr-slot const-0) (emit (first args) (1+ depth))
+                                (declare (ignore const-0))
+                                (loop for arg in (rest args)
+                                      do (multiple-value-bind (next-slot const-next) (emit arg (1+ depth))
+                                           (declare (ignore const-next))
+                                           (let ((dst (alloc-slot)))
+                                             (push (make-math-step opcode dst
+                                                                   :src1 curr-slot :src2 next-slot
+                                                                   :pos (node-pos node))
+                                                   steps)
+                                             (setf curr-slot dst))))
+                                (values curr-slot nil)))))))
 
                       ((member name '("IF" "COND") :test #'string=)
                        (return-from compile-math-plan nil))
