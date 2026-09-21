@@ -1,5 +1,9 @@
 # F1–F6 implementation and verification — 2026-09-16
 
+> Update 2026-09-21: the one item this report leaves open, the database-backed
+> SQL fuzz boundary under C1, is closed (worklist SEL-0034, SEL-0041); that
+> lane is green on every dialect. The text below is kept as written.
+
 Scope: the five requested fixes (F1–F4 and F6), starting in Lisp and rolled out
 to Python, JS, PHP and C++. F5 was already addressed by the parallel remediation
 work and its original witness was rechecked. No commit was made. Unrelated

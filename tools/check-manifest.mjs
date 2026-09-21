@@ -45,10 +45,20 @@ for (const [name, e] of Object.entries(MANIFEST)) {
   const a = e.arity;
   const hi = a.max === 'variadic' ? a.min + 3 : a.max + 2;
   for (let c = Math.max(0, a.min - 2); c <= hi; c++) {
-    arityProbes.push({ name, count: c, source: `${name}(${Array(c).fill('1').join(', ')})`, accepted: accepts(a, c) });
+    arityProbes.push({ name, count: c, at: '1:1', accepted: accepts(a, c),
+      source: `${name}(${Array(c).fill('1').join(', ')})` });
+    // The same count through the `.>` form, the left operand supplying the
+    // first argument. A second parse path with its own copy of the arity rule
+    // was pinned by two hand-written cases until SEL-0038 gave both paths one
+    // body; this keeps it pinned per builtin either way. The name token sits
+    // at column 6.
+    if (c >= 1) {
+      arityProbes.push({ name, count: c, at: '1:6', accepted: accepts(a, c),
+        source: `1 .> ${name}(${Array(c - 1).fill('1').join(', ')})` });
+    }
   }
 }
-const corpus = arityProbes.map((p) => `### ${p.name}/${p.count}\n${p.source}\n`).join('');
+const corpus = arityProbes.map((p) => `### ${p.name}/${p.count}${p.at === '1:6' ? '/pipe' : ''}\n${p.source}\n`).join('');
 writeFileSync(join(work, 'arity.selc'), corpus);
 for (const impl of IMPLS) {
   let out;
@@ -64,7 +74,7 @@ for (const impl of IMPLS) {
     const observed = lines[i] ?? '';
     const isArity = observed.startsWith('!E_ARITY@');
     if (p.accepted && isArity) { bad++; complain(`${impl}: ${p.source} — the manifest accepts ${p.count} arguments, the host says ${observed}`); }
-    if (!p.accepted && observed !== '!E_ARITY@1:1') { bad++; complain(`${impl}: ${p.source} — the manifest refuses ${p.count} arguments, the host answered ${observed || '(nothing)'}`); }
+    if (!p.accepted && observed !== `!E_ARITY@${p.at}`) { bad++; complain(`${impl}: ${p.source} — the manifest refuses ${p.count} arguments, the host answered ${observed || '(nothing)'}`); }
   });
   if (!bad) console.log(`manifest: ${impl} accepts exactly the manifest's counts (${arityProbes.length} probes)`);
 }

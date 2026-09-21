@@ -70,7 +70,7 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0035](#sel-0035) | Assess computed-projection type propagation | All five / SQL | Deferred | P3 |
 | [SEL-0036](#sel-0036) | Assess broader latest-revision pushdown forms | All five / SQL | Deferred | P3 |
 | [SEL-0037](#sel-0037) | Reconcile historical review closure records | Documentation / audit | Needs verification | P3 |
-| [SEL-0038](#sel-0038) | Check call arity once per parser | All five | Proposed | P3 |
+| [SEL-0038](#sel-0038) | Check call arity once per parser | All five | Resolved | P3 |
 | [SEL-0039](#sel-0039) | Share the SQL translator's repeated arms | All five / SQL | Proposed | P3 |
 | [SEL-0040](#sel-0040) | Share PHP element iteration and optimizer child visits | PHP | Proposed | P3 |
 | [SEL-0041](#sel-0041) | SQLite before 3.48 truncates SUBSTR lengths past 2^31 | Tooling / SQL oracle | Resolved | P2 |
@@ -1067,14 +1067,48 @@ Source: [Earlier review index](../interim/review-2026-09-15-00-index.md) — Old
 <a id="sel-0038"></a>
 ### SEL-0038 — Check call arity once per parser
 
-**Proposed · P3 · All five · Owner: unassigned.**
+**Resolved 2026-09-21 · P3 · All five · Owner: unassigned.**
 Source: [SEL-0019 triage](001-scan-triage.md) — clone windows #2, #13, #21 (and the same two arms in the JS and C++ parsers).
 
 **Next action:** Each parser checks min/max and the extra arity rule in two places, the plain call and the `.>` pipeline call. Move the check into one helper per host taking the spec, the count and the name token, so the compile-time E_ARITY rule (SEL-0002) has one body per lane.
 
 **Close when:** `11-arity.selt` (including the never-reached-call cases) passes on all five; positions unchanged; no host keeps a second copy.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-21, delivered as analysed the same day
+(analysis kept below). The clone is wider than the arity check:
+in every host the plain call (`parse_call`) and the `.>` call share, line for
+line, the registry lookup with `E_UNKNOWN_FUNC`, the min/max check, the
+`arity_error` rule, and the construction of the `call` node with its record
+shape — about 12 lines twice per host, 60 in all. Only the pipeline's
+placeholder/left-insertion step, which sits between the lookup and the check,
+differs, so the lookup cannot join the helper but everything after it can.
+Recommended shape: one `finish_call(name_tok, spec, args)` per host (Python
+`_finish_call`, JS `finishCall`, PHP `self::finishCall`, C++ a `Parser`
+member, Lisp `finish-call`) that runs both checks against `len(args)` and
+returns the node; both sites become a one-line tail call. Positions are
+unchanged because every `fail` already reports `name_tok`. Pinned today by
+`11-arity.selt` (126 cases, plain path, including `link.four-is-compile-time`
+and `link-left.four-is-compile-time`) and by only two `.>` cases
+(`pipe.arity.too-few` / `too-many` in `14-pipeline.selt`), and
+`tools/check-manifest.mjs` probes the plain path alone; the recommendation
+adds the `.>` form to its 381 count probes (`1 .> NAME(1, …)` with one fewer
+literal) so a helper regression on the pipeline path is caught per builtin,
+not per two hand-written cases. Risk low: no semantics move, and the helper
+is exactly the text both sites already contain.
+
+Delivered: `_finish_call` in `python/sel/parser.py`, `finishCall` in
+`js/src/parser.mjs` and `php/src/Parser.php`, `Parser::finish_call` in
+`cpp/sel.cpp`, `finish-call` in `lisp/src/parser.lisp`; both call forms in
+every host end in the one call, and each parser has one `E_ARITY` body left
+(99 lines removed, 117 added, the helpers and their comments included).
+`tools/check-manifest.mjs` now probes the `.>` form for every count of one or
+more (`1 .> NAME(1, …)`, name token at 1:6): 693 count probes per host, from
+381. Validation: `11-arity.selt` and `14-pipeline.selt` 158/158 on all five
+hosts, positions unchanged; `tools/check-manifest.sh` 7 hosts agree;
+`tools/check.sh` ALL GREEN (48 layers, 1,140 s); against pinned Docker servers
+oracle 0 differing on every dialect, mutations 197 caught / 0 survived / 0
+skipped. No performance dimension: the helper is the same code at a call
+boundary, once per parsed call.
 
 <a id="sel-0039"></a>
 ### SEL-0039 — Share the SQL translator's repeated arms

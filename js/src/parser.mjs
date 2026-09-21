@@ -335,16 +335,7 @@ class Parser {
       args.unshift(left);
     }
 
-    const finalCount = args.length;
-    if (finalCount < spec.min || finalCount > spec.max) {
-      fail('E_ARITY', `${spec.name} takes ${arityText(spec)}, got ${finalCount}`, nameTok);
-    }
-    if (spec.arityError) {
-      const problem = spec.arityError(finalCount);
-      if (problem) fail('E_ARITY', problem, nameTok);
-    }
-    return { t: 'call', name: spec.name, spec, args, pos: nameTok,
-      recordShape: prepareRecordShape(spec.name, args) };
+    return finishCall(nameTok, spec, args);
   }
 
   parsePrimary() {
@@ -407,16 +398,24 @@ class Parser {
 
     const spec = lookup(nameTok.value);
     if (!spec) fail('E_UNKNOWN_FUNC', `unknown function ${nameTok.value}`, nameTok);
-    if (args.length < spec.min || args.length > spec.max) {
-      fail('E_ARITY', `${spec.name} takes ${arityText(spec)}, got ${args.length}`, nameTok);
-    }
-    if (spec.arityError) {
-      const problem = spec.arityError(args.length);
-      if (problem) fail('E_ARITY', problem, nameTok);
-    }
-    return { t: 'call', name: spec.name, spec, args, pos: nameTok,
-      recordShape: prepareRecordShape(spec.name, args) };
+    return finishCall(nameTok, spec, args);
   }
+}
+
+// The compile-time arity rule (spec §6.2, SEL-0002) and the call node, in one
+// place for both call forms; the pipeline form has already placed its left
+// operand in `args`. Every refusal reports the name token.
+function finishCall(nameTok, spec, args) {
+  const count = args.length;
+  if (count < spec.min || count > spec.max) {
+    fail('E_ARITY', `${spec.name} takes ${arityText(spec)}, got ${count}`, nameTok);
+  }
+  if (spec.arityError) {
+    const problem = spec.arityError(count);
+    if (problem) fail('E_ARITY', problem, nameTok);
+  }
+  return { t: 'call', name: spec.name, spec, args, pos: nameTok,
+    recordShape: prepareRecordShape(spec.name, args) };
 }
 
 function arityText(spec) {

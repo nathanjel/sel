@@ -373,15 +373,7 @@ class Parser:
         if not has_placeholder:
             args.insert(0, left)
 
-        if len(args) < spec.min or len(args) > spec.max:
-            fail('E_ARITY', f'{spec.name} takes {arity_text(spec)}, got {len(args)}',
-                 name_tok.pos)
-        if spec.arity_error is not None:
-            problem = spec.arity_error(len(args))
-            if problem:
-                fail('E_ARITY', problem, name_tok.pos)
-        return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args,
-                    record_shape=_prepare_record_shape(spec.name, args))
+        return _finish_call(name_tok, spec, args)
 
     def parse_primary(self) -> Node:
         t = self.peek()
@@ -441,15 +433,22 @@ class Parser:
         spec = lookup(name_tok.value)
         if spec is None:
             fail('E_UNKNOWN_FUNC', f'unknown function {name_tok.value}', name_tok.pos)
-        if len(args) < spec.min or len(args) > spec.max:
-            fail('E_ARITY', f'{spec.name} takes {arity_text(spec)}, got {len(args)}',
-                 name_tok.pos)
-        if spec.arity_error is not None:
-            problem = spec.arity_error(len(args))
-            if problem:
-                fail('E_ARITY', problem, name_tok.pos)
-        return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args,
-                    record_shape=_prepare_record_shape(spec.name, args))
+        return _finish_call(name_tok, spec, args)
+
+
+def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
+    """The compile-time arity rule (spec 6.2, SEL-0002) and the call node, in
+    one place for both call forms; the pipeline form has already placed its
+    left operand in ``args``. Every refusal reports the name token."""
+    count = len(args)
+    if count < spec.min or count > spec.max:
+        fail('E_ARITY', f'{spec.name} takes {arity_text(spec)}, got {count}', name_tok.pos)
+    if spec.arity_error is not None:
+        problem = spec.arity_error(count)
+        if problem:
+            fail('E_ARITY', problem, name_tok.pos)
+    return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args,
+                record_shape=_prepare_record_shape(spec.name, args))
 
 
 def arity_text(spec: Spec) -> str:

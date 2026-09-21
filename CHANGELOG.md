@@ -12,6 +12,17 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+A filtered PHP case run no longer fails on the whole-suite pin check (2026-09-21).
+
+  - **`php/bin/sqlt <filter>` asserts caveat pins only on a full run.** The pins are gathered from the cases that ran, so a filtered run knew only its own and reported every other caveated entry as unpinned: 59 `UNPINNED` lines and exit 1 around a passing case, saying nothing about the cases selected. The check now runs when every case ran and prints a one-line note otherwise; the mirror-parity check reads the shipped map and still runs either way. The full run is unchanged (856 passed, 0 suite errors). `CLAUDE.md`'s example filter named no case; it now names `agg.static`.
+
+Each parser checks call arity once (2026-09-21; WL-001 SEL-0038; no behaviour change).
+
+  - **One `finish_call` per host.** The plain call and the `.>` pipeline call shared, line for line, the min/max check, the extra arity rule and the construction of the call node — about 12 lines twice in every host. Both forms now end in one helper (`_finish_call`, `finishCall`, `Parser::finish_call`, `finish-call`), so the compile-time `E_ARITY` rule has one body per lane; positions are unchanged, every refusal still reporting the name token.
+  - **The manifest gate probes the pipeline form too.** `tools/check-manifest.sh` used to probe accepted counts through the plain form only; it now also asks `1 .> NAME(1, …)` for every count of one or more, 693 count probes per host from 381, so the second parse path is pinned per builtin rather than by two hand-written cases.
+
+Validation: 934 conformance cases per host (`11-arity.selt` and `14-pipeline.selt` 158/158 on all five); `tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php, cpp, lisp and python (48 layers); against pinned Docker servers: semantic oracle 0 differing on every dialect, mutation catalogue 197 caught, 0 survived, 0 skipped.
+
 The SQL translator charges the levels stage 1 removes (2026-09-21; WL-001 SEL-0034, SEL-0041).
 
   - **Stage 1 counts depth from where the evaluator's count stands.** The `;` sequence costs a level and each assignment it inlines one more (spec §6.4), and stage 1 removed both before either `E_SQL_DEPTH` guard looked, so `X = <199 terms>; X` — `E_DEPTH` in the evaluator — translated, and a database answered a rule SEL has no answer for. The database-backed fuzz lane (`tools/fuzz-sql.sh 2000 20260905`) had reported five such programs per dialect since 2026-09-16. The substitution walk in every host now starts at that depth; a flat chain is untouched, and only programs the evaluator already rejects gain a refusal, at the same position. Four cases in `sql/cases/18-host-neutrality.sqlt` and five mutations (one per host) pin it; `sql/errors.md` states the rule.

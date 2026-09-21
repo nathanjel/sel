@@ -2835,21 +2835,7 @@ class Parser {
       args.insert(args.begin(), std::move(left));
     }
 
-    const int final_count = static_cast<int>(args.size());
-    if (final_count < spec->min || final_count > spec->max) {
-      fail("E_ARITY", spec->name + " takes " + arity_text(*spec) + ", got " + std::to_string(final_count),
-           name_tok.pos);
-    }
-    if (spec->arity_error) {
-      const std::string problem = spec->arity_error(final_count);
-      if (!problem.empty()) fail("E_ARITY", problem, name_tok.pos);
-    }
-    auto n = make(NT::Call, name_tok.pos);
-    n->s = spec->name;
-    n->spec = spec;
-    n->items = std::move(args);
-    n->record_shape = prepare_record_shape(*n);
-    return n;
+    return finish_call(name_tok, spec, std::move(args));
   }
 
   NodePtr parse_primary() {
@@ -2925,6 +2911,13 @@ class Parser {
 
     const Spec* spec = registry_lookup(name_tok.value);
     if (!spec) fail("E_UNKNOWN_FUNC", "unknown function " + name_tok.value, name_tok.pos);
+    return finish_call(name_tok, spec, std::move(args));
+  }
+
+  // The compile-time arity rule (spec §6.2, SEL-0002) and the call node, in
+  // one place for both call forms; the pipeline form has already placed its
+  // left operand in `args`. Every refusal reports the name token.
+  NodePtr finish_call(const Token& name_tok, const Spec* spec, std::vector<NodePtr> args) {
     const int count = static_cast<int>(args.size());
     if (count < spec->min || count > spec->max) {
       fail("E_ARITY", spec->name + " takes " + arity_text(*spec) + ", got " + std::to_string(count),

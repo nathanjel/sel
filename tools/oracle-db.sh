@@ -112,9 +112,23 @@ start_one() {
   return 0
 }
 
+HINT="(tools/check.sh: SEL_SKIP_DB_TESTS=1 opts out of the database layers, SEL_SQL_<DIALECT>_DSN supplies your own servers)"
+
 up() {
-  command -v docker >/dev/null 2>&1 || { note "docker is not installed"; return 1; }
-  docker info >/dev/null 2>&1 || { note "the docker daemon is not reachable"; return 1; }
+  command -v docker >/dev/null 2>&1 || { note "docker is not installed $HINT"; return 1; }
+  docker info >/dev/null 2>&1 || { note "the docker daemon is not reachable $HINT"; return 1; }
+  # The client that will ask the servers is whatever `php` is on PATH, and it
+  # needs every PDO driver the oracle uses; found out here, in one line, rather
+  # than as a readiness timeout on the first server. See
+  # tools/oracle-php-client.Dockerfile for a client that has them all.
+  local drivers d
+  drivers="$(php -r 'echo implode(" ", PDO::getAvailableDrivers());' 2>/dev/null)"
+  for d in mysql pgsql sqlite; do
+    case " $drivers " in *" $d "*) ;; *)
+      note "the PHP client on PATH has no pdo_$d driver (it has: ${drivers:-none}); build tools/oracle-php-client.Dockerfile and put its php shim on PATH $HINT"
+      return 1 ;;
+    esac
+  done
 
   note "starting pinned servers (${TAG}):"
   local line

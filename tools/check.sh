@@ -14,6 +14,31 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 . tools/impls.sh
 
+# --- databases ----------------------------------------------------------------
+# Three layers ask a real server what the emitted SQL MEANS -- the semantic
+# oracle, the seven live entries of the mutation catalogue, and the oracle half
+# of the SQL fuzz lane -- and every one of them prints a skip and succeeds with
+# no DSN. That made the whole database story invisible to a plain run for a
+# long time (tools/oracle-db.sh's header says how). So the databases are not
+# optional here: unless the caller provides servers or opts out, this script
+# re-runs itself under `tools/oracle-db.sh run`, which starts the pinned Docker
+# servers, exports their DSNs, and removes them when the run ends -- and if
+# that cannot be done the run FAILS rather than passing having asked nobody.
+#
+#   SEL_SKIP_DB_TESTS=1         opt out; the three layers print their skips
+#   SEL_SQL_<DIALECT>_DSN=...   use these servers; nothing is started
+#   (neither)                   pinned Docker servers, or a failed run
+if [ "${SEL_SKIP_DB_TESTS:-0}" = 1 ]; then
+  echo "databases: skipped (SEL_SKIP_DB_TESTS=1); the DSN-backed layers print their skips"
+elif [ -n "${SEL_CHECK_UNDER_ORACLE_DB:-}" ]; then
+  echo "databases: pinned Docker servers, started by tools/oracle-db.sh for this run"
+elif env | grep -q '^SEL_SQL_[A-Z]*_DSN=.'; then
+  echo "databases: the SEL_SQL_*_DSN servers given; nothing started"
+else
+  echo "databases: starting pinned Docker servers (tools/oracle-db.sh run); SEL_SKIP_DB_TESTS=1 opts out, SEL_SQL_<DIALECT>_DSN supplies your own"
+  SEL_CHECK_UNDER_ORACLE_DB=1 exec ./tools/oracle-db.sh run "$0" "$@"
+fi
+
 LOGS="$(mktemp -d)"
 trap 'rm -rf "$LOGS"' EXIT
 started="$(date +%s)"
@@ -161,8 +186,14 @@ check_replay() {
 step "sql map replay" check_replay
 
 step "sql documented examples" ./tools/check-sql-docs.sh
-step "sql mutations" ./tools/mutate-sql.sh
-step "sql semantic oracle" ./tools/check-sql-oracle.sh
+# The three database layers share one schema and each drops and recreates its
+# tables, so they run one at a time under a lock while everything else keeps
+# going. The lock is held for the whole step: the fuzz lane's host-versus-host
+# half and most of the mutation run need no server, and could release it
+# sooner, but a finer grain would have to reach inside those scripts.
+db_step() { local name="$1"; shift; step "$name" flock "$LOGS/db.lock" "$@"; }
+db_step "sql mutations" ./tools/mutate-sql.sh
+db_step "sql semantic oracle" ./tools/check-sql-oracle.sh
 step "manifest versions" sel_slot ./tools/check-version.sh
 step "host API parity" ./tools/check-api.sh
 step "documentation examples" ./tools/check-docs.sh
@@ -171,7 +202,7 @@ step "documentation quotes" sel_slot ./tools/check-snippets.py
 step "decimal vs python oracle" ./tools/check-decimal.sh "${DECIMAL_COUNT:-4000}"
 step "end to end, every host API" ./tools/e2e.sh
 step "differential fuzz" ./tools/fuzz.sh "${FUZZ_COUNT:-4000}" "${FUZZ_SEED:-20260813}"
-step "differential fuzz, sql" ./tools/fuzz-sql.sh "${SQL_FUZZ_COUNT:-2000}" "${SQL_FUZZ_SEED:-20260905}"
+db_step "differential fuzz, sql" ./tools/fuzz-sql.sh "${SQL_FUZZ_COUNT:-2000}" "${SQL_FUZZ_SEED:-20260905}"
 
 report
 

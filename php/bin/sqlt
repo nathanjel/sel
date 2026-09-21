@@ -568,9 +568,18 @@ Map::reset();
 // years. Registering the same probe sql/cases/20-ansi-fallback.sqlt uses puts
 // ansi's caveated entries back under the gate.
 Map::defineDialect('ansi-probe', ['extends' => 'ansi', 'version' => '1', 'target' => true]);
-foreach (caveat_pins($GLOBALS['pinned'] ?? []) as $p) {
-    echo "UNPINNED {$p}\n";
-    $suiteErrors++;
+// A whole-suite property: the pins are gathered from the cases that RAN, so a
+// filtered run knows only its own and would report every other caveated entry
+// as unpinned -- 59 lines and a red exit around a passing case, saying nothing
+// about the cases selected. Asserted only when every case ran; the parity check
+// below reads the shipped map, not the cases, so it runs either way.
+if ($filters === []) {
+    foreach (caveat_pins($GLOBALS['pinned'] ?? []) as $p) {
+        echo "UNPINNED {$p}\n";
+        $suiteErrors++;
+    }
+} else {
+    echo "(filtered run: caveat pins are checked only by a full run)\n";
 }
 $parity = mirror_parity();
 foreach ($parity as $p) {

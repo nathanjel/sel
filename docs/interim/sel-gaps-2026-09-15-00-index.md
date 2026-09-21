@@ -12,8 +12,9 @@ direct-field type-loss paths. UNKNOWN group keys and mixed-MAP downstream
 FILTER retain safe fallback. F6's explicitly unique-revision TOP 1 strategy
 transfers 100 complete winner rows from 100,000 revisions. C1 remains open:
 database-backed SQL fuzzing exposes a pre-existing local `E_DEPTH` versus SQL
-acceptance boundary. The historical verification below records the original
-audit, not the current fix status; see the dated updates.
+acceptance boundary (closed 2026-09-21: worklist SEL-0034 and SEL-0041; the
+database-backed fuzz lane is green). The historical verification below records
+the original audit, not the current fix status; see the dated updates.
 
 The consolidated [implementation/verification report](sel-gaps-2026-09-15-08-fix-verification.md)
 records the new live regression totals and explicitly separates the remaining

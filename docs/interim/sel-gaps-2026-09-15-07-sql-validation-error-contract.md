@@ -1,5 +1,12 @@
 # C1 — Make SQL validation/error semantics explicit
 
+> Update 2026-09-21: the depth boundary below is closed — stage 1 now charges
+> the sequence and assignment levels it removes, and the database-backed SQL
+> fuzz lane is green on every dialect (worklist SEL-0034; the lane's other
+> finding, a SQLite-version `substr` difference, is SEL-0041). The dirty-text,
+> division and strict-mode boundaries in the table are unchanged and remain
+> the documented contract. The text below is kept as written.
+
 Status: observed at `55f4aa6`; **documented semantic limitation**, not a newly
 discovered defect. Proposed priority: **P2, API contract/documentation and
 validation planning**. This work item captures stress-test results that should

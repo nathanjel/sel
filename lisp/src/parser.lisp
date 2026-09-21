@@ -117,6 +117,25 @@
     (:num (format nil "number ~a" (token-value tok)))
     (t (format nil "~s" (token-value tok)))))
 
+(defun finish-call (name-tok spec args)
+  "The compile-time arity rule (spec 6.2, SEL-0002) and the call node, in one
+place for both call forms; the pipeline form has already placed its left
+operand in ARGS. Every refusal reports the name token."
+  (let ((count (length args)))
+    (when (or (< count (spec-min spec)) (> count (spec-max spec)))
+      (fail "E_ARITY"
+            (format nil "~a takes ~a, got ~d" (spec-name spec) (arity-text spec) count)
+            (token-pos name-tok)))
+    (when (spec-arity-error spec)
+      (let ((problem (funcall (spec-arity-error spec) count)))
+        (when problem (fail "E_ARITY" problem (token-pos name-tok)))))
+    (let ((n (make-node :call (token-pos name-tok))))
+      (setf (node-s n) (spec-name spec)
+            (node-spec n) spec
+            (node-items n) args
+            (node-record-shape n) (prepare-record-shape n))
+      n)))
+
 (defun arity-text (spec)
   (let ((plural (if (= (spec-min spec) 1) "" "s")))
     (cond ((>= (spec-max spec) +variadic+)
@@ -359,20 +378,7 @@
                              has-placeholder t)))
           (unless has-placeholder
             (setf new-args (cons left new-args)))
-          (let ((count (length new-args)))
-            (when (or (< count (spec-min spec)) (> count (spec-max spec)))
-              (fail "E_ARITY"
-                    (format nil "~a takes ~a, got ~d" (spec-name spec) (arity-text spec) count)
-                    (token-pos name-tok)))
-            (when (spec-arity-error spec)
-              (let ((problem (funcall (spec-arity-error spec) count)))
-                (when problem (fail "E_ARITY" problem (token-pos name-tok)))))
-            (let ((n (make-node :call (token-pos name-tok))))
-              (setf (node-s n) (spec-name spec)
-                    (node-spec n) spec
-                    (node-items n) new-args)
-              (setf (node-record-shape n) (prepare-record-shape n))
-              n)))))))
+          (finish-call name-tok spec new-args))))))
 
 (defun parse-primary (p)
   (let ((tok (p-peek p)))
@@ -451,20 +457,7 @@
         (unless spec
           (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
                 (token-pos name-tok)))
-        (let ((count (length args)))
-          (when (or (< count (spec-min spec)) (> count (spec-max spec)))
-            (fail "E_ARITY"
-                  (format nil "~a takes ~a, got ~d" (spec-name spec) (arity-text spec) count)
-                  (token-pos name-tok)))
-          (when (spec-arity-error spec)
-            (let ((problem (funcall (spec-arity-error spec) count)))
-              (when problem (fail "E_ARITY" problem (token-pos name-tok)))))
-          (let ((n (make-node :call (token-pos name-tok))))
-            (setf (node-s n) (spec-name spec)
-                  (node-spec n) spec
-                  (node-items n) args)
-            (setf (node-record-shape n) (prepare-record-shape n))
-            n))))))
+        (finish-call name-tok spec args)))))
 
 ;;; The target must be an identifier followed by zero or more index operations.
 (defun check-target (node op-tok)

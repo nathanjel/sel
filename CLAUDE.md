@@ -38,7 +38,7 @@ PYTHONPATH=$PWD/python python3 python/bin/conformance.py
 SQL translation cases (`sql/cases/*.sqlt`), per host; args are name substrings:
 
 ```
-node js/bin/sqlt.mjs [agg.link]        php php/bin/sqlt    cpp/build/sqlt
+node js/bin/sqlt.mjs [agg.static]      php php/bin/sqlt    cpp/build/sqlt
 lisp/bin/sqlt                          PYTHONPATH=$PWD/python python3 python/bin/sqlt
 ```
 

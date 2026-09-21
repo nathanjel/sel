@@ -551,18 +551,7 @@ final class Parser
             array_unshift($args, $left);
         }
 
-        $count = count($args);
-        if ($count < $spec['min'] || $count > $spec['max']) {
-            fail('E_ARITY', "{$spec['name']} takes " . self::arityText($spec) . ", got {$count}", $nameTok);
-        }
-        if ($spec['arityError'] !== null) {
-            $problem = ($spec['arityError'])($count);
-            if ($problem !== null) {
-                fail('E_ARITY', $problem, $nameTok);
-            }
-        }
-        return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args, 'pos' => $nameTok,
-            'recordShape' => self::prepareRecordShape($spec['name'], $args)];
+        return self::finishCall($nameTok, $spec, $args);
     }
 
     /** @return array<string,mixed> */
@@ -637,6 +626,22 @@ final class Parser
         if ($spec === null) {
             fail('E_UNKNOWN_FUNC', "unknown function {$nameTok['value']}", $nameTok);
         }
+        return self::finishCall($nameTok, $spec, $args);
+    }
+
+    /** @param array<string,mixed> $spec */
+    /**
+     * The compile-time arity rule (spec §6.2, SEL-0002) and the call node, in
+     * one place for both call forms; the pipeline form has already placed its
+     * left operand in $args. Every refusal reports the name token.
+     *
+     * @param array<string,mixed> $nameTok
+     * @param array<string,mixed> $spec
+     * @param list<array<string,mixed>> $args
+     * @return array<string,mixed>
+     */
+    private static function finishCall(array $nameTok, array $spec, array $args): array
+    {
         $count = count($args);
         if ($count < $spec['min'] || $count > $spec['max']) {
             fail('E_ARITY', "{$spec['name']} takes " . self::arityText($spec) . ", got {$count}", $nameTok);
@@ -647,11 +652,10 @@ final class Parser
                 fail('E_ARITY', $problem, $nameTok);
             }
         }
-        return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args, 'pos' => $nameTok,
-            'recordShape' => self::prepareRecordShape($spec['name'], $args)];
+        return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args,
+            'pos' => $nameTok, 'recordShape' => self::prepareRecordShape($spec['name'], $args)];
     }
 
-    /** @param array<string,mixed> $spec */
     private static function arityText(array $spec): string
     {
         if ($spec['max'] === PHP_INT_MAX) {
