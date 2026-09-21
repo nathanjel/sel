@@ -66,13 +66,14 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0031](#sel-0031) | Assess heterogeneous Python metadata-cache churn | Python | Retained intentionally | P3 |
 | [SEL-0032](#sel-0032) | Validate PHP mixed-query performance and comparator attribution | PHP | Resolved | P3 |
 | [SEL-0033](#sel-0033) | Run the full five-lane integration gate after remediation | All five / validation | Resolved | P2 |
-| [SEL-0034](#sel-0034) | Revalidate and resolve SQL depth/error-policy boundary C1 | All five / SQL | Needs verification | P2 |
+| [SEL-0034](#sel-0034) | Revalidate and resolve SQL depth/error-policy boundary C1 | All five / SQL | Resolved | P2 |
 | [SEL-0035](#sel-0035) | Assess computed-projection type propagation | All five / SQL | Deferred | P3 |
 | [SEL-0036](#sel-0036) | Assess broader latest-revision pushdown forms | All five / SQL | Deferred | P3 |
 | [SEL-0037](#sel-0037) | Reconcile historical review closure records | Documentation / audit | Needs verification | P3 |
 | [SEL-0038](#sel-0038) | Check call arity once per parser | All five | Proposed | P3 |
 | [SEL-0039](#sel-0039) | Share the SQL translator's repeated arms | All five / SQL | Proposed | P3 |
 | [SEL-0040](#sel-0040) | Share PHP element iteration and optimizer child visits | PHP | Proposed | P3 |
+| [SEL-0041](#sel-0041) | SQLite before 3.48 truncates SUBSTR lengths past 2^31 | Tooling / SQL oracle | Resolved | P2 |
 
 ## Working items
 
@@ -952,14 +953,80 @@ is in `tools/oracle-db.sh`.
 <a id="sel-0034"></a>
 ### SEL-0034 — Revalidate and resolve SQL depth/error-policy boundary C1
 
-**Needs verification · P2 · All five / SQL · Owner: unassigned.**
+**Resolved 2026-09-21 · P2 · All five / SQL · Owner: unassigned.**
 Source: [Earlier gap verification](../interim/sel-gaps-2026-09-15-08-fix-verification.md) — Historical C1, explicitly still open.
 
 **Next action:** Reproduce the older database-fuzz cases where local SEL raises E_DEPTH while SQL normalization accepts the expression. The earlier report explicitly leaves C1 open; it has not been rerun during this backlog import.
 
 **Close when:** Current reproduction and a normative error/translation policy are recorded; targeted database tests and local error-phase/position checks pass after resolution.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-21; reproduced on `371f090`, fixed in all five hosts the same day (decision: charge the wrappers).
+
+The boundary is still there, and it is now exactly characterised. Since the
+report, `E_SQL_DEPTH` was added to stage 1 and to the render walk in every
+host (`sql/cases/18-host-neutrality.sqlt`, the three `neutral.depth.*`
+cases), so a flat chain agrees: 200 terms translate and evaluate, 201 is
+`E_DEPTH` here and `E_SQL_DEPTH` there. What the translator still does not
+charge is what stage 1 removes before either guard looks: **the top-level
+sequence (one level) and the assignment that defines a substituted name (one
+more)**. spec/SPEC.md §6.4 charges both, and `conformance/10-limits.selt`
+pins it (`lim.eval-depth-through-an-assignment`: 199 behind `X =` is
+`E_DEPTH` at 1:5). A boundary corpus through every host's `batch` and
+`sqlfuzz` runners, all five identical on both lanes:
+
+| Program | Evaluator | Translator |
+|---|---|---|
+| 200-term chain, alone | `200` | translated |
+| 201-term chain, alone | `E_DEPTH` | `E_SQL_DEPTH` |
+| `A = ""; <200-term chain>` | `E_DEPTH` | translated |
+| `X = <199-term chain>; X` | `E_DEPTH` at 1:5 | translated |
+| `X = <200-term chain>; X` | `E_DEPTH` | translated |
+| `X = <201-term chain>; X` | `E_DEPTH` | `E_SQL_DEPTH` |
+| `A = 1; IF(FALSE, 7, <199-term chain>)` | `E_DEPTH` | translated |
+| `A = 1; (<199-term chain>) * 2` | `E_DEPTH` | translated |
+
+So the translator is short by exactly the levels the wrappers cost: one
+program of width for a bare sequence, two behind an assignment. The
+database-backed lane the report cites, `tools/oracle-db.sh run
+tools/fuzz-sql.sh 2000 20260905`, reproduces the report's figure to the
+program: 5 differing programs on each of mariadb, mysql, postgresql, the ANSI
+probe and sqlite, all of the shape above (chains of 199 or 200 terms behind a
+sequence, an assignment, an `IF` branch or a parenthesis), every one reported
+as "SEL rejects this with E_DEPTH and the translation succeeded". The lane
+exits 1; it is not green and was not claimed to be. The host-versus-host half
+of the same lane reports 0 disagreements on every dialect, as the gate does.
+The five hosts also agree on the opposite direction: `Y = <150>; X = Y +
+<60>; X` evaluates to 210 and is refused, because the constant check runs on
+the substituted subtree (`E_SQL_INVALID` citing `E_DEPTH`) — a conservative
+refusal §11.4 permits, recorded here so nobody mistakes it for the defect.
+
+Normative policy, applied: **stage 1 substitutes a definition at the depth
+the evaluator evaluated it** — the `;` sequence costs one level and each
+assignment one more (spec §6.4), so the substitution walk in every host
+(`normalise.py`, `normalise.mjs`, `Normalise.php`, `sel_sql_stage1.cpp`,
+`stage1.lisp`) starts from that depth rather than from zero: a start-depth
+argument threaded through `record`, five lines of logic in all. A flat chain
+is untouched; refusals are added only for programs the evaluator already
+rejects; `sql/errors.md` now states the rule beside its contract sentence.
+After the change the boundary corpus agrees row for row on all five hosts,
+`E_SQL_DEPTH` landing at the same position as `E_DEPTH` (1:5 for the
+assignment case, 1:21 for the `IF` branch, 1:9 for the parenthesis).
+
+Pinned by four cases in `sql/cases/18-host-neutrality.sqlt`
+(`neutral.depth.the-sequence-costs-a-level` and
+`neutral.depth.an-assignment-costs-another`, each with a just-under twin) and
+five mutations, one per host (`*-stage-one-wrappers-cost-nothing`, the start
+depth reset to zero), all caught by that host's `sqlt` run; the catalogue is
+197 entries. Validation on the tree: 856 SQL cases per host, `tools/check.sh`
+ALL GREEN (48 layers, 1,082 s; SQL fuzz host-versus-host 0 disagreements),
+and against pinned Docker servers through the rebuilt client of SEL-0041:
+oracle 0 differing on every dialect, mutations 197 caught / 0 survived / 0
+skipped, and the lane this item was opened for — `tools/oracle-db.sh run
+tools/fuzz-sql.sh 2000 20260905` — green for the first time: 0 differing on
+mariadb, mysql, postgresql, sqlite and the ANSI probe, with the 744 programs
+that do not evaluate all 744 refused by the translator (739 before). No
+performance dimension: the change is one integer per program. The conservative
+refusal of `Y = <150>; X = Y + <60>; X` stands as recorded above.
 
 <a id="sel-0035"></a>
 ### SEL-0035 — Assess computed-projection type propagation
@@ -1033,6 +1100,32 @@ Source: [SEL-0019 triage](001-scan-triage.md) — windows #10, #12.
 
 **Resolution:** Pending.
 
+<a id="sel-0041"></a>
+### SEL-0041 — SQLite before 3.48 truncates SUBSTR lengths past 2^31
+
+**Resolved 2026-09-21 · P2 · Tooling / SQL oracle · Owner: unassigned.**
+Source: SEL-0034 revalidation, 2026-09-21 — the database-backed SQL fuzz lane's two non-depth differences, both on sqlite.
+
+**Next action:** Decide how the layer treats SQLite builds that mishandle a `substr` length at or past 2^31. Measured: `substr('Zażółć', 2, 4294967299)` is `ażó` and `substr('a👍b', 2, 9223372036854775807)` is `a` on SQLite 3.46.1 (the `php:cli` oracle image's library, Debian trixie); both are correct on 3.51.2 (this box's Python and native PHP). SEL answers `ażółć` and `👍b`; the fuzz lane reports the two as differing and nothing declares a caveat. MariaDB and MySQL answer correctly; PostgreSQL refuses the `CAST(… AS INTEGER)` as out of range, which the oracle accepts as a server refusal. Options: (a) clamp the length in the sqlite template (`spec`: a length past the text's end already means "to the end", so `min({2}, 2147483647)` is semantically identical for a non-negative length — but `min(NULL, …)` and negative lengths need the same care the existing guards take, and every sqlite `SUBSTR` case's expected SQL changes); (b) pin the oracle's SQLite version — rebuild `sel-php-oracle:local` on a base whose libsqlite3 is 3.47 or later and record the floor in `sql/oracle/README.md`, leaving consumers on older SQLite with a documented boundary; (c) both.
+
+**Close when:** The policy is recorded; the sqlite fuzz lane reports the two programs as agreeing (or as a declared, named caveat); a `.sqlt` case pins whatever the template emits; `tools/check-sql-oracle.sh` stays 0 differing.
+
+**Resolution:** Resolved 2026-09-21, option (b): the oracle's SQLite is pinned
+by a floor and the floor is documented; the map is unchanged, so no `.sqlt`
+case changes. Measured to find the floor: 3.45.3 and 3.46.1 wrong, 3.48.0,
+3.49.2, 3.51.2 and 3.53.4 right (3.47 not measured; the floor is the first
+version measured correct). `tools/oracle-php-client.Dockerfile` is the
+client the repository's own database runs use — PHP CLI on Alpine with
+`pdo_mysql`, `pdo_pgsql` and `pdo_sqlite`, libsqlite3 3.53.4 today — and
+`tools/oracle-db.sh` asks the PHP client (not a host `sqlite3` binary, which
+is not what the oracle runs) for its library version and refuses below
+`SQLITE_FLOOR=3.48.0`, printing the version in its readiness line.
+`sql/oracle/README.md` records the floor, the reason and the shim recipe, and
+says that a consumer on an older SQLite gets the truncation: the library is
+what is wrong, not the translation. With the rebuilt client the fuzz lane
+reports the two programs as agreeing (sqlite 276 agree, 0 differ) and the
+oracle stays 0 differing on all four dialects.
+
 ## Suggested order
 
 Start with SEL-0001–0004 and revalidate SEL-0034. Take verified cleanup items
@@ -1057,3 +1150,4 @@ closure when its evidence is recorded.
 | Generation roadmap and gates | SEL-0020–0026, SEL-0033 |
 | Surrounding correctness/performance follow-ups | SEL-0001, SEL-0003, SEL-0027–0032 |
 | Earlier SQL boundaries / history reconciliation | SEL-0034–0037 |
+| Database fuzz lane findings, 2026-09-21 | SEL-0034 (closure), SEL-0041 |

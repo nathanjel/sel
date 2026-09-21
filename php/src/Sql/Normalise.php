@@ -24,21 +24,29 @@ final class Normalise
         $result = array_pop($stmts);
         $defs = [];                                  // NAME => node
 
+        // Counting starts where the evaluator's count would stand: the `;`
+        // sequence costs a level and each assignment it inlines one more
+        // (spec §6.4), so `X = <199 terms>; X` -- E_DEPTH in the evaluator --
+        // is refused here too, although the chain alone would translate.
+        // Stage 1 removes both wrappers before either guard looks, which is
+        // why they must be charged up front.
+        $base = $ast['t'] === 'seq' ? 1 : 0;
         foreach ($stmts as $s) {
-            self::record($s, $defs, $constNames, $ctx);
+            self::record($s, $defs, $constNames, $ctx, $base + 1);
         }
-        return self::substitute($result, $defs, []);
+        return self::substitute($result, $defs, [], $base);
     }
 
     /**
-     * Fold one leading statement into $defs, or refuse it.
+     * Fold one leading statement into $defs, or refuse it. $depth is where the
+     * evaluator's count stands at the assignment's right-hand side.
      *
      * @param array<string,mixed> $s
      * @param array<string, array<string,mixed>> $defs
      * @param array<string,bool> $constNames
      */
     private static function record(array $s, array &$defs, array $constNames = [],
-                                   ?\Sel\Context $ctx = null): void
+                                   ?\Sel\Context $ctx = null, int $depth = 0): void
     {
         if ($s['t'] !== 'assign') {
             refuse('E_SQL_ASSIGN',
@@ -71,7 +79,7 @@ final class Normalise
         }
         $name = $t['name'];
 
-        $value = self::substitute($s['value'], $defs, []);
+        $value = self::substitute($s['value'], $defs, [], $depth);
 
         // Validated here, and only here, because after this the subtree may be
         // gone: a definition nothing reads is dropped, so `A = 1 / 0; TRUE`

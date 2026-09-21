@@ -38,6 +38,8 @@ postgresql|postgres:17|1|256m|5432|/var/lib/postgresql/data
 '
 
 TAG="selo-$$"
+# The oldest libsqlite3 the PHP client may carry; see up() for why.
+SQLITE_FLOOR="3.48.0"
 STARTED=""
 READY_TIMEOUT="${SEL_ORACLE_TIMEOUT:-90}"
 SQLITE_FILE=""
@@ -126,7 +128,22 @@ up() {
   # nobody asks a server about is a dialect whose map is a set of guesses.
   SQLITE_FILE="$(mktemp -t "selo-XXXXXX.db")"
   export SEL_SQL_SQLITE_DSN="sqlite:$SQLITE_FILE" SEL_SQL_SQLITE_USER= SEL_SQL_SQLITE_PASS=
-  note "  sqlite   ready at $SQLITE_FILE (no server; $(sqlite3 --version 2>/dev/null | cut -d' ' -f1 || php -r 'echo (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn();'))"
+  # No server means the PHP client's own libsqlite3 IS the sqlite target, so
+  # it is pinned the way the servers above are: by a floor rather than a tag,
+  # because the library comes with whatever `php` is on PATH (see
+  # tools/oracle-php-client.Dockerfile). 3.46.1 truncates a substr() length
+  # past 2^31 -- substr('Zażółć', 2, 4294967299) is 'ażó' -- and the fuzz lane
+  # reports that as the map differing from SEL, which it does not (SEL-0041).
+  # 3.48.0 is the first version measured correct. Asked of the client, not of
+  # a `sqlite3` binary on the host, which is not what the oracle runs.
+  local lib
+  lib="$(php -r 'echo (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn();' 2>/dev/null)"
+  [ -n "$lib" ] || { note "sqlite: the PHP client has no pdo_sqlite"; return 1; }
+  if [ "$(printf '%s\n%s\n' "$SQLITE_FLOOR" "$lib" | sort -V | head -1)" != "$SQLITE_FLOOR" ]; then
+    note "sqlite: the PHP client's libsqlite3 is $lib, below the $SQLITE_FLOOR floor; use a newer client (tools/oracle-php-client.Dockerfile)"
+    return 1
+  fi
+  note "  sqlite   ready at $SQLITE_FILE (no server; libsqlite3 $lib in the PHP client, floor $SQLITE_FLOOR)"
   return 0
 }
 

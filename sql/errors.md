@@ -83,7 +83,12 @@ flat chain of 201 operators is `E_DEPTH` in the evaluator, and before the guard
 existed every host translated it — so the server answered a rule SEL has no
 answer for, which is the whole of §11.4's defect in a different costume. Both
 walks that touch the tree carry the bound: stage 1's substitution and the
-render walk.
+render walk. Stage 1 starts counting where the evaluator's count would stand:
+a program's `;` sequence costs a level and each assignment it inlines one
+more (spec §6.4), so `X = <199 terms>; X` — `E_DEPTH` in the evaluator,
+because the two wrappers cost two — is refused here too, although the chain
+alone would translate. The wrappers are exactly what stage 1 removes before
+either guard looks, which is why they are charged up front rather than found.
 
 It is raised only where the answer is knowable, and the residual is exactly one
 thing: **a column**. A literal is knowable, a scalar `value` binding is a literal

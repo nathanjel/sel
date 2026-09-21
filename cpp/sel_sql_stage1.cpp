@@ -149,7 +149,7 @@ SNodePtr substitute(const NodePtr& node, Defs& defs,
 // the ASSIGN's position, which is its target's position -- not the `=` and not
 // the statement start.
 void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_names,
-            sel::Value& root) {
+            sel::Value& root, int depth) {
   if (s->t != NT::Assign) {
     refuse("E_SQL_ASSIGN",
            "only assignments may come before the result expression; this "
@@ -185,7 +185,7 @@ void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_nam
   }
   const std::string name = t->s;
 
-  SNodePtr value = substitute(s->r, defs, {}, 0);
+  SNodePtr value = substitute(s->r, defs, {}, depth);
 
   // Validated here, and ONLY here, because after this the subtree may be gone:
   // a definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to
@@ -440,9 +440,15 @@ SNodePtr normalise(const NodePtr& ast, const std::set<std::string>& const_names,
   const NodePtr result = stmts.back();
   stmts.pop_back();
 
+  // Counting starts where the evaluator's count would stand: the `;` sequence
+  // costs a level and each assignment it inlines one more (spec §6.4), so
+  // `X = <199 terms>; X` -- E_DEPTH in the evaluator -- is refused here too,
+  // although the chain alone would translate. Stage 1 removes both wrappers
+  // before either guard looks, which is why they must be charged up front.
+  const int base = ast->t == NT::Seq ? 1 : 0;
   Defs defs;
-  for (const NodePtr& s : stmts) record(s, defs, const_names, root);
-  return substitute(result, defs, {}, 0);
+  for (const NodePtr& s : stmts) record(s, defs, const_names, root, base + 1);
+  return substitute(result, defs, {}, base);
 }
 
 }  // namespace sel::sql

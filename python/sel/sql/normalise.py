@@ -47,14 +47,21 @@ def run(ast: Node, const_names: dict[str, bool] | None = None, ctx=None) -> Any:
     result = stmts.pop()
     defs: dict[str, Any] = {}                      # NAME => node
 
+    # Counting starts where the evaluator's count would stand: the `;` sequence
+    # costs a level and each assignment it inlines one more (spec §6.4), so
+    # `X = <199 terms>; X` -- E_DEPTH in the evaluator -- is refused here too,
+    # although the chain alone would translate. Stage 1 removes both wrappers
+    # before either guard looks, which is why they must be charged up front.
+    base = 1 if ast.t == 'seq' else 0
     for s in stmts:
-        _record(s, defs, const_names or {}, ctx)
-    return _substitute(result, defs, [])
+        _record(s, defs, const_names or {}, ctx, base + 1)
+    return _substitute(result, defs, [], base)
 
 
 def _record(s: Node, defs: dict[str, Any],
-            const_names: dict[str, bool], ctx) -> None:
-    """Fold one leading statement into ``defs``, or refuse it."""
+            const_names: dict[str, bool], ctx, depth: int = 0) -> None:
+    """Fold one leading statement into ``defs``, or refuse it. ``depth`` is
+    where the evaluator's count stands at the assignment's right-hand side."""
     if s.t != 'assign':
         refuse('E_SQL_ASSIGN',
                'only assignments may come before the result expression; this '
@@ -81,7 +88,7 @@ def _record(s: Node, defs: dict[str, Any],
         refuse('E_SQL_ASSIGN', 'assignment target is not a variable', s.pos)
     name = t.name
 
-    value = _substitute(s.value, defs, [])
+    value = _substitute(s.value, defs, [], depth)
 
     # Validated here, and only here, because after this the subtree may be gone:
     # a definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to

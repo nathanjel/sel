@@ -6532,8 +6532,72 @@
    :register nil
    :bindings (lambda () (list )))
   (list
+   :name "neutral.depth.the-sequence-costs-a-level"
+   :at "18-host-neutrality.sqlt:206"
+   :dialect "mariadb"
+   :source "A = 1; 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1"
+   :expect nil
+   :error "E_SQL_DEPTH 1:8"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "neutral.depth.the-sequence-costs-a-level-just-under"
+   :at "18-host-neutrality.sqlt:221"
+   :dialect "mariadb"
+   :source "A = 1; 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1"
+   :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1 + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "neutral.depth.an-assignment-costs-another"
+   :at "18-host-neutrality.sqlt:229"
+   :dialect "mariadb"
+   :source "X = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1; X"
+   :expect nil
+   :error "E_SQL_DEPTH 1:5"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "neutral.depth.an-assignment-costs-another-just-under"
+   :at "18-host-neutrality.sqlt:242"
+   :dialect "mariadb"
+   :source "X = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1; X"
+   :expect "(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1 + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
    :name "neutral.register.no-ret"
-   :at "18-host-neutrality.sqlt:219"
+   :at "18-host-neutrality.sqlt:263"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6550,7 +6614,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.tpl-as-a-list"
-   :at "18-host-neutrality.sqlt:231"
+   :at "18-host-neutrality.sqlt:275"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6567,7 +6631,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.arity-of-strings"
-   :at "18-host-neutrality.sqlt:243"
+   :at "18-host-neutrality.sqlt:287"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6584,7 +6648,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.since-not-numeric"
-   :at "18-host-neutrality.sqlt:255"
+   :at "18-host-neutrality.sqlt:299"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6601,7 +6665,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.invented-caveat"
-   :at "18-host-neutrality.sqlt:267"
+   :at "18-host-neutrality.sqlt:311"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6618,7 +6682,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.lowercase-op-key"
-   :at "18-host-neutrality.sqlt:279"
+   :at "18-host-neutrality.sqlt:323"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6635,7 +6699,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.lowered-function"
-   :at "18-host-neutrality.sqlt:291"
+   :at "18-host-neutrality.sqlt:335"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6652,7 +6716,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.skeleton-slot-typo"
-   :at "18-host-neutrality.sqlt:303"
+   :at "18-host-neutrality.sqlt:347"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6669,7 +6733,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.dialect-redefined"
-   :at "18-host-neutrality.sqlt:315"
+   :at "18-host-neutrality.sqlt:359"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6686,7 +6750,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.target-not-a-boolean"
-   :at "18-host-neutrality.sqlt:327"
+   :at "18-host-neutrality.sqlt:371"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6703,7 +6767,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.version-with-a-suffix"
-   :at "18-host-neutrality.sqlt:339"
+   :at "18-host-neutrality.sqlt:383"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6720,7 +6784,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.text-escape-as-a-string"
-   :at "18-host-neutrality.sqlt:351"
+   :at "18-host-neutrality.sqlt:395"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6737,7 +6801,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.lexical-true-as-a-boolean"
-   :at "18-host-neutrality.sqlt:363"
+   :at "18-host-neutrality.sqlt:407"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6754,7 +6818,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.unknown-lexical-key"
-   :at "18-host-neutrality.sqlt:375"
+   :at "18-host-neutrality.sqlt:419"
    :dialect "mariadb"
    :source "1 + 1"
    :expect nil
@@ -6771,7 +6835,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.arity-null-withdraws"
-   :at "18-host-neutrality.sqlt:387"
+   :at "18-host-neutrality.sqlt:431"
    :dialect "mariadb"
    :source "MIN(5)"
    :expect nil
@@ -6788,7 +6852,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.register.arity-fallback-still-applies"
-   :at "18-host-neutrality.sqlt:402"
+   :at "18-host-neutrality.sqlt:446"
    :dialect "mariadb"
    :source "MIN(5, 3)"
    :expect "LEAST(5, 3)"
@@ -6805,7 +6869,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.ordinal.tenth-column"
-   :at "18-host-neutrality.sqlt:415"
+   :at "18-host-neutrality.sqlt:459"
    :dialect "mariadb"
    :source "COLS[\"10\"]"
    :expect "`c10`"
@@ -6821,7 +6885,7 @@
    :bindings (lambda () (list (cons "COLS" (binding-columns (binding-column "c1" nil :unknown) (binding-column "c2" nil :unknown) (binding-column "c3" nil :unknown) (binding-column "c4" nil :unknown) (binding-column "c5" nil :unknown) (binding-column "c6" nil :unknown) (binding-column "c7" nil :unknown) (binding-column "c8" nil :unknown) (binding-column "c9" nil :unknown) (binding-column "c10" nil :unknown) (binding-column "c11" nil :unknown) (binding-column "c12" nil :unknown))))))
   (list
    :name "neutral.ordinal.tenth-column-by-name"
-   :at "18-host-neutrality.sqlt:436"
+   :at "18-host-neutrality.sqlt:480"
    :dialect "mariadb"
    :source "HAS(COLS, \"10\")"
    :expect "TRUE"
@@ -6837,7 +6901,7 @@
    :bindings (lambda () (list (cons "COLS" (binding-columns (binding-column "c1" nil :unknown) (binding-column "c2" nil :unknown) (binding-column "c3" nil :unknown) (binding-column "c4" nil :unknown) (binding-column "c5" nil :unknown) (binding-column "c6" nil :unknown) (binding-column "c7" nil :unknown) (binding-column "c8" nil :unknown) (binding-column "c9" nil :unknown) (binding-column "c10" nil :unknown) (binding-column "c11" nil :unknown) (binding-column "c12" nil :unknown))))))
   (list
    :name "neutral.ordinal.tenth-element"
-   :at "18-host-neutrality.sqlt:451"
+   :at "18-host-neutrality.sqlt:495"
    :dialect "mariadb"
    :source "HAS((1,2,3,4,5,6,7,8,9,10,11,12), \"10\")"
    :expect "TRUE"
@@ -6853,7 +6917,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.ordinal.arity-key-past-nine"
-   :at "18-host-neutrality.sqlt:465"
+   :at "18-host-neutrality.sqlt:509"
    :dialect "mariadb"
    :source "MIN(1,2,3,4,5,6,7,8,9,10)"
    :expect "TEN(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)"
@@ -6870,7 +6934,7 @@
    :bindings (lambda () (list )))
   (list
    :name "neutral.ordinal.placeholder-past-nine"
-   :at "18-host-neutrality.sqlt:480"
+   :at "18-host-neutrality.sqlt:524"
    :dialect "pg-numbered"
    :source "T IN (\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\",\"j\",\"k\")"
    :expect "(((((((((((CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($1 AS TEXT) COLLATE \"C\") OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($2 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($3 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($4 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($5 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($6 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($7 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($8 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($9 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($10 AS TEXT) COLLATE \"C\")) OR (CAST(\"t\" AS TEXT) COLLATE \"C\" = CAST($11 AS TEXT) COLLATE \"C\"))"

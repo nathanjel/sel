@@ -73,6 +73,28 @@ distributions (`dnf install php-pgsql`, `apt install php-pgsql`).
 A named schema must exist and must be disposable: the row oracle drops and
 recreates its tables every run.
 
+SQLite has no server, so the `sqlite` target is whatever libsqlite3 the PHP
+client links, and that library is pinned by a **floor**: `tools/oracle-db.sh`
+refuses a client below 3.48.0. Debian trixie's 3.46.1 truncates a `substr()`
+length at or past 2^31 — `substr('Zażółć', 2, 4294967299)` is `ażó` there and
+`ażółć` from 3.48.0 on — and the fuzz lane reported that as the map differing
+from SEL, which it does not (SEL-0041). The client this repository's own
+database runs use is `tools/oracle-php-client.Dockerfile`: PHP CLI on Alpine
+(libsqlite3 3.53 at the time of writing) with `pdo_mysql`, `pdo_pgsql` and
+`pdo_sqlite`. Build it as `sel-php-oracle:local` and put a `php` shim on PATH
+that runs it with `--network host` and the checkout mounted at its own path,
+so `127.0.0.1:<port>` reaches the throwaway servers and `/tmp` (the sqlite
+file, the mutation copies) is shared:
+
+```
+docker build -t sel-php-oracle:local -f tools/oracle-php-client.Dockerfile tools
+PATH="$HOME/bin/sel-oracle:$PATH" tools/oracle-db.sh run tools/check-sql-oracle.sh
+```
+
+A consumer on an older SQLite gets the truncation the fuzz lane saw; the map
+does not work around it, because a length past the text's end is a length the
+spec already defines and the library, not the translation, is what is wrong.
+
 ## `expressions.selo`
 
 Closed SEL expressions — literals only, no bindings — one per line, grouped by

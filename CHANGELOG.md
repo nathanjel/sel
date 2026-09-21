@@ -12,6 +12,13 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+The SQL translator charges the levels stage 1 removes (2026-09-21; WL-001 SEL-0034, SEL-0041).
+
+  - **Stage 1 counts depth from where the evaluator's count stands.** The `;` sequence costs a level and each assignment it inlines one more (spec §6.4), and stage 1 removed both before either `E_SQL_DEPTH` guard looked, so `X = <199 terms>; X` — `E_DEPTH` in the evaluator — translated, and a database answered a rule SEL has no answer for. The database-backed fuzz lane (`tools/fuzz-sql.sh 2000 20260905`) had reported five such programs per dialect since 2026-09-16. The substitution walk in every host now starts at that depth; a flat chain is untouched, and only programs the evaluator already rejects gain a refusal, at the same position. Four cases in `sql/cases/18-host-neutrality.sqlt` and five mutations (one per host) pin it; `sql/errors.md` states the rule.
+  - **The oracle's SQLite is pinned by a floor.** SQLite has no server, so the `sqlite` target is the PHP client's libsqlite3, and 3.46.1 truncates a `substr()` length past 2^31 (`substr('Zażółć', 2, 4294967299)` is `ażó`; correct from 3.48.0). `tools/oracle-db.sh` now asks the client for its library version and refuses below 3.48.0; `tools/oracle-php-client.Dockerfile` is the client the repository's database runs use (Alpine, libsqlite3 3.53.4); `sql/oracle/README.md` documents the floor. The map is unchanged.
+
+Validation: 856 SQL cases per host; `tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php, cpp, lisp and python (48 layers, 1,082 s); against pinned Docker servers through the rebuilt client: semantic oracle 0 differing on every dialect, mutation catalogue 197 caught, 0 survived, 0 skipped, and the database-backed SQL fuzz lane green for the first time — 0 differing on mariadb, mysql, postgresql, sqlite and the ANSI probe, every one of the 744 programs the evaluator rejects also refused by the translator.
+
 Full five-lane gate recorded on a committed checkpoint (2026-09-21; WL-001 SEL-0033; no code change).
 
   - **Revision `371f090`, clean tree.** `tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php, cpp, lisp and python (48 layers, 1,108 s; fuzz seeds 20260813 and 20260905, 0 disagreements); `cd cpp && make asan` 171/171 unit and 934/934 conformance with no sanitizer report; the database layers against pinned Docker servers (mariadb 11.8, mysql 8.4, postgres 17, sqlite): semantic oracle 0 differing on every dialect, mutation catalogue 192 caught, 0 survived, 0 skipped. Benchmark against the `6568201` baseline, interleaved on an idle box:

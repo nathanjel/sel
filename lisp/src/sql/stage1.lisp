@@ -287,7 +287,7 @@ values stop the recursion, which is the whole reason clist exists."
           (:clist (dolist (cell (clist-entries s)) (push (cdr cell) out)))
           (t (push s out)))))))
 
-(defun record-statement (s defs const-names root)
+(defun record-statement (s defs const-names root depth)
   "Fold one leading statement into DEFS, or refuse it. Every refusal reports the
 ASSIGN's position, which is its target's position -- not the `=` and not the
 statement start.
@@ -318,7 +318,7 @@ here, because the shape has to be known before the query runs"
     (unless (eq (snode-kind target) :var)
       (refuse "E_SQL_ASSIGN" "assignment target is not a variable" (snode-pos s)))
     (let ((name (sel::node-s target))
-          (value (substitute-node (sel::node-r s) defs '() 0)))
+          (value (substitute-node (sel::node-r s) defs '() depth)))
       ;; Validated here, and ONLY here, because after this the subtree may be
       ;; gone: a definition nothing reads is dropped, so `A = 1 / 0; TRUE`
       ;; translated to TRUE and every server answered TRUE where SEL raises
@@ -368,7 +368,14 @@ a shape. The result is not always an expression node."
          ;; reports at 1:1.
          (result (car (last stmts)))
          (leading (butlast stmts))
-         (defs '()))
+         (defs '())
+         ;; Counting starts where the evaluator's count would stand: the `;`
+         ;; sequence costs a level and each assignment it inlines one more
+         ;; (spec 6.4), so `X = <199 terms>; X` -- E_DEPTH in the evaluator --
+         ;; is refused here too, although the chain alone would translate.
+         ;; Stage 1 removes both wrappers before either guard looks, which is
+         ;; why they must be charged up front.
+         (base (if (eq (sel::node-kind ast) :seq) 1 0)))
     (dolist (s leading)
-      (setf defs (record-statement s defs const-names root)))
-    (substitute-node result defs '() 0)))
+      (setf defs (record-statement s defs const-names root (1+ base))))
+    (substitute-node result defs '() base)))

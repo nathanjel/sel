@@ -611,6 +611,41 @@
       "to": "    if False:"
     },
     {
+      "name": "python-stage-one-wrappers-cost-nothing",
+      "file": "python/sel/sql/normalise.py",
+      "from": "    base = 1 if ast.t == 'seq' else 0\n",
+      "to": "    base = 0\n",
+      "was": "Stage 1 counts from zero, so the `;` sequence and the assignment it inlines cost nothing and `X = <199 terms>; X` translates while the evaluator answers E_DEPTH -- the shape the database-backed fuzz lane reported five times per dialect (SEL-0034). One mutation per host: the start depth is a line each host owns, and the four .sqlt depth cases behind an assignment and a sequence are what catch it."
+    },
+    {
+      "name": "js-stage-one-wrappers-cost-nothing",
+      "file": "js/src/sql/normalise.mjs",
+      "from": "  const base = ast.t === 'seq' ? 1 : 0;\n",
+      "to": "  const base = 0;\n",
+      "was": "Stage 1 counts from zero, so the `;` sequence and the assignment it inlines cost nothing and `X = <199 terms>; X` translates while the evaluator answers E_DEPTH -- the shape the database-backed fuzz lane reported five times per dialect (SEL-0034). One mutation per host: the start depth is a line each host owns, and the four .sqlt depth cases behind an assignment and a sequence are what catch it."
+    },
+    {
+      "name": "php-stage-one-wrappers-cost-nothing",
+      "file": "php/src/Sql/Normalise.php",
+      "from": "        $base = $ast['t'] === 'seq' ? 1 : 0;\n",
+      "to": "        $base = 0;\n",
+      "was": "Stage 1 counts from zero, so the `;` sequence and the assignment it inlines cost nothing and `X = <199 terms>; X` translates while the evaluator answers E_DEPTH -- the shape the database-backed fuzz lane reported five times per dialect (SEL-0034). One mutation per host: the start depth is a line each host owns, and the four .sqlt depth cases behind an assignment and a sequence are what catch it."
+    },
+    {
+      "name": "cpp-stage-one-wrappers-cost-nothing",
+      "file": "cpp/sel_sql_stage1.cpp",
+      "from": "  const int base = ast->t == NT::Seq ? 1 : 0;\n",
+      "to": "  const int base = 0;\n",
+      "was": "Stage 1 counts from zero, so the `;` sequence and the assignment it inlines cost nothing and `X = <199 terms>; X` translates while the evaluator answers E_DEPTH -- the shape the database-backed fuzz lane reported five times per dialect (SEL-0034). One mutation per host: the start depth is a line each host owns, and the four .sqlt depth cases behind an assignment and a sequence are what catch it."
+    },
+    {
+      "name": "lisp-stage-one-wrappers-cost-nothing",
+      "file": "lisp/src/sql/stage1.lisp",
+      "from": "         (base (if (eq (sel::node-kind ast) :seq) 1 0)))\n",
+      "to": "         (base 0))\n",
+      "was": "Stage 1 counts from zero, so the `;` sequence and the assignment it inlines cost nothing and `X = <199 terms>; X` translates while the evaluator answers E_DEPTH -- the shape the database-backed fuzz lane reported five times per dialect (SEL-0034). One mutation per host: the start depth is a line each host owns, and the four .sqlt depth cases behind an assignment and a sequence are what catch it."
+    },
+    {
       "name": "arity-null-is-rescued-by-the-fallback",
       "was": "How it shipped, and the reason sql/MAP.md §2 needed saying twice. null is a refusal without a reason, so a template map keyed {\"1\": null, \"*\": ...} withdraws the one-argument form -- and isset() reads the null as ABSENT, so the `*` fallback rescued the entry the author had just withdrawn. The withdrawal was unwritable on the PHP host and, on the Python one, the null reached the renderer and emitted the literal text `None` into the SQL.",
       "file": "php/src/Sql/Translator.php",

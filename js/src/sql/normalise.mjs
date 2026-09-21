@@ -38,12 +38,19 @@ export function run(ast, constNames = null, ctx = null) {
   // function.
   const defs = new Map();
 
-  for (const s of stmts) record(s, defs, constNames ?? new Map(), ctx);
-  return substitute(result, defs, []);
+  // Counting starts where the evaluator's count would stand: the `;` sequence
+  // costs a level and each assignment it inlines one more (spec §6.4), so
+  // `X = <199 terms>; X` — E_DEPTH in the evaluator — is refused here too,
+  // although the chain alone would translate. Stage 1 removes both wrappers
+  // before either guard looks, which is why they must be charged up front.
+  const base = ast.t === 'seq' ? 1 : 0;
+  for (const s of stmts) record(s, defs, constNames ?? new Map(), ctx, base + 1);
+  return substitute(result, defs, [], base);
 }
 
-// Fold one leading statement into `defs`, or refuse it.
-function record(s, defs, constNames, ctx) {
+// Fold one leading statement into `defs`, or refuse it. `depth` is where the
+// evaluator's count stands at the assignment's right-hand side.
+function record(s, defs, constNames, ctx, depth = 0) {
   if (s.t !== 'assign') {
     refuse('E_SQL_ASSIGN',
       'only assignments may come before the result expression; this computes a '
@@ -71,7 +78,7 @@ function record(s, defs, constNames, ctx) {
   if (t.t !== 'var') refuse('E_SQL_ASSIGN', 'assignment target is not a variable', s.pos);
   const name = t.name;
 
-  const value = substitute(s.value, defs, []);
+  const value = substitute(s.value, defs, [], depth);
 
   // Validated here, and only here, because after this the subtree may be gone: a
   // definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to
