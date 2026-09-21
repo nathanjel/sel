@@ -12,6 +12,20 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Full five-lane gate recorded on a committed checkpoint (2026-09-21; WL-001 SEL-0033; no code change).
+
+  - **Revision `371f090`, clean tree.** `tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php, cpp, lisp and python (48 layers, 1,108 s; fuzz seeds 20260813 and 20260905, 0 disagreements); `cd cpp && make asan` 171/171 unit and 934/934 conformance with no sanitizer report; the database layers against pinned Docker servers (mariadb 11.8, mysql 8.4, postgres 17, sqlite): semantic oracle 0 differing on every dialect, mutation catalogue 192 caught, 0 survived, 0 skipped. Benchmark against the `6568201` baseline, interleaved on an idle box:
+
+| Host | Mandelbrot baseline → current | Startup, per process | Conformance wall time |
+|---|---|---|---|
+| C++ | 148.7 / 148.6 ms → 153.2 / 146.4 ms | 2 → 2 ms | 124 → 133 ms |
+| JS | 66.2 / 65.0 ms → 65.0 / 65.4 ms | 69 → 70 ms | 2097 → 2097 ms |
+| Python | 357.8 / 350.1 ms → 354.7 / 352.1 ms | 59 → 59 ms | 5047 → 5064 ms |
+| PHP | 483.0 / 483.6 ms → 490.3 / 493.2 ms | 65 → 67 ms | 2480 → 2495 ms |
+| Lisp | 95.0 / 81.0 ms → 79.0 / 78.0 ms | 652 → 651 ms | 30464 → 30529 ms |
+
+Within run-to-run spread on every host (the current tree runs 934 conformance cases to the baseline's 925). Earlier entries below counted the gate runner's banner as a layer and say 49; the layer count is 48.
+
 Python pauses the cyclic collector for a run (2026-09-21; WL-001 SEL-0030).
 
   - **`Program.run` runs with CPython's cyclic collector paused** (`python/sel/_gc.py`), handed back exactly as found: re-entrant, exception-safe, a no-op if the application had it off. A profile through the collector's own callbacks showed 27–40% of the join-heavy scenarios' time was collector wall time that found nothing — SEL values are trees, a run creates no cycles, and reference counting frees its garbage regardless — with each full pass walking the whole resident context. Measured on the 137,100-row fixture: S1 2,860 → 1,974 ms, S3 1,447 → 911, S5 717 → 624, S6 1,385 → 775 (isolated 1,265 → 786); S2, S4 and Mandelbrot unchanged; sample spread collapses from ±25% to ±3%. This also retires the S6 regression that SEL-0003's spec-required right-side aliasing had introduced, which stays as the other hosts have it. Six tests pin the collector's restoration and the no-cycles claim; the contributor guide records the rule a new builtin must keep.

@@ -65,7 +65,7 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0030](#sel-0030) | Investigate the small Python S6 slowdown | Python | Resolved | P2 |
 | [SEL-0031](#sel-0031) | Assess heterogeneous Python metadata-cache churn | Python | Retained intentionally | P3 |
 | [SEL-0032](#sel-0032) | Validate PHP mixed-query performance and comparator attribution | PHP | Resolved | P3 |
-| [SEL-0033](#sel-0033) | Run the full five-lane integration gate after remediation | All five / validation | Proposed | P2 |
+| [SEL-0033](#sel-0033) | Run the full five-lane integration gate after remediation | All five / validation | Resolved | P2 |
 | [SEL-0034](#sel-0034) | Revalidate and resolve SQL depth/error-policy boundary C1 | All five / SQL | Needs verification | P2 |
 | [SEL-0035](#sel-0035) | Assess computed-projection type propagation | All five / SQL | Deferred | P3 |
 | [SEL-0036](#sel-0036) | Assess broader latest-revision pushdown forms | All five / SQL | Deferred | P3 |
@@ -896,7 +896,7 @@ by the untimed parity run and cached, so it measures the cached path).
 <a id="sel-0033"></a>
 ### SEL-0033 — Run the full five-lane integration gate after remediation
 
-**Proposed · P2 · All five / validation · Owner: unassigned.**
+**Resolved 2026-09-21 · P2 · All five / validation · Owner: unassigned.**
 Source: [Structured scan, retained as history](../interim/structured-code-scan.md) — Safe sequencing step 5; follow-up validation limits.
 
 **Next action:** Schedule the complete repository gate for a coherent cleanup/generation checkpoint. Recent optimization follow-ups ran targeted suites, not the full five-lane gate; this is a validation gap, not evidence of a failing gate.
@@ -916,7 +916,38 @@ dialects, mutations 192 caught / 0 skipped. 2026-09-21, tree carrying
 SEL-0001–0023: gate ALL GREEN (48 layers), database layers green, and a
 baseline-versus-current benchmark on all five hosts (Mandelbrot, startup,
 conformance wall time; table in the changelog) with no regression. Not yet
-the closure: no committed revision to pin, and `make asan` was not run.
+the closure then: no committed revision to pin, and `make asan` was not run.
+
+Closure 2026-09-21, on committed revision `371f090` ("wip optimizations and
+cleanup", `git status` clean; carries SEL-0001–0032 and the SEL-0030 collector
+pause), C++ rebuilt and the JS bundle regenerated first. Commands and results:
+
+- `tools/check.sh` — ALL GREEN on js, js-bundle, js-bundle-min, php, cpp,
+  lisp, python; 48 layers (earlier progress notes counted the runner's own
+  banner and said 49); wall time 1,108 s. Among them: 934 conformance cases
+  per host, 852 SQL cases per host, error codes, manifest semantics,
+  generated artifacts, host API parity, documentation examples, decimal
+  versus Python's oracle, differential fuzz 4,000 programs seed 20260813
+  (0 disagreements, 0 host crashes) and SQL fuzz 2,000 programs seed 20260905.
+- `cd cpp && make asan` — unit 171/171 and conformance 934/934 under the
+  address, leak and undefined-behaviour sanitizers, no report.
+- `tools/oracle-db.sh run bash -c 'tools/check-sql-oracle.sh; tools/mutate-sql.sh'`
+  against pinned Docker servers (mariadb 11.8, mysql 8.4, postgres 17, plus
+  sqlite) — oracle expressions/rows/statements 0 differing on every dialect
+  (mariadb 377 agree, mysql 379, postgresql 387, sqlite 317; the
+  "refused" counts are declared non-translations); mutations 192 caught,
+  0 survived, 0 skipped. The six DSN-backed mutations that the gate's own
+  mutation layer reports as skipped without a DSN are among the 192.
+- Benchmark, `6568201` baseline worktree against `371f090`, interleaved,
+  idle box: every host within run-to-run spread (C++ Mandelbrot 148.7 / 148.6
+  → 153.2 / 146.4 ms; JS 66.2 / 65.0 → 65.0 / 65.4; Python 357.8 / 350.1 →
+  354.7 / 352.1; PHP 483.0 / 483.6 → 490.3 / 493.2; Lisp 95.0 / 81.0 → 79.0 /
+  78.0; startup and conformance wall time flat, the current tree running 934
+  cases to the baseline's 925). Table in the changelog.
+
+No failure surfaced, so no new IDs were opened by this closure. Later
+checkpoints repeat the same four commands; the recipe for the database lane
+is in `tools/oracle-db.sh`.
 
 <a id="sel-0034"></a>
 ### SEL-0034 — Revalidate and resolve SQL depth/error-policy boundary C1
