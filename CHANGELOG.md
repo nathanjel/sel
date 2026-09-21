@@ -12,6 +12,53 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Performance investigations measured, one regression found (2026-09-21; WL-001 SEL-0027–0032; no runtime change).
+
+  - **Five tradeoffs accepted with current numbers.** C++: a gprof profile shows the remaining S4 cost is the harness's context clone, teardown and result hashing, not the query. Lisp: isolated S6 sits at the recorded baseline (184–189 ms) and the full-batch mean gap is GC placement; cold paths are back at baseline latency since the per-shape alias table went. Python: the metadata churn profile reproduces and the clear-all policy stands. PHP: the fixed-order and isolated S4/S6 figures reproduce the September 20 report to the millisecond, and boolean SORT is 26% faster now that SORT shares TOP's comparator.
+  - **A Python S6 regression, cause established, decision pending (SEL-0030).** The right-side aliasing that SEL-0003 added for spec conformance costs Python's S6 left join 712 → 1,265 ms median: 92,002 aliased right rows add two container objects each, which doubles the cyclic collector's full collections over the resident 137,100-row dataset (+27% with the collector off, +75% with it on). No low-risk fix exists; the options are recorded in the worklist for the owner to choose.
+
+Validation: no runtime code changed under these items, so the closing check is
+the same five-host benchmark as the two entries below, `6568201` baseline
+against the final tree on an idle box, interleaved:
+
+| Host | Mandelbrot baseline → current | Startup, per process | Conformance wall time |
+|---|---|---|---|
+| C++ | 146.4 / 145.5 ms → 145.2 / 146.9 ms | 2 → 2 ms | 124 → 128 ms |
+| JS | 64.9 / 63.1 ms → 64.2 / 63.2 ms | 67 → 70 ms | 2076 → 2084 ms |
+| Python | 350.6 / 349.9 ms → 348.9 / 348.2 ms | 57 → 59 ms | 4997 → 4999 ms |
+| PHP | 480.0 / 477.7 ms → 480.6 / 482.4 ms | 66 → 67 ms | 2469 → 2475 ms |
+| Lisp | 92.0 / 78.0 ms → 82.0 / 78.0 ms | 649 → 647 ms | 30292 → 30294 ms |
+
+Within run-to-run spread on every host (the current tree runs 934 conformance
+cases to the baseline's 925). The Python S6 cost above is the one exception,
+and it is SEL-0003's, reported for decision rather than hidden in this table.
+
+The SQL map's arity authority is the manifest, and the manifest is checked against behaviour (2026-09-21; WL-001 SEL-0025, SEL-0026).
+
+  - **`tools/gen-sql-map.mjs` no longer loads the JS host.** An entry's `arity` is checked against `spec/builtins.json`, including the accepted-count rules; the renderings are byte-identical, and no implementation is the map's authority any more.
+  - **`tools/check-manifest.sh` holds every host to the manifest's meaning, not its table.** It calls every builtin with every count around its range (381 probes: compiles, or `E_ARITY` at the call) and every binding form with a distinct name in each slot plus a guard-defeating variant (45 probes, through `dependencies()`), all predicted from the manifest alone. Seven roster entries agree; a doctored manifest fails it. Together with the freshness groups for all three manifests and the error-code gate, generated facts can be neither stale, hand-edited, nor silently disobeyed.
+
+Validation: `tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php,
+cpp, lisp and python — 49 layers now, "manifest semantics" and "error codes"
+among them.
+The database layers against pinned Docker servers (mariadb 11.8, mysql 8.4,
+postgres 17, sqlite): semantic oracle 0 differing on every dialect, mutation
+catalogue 192 caught, 0 survived, 0 skipped.
+
+Performance, the `6568201` baseline against this tree, same protocol as the
+SEL-0023 entry (idle box, interleaved; the runtime is unchanged by these two
+items, the tooling is what changed):
+
+| Host | Mandelbrot baseline → current | Startup, per process | Conformance wall time |
+|---|---|---|---|
+| C++ | 147.0 / 146.4 ms → 145.2 / 147.5 ms | 2 → 2 ms | 125 → 129 ms |
+| JS | 63.5 / 63.8 ms → 64.2 / 65.5 ms | 66 → 69 ms | 2080 → 2085 ms |
+| Python | 355.1 / 345.7 ms → 345.8 / 347.0 ms | 58 → 58 ms | 4988 → 4988 ms |
+| PHP | 485.8 / 475.8 ms → 480.1 / 477.7 ms | 65 → 66 ms | 2460 → 2469 ms |
+| Lisp | 91.0 / 77.0 ms → 77.0 / 78.0 ms | 646 → 645 ms | 30242 → 30241 ms |
+
+Within run-to-run spread on every host; no regression to reject.
+
 Limits and error codes are stated once and held to the spec (2026-09-21; WL-001 SEL-0023).
 
   - **`spec/limits.json` restates the four normative numbers and the 25 error codes**, and its generator refuses to render unless `spec/SPEC.md` and `spec/errors.md` still say the same — the prose stays the authority. Each host's `MAX_DEPTH`, decimal digit caps and division scale are now defined from its rendering rather than as literals; `docs/LIMITS.md` lists them.

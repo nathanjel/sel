@@ -57,14 +57,14 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0022](#sel-0022) | Generate shared math-operation metadata | All five | Resolved | P3 |
 | [SEL-0023](#sel-0023) | Centralize normative limits and error identifiers | All five | Resolved | P3 |
 | [SEL-0024](#sel-0024) | Assess remaining SQL capability/category duplication | All five / SQL | Deferred | P3 |
-| [SEL-0025](#sel-0025) | Remove JS registry as the implicit SQL-generator authority | Tooling / all five | Proposed | P2 |
-| [SEL-0026](#sel-0026) | Add generation freshness and semantic gates | Tooling / all five | Proposed | P2 |
-| [SEL-0027](#sel-0027) | Investigate remaining C++ allocation tradeoffs | C++ | Investigate | P3 |
-| [SEL-0028](#sel-0028) | Resolve or explicitly accept history-sensitive S6 latency | Common Lisp | Investigate | P3 |
-| [SEL-0029](#sel-0029) | Assess Lisp cold-path and retained-vector costs | Common Lisp | Investigate | P3 |
-| [SEL-0030](#sel-0030) | Investigate the small Python S6 slowdown | Python | Investigate | P3 |
-| [SEL-0031](#sel-0031) | Assess heterogeneous Python metadata-cache churn | Python | Investigate | P3 |
-| [SEL-0032](#sel-0032) | Validate PHP mixed-query performance and comparator attribution | PHP | Investigate | P3 |
+| [SEL-0025](#sel-0025) | Remove JS registry as the implicit SQL-generator authority | Tooling / all five | Resolved | P2 |
+| [SEL-0026](#sel-0026) | Add generation freshness and semantic gates | Tooling / all five | Resolved | P2 |
+| [SEL-0027](#sel-0027) | Investigate remaining C++ allocation tradeoffs | C++ | Retained intentionally | P3 |
+| [SEL-0028](#sel-0028) | Resolve or explicitly accept history-sensitive S6 latency | Common Lisp | Retained intentionally | P3 |
+| [SEL-0029](#sel-0029) | Assess Lisp cold-path and retained-vector costs | Common Lisp | Retained intentionally | P3 |
+| [SEL-0030](#sel-0030) | Investigate the small Python S6 slowdown | Python | Blocked (decision) | P2 |
+| [SEL-0031](#sel-0031) | Assess heterogeneous Python metadata-cache churn | Python | Retained intentionally | P3 |
+| [SEL-0032](#sel-0032) | Validate PHP mixed-query performance and comparator attribution | PHP | Resolved | P3 |
 | [SEL-0033](#sel-0033) | Run the full five-lane integration gate after remediation | All five / validation | Proposed | P2 |
 | [SEL-0034](#sel-0034) | Revalidate and resolve SQL depth/error-policy boundary C1 | All five / SQL | Needs verification | P2 |
 | [SEL-0035](#sel-0035) | Assess computed-projection type propagation | All five / SQL | Deferred | P3 |
@@ -639,98 +639,223 @@ Source: [Structured scan, retained as history](../interim/structured-code-scan.m
 <a id="sel-0025"></a>
 ### SEL-0025 — Remove JS registry as the implicit SQL-generator authority
 
-**Proposed · P2 · Tooling / all five · Owner: unassigned.**
+**Resolved 2026-09-21 · P2 · Tooling / all five · Owner: unassigned.**
 Source: [Structured scan, retained as history](../interim/structured-code-scan.md) — Safe sequencing step 4.
 
 **Next action:** After SEL-0020, validate SQL-map arities against the authored manifest rather than the JS startup registry. Retain runtime parity checks across all lanes.
 
 **Close when:** SQL generation no longer depends on JS implementation metadata as authority; existing generated maps/cases remain current and all signatures are checked.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-21, working tree on `061358b` (commit pending).
+`tools/gen-sql-map.mjs` no longer imports the JS host: the names and arities
+an entry's `arity` is checked against come from `spec/builtins.json`, the
+manifest every host's table is held to at startup, and the check now also
+refuses a range that includes a count SEL rejects (`allowed`/`parity`), not
+only one outside min..max. `spec/builtins.json` is a declared source of the
+map's freshness group in `tools/check-generated.sh`; `sql/MAP.md` §7 rule 4
+names the authority. The ten renderings are byte-identical (`--check`
+current, C++ and Python tables agree on 780 records), so no host consumer
+changed. Runtime parity checks (per-host `map_replay`, `sqlt` on all five,
+the SQL fuzz and the Docker oracle) are retained and were rerun.
 
 <a id="sel-0026"></a>
 ### SEL-0026 — Add generation freshness and semantic gates
 
-**Proposed · P2 · Tooling / all five · Owner: unassigned.**
+**Resolved 2026-09-21 · P2 · Tooling / all five · Owner: unassigned.**
 Source: [Structured scan, retained as history](../interim/structured-code-scan.md) — Generation safeguards.
 
 **Next action:** With SEL-0020–0025, add deterministic emit/check support and wire all new outputs into check-generated.sh. Check accepted counts/binding forms, not just table presence. Keep independent oracles independent.
 
 **Close when:** Missing/stale/hand-edited outputs fail; conformance, SQL, API, differential/error-position and relevant performance gates pass without correlated generated expected answers.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-21, working tree on `061358b` (commit pending).
+Freshness: every rendering of the three manifests (SEL-0020/0022/0023) and
+the SQL map/cases is in `tools/check-generated.sh` with content-authoritative
+`--check` and an mtime fallback; a hand-edited `_limits.mjs` was shown to
+fail it ("is stale") and pass again once restored. Semantics, the part table
+presence cannot give: new `tools/check-manifest.sh` (gate step "manifest
+semantics") predicts from `spec/builtins.json` alone and observes every host
+— 381 accepted-count probes (every builtin at every count around its range,
+every parity/allowed edge, through the batch runner: compiles or `E_ARITY`
+at the call) and 45 binding-form probes (every form with a distinct name per
+slot, a grouped name where an earlier bare-name guard would capture it, and
+a guard-defeating variant per guarded form, through `--deps`). All seven
+roster entries agree with the manifest; a doctored copy (LINK accepting 4,
+COND any count) produces three disagreements, so the gate bites. Independence
+kept: no host output feeds the predictions, `10-limits.selt` and the API
+probes keep literal limits, the decimal oracle is Python's `decimal`, and
+conformance/SQL expectations stay hand-written. Also in this batch: the
+error-code gate (SEL-0023). Building the semantic gate surfaced a language
+fact worth knowing: a plain variable in a binder slot is a bare name, so
+`SORT_BY(L, K, X)` binds `K`; only a text literal in the direction slot, or
+a grouped `(K)`, reaches the key form — all five hosts and the manifest
+agree, and the probes now pin it.
 
 <a id="sel-0027"></a>
 ### SEL-0027 — Investigate remaining C++ allocation tradeoffs
 
-**Investigate · P3 · C++ · Owner: unassigned.**
+**Retained intentionally 2026-09-21 · P3 · C++ · Owner: unassigned.**
 Source: [C++ follow-up](../interim/cpp-collection-improvements.md) — Recommendation and remaining work.
 
 **Next action:** Profile S4/scalar destruction and remaining query-throughput costs before another allocator change. Do not assume manual dispatch or bypassed freelists are causal; retain the rejected-pool evidence.
 
 **Close when:** Representative profiling explains the costs and yields a measured fix or explicit accepted tradeoff, including six scenarios, Mandelbrot and retained memory.
 
-**Resolution:** Pending.
+**Resolution:** Retained intentionally 2026-09-21; no allocator change.
+Current tree, idle box: six scenarios (7 runs) S1 559 · S2 5.4 · S3 173 · S4
+8.5 · S5 515 · S6 260 ms medians; S4/S6 isolated (15 runs) 8.7 / 254 ms. A
+gprof build of the scale harness over 20 S4 runs answers the profiling
+question the follow-up asked: the scalar-destruction path (`Value::destroy`,
+22.4 M calls, 23% of samples) and `clone_at` (130 k calls, 17%) are the
+harness's per-run context clone and teardown of the 137,100-row dataset, and
+the largest entry (`structural_hash`, 32%) is its untimed result validation;
+the timed S4 query is 8.5 ms of a 3.4 s profile. Nothing in the query's own
+path stands out, so another pool or dispatch change would optimise the
+harness, not the language. Mandelbrot 145–148 ms and retained memory are as
+recorded in the closing benchmark of SEL-0023. Accepted; revisit only with a
+profile of the timed region alone.
 
 <a id="sel-0028"></a>
 ### SEL-0028 — Resolve or explicitly accept history-sensitive S6 latency
 
-**Investigate · P3 · Common Lisp · Owner: unassigned.**
+**Retained intentionally 2026-09-21 · P3 · Common Lisp · Owner: unassigned.**
 Source: [Lisp follow-up](../interim/lisp-runtime-improvements.md) — S6, GC and validation placement.
 
 **Next action:** Measure representative query sequences/context lifetimes with normal GC, keeping standard full-batch and batch-validation diagnostics separate. Reduced allocation does not erase the roughly 17% full-batch mean slowdown.
 
 **Close when:** Causal evidence and an accepted latency policy or fix are documented; preserve original results and repeat both relevant histories.
 
-**Resolution:** Pending.
+**Resolution:** Retained intentionally 2026-09-21; no change.
+Both histories repeated on the current tree with normal GC. Isolated S6, 15
+runs, twice: 184.0 / 187.3 and 189.0 / 190.1 ms (median / mean) — the
+recorded baseline was 185.0 / 198.6 and the recorded final 190.0 / 191.2, so
+the tree sits inside that band. Full six-scenario batch (10 runs): S6 198.0 /
+219.4 ms with min 176 and max 281 — the recorded final full batch was 190.5 /
+217.8. The roughly 17% full-batch mean gap is therefore reproducible and is
+GC placement: the batch mean carries one or two collection-bearing samples
+(max 281 ms) that the isolated runs do not, while medians agree within 5%.
+Policy adopted: the S6 latency figure is the isolated median under normal
+GC; batch means are reported beside it and never subtracted. Original
+results are preserved unchanged in the follow-up report.
 
 <a id="sel-0029"></a>
 ### SEL-0029 — Assess Lisp cold-path and retained-vector costs
 
-**Investigate · P3 · Common Lisp · Owner: unassigned.**
+**Retained intentionally 2026-09-21 · P3 · Common Lisp · Owner: unassigned.**
 Source: [Lisp follow-up](../interim/lisp-runtime-improvements.md) — Cold paths and retained heap.
 
 **Next action:** Track changing-schema/alias misses, compile-and-run and long-lived compiled-program retention. Relate alias-slot cleanup SEL-0008 to measured memory; do not assume it removes the shared-vector retention cost.
 
 **Close when:** Workload-specific costs are measured and fixed or explicitly accepted, with bounded ownership and per-invocation value isolation retained.
 
-**Resolution:** Pending.
+**Resolution:** Retained intentionally 2026-09-21; measured after SEL-0008.
+Cold-path probes (`tools/lisp-runtime/benchmark.lisp`, seven samples): a
+changing alias name is 1.6 µs / 928 B consed (recorded final 1.8 µs / 1,073 B,
+baseline 1.6 µs / 969 B) and a changing source shape 2.8 µs / 1,943–1,950 B
+(recorded final 3.2 µs / 2,231 B, baseline 2.8 µs / 1,820 B): removing the
+per-shape alias table returned both cold paths to baseline latency and
+removed a third of the extra allocation the follow-up had noted. Stable and
+alternating aliases stay at 0.20 / 0.27 µs and 144 B; argument wrappers,
+node construction, the 1,000-row projection and compile-and-run are as
+recorded. Retained heap (`program-memory.lisp`): 5,000 compiled programs
+10,601,312 B and after first execution 18,181,280 B (recorded 10,605,152 /
+18,185,184): the roughly 112 B per executed program for its argument pair and
+vector remains and is accepted — it is bounded per program, retains no
+contexts or invocation values, and buys the argument-wrapper savings above.
 
 <a id="sel-0030"></a>
 ### SEL-0030 — Investigate the small Python S6 slowdown
 
-**Investigate · P3 · Python · Owner: unassigned.**
+**Blocked on a decision 2026-09-21 · P2 (raised from P3: a measured regression) · Python · Owner: unassigned.**
 Source: [Python follow-up](../interim/python-runtime-improvements.md) — S4/S6 follow-up.
 
 **Next action:** Retain the approximately 1.4% isolated median / 0.6% mean cost as unresolved. S4 reverses direction in isolation; neither prepared query calls the changed sub/div functions.
 
 **Close when:** Repeat representative histories and establish a cause, noise bound or accepted tradeoff; no unsupported attribution to arithmetic changes.
 
-**Resolution:** Pending.
+**Resolution:** Blocked on a decision, 2026-09-21. The small slowdown is
+gone; a large one took its place, and its cause is established.
+Isolated S4/S6 (15 runs, 3 warmups, `PYTHONHASHSEED=0`), current tree, twice:
+S4 62.6 / 61.7 ms (recorded 63.9 → 63.0), S6 **1,264.8 / 1,267.9 ms** median
+(recorded 718.2 → 728.1). The `6568201` baseline in a separate worktree on the
+same box, same protocol: S4 62.9, S6 711.7 ms — so the regression is this
+session's, not the machine's (PHP's numbers reproduce its report to the
+millisecond). Bisect: the baseline tree with only the current
+`python/sel/builtins/structure.py` measures S6 1,279.6 ms, and that file's
+only S6-path change is SEL-0003's right-side aliasing — the spec-required
+extension of each right element with its relation name, which the other four
+hosts always performed. Mechanism (`tools/python-runtime/gc_s6.py`, 10 runs each): with
+the cyclic collector disabled, baseline 629 → current 798 ms (+27%, the
+92,002 aliased rows' own cost: one `Value` and one list each); with it
+enabled, 716 → 1,252 ms (+75%), generation-2 collections during the ten runs
+4 → 8 and generation-1 77 → 151. The added container objects trip full
+collections, and each full collection walks the resident 137,100-row dataset;
+the samples are bimodal (min 905, median 1,265) accordingly. cProfile
+confirms no hot function beyond `_from_shape` (182 k calls, half of them the
+alias). The earlier 1.4% S6 note and the arithmetic changes are unrelated —
+S4 is flat.
+Not changed, because no low-risk fix exists: (A) accept the cost as the price
+of spec conformance, as JS/PHP/C++/Lisp already pay it (document it); (B) a
+shared-storage alias representation in `Value` (moderate risk, touches the
+hot record path); (C) leave the runtime alone and document collector policy
+for large resident datasets (`gc.freeze()` after loading, or raised
+thresholds), which the scale harness's `gc-controlled` mode already models;
+(D) alias lazily where a static check proves the key expression and the
+downstream steps never read the alias keys (moderate risk, new analysis).
+The choice is the owner's; the item stays open and P2 until it is made.
 
 <a id="sel-0031"></a>
 ### SEL-0031 — Assess heterogeneous Python metadata-cache churn
 
-**Investigate · P3 · Python · Owner: unassigned.**
+**Retained intentionally 2026-09-21 · P3 · Python · Owner: unassigned.**
 Source: [Python follow-up](../interim/python-runtime-improvements.md) — Bounded metadata under heterogeneous input.
 
 **Next action:** Keep the 65-power/257-shape and weighted-budget probes alongside application benchmarks. Decide whether representative churn warrants a policy change; bounded retention alone does not guarantee throughput.
 
 **Close when:** Document an accepted policy or measured improvement across stable and heterogeneous workloads without unbounded retention or an unmeasured per-hit LRU penalty.
 
-**Resolution:** Pending.
+**Resolution:** Retained intentionally 2026-09-21; policy unchanged.
+`tools/python-runtime/metadata.py` on the current tree reproduces the
+recorded profile: stable powers 0.16 µs per lookup, the 65-power cycle
+0.84 µs (every call a miss, bounded at 10 entries), the weighted cycle of
+eight exponents near 160,000 **14.08 ms** per lookup (recorded 14.34 —
+recomputing a 160,000-digit power is the cost, not the cache), hot power
+among 300 unique 2.9 µs, stable shapes 0.78 µs, the 257-shape cycle 2.2 µs,
+hot shape among 1,000 unique 1.5 µs. Bounds hold after every operation.
+Accepted policy: clear-all at the entry budget, no per-hit LRU bookkeeping
+(its cost on the stable workloads that dominate the application suite was
+never justified), and for applications with many distinct large scales the
+documented remedy stands — cancel shared scales before exponentiation. The
+probes stay beside the application suite as the regression fence.
 
 <a id="sel-0032"></a>
 ### SEL-0032 — Validate PHP mixed-query performance and comparator attribution
 
-**Investigate · P3 · PHP · Owner: unassigned.**
+**Resolved 2026-09-21 · P3 · PHP · Owner: unassigned.**
 Source: [PHP follow-up](../interim/php-runtime-improvements.md) — Application results; also scan PHP-1.
 
 **Next action:** Keep original S4/S6 workload-order sensitivity distinct from local getter savings. Account for the scan showing Core SORT did not receive the Structure TOP getter change; attribute measured gains only to exercised paths.
 
 **Close when:** A current interpretation distinguishes SORT/TOP and mixed/isolated histories under recorded GMP/JIT settings; any new claim has path-specific evidence.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-21; no change.
+Recorded GMP/JIT settings (`php -n`, ctype+gmp, OPcache JIT 1255, 128 M
+buffer), current tree. Fixed-order six-scenario batch (7 runs): S4 57.2 ms,
+S6 1,086 ms — the recorded batch was 58–59 / 1,090–1,096. Isolated S4/S6
+(15 runs), twice: S4 44.2 / 44.4 ms, S6 877 / 889 ms — recorded 43 / 887. The
+workload-history effect is therefore reproducible to the millisecond and is
+history, not code: the same tree answers S4 23% and S6 19% faster when the
+five earlier scenarios' heap and JIT state are absent. Both figures are
+kept, labelled by history, and neither is "the" S4 or S6 number.
+Comparator attribution, focused probes against the `6568201` worktree in
+alternating order: `sort.booleans` 1,929 / 1,939 → 1,453 / 1,396 µs (−26%
+in both orders) — SEL-0004 gave the SORT route the explicit-getter comparator
+the scan had found only in TOP, which is the path-specific evidence the item
+asked for; `join.numeric_cached` 1,317 / 1,420 → 1,294 / 1,307 and
+`join.literal_lazy` 1,245 / 1,269 → 1,180 / 1,135 slightly faster;
+`join.numeric_text` 1,842 / 1,647 → 1,802 / 1,816, inside that probe's own
+swing (its recorded baseline pair differed by 11%; its keys are parsed once
+by the untimed parity run and cached, so it measures the cached path).
 
 <a id="sel-0033"></a>
 ### SEL-0033 — Run the full five-lane integration gate after remediation

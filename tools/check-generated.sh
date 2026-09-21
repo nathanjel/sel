@@ -123,7 +123,7 @@ check_group() {
 # whole point of the gate, since a C++ or Lisp consumer is precisely the one
 # with no JS tooling to run the generator with.
 check_group "sql dialect map" "node tools/gen-sql-map.mjs" \
-  sql/dialects/*.json tools/gen-sql-map.mjs \
+  sql/dialects/*.json spec/builtins.json tools/gen-sql-map.mjs \
   -- \
   php/src/Sql/MapData.php python/sel/sql/_map.py js/src/sql/_map.mjs \
   cpp/sel_sql_map_data.cpp lisp/src/sql/map-data.lisp \

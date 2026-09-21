@@ -633,7 +633,10 @@ defend against a malformed map:
 3. Every entry is an object, a string, or `null`; every object has exactly one of
    `tpl`/`variants` and a valid `ret`.
 4. Every `{n}` in a template is within the entry's effective arity, and that
-   arity is within the SEL function's own declared arity.
+   arity is within the SEL function's own declared arity — the one in
+   `spec/builtins.json`, the manifest every host's function table is held to,
+   including its accepted-count rules (a range that includes a count SEL
+   refuses is an error). No host's registry is consulted.
 5. Every `{key}` names a `lexical` entry that resolves for every dialect that
    inherits the template.
 6. Every `caveat` is on the closed list in §4.6; every `since` and `version` is

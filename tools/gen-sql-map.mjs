@@ -20,14 +20,31 @@ import { cppEntrySpec, cppDialectSpec, cppStr, SECTIONS as CPP_SECTIONS }
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, basename } from 'node:path';
 
-// Importing the JS host populates the function table as a side effect, which is
-// what lets an entry's `arity` be checked against SEL's own declared arity
-// rather than against a second copy of it that could drift.
-import '../js/src/sel.mjs';
-import { lookup as selLookup, names as selNames } from '../js/src/registry.mjs';
+// An entry's `arity` is checked against SEL's declared arity. The declaration
+// is the authored builtin manifest, spec/builtins.json — the same source every
+// host's function table is held to at startup (tools/gen-builtins.mjs) — not
+// any one host's registry, so no implementation is the map's authority. The
+// accepted-count rules (LINK's three-or-five, COND's odd count) are checked
+// too, not only the min..max range.
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIALECT_DIR = resolve(ROOT, 'sql/dialects');
+
+const BUILTIN_MANIFEST = JSON.parse(readFileSync(resolve(ROOT, 'spec/builtins.json'), 'utf8')).builtins;
+function selNames() { return Object.keys(BUILTIN_MANIFEST); }
+function selLookup(name) {
+  const e = BUILTIN_MANIFEST[name];
+  if (!e) return undefined;
+  const a = e.arity;
+  return { min: a.min, max: a.max === 'variadic' ? Infinity : a.max, allowed: a.allowed ?? null, parity: a.parity ?? null };
+}
+// Whether SEL accepts a call of `name` with `count` arguments.
+function selAccepts(spec, count) {
+  if (count < spec.min || count > spec.max) return false;
+  if (spec.allowed && !spec.allowed.includes(count)) return false;
+  if (spec.parity && (count % 2 === 1) !== (spec.parity === 'odd')) return false;
+  return true;
+}
 const MAX_CHAIN = 8;
 
 // ---------------------------------------------------------------------------
@@ -398,6 +415,10 @@ function checkEntry(entry, key, section, dialect, lexical) {
       fail(where, `${key} is not a SEL function`);
     } else if (entry.arity && (min < spec.min || max > spec.max)) {
       fail(where, `arity [${min}, ${max}] is outside SEL's [${spec.min}, ${spec.max}]`);
+    } else if (entry.arity && max !== Infinity) {
+      for (let c = min; c <= max; c++) {
+        if (!selAccepts(spec, c)) fail(where, `arity [${min}, ${max}] includes ${c}, which SEL refuses for ${key} (E_ARITY)`);
+      }
     } else if (!entry.arity) {
       [min, max] = [spec.min, spec.max];
     }
