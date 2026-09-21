@@ -21,6 +21,7 @@ from .errors import Pos, SelError, fail
 from .eval import MAX_DEPTH, Context as _Context, eval_node
 from .parser import Node, parse
 from .registry import names as _names, binding_form as _binding_form
+from ._gc import bulk_allocation as _bulk_allocation
 from .value import BIN, BOOL, NONE, TEXT, Value
 
 __all__ = [
@@ -62,7 +63,10 @@ class Program:
         the context is mutated in place by any assignments the program performs.
         """
         root = context if isinstance(context, Value) else Value.from_native(context or {})
-        return eval_node(self.physical_ast(root), _Context(root))
+        # The cyclic collector is paused for the run (sel/_gc.py): a run builds
+        # rows, never cycles, and every pass the collector made found nothing.
+        with _bulk_allocation():
+            return eval_node(self.physical_ast(root), _Context(root))
 
     def physical_ast(self, context: Any = None) -> Node:
         """The optimised tree run() evaluates, built once per `ast`."""

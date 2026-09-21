@@ -12,6 +12,30 @@ Each entry ends with the three lanes that gate a release: conformance cases
 
 ## [Unreleased]
 
+Python pauses the cyclic collector for a run (2026-09-21; WL-001 SEL-0030).
+
+  - **`Program.run` runs with CPython's cyclic collector paused** (`python/sel/_gc.py`), handed back exactly as found: re-entrant, exception-safe, a no-op if the application had it off. A profile through the collector's own callbacks showed 27–40% of the join-heavy scenarios' time was collector wall time that found nothing — SEL values are trees, a run creates no cycles, and reference counting frees its garbage regardless — with each full pass walking the whole resident context. Measured on the 137,100-row fixture: S1 2,860 → 1,974 ms, S3 1,447 → 911, S5 717 → 624, S6 1,385 → 775 (isolated 1,265 → 786); S2, S4 and Mandelbrot unchanged; sample spread collapses from ±25% to ±3%. This also retires the S6 regression that SEL-0003's spec-required right-side aliasing had introduced, which stays as the other hosts have it. Six tests pin the collector's restoration and the no-cycles claim; the contributor guide records the rule a new builtin must keep.
+
+Validation: 630 Python tests, 934 conformance and 852 SQL cases; `tools/check.sh`
+ALL GREEN on js, js-bundle, js-bundle-min, php, cpp, lisp and python (49
+layers); the database layers against pinned Docker servers (mariadb 11.8,
+mysql 8.4, postgres 17, sqlite): semantic oracle 0 differing on every dialect,
+mutation catalogue 192 caught, 0 survived, 0 skipped. Closing benchmark,
+`6568201` baseline against this tree on an idle box, interleaved — the pause
+is Python's alone, and the other hosts are the control:
+
+| Host | Mandelbrot baseline → current | Startup, per process | Conformance wall time |
+|---|---|---|---|
+| C++ | 146.7 / 146.9 ms → 145.9 / 144.8 ms | 2 → 2 ms | 126 → 130 ms |
+| JS | 63.6 / 64.0 ms → 66.3 / 66.3 ms | 66 → 68 ms | 2060 → 2080 ms |
+| Python | 352.8 / 351.8 ms → 350.0 / 352.3 ms | 57 → 58 ms | 5011 → 5009 ms |
+| PHP | 478.2 / 476.8 ms → 483.5 / 481.1 ms | 65 → 66 ms | 2471 → 2480 ms |
+| Lisp | 93.0 / 78.0 ms → 78.0 / 78.0 ms | 649 → 642 ms | 30257 → 30264 ms |
+
+Within run-to-run spread on every host (the current tree runs 934 conformance
+cases to the baseline's 925); Python's Mandelbrot, the arithmetic-bound case
+that allocates no rows, is unchanged by the pause, as expected.
+
 Performance investigations measured, one regression found (2026-09-21; WL-001 SEL-0027–0032; no runtime change).
 
   - **Five tradeoffs accepted with current numbers.** C++: a gprof profile shows the remaining S4 cost is the harness's context clone, teardown and result hashing, not the query. Lisp: isolated S6 sits at the recorded baseline (184–189 ms) and the full-batch mean gap is GC placement; cold paths are back at baseline latency since the per-shape alias table went. Python: the metadata churn profile reproduces and the clear-all policy stands. PHP: the fixed-order and isolated S4/S6 figures reproduce the September 20 report to the millisecond, and boolean SORT is 26% faster now that SORT shares TOP's comparator.

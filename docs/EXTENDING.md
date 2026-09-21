@@ -570,6 +570,22 @@ the operator is actually consumed*, or every other expression loses a level and
 
 ### Python
 
+**Do not run a query with the cyclic collector's default policy over a large
+resident context — and do not add cycles to a run.** `Program.run` pauses the
+cyclic collector for the run (`python/sel/_gc.py`), because CPython's
+collector triggers on allocation counts and a full pass walks the whole
+resident context to find cycles that SEL's tree-shaped values never form: on
+the 137,100-row scale fixture, 27–40% of the join-heavy scenarios' time was
+collector wall time finding nothing. The pause is re-entrant, exception-safe,
+and hands the collector back exactly as found. It is safe only while a run
+creates no cyclic garbage: a new builtin must not build self-referential
+structures per element (closures that capture themselves, back-pointers from
+child to parent). The optimiser's math-plan compiler is the one known source,
+about ten closure objects per plan, reclaimed at the first pass after the run;
+`python/tests/test_gc_pause.py` measures both facts. An application that
+serves many queries over one large context can go further with `gc.freeze()`
+after loading it, which removes the context from every future full pass.
+
 **Never call `round()`, and never let a float in.** Python's `round()` is half to
 even — `round(2.5)` is 2 — and SEL rounds half away from zero everywhere. `/` on
 ints produces a float, and `math` takes floats. `python/sel/decimal.py` uses `int`

@@ -62,7 +62,7 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0027](#sel-0027) | Investigate remaining C++ allocation tradeoffs | C++ | Retained intentionally | P3 |
 | [SEL-0028](#sel-0028) | Resolve or explicitly accept history-sensitive S6 latency | Common Lisp | Retained intentionally | P3 |
 | [SEL-0029](#sel-0029) | Assess Lisp cold-path and retained-vector costs | Common Lisp | Retained intentionally | P3 |
-| [SEL-0030](#sel-0030) | Investigate the small Python S6 slowdown | Python | Blocked (decision) | P2 |
+| [SEL-0030](#sel-0030) | Investigate the small Python S6 slowdown | Python | Resolved | P2 |
 | [SEL-0031](#sel-0031) | Assess heterogeneous Python metadata-cache churn | Python | Retained intentionally | P3 |
 | [SEL-0032](#sel-0032) | Validate PHP mixed-query performance and comparator attribution | PHP | Resolved | P3 |
 | [SEL-0033](#sel-0033) | Run the full five-lane integration gate after remediation | All five / validation | Proposed | P2 |
@@ -766,7 +766,7 @@ contexts or invocation values, and buys the argument-wrapper savings above.
 <a id="sel-0030"></a>
 ### SEL-0030 — Investigate the small Python S6 slowdown
 
-**Blocked on a decision 2026-09-21 · P2 (raised from P3: a measured regression) · Python · Owner: unassigned.**
+**Resolved 2026-09-21 · P2 (raised from P3: a measured regression) · Python · Owner: unassigned.**
 Source: [Python follow-up](../interim/python-runtime-improvements.md) — S4/S6 follow-up.
 
 **Next action:** Retain the approximately 1.4% isolated median / 0.6% mean cost as unresolved. S4 reverses direction in isolation; neither prepared query calls the changed sub/div functions.
@@ -802,7 +802,43 @@ for large resident datasets (`gc.freeze()` after loading, or raised
 thresholds), which the scale harness's `gc-controlled` mode already models;
 (D) alias lazily where a static check proves the key expression and the
 downstream steps never read the alias keys (moderate risk, new analysis).
-The choice is the owner's; the item stays open and P2 until it is made.
+The owner chose to try the collector pause, after a targeted profile.
+**Profile (collector wall time through `gc.callbacks`, current tree before
+the change):** S6's join step alone carried 478 ms of collector time (one
+full pass, fifteen generation-1 passes, 166 generation-0); the later steps
+added none. The shape is general: S1 spent 790 ms (28%) and S3 457 ms (33%,
+with no full pass at all — the young-generation passes over freshly built
+rows are expensive too), S5 76 ms (10%), S2/S4 nothing. Two grains were
+prototyped by wrapping at runtime: a pause inside `LINK` only (S6 999, S1
+2,154, S3 1,087 ms) and a pause around the whole `Program.run` (S6 785, S1
+2,015, S3 926, S5 625 ms; S2, S4 and Mandelbrot flat). Safety measured
+before choosing: with the collector paused for a run, `gc.collect()` found 0
+unreachable objects after every scenario and Mandelbrot — SEL values are
+trees, reference counting frees a run's garbage, the collector only ever
+found nothing.
+**Change:** `python/sel/_gc.py` (`bulk_allocation`, re-entrant, exception-
+safe, no-op when the application already disabled the collector, hands it
+back as found) and `Program.run` in `python/sel/__init__.py` wraps
+evaluation in it. Nothing in the join changed; the aliasing's own 170 ms
+stays, as it does in the other four hosts. Six tests in
+`python/tests/test_gc_pause.py`: restored after a run, left off when the
+application turned it off, restored when the program raises, restored once
+across a nested run from a host builtin, zero cyclic garbage from evaluation
+with a reused context, and the one known cycle source bounded — the
+optimiser's math-plan compiler leaves about ten closure objects per plan
+when a fresh context rebuilds the physical tree, reclaimed at the first
+pass after the run. `docs/EXTENDING.md` §Python records the rule a new
+builtin must keep (no per-element cycles) and the application-level
+`gc.freeze()` complement.
+**After (same protocol, idle box):** S6 isolated 786.3 / 796.1 ms median
+(from 1,264.8 / 1,267.9; the collector-off floor was 798), min–max 773–819
+(from 905–1,345); full six-scenario batch S1 1,974 (from 2,860), S2 36.8
+(38.1), S3 911 (1,447), S4 62.4 (62.5), S5 624 (717), S6 775 (1,385) ms, every
+sample within 3% of its median, all results verified. Generation-1 and
+generation-2 collections during ten S6 runs: 0. Below the pre-SEL-0003
+figure of 712 ms only in the collector-off sense; the honest statement is
+that the tree is now faster than the `6568201` baseline on every join-heavy
+scenario while paying the aliasing the spec requires.
 
 <a id="sel-0031"></a>
 ### SEL-0031 — Assess heterogeneous Python metadata-cache churn
