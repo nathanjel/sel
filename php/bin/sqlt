@@ -226,6 +226,9 @@ function run_plan_case(array $c): ?string
         if (preg_match('/^(\S+)(?:\s+(\d+):(\d+))?$/', $c['error'], $m) !== 1) {
             throw new RuntimeException("{$c['at']}: malformed error expectation");
         }
+        // The code alone: a plan refusal blames the bindings or the dialect,
+        // not a node of the rule, so it carries no position, and the
+        // generator refuses a case that writes one (SEL-0046).
         if ($error->code !== $m[1]) {
             return "expected {$m[1]}, got {$error->code} ({$error->getMessage()})";
         }

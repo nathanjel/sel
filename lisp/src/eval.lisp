@@ -10,7 +10,12 @@
   ;; Aggregate binders. The only scoping SEL has: one name for the duration of
   ;; one element, pushed by the aggregates and popped again afterwards.
   (frames nil :type list)
-  (depth 0 :type fixnum))
+  (depth 0 :type fixnum)
+  ;; Bumped by a tentative FILTER body (a conjunct pushed under a LINK) each
+  ;; time it keeps a row it raised on; the FILTER above compares it around
+  ;; its source's evaluation to know whether the pushed conjuncts held on
+  ;; every row it sees (SEL-0051).
+  (tentative-kept 0 :type fixnum))
 
 (declaim (inline ctx-lookup ctx-bound-p))
 (defun ctx-lookup (ctx name)

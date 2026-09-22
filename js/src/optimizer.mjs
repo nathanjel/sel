@@ -417,16 +417,29 @@ function logicalSteps(source, steps, options = {}) {
       }
       if (options.fuseFilters !== false && second && first.name === 'FILTER' && second.name === 'FILTER') {
         const left = filterDetails(first), right = filterDetails(second);
-        if (!left.valid || !right.valid) {
+        // A tentative FILTER (a pushed conjunct, kept on error) never fuses
+        // with a real one: the fused predicate could only be one or the other.
+        if (!left.valid || !right.valid
+            || Boolean(left.predicate.tentative) !== Boolean(right.predicate.tentative)) {
           next.push(first);
           continue;
         }
         const predicate = right.binder.toUpperCase() === left.binder.toUpperCase()
           ? right.predicate : renameVar(right.predicate, right.binder, left.binder);
         const merged = copyNode(first);
+        const body = { t: 'bin', op: 'AND', l: left.predicate, r: predicate, pos: left.predicate.pos };
+        if (left.predicate.tentative) body.tentative = true;
+        if (left.predicate.pushedDown || right.predicate.pushedDown) {
+          body.pushedDown = true;
+          const rest = (p) => (p.pushedDown ? p.remaining : p);
+          const isTrue = (p) => p.t === 'bool' && p.v === true;
+          const l = rest(left.predicate), r = rest(predicate);
+          body.remaining = isTrue(l) ? r : isTrue(r) ? l
+            : { t: 'bin', op: 'AND', l, r, pos: left.predicate.pos };
+        }
         merged.args = left.explicit
-          ? [first.args[0], first.args[1], { t: 'bin', op: 'AND', l: left.predicate, r: predicate, pos: left.predicate.pos }]
-          : [first.args[0], { t: 'bin', op: 'AND', l: left.predicate, r: predicate, pos: left.predicate.pos }];
+          ? [first.args[0], first.args[1], body]
+          : [first.args[0], body];
         next.push(merged);
         i++;
         changed = true;
@@ -476,11 +489,18 @@ function pushdownJoinFilters(steps) {
     for (const name of collectPipelineSourceNames(leftSource)) leftNames.add(name.toUpperCase());
     for (const name of collectPipelineSourceNames(rightSource)) rightNames.add(name.toUpperCase());
     const info = filterDetails(filter);
-    if (!info.valid) {
+    // A FILTER whose conjuncts were already pushed keeps them all (see below),
+    // so it must not be pushed again on the next pass.
+    if (!info.valid || info.predicate.pushedDown) {
       result.push(link);
       continue;
     }
     const left = [], right = [], remaining = [];
+    // Only the LEADING run of conjuncts that name one side is pushed: a
+    // conjunct left for the join might raise on a row an early test of a
+    // later conjunct would drop, and the program as written reaches that
+    // raise first (spec §7.4; SEL-0051). The rest stays for the FILTER above.
+    let side = null;
     const classify = (node) => {
       let hasLeft = false, hasRight = false, ambiguous = false, unknown = false;
       const visit = (item) => {
@@ -546,10 +566,14 @@ function pushdownJoinFilters(steps) {
     };
     for (const conjunct of splitAnd(info.predicate)) {
       const affinity = classify(conjunct);
-      if (affinity.hasLeft && !affinity.hasRight && !affinity.ambiguous && !affinity.unknown) {
+      const pure = !affinity.ambiguous && !affinity.unknown;
+      if (remaining.length === 0 && pure && affinity.hasLeft && !affinity.hasRight
+          && side !== 'right') {
+        side = 'left';
         left.push(rewrite(conjunct, leftNames, info.binder));
-      } else if (affinity.hasRight && !affinity.hasLeft && !affinity.ambiguous
-          && !affinity.unknown && link.name === 'LINK') {
+      } else if (remaining.length === 0 && pure && affinity.hasRight && !affinity.hasLeft
+          && link.name === 'LINK' && side !== 'left') {
+        side = 'right';
         right.push(rewrite(conjunct, rightNames, info.binder));
       } else {
         remaining.push(conjunct);
@@ -559,23 +583,35 @@ function pushdownJoinFilters(steps) {
       result.push(link);
       continue;
     }
+    // The pushed conjuncts run TENTATIVELY under the join -- a row they raise
+    // on is kept -- and the FILTER above keeps its whole predicate in the
+    // source's order, so the program raises what it raises as written, where
+    // it would have (spec §7.4; SEL-0051). The marks are physical-tree
+    // metadata on the body nodes; copyNode and filter fusion keep them.
+    const tentative = (conjuncts) => { const body = combineAnd(conjuncts, filter.pos); body.tentative = true; return body; };
     if (left.length) {
-      result.push(call('FILTER', [leftSource, combineAnd(left, filter.pos)], filter.pos));
+      result.push(call('FILTER', [leftSource, tentative(left)], filter.pos));
     }
     let newLink = link;
     if (right.length) {
       newLink = copyNode(link);
       newLink.args = [...link.args];
-      newLink.args[1] = call('FILTER', [rightSource, combineAnd(right, filter.pos)], filter.pos);
+      newLink.args[1] = call('FILTER', [rightSource, tentative(right)], filter.pos);
     }
     result.push(newLink);
-    if (remaining.length) {
-      const newFilter = copyNode(filter);
-      newFilter.args = info.explicit
-        ? [newLink, filter.args[1], combineAnd(remaining, filter.pos)]
-        : [newLink, combineAnd(remaining, filter.pos)];
-      result.push(newFilter);
-    }
+    // The retained predicate is the whole one; `remaining` is what the FILTER
+    // evaluates instead when no tentative body kept a row on an error while
+    // its source ran (the pushed conjuncts then held on every row it sees).
+    const predicate = copyNode(info.predicate);
+    predicate.pushedDown = true;
+    predicate.remaining = remaining.length
+      ? combineAnd(remaining, filter.pos)
+      : { t: 'bool', v: true, pos: filter.pos };
+    const newFilter = copyNode(filter);
+    newFilter.args = info.explicit
+      ? [newLink, filter.args[1], predicate]
+      : [newLink, predicate];
+    result.push(newFilter);
     changed = true;
     i++;
   }

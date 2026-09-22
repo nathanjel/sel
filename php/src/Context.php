@@ -18,6 +18,13 @@ final class Context
     /** @var list<array<string, Value>> */
     public array $frames = [];
     public int $depth = 0;
+    /**
+     * Bumped by a tentative FILTER body (a conjunct pushed under a LINK) each
+     * time it keeps a row it raised on; the FILTER above compares it around
+     * its source's evaluation to know whether the pushed conjuncts held on
+     * every row it sees (SEL-0051).
+     */
+    public int $tentativeKept = 0;
 
     public function __construct(?Value $root = null)
     {

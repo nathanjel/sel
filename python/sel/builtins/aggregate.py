@@ -5,7 +5,7 @@ once per element, which is the same move IF makes, repeated.
 from functools import cmp_to_key
 
 from .. import decimal as D
-from ..errors import fail
+from ..errors import SelError, fail
 from ..eval import bytes_compare
 from ..registry import define
 from ..value import NONE, Value, iter_elements, structural_hash
@@ -49,14 +49,27 @@ def node_contains_var(node, name):
     return False
 
 
-def walk(args, ctx, visit):
+def _eval_body(args, body, tentative):
+    if not tentative:
+        return args.eval_node(body)
+    try:
+        return args.eval_node(body)
+    except SelError:
+        return None
+
+
+def walk(args, ctx, visit, tentative=False, body_override=None):
     """Runs `visit` per element with the binder and _K in scope. Returning a
-    value from `visit` stops the walk and becomes the result.
+    value from `visit` stops the walk and becomes the result. ``tentative``: a
+    body that raises keeps the element -- `visit` sees None -- for the FILTER
+    above to decide (a pushed conjunct, spec §7.4).
 
     The frame is popped in a finally, so a body that raises does not leave the
     binder in scope for whatever runs next.
     """
     binder, body = shape(args)
+    if body_override is not None:
+        body = body_override
     frame = {binder: None}
     if node_contains_var(body, '_K'):
         frame['_K'] = None
@@ -66,7 +79,7 @@ def walk(args, ctx, visit):
             frame[binder] = item
             if '_K' in frame:
                 frame['_K'] = Value.text(key)
-            result = visit(args.eval_node(body), key, item, body)
+            result = visit(_eval_body(args, body, tentative), key, item, body)
             if result is not None:
                 return result
     finally:
@@ -102,7 +115,8 @@ def _leading_field_conjuncts(body, binder):
     of the element -- ``_["status"] $== "x"`` -- as (node, fields) pairs, in
     order, stopping at the first conjunct that reads anything else: another
     variable, ``_K``, the element as a whole, a call, an assignment. The list
-    is what a LINK may pre-apply to its left rows (see ``_link``).
+    is what a LINK may pre-apply to its left rows (see ``_link``). The second
+    value says whether EVERY conjunct qualified.
     """
     conjuncts = []
     node = body
@@ -132,9 +146,9 @@ def _leading_field_conjuncts(body, binder):
                 return reads_only_fields(n.x)
             return False
         if not reads_only_fields(c) or not fields:
-            break
+            return out, False
         out.append((c, fields))
-    return out
+    return out, True
 
 
 def _filter(args, ctx):
@@ -148,17 +162,67 @@ def _filter(args, ctx):
     # they were. This is where this host used to push a filter under the join
     # in its physical tree by reading the context's first row (SEL-0049); the
     # tree is now the same for any data, and the join decides at run time.
+    #
+    # The conjuncts travel as STAGES, one per FILTER, in the order the FILTERs
+    # run: a FILTER between two joins (one the logical optimiser pushed down)
+    # takes the stages handed to it by the join above and puts its own first
+    # -- but only when its whole predicate is pre-evaluable, so a row dropped
+    # below could not have raised in it -- and hands them to its own join.
+    # Deep drops, below the join directly under the owning FILTER, change that
+    # FILTER's keys, so they are allowed only where nothing observes them
+    # (`keys_unobserved`, stamped by the physical optimiser) -- SEL-0050.
     src = args.node(0)
+    handed = ctx.join_prefilter
+    ctx.join_prefilter = None
     if src is not None and src.t == 'call' and src.name in ('LINK', 'LINK_LEFT'):
         binder, body = shape(args)
-        leading = _leading_field_conjuncts(body, binder)
-        if leading:
-            ctx.join_prefilter = (binder, leading)
+        own, complete = _leading_field_conjuncts(body, binder)
+        stages = [(binder, own)] if own else []
+        if handed is not None and own and complete:
+            stages.extend(handed[0])
+        deep = bool(getattr(body, 'keys_unobserved', False)) if handed is None else True
+        if stages:
+            ctx.join_prefilter = (stages, deep)
+    written = args.node(args.count() - 1)
+    kept_before = ctx.tentative_kept
     try:
         in_val = args.val(0)
     finally:
         ctx.join_prefilter = None
+    # A predicate whose leading conjuncts were pushed under the LINK below:
+    # when no tentative body kept a row on an error while the source ran,
+    # every row here passed them, and only the remaining conjuncts are
+    # evaluated (TRUE when there are none); otherwise the whole predicate, as
+    # written, decides -- and raises -- in the source's order.
+    body_override = None
+    if written.pushed_down and ctx.tentative_kept == kept_before:
+        body_override = written.remaining
+        # Nothing remains: every row of the join below passed, and the join
+        # built a fresh list this FILTER would only copy.
+        if body_override.t == 'bool' and body_override.v is True:
+            return in_val
+    # Pass the join's report up past this FILTER's own stage, so the join
+    # above counts only the conjuncts that were its own.
+    report = ctx.join_prefilter_report
+    ctx.join_prefilter_report = None
+    if report is not None and handed is not None and own and complete:
+        ctx.join_prefilter_report = (max(0, report[0] - len(own)), report[1])
     is_dense = in_val.is_list and in_val.storage is not None and in_val.list_keys is None
+    tentative = bool(written.tentative)
+    def keep(r, body):
+        # A tentative body (a pushed conjunct, spec §7.4) that raised gives
+        # None, and one whose value is not a BOOL is kept too: the FILTER
+        # above decides, in the source's order.
+        if r is None:
+            ctx.tentative_kept += 1
+            return True
+        try:
+            return r.as_bool(body.pos)
+        except SelError:
+            if not tentative:
+                raise
+            ctx.tentative_kept += 1
+            return True
     storage = []
     keys = None
     needs_custom_keys = False
@@ -167,7 +231,7 @@ def _filter(args, ctx):
     if is_dense:
         def visit(r, key, item, body):
             nonlocal needs_custom_keys, keys, orig_idx
-            if r.as_bool(body.pos):
+            if keep(r, body):
                 storage.append(item)
                 if needs_custom_keys:
                     keys.append(str(orig_idx))
@@ -181,7 +245,7 @@ def _filter(args, ctx):
         expected_index = 1
         def visit(r, key, item, body):
             nonlocal needs_custom_keys, keys, expected_index
-            if r.as_bool(body.pos):
+            if keep(r, body):
                 storage.append(item)
                 if not needs_custom_keys and str(key) != str(expected_index):
                     needs_custom_keys = True
@@ -193,7 +257,7 @@ def _filter(args, ctx):
                 expected_index += 1
             return None
 
-    walk(args, ctx, visit)
+    walk(args, ctx, visit, tentative, body_override)
     return Value.list(storage, keys if needs_custom_keys else None)
 
 

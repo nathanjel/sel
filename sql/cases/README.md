@@ -37,7 +37,13 @@ A case with `--- plan` asks `plan_hybrid` rather than `translate` (see
 docs/SQL-TRANSLATION.md §12.1). The runner asserts the classification, the
 `tables`, and for `pure_sql` and `hybrid` that `expect` is the prefix
 statement; a `pure_memory` plan has no `expect`, and a `refused` plan has
-`error` and nothing else. Every planner case also checks that the continuation
+`error` and nothing else — the code alone, since planning refuses only on the
+bindings or the dialect (a base dialect, an alias collision), which blame no
+node of the rule, so the error carries no position and the generator refuses
+one written; a refusal that blames a place in the program is a translate
+case. A program stage 1 refuses, including one past the depth limit, is a
+`pure_memory` plan rather than a refusal (`plan.pure-memory.*`). Every
+planner case also checks that the continuation
 is present exactly when the classification says so, and that the program's
 AST is the same tree after planning and after the physical optimiser as
 before — which is how the fixtures see an optimiser that writes into its input.

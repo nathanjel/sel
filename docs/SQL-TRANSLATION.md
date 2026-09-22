@@ -2467,7 +2467,13 @@ The ordinary prefix planner promises:
   a list literal or constructor — because over a scalar it is the one-element
   list spec §7.3 promises, and a bound relation is such a source: `ORDERS .>
   FILTER(TRUE)` is a one-step pipeline the planner pushes down, not a bare
-  relation it leaves in memory. And a fold never changes the *form* of a
+  relation it leaves in memory. The physical join-predicate pushdown keeps
+  the value the same way: only the *leading* conjuncts that name one side
+  move under the `LINK`, and they run there *tentatively* — a row the pushed
+  body raises on is kept for the `FILTER` above, whose predicate still
+  carries every conjunct in the source's order, so which error surfaces, and
+  where, is what the program as written says (spec §7.4; SEL-0051). And a
+  fold never changes the *form* of a
   call the evaluator resolves by shape: the third slot of a three-argument
   `SORT_BY` or `TOP_BY` whose second is a bare name is the binder form's key,
   and `IF(TRUE, "DESC", "ASC")` there stays an `IF` rather than becoming the

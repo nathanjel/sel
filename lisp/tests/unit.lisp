@@ -1038,18 +1038,60 @@ b\"c\\d")))
     (is (string= "TAKE" (sel::node-s opt)))
     (is (string= "FILTER" (sel::node-s (first (sel::node-items opt))))))
 
-  ;; 14. In-Memory LINK Predicate Pushdown (Left and Right)
+  ;; 14. In-Memory LINK Predicate Pushdown. Only the leading run of conjuncts
+  ;; naming one side is pushed, it runs tentatively, and the FILTER after the
+  ;; LINK is retained with its whole predicate, marked pushed-down, the rest
+  ;; as `remaining` (SEL-0051): the product conjunct follows an order
+  ;; conjunct, so the right side is untouched and it is the remaining body.
   (let* ((prog (sel:compile-source "ORDERS .> LINK(PRODUCTS, _['p_id'] == _2['id']) .> FILTER(_['orders']['status'] $== 'ACTIVE' AND _['products']['is_active'] == 1)"))
-         (opt (sel:optimize-ast-in-memory (sel:program-ast prog))))
-    (is (string= "LINK" (sel::node-s opt)))
-    ;; Left side of LINK should be rewritten to FILTER on ORDERS
-    (let ((left-side (first (sel::node-items opt))))
-      (is (string= "FILTER" (sel::node-s left-side)))
-      (is (string= "ORDERS" (sel::node-s (first (sel::node-items left-side))))))
-    ;; Right side of LINK should be rewritten to FILTER on PRODUCTS
-    (let ((right-side (second (sel::node-items opt))))
-      (is (string= "FILTER" (sel::node-s right-side)))
-      (is (string= "PRODUCTS" (sel::node-s (first (sel::node-items right-side)))))))
+         (opt (sel:optimize-ast-in-memory (sel:program-ast prog)))
+         (kept (second (sel::node-items opt))))
+    (is (string= "FILTER" (sel::node-s opt)))
+    (is (sel::node-pushed-down kept))
+    (is (not (sel::node-tentative kept)))
+    (is (string= "==" (sel::node-s (sel::node-remaining kept))))
+    (let ((link (first (sel::node-items opt))))
+      (is (string= "LINK" (sel::node-s link)))
+      ;; Left side of LINK should be rewritten to a tentative FILTER on ORDERS
+      (let ((left-side (first (sel::node-items link))))
+        (is (string= "FILTER" (sel::node-s left-side)))
+        (is (string= "ORDERS" (sel::node-s (first (sel::node-items left-side)))))
+        (is (sel::node-tentative (second (sel::node-items left-side)))))
+      ;; Right side of LINK is untouched
+      (is (string= "PRODUCTS" (sel::node-s (second (sel::node-items link)))))))
+
+  ;; 14r. A leading product conjunct goes into the right side; the order
+  ;; conjunct after it is the remaining body. A wholly pushed predicate
+  ;; leaves TRUE as the remaining body.
+  (let* ((prog (sel:compile-source "ORDERS .> LINK(PRODUCTS, _['p_id'] == _2['id']) .> FILTER(_['products']['is_active'] == 1 AND _['orders']['status'] $== 'ACTIVE')"))
+         (opt (sel:optimize-ast-in-memory (sel:program-ast prog)))
+         (link (first (sel::node-items opt)))
+         (right-side (second (sel::node-items link))))
+    (is (string= "FILTER" (sel::node-s opt)))
+    (is (string= "LINK" (sel::node-s link)))
+    (is (string= "FILTER" (sel::node-s right-side)))
+    (is (sel::node-tentative (second (sel::node-items right-side))))
+    (is (string= "$==" (sel::node-s (sel::node-remaining (second (sel::node-items opt)))))))
+  (let* ((prog (sel:compile-source "ORDERS .> LINK(PRODUCTS, _['p_id'] == _2['id']) .> FILTER(_['orders']['status'] $== 'ACTIVE')"))
+         (opt (sel:optimize-ast-in-memory (sel:program-ast prog)))
+         (rem (sel::node-remaining (second (sel::node-items opt)))))
+    (is (eq :bool (sel::node-kind rem)))
+    (is (eq t (sel::node-b rem))))
+
+  ;; 14a. A pushed (tentative) FILTER does not fuse with the as-written FILTER
+  ;; already before the LINK, and the retained FILTER is not pushed again.
+  (let* ((prog (sel:compile-source "ORDERS .> FILTER(_['status'] $== 'ACTIVE') .> LINK(PRODUCTS, _['p_id'] == _2['id']) .> FILTER(_['orders']['status'] $== 'ACTIVE')"))
+         (opt (sel:optimize-ast-in-memory (sel:program-ast prog)))
+         (link (first (sel::node-items opt)))
+         (pushed (first (sel::node-items link)))
+         (original (first (sel::node-items pushed))))
+    (is (string= "FILTER" (sel::node-s opt)))
+    (is (string= "LINK" (sel::node-s link)))
+    (is (string= "FILTER" (sel::node-s pushed)))
+    (is (sel::node-tentative (second (sel::node-items pushed))))
+    (is (string= "FILTER" (sel::node-s original)))
+    (is (not (sel::node-tentative (second (sel::node-items original)))))
+    (is (string= "ORDERS" (sel::node-s (first (sel::node-items original))))))
 
   ;; 14b. A binder read after the LINK names no side: the binders are scoped
   ;; to the predicate (spec §7.4), so `O['status']` in the FILTER is

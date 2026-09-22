@@ -745,3 +745,88 @@ X = LIST(RECORD("id", 1, "cid", 7)); Y = LIST(RECORD("id", 7)); X .> LINK(Y, O, 
 --- expect
 tree -
 ===
+### name: rel.link.then-filter.pushed-conjunct-keeps-the-source-order
+--- note
+Spec 7.4: a FILTER after a LINK is evaluated as written. Every host's physical
+optimiser moves `_["orders"]["amount"] > 2` under the join, and evaluated it
+there on every order -- including order 2, whose status the first conjunct
+rejects and whose amount is text -- so the program raised E_NOT_NUM where its
+AND, short-circuiting, never reaches the amount. The pushed conjunct now runs
+tentatively: a row it raises on is kept for the FILTER above, which carries
+the whole predicate in the source's order (SEL-0051).
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", "x")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+tree -{"1"=-{"id"=t"1"}}
+===
+### name: rel.link.then-filter.pushed-conjunct-raises-where-the-source-does
+--- note
+The same predicate with its conjuncts swapped reaches the amount of order 2
+before anything rejects it, so it raises in either form -- at the amount.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", "x")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["amount"] > 2 AND _["status"] $== "A") .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NOT_NUM at 1:330
+===
+### name: rel.link.then-filter.pushed-right-conjunct-keeps-the-source-order
+--- note
+The right side too: `_["customers"]["credit"] > 2` is pushed under the inner
+join over CUSTOMERS, where customer 7's text credit raised -- but customer 7
+joins only order 2, which the status conjunct rejects first.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", "x")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["status"] $== "A" AND _["customers"]["credit"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+tree -{"1"=-{"id"=t"1"}}
+===
+### name: rel.link-left.then-filter.pushed-conjunct-keeps-the-source-order
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", "x")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK_LEFT(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+tree -{"1"=-{"id"=t"1"}}
+===
+### name: rel.link.then-filter.two-raising-conjuncts-report-the-first
+--- note
+Order 2's joined row raises in both conjuncts; the first in source order is
+the one reported, at its own position, whichever was pushed where.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", "x")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["amount"] > 2 AND _["customers"]["credit"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NOT_NUM at 1:330
+===
+### name: rel.link.then-filter.conjunct-after-a-raising-one-is-not-tested-early
+--- note
+Order 2 joins customer 7, whose text credit raises in the first conjunct;
+the second, on the order alone, is false there. Testing the second before the
+join would drop the order and lose the raise the program as written reaches
+first: a conjunct is tested early only when every conjunct before it is
+tested on the same side (spec §7.4).
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["customers"]["credit"] > _["orders"]["id"] AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NOT_NUM at 1:331
+===
+### name: rel.link.then-filter.right-conjunct-after-a-left-one-is-not-tested-early
+--- note
+Order 2's text amount raises in the first conjunct, on the order; the second,
+on the customer alone, is false for customer 7, order 2's only match. Testing
+it before the join would leave order 2 without a row and lose the raise.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", "x")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", 1), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["amount"] > 2 AND _["customers"]["credit"] > 5) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NOT_NUM at 1:328
+===
+### name: rel.link.then-filter.conjunct-after-the-tested-one-still-filters
+--- note
+The order conjunct passes on every row and is tested early; the customer
+conjunct after it is what rejects order 2, and it must still be applied.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 5)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["amount"] > 2 AND _["customers"]["name"] $== "n8") .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+tree -{"1"=-{"id"=t"1"}}
+===
+### name: rel.link.then-filter.conjunct-after-the-tested-one-raises-in-its-place
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 5)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["amount"] > 2 AND _["customers"]["credit"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NOT_NUM at 1:361
+===

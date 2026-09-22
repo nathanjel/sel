@@ -496,7 +496,11 @@ def logical_steps(source: Node | None, steps: list[Node],
             if (options.get('fuseFilters', True) is not False
                     and second is not None and first.name == 'FILTER' and second.name == 'FILTER'):
                 left, right = filter_details(first), filter_details(second)
-                if not left['valid'] or not right['valid']:
+                # A tentative FILTER (a pushed conjunct, kept on error) never
+                # fuses with a real one: the fused predicate could only be one
+                # or the other.
+                if (not left['valid'] or not right['valid']
+                        or left['predicate'].tentative != right['predicate'].tentative):
                     next_steps.append(first)
                     i += 1
                     continue
@@ -504,7 +508,17 @@ def logical_steps(source: Node | None, steps: list[Node],
                              else rename_var(right['predicate'], right['binder'], left['binder']))
                 merged = copy_node(first)
                 combined = Node('bin', left['predicate'].pos, op='AND',
-                                l=left['predicate'], r=predicate)
+                                l=left['predicate'], r=predicate,
+                                tentative=left['predicate'].tentative,
+                                pushed_down=left['predicate'].pushed_down or right['predicate'].pushed_down)
+                if combined.pushed_down:
+                    def rest(p):
+                        return p.remaining if p.pushed_down else p
+                    def is_true(p):
+                        return p.t == 'bool' and p.v is True
+                    l, r = rest(left['predicate']), rest(predicate)
+                    combined.remaining = (r if is_true(l) else l if is_true(r)
+                                          else Node('bin', left['predicate'].pos, op='AND', l=l, r=r))
                 merged.args = ([first.args[0], first.args[1], combined]
                                if left['explicit'] else [first.args[0], combined])
                 next_steps.append(merged)
@@ -595,7 +609,9 @@ def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
 
 
         info = filter_details(filter_node)
-        if not info['valid']:
+        # A FILTER whose conjuncts were already pushed keeps them all (see
+        # below), so it must not be pushed again on the next pass.
+        if not info['valid'] or info['predicate'].pushed_down:
             result.append(link)
             i += 1
             continue
@@ -684,12 +700,20 @@ def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
                 copy.value = rewrite(copy.value, target_names)
             return copy
 
+        # Only the LEADING run of conjuncts that name one side is pushed: a
+        # conjunct left for the join might raise on a row an early test of a
+        # later conjunct would drop, and the program as written reaches that
+        # raise first (spec §7.4; SEL-0051). The rest stays for the FILTER above.
+        side = None
         for conjunct in split_and(info['predicate']):
             has_left, has_right, ambiguous, unknown = classify(conjunct)
-            if has_left and not has_right and not ambiguous and not unknown:
+            pure = not ambiguous and not unknown
+            if not remaining and pure and has_left and not has_right and side != 'right':
+                side = 'left'
                 left.append(rewrite(conjunct, left_names))
-            elif (has_right and not has_left and not ambiguous and not unknown
-                  and link.name == 'LINK'):
+            elif (not remaining and pure and has_right and not has_left
+                  and link.name == 'LINK' and side != 'left'):
+                side = 'right'
                 right.append(rewrite(conjunct, right_names))
             else:
                 remaining.append(conjunct)
@@ -697,19 +721,36 @@ def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
             result.append(link)
             i += 1
             continue
+        # The pushed conjuncts run TENTATIVELY under the join -- a row they
+        # raise on is kept -- and the FILTER above keeps its whole predicate in
+        # the source's order, so the program raises what it raises as written,
+        # where it would have (spec §7.4; SEL-0051). The marks are
+        # physical-tree metadata on the body nodes; copies and filter fusion
+        # keep them.
+        def tentative(conjuncts):
+            body = combine_and(conjuncts, filter_node.pos)
+            body.tentative = True
+            return body
         if left:
-            result.append(call('FILTER', [left_source, combine_and(left, filter_node.pos)], filter_node.pos))
+            result.append(call('FILTER', [left_source, tentative(left)], filter_node.pos))
         new_link = link
         if right:
             new_link = copy_node(link)
             new_link.args = list(link.args)
-            new_link.args[1] = call('FILTER', [right_source, combine_and(right, filter_node.pos)], filter_node.pos)
+            new_link.args[1] = call('FILTER', [right_source, tentative(right)], filter_node.pos)
         result.append(new_link)
-        if remaining:
-            new_filter = copy_node(filter_node)
-            new_filter.args = ([new_link, filter_node.args[1], combine_and(remaining, filter_node.pos)]
-                               if info['explicit'] else [new_link, combine_and(remaining, filter_node.pos)])
-            result.append(new_filter)
+        # The retained predicate is the whole one; `remaining` is what the
+        # FILTER evaluates instead when no tentative body kept a row on an
+        # error while its source ran (the pushed conjuncts then held on every
+        # row it sees).
+        predicate = copy_node(info['predicate'])
+        predicate.pushed_down = True
+        predicate.remaining = (combine_and(remaining, filter_node.pos) if remaining
+                               else Node('bool', filter_node.pos, v=True))
+        new_filter = copy_node(filter_node)
+        new_filter.args = ([new_link, filter_node.args[1], predicate]
+                           if info['explicit'] else [new_link, predicate])
+        result.append(new_filter)
         changed = True
         i += 2
     return result, changed
@@ -744,6 +785,16 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
                 if not pushed:
                     break
                 final_steps = logical_steps(optimized_source, final_steps, options)
+            # A tree fact the evaluator's join pre-filter needs (SEL-0050):
+            # whether anything can see the keys a FILTER's result carries. A
+            # following step that renumbers without reading `_K` hides them
+            # (keys_renumbered_by, the same notion the logical rewrites use);
+            # the end of the pipeline or another FILTER does not. Stamped on
+            # the body node of the physical copy, never on the caller's AST.
+            for index, step in enumerate(final_steps):
+                if step.name == 'FILTER':
+                    following = final_steps[index + 1] if index + 1 < len(final_steps) else None
+                    step.args[-1].keys_unobserved = keys_renumbered_by(following)
         return build_pipeline(optimized_source, final_steps)
 
     is_curr_math = is_math_op(node)

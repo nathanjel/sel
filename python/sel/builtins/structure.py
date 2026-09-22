@@ -413,11 +413,60 @@ def _pure_source(node):
     return False
 
 
+def _usable_stages(stages, right_keys):
+    """The stages, in order, up to the first conjunct that reads a field the
+    right rows have: that conjunct and everything after it cannot be
+    pre-applied here (the joined row's field would not be the left row's, and
+    AND short-circuits left to right), so the list is cut there."""
+    out = []
+    for binder, conjuncts in stages:
+        kept = []
+        for conjunct, fields in conjuncts:
+            if fields & right_keys:
+                if kept:
+                    out.append((binder, kept))
+                return out
+            kept.append((conjunct, fields))
+        out.append((binder, kept))
+    return out
+
+
+class _KeySet:
+    """The upper-cased keys of every row of a side, gathered as the rows go
+    by. Rows of a dense list mostly share one record shape, and a shape's keys
+    are read once: the per-row cost is then one identity check, not a list of
+    upper-cased strings, which is what made the pre-filter's bookkeeping
+    visible in a profile of a 90,000-row join."""
+    __slots__ = ('keys', 'shapes')
+
+    def __init__(self):
+        self.keys = set()
+        self.shapes = set()
+
+    def add(self, row):
+        shape = row.shape
+        if shape is not None:
+            if id(shape) in self.shapes:
+                return
+            self.shapes.add(id(shape))
+            self.keys.update(k.upper() for k in shape.keys)
+        else:
+            self.keys.update(k.upper() for k in row.keys())
+
+
 def _row_keys(value):
-    keys = set()
+    # A dense list whose rows all share one record shape -- the common case for
+    # rows built from one source -- answers from that shape after one identity
+    # scan, which is a third of the cost of visiting each row.
+    storage = value.storage if value.is_list else None
+    if storage:
+        first = storage[0].shape
+        if first is not None and all(row.shape is first for row in storage):
+            return {k.upper() for k in first.keys}
+    keys = _KeySet()
     for row in iter_collection_items(value):
-        keys.update(k.upper() for k in row.keys())
-    return keys
+        keys.add(row)
+    return keys.keys
 
 
 def _link(args, ctx, left_join):
@@ -438,20 +487,18 @@ def _link(args, ctx, left_join):
     # time; done here it reads every row, at run time, and the tree stays the
     # same for any data (SEL-0049).
     right_keys_seen = None
+    keys_known = False
     left_node, right_node = args.node(0), args.node(1)
-    if (prefilter is not None and left_node is not None and left_node.t == 'call'
-            and left_node.name in ('LINK', 'LINK_LEFT')
+    stages, deep = prefilter if prefilter is not None else ([], False)
+    if (deep and stages and left_node is not None and left_node.t == 'call'
+            and left_node.name in ('LINK', 'LINK_LEFT', 'FILTER')
             and _pure_source(left_node) and _pure_source(right_node)):
         right_value = args.val(1)
         right_keys_seen = _row_keys(right_value)
-        binder, leading = prefilter
-        handed = []
-        for conjunct, fields in leading:
-            if fields & right_keys_seen:
-                break
-            handed.append((conjunct, fields))
+        keys_known = True
+        handed = _usable_stages(stages, right_keys_seen)
         if handed:
-            ctx.join_prefilter = (binder, handed)
+            ctx.join_prefilter = (handed, True)
         try:
             left_value = args.val(0)
         finally:
@@ -459,6 +506,13 @@ def _link(args, ctx, left_join):
     else:
         left_value = args.val(0)
         right_value = args.val(1)
+    # The join below, if it applied some of these conjuncts, says how many
+    # every row that came up has passed; those are skipped here unless a row
+    # was kept on an error below, since such a row must reach the FILTER
+    # untouched and cannot be told apart from the others.
+    below = ctx.join_prefilter_report
+    ctx.join_prefilter_report = None
+    passed_below = below[0] if (below is not None and not below[1]) else 0
     b1, b2 = '_1', '_2'
     if count == 3:
         b1 = single_relation_name(args.node(0)) or b1
@@ -512,22 +566,30 @@ def _link(args, ctx, left_join):
     # row order, or does not raise at all for a left row that joins nothing.
     if right_keys_seen is None:
         right_keys_seen = set()
+    gather = _KeySet() if (prefilter is not None and not keys_known) else None
     prefix = []
-    prefilter_binder = None
     if prefilter is not None:
-        prefilter_binder, leading = prefilter
+        binders = []
+        applied = [0]
+        errored = [False]
         def settle_prefix():
-            for conjunct, fields in leading:
-                if fields & right_keys_seen:
-                    break
-                prefix.append(conjunct)
+            usable = []
+            for binder, conjuncts in _usable_stages(stages, right_keys_seen):
+                if binder not in binders:
+                    binders.append(binder)
+                for conjunct, _fields in conjuncts:
+                    usable.append(conjunct)
+            applied[0] = len(usable)
+            prefix.extend(usable[min(passed_below, len(usable)):])
         def rejects(row):
-            ctx.push_frame({prefilter_binder: row})
+            # One frame per row, every stage's binder naming it.
+            ctx.push_frame({binder: row for binder in binders})
             try:
                 for conjunct in prefix:
                     try:
                         keep = args.eval_node(conjunct).as_bool(conjunct.pos)
                     except SelError:
+                        errored[0] = True
                         return False
                     if not keep:
                         return True
@@ -549,11 +611,13 @@ def _link(args, ctx, left_join):
                 key = canonical_join_key(args.eval_node(right_expr), numeric)
                 if key is not None:
                     buckets.setdefault(key, []).append(row)
-                if prefilter is not None:
-                    right_keys_seen.update(k.upper() for k in row.keys())
+                if gather is not None:
+                    gather.add(row)
         finally:
             ctx.pop_frame()
         if prefilter is not None:
+            if gather is not None:
+                right_keys_seen = gather.keys
             settle_prefix()
 
         # A FILTER keeps its input's keys, so the rows dropped here still count
@@ -561,21 +625,40 @@ def _link(args, ctx, left_join):
         # first, as it is for every row (and raises where it would have), the
         # matches say how many joined rows the dropped row stood for, and the
         # kept rows are emitted under the positions they would have had.
-        keys = [] if prefix else None
+        keys = [] if (prefix and not deep) else None
         position = 1
+        # The join key is computed for every left row before the pre-filter
+        # is asked, so that a key that raises still raises. When the key is a
+        # literal field of the row -- `_1["customer_id"]` -- the read can only
+        # raise for a row that lacks the field (the evaluator's E_NO_KEY; the
+        # canonical key never raises), so a row that HAS it may be rejected
+        # first and its key never computed: that is most of what a pushed
+        # filter used to save. Only where nothing observes the numbering.
+        fast_field = None
+        if (prefix and deep and left_expr.t == 'index' and left_expr.obj is not None
+                and left_expr.obj.t == 'var' and left_expr.idx is not None
+                and left_expr.idx.t == 'text'
+                and left_expr.obj.name.upper() in (b1.upper(), '_1', '_')):
+            fast_field = left_expr.idx.v
         frame_left = {b1: None, b1.lower(): None, '_1': None, '_': None}
         ctx.push_frame(frame_left)
         try:
             for item in iter_collection_items(left_value):
                 row = ensure_row_table_alias(item, b1) if needs_left_alias else item
+                asked = False
+                if fast_field is not None and row.get(fast_field) is not None:
+                    asked = True
+                    if rejects(row):
+                        continue
                 frame_left[b1] = row
                 frame_left[b1.lower()] = row
                 frame_left['_1'] = row
                 frame_left['_'] = row
                 key = canonical_join_key(args.eval_node(left_expr), numeric)
                 matches = buckets.get(key) if key is not None else None
-                if prefix and rejects(row):
-                    position += len(matches) if matches else (1 if left_join else 0)
+                if prefix and not asked and rejects(row):
+                    if not deep:
+                        position += len(matches) if matches else (1 if left_join else 0)
                     continue
                 if matches:
                     for right in matches:
@@ -590,6 +673,8 @@ def _link(args, ctx, left_join):
                     position += 1
         finally:
             ctx.pop_frame()
+        if prefilter is not None:
+            ctx.join_prefilter_report = (applied[0], errored[0])
         if keys is not None and len(keys) != position - 1:
             return Value.list(output, keys)
     else:

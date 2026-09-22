@@ -116,6 +116,9 @@ function runPlanCase(c) {
     if (error === null) return `expected ${c.error}, got a ${classify(plan)} plan`;
     const m = ERROR_RE.exec(c.error);
     if (m === null) throw new SuiteError(`${c.at}: malformed error expectation`);
+    // The code alone: a plan refusal blames the bindings or the dialect, not a
+    // node of the rule, so it carries no position, and the generator refuses
+    // a case that writes one (SEL-0046).
     if (error.code !== m[1]) return `expected ${m[1]}, got ${error.code} (${error.message})`;
     return null;
   }

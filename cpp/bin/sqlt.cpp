@@ -152,6 +152,9 @@ std::string run_plan_case(const SqlCase& c, const std::string& dialect) {
   if (want_plan == "refused") {
     if (!have_error) return std::string("expected ") + c.error + ", got a " + classify(*plan) + " plan";
     const Expected want = parse_expected(c.error, c.at);
+    // The code alone: a plan refusal blames the bindings or the dialect, not
+    // a node of the rule, so it carries no position, and the generator
+    // refuses a case that writes one (SEL-0046).
     if (error.code() != want.code) {
       return "expected " + want.code + ", got " + error.code() + " (" + error.message() + ")";
     }

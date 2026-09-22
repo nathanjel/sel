@@ -111,11 +111,35 @@ same(names(optimizedSteps('(1, 2) .> FILTER(TRUE)', false)), [],
 same(names(optimizedSteps('DATA .> FILTER(TRUE)', false)), ['FILTER'],
   'a first-step TRUE filter over a variable is kept (the source may be a scalar)');
 
-same(names(optimizedSteps(
+// Only the leading run of conjuncts naming one side is pushed, it runs
+// tentatively under the join, and the FILTER above keeps its whole predicate
+// with the rest as `remaining` (spec §7.4; SEL-0051), so the shape is
+// FILTER (tentative, over ORDERS) / LINK (its right side untouched: the
+// customer conjunct follows an order conjunct) / FILTER (the original,
+// marked pushed, remaining = the customer conjunct).
+const pushed = optimizedSteps(
   'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
   + ' .> FILTER(_["orders"]["status"] $== "ACTIVE"'
-  + ' AND _["customers"]["country"] $== "DE")', true)), ['FILTER', 'LINK'],
-  'qualified LINK predicate pushdown');
+  + ' AND _["customers"]["country"] $== "DE")', true);
+same(names(pushed), ['FILTER', 'LINK', 'FILTER'], 'qualified LINK predicate pushdown');
+check(pushed[0].args[1].tentative === true && pushed[1].args[1].t === 'var'
+  && pushed[2].args[1].pushedDown === true && pushed[2].args[1].op === 'AND'
+  && pushed[2].args[1].remaining.op === '$==',
+  'the leading order conjunct is tentative, the FILTER above keeps the whole predicate and the customer conjunct as remaining');
+const pushedRight = optimizedSteps(
+  'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+  + ' .> FILTER(_["customers"]["country"] $== "DE"'
+  + ' AND _["orders"]["status"] $== "ACTIVE")', true);
+same(names(pushedRight), ['LINK', 'FILTER'], 'a leading customer conjunct is pushed into the right side');
+check(pushedRight[0].args[1].name === 'FILTER' && pushedRight[0].args[1].args[1].tentative === true
+  && pushedRight[1].args[1].pushedDown === true && pushedRight[1].args[1].remaining.op === '$==',
+  'the right side is a tentative FILTER; the order conjunct after it is remaining');
+const pushedAll = optimizedSteps(
+  'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+  + ' .> FILTER(_["orders"]["status"] $== "ACTIVE")', true);
+check(pushedAll[2].args[1].pushedDown === true && pushedAll[2].args[1].remaining.t === 'bool'
+  && pushedAll[2].args[1].remaining.v === true,
+  'a wholly pushed predicate leaves TRUE as the remaining body');
 const leftJoin = optimizedSteps(
   'ORDERS .> LINK_LEFT(CUSTOMERS, _1["customer_id"] == _2["id"])'
   + ' .> FILTER(_["customers"]["country"] $== "DE")', true);
@@ -124,8 +148,8 @@ same(names(leftJoin), ['LINK_LEFT', 'FILTER'], 'LINK_LEFT right predicate stays 
 same(names(optimizedSteps(
   'ORDERS .> FILTER(_["status"] $== "ACTIVE")'
   + ' .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
-  + ' .> FILTER(_["orders"]["status"] $== "ACTIVE")', true)), ['FILTER', 'LINK'],
-  'join pushdown returns to the logical fixed point');
+  + ' .> FILTER(_["orders"]["status"] $== "ACTIVE")', true)), ['FILTER', 'FILTER', 'LINK', 'FILTER'],
+  'a pushed (tentative) FILTER does not fuse with the real FILTER already before the LINK');
 same(names(optimizedSteps(
   'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
   + ' .> FILTER(FOO["orders"]["status"] $== "ACTIVE")', true)), ['LINK', 'FILTER'],

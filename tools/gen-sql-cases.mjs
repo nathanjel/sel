@@ -102,6 +102,14 @@ function parseSqlt(text, file) {
         if (c.error === null || c.expect !== null || c.tables !== null) {
           fail(c.at, `case ${c.name}: a refused plan has --- error and nothing else`);
         }
+        // Planning refuses on the bindings or the dialect -- a base dialect,
+        // an alias collision -- which blame no node of the rule, so every
+        // host reports such an error without a position. A position written
+        // here would be one no runner can compare (SEL-0046); a refusal that
+        // blames a place in the program is a translate case.
+        if (c.error !== null && /\s/.test(c.error)) {
+          fail(c.at, `case ${c.name}: a refused plan blames the bindings or the dialect, not a position -- write the code alone`);
+        }
       } else if (c.error !== null) {
         fail(c.at, `case ${c.name}: a plan that raises is --- plan refused`);
       } else if (c.plan === 'pure_memory' && c.expect !== null) {

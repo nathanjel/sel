@@ -597,8 +597,21 @@ the evaluator now: a FILTER over a LINK hands its leading field conjuncts to
 the join, which pre-applies them to left rows only where the joined row's
 field is provably the left row's (the field is a key of no right row, checked
 over every row), keeps a row on any error so the full predicate raises where
-it would have, and numbers the kept rows as the unfiltered join would. A
-physical optimisation that reads data belongs at run time, never in the tree.
+it would have, numbers the kept rows as the unfiltered join would where the
+numbering can be seen, and travels down a chain of joins — through a FILTER
+the logical optimiser pushed between them only by pre-applying that FILTER's
+whole predicate too (SEL-0050). A physical optimisation that reads data
+belongs at run time, never in the tree. And the physical optimiser pushes
+under a `LINK` only the leading run of conjuncts that name one side, which
+runs *tentatively* there, keeping a row it raises on, while the `FILTER`
+above keeps the whole predicate: the source's `AND` short-circuit decides
+which error a program raises, not the rewrite (spec §7.4, SEL-0051). The
+pushed body carries the `tentative` mark; the retained body carries the
+`pushed_down` mark and its `remaining` conjuncts (`TRUE` when there are
+none), which the `FILTER` evaluates instead of the whole predicate when no
+tentative body kept a row on an error while its source ran — a counter on
+the context, bumped by every tentative keep. All three are physical-tree
+metadata every host's `copy` must keep and its FILTER-fusion must respect.
 
 **Never call `round()`, and never let a float in.** Python's `round()` is half to
 even — `round(2.5)` is 2 — and SEL rounds half away from zero everywhere. `/` on

@@ -29,7 +29,17 @@
   (spec nil)               ; call
   (record-shape nil)       ; prepared literal-key RECORD layout
   (dec-val nil)            ; cached DEC struct for :num nodes
-  (math-plan nil))         ; compiled MathPlan when physical AST is optimized
+  (math-plan nil)          ; compiled MathPlan when physical AST is optimized
+  ;; Physical join-predicate pushdown (SEL-0051): a FILTER body copied under
+  ;; a LINK runs tentatively (a raise keeps the element for the FILTER after
+  ;; the LINK to decide); that FILTER's predicate is marked pushed-down so the
+  ;; next pass leaves it alone. Fusion merges bodies of equal tentativeness.
+  (tentative nil)
+  (pushed-down nil)
+  ;; With pushed-down: the conjuncts that were not pushed (TRUE when all
+  ;; were), which FILTER evaluates instead of the whole predicate when no
+  ;; tentative body kept a row on an error while its source ran.
+  (remaining nil))
 
 ;;; The operator families, named once for the PARSER. The precedence table below
 ;;; is BUILT from these rather than repeating them, and EVAL-BINARY asks

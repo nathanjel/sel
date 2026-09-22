@@ -49,10 +49,14 @@
 
 ;;; Runs VISIT per element with the binder and _K in scope. A non-NIL return from
 ;;; VISIT stops the walk and becomes the result.
-(defun aggregate-walk (a ctx visit &optional (pass-key nil))
+(defun aggregate-walk (a ctx visit &optional (pass-key nil) (tentative nil) (body-override nil))
+  "Runs VISIT per element with the binder and _K in scope. A TENTATIVE body (a
+conjunct the physical optimizer moved under a LINK, SEL-0051) that raises does
+not decide the element: only FILTER walks tentatively, and for it a raise means
+keep -- the visitor sees T and the FILTER after the LINK decides."
   (let* ((three (= (args-count a) 3))
          (binder (if three (args-symbol a 1) "_"))
-         (body (args-node a (if three 2 1)))
+         (body (or body-override (args-node a (if three 2 1))))
          (val (args-val a 0)))
     (unless (or (value-null-p val)
                 (and (eq (value-kind val) :none) (zerop (value-size val))))
@@ -61,6 +65,14 @@
              (k-cell (when needs-k (cons "_K" nil)))
              (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
         (ctx-push-frame ctx frame)
+        (flet ((eval-body ()
+                 (if tentative
+                     (handler-case (args-eval a body)
+                       (sel-error ()
+                         (incf (context-tentative-kept ctx))
+                         (make-bool t)))
+                     (args-eval a body))))
+          (declare (inline eval-body))
         (unwind-protect
              (cond
                ;; Fast path: list value with storage vector
@@ -73,7 +85,7 @@
                                  (k-str (when pass-key (format-index-string (1+ i)))))
                              (when needs-k
                                (setf (cdr k-cell) k-val))
-                             (let ((res (funcall visit (args-eval a body) k-str item body)))
+                             (let ((res (funcall visit (eval-body) k-str item body)))
                                (when res (return res)))))))
                ;; Fast path: shaped record
                ((value-shape val)
@@ -86,7 +98,7 @@
                         do (setf (cdr binder-cell) item)
                            (when needs-k
                              (setf (cdr k-cell) (%text k)))
-                           (let ((res (funcall visit (args-eval a body) (when pass-key k) item body)))
+                           (let ((res (funcall visit (eval-body) (when pass-key k) item body)))
                              (when res (return res))))))
                ;; General path
                (t
@@ -95,9 +107,9 @@
                         do (setf (cdr binder-cell) item)
                            (when needs-k
                              (setf (cdr k-cell) (%text key)))
-                           (let ((res (funcall visit (args-eval a body) (when pass-key key) item body)))
+                           (let ((res (funcall visit (eval-body) (when pass-key key) item body)))
                              (when res (return res)))))))
-          (ctx-pop-frame ctx))))))
+          (ctx-pop-frame ctx)))))))
 
 (define-builtin "ALL" 2 3
   (lambda (a ctx)
@@ -132,17 +144,41 @@
 ;;; addressable the way the original was.
 (define-builtin "FILTER" 2 3
   (lambda (a ctx)
-    (let ((pairs '()))
+   (block filter-body
+    (let* ((pairs '())
+           (written (args-node a (1- (args-count a))))
+           (tentative (node-tentative written))
+           ;; A predicate whose leading conjuncts were pushed under the LINK
+           ;; below: when no tentative body kept a row on an error while the
+           ;; source ran, every row here passed them, and only the remaining
+           ;; conjuncts are evaluated (TRUE when there are none); otherwise
+           ;; the whole predicate, as written, decides -- and raises -- in
+           ;; the source's order.
+           (kept-before (context-tentative-kept ctx))
+           (body-override (progn
+                            (args-val a 0)
+                            (when (and (node-pushed-down written)
+                                       (= (context-tentative-kept ctx) kept-before))
+                              (node-remaining written)))))
+      ;; Nothing remains: every row of the join below passed, and the join
+      ;; built a fresh list this FILTER would only copy.
+      (when (and body-override (eq (node-kind body-override) :bool) (node-b body-override))
+        (return-from filter-body (args-val a 0)))
       (aggregate-walk a ctx
                       (lambda (r key item body)
-                        (when (as-bool r (node-pos body))
+                        (when (if tentative
+                                  (handler-case (as-bool r (node-pos body))
+                                    (sel-error ()
+                                      (incf (context-tentative-kept ctx))
+                                      t))
+                                  (as-bool r (node-pos body)))
                           (push (cons key item) pairs))
                         nil)
-                      t)
+                      t tentative body-override)
       (if (null pairs)
           (%make-value :none nil nil t)
           (let ((entries (nreverse pairs)))
-            (%value-with-children :none nil entries t)))))
+            (%value-with-children :none nil entries t))))))
   :lazy t :binds t)
 
 (define-builtin "SUM" 2 3

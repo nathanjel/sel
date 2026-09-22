@@ -2964,6 +2964,11 @@ struct Context {
   // one element, pushed by the aggregates and popped again afterwards.
   std::vector<std::vector<std::pair<std::string, Value>>> frames;
   int depth = 0;
+  // Bumped by a tentative FILTER body (a conjunct pushed under a LINK) each
+  // time it keeps a row it raised on; the FILTER above compares it around
+  // its source's evaluation to know whether the pushed conjuncts held on
+  // every row it sees (SEL-0051).
+  std::size_t tentative_kept = 0;
 
   explicit Context(Value& r) : root(&r) {}
 
@@ -4500,10 +4505,11 @@ void register_structure() {
 // Runs `visit` per element with the binder and _K in scope. Returning a value
 // from `visit` stops the walk and becomes the result.
 template <typename Visitor>
-std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit) {
+std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, bool tentative = false,
+                          const Node* body_override = nullptr) {
   const bool three = a.count() == 3;
   const std::string binder = three ? a.symbol(1) : std::string("_");
-  const Node& body = a.node(three ? 2 : 1);
+  const Node& body = body_override ? *body_override : a.node(three ? 2 : 1);
   const bool needs_k = node_contains_var(body, "_K");
 
   const Value& coll = a.val(0);
@@ -4524,8 +4530,20 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit) {
       if (needs_k) {
         ctx.frames.back()[1].second = make_text(collection_key(coll, i));
       }
-      const Value r = a.eval(body);
-      std::optional<Value> result = visit(r, i, item, body);
+      // A tentative body (a conjunct the physical optimizer moved under a
+      // LINK, SEL-0051) that raises does not decide the element: only FILTER
+      // walks tentatively, and for it a raise means "keep" -- the FILTER after
+      // the LINK evaluates the whole predicate as written and decides.
+      std::optional<Value> evaluated;
+      if (tentative) {
+        try { evaluated = a.eval(body); } catch (const SelError&) {
+          ctx.tentative_kept++;
+          evaluated = Value::boolean(true);
+        }
+      } else {
+        evaluated = a.eval(body);
+      }
+      std::optional<Value> result = visit(*evaluated, i, item, body);
       if (result.has_value()) {
         stopped = std::move(result);
         break;
@@ -4975,15 +4993,36 @@ void register_aggregates() {
   // The one aggregate that preserves keys — a filtered list should still be
   // addressable the way the original was.
   define(Spec{"FILTER", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
+                const Node& written = a.node(a.count() - 1);
+                const bool tentative = written.tentative;
+                // A predicate whose leading conjuncts were pushed under the
+                // LINK below: when no tentative body kept a row on an error
+                // while the source ran, every row here passed them, and only
+                // the remaining conjuncts are evaluated (TRUE when there are
+                // none); otherwise the whole predicate, as written, decides --
+                // and raises -- in the source's order.
+                const std::size_t kept_before = ctx.tentative_kept;
                 const Value& coll = a.val(0);
+                const Node* body_override =
+                    written.pushed_down && ctx.tentative_kept == kept_before ? written.remaining.get() : nullptr;
+                // Nothing remains: every row of the join below passed, and
+                // the join built a fresh list this FILTER would only copy.
+                if (body_override && body_override->t == NT::Bool && body_override->b) return coll;
                 std::vector<Value::Entry> entries;
-                walk(a, ctx, [&entries, &coll](const Value& r, std::size_t idx, const Value& item,
-                                               const Node& body) -> std::optional<Value> {
-                  if (r.as_bool(body.pos)) {
-                    entries.emplace_back(collection_key(coll, idx), item);
+                walk(a, ctx, [&entries, &coll, &ctx, tentative](const Value& r, std::size_t idx, const Value& item,
+                                                                const Node& body) -> std::optional<Value> {
+                  bool keep;
+                  if (tentative) {
+                    try { keep = r.as_bool(body.pos); } catch (const SelError&) {
+                      ctx.tentative_kept++;
+                      keep = true;
+                    }
+                  } else {
+                    keep = r.as_bool(body.pos);
                   }
+                  if (keep) entries.emplace_back(collection_key(coll, idx), item);
                   return std::nullopt;
-                });
+                }, tentative, body_override);
                 if (entries.empty()) {
                   Value out = Value::none();
                   out.set_is_list(true);
@@ -6584,10 +6623,22 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       if (second && first->s == "FILTER" && (*second)->s == "FILTER") {
         const OptFilterInfo left = opt_filter_info(*first);
         const OptFilterInfo right = opt_filter_info(**second);
-        if (left.valid && right.valid) {
+        // A tentative (pushed) body never fuses with an as-written one: the
+        // merged body would be one or the other, and each is wrong for the
+        // other's conjuncts (SEL-0051).
+        if (left.valid && right.valid && left.predicate->tentative == right.predicate->tentative) {
           const NodePtr right_pred = upper_name(left.binder) == upper_name(right.binder)
               ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
-          NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
+          auto combined = opt_copy(opt_combine_and({left.predicate, right_pred}, left.predicate->pos));
+          combined->tentative = left.predicate->tentative;
+          combined->pushed_down = left.predicate->pushed_down || right.predicate->pushed_down;
+          if (combined->pushed_down) {
+            const auto rest = [](const NodePtr& p) { return p->pushed_down ? p->remaining : p; };
+            const auto is_true = [](const NodePtr& p) { return p->t == NT::Bool && p->b; };
+            const NodePtr l = rest(left.predicate), r = rest(right_pred);
+            combined->remaining = is_true(l) ? r : is_true(r) ? l : opt_combine_and({l, r}, left.predicate->pos);
+          }
+          const NodePtr predicate = std::move(combined);
           auto merged = opt_copy(first);
           merged->items = left.explicit_binder
               ? std::vector<NodePtr>{first->items[0], first->items[1], predicate}
@@ -6732,37 +6783,58 @@ std::pair<std::vector<NodePtr>, bool> opt_pushdown_join_filters(const std::vecto
     left_names.insert(source_left.begin(), source_left.end());
     right_names.insert(source_right.begin(), source_right.end());
     const OptFilterInfo info = opt_filter_info(*filter);
-    if (!info.valid || !info.predicate) {
+    if (!info.valid || !info.predicate || info.predicate->pushed_down) {
       result.push_back(link);
       i++;
       continue;
     }
+    // Only the LEADING run of conjuncts that name one side is pushed: a
+    // conjunct left for the join might raise on a row an early test of a
+    // later conjunct would drop, and the program as written reaches that
+    // raise first (spec §7.4; SEL-0051). The rest stays for the FILTER above.
     std::vector<NodePtr> left, right, remaining;
     for (const NodePtr& conjunct : opt_split_and(info.predicate)) {
       const OptAffinity affinity = opt_conjunct_affinity(*conjunct, left_names, right_names, info.binder);
-      if (affinity == OptAffinity::Left) left.push_back(opt_rewrite_for_relation(conjunct, left_names, info.binder));
-      else if (affinity == OptAffinity::Right && inner) right.push_back(opt_rewrite_for_relation(conjunct, right_names, info.binder));
-      else remaining.push_back(conjunct);
+      if (remaining.empty() && affinity == OptAffinity::Left && right.empty()) {
+        left.push_back(opt_rewrite_for_relation(conjunct, left_names, info.binder));
+      } else if (remaining.empty() && affinity == OptAffinity::Right && inner && left.empty()) {
+        right.push_back(opt_rewrite_for_relation(conjunct, right_names, info.binder));
+      } else {
+        remaining.push_back(conjunct);
+      }
     }
     if (left.empty() && right.empty()) {
       result.push_back(link);
       i++;
       continue;
     }
-    if (!left.empty()) result.push_back(opt_filter_call(link->items[0], opt_combine_and(left, filter->pos), filter->pos));
+    // Pushed conjuncts run tentatively under the LINK (a raise keeps the row),
+    // and the FILTER after it keeps the whole predicate as written, so the
+    // value -- including which error is reported -- is the one the program
+    // states (spec §7.4, SEL-0051). The retained predicate is marked so the
+    // next pass does not push it again.
+    const auto tentative = [&](const std::vector<NodePtr>& conjuncts) -> NodePtr {
+      auto body = opt_copy(opt_combine_and(conjuncts, filter->pos));
+      body->tentative = true;
+      return body;
+    };
+    if (!left.empty()) result.push_back(opt_filter_call(link->items[0], tentative(left), filter->pos));
     auto new_link = opt_copy(link);
     if (!right.empty()) {
-      new_link->items[1] = opt_filter_call(link->items[1], opt_combine_and(right, filter->pos), filter->pos);
+      new_link->items[1] = opt_filter_call(link->items[1], tentative(right), filter->pos);
     }
     result.push_back(std::move(new_link));
-    if (!remaining.empty()) {
-      auto new_filter = opt_copy(filter);
-      const NodePtr predicate = opt_combine_and(remaining, filter->pos);
-      new_filter->items = info.explicit_binder
-          ? std::vector<NodePtr>{filter->items[0], filter->items[1], predicate}
-          : std::vector<NodePtr>{filter->items[0], predicate};
-      result.push_back(std::move(new_filter));
-    }
+    // The retained predicate is the whole one; `remaining` is what the FILTER
+    // evaluates instead when no tentative body kept a row on an error while
+    // its source ran (the pushed conjuncts then held on every row it sees).
+    auto predicate = opt_copy(info.predicate);
+    predicate->pushed_down = true;
+    predicate->remaining = remaining.empty() ? opt_bool(true, filter->pos) : opt_combine_and(remaining, filter->pos);
+    auto new_filter = opt_copy(filter);
+    new_filter->items = info.explicit_binder
+        ? std::vector<NodePtr>{filter->items[0], filter->items[1], NodePtr(predicate)}
+        : std::vector<NodePtr>{filter->items[0], NodePtr(predicate)};
+    result.push_back(std::move(new_filter));
     i += 2;
     changed = true;
   }

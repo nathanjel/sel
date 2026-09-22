@@ -10564,8 +10564,42 @@ function sql_cases(): array
             'bindings' => static fn (): array => ['ORDERS' => Binding::relation('orders', 'o', ['ID' => Binding::column('id', 'o', 'NUM')], null, null)],
         ],
         [
-            'name' => 'plan.hybrid.unsupported-suffix',
+            'name' => 'plan.pure-memory.past-the-depth-limit-falls-back',
             'at' => '25-hybrid-plans.sqlt:92',
+            'dialect' => 'mariadb',
+            'source' => 'A = 1; 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1',
+            'expect' => null,
+            'error' => null,
+            'throws' => null,
+            'params' => null,
+            'as' => null,
+            'mode' => null,
+            'register' => null,
+            'options' => null,
+            'plan' => 'pure_memory',
+            'tables' => [],
+            'bindings' => static fn (): array => [],
+        ],
+        [
+            'name' => 'plan.pure-memory.past-the-depth-limit-over-a-relation',
+            'at' => '25-hybrid-plans.sqlt:107',
+            'dialect' => 'mariadb',
+            'source' => 'ORDERS .> FILTER(_["ID"] > 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1)',
+            'expect' => null,
+            'error' => null,
+            'throws' => null,
+            'params' => null,
+            'as' => null,
+            'mode' => null,
+            'register' => null,
+            'options' => null,
+            'plan' => 'pure_memory',
+            'tables' => ['orders'],
+            'bindings' => static fn (): array => ['ORDERS' => Binding::relation('orders', 'o', ['ID' => Binding::column('id', 'o', 'NUM')], null, null)],
+        ],
+        [
+            'name' => 'plan.hybrid.unsupported-suffix',
+            'at' => '25-hybrid-plans.sqlt:123',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> TAKE(1) .> MAP(RECORD("id", _["id"], "note", ABORT("no")))',
             'expect' => 'SELECT `_sub1`.`id` AS `id` FROM (SELECT `o`.* FROM `orders` `o` LIMIT 1) `_sub1`',
@@ -10582,7 +10616,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.hybrid.fallthrough-keeps-downstream-steps',
-            'at' => '25-hybrid-plans.sqlt:113',
+            'at' => '25-hybrid-plans.sqlt:144',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("id", _["id"], "tag", ABORT("x"))) .> TAKE(3)',
             'expect' => 'SELECT `o`.`id` AS `id` FROM `orders` `o` LIMIT 3',
@@ -10599,7 +10633,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.hybrid.longest-prefix',
-            'at' => '25-hybrid-plans.sqlt:132',
+            'at' => '25-hybrid-plans.sqlt:163',
             'dialect' => 'postgresql',
             'source' => 'ORDERS .> SORT_DESC(_["id"]) .> TAKE(1) .> MAP(RECORD("id", _["id"], "tag", ABORT("x")))',
             'expect' => 'SELECT "_sub1"."id" AS "id" FROM (SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" DESC LIMIT 1) "_sub1"',
@@ -10616,7 +10650,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.pure-memory.bound-relation-in-source',
-            'at' => '25-hybrid-plans.sqlt:147',
+            'at' => '25-hybrid-plans.sqlt:178',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("note", ABORT("no")))',
             'expect' => null,
@@ -10633,7 +10667,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.pure-memory.unbound-source',
-            'at' => '25-hybrid-plans.sqlt:164',
+            'at' => '25-hybrid-plans.sqlt:195',
             'dialect' => 'mariadb',
             'source' => 'ROWS .> TAKE(1)',
             'expect' => null,
@@ -10650,7 +10684,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.pure-memory.not-a-pipeline',
-            'at' => '25-hybrid-plans.sqlt:174',
+            'at' => '25-hybrid-plans.sqlt:205',
             'dialect' => 'mariadb',
             'source' => 'COUNT(ORDERS) > 0',
             'expect' => null,
@@ -10667,7 +10701,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.tables.physical-name-not-binding-name',
-            'at' => '25-hybrid-plans.sqlt:187',
+            'at' => '25-hybrid-plans.sqlt:218',
             'dialect' => 'mariadb',
             'source' => 'SALES .> TAKE(1)',
             'expect' => 'SELECT `s`.* FROM `sales_orders` `s` LIMIT 1',
@@ -10684,7 +10718,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.tables.binding-name-is-case-insensitive',
-            'at' => '25-hybrid-plans.sqlt:206',
+            'at' => '25-hybrid-plans.sqlt:237',
             'dialect' => 'mariadb',
             'source' => 'orders .> take(1)',
             'expect' => 'SELECT `o`.* FROM `Orders` `o` LIMIT 1',
@@ -10701,7 +10735,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.tables.first-use-order',
-            'at' => '25-hybrid-plans.sqlt:224',
+            'at' => '25-hybrid-plans.sqlt:255',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> TAKE(2)',
             'expect' => null,
@@ -10718,7 +10752,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.tables.dedupe-by-physical-source',
-            'at' => '25-hybrid-plans.sqlt:243',
+            'at' => '25-hybrid-plans.sqlt:274',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> LINK(O2, _1["id"] == _2["id"]) .> TAKE(2)',
             'expect' => null,
@@ -10735,7 +10769,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.tables.relation-query-is-reported-verbatim',
-            'at' => '25-hybrid-plans.sqlt:260',
+            'at' => '25-hybrid-plans.sqlt:291',
             'dialect' => 'mariadb',
             'source' => 'RECENT .> MAP(RECORD("note", ABORT("no")))',
             'expect' => null,
@@ -10752,7 +10786,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.pure-memory.left-join-then-select-cols-of-a-shared-name',
-            'at' => '25-hybrid-plans.sqlt:277',
+            'at' => '25-hybrid-plans.sqlt:308',
             'dialect' => 'postgresql',
             'source' => 'ORDERS .> LINK_LEFT(CUSTOMERS, _1["customer_id"] == _2["id"]) .> SELECT_COLS("id")',
             'expect' => null,
@@ -10769,7 +10803,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.pure-sql.filters-fuse-before-planning',
-            'at' => '25-hybrid-plans.sqlt:297',
+            'at' => '25-hybrid-plans.sqlt:328',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(_["id"] > 1) .> FILTER(_["id"] < 9)',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE ((`o`.`id` > 1) AND (`o`.`id` < 9))',
@@ -10786,7 +10820,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.pure-sql.sort-take-fuses-to-top',
-            'at' => '25-hybrid-plans.sqlt:316',
+            'at' => '25-hybrid-plans.sqlt:347',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> SORT_BY(_["id"]) .> TAKE(1)',
             'expect' => 'SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 1',
@@ -10803,7 +10837,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.pure-sql.filter-drop-take',
-            'at' => '25-hybrid-plans.sqlt:331',
+            'at' => '25-hybrid-plans.sqlt:362',
             'dialect' => 'postgresql',
             'source' => 'ORDERS .> FILTER(_["id"] > 1) .> DROP(1) .> TAKE(1)',
             'expect' => 'SELECT "o".* FROM "orders" "o" WHERE ("o"."id" > 1) LIMIT 1 OFFSET 1',
@@ -10820,7 +10854,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.distinct.open-row-schema-stays-local',
-            'at' => '25-hybrid-plans.sqlt:346',
+            'at' => '25-hybrid-plans.sqlt:377',
             'dialect' => 'postgresql',
             'source' => 'ORDERS .> DISTINCT()',
             'expect' => null,
@@ -10837,7 +10871,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.options.strict-off-caveat-pushes-down',
-            'at' => '25-hybrid-plans.sqlt:359',
+            'at' => '25-hybrid-plans.sqlt:390',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> TAKE(2) .> FILTER(UPPER(_["name"]) $== "A")',
             'expect' => 'SELECT `_sub1`.* FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1` WHERE (CAST(UPPER(`_sub1`.`name`) AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(\'A\' AS CHAR) COLLATE utf8mb4_nopad_bin)',
@@ -10854,7 +10888,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.options.strict-on-caveat-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:377',
+            'at' => '25-hybrid-plans.sqlt:408',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> TAKE(2) .> FILTER(UPPER(_["name"]) $== "A")',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 2',
@@ -10871,7 +10905,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fold.literal-branch-is-hoisted-into-the-prefix',
-            'at' => '25-hybrid-plans.sqlt:398',
+            'at' => '25-hybrid-plans.sqlt:429',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(IF(TRUE, 2, 1) >= _["id"])',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE (2 >= `o`.`id`)',
@@ -10888,7 +10922,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fold.compound-branch-stays-an-if',
-            'at' => '25-hybrid-plans.sqlt:417',
+            'at' => '25-hybrid-plans.sqlt:448',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(IF(TRUE, _["id"] > 1, FALSE))',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE CASE WHEN TRUE THEN (`o`.`id` > 1) ELSE FALSE END',
@@ -10905,7 +10939,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fold.hoisted-literal-does-not-change-the-split',
-            'at' => '25-hybrid-plans.sqlt:441',
+            'at' => '25-hybrid-plans.sqlt:472',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> TAKE(2) .> MAP(IF(TRUE, "x", 1) >= _["id"])',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 2',
@@ -10922,7 +10956,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.bare-bucket-at-the-end-is-pure-memory',
-            'at' => '25-hybrid-plans.sqlt:461',
+            'at' => '25-hybrid-plans.sqlt:492',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"])',
             'expect' => null,
@@ -10939,7 +10973,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.open-bucket-at-the-end-splits-before-it',
-            'at' => '25-hybrid-plans.sqlt:480',
+            'at' => '25-hybrid-plans.sqlt:511',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(_["amount"] > 1) .> BUCKET(_["customer_id"])',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)',
@@ -10956,7 +10990,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.sealed-bucket-at-the-end-is-pure-memory',
-            'at' => '25-hybrid-plans.sqlt:495',
+            'at' => '25-hybrid-plans.sqlt:526',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1)',
             'expect' => null,
@@ -10973,7 +11007,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.having-at-the-end-is-pure-memory',
-            'at' => '25-hybrid-plans.sqlt:508',
+            'at' => '25-hybrid-plans.sqlt:539',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> FILTER(COUNT(_) > 1)',
             'expect' => null,
@@ -10990,7 +11024,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.bucket-over-buckets-is-pure-memory',
-            'at' => '25-hybrid-plans.sqlt:524',
+            'at' => '25-hybrid-plans.sqlt:555',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> BUCKET(COUNT(_)) .> MAP(RECORD("size", _K, "n", COUNT(_)))',
             'expect' => null,
@@ -11007,7 +11041,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.aliased-pair-passes-through-by-key',
-            'at' => '25-hybrid-plans.sqlt:540',
+            'at' => '25-hybrid-plans.sqlt:571',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("cid", _["customer_id"], "tag", ABORT("x"))) .> TAKE(3)',
             'expect' => 'SELECT `o`.`customer_id` AS `cid` FROM `orders` `o` LIMIT 3',
@@ -11024,7 +11058,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.expression-pair-passes-through-by-key',
-            'at' => '25-hybrid-plans.sqlt:563',
+            'at' => '25-hybrid-plans.sqlt:594',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("plus", _["amount"] + 1, "tag", ABORT("x"))) .> TAKE(3)',
             'expect' => 'SELECT (`o`.`amount` + 1) AS `plus` FROM `orders` `o` LIMIT 3',
@@ -11041,7 +11075,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.downstream-bucket-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:581',
+            'at' => '25-hybrid-plans.sqlt:612',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("customer_id", _["customer_id"], "tag", ABORT("x"))) .> BUCKET(_["customer_id"])',
             'expect' => null,
@@ -11058,7 +11092,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.downstream-map-splits-before-the-map',
-            'at' => '25-hybrid-plans.sqlt:601',
+            'at' => '25-hybrid-plans.sqlt:632',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> TAKE(5) .> MAP(RECORD("id", _["id"], "tag", ABORT("x"))) .> MAP(RECORD("i", _["id"]))',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 5',
@@ -11075,7 +11109,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.downstream-dedupe-splits-before-the-map',
-            'at' => '25-hybrid-plans.sqlt:616',
+            'at' => '25-hybrid-plans.sqlt:647',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> TAKE(5) .> MAP(RECORD("id", _["id"], "tag", ABORT(_["name"]))) .> DEDUPE()',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 5',
@@ -11092,7 +11126,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.downstream-read-of-a-dependency-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:635',
+            'at' => '25-hybrid-plans.sqlt:666',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("id", _["id"], "tag", ABORT(_["name"]))) .> FILTER(_["name"] $== "x")',
             'expect' => null,
@@ -11109,7 +11143,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.whole-row-read-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:653',
+            'at' => '25-hybrid-plans.sqlt:684',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("id", _["id"], "row", ABORT(GET(_, "name")))) .> TAKE(3)',
             'expect' => null,
@@ -11126,7 +11160,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.dependency-colliding-with-a-pushable-key-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:669',
+            'at' => '25-hybrid-plans.sqlt:700',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("customer_id", _["amount"], "tag", ABORT(_["customer_id"]))) .> TAKE(3)',
             'expect' => null,
@@ -11143,7 +11177,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.downstream-read-under-its-own-binder-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:686',
+            'at' => '25-hybrid-plans.sqlt:717',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(r, RECORD("id", r["id"], "tag", ABORT(r["name"]))) .> SORT_BY(s, s["name"])',
             'expect' => null,
@@ -11160,7 +11194,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key',
-            'at' => '25-hybrid-plans.sqlt:704',
+            'at' => '25-hybrid-plans.sqlt:735',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(r, RECORD("id", r["id"], "tag", ABORT(r["name"]))) .> FILTER(s, s["id"] > 1)',
             'expect' => null,
@@ -11177,7 +11211,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.dependency-differing-from-a-key-only-by-case-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:721',
+            'at' => '25-hybrid-plans.sqlt:752',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("Name", _["name"], "tag", ABORT(_["name"]))) .> TAKE(2)',
             'expect' => null,
@@ -11194,7 +11228,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.custom-key-differing-from-a-pushable-key-only-by-case',
-            'at' => '25-hybrid-plans.sqlt:742',
+            'at' => '25-hybrid-plans.sqlt:773',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("x", _["id"], "X", ABORT("x"))) .> TAKE(2)',
             'expect' => 'SELECT `o`.`id` AS `x` FROM `orders` `o` LIMIT 2',
@@ -11211,7 +11245,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.two-dependencies-differing-only-by-case-stay-in-memory',
-            'at' => '25-hybrid-plans.sqlt:761',
+            'at' => '25-hybrid-plans.sqlt:792',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("id", _["id"], "a", ABORT(_["name"]), "b", ABORT(_["Name"]))) .> TAKE(2)',
             'expect' => null,
@@ -11228,7 +11262,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fallthrough.case-is-ascii-case',
-            'at' => '25-hybrid-plans.sqlt:777',
+            'at' => '25-hybrid-plans.sqlt:808',
             'dialect' => 'postgresql',
             'source' => 'ORDERS .> MAP(RECORD("NAMÉ", _["id"], "tag", ABORT(_["namé"]))) .> TAKE(2)',
             'expect' => 'SELECT "o"."id" AS "NAMÉ", "o"."name" AS "namé" FROM "orders" "o" LIMIT 2',
@@ -11245,7 +11279,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.filter-after-pagination-is-a-where',
-            'at' => '25-hybrid-plans.sqlt:797',
+            'at' => '25-hybrid-plans.sqlt:828',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_))) .> TAKE(2) .> FILTER(_["n"] > 1)',
             'expect' => 'SELECT `_sub1`.* FROM (SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin LIMIT 2) `_sub1` WHERE (CASE WHEN (`_sub1`.`n` REGEXP \'\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z\') THEN CAST(`_sub1`.`n` AS DECIMAL(65,10)) ELSE NULL END > 1)',
@@ -11262,7 +11296,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.filter-after-pagination-on-sqlite-splits',
-            'at' => '25-hybrid-plans.sqlt:816',
+            'at' => '25-hybrid-plans.sqlt:847',
             'dialect' => 'sqlite',
             'source' => 'ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_))) .> TAKE(2) .> FILTER(_["n"] > 1)',
             'expect' => 'SELECT MIN("o"."customer_id") AS "cid", COUNT(*) AS "n" FROM "orders" "o" GROUP BY CAST("o"."customer_id" AS TEXT) COLLATE BINARY LIMIT 2',
@@ -11279,7 +11313,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.bool-key-in-a-bare-bucket-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:836',
+            'at' => '25-hybrid-plans.sqlt:867',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["active"]) .> MAP(RECORD("a", _K, "n", COUNT(_)))',
             'expect' => null,
@@ -11296,7 +11330,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.take.count-sel-refuses-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:852',
+            'at' => '25-hybrid-plans.sqlt:883',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> TAKE(1 / 0)',
             'expect' => null,
@@ -11313,7 +11347,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.refuse.base-dialect',
-            'at' => '25-hybrid-plans.sqlt:868',
+            'at' => '25-hybrid-plans.sqlt:899',
             'dialect' => 'ansi',
             'source' => 'ORDERS .> TAKE(1)',
             'expect' => null,
@@ -11330,7 +11364,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.immutable.folding-does-not-write-back',
-            'at' => '25-hybrid-plans.sqlt:885',
+            'at' => '25-hybrid-plans.sqlt:916',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(_["id"] > 1 + 1) .> TAKE(2 * 2)',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) LIMIT 4',
@@ -11347,7 +11381,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.immutable.folding-inside-a-kept-step',
-            'at' => '25-hybrid-plans.sqlt:907',
+            'at' => '25-hybrid-plans.sqlt:938',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(NOT (_["id"] > 1 + 1)) .> MAP(RECORD("n", ABORT("x")))',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE (NOT (`o`.`id` > 2))',
@@ -11364,7 +11398,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.pipeline-map-pushes-down-whole',
-            'at' => '25-hybrid-plans.sqlt:926',
+            'at' => '25-hybrid-plans.sqlt:957',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_)))',
             'expect' => 'SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin',
@@ -11381,7 +11415,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.open-prefix-is-not-a-split-point',
-            'at' => '25-hybrid-plans.sqlt:945',
+            'at' => '25-hybrid-plans.sqlt:976',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "note", ABORT("x")))',
             'expect' => null,
@@ -11398,7 +11432,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.split-before-the-bucket',
-            'at' => '25-hybrid-plans.sqlt:963',
+            'at' => '25-hybrid-plans.sqlt:994',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(_["amount"] > 1) .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "note", ABORT("x")))',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1)',
@@ -11415,7 +11449,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.projected-then-custom-map',
-            'at' => '25-hybrid-plans.sqlt:981',
+            'at' => '25-hybrid-plans.sqlt:1012',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> MAP(RECORD("c", _["cid"], "note", ABORT("x")))',
             'expect' => 'SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin',
@@ -11432,7 +11466,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.sealed-prefix-is-not-a-split-point',
-            'at' => '25-hybrid-plans.sqlt:999',
+            'at' => '25-hybrid-plans.sqlt:1030',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> TAKE(2) .> MAP(RECORD("cid", _K))',
             'expect' => null,
@@ -11449,7 +11483,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.pure-sql.constant-true-filter',
-            'at' => '25-hybrid-plans.sqlt:1012',
+            'at' => '25-hybrid-plans.sqlt:1043',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(TRUE)',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE TRUE',
@@ -11466,7 +11500,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.sort.binder-form-keeps-its-form-when-the-key-folds',
-            'at' => '25-hybrid-plans.sqlt:1035',
+            'at' => '25-hybrid-plans.sqlt:1066',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(_["id"] > 0) .> SORT_BY(O, IF(TRUE, "DESC", "ASC"))',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 0) ORDER BY CAST(CASE WHEN TRUE THEN \'DESC\' ELSE \'ASC\' END AS CHAR) COLLATE utf8mb4_nopad_bin ASC',
@@ -11483,7 +11517,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.sort.direction-form-folds-to-a-literal',
-            'at' => '25-hybrid-plans.sqlt:1056',
+            'at' => '25-hybrid-plans.sqlt:1087',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> SORT_BY(_["id"], IF(TRUE, "DESC", "ASC"))',
             'expect' => 'SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` DESC',
@@ -11500,7 +11534,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.map.computed-field-then-keyless-sort-stays-after-the-map',
-            'at' => '25-hybrid-plans.sqlt:1076',
+            'at' => '25-hybrid-plans.sqlt:1107',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("q", 0 - _["amount"])) .> SORT()',
             'expect' => 'SELECT `_sub1`.* FROM (SELECT (0 - `o`.`amount`) AS `q` FROM `orders` `o`) `_sub1` ORDER BY `_sub1`.`q` ASC',
@@ -11517,7 +11551,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.map.pass-through-key-sorts-early',
-            'at' => '25-hybrid-plans.sqlt:1096',
+            'at' => '25-hybrid-plans.sqlt:1127',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("id", _["id"], "q", 0 - _["amount"])) .> SORT_BY(_["id"], "DESC")',
             'expect' => 'SELECT `o`.`id` AS `id`, (0 - `o`.`amount`) AS `q` FROM `orders` `o` ORDER BY `o`.`id` DESC',
@@ -11534,7 +11568,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.sort.then-filter-on-the-key-splits',
-            'at' => '25-hybrid-plans.sqlt:1115',
+            'at' => '25-hybrid-plans.sqlt:1146',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> SORT_BY(_["id"]) .> FILTER(_K == "1")',
             'expect' => 'SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC',
@@ -11551,7 +11585,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.member-field-through-the-group-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:1135',
+            'at' => '25-hybrid-plans.sqlt:1166',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(g, RECORD("cid", _K, "amt", g["amount"]))',
             'expect' => null,
@@ -11568,7 +11602,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.having-alias-before-the-map-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:1154',
+            'at' => '25-hybrid-plans.sqlt:1185',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> FILTER(_["total"] > 1) .> MAP(RECORD("cid", _K, "total", SUM(_, _["amount"])))',
             'expect' => null,
@@ -11585,7 +11619,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.max-over-the-group-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:1167',
+            'at' => '25-hybrid-plans.sqlt:1198',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"], RECORD("cid", _K, "mx", MAX(_, _["amount"])))',
             'expect' => null,
@@ -11602,7 +11636,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.two-argument-sum-under-a-named-group-pushes-down',
-            'at' => '25-hybrid-plans.sqlt:1180',
+            'at' => '25-hybrid-plans.sqlt:1211',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(g, RECORD("cid", _K, "n", COUNT(g), "s", SUM(g, _["amount"])))',
             'expect' => 'SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n`, COALESCE(SUM(`o`.`amount`), 0) AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin',
@@ -11619,7 +11653,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.source-key-before-the-bucket-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:1195',
+            'at' => '25-hybrid-plans.sqlt:1226',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> FILTER(_K $== "2") .> BUCKET(_["customer_id"], RECORD("cid", _K, "n", COUNT(_)))',
             'expect' => null,
@@ -11636,7 +11670,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.list-key-after-the-projection-splits',
-            'at' => '25-hybrid-plans.sqlt:1213',
+            'at' => '25-hybrid-plans.sqlt:1244',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> FILTER(_K $== "2")',
             'expect' => 'SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin',
@@ -11653,7 +11687,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.sort-by-list-key-after-the-projection-splits',
-            'at' => '25-hybrid-plans.sqlt:1233',
+            'at' => '25-hybrid-plans.sqlt:1264',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> SORT_BY(_K)',
             'expect' => 'SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin',
@@ -11670,7 +11704,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.projected-row-field-splits',
-            'at' => '25-hybrid-plans.sqlt:1248',
+            'at' => '25-hybrid-plans.sqlt:1279',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> SORT_BY(_["customer_id"])',
             'expect' => 'SELECT MIN(`o`.`customer_id`) AS `cid`, COUNT(*) AS `n` FROM `orders` `o` GROUP BY CAST(`o`.`customer_id` AS CHAR) COLLATE utf8mb4_nopad_bin',
@@ -11687,7 +11721,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.map.count-of-a-row-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:1267',
+            'at' => '25-hybrid-plans.sqlt:1298',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(_)))',
             'expect' => null,
@@ -11704,7 +11738,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.bucket.count-of-a-bucket-in-the-projection-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:1287',
+            'at' => '25-hybrid-plans.sqlt:1318',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "by_status", COUNT(BUCKET(_, _["status"]))))',
             'expect' => null,
@@ -11721,7 +11755,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.map.count-of-a-list-stays-in-memory',
-            'at' => '25-hybrid-plans.sqlt:1305',
+            'at' => '25-hybrid-plans.sqlt:1336',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("id", _["id"], "n", COUNT(LIST(1, 2, 3)))) .> TAKE(2)',
             'expect' => null,
@@ -11738,7 +11772,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fold.negative-literal',
-            'at' => '25-hybrid-plans.sqlt:1324',
+            'at' => '25-hybrid-plans.sqlt:1355',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> TAKE(2) .> MAP(RECORD("k", -0, "j", - -1.50))',
             'expect' => 'SELECT 0 AS `k`, 1.50 AS `j` FROM (SELECT `o`.* FROM `orders` `o` LIMIT 2) `_sub1`',
@@ -11755,7 +11789,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.fold.negative-literal-in-a-where',
-            'at' => '25-hybrid-plans.sqlt:1345',
+            'at' => '25-hybrid-plans.sqlt:1376',
             'dialect' => 'postgresql',
             'source' => 'ORDERS .> FILTER(_["id"] > -1)',
             'expect' => 'SELECT "o".* FROM "orders" "o" WHERE ("o"."id" > (-1))',
@@ -11772,7 +11806,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.sort.later-sort-is-the-primary-key',
-            'at' => '25-hybrid-plans.sqlt:1360',
+            'at' => '25-hybrid-plans.sqlt:1391',
             'dialect' => 'postgresql',
             'source' => 'ORDERS .> SORT_BY(_["name"]) .> SORT_BY(_["id"], "DESC") .> TAKE(2)',
             'expect' => 'SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" DESC, CAST("o"."name" AS TEXT) COLLATE "C" ASC LIMIT 2',
@@ -11789,7 +11823,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.map.computed-then-sort-then-take',
-            'at' => '25-hybrid-plans.sqlt:1381',
+            'at' => '25-hybrid-plans.sqlt:1412',
             'dialect' => 'postgresql',
             'source' => 'ORDERS .> MAP(RECORD("id", _["id"], "n", _["id"] + 1)) .> SORT_BY(_["id"], "DESC") .> TAKE(2)',
             'expect' => 'SELECT "o"."id" AS "id", (CAST("o"."id" AS NUMERIC) + CAST(1 AS NUMERIC)) AS "n" FROM "orders" "o" ORDER BY "o"."id" DESC LIMIT 2',
@@ -11806,7 +11840,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.helper.literal-helper-is-inlined-at-its-read',
-            'at' => '25-hybrid-plans.sqlt:1401',
+            'at' => '25-hybrid-plans.sqlt:1432',
             'dialect' => 'mariadb',
             'source' => 'Y = "x"; ORDERS .> TAKE(2) .> MAP(_["id"] + Y)',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 2',
@@ -11823,7 +11857,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.helper.folded-helper-is-a-literal',
-            'at' => '25-hybrid-plans.sqlt:1427',
+            'at' => '25-hybrid-plans.sqlt:1458',
             'dialect' => 'mariadb',
             'source' => 'N = 1 + 1; ORDERS .> TAKE(N)',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 2',
@@ -11840,7 +11874,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.helper.relation-helper-is-the-pipeline-source',
-            'at' => '25-hybrid-plans.sqlt:1446',
+            'at' => '25-hybrid-plans.sqlt:1477',
             'dialect' => 'mariadb',
             'source' => 'X = ORDERS .> TAKE(2); Y = (FALSE AND TRUE); X .> MAP(Y + _["id"])',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 2',
@@ -11857,7 +11891,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.helper.non-literal-helper-is-carried-as-written',
-            'at' => '25-hybrid-plans.sqlt:1467',
+            'at' => '25-hybrid-plans.sqlt:1498',
             'dialect' => 'mariadb',
             'source' => 'C = COUNT(ORDERS); ORDERS .> FILTER(_["id"] > C)',
             'expect' => 'SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > (SELECT COUNT(*) FROM `orders` `o` WHERE TRUE))',
@@ -11874,7 +11908,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.helper.unread-helper-reads-no-table',
-            'at' => '25-hybrid-plans.sqlt:1489',
+            'at' => '25-hybrid-plans.sqlt:1520',
             'dialect' => 'mariadb',
             'source' => 'U = USERS .> TAKE(1); ORDERS .> TAKE(2) .> MAP(_["id"] + "x")',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 2',
@@ -11891,7 +11925,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.helper.indexed-helper-is-carried-as-written',
-            'at' => '25-hybrid-plans.sqlt:1510',
+            'at' => '25-hybrid-plans.sqlt:1541',
             'dialect' => 'mariadb',
             'source' => 'R[1] = 5; ORDERS .> TAKE(2) .> MAP(_["id"] + R[1])',
             'expect' => 'SELECT `o`.* FROM `orders` `o` LIMIT 2',
@@ -11908,7 +11942,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.select-cols.after-a-sort-keeps-one-statement',
-            'at' => '25-hybrid-plans.sqlt:1531',
+            'at' => '25-hybrid-plans.sqlt:1562',
             'dialect' => 'mariadb',
             'source' => 'CUSTOMERS .> SORT_BY(r, r["id"], "DESC") .> SELECT_COLS("name")',
             'expect' => 'SELECT `c`.`name` FROM `customers` `c` ORDER BY `c`.`id` DESC',
@@ -11925,7 +11959,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.index.qualified-by-binding-name',
-            'at' => '25-hybrid-plans.sqlt:1555',
+            'at' => '25-hybrid-plans.sqlt:1586',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("n", _["CUSTOMERS"]["NAME"]))',
             'expect' => 'SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)',
@@ -11942,7 +11976,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.index.qualified-by-alias-qualifies-without-a-join',
-            'at' => '25-hybrid-plans.sqlt:1574',
+            'at' => '25-hybrid-plans.sqlt:1605',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> MAP(RECORD("a", _["o"]["AMOUNT"]))',
             'expect' => 'SELECT `o`.`amount` AS `a` FROM `orders` `o`',
@@ -11959,7 +11993,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.index.qualified-by-a-declared-binder',
-            'at' => '25-hybrid-plans.sqlt:1592',
+            'at' => '25-hybrid-plans.sqlt:1623',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> LINK(CUSTOMERS, O, C, O["CUSTOMER_ID"] == C["ID"]) .> MAP(RECORD("n", _["C"]["NAME"]))',
             'expect' => 'SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)',
@@ -11976,7 +12010,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.index.positional-binder-names-are-not-qualifiers',
-            'at' => '25-hybrid-plans.sqlt:1609',
+            'at' => '25-hybrid-plans.sqlt:1640',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("n", _["_2"]["NAME"]))',
             'expect' => null,
@@ -11993,7 +12027,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.index.positional-left-binder-is-not-a-qualifier',
-            'at' => '25-hybrid-plans.sqlt:1623',
+            'at' => '25-hybrid-plans.sqlt:1654',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("a", _["_1"]["AMOUNT"]))',
             'expect' => null,
@@ -12010,7 +12044,7 @@ function sql_cases(): array
         ],
         [
             'name' => 'plan.index.the-row-itself-is-not-a-qualifier',
-            'at' => '25-hybrid-plans.sqlt:1635',
+            'at' => '25-hybrid-plans.sqlt:1666',
             'dialect' => 'mariadb',
             'source' => 'ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("a", _["_"]["AMOUNT"]))',
             'expect' => null,

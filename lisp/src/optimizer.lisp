@@ -21,7 +21,10 @@
           (node-items copy) (copy-list (node-items n))
           (node-spec copy) (node-spec n)
           (node-record-shape copy) (node-record-shape n)
-          (node-math-plan copy) (node-math-plan n))
+          (node-math-plan copy) (node-math-plan n)
+          (node-tentative copy) (node-tentative n)
+          (node-pushed-down copy) (node-pushed-down n)
+          (node-remaining copy) (node-remaining n))
     copy))
 
 ;; A fold that replaces a node by one of its children must not move the error
@@ -550,6 +553,11 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
 (defun sort-step-p (step)
   (member (node-s step) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=))
 
+(defun filter-predicate-of (step)
+  "The body of a FILTER step: the third item with an explicit binder, else the second."
+  (let ((args (node-items step)))
+    (if (= (length args) 3) (third args) (second args))))
+
 (defun valid-filter-p (step)
   "A FILTER whose binder slot, if it has one, is a bare name."
   (let ((args (node-items step)))
@@ -642,8 +650,13 @@ everywhere else)."
                    (reads-row-or-key-p key binder))))
        (values (list s2 s1) 2))
       ;; FILTER + FILTER -> FILTER(p1 AND p2)
+      ;; A tentative (pushed) body never fuses with an as-written one: the
+      ;; merged body would be one or the other, and each is wrong for the
+      ;; other's conjuncts (SEL-0051).
       ((and s2 (string= n1 "FILTER") (string= n2 "FILTER")
-            (valid-filter-p s1) (valid-filter-p s2))
+            (valid-filter-p s1) (valid-filter-p s2)
+            (eq (not (node-tentative (filter-predicate-of s1)))
+                (not (node-tentative (filter-predicate-of s2)))))
        (let* ((args1 (node-items s1))
               (args2 (node-items s2))
               (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
@@ -655,7 +668,22 @@ everywhere else)."
               (fused (copy-node-shallow s1)))
          (setf (node-s and-node) "AND"
                (node-l and-node) pred1
-               (node-r and-node) renamed-pred2)
+               (node-r and-node) renamed-pred2
+               (node-tentative and-node) (node-tentative pred1)
+               (node-pushed-down and-node) (or (node-pushed-down pred1) (node-pushed-down pred2)))
+         (when (node-pushed-down and-node)
+           (flet ((rest-of (p) (if (node-pushed-down p) (node-remaining p) p))
+                  (true-p (p) (and (eq (node-kind p) :bool) (node-b p))))
+             (let ((l (rest-of pred1))
+                   (r (rest-of renamed-pred2)))
+               (setf (node-remaining and-node)
+                     (cond ((true-p l) r)
+                           ((true-p r) l)
+                           (t (let ((rem (make-node :bin (node-pos pred1))))
+                                (setf (node-s rem) "AND"
+                                      (node-l rem) l
+                                      (node-r rem) r)
+                                rem)))))))
          (setf (node-items fused)
                (if (= (length args1) 3)
                    (list (first args1) (second args1) and-node)
@@ -715,7 +743,8 @@ needs."
       (let ((s1 (nth i curr-steps))
             (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
         (if (and s2 (member (node-s s1) '("LINK" "LINK_LEFT") :test #'string=)
-                 (string= (node-s s2) "FILTER"))
+                 (string= (node-s s2) "FILTER")
+                 (not (node-pushed-down (filter-predicate-of s2))))
             (let* ((s1-args (node-items s1))
                    (is-inner (string= (node-s s1) "LINK"))
                    (left-src (first s1-args))
@@ -737,22 +766,33 @@ needs."
                    (left-conjuncts '())
                    (right-conjuncts '())
                    (remaining-conjuncts '()))
+              ;; Only the LEADING run of conjuncts that name one side is
+              ;; pushed: a conjunct left for the join might raise on a row an
+              ;; early test of a later conjunct would drop, and the program as
+              ;; written reaches that raise first (spec §7.4; SEL-0051). The
+              ;; rest stays for the FILTER above.
               (dolist (c conjuncts)
                 (let ((affinity (conjunct-relation-affinity c left-names right-names f-binder)))
                   (cond
-                    ((eq affinity :left)
+                    ((and (null remaining-conjuncts) (eq affinity :left) (null right-conjuncts))
                      (push (rewrite-conjunct-for-relation c left-names f-binder) left-conjuncts))
-                    ((and (eq affinity :right) is-inner)
+                    ((and (null remaining-conjuncts) (eq affinity :right) is-inner (null left-conjuncts))
                      (push (rewrite-conjunct-for-relation c right-names f-binder) right-conjuncts))
                     (t
                      (push c remaining-conjuncts)))))
+              ;; Pushed conjuncts run tentatively under the LINK (a raise keeps
+              ;; the row), and the FILTER after it keeps the whole predicate as
+              ;; written, so the value -- including which error is reported --
+              ;; is the one the program states (spec §7.4, SEL-0051). The
+              ;; retained predicate is marked so the next pass leaves it.
               (if (or left-conjuncts right-conjuncts)
                   (progn
                     ;; If left conjuncts exist, push a FILTER step before LINK
                     (when left-conjuncts
-                      (let* ((left-pred (combine-and-conjuncts (nreverse left-conjuncts) (node-pos s2)))
+                      (let* ((left-pred (copy-node-shallow (combine-and-conjuncts (nreverse left-conjuncts) (node-pos s2))))
                              (f-spec (registry-lookup "FILTER"))
                              (left-filter (make-node :call (node-pos s2))))
+                        (setf (node-tentative left-pred) t)
                         (setf (node-s left-filter) "FILTER"
                               (node-spec left-filter) f-spec
                               (node-items left-filter) (list left-src left-pred))
@@ -760,9 +800,10 @@ needs."
                     ;; If right conjuncts exist, wrap right relation with FILTER
                     (let ((new-s1 (copy-node-shallow s1)))
                       (when right-conjuncts
-                        (let* ((right-pred (combine-and-conjuncts (nreverse right-conjuncts) (node-pos s2)))
+                        (let* ((right-pred (copy-node-shallow (combine-and-conjuncts (nreverse right-conjuncts) (node-pos s2))))
                                (f-spec (registry-lookup "FILTER"))
                                (wrapped-r (make-node :call (node-pos s2))))
+                          (setf (node-tentative right-pred) t)
                           (setf (node-s wrapped-r) "FILTER"
                                 (node-spec wrapped-r) f-spec
                                 (node-items wrapped-r) (list right-src right-pred))
@@ -770,14 +811,23 @@ needs."
                             (setf (second new-args) wrapped-r
                                   (node-items new-s1) new-args))))
                       (push new-s1 new-steps))
-                    ;; If remaining conjuncts exist, keep them in s2
-                    (when remaining-conjuncts
-                      (let* ((rem-pred (combine-and-conjuncts (nreverse remaining-conjuncts) (node-pos s2)))
-                             (new-s2 (copy-node-shallow s2)))
-                        (if (= (length s2-args) 3)
-                            (setf (node-items new-s2) (list (first s2-args) (second s2-args) rem-pred))
-                            (setf (node-items new-s2) (list (first s2-args) rem-pred)))
-                        (push new-s2 new-steps)))
+                    ;; The FILTER after the LINK keeps its whole predicate;
+                    ;; `remaining` is what it evaluates instead when no
+                    ;; tentative body kept a row on an error while its source
+                    ;; ran (the pushed conjuncts then held on every row).
+                    (let ((kept-pred (copy-node-shallow f-pred))
+                          (new-s2 (copy-node-shallow s2)))
+                      (setf (node-pushed-down kept-pred) t
+                            (node-remaining kept-pred)
+                            (if remaining-conjuncts
+                                (combine-and-conjuncts (nreverse remaining-conjuncts) (node-pos s2))
+                                (let ((true-node (make-node :bool (node-pos s2))))
+                                  (setf (node-b true-node) t)
+                                  true-node)))
+                      (if (= (length s2-args) 3)
+                          (setf (node-items new-s2) (list (first s2-args) (second s2-args) kept-pred))
+                          (setf (node-items new-s2) (list (first s2-args) kept-pred)))
+                      (push new-s2 new-steps))
                     (setf changed t)
                     (incf i 2))
                   (progn

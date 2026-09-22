@@ -483,7 +483,35 @@ def test_optimizer_physical_join_pushdown_keeps_record():
 
     physical = optimize_ast_in_memory(sel_compile(source).ast)
     _, steps = unwind_pipeline(physical)
-    assert [step.name for step in steps] == ['FILTER', 'LINK']
+    # Only the leading run of conjuncts naming one side is pushed, it runs
+    # tentatively under the join, and the FILTER above keeps its whole
+    # predicate with the rest as `remaining` (spec §7.4; SEL-0051): the
+    # customer conjunct follows an order conjunct, so the right side is
+    # untouched and that conjunct is the remaining body.
+    assert [step.name for step in steps] == ['FILTER', 'LINK', 'FILTER']
+    assert steps[0].args[1].tentative and steps[1].args[1].t == 'var'
+    assert steps[2].args[1].pushed_down and steps[2].args[1].remaining.op == '$=='
+
+    # A leading customer conjunct goes into the right side; the order
+    # conjunct after it is the remaining body.
+    physical = optimize_ast_in_memory(sel_compile(
+        'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+        ' .> FILTER(_["customers"]["country"] $== "DE"'
+        ' AND _["orders"]["status"] $== "ACTIVE")'
+    ).ast)
+    _, steps = unwind_pipeline(physical)
+    assert [step.name for step in steps] == ['LINK', 'FILTER']
+    assert steps[0].args[1].name == 'FILTER' and steps[0].args[1].args[1].tentative
+    assert steps[1].args[1].pushed_down and steps[1].args[1].remaining.op == '$=='
+
+    # A wholly pushed predicate leaves TRUE as the remaining body.
+    physical = optimize_ast_in_memory(sel_compile(
+        'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+        ' .> FILTER(_["orders"]["status"] $== "ACTIVE")'
+    ).ast)
+    _, steps = unwind_pipeline(physical)
+    assert [step.name for step in steps] == ['FILTER', 'LINK', 'FILTER']
+    assert steps[2].args[1].remaining.t == 'bool' and steps[2].args[1].remaining.v is True
 
     # Join pushdown must return to the logical fixed point: a pushed left
     # predicate must fuse with a FILTER that was already before the LINK.
@@ -493,7 +521,9 @@ def test_optimizer_physical_join_pushdown_keeps_record():
         ' .> FILTER(_["orders"]["status"] $== "ACTIVE")'
     ).ast)
     _, steps = unwind_pipeline(fixed_point)
-    assert [step.name for step in steps] == ['FILTER', 'LINK']
+    # A pushed (tentative) FILTER does not fuse with the real FILTER that was
+    # already before the LINK: the fused predicate could only be one or the other.
+    assert [step.name for step in steps] == ['FILTER', 'FILTER', 'LINK', 'FILTER']
 
     # A qualified table reference is only affinity-safe when rooted at the
     # current filter binder or `_`; an external variable must remain above the
@@ -528,7 +558,10 @@ def test_optimizer_physical_join_pushdown_keeps_record():
         ' .> FILTER(_["C"]["country"] $== "DE")'
     ).ast)
     _, steps = unwind_pipeline(through_the_key)
-    assert [step.name for step in steps] == ['LINK']
+    # The right-side conjunct is pushed (tentatively) into the LINK's right
+    # source and the FILTER above keeps it (spec §7.4; SEL-0051).
+    assert [step.name for step in steps] == ['LINK', 'FILTER']
+    assert steps[0].args[1].name == 'FILTER' and steps[0].args[1].args[1].tentative
     pushed = steps[0].args[1]
     assert pushed.name == 'FILTER' and pushed.args[0].name == 'CUSTOMERS'
     assert pushed.args[1].l.obj.name == '_'
@@ -958,4 +991,58 @@ def test_join_prefilter_travels_down_a_chain_of_pure_joins():
     as_written, through_a_variable = _joined(src, ctx)
     assert as_written == through_a_variable
     assert as_written.startswith('ok ') and 's1' in as_written and 's2' not in as_written
+
+
+def test_join_prefilter_through_a_pushed_filter_keeps_results_keys_and_errors():
+    """SEL-0050: a qualified conjunct is pushed below the upper join by the
+    logical optimiser in every host, leaving a FILTER between the joins; the
+    pre-filter travels through it only by pre-applying that FILTER's own
+    predicate too, and drops rows below the upper join only when nothing
+    observes the top FILTER's keys (a MAP after it) -- otherwise it keeps the
+    numbering. Every shape is compared with the same program run through a
+    helper variable, which engages none of this."""
+    ctx = {
+        'ORDERS': _rows({'id': 1, 'customer_id': 7, 'status': 'A', 'amount': 5},
+                        {'id': 2, 'customer_id': 7, 'status': 'B', 'amount': 'x'},
+                        {'id': 3, 'customer_id': 9, 'status': 'A', 'amount': 1},
+                        {'id': 4, 'customer_id': 7, 'status': 'A', 'amount': 8},
+                        {'id': 5, 'customer_id': 7, 'status': 'B'}),
+        'CUSTOMERS': _rows({'id': 7, 'name': 'n7', 'tier': 'P'}, {'id': 9, 'name': 'n9', 'tier': 'G'}),
+        'ITEMS': _rows({'order_id': 1, 'sku': 's1'}, {'order_id': 2, 'sku': 's1'},
+                       {'order_id': 4, 'sku': 's2'}, {'order_id': 5, 'sku': 's1'}),
+    }
+    chain = ('ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+             ' .> LINK(ITEMS, _["orders"]["id"] == _2["order_id"])')
+    left_chain = chain.replace('LINK(ITEMS', 'LINK_LEFT(ITEMS')
+    import sel.builtins.aggregate as aggregate
+
+    def without_prefilter(src):
+        # The same physical tree -- the helper-variable form is not the oracle
+        # here, because the logical optimiser (every host) pushes the qualified
+        # conjunct below the upper join, where it is evaluated on rows the
+        # source program's AND would have short-circuited -- with the join
+        # pre-filter switched off.
+        real = aggregate._leading_field_conjuncts
+        aggregate._leading_field_conjuncts = lambda body, binder: ([], False)
+        try:
+            return _joined(src, ctx)[0]
+        finally:
+            aggregate._leading_field_conjuncts = real
+
+    for src in [
+        # the pushed conjunct reads a number that is text on order 2: an error
+        # where that row reaches the pushed FILTER, in both evaluations
+        f'FILTER_SRC{chain} .> FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2 AND _["sku"] $== "s1")',
+        f'FILTER_SRC{chain} .> FILTER(_["status"] $== "B" AND _["orders"]["amount"] > 2)',
+        # keys observed: the pipeline ends at the FILTER
+        f'FILTER_SRC{chain} .> FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 0 AND _["tier"] $== "P")',
+        # keys unobserved: a MAP follows, so rows may be dropped at the base
+        f'FILTER_SRC{chain} .> FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 0 AND _["tier"] $== "P") .> MAP(RECORD("s", _["sku"]))',
+        f'FILTER_SRC{left_chain} .> FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 0) .> MAP(RECORD("s", _["sku"]))',
+        # a field the row lacks (order 5 has no amount) and a key read _K
+        f'FILTER_SRC{chain} .> FILTER(_["orders"]["amount"] > 0 AND _["status"] $== "B") .> MAP(RECORD("s", _["sku"]))',
+        f'FILTER_SRC{chain} .> FILTER(_["status"] $== "A" AND _K > 1) .> MAP(RECORD("s", _["sku"]))',
+    ]:
+        as_written = _joined(src, ctx)[0]
+        assert as_written == without_prefilter(src), src
 

@@ -5,7 +5,7 @@ import * as D from '../decimal.mjs';
 import { Value, NONE, structuralHash } from '../value.mjs';
 import { define } from '../registry.mjs';
 import { bytesCompare } from '../utf8.mjs';
-import { fail } from '../errors.mjs';
+import { SelError, fail } from '../errors.mjs';
 
 // Two-argument form binds `_`; three-argument form takes a bare identifier as
 // the binder, checked by inspecting the AST node the caller handed us.
@@ -41,8 +41,11 @@ function nodeContainsVar(node, name) {
 
 // Runs `visit` per element with the binder and _K in scope. Returning a value
 // from `visit` stops the walk and becomes the result.
-function walk(args, ctx, visit) {
-  const { binder, body } = shape(args);
+// `tentative`: a body that raises keeps the element -- the visitor sees null
+// -- for the FILTER above to decide (a pushed conjunct, spec §7.4).
+function walk(args, ctx, visit, tentative = false, bodyOverride = null) {
+  const { binder, body: written } = shape(args);
+  const body = bodyOverride ?? written;
   const collection = args.val(0);
   const frame = new Map([[binder, null]]);
   const needsK = nodeContainsVar(body, '_K');
@@ -52,7 +55,14 @@ function walk(args, ctx, visit) {
     const visitItem = (key, item) => {
       frame.set(binder, item);
       if (needsK) frame.set('_K', Value.text(key));
-      return visit(args.evalNode(body), key, item, body);
+      let r;
+      try {
+        r = args.evalNode(body);
+      } catch (e) {
+        if (!tentative || !(e instanceof SelError)) throw e;
+        r = null;
+      }
+      return visit(r, key, item, body);
     };
     // Match Lisp's vector fast paths: read the packed storage directly and
     // reuse the binder frame. `entries()` is intentionally reserved for the
@@ -124,10 +134,41 @@ define({
   name: 'FILTER', min: 2, max: 3, lazy: true, binds: true,
   fn: (args, ctx) => {
     const out = new Value(NONE, null, true);
+    const written = args.node(args.nodes.length - 1);
+    const tentative = Boolean(written.tentative);
+    // A predicate whose leading conjuncts were pushed under the LINK below:
+    // when no tentative body kept a row on an error while the source ran,
+    // every row here passed them, and only the remaining conjuncts are
+    // evaluated (TRUE when there are none); otherwise the whole predicate,
+    // as written, decides -- and raises -- in the source's order.
+    let bodyOverride = null;
+    if (written.pushedDown) {
+      const before = ctx.tentativeKept;
+      const source = args.val(0);
+      if (ctx.tentativeKept === before) {
+        bodyOverride = written.remaining;
+        // Nothing remains: every row of the join below passed, and the join
+        // built a fresh list this FILTER would only copy.
+        if (bodyOverride.t === 'bool' && bodyOverride.v === true) return source;
+      }
+    }
     walk(args, ctx, (r, key, item, body) => {
-      if (r.asBool(body.pos)) out.set(key, item);
+      let keep;
+      if (r === null) {
+        keep = true;
+        ctx.tentativeKept++;
+      } else {
+        try {
+          keep = r.asBool(body.pos);
+        } catch (e) {
+          if (!tentative || !(e instanceof SelError)) throw e;
+          keep = true;
+          ctx.tentativeKept++;
+        }
+      }
+      if (keep) out.set(key, item);
       return undefined;
-    });
+    }, tentative, bodyOverride);
     return out;
   },
 });

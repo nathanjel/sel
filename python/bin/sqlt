@@ -175,6 +175,9 @@ def run_plan_case(c: dict) -> str | None:
         m = ERROR_RE.match(c['error'])
         if m is None:
             raise SuiteError(f"{c['at']}: malformed error expectation")
+        # The code alone: a plan refusal blames the bindings or the dialect,
+        # not a node of the rule, so it carries no position, and the generator
+        # refuses a case that writes one (SEL-0046).
         if error.code != m.group(1):
             return f'expected {m.group(1)}, got {error.code} ({error.message})'
         return None

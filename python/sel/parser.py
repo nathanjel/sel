@@ -128,6 +128,18 @@ class Node:
     math_plan: Any = None
     _cached_slot: Any = None
     record_shape: Any = None
+    # Physical-tree metadata (this host's optimiser stamps it on its own copy,
+    # never on the caller's tree): a FILTER body whose result keys nothing
+    # observes, so the evaluator's join pre-filter may drop rows below the join
+    # (SEL-0050).
+    keys_unobserved: bool = False
+    # A FILTER body the physical optimiser pushed under a LINK: it runs
+    # tentatively, keeping a row it raises on for the FILTER above; and a body
+    # whose conjuncts were pushed, kept whole and not to be pushed again
+    # (spec §7.4; SEL-0051).
+    tentative: bool = False
+    pushed_down: bool = False
+    remaining: 'Node | None' = None
 
 
 class Parser:

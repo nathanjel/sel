@@ -131,6 +131,9 @@ optimiser, and after the physical optimiser RUN uses."
       (unless err
         (return-from run-plan-case
           (format nil "expected ~a, got a ~a plan" (getf c :error) (classify plan))))
+      ;; The code alone: a plan refusal blames the bindings or the dialect,
+      ;; not a node of the rule, so it carries no position, and the generator
+      ;; refuses a case that writes one (SEL-0046).
       (destructuring-bind (code line col) (parse-expected (getf c :error) (getf c :at))
         (declare (ignore line col))
         (unless (equal (sql-error-code err) code)

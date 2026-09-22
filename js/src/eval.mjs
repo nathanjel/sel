@@ -21,6 +21,11 @@ export class Context {
     this.root = root || Value.none();
     this.frames = [];     // aggregate binders: Map<name, Value>
     this.depth = 0;
+    // Bumped by a tentative FILTER body (a conjunct pushed under a LINK) each
+    // time it keeps a row it raised on; the FILTER above compares it around
+    // its source's evaluation to know whether the pushed conjuncts held on
+    // every row it sees (SEL-0051).
+    this.tentativeKept = 0;
   }
 
   lookup(name) {

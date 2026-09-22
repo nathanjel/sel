@@ -9,6 +9,7 @@ use Sel\Args;
 use Sel\Context;
 use Sel\Dec;
 use Sel\Registry;
+use Sel\SelError;
 use Sel\Value;
 
 use function Sel\fail;
@@ -350,9 +351,24 @@ final class Core
      * Runs $visit per element with the binder and _K in scope. Returning a Value
      * from $visit stops the walk and becomes the result.
      */
-    private static function walk(Args $a, Context $ctx, callable $visit): ?Value
+    // $tentative: a body that raises keeps the element -- the visitor sees null --
+    // for the FILTER above to decide (a pushed conjunct, spec §7.4).
+    private static function evalBody(Args $a, array $body, bool $tentative): ?Value
+    {
+        if (!$tentative) {
+            return $a->evalNode($body);
+        }
+        try {
+            return $a->evalNode($body);
+        } catch (SelError) {
+            return null;
+        }
+    }
+
+    private static function walk(Args $a, Context $ctx, callable $visit, bool $tentative = false, ?array $bodyOverride = null): ?Value
     {
         ['binder' => $binder, 'body' => $body] = self::shape($a);
+        if ($bodyOverride !== null) $body = $bodyOverride;
         $result = null;
         $value = $a->val(0);
         $needsK = self::containsVar($body, '_K');
@@ -368,7 +384,7 @@ final class Core
                         $key = $value->listKeys[$i];
                         $topFrame[$binder] = $item;
                         if ($needsK) $topFrame['_K'] = Value::text($key);
-                        $result = $visit($a->evalNode($body), $key, $item, $body);
+                        $result = $visit(self::evalBody($a, $body, $tentative), $key, $item, $body);
                     }
                 } else {
                     foreach ($value->storage as $i => $item) {
@@ -376,7 +392,7 @@ final class Core
                         $key = $needsK ? (string) ($i + 1) : ($i + 1);
                         $topFrame[$binder] = $item;
                         if ($needsK) $topFrame['_K'] = Value::text((string) $key);
-                        $result = $visit($a->evalNode($body), $key, $item, $body);
+                        $result = $visit(self::evalBody($a, $body, $tentative), $key, $item, $body);
                     }
                 }
             } elseif ($value->shape !== null && $value->storage !== null) {
@@ -460,10 +476,42 @@ final class Core
                 $keys = [];
                 $needsCustomKeys = false;
                 $expectedIndex = 1;
-                self::walk($a, $ctx, static function (Value $r, string|int $key, Value $item, array $body) use (
-                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex
+                $written = $a->node($a->count() - 1);
+                $tentative = !empty($written['tentative']);
+                // A predicate whose leading conjuncts were pushed under the
+                // LINK below: when no tentative body kept a row on an error
+                // while the source ran, every row here passed them, and only
+                // the remaining conjuncts are evaluated (TRUE when there are
+                // none); otherwise the whole predicate, as written, decides --
+                // and raises -- in the source's order.
+                $bodyOverride = null;
+                if (!empty($written['pushedDown'])) {
+                    $before = $ctx->tentativeKept;
+                    $source = $a->val(0);
+                    if ($ctx->tentativeKept === $before) {
+                        $bodyOverride = $written['remaining'];
+                        // Nothing remains: every row of the join below passed,
+                        // and the join built a fresh list this FILTER would
+                        // only copy.
+                        if ($bodyOverride['t'] === 'bool' && $bodyOverride['v'] === true) return $source;
+                    }
+                }
+                self::walk($a, $ctx, static function (?Value $r, string|int $key, Value $item, array $body) use (
+                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex, $tentative, $ctx
                 ): ?Value {
-                    if ($r->asBool($body['pos'])) {
+                    if ($r === null) {
+                        $keep = true;
+                        $ctx->tentativeKept++;
+                    } else {
+                        try {
+                            $keep = $r->asBool($body['pos']);
+                        } catch (SelError $e) {
+                            if (!$tentative) throw $e;
+                            $keep = true;
+                            $ctx->tentativeKept++;
+                        }
+                    }
+                    if ($keep) {
                         $storage[] = $item;
                         $keyInt = is_int($key) ? $key : (int) $key;
                         if (!$needsCustomKeys && $keyInt !== $expectedIndex) {
@@ -478,7 +526,7 @@ final class Core
                         $expectedIndex++;
                     }
                     return null;
-                });
+                }, $tentative, $bodyOverride);
                 return Value::list($storage, $needsCustomKeys ? $keys : null);
             }]);
 

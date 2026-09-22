@@ -52,16 +52,34 @@ $leftQualified = optimized_steps(
     'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
     . ' .> FILTER(_["orders"]["status"] $== "COMPLETED")',
 );
-check(array_map(static fn (array $step): string => $step['name'], $leftQualified) === ['FILTER', 'LINK'],
+// The pushed conjuncts run tentatively under the join and the FILTER above
+// keeps its whole predicate (spec §7.4; SEL-0051).
+check(array_map(static fn (array $step): string => $step['name'], $leftQualified) === ['FILTER', 'LINK', 'FILTER']
+    && !empty($leftQualified[0]['args'][1]['tentative']) && !empty($leftQualified[2]['args'][1]['pushedDown']),
     'qualified left join-filter pushdown');
 
 $rightQualified = optimized_steps(
     'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
     . ' .> FILTER(_["customers"]["country"] $== "DE")',
 );
-check(count($rightQualified) === 1 && $rightQualified[0]['name'] === 'LINK'
-    && ($rightQualified[0]['args'][1]['name'] ?? null) === 'FILTER',
-    'qualified right join-filter pushdown');
+check(count($rightQualified) === 2 && $rightQualified[0]['name'] === 'LINK'
+    && ($rightQualified[0]['args'][1]['name'] ?? null) === 'FILTER'
+    && !empty($rightQualified[0]['args'][1]['args'][1]['tentative'])
+    && $rightQualified[1]['name'] === 'FILTER'
+    && ($rightQualified[1]['args'][1]['remaining']['t'] ?? null) === 'bool',
+    'qualified right join-filter pushdown; a wholly pushed predicate leaves TRUE as the remaining body');
+
+// Only the leading run of conjuncts naming one side is pushed: a customer
+// conjunct after an order conjunct stays above the join, as `remaining`.
+$mixed = optimized_steps(
+    'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+    . ' .> FILTER(_["orders"]["status"] $== "COMPLETED" AND _["customers"]["country"] $== "DE")',
+);
+check(array_map(static fn (array $step): string => $step['name'], $mixed) === ['FILTER', 'LINK', 'FILTER']
+    && !empty($mixed[0]['args'][1]['tentative']) && ($mixed[1]['args'][1]['t'] ?? null) === 'var'
+    && !empty($mixed[2]['args'][1]['pushedDown'])
+    && ($mixed[2]['args'][1]['remaining']['op'] ?? null) === '$==',
+    'a conjunct after the pushed run stays above the join as the remaining body');
 
 // Only a read through the joined row's key names a side. `O["x"]`, `C["x"]`
 // or `ORDERS["x"]` after the LINK is E_UNDEF_VAR / E_NO_KEY as written (spec
@@ -92,8 +110,8 @@ $fixedPoint = optimized_steps(
     . ' .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
     . ' .> FILTER(_["orders"]["status"] $== "ACTIVE")',
 );
-check(step_names($fixedPoint) === ['FILTER', 'LINK'],
-    'join pushdown returns to the logical fixed point');
+check(step_names($fixedPoint) === ['FILTER', 'FILTER', 'LINK', 'FILTER'],
+    'a pushed (tentative) FILTER does not fuse with the real FILTER already before the LINK');
 
 $groupKey = optimized_steps(
     'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'

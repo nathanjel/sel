@@ -776,6 +776,21 @@ left element outer, right element inner. With no right elements `pred` is never
 evaluated: an unmatched `LINK_LEFT` row costs no evaluation of it, and a `LINK`
 over an empty side is the empty list whatever `pred` would have done.
 
+**A `FILTER` after a `LINK` is evaluated as written.** An implementation may
+test a conjunct of the `FILTER`'s predicate against one side's elements before
+the join, to join fewer rows, but the program's value is that of evaluating the
+joined rows in order and the predicate left to right, `AND` short-circuiting
+as §5 says: a conjunct tested early that would raise keeps the element for the
+`FILTER` to decide, so no error is reported that the predicate as written would
+not have reached on that row, and none is missed — which also means a conjunct
+is tested early only when every conjunct before it is tested there too, since
+an earlier conjunct left for the join might raise on a row the early test
+would have dropped. `ORDERS .> LINK(C, …) .>
+FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2)` over an order whose
+status is `"B"` and whose amount is text answers the rows it would answer had
+the join been assigned to a variable first; the same predicate with its
+conjuncts swapped is `E_NOT_NUM` at the amount, in either form.
+
 ### 7.5 Text
 
 Positions are **1-based**, and `0` means "not found". Lengths and positions count

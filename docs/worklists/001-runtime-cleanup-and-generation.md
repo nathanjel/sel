@@ -78,11 +78,13 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0043](#sel-0043) | Positional index on a relation row: one refusal code and position | All five / SQL | Resolved | P2 |
 | [SEL-0044](#sel-0044) | Probe physical_ast and plan_hybrid in the API-parity lane | All five / validation | Resolved | P3 |
 | [SEL-0045](#sel-0045) | Sanitize the C++ SQL layer and planner | C++ / validation | Resolved | P3 |
-| [SEL-0046](#sel-0046) | Compare refused-plan error positions in every runner | All five / validation | Proposed | P3 |
+| [SEL-0046](#sel-0046) | Compare refused-plan error positions in every runner | All five / validation | Resolved | P3 |
 | [SEL-0047](#sel-0047) | Cover binding kinds and multi-line programs under plan_hybrid | All five / SQL | Proposed | P3 |
 | [SEL-0048](#sel-0048) | SELECT_COLS after a sort wrapped the plan in four hosts; the SQL fuzz lane never ran the generator's SQL mode | All five / SQL | Resolved | P2 |
 | [SEL-0049](#sel-0049) | Python's physical tree depends on the context's data; the other four depend on the AST alone | Python | Resolved | P2 |
-| [SEL-0050](#sel-0050) | Carry Python's join pre-filter through a pushed FILTER to recover scenario 5 | Python | Proposed | P3 |
+| [SEL-0050](#sel-0050) | Carry Python's join pre-filter through a pushed FILTER to recover scenario 5 | Python | Resolved | P3 |
+| [SEL-0051](#sel-0051) | The logical FILTER pushdown evaluates a pushed conjunct on rows an earlier conjunct would have short-circuited | All five | Resolved | P3 |
+| [SEL-0052](#sel-0052) | Recover scenario 5 exactly: a run-time join pre-filter that proves side ownership and totality, in every host | All five | Proposed | P3 |
 
 ## Working items
 
@@ -1380,14 +1382,68 @@ previous commit, startup ~2.2 ms per process. `tools/check.sh` still leaves
 <a id="sel-0046"></a>
 ### SEL-0046 — Compare refused-plan error positions in every runner
 
-**Proposed · P3 · All five / validation · Owner: unassigned.**
+**Resolved 2026-09-22 · P3 · All five / validation · Owner: unassigned.**
 Source: SEL-0037 reconciliation — 2026-09-15 review, low-severity report.
 
 **Next action:** For a `--- plan refused` case every runner parses `CODE line:col` and compares only the code (Python `python/bin/sqlt` ~172; Lisp `(declare (ignore line col))`), and `tools/gen-sql-cases.mjs` accepts a position it will never assert. Either compare the position when one is written, in all five runners, or have the generator refuse a position on a refused plan.
 
 **Close when:** A refused-plan case with a wrong position fails on every host, or cannot be written.
 
-**Resolution:** Pending.
+**Analysis (2026-09-22):** Confirmed on all five runners with probe cases (added, run, and
+removed again; the tree is as it was): a `--- plan refused` case whose
+`--- error` says `E_SQL_DIALECT 9:9` or `E_SQL_BINDING 9:9` PASSES on js,
+php, python, cpp and lisp — every runner parses the position and compares
+the code alone, where its translate path compares both. With the five
+refused branches patched to compare a written position (the translate
+path's check, copied), the same probes fail identically on every host: `got
+it at 0:0`. That is the finding under the finding: **a plan refusal carries no
+program position on any host** — the two refusals planning can raise, a base
+dialect and an alias collision, blame the bindings or the dialect, not the
+rule, and every host's `SqlError` reports `0:0` when no node is blamed. The
+only refused-plan case in the suite (`plan.refuse.base-dialect`) writes no
+position, correctly. So the option "compare the position when one is
+written" would pin only `0:0`, a position that is not one. A third probe
+showed the boundary: a program the translator refuses with `E_SQL_DEPTH`
+(`A = 1;` before 200 terms, or a 200-term predicate over a bound relation) is
+not refused by `plan_hybrid` on any host — it is classified `pure_memory`,
+on all five alike, so the planner never refuses for a reason inside the
+program, and running such a plan raises `E_DEPTH` in the evaluator.
+Recommended: (1) have `tools/gen-sql-cases.mjs` refuse a position on a
+refused plan (it already refuses `--- expect` and `--- tables` there) and say
+in sql/cases/README.md's `plan` row that a refusal blames the bindings or the
+dialect and carries no position; leave the five runners comparing the code
+and replace Lisp's `(declare (ignore line col))` and its four twins with a
+comment saying why (the position is never written); (2) pin the depth
+boundary as a decision with two planner cases — the 200-term chain behind
+`A = 1;` and the 200-term predicate over a relation are `pure_memory` — or
+decide instead that the planner should refuse what stage 1 refuses, in which
+case `E_SQL_DEPTH 1:8` becomes the one refusal with a program position and
+the runners must compare it (the patch is the translate path's five-line
+check, copied into each refused branch; it was applied and reverted here).
+
+**Resolution:** Resolved 2026-09-22, working tree on `b274aa2` (commit
+pending), by the second closing condition — the case cannot be written.
+`tools/gen-sql-cases.mjs` now refuses a `--- plan refused` case whose
+`--- error` carries a position (a probe with `E_SQL_DIALECT 1:1` stops the
+generator with "a refused plan blames the bindings or the dialect, not a
+position"), and sql/cases/README.md says why beside the `plan` rule: planning
+refuses only on the bindings or the dialect, which blame no node of the rule,
+so the error carries no position, and a refusal that blames a place in the
+program is a translate case. The five runners keep comparing the code, and
+each refused branch now says so in a comment where Lisp's
+`(declare (ignore line col))` stood unexplained. The depth boundary is pinned
+as a decision by two planner cases, `plan.pure-memory.past-the-depth-limit-
+falls-back` (200 terms behind `A = 1;`, no source table) and
+`plan.pure-memory.past-the-depth-limit-over-a-relation` (the 200-term
+predicate over a bound relation, `orders` still named): both `pure_memory` on
+all five, beside `plan.pure-memory.non-normalisable-falls-back`, whose note
+already states the rule that a program stage 1 refuses is a plan the database
+does none of. Full SQL check: 881 cases per host (from 879); generated
+artifacts, dialect map and case data current; SQL API 27 probes and the map
+replay agreeing on five hosts; SQL docs 27 quoted examples right; with the
+gate's Docker servers, mutations 197 caught, 0 survived, 0 skipped; oracle 0
+differing on every dialect; SQL fuzz 2,000 programs 0 disagreements host
+versus host and 0 differing against every server.
 
 <a id="sel-0047"></a>
 ### SEL-0047 — Cover binding kinds and multi-line programs under plan_hybrid
@@ -1471,14 +1527,141 @@ Recovering it soundly is SEL-0050.
 <a id="sel-0050"></a>
 ### SEL-0050 — Carry Python's join pre-filter through a pushed FILTER to recover scenario 5
 
-**Proposed · P3 · Python · Owner: unassigned.**
+**Resolved 2026-09-22 · P3 · Python · Owner: unassigned.**
 Source: SEL-0049 closure, 2026-09-22.
 
 **Next action:** Scenario 5's leading conjuncts (`status`, `tier`) cannot travel below the FILTER the logical optimiser pushed between its joins: a row dropped before that FILTER would skip the error its predicate might raise, and dropping rows inside it would renumber the join above. One sound design: hand the conjuncts through the FILTER as *marks* rather than drops — a marked row still passes the intermediate predicate (so its error surfaces in order), the join above computes its key and match count for a marked row and advances its numbering without emitting — so the base joins shrink as the old rewrite made them. Measure S5 (`tools/scale-test/sel_benchmarks.py --only scenario5`) and the whole set; pin results, keys and errors as SEL-0049's tests do.
 
 **Close when:** S5 measures near its former 630 ms with results, keys and error order unchanged; the physical tree stays a function of the AST.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-22, by a different route than the marks
+sketched above. The conjuncts travel as STAGES, one per FILTER in the order
+the FILTERs run: a FILTER between two joins (the one the logical optimiser
+pushed) takes the stages handed down by the join above, puts its own whole
+predicate first — only when every conjunct of it is pre-evaluable, so a row
+dropped below could not have raised in it — and hands them to its own join;
+each join applies the stages in order with the keep-on-error rule and cuts the
+list at the first conjunct that reads a field its right rows have. Deep drops
+(below the join directly under the owning FILTER) change that FILTER's keys,
+so the physical optimiser stamps each FILTER body with whether a following
+step renumbers without reading `_K` (`keys_unobserved`, the same notion the
+logical rewrites use; a new field on this host's node) and deep drops happen
+only then; otherwise the join under the FILTER keeps the numbering as before.
+Three costs were then taken out of the sound path: a join reports upward how
+many conjuncts every row it emitted has passed and whether any row was kept
+on an error, so the join above re-applies only the rest (or everything, after
+an error); the right side's keys are gathered once per record shape, and once
+per identity scan when a dense list shares one shape; and a row that carries a
+literal join key (`_1["customer_id"]`) is rejected before its key is computed,
+since the read could only have raised for a row without the field. Scale
+scenarios, before → now: S1 1,997 → 2,022 ms, S2 37.5 → 37.7, S3 925 → 931,
+S4 62.0 → 61.6, S6 793 → 776, **S5 630 → 698 ms** (from 1,382 at SEL-0049's
+close). The residual 11% is the price of soundness: the old rewrite also
+skipped the join key of every row it dropped, and never checked the right
+rows' keys. A third parity test pins results, keys and errors on the deep
+path against the same physical tree with the pre-filter switched off — the
+helper-variable oracle does not serve there, which is SEL-0051.
+
+<a id="sel-0051"></a>
+### SEL-0051 — The logical FILTER pushdown evaluates a pushed conjunct on rows an earlier conjunct would have short-circuited
+
+**Resolved 2026-09-22 · P3 · All five · Owner: unassigned.**
+Source: SEL-0050's tests, 2026-09-22.
+
+**Next action:** `ORDERS .> LINK(CUSTOMERS, …) .> LINK(ITEMS, …) .> FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2 AND _["sku"] $== "s1")` raises `E_NOT_NUM` in every host when an order with status B carries a text amount, because the qualified conjunct is pushed below the upper join and evaluated on rows the source program's `AND` would have skipped; through a helper variable (`J = …; J .> FILTER(…)`) the same program answers rows. The five hosts agree, so parity holds, but docs/SQL-TRANSLATION.md §12.1's "a rewrite keeps the program's value, or it does not fire" is not true of errors here. Decide: document the rule as "a pushed conjunct may be evaluated where its short-circuit would not have reached" (and say so beside the rewrite in every host), or restrict the pushdown to conjuncts that precede no unpushed one. Measure S5 on every host before choosing the second.
+
+**Close when:** The rule is written in §12.1 and a `.selt` case pins the chosen behaviour on all five.
+
+**Analysis (2026-09-22, before the change):** Proven on all five hosts with one batch corpus (js, php, cpp,
+lisp, python answer identically): as written, `ORDERS .> LINK(CUSTOMERS,
+_1["customer_id"] == _2["id"]) .> FILTER(_["status"] $== "A" AND
+_["orders"]["amount"] > 2)` over an order with status B and amount "x" is
+`E_NOT_NUM` at 1:295; `J = ORDERS .> LINK(…); J .> FILTER(…)` returns the
+one row; with the conjuncts swapped both forms raise (the control); the same
+predicate over a plain list returns the row. It is the PHYSICAL join
+predicate pushdown, not the logical tier: the logical tree is unchanged and
+the physical tree is `MAP{FILTER{LINK{FILTER{ORDERS} pred=(_['amount'] > 2)}}
+pred=(_['status'] $== 'A')}` — each conjunct is classified by the side it
+reads and moved on its own, whatever its place in the AND chain
+(`pushdownJoinFilters` in every host), so a conjunct the source program's
+short-circuit would never have reached on that row is evaluated there. The
+planner and SQL translation are not involved. Nothing pins it: the three
+`rel.link.then-filter.*` cases pin name resolution after a LINK (review W2),
+not evaluation order. What the pushdown is worth: JS scenario 5 is 508 ms
+with it and 706 ms running the logical tree alone. Options: (A) document —
+spec §7 and docs/SQL-TRANSLATION.md §12.1 say a pushed conjunct may be
+evaluated on rows an earlier conjunct would have rejected, and a `.selt`
+case pins the raise; (B) push only conjuncts that precede no unpushed one —
+exact source semantics, costs the four fast hosts ~40% on S5 and Python
+more; (C) push tentatively — the pushed FILTER keeps a row its predicate
+raises on and the conjunct stays in the top predicate, so errors surface in
+source order and the row-shrinking is kept (the rule Python's run-time
+pre-filter already lives by); a flag on the pushed node in every host, one
+line in each evaluator's FILTER, and the top predicate re-evaluates a passed
+conjunct on surviving rows — recommended. Session report 2026-09-22 carries
+the code sketches.
+
+**Resolution:** Resolved 2026-09-22, working tree on `b274aa2` (commit
+pending), by option C made exact. Spec §7.4 now says a `FILTER` after a
+`LINK` is evaluated as written, and draws the consequence that a conjunct is
+tested early only when every conjunct before it is tested there too. Nine
+`rel.link*.then-filter.*` cases pin it on five hosts: the pushed conjunct
+keeps the source order (left, right, `LINK_LEFT`), raises where the source
+does, two raising conjuncts report the first, a conjunct after a raising one
+is not tested early, a right conjunct after a left one is not tested early,
+and the conjunct after the tested run still filters, and raises in its place.
+Option C as sketched had a hole that writing those cases found: a pushed
+conjunct that is FALSE on a row drops it, and a conjunct EARLIER in the `AND`
+that reads the joined row — `_["customers"]["credit"] > _["orders"]["id"]` —
+would have raised on that row's join; the tentative keep covers only the
+pushed conjunct's own raise. Proven on JS and Python before the fix: the
+program as written `E_NOT_NUM`, the tree an empty list. So the rewrite in
+every host now moves only the LEADING run of conjuncts that name one side (a
+left run, or a right run under an inner join), and moves it tentatively: a
+raise in the pushed body keeps the row and bumps a counter on the context;
+the `FILTER` above keeps its whole predicate, marked `pushed_down`, with the
+conjuncts that did not move as `remaining` (`TRUE` when all did), and
+evaluates only `remaining` when the counter did not move while its source ran
+— every row it sees then passed the pushed run, deterministically, since that
+run read only its own side's row — or the whole predicate, in source order,
+when a row was kept on an error; a `TRUE` remainder returns the join's list
+as it is. FILTER fusion merges bodies of equal tentativeness only and carries
+the marks and the remainder. The marks are `tentative`/`pushedDown`/
+`remaining` on JS and PHP nodes, dataclass fields on Python's, `Node` members
+in C++ (`sel_ast.hpp`), slots in Lisp (`copy-node-shallow` copies them).
+Shape checks updated: `tools/check-js-optimizer.mjs` (139),
+`tools/check-php-optimizer.php` (136), `python/tests/test_unit.py` (634),
+`cpp/tests/unit.cpp` (173), `lisp/tests/unit.lisp` (550). Scale scenarios,
+HEAD `b274aa2` against this tree, interleaved, seven runs after two warm-ups:
+S1–S4 and S6 within run-to-run spread on every host (S1: C++ 561.9 → 550.7
+ms, JS 616.0 → 601.0, PHP 3,468.6 → 3,484.2, Python 2,003.9 → 2,028.1, Lisp
+469.0 → 462.0; S3: 176.0 → 174.2, 231.4 → 224.3, 1,103.9 → 1,110.6, 916.5 →
+928.8, 225.0 → 235.0). **Scenario 5 is slower on the four hosts whose speed
+there came from the unsound rewrite: C++ 523.7 → 634.5 ms (+21%), JS 493.7 →
+695.7 (+41%), PHP 2,207.8 → 3,132.7 (+42%), Lisp 396.0 → 527.0 (+33%)** — its
+predicate opens with two unqualified conjuncts (`_["status"]`, `_["tier"]`),
+which name no side (SEL-0049), so the qualified `_["orders"]["order_year"]`
+after them no longer moves under the joins; nothing else in the scale set has
+a conjunct after an unpushed one. Python, whose run-time pre-filter proves
+side ownership from the data, is 1,361.9 → 902.3 ms against HEAD (−34%), but
+was 698 with the uncommitted SEL-0050 tree that still had the unsound push
+(that staging cuts its list at `tier`, a customers field, and leaned on the
+pushed FILTER to have thinned ORDERS below it). Recovering S5 exactly is
+SEL-0052. Validation: 944 conformance cases on seven roster entries;
+differential fuzz 4,000 programs and SQL fuzz 2,000 programs with 0
+disagreements; API 64, SQL API 27 and the end-to-end scenarios agreeing;
+`tools/check.sh` ALL GREEN (49 layers) with the gate's own Docker servers,
+197 mutations caught; no compiler warning.
+
+<a id="sel-0052"></a>
+### SEL-0052 — Recover scenario 5 exactly: a run-time join pre-filter that proves side ownership and totality, in every host
+
+**Proposed · P3 · All five · Owner: unassigned.**
+Source: SEL-0051 closure, 2026-09-22.
+
+**Next action:** The physical pushdown can move only a leading run of one-sided conjuncts (SEL-0051), and a predicate that opens with unqualified reads — scenario 5's `_["status"] $== "COMPLETED" AND _["tier"] $== "PLATINUM" AND _["orders"]["order_year"] == 2026` — moves nothing, which costs JS, PHP, C++ and Lisp 21–42% there against the unsound rewrite. What the tree cannot know, the join can: Python's `_link` already pre-applies a FILTER's leading conjuncts to left rows where the read field is a key of no right row (SEL-0049/0050), and reached 698 ms while the unsound push still thinned ORDERS below it, 902 without. Two steps. (1) Extend Python's staging so a conjunct may be applied below an earlier one that is *total* over the joined rows — its field owned by one side and present, with the operator's type, in every row of that side (`$==` on `tier` needs a text in every customer), a per-relation scan cached beside the key sets — so `order_year` reaches ORDERS while `tier` waits for the customer join; the report upward becomes a set of passed conjuncts rather than a count. (2) Port the pre-filter — stages, reports, key gathering, the literal-key fast path and the totality proof — to the other four hosts, whose `LINK` builtins take the same shape. Measure S5 per host with the scale harness against `b274aa2`; the rest of the set must stay flat.
+
+**Close when:** S5 is within run-to-run spread of the `b274aa2` figure on every host (C++ 524 ms, JS 494, PHP 2,208, Lisp 396; Python 698, the SEL-0050 figure) with the SEL-0051 cases green; the physical tree stays a function of the AST.
 
 ## Suggested order
 
@@ -1507,4 +1690,5 @@ closure when its evidence is recorded.
 | Database fuzz lane findings, 2026-09-21 | SEL-0034 (closure), SEL-0041 |
 | Review reconciliation, 2026-09-22 | SEL-0037 (closure), SEL-0042–0047 |
 | SQL fuzz lane in SQL mode, 2026-09-22 | SEL-0048 |
-| API-lane analysis, 2026-09-22 | SEL-0044, SEL-0049 (closures), SEL-0050 |
+| API-lane analysis, 2026-09-22 | SEL-0044, SEL-0049, SEL-0050 (closures), SEL-0051 |
+| SEL-0051 closure, 2026-09-22 | SEL-0052 |

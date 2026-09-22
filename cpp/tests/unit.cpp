@@ -497,9 +497,32 @@ void test_relational_optimizations() {
       "ORDERS .> FILTER(_[\"status\"] $== \"ACTIVE\")"
       " .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
       " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\")");
-  selt::ok(fixed_point.size() == 2 && fixed_point[0]->s == "FILTER" &&
-               fixed_point[1]->s == "LINK",
+  // The pushed (tentative) FILTER does not fuse with the as-written FILTER
+  // already before the LINK, and the FILTER after the LINK is retained with
+  // its whole predicate, marked so the next pass leaves it (SEL-0051).
+  selt::ok(fixed_point.size() == 4 && fixed_point[0]->s == "FILTER" &&
+               fixed_point[1]->s == "FILTER" && fixed_point[2]->s == "LINK" &&
+               fixed_point[3]->s == "FILTER" &&
+               !fixed_point[0]->items[1]->tentative && fixed_point[1]->items[1]->tentative &&
+               fixed_point[3]->items[1]->pushed_down,
            "join pushdown returns to the logical fixed point");
+
+  // Only the leading run of conjuncts naming one side is pushed; a customer
+  // conjunct after an order conjunct stays above the join as `remaining`.
+  const auto mixed = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
+      " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\" AND _[\"customers\"][\"country\"] $== \"DE\")");
+  selt::ok(mixed.size() == 3 && mixed[0]->s == "FILTER" && mixed[0]->items[1]->tentative &&
+               mixed[1]->s == "LINK" && mixed[1]->items[1]->t == NT::Var &&
+               mixed[2]->s == "FILTER" && mixed[2]->items[1]->pushed_down &&
+               mixed[2]->items[1]->remaining && mixed[2]->items[1]->remaining->s == "$==",
+           "a conjunct after the pushed run stays above the join as the remaining body");
+  const auto whole = optimized_steps(
+      "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
+      " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\")");
+  selt::ok(whole.size() == 3 && whole[2]->items[1]->remaining &&
+               whole[2]->items[1]->remaining->t == NT::Bool && whole[2]->items[1]->remaining->b,
+           "a wholly pushed predicate leaves TRUE as the remaining body");
 
   const auto external_root = optimized_steps(
       "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
@@ -521,17 +544,21 @@ void test_relational_optimizations() {
   const auto through_key = optimized_steps(
       "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
       " .> FILTER(_[\"O\"][\"status\"] $== \"ACTIVE\")");
-  selt::ok(through_key.size() == 2 && through_key[0]->s == "FILTER" &&
-               through_key[1]->s == "LINK",
+  selt::ok(through_key.size() == 3 && through_key[0]->s == "FILTER" &&
+               through_key[1]->s == "LINK" && through_key[2]->s == "FILTER" &&
+               through_key[0]->items[1]->tentative && !through_key[2]->items[1]->tentative &&
+               through_key[2]->items[1]->pushed_down,
            "a read through the joined row's left key pushes into the left side");
 
   const auto through_right_key = optimized_steps(
       "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
       " .> FILTER(_[\"C\"][\"name\"] $== \"x\")");
-  selt::ok(through_right_key.size() == 1 && through_right_key[0]->s == "LINK" &&
+  selt::ok(through_right_key.size() == 2 && through_right_key[0]->s == "LINK" &&
                through_right_key[0]->items.size() >= 2 &&
                through_right_key[0]->items[1]->t == NT::Call &&
-               through_right_key[0]->items[1]->s == "FILTER",
+               through_right_key[0]->items[1]->s == "FILTER" &&
+               through_right_key[0]->items[1]->items[1]->tentative &&
+               through_right_key[1]->s == "FILTER" && through_right_key[1]->items[1]->pushed_down,
            "a read through the joined row's right key pushes into the right side");
 
   const auto bare_left_binder = optimized_steps(

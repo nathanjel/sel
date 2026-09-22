@@ -468,13 +468,27 @@ final class Optimizer
                     && $firstName === 'FILTER' && $secondName === 'FILTER') {
                     $left = self::filterDetails($first);
                     $right = self::filterDetails($second);
-                    if ($left['valid'] && $right['valid']) {
+                    // A tentative FILTER (a pushed conjunct, kept on error) never
+                    // fuses with a real one: the fused predicate could only be
+                    // one or the other.
+                    if ($left['valid'] && $right['valid']
+                        && !empty($left['predicate']['tentative']) === !empty($right['predicate']['tentative'])) {
                         $predicate = strcasecmp($right['binder'], $left['binder']) === 0
                             ? $right['predicate']
                             : self::renameVar($right['predicate'], $right['binder'], $left['binder']);
                         $merged = self::copyNode($first);
                         $and = ['t' => 'bin', 'op' => 'AND', 'l' => $left['predicate'],
                                 'r' => $predicate, 'pos' => $left['predicate']['pos']];
+                        if (!empty($left['predicate']['tentative'])) $and['tentative'] = true;
+                        if (!empty($left['predicate']['pushedDown']) || !empty($right['predicate']['pushedDown'])) {
+                            $and['pushedDown'] = true;
+                            $rest = static fn (array $p): array => !empty($p['pushedDown']) ? $p['remaining'] : $p;
+                            $isTrue = static fn (array $p): bool => $p['t'] === 'bool' && $p['v'] === true;
+                            $l = $rest($left['predicate']);
+                            $r = $rest($predicate);
+                            $and['remaining'] = $isTrue($l) ? $r : ($isTrue($r) ? $l
+                                : ['t' => 'bin', 'op' => 'AND', 'l' => $l, 'r' => $r, 'pos' => $left['predicate']['pos']]);
+                        }
                         $merged['args'] = $left['explicit']
                             ? [$first['args'][0], $first['args'][1], $and]
                             : [$first['args'][0], $and];
@@ -787,37 +801,71 @@ final class Optimizer
                 if (($link['args'][2]['t'] ?? null) === 'var') $leftNames[] = $link['args'][2]['name'];
                 if (($link['args'][3]['t'] ?? null) === 'var') $rightNames[] = $link['args'][3]['name'];
             }
+            // A FILTER whose conjuncts were already pushed keeps them all (see
+            // below), so it must not be pushed again on the next pass.
+            if (!empty($info['predicate']['pushedDown'])) {
+                $out[] = $link;
+                continue;
+            }
             $left = [];
             $right = [];
             $remaining = [];
+            // Only the LEADING run of conjuncts that name one side is pushed: a
+            // conjunct left for the join might raise on a row an early test of
+            // a later conjunct would drop, and the program as written reaches
+            // that raise first (spec §7.4; SEL-0051). The rest stays above.
+            $side = null;
             foreach (self::splitAnd($info['predicate']) as $conjunct) {
                 $affinity = self::predicateAffinity($conjunct, $info['binder'], $leftNames, $rightNames);
-                if ($affinity === 'left') $left[] = self::rewriteJoinRefs($conjunct, $leftNames, $info['binder']);
-                elseif ($affinity === 'right' && $link['name'] === 'LINK') $right[] = self::rewriteJoinRefs($conjunct, $rightNames, $info['binder']);
-                else $remaining[] = $conjunct;
+                if ($remaining === [] && $affinity === 'left' && $side !== 'right') {
+                    $side = 'left';
+                    $left[] = self::rewriteJoinRefs($conjunct, $leftNames, $info['binder']);
+                } elseif ($remaining === [] && $affinity === 'right' && $link['name'] === 'LINK' && $side !== 'left') {
+                    $side = 'right';
+                    $right[] = self::rewriteJoinRefs($conjunct, $rightNames, $info['binder']);
+                } else {
+                    $remaining[] = $conjunct;
+                }
             }
             if ($left === [] && $right === []) {
                 $out[] = $link;
                 continue;
             }
+            // The pushed conjuncts run TENTATIVELY under the join -- a row they
+            // raise on is kept -- and the FILTER above keeps its whole predicate
+            // in the source's order, so the program raises what it raises as
+            // written, where it would have (spec §7.4; SEL-0051). The marks are
+            // physical-tree metadata on the body nodes; copies and filter
+            // fusion keep them.
+            $tentative = static function (array $conjuncts, array $pos): array {
+                $body = self::combineAnd($conjuncts, $pos);
+                $body['tentative'] = true;
+                return $body;
+            };
             if ($left !== []) {
-                $out[] = self::callNode('FILTER', [$link['args'][0], self::combineAnd($left, $filter['pos'])], $filter['pos']);
+                $out[] = self::callNode('FILTER', [$link['args'][0], $tentative($left, $filter['pos'])], $filter['pos']);
             }
             $newLink = $link;
             if ($right !== []) {
                 $newLink = self::copyNode($link);
                 $newLink['args'] = $link['args'];
-                $newLink['args'][1] = self::callNode('FILTER', [$link['args'][1], self::combineAnd($right, $filter['pos'])], $filter['pos']);
+                $newLink['args'][1] = self::callNode('FILTER', [$link['args'][1], $tentative($right, $filter['pos'])], $filter['pos']);
             }
             $out[] = $newLink;
-            if ($remaining !== []) {
-                $newFilter = self::copyNode($filter);
-                $predicate = self::combineAnd($remaining, $filter['pos']);
-                $newFilter['args'] = $info['explicit']
-                    ? [$newLink, $filter['args'][1], $predicate]
-                    : [$newLink, $predicate];
-                $out[] = $newFilter;
-            }
+            // The retained predicate is the whole one; `remaining` is what the
+            // FILTER evaluates instead when no tentative body kept a row on an
+            // error while its source ran (the pushed conjuncts then held on
+            // every row it sees).
+            $predicate = $info['predicate'];
+            $predicate['pushedDown'] = true;
+            $predicate['remaining'] = $remaining !== []
+                ? self::combineAnd($remaining, $filter['pos'])
+                : self::boolNode(true, $filter['pos']);
+            $newFilter = self::copyNode($filter);
+            $newFilter['args'] = $info['explicit']
+                ? [$newLink, $filter['args'][1], $predicate]
+                : [$newLink, $predicate];
+            $out[] = $newFilter;
             $changed = true;
             $i++;
         }
