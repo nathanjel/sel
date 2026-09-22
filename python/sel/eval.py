@@ -38,12 +38,16 @@ _MAX = OpCode.MAX
 
 
 class Context:
-    __slots__ = ('root', 'frames', 'depth')
+    __slots__ = ('root', 'frames', 'depth', 'join_prefilter')
 
     def __init__(self, root: Value | None = None) -> None:
         self.root = root if root is not None else Value.none()
         self.frames: list[dict[str, Value]] = []   # aggregate binders
         self.depth = 0
+        # A FILTER whose source is a LINK hands the join its leading conjuncts
+        # here, for the join to pre-apply to left rows where that is provably
+        # the same as filtering the joined rows (builtins/structure.py, _link).
+        self.join_prefilter = None
 
     def lookup(self, name: str) -> Value | None:
         frames = self.frames

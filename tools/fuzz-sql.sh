@@ -25,7 +25,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 echo "generating $COUNT programs (seed $SEED)..."
-node tools/gen-programs.mjs "$COUNT" "$SEED" > "$WORK/corpus.selc"
+node tools/gen-programs.mjs "$COUNT" "$SEED" --sql > "$WORK/corpus.selc"
 
 # An empty corpus makes every comparison vacuously unanimous, the same guard
 # fuzz.sh has for the same reason.

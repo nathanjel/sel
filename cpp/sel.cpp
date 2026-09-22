@@ -420,9 +420,9 @@ std::vector<uint32_t> mul_limbs(const std::vector<uint32_t>& la, const std::vect
   if (lb.size() == 1 && lb[0] == 1) return la;
   const size_t n = la.size(), m = lb.size();
   const size_t total = n + m;
-  unsigned __int128 stack_acc[256];
-  std::vector<unsigned __int128> heap_acc;
-  unsigned __int128* acc = nullptr;
+  __uint128_t stack_acc[256];
+  std::vector<__uint128_t> heap_acc;
+  __uint128_t* acc = nullptr;
   if (total <= 256) {
     std::fill_n(stack_acc, total, 0);
     acc = stack_acc;
@@ -434,13 +434,13 @@ std::vector<uint32_t> mul_limbs(const std::vector<uint32_t>& la, const std::vect
     const uint64_t av = la[i];
     if (av == 0) continue;
     for (size_t j = 0; j < m; ++j) {
-      acc[i + j] += static_cast<unsigned __int128>(av) * lb[j];
+      acc[i + j] += static_cast<__uint128_t>(av) * lb[j];
     }
   }
   std::vector<uint32_t> res(total);
-  unsigned __int128 carry = 0;
+  __uint128_t carry = 0;
   for (size_t i = 0; i < total; ++i) {
-    unsigned __int128 cur = acc[i] + carry;
+    __uint128_t cur = acc[i] + carry;
     res[i] = static_cast<uint32_t>(cur % BASE_10E9);
     carry = cur / BASE_10E9;
   }
@@ -469,7 +469,7 @@ void scale_up_limbs(std::vector<uint32_t>& limbs, long long diff) {
   }
 }
 
-std::string dec_digits_from_magnitude(unsigned __int128 magnitude) {
+std::string dec_digits_from_magnitude(__uint128_t magnitude) {
   if (magnitude == 0) return "0";
   char buf[42];
   int pos = 42;
@@ -484,7 +484,7 @@ std::string add_abs(const std::string& a, const std::string& b) {
   if (a == "0") return b;
   if (b == "0") return a;
   if (a.size() <= 18 && b.size() <= 18) {
-    unsigned __int128 va = 0, vb = 0;
+    __uint128_t va = 0, vb = 0;
     for (char c : a) va = va * 10 + (c - '0');
     for (char c : b) vb = vb * 10 + (c - '0');
     return dec_digits_from_magnitude(va + vb);
@@ -497,7 +497,7 @@ std::string sub_abs(const std::string& a, const std::string& b) {
   if (a == b) return "0";
   if (b == "0") return a;
   if (a.size() <= 18 && b.size() <= 18) {
-    unsigned __int128 va = 0, vb = 0;
+    __uint128_t va = 0, vb = 0;
     for (char c : a) va = va * 10 + (c - '0');
     for (char c : b) vb = vb * 10 + (c - '0');
     return dec_digits_from_magnitude(va - vb);
@@ -572,8 +572,8 @@ const std::vector<uint32_t>& dec_get_limbs(const Dec& d) {
   if (!d.limbs.empty()) return d.limbs;
   if (d.small) {
     std::vector<uint32_t>& l = const_cast<Dec&>(d).limbs;
-    unsigned __int128 mag = d.mantissa < 0 ? static_cast<unsigned __int128>(-(d.mantissa))
-                                           : static_cast<unsigned __int128>(d.mantissa);
+    __uint128_t mag = d.mantissa < 0 ? static_cast<__uint128_t>(-(d.mantissa))
+                                           : static_cast<__uint128_t>(d.mantissa);
     if (mag == 0) {
       l.push_back(0);
     } else {
@@ -595,8 +595,8 @@ const std::vector<uint32_t>& dec_get_limbs(const Dec& d) {
 const std::string& dec_get_digits(const Dec& d) {
   if (!d.digits.empty()) return d.digits;
   if (d.small) {
-    unsigned __int128 mag = d.mantissa < 0 ? static_cast<unsigned __int128>(-(d.mantissa))
-                                           : static_cast<unsigned __int128>(d.mantissa);
+    __uint128_t mag = d.mantissa < 0 ? static_cast<__uint128_t>(-(d.mantissa))
+                                           : static_cast<__uint128_t>(d.mantissa);
     const_cast<Dec&>(d).digits = dec_digits_from_magnitude(mag);
     return d.digits;
   }
@@ -623,12 +623,12 @@ Dec dec_from_limbs(bool neg, std::vector<uint32_t> limbs, long long scale) {
     return dec_from_mantissa(0, scale);
   }
   if (scale <= 38 && limbs.size() <= 4) {
-    unsigned __int128 mag = 0;
+    __uint128_t mag = 0;
     for (size_t i = limbs.size(); i > 0; --i) {
       mag = mag * BASE_10E9 + limbs[i - 1];
     }
-    const unsigned __int128 limit = neg ? (static_cast<unsigned __int128>(1) << 127)
-                                        : static_cast<unsigned __int128>(~((static_cast<unsigned __int128>(1)) << 127));
+    const __uint128_t limit = neg ? (static_cast<__uint128_t>(1) << 127)
+                                        : static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
     if (mag <= limit) {
       __int128_t mantissa = neg ? -static_cast<__int128_t>(mag) : static_cast<__int128_t>(mag);
       return dec_from_mantissa(mantissa, scale);
@@ -644,17 +644,17 @@ Dec dec_from_limbs(bool neg, std::vector<uint32_t> limbs, long long scale) {
 
 std::optional<__int128_t> dec_small_mantissa(const std::string& digits, bool neg) {
   if (digits.size() > 38) return std::nullopt;
-  const unsigned __int128 limit =
-      neg ? (static_cast<unsigned __int128>(1) << 127)
-          : static_cast<unsigned __int128>(~((static_cast<unsigned __int128>(1)) << 127));
-  unsigned __int128 magnitude = 0;
+  const __uint128_t limit =
+      neg ? (static_cast<__uint128_t>(1) << 127)
+          : static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
+  __uint128_t magnitude = 0;
   for (const char ch : digits) {
     const unsigned digit = static_cast<unsigned>(ch - '0');
     if (magnitude > (limit - digit) / 10) return std::nullopt;
     magnitude = magnitude * 10 + digit;
   }
   if (!neg) return static_cast<__int128_t>(magnitude);
-  if (magnitude == (static_cast<unsigned __int128>(1) << 127)) {
+  if (magnitude == (static_cast<__uint128_t>(1) << 127)) {
     return static_cast<__int128_t>(magnitude);
   }
   return -static_cast<__int128_t>(magnitude);
@@ -726,7 +726,7 @@ bool dec_parse(std::string_view text, Dec& out, Pos pos = {}) {
   const long long frac_len = dot == std::string_view::npos ? 0 : static_cast<long long>(body.size() - 1 - dot);
 
   if (body.size() <= 38) {
-    unsigned __int128 mag = 0;
+    __uint128_t mag = 0;
     bool has_nonzero = false;
     for (size_t i = 0; i < body.size(); ++i) {
       if (i == dot) continue;
@@ -7044,7 +7044,12 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
   const bool next_in_math = is_curr_math;
 
   auto copy = opt_copy(node);
-  if (copy->l) copy->l = opt_tree(copy->l, physical, depth + 1, fold, next_in_math);
+  // An assignment's target is walked iteratively by the evaluator (spec 6.4:
+  // a chain of index brackets, not a nesting) and is never charged or folded
+  // there, so it is left as written here too, as the other four hosts leave
+  // it; only the value is optimised (review 2026-09-15, low: C++ alone
+  // rewrote targets, harmlessly today).
+  if (copy->l && copy->t != NT::Assign) copy->l = opt_tree(copy->l, physical, depth + 1, fold, next_in_math);
   if (copy->r) copy->r = opt_tree(copy->r, physical, depth + 1, fold, next_in_math);
   for (NodePtr& child : copy->items) child = opt_tree(child, physical, depth + 1, fold, next_in_math);
   NodePtr folded = fold ? opt_fold(copy) : copy;

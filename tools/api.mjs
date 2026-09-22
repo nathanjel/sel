@@ -165,4 +165,27 @@ try {
   say('deps.depth.over', e.code + ' ' + e.line + ':' + e.col);
 }
 
+// --- the physical tree (docs/SQL-TRANSLATION.md §12.1; SEL-0044, SEL-0049)
+// What run() evaluates is a physical rewrite of the AST -- join predicate
+// pushdown among others -- built once per program from the AST alone and
+// kept. Identity is the host's own (a reference here, pointer equality in
+// C++, EQ in Lisp, value equality in PHP, where arrays are values); the rule
+// is the same: one tree per AST, the same tree whatever data the program ran
+// over, the AST itself untouched, and run() answering the same after an
+// explicit build as before one.
+{
+  const join = compile('ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["amount"] > 1)');
+  const before = join.dependencies().join(' ');
+  const first = join.physicalAst();
+  say('program.physical.built-once', bool(join.physicalAst() === first));
+  say('program.physical.keeps.ast', bool(join.dependencies().join(' ') === before) + ' ' + before);
+  const ctx = Value.none();
+  compile('ORDERS = LIST(RECORD("id", 1, "customer_id", 7, "amount", 5), RECORD("id", 2, "customer_id", 7, "amount", 0), RECORD("id", 3, "customer_id", 9, "amount", 9)); CUSTOMERS = LIST(RECORD("id", 7, "name", "x")); 0').run(ctx);
+  say('program.physical.run.agrees', join.run(ctx).dump());
+  const empty = Value.none();
+  compile('ORDERS = LIST(); CUSTOMERS = LIST(); 0').run(empty);
+  join.run(empty);
+  say('program.physical.independent.of.data', bool(join.physicalAst() === first));
+}
+
 process.stdout.write(out.join('\n') + '\n');

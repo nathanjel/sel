@@ -1,4 +1,4 @@
-from ..errors import fail
+from ..errors import SelError, fail
 from ..registry import INF, define
 from ..value import NONE, Value, iter_elements, iter_values, structural_hash, _record_shape
 
@@ -385,12 +385,80 @@ def make_join_projector(sample_left, sample_right, b1, b2,
     return local_ns['_compiled_project'](left_shape, right_shape, output_shape, fallback, Value._from_shape, none_val)
 
 
+def _pure_source(node):
+    """Whether evaluating NODE can be observed only through its value: no
+    assignment, no sequence, no call outside the shipped builtins (an
+    application's own function may do anything), no ABORT. Such a node may be
+    evaluated out of order -- the right source of a join before the left --
+    which is what lets a FILTER's conjuncts travel down a chain of joins."""
+    if node is None:
+        return True
+    t = node.t
+    if t in ('var', 'num', 'text', 'bool'):
+        return True
+    if t == 'index':
+        return _pure_source(node.obj) and _pure_source(node.idx)
+    if t == 'bin':
+        return _pure_source(node.l) and _pure_source(node.r)
+    if t == 'un':
+        return _pure_source(node.x)
+    if t == 'list':
+        return all(_pure_source(item) for item in node.items)
+    if t == 'call':
+        spec = node.spec
+        module = getattr(getattr(spec, 'fn', None), '__module__', '') or ''
+        if not module.startswith('sel.builtins') or spec.name == 'ABORT':
+            return False
+        return all(_pure_source(arg) for arg in node.args)
+    return False
+
+
+def _row_keys(value):
+    keys = set()
+    for row in iter_collection_items(value):
+        keys.update(k.upper() for k in row.keys())
+    return keys
+
+
 def _link(args, ctx, left_join):
+    # Taken before anything else is evaluated, so a LINK nested in this one's
+    # sources cannot pick it up by accident (aggregate.py, _filter); it is
+    # handed down on purpose below.
+    prefilter = ctx.join_prefilter
+    ctx.join_prefilter = None
     count = args.count()
     if count not in (3, 5):
         fail('E_ARITY', f'{args.name} takes 3 or 5 arguments, got {count}', args.pos)
-    left_value = args.val(0)
-    right_value = args.val(1)
+    # With conjuncts to pre-apply and a left source that is itself a join, the
+    # right source is evaluated first -- unobservable when both sources are
+    # pure -- so that the conjuncts still valid above this join's right rows
+    # can travel down to the join below, and from there to the base rows,
+    # where dropping a row saves every join above it. This is what the old
+    # physical pushdown achieved by reading the context's first row at plan
+    # time; done here it reads every row, at run time, and the tree stays the
+    # same for any data (SEL-0049).
+    right_keys_seen = None
+    left_node, right_node = args.node(0), args.node(1)
+    if (prefilter is not None and left_node is not None and left_node.t == 'call'
+            and left_node.name in ('LINK', 'LINK_LEFT')
+            and _pure_source(left_node) and _pure_source(right_node)):
+        right_value = args.val(1)
+        right_keys_seen = _row_keys(right_value)
+        binder, leading = prefilter
+        handed = []
+        for conjunct, fields in leading:
+            if fields & right_keys_seen:
+                break
+            handed.append((conjunct, fields))
+        if handed:
+            ctx.join_prefilter = (binder, handed)
+        try:
+            left_value = args.val(0)
+        finally:
+            ctx.join_prefilter = None
+    else:
+        left_value = args.val(0)
+        right_value = args.val(1)
     b1, b2 = '_1', '_2'
     if count == 3:
         b1 = single_relation_name(args.node(0)) or b1
@@ -431,6 +499,42 @@ def _link(args, ctx, left_join):
     equi = try_extract_equi_keys(predicate, b1, b2)
     output = []
 
+    # The pre-filter, decided at run time from the rows themselves. A leading
+    # conjunct reading `_["F"]` may be applied to a left row before the join
+    # only when F is a key of NO right row (over every row, not a sample), so
+    # that the joined row's F is the left row's F; a conjunct with any field
+    # the right side has ends the usable prefix, since AND short-circuits left
+    # to right and a later conjunct may not run before an earlier one. On a
+    # left row it evaluates FALSE the row is dropped -- the joined rows it
+    # would have produced (or its null-extended row, for LINK_LEFT) would all
+    # have been dropped by the same conjunct. On an error the row is KEPT: the
+    # full predicate runs over the joined rows afterwards and raises there, in
+    # row order, or does not raise at all for a left row that joins nothing.
+    if right_keys_seen is None:
+        right_keys_seen = set()
+    prefix = []
+    prefilter_binder = None
+    if prefilter is not None:
+        prefilter_binder, leading = prefilter
+        def settle_prefix():
+            for conjunct, fields in leading:
+                if fields & right_keys_seen:
+                    break
+                prefix.append(conjunct)
+        def rejects(row):
+            ctx.push_frame({prefilter_binder: row})
+            try:
+                for conjunct in prefix:
+                    try:
+                        keep = args.eval_node(conjunct).as_bool(conjunct.pos)
+                    except SelError:
+                        return False
+                    if not keep:
+                        return True
+                return False
+            finally:
+                ctx.pop_frame()
+
     if equi is not None and sample_right is not None:
         left_expr, right_expr, numeric = equi
         buckets = {}
@@ -445,9 +549,20 @@ def _link(args, ctx, left_join):
                 key = canonical_join_key(args.eval_node(right_expr), numeric)
                 if key is not None:
                     buckets.setdefault(key, []).append(row)
+                if prefilter is not None:
+                    right_keys_seen.update(k.upper() for k in row.keys())
         finally:
             ctx.pop_frame()
+        if prefilter is not None:
+            settle_prefix()
 
+        # A FILTER keeps its input's keys, so the rows dropped here still count
+        # towards the numbering of the rows kept: the join key is computed
+        # first, as it is for every row (and raises where it would have), the
+        # matches say how many joined rows the dropped row stood for, and the
+        # kept rows are emitted under the positions they would have had.
+        keys = [] if prefix else None
+        position = 1
         frame_left = {b1: None, b1.lower(): None, '_1': None, '_': None}
         ctx.push_frame(frame_left)
         try:
@@ -459,14 +574,28 @@ def _link(args, ctx, left_join):
                 frame_left['_'] = row
                 key = canonical_join_key(args.eval_node(left_expr), numeric)
                 matches = buckets.get(key) if key is not None else None
+                if prefix and rejects(row):
+                    position += len(matches) if matches else (1 if left_join else 0)
+                    continue
                 if matches:
                     for right in matches:
                         output.append(project(row, right))
+                        if keys is not None:
+                            keys.append(str(position))
+                        position += 1
                 elif left_join:
                     output.append(project(row, None))
+                    if keys is not None:
+                        keys.append(str(position))
+                    position += 1
         finally:
             ctx.pop_frame()
+        if keys is not None and len(keys) != position - 1:
+            return Value.list(output, keys)
     else:
+        # No pre-filter on the general join: the numbering of the kept rows
+        # would need the count of matches of every dropped row, which is the
+        # predicate scan the pre-filter exists to avoid.
         frame = {b1: None, b1.lower(): None, '_1': None, '_': None,
                  b2: None, b2.lower(): None, '_2': None}
         ctx.push_frame(frame)

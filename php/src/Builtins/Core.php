@@ -102,7 +102,7 @@ final class Core
                 }
                 $out = [];
                 $seen = 0;
-                self::forEachElement($val, static function (string $key, Value $item) use (&$out, &$seen, $count): void {
+                $val->forEachElement(static function (string $key, Value $item) use (&$out, &$seen, $count): void {
                     if ($seen < $count) $out[] = $item;
                     $seen++;
                 });
@@ -121,7 +121,7 @@ final class Core
                 }
                 $out = [];
                 $index = 0;
-                self::forEachElement($val, static function (string $key, Value $item) use (&$out, &$index, $count): void {
+                $val->forEachElement(static function (string $key, Value $item) use (&$out, &$index, $count): void {
                     if ($index++ >= $count) $out[] = $item;
                 });
                 return Value::list($out);
@@ -139,7 +139,7 @@ final class Core
                     $cols[] = $a->text($i);
                 }
                 $out = [];
-                self::forEachElement($val, static function (string $key, Value $row) use (&$out, $cols): void {
+                $val->forEachElement(static function (string $key, Value $row) use (&$out, $cols): void {
                     $newRow = Value::none();
                     foreach ($cols as $c) {
                         if ($row->has($c)) {
@@ -159,7 +159,7 @@ final class Core
                 }
                 $buckets = [];
                 $out = [];
-                self::forEachElement($val, static function (string $key, Value $item) use (&$buckets, &$out): void {
+                $val->forEachElement(static function (string $key, Value $item) use (&$buckets, &$out): void {
                     $hash = $item->structuralHash();
                     $seen = false;
                     foreach ($buckets[$hash] ?? [] as $existing) {
@@ -244,7 +244,7 @@ final class Core
             $dir = $forcedDir ?? 'ASC';
             $indexed = [];
             $idx = 0;
-            self::forEachElement($val, static function (string $key, Value $item) use (&$indexed, &$idx): void {
+            $val->forEachElement(static function (string $key, Value $item) use (&$indexed, &$idx): void {
                 $indexed[] = ['item' => $item, 'key' => $item, 'idx' => $idx++];
             });
         } else {
@@ -288,7 +288,7 @@ final class Core
             if ($needsK) $frame['_K'] = Value::none();
             $ctx->pushFrame($frame);
             try {
-                self::forEachElement($val, function (string $k, Value $item) use (
+                $val->forEachElement(function (string $k, Value $item) use (
                     &$indexed, &$idx, $ctx, $binder, $body, $a, &$frame, $needsK,
                 ): void {
                     $frame[$binder] = $item;
@@ -344,35 +344,6 @@ final class Core
             return $value->entries();
         }
         return $value->kind === Value::NONE ? [] : [['1', $value]];
-    }
-
-    /** @param callable(string,Value):void $callback */
-    private static function forEachElement(Value $value, callable $callback): void
-    {
-        if ($value->isNull()) return;
-        if ($value->isList && $value->storage !== null) {
-            if ($value->listKeys !== null) {
-                foreach ($value->storage as $i => $item) {
-                    $callback($value->listKeys[$i], $item);
-                }
-            } else {
-                foreach ($value->storage as $i => $item) {
-                    $callback((string) ($i + 1), $item);
-                }
-            }
-            return;
-        }
-        if ($value->shape !== null && $value->storage !== null) {
-            foreach ($value->shape->keys as $i => $key) {
-                $callback($key, $value->storage[$i]);
-            }
-            return;
-        }
-        if ($value->size() > 0) {
-            foreach ($value->children as $key => $item) $callback((string) $key, $item);
-            return;
-        }
-        if ($value->kind !== Value::NONE) $callback('1', $value);
     }
 
     /**
@@ -526,7 +497,7 @@ final class Core
             'fn' => static function (Args $a): Value {
                 $sep = $a->text(1);
                 $parts = [];
-                self::forEachElement($a->val(0), static function (string $key, Value $item) use (&$parts, $a, $sep): void {
+                $a->val(0)->forEachElement(static function (string $key, Value $item) use (&$parts, $a, $sep): void {
                     $parts[] = $item->asText($a->posOf(0));
                 });
                 return Value::text(implode($sep, $parts));

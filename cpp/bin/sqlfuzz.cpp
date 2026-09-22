@@ -70,7 +70,7 @@ sel::sql::Bindings fuzz_bindings() {
   return sel::sql::Bindings({
       {"ORDERS", Binding::relation("orders", "o", {
           {"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)},
-          {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}})},
+          {"AMOUNT", Binding::column("amount", std::nullopt, SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}})},
       {"CUSTOMERS", Binding::relation("customers", "c", {
           {"ID", Binding::column("id", "c", SqlKind::Num)}, {"NAME", Binding::column("name", "c", SqlKind::Text)}})}});
 }

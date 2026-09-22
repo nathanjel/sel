@@ -67,8 +67,16 @@ final class Translator
         $this->strict = (bool) ($options['strict'] ?? false);
     }
 
-    /** @param array<string,mixed> $ast */
-    public function translate(array $ast): Fragment
+    /**
+     * What both entry points do before they differ: the dialect and alias
+     * checks (in that order -- a caller with both a bad dialect and a duplicate
+     * alias gets E_SQL_DIALECT), the per-translation state, the constant scope,
+     * stage 1, and the planner's look at the result.
+     *
+     * @param array<string,mixed> $ast
+     * @return array{0: array<string,mixed>, 1: ?RelationalPlan} the normalised tree and the plan, null for an expression
+     */
+    private function begin(array $ast): array
     {
         Map::requireTarget($this->dialect);
         $this->bindings->checkAliases();
@@ -80,8 +88,42 @@ final class Translator
         $this->depth = 0;
         $this->subqueryCounter = 0;
         [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
+        // Stage 1 and nothing else: the translator renders the tree it is
+        // handed; the planner is the one place that optimises first.
         $norm = Normalise::run($ast, $this->constNames, $this->constCtx);
-        $plan = $this->analyzePipeline($norm);
+        return [$norm, $this->analyzePipeline($norm)];
+    }
+
+    /**
+     * The [name, value] pairs of a RECORD(k, v, ...) call, refusing what the
+     * evaluator would: an odd count at the call, a name that is not a text
+     * literal at the name. The planner reads RECORD in three places -- a
+     * bucket's projection, a bucket's key, a MAP's projection -- and each used
+     * to walk the pairs itself.
+     *
+     * @param array<string,mixed> $node
+     * @return list<array{0: string, 1: array<string,mixed>}>
+     */
+    private static function recordFields(array $node): array
+    {
+        if (count($node['args']) % 2 !== 0) {
+            refuse('E_ARITY', 'RECORD takes an even number of arguments', $node['pos']);
+        }
+        $fields = [];
+        for ($i = 0; $i < count($node['args']); $i += 2) {
+            $key = $node['args'][$i];
+            if ($key['t'] !== 'text') {
+                refuse('E_BAD_ARG', 'RECORD field names must be string literals', $key['pos']);
+            }
+            $fields[] = [$key['v'], $node['args'][$i + 1]];
+        }
+        return $fields;
+    }
+
+    /** @param array<string,mixed> $ast */
+    public function translate(array $ast): Fragment
+    {
+        [$norm, $plan] = $this->begin($ast);
         if ($plan !== null) {
             return $this->compileStatement($plan);
         }
@@ -94,18 +136,7 @@ final class Translator
     /** @param array<string,mixed> $ast */
     public function translateStatement(array $ast): Fragment
     {
-        Map::requireTarget($this->dialect);
-        $this->bindings->checkAliases();
-
-        $this->params = [];
-        $this->paramKinds = [];
-        $this->caveats = [];
-        $this->frames = [];
-        $this->depth = 0;
-        $this->subqueryCounter = 0;
-        [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
-        $norm = Normalise::run($ast, $this->constNames, $this->constCtx);
-        $plan = $this->analyzePipeline($norm);
+        [, $plan] = $this->begin($ast);
         if ($plan === null) {
             refuse('E_SQL_SHAPE', 'expected a relational query or pipeline');
         }
@@ -464,17 +495,9 @@ final class Translator
             $rLit = ($n['r']['t'] === 'text');
             if (($lExact && ($rExact || $rLit)) || ($rExact && $lLit)) {
                 // bare comparison
-            } elseif ($op === '$==' && $l->sargable && $rLit) {
-                if ($this->emit->lex('sargablePrefilter') === 'true') {
-                    $coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);
-                    $residual = $this->apply('ops', '$==',
-                        [$this->emit->textOperand($l), $this->emit->textOperand($r)], $n['pos'], $variant);
-                    $res = $this->apply('ops', 'AND', [$coarse, $residual], $n['pos']);
-                    $res->prefilter = $coarse;
-                    $res->separatePrefilter = $l->separatePrefilter || $r->separatePrefilter;
-                    return $res;
-                }
-            } elseif ($op === '$==' && $r->sargable && $lLit) {
+            } elseif ($op === '$==' && (($l->sargable && $rLit) || ($r->sargable && $lLit))) {
+                // A sargable column against a literal, either way round: the
+                // coarse comparison the index can serve, AND the exact one.
                 if ($this->emit->lex('sargablePrefilter') === 'true') {
                     $coarse = $this->apply('ops', '$==', [$l, $r], $n['pos'], $variant);
                     $residual = $this->apply('ops', '$==',
@@ -840,7 +863,18 @@ final class Translator
             }
         }
         if ($source === null) {
-            refuse('E_SQL_BINDING', "unknown joined relation '{$qualifier}'", $n['pos']);
+            // A qualifier names a relation by its binding name, its table, its
+            // alias or a binder the join predicate declared, and nothing else:
+            // a position (`_[1]["amount"]`) or a stray name is the shape the
+            // row does not have, E_SQL_SHAPE as C++ and Lisp always said
+            // (SEL-0043). It used to be E_SQL_BINDING "unknown joined
+            // relation" here, the accident of the alias lookup.
+            if (self::listKey($qualifier) !== null) {
+                refuse('E_SQL_SHAPE', "[{$qualifier}] asks for a row by position, and a relation has "
+                    . 'no first row without an ORDER BY that nothing here can supply', $n['pos']);
+            }
+            refuse('E_SQL_SHAPE', 'only a bound name can be indexed here; SQL has no way to index into '
+                . "the result of an expression ({$qualifier} names no relation of this statement)", $n['pos']);
         }
         $field = $source['relation']['fields'][strtoupper($key)] ?? null;
         if ($field === null) {
@@ -2696,18 +2730,8 @@ final class Translator
     {
         if ($aggNode !== null) {
             if ($aggNode['t'] === 'call' && $aggNode['name'] === 'RECORD') {
-                $recArgs = $aggNode['args'];
-                if (count($recArgs) % 2 !== 0) {
-                    refuse('E_ARITY', 'RECORD takes an even number of arguments', $aggNode['pos']);
-                }
                 $projections = [];
-                for ($i = 0; $i < count($recArgs); $i += 2) {
-                    $kNode = $recArgs[$i];
-                    $vNode = $recArgs[$i + 1];
-                    if ($kNode['t'] !== 'text') {
-                        refuse('E_BAD_ARG', 'RECORD field names must be string literals', $kNode['pos']);
-                    }
-                    $alias = $kNode['v'];
+                foreach (self::recordFields($aggNode) as [$alias, $vNode]) {
                     $actualNode = $vNode;
                     // _K is the key, which was written against the KEY's binder --
                     // the MAP spelling may name the group differently, so the
@@ -2901,19 +2925,12 @@ final class Translator
                             ];
                         }
                     } elseif ($keyNode['t'] === 'call' && $keyNode['name'] === 'RECORD') {
-                        $rArgs = $keyNode['args'];
-                        if (count($rArgs) % 2 !== 0) {
-                            refuse('E_ARITY', 'RECORD takes an even number of arguments', $keyNode['pos']);
-                        }
-                        for ($i = 0; $i < count($rArgs); $i += 2) {
-                            if ($rArgs[$i]['t'] !== 'text') {
-                                refuse('E_BAD_ARG', 'RECORD field names must be string literals', $rArgs[$i]['pos']);
-                            }
+                        foreach (self::recordFields($keyNode) as [$alias, $value]) {
                             $groupBy[] = [
-                                'alias' => $rArgs[$i]['v'],
+                                'alias' => $alias,
                                 'binder' => $binder,
-                                'node' => $rArgs[$i + 1],
-                                'pos' => $rArgs[$i + 1]['pos'] ?? $step['pos'],
+                                'node' => $value,
+                                'pos' => $value['pos'] ?? $step['pos'],
                             ];
                         }
                     } else {
@@ -2932,7 +2949,11 @@ final class Translator
                     break;
 
                 case 'SELECT_COLS':
-                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
+                    // The same rule as a MAP's: an ORDER BY alone does not wrap
+                    // (a derived table is where MariaDB drops an ORDER BY with
+                    // no LIMIT beside it), everything else above the rows does
+                    // (SEL-0048).
+                    $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
                     $colArgs = array_slice($args, 1);
                     if (count($colArgs) === 1 && $colArgs[0]['t'] === 'list') {
                         $items = $colArgs[0]['items'];
@@ -2995,22 +3016,9 @@ final class Translator
                     $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
 
                     if ($expr['t'] === 'call' && $expr['name'] === 'RECORD') {
-                        $recArgs = $expr['args'];
-                        if (count($recArgs) % 2 !== 0) {
-                            refuse('E_ARITY', 'RECORD takes an even number of arguments', $expr['pos']);
-                        }
                         $projections = [];
-                        for ($i = 0; $i < count($recArgs); $i += 2) {
-                            $kNode = $recArgs[$i];
-                            $vNode = $recArgs[$i + 1];
-                            if ($kNode['t'] !== 'text') {
-                                refuse('E_BAD_ARG', 'RECORD field names must be string literals', $kNode['pos']);
-                            }
-                            $projections[] = [
-                                'alias' => $kNode['v'],
-                                'binder' => $binder,
-                                'node' => $vNode,
-                            ];
+                        foreach (self::recordFields($expr) as [$alias, $value]) {
+                            $projections[] = ['alias' => $alias, 'binder' => $binder, 'node' => $value];
                         }
                         $plan->projections = $projections;
                     } else {

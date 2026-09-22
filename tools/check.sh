@@ -196,6 +196,7 @@ db_step "sql mutations" ./tools/mutate-sql.sh
 db_step "sql semantic oracle" ./tools/check-sql-oracle.sh
 step "manifest versions" sel_slot ./tools/check-version.sh
 step "host API parity" ./tools/check-api.sh
+step "host SQL API parity" ./tools/check-sqlapi.sh
 step "documentation examples" ./tools/check-docs.sh
 step "worked examples, every host" ./tools/check-examples.sh
 step "documentation quotes" sel_slot ./tools/check-snippets.py

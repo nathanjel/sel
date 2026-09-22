@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""SQL API parity probe: the planner's contract through every host's own SQL
+binding. tools/check-sqlapi.sh diffs the reports of the hosts that carry the
+SQL layer (the JS bundles do not; they print nothing and are left out).
+Three programs -- one the planner pushes down whole, one it splits into a SQL
+prefix and an in-memory continuation, one it keeps in memory -- and the same
+nine questions about each plan: its classification, dialect, statement, prefix
+and continuation presence, the continuation's dependencies, its source
+variable, the physical source tables and the selected member. The probe NAMES
+are the contract and the VALUES are compared; each host spells its accessors
+its own way (SEL-0044).
+"""
+import os
+import sys
+
+try:
+    import sel as _probe                                            # noqa: F401
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
+import sel                                                          # noqa: E402
+from sel.sql import Binding, Sql                                    # noqa: E402
+
+out = []
+_n = [0]
+
+
+def say(name, value):
+    _n[0] += 1
+    out.append(f'{_n[0]:02d} {name} = {value}')
+
+
+def b(x):
+    return 'true' if x else 'false'
+
+
+BINDINGS = {
+    'ORDERS': Binding.relation('orders', 'o', {
+        'ID': Binding.column('id', 'o', 'NUM'), 'CUSTOMER_ID': Binding.column('customer_id', 'o', 'NUM'),
+        'AMOUNT': Binding.column('amount', 'o', 'NUM'), 'NAME': Binding.column('name', 'o', 'TEXT')}, None, None),
+    'CUSTOMERS': Binding.relation('customers', 'c', {
+        'ID': Binding.column('id', 'c', 'NUM'), 'NAME': Binding.column('name', 'c', 'TEXT')}, None, None),
+}
+
+
+def probe(label, source):
+    plan = Sql.plan_hybrid(sel.compile(source), 'mariadb', BINDINGS)
+    say(f'plan.{label}.kind', 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid')
+    say(f'plan.{label}.dialect', plan.dialect or '-')
+    say(f'plan.{label}.statement', plan.sql_statement.as_statement() if plan.sql_statement is not None else '-')
+    say(f'plan.{label}.prefix.present', b(plan.sql_prefix_ast is not None))
+    say(f'plan.{label}.continuation.present', b(plan.continuation_ast is not None))
+    cont = plan.continuation_program
+    say(f'plan.{label}.continuation.deps', ' '.join(cont.dependencies()) if cont is not None else '-')
+    say(f'plan.{label}.source.var', plan.continuation_source_var)
+    say(f'plan.{label}.tables', ','.join(plan.source_tables))
+    say(f'plan.{label}.selected.member', 'present' if plan.selected_member is not None else '-')
+
+
+probe('sql', 'ORDERS .> FILTER(_["AMOUNT"] > 10) .> MAP(RECORD("id", _["ID"], "amount", _["AMOUNT"]))')
+probe('hybrid', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> FILTER(_K > 1)')
+probe('memory', 'A += 1; ORDERS .> TAKE(1)')
+
+sys.stdout.reconfigure(encoding='utf-8', newline='\n')
+sys.stdout.write('\n'.join(out) + '\n')

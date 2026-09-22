@@ -36,7 +36,7 @@ __version__ = '0.7.4'
 
 
 class Program:
-    __slots__ = ('source', 'ast', '_physical', '_physical_of', '_physical_context')
+    __slots__ = ('source', 'ast', '_physical', '_physical_of')
 
     def __init__(self, source: str, ast: Node) -> None:
         self.source = source
@@ -56,7 +56,6 @@ class Program:
         # pushdown) is not something a database can be asked to run.
         self._physical: Node | None = None
         self._physical_of: Node | None = None
-        self._physical_context: Any = None
 
     def run(self, context: Any = None) -> Value:
         """`context` may be a Value, a plain dict, or omitted. Returns a Value;
@@ -66,16 +65,17 @@ class Program:
         # The cyclic collector is paused for the run (sel/_gc.py): a run builds
         # rows, never cycles, and every pass the collector made found nothing.
         with _bulk_allocation():
-            return eval_node(self.physical_ast(root), _Context(root))
+            return eval_node(self.physical_ast(), _Context(root))
 
-    def physical_ast(self, context: Any = None) -> Node:
-        """The optimised tree run() evaluates, built once per `ast`."""
-        if (self._physical_of is not self.ast
-                or (context is not None and self._physical_context is not context)):
+    def physical_ast(self) -> Node:
+        """The optimised tree run() evaluates, built once per `ast` and from the
+        AST alone -- the other four hosts' rule, which this host broke by keying
+        the tree on the context too (SEL-0049): a fresh context per run rebuilt
+        it, and its join-filter pushdown read the rows to decide a side."""
+        if self._physical_of is not self.ast:
             from .optimizer import optimize_ast
-            self._physical = optimize_ast(self.ast, context=context)
+            self._physical = optimize_ast(self.ast)
             self._physical_of = self.ast
-            self._physical_context = context
         return self._physical
 
     def dependencies(self) -> list[str]:

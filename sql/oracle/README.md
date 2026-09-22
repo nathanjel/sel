@@ -19,7 +19,14 @@ See `docs/history/SQL-TESTING.md` for the analysis this came out of.
 
 ## Running it
 
-The short way, which needs only Docker and takes about a minute:
+`tools/check.sh` runs this for you: unless `SEL_SKIP_DB_TESTS=1` is set or a
+`SEL_SQL_<DIALECT>_DSN` is given, it re-runs itself under `tools/oracle-db.sh
+run`, so the pinned servers below exist for the whole gate and the run fails
+if they cannot be started — a gate that passed having asked nobody is what
+this directory exists to prevent. The three database layers run one at a time
+under a lock, because they share the schema and each recreates its tables.
+
+The short way by hand, which needs only Docker and takes about a minute:
 
 ```
 tools/oracle-db.sh

@@ -43,9 +43,10 @@ rather than a comparison of the standard library with itself.
 | `conformance [file…]` | `conformance/*.selt` | a human report | non-zero on any failure |
 | `batch [--show] <corpus>` | a corpus file | one canonical line per program | 0 unless it cannot read the corpus |
 | `sqlreplay` | nothing | the shipped map rebuilt through the public registration API, and diffed against itself | 0 unless the API cannot express the map |
-| `sqlfuzz <corpus> [dialect]` | a corpus file | one canonical line per program, three `\|\|`-separated lanes: `translate` (the inline SQL, the `params` SQL and the bound values, or a refusal), `translate_statement` likewise, and `plan_hybrid` (the classification, then the prefix statement in `params` mode); every runner binds the same ORDERS and CUSTOMERS relations, which `gen-programs.mjs --sql` writes pipelines over | 0 unless it cannot read the corpus |
+| `sqlfuzz <corpus> [dialect]` | a corpus file | one canonical line per program, three `\|\|`-separated lanes: `translate` (the inline SQL, the `params` SQL and the bound values, or a refusal), `translate_statement` likewise, and `plan_hybrid` (the classification, then the prefix statement in `params` mode); every runner binds the same ORDERS and CUSTOMERS relations, which `gen-programs.mjs --sql` writes pipelines over (the AMOUNT field declares no table, so a join must qualify it by the relation's alias — SEL-0042) | 0 unless it cannot read the corpus |
 | `e2e` | `examples/order-validation.sel` | the scenario report | 0 |
 | `api` | nothing | the API parity report, one `NN name = value` line per probe | 0 |
+| `sqlapi` | nothing | the planner's contract, one `NN name = value` line per probe (tools/check-sqlapi.sh); **0 and silent** for a host with no SQL layer | 0 |
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
 | `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure; **0 and silent** for a host with no SQL layer |
 | `oracle [mode]` | `sql/oracle/*` | a per-mode agreement report | non-zero on any disagreement; **0 with a skip line** when no DSN is set |

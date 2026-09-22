@@ -45,7 +45,7 @@ deliberately."
   (list (cons "ORDERS" (binding-relation "orders" "o"
                          (list (cons "ID" (binding-column "id" "o" :num))
                                (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num))
-                               (cons "AMOUNT" (binding-column "amount" "o" :num))
+                               (cons "AMOUNT" (binding-column "amount" nil :num))
                                (cons "NAME" (binding-column "name" "o" :text)))))
         (cons "CUSTOMERS" (binding-relation "customers" "c"
                             (list (cons "ID" (binding-column "id" "c" :num))

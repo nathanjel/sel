@@ -81,3 +81,48 @@ Verdicts: 28 CONFIRMED, 1 PARTIAL, 0 REFUTED. Two further findings come from the
 | # | Finding | Status |
 |---|---|---|
 | 33 | [The FILTER-before-MAP rewrite renumbers the result's keys](review-2026-09-15-33-NEW-filter-before-map-rewrite-renumbers-keys.md) — found while fixing AJ and R; one witness per host, not independently verified | FIXED 2026-09-16 |
+
+## Reconciliation — 2026-09-22 (worklist SEL-0037)
+
+The 33 numbered findings carry a `Status: FIXED` line each, pointing at the
+changelog section that closed them; nothing below reopens one. The two lists
+that never went to verification are reconciled here against the tree at
+`302a38e` plus the SEL-0037 work: **closed** means evidence exists in the
+tree, **retained** means a decision is recorded, **open** means a worklist ID
+now carries it.
+
+Low-severity reports:
+
+| Report | Status | Evidence or ID |
+|---|---|---|
+| isSameField folds alias case natively | closed | the `aggregateAliases` field and `isSameField` are gone from all five hosts (finding K's fix) |
+| JS dead GROUP_BY label / wording (two reports) | closed | finding 32 |
+| Lisp leaves join columns unqualified when fields declare no table | fixed (SEL-0042, 2026-09-22) | reproduced 2026-09-22: `SELECT name … ON (customer_id = id)` from Lisp where the other four emit `c.name` and `o.customer_id`; the fuzz corpus binds every field to a table, so it cannot see it — **SEL-0042** |
+| Minor planner divergences (3-arg MAP binder check; execute-hybrid aliases the caller's context; position stamps) | closed / fixed | (1) `stage1.lisp`/`hybrid.lisp` now test `node-grouped`; (2) fixed 2026-09-22: `execute-hybrid` copies the context with `value-copy` as the other four clone; (3) unobservable, retained |
+| check.sh skips the Python unit lane without pytest | fixed | 2026-09-22: `impl_unit python` fails with a message; `SEL_SKIP_PYTHON_UNIT=1` opts out |
+| Host-local unit coverage matrix | retained | informational; the PHP cache-key row was finding AA |
+| Refused-plan `--- error` position parsed but not compared | **open** | still true in all five runners and the generator — **SEL-0046** |
+| Fixture notes / CHANGELOG counts (25 planner cases) | retained | the changelog entry is a dated record; `25-hybrid-plans.sqlt` holds 83 `--- plan` cases today |
+| BUCKET absent from spec and LANGUAGE; EXTENDING table rows | closed | spec/SPEC.md §7 and docs/LANGUAGE.md define `BUCKET` (two rows each); the "Where everything lives" gap is superseded by the optimiser/planner sections added since |
+| C++ optimiser rewrites assignment targets | fixed | 2026-09-22: `opt_tree` leaves an assignment's target as written, as the other four do |
+| C++ call_once comment describes a throwing guard | closed | the comment now says the optimiser cannot raise (rewritten with AF) |
+| Positional index on a relation row: E_SQL_BINDING vs E_SQL_SHAPE | fixed (SEL-0043, 2026-09-22) | reproduced 2026-09-22 outside a bucket (JS/PHP/Python E_SQL_BINDING, C++/Lisp E_SQL_SHAPE), and inside a bucket all five say E_SQL_SHAPE but C++ at 1:59 where the others say 1:56 — **SEL-0043** |
+
+Gaps the critic found:
+
+| Gap | Status | Evidence or ID |
+|---|---|---|
+| API-parity lane probes neither `physical_ast` nor `plan_hybrid`'s fields | fixed (SEL-0044, 2026-09-22) | still 0 mentions in `tools/api.*` — **SEL-0044** |
+| No conformance case pins GROUP_BY as unknown | fixed | 2026-09-22: `bucket.group-by-is-not-a-function` in `conformance/16-bucket.selt` |
+| Spec never mentions BUCKET | closed | spec/SPEC.md §7 rows for both forms |
+| `make asan` covers only the language core | fixed (SEL-0045, 2026-09-22) | still `tests/unit.cpp` and `bin/conformance.cpp` — **SEL-0045** |
+| No planner/bucket/hybrid mutation | closed | 17 of 197 catalogue entries name hybrid, bucket, plan, pipeline, link or sort |
+| Fuzzers do not reach pipelines | closed | finding 31 |
+| Statement-level SQL has no oracle | closed | `sql/oracle` runs `statements: 31 agree` on every dialect |
+| python-wheel not in the default roster | retained | deliberate, documented in `tools/impls.sh` |
+| Binding.raw / scalar / correlate / prefilter under plan_hybrid; multi-line programs through the continuation | **open** | a handful of cases each; folded into **SEL-0047** |
+| CHANGELOG's measured gains re-measured by nobody | closed | the closing benchmarks of SEL-0021 onward, tables in the changelog |
+| CLAUDE.md / EXTENDING drift | closed | the quoted sentences are gone; the `make` build list in EXTENDING now names the SQL binaries (2026-09-22) |
+| sqlt mirrored-dialect pass for plan cases unread | retained | informational |
+| `tools/check.sh` not run by the review | closed | run at every closure since, ALL GREEN |
+

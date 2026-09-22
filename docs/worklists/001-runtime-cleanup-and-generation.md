@@ -69,11 +69,20 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0034](#sel-0034) | Revalidate and resolve SQL depth/error-policy boundary C1 | All five / SQL | Resolved | P2 |
 | [SEL-0035](#sel-0035) | Assess computed-projection type propagation | All five / SQL | Deferred | P3 |
 | [SEL-0036](#sel-0036) | Assess broader latest-revision pushdown forms | All five / SQL | Deferred | P3 |
-| [SEL-0037](#sel-0037) | Reconcile historical review closure records | Documentation / audit | Needs verification | P3 |
+| [SEL-0037](#sel-0037) | Reconcile historical review closure records | Documentation / audit | Resolved | P3 |
 | [SEL-0038](#sel-0038) | Check call arity once per parser | All five | Resolved | P3 |
-| [SEL-0039](#sel-0039) | Share the SQL translator's repeated arms | All five / SQL | Proposed | P3 |
-| [SEL-0040](#sel-0040) | Share PHP element iteration and optimizer child visits | PHP | Proposed | P3 |
+| [SEL-0039](#sel-0039) | Share the SQL translator's repeated arms | All five / SQL | Resolved | P3 |
+| [SEL-0040](#sel-0040) | Share PHP element iteration and optimizer child visits | PHP | Resolved | P3 |
 | [SEL-0041](#sel-0041) | SQLite before 3.48 truncates SUBSTR lengths past 2^31 | Tooling / SQL oracle | Resolved | P2 |
+| [SEL-0042](#sel-0042) | Lisp leaves join columns unqualified when fields declare no table | Common Lisp / SQL | Resolved | P2 |
+| [SEL-0043](#sel-0043) | Positional index on a relation row: one refusal code and position | All five / SQL | Resolved | P2 |
+| [SEL-0044](#sel-0044) | Probe physical_ast and plan_hybrid in the API-parity lane | All five / validation | Resolved | P3 |
+| [SEL-0045](#sel-0045) | Sanitize the C++ SQL layer and planner | C++ / validation | Resolved | P3 |
+| [SEL-0046](#sel-0046) | Compare refused-plan error positions in every runner | All five / validation | Proposed | P3 |
+| [SEL-0047](#sel-0047) | Cover binding kinds and multi-line programs under plan_hybrid | All five / SQL | Proposed | P3 |
+| [SEL-0048](#sel-0048) | SELECT_COLS after a sort wrapped the plan in four hosts; the SQL fuzz lane never ran the generator's SQL mode | All five / SQL | Resolved | P2 |
+| [SEL-0049](#sel-0049) | Python's physical tree depends on the context's data; the other four depend on the AST alone | Python | Resolved | P2 |
+| [SEL-0050](#sel-0050) | Carry Python's join pre-filter through a pushed FILTER to recover scenario 5 | Python | Proposed | P3 |
 
 ## Working items
 
@@ -1055,14 +1064,39 @@ Source: [Earlier gap verification](../interim/sel-gaps-2026-09-15-08-fix-verific
 <a id="sel-0037"></a>
 ### SEL-0037 — Reconcile historical review closure records
 
-**Needs verification · P3 · Documentation / audit · Owner: unassigned.**
+**Resolved 2026-09-22 · P3 · Documentation / audit · Owner: unassigned.**
 Source: [Earlier review index](../interim/review-2026-09-15-00-index.md) — Older review inventory.
 
 **Next action:** Cross-reference earlier review entries against later fixes, changelog and verification artifacts. Preserve historic verdicts; do not assume every old CONFIRMED report remains open or that an implemented plan closes unrelated findings.
 
 **Close when:** Each historical finding is linked to closure evidence, an existing SEL ID, or a newly allocated ID after current verification; closed F1–F6 gap work is not duplicated.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-22. The 33 numbered findings of the
+2026-09-15 review each carry a `Status: FIXED` line naming its changelog
+section; none was reopened. The two lists that never went to verification —
+13 low-severity reports and 14 critic gaps — are reconciled in a dated
+section at the end of `docs/interim/review-2026-09-15-00-index.md`, each
+row closed with evidence in the tree, retained with a recorded reason, or
+carried by a new ID. Verified by reproduction where the tree could answer:
+the Lisp column-qualification report is live (SEL-0042), the positional-index
+refusal differs in code across hosts and in position for C++ (SEL-0043); the
+`isSameField`, call_once-comment and BUCKET-in-spec reports are closed by the
+current code and spec. Four small alignments were made in the same pass, each
+covered by an existing suite: the Python unit lane fails rather than skips
+without pytest (`SEL_SKIP_PYTHON_UNIT=1` opts out), the C++ optimiser leaves
+assignment targets as written like the other four, Lisp's `execute-hybrid`
+copies the caller's context as the other four do, and
+`bucket.group-by-is-not-a-function` pins the retired verb. Three interim
+documents that still called the database fuzz lane open carry dated pointers
+to SEL-0034 (2026-09-21). Also in this pass, at the user's request: the four
+`-Wswitch`/`-Wmissing-field-initializers` warnings in `sel_sql_translator.cpp`
+are fixed, so every C++ translation unit compiles clean under the Makefile's
+flags. Opened: SEL-0042–0047. The earlier F1–F6 gap work is referenced, not
+repeated. Closing validation, shared with SEL-0039 and SEL-0040: gate ALL
+GREEN (48 layers, 560 s, Docker servers started by the gate, native PHP
+client), mutations 197 / 0 / 0, oracle and database fuzz 0 differing on every
+dialect, differential fuzz 0 disagreements, no compiler warning; five-host
+benchmark against `6568201` within spread (table in the changelog).
 
 <a id="sel-0038"></a>
 ### SEL-0038 — Check call arity once per parser
@@ -1113,26 +1147,57 @@ boundary, once per parsed call.
 <a id="sel-0039"></a>
 ### SEL-0039 — Share the SQL translator's repeated arms
 
-**Proposed · P3 · All five / SQL · Owner: unassigned.**
+**Resolved 2026-09-22 · P3 · All five / SQL · Owner: unassigned.**
 Source: [SEL-0019 triage](001-scan-triage.md) — windows #3, #4, #6, #7, #16–18, #23, #25, #30–32.
 
 **Next action:** Four internal repeats, to take one at a time and in every host that has it: (a) the sargable-prefilter arm, written once for `sargable $== literal` and once mirrored, in all five translators; (b) the `RECORD(k, v, …)` → projection-list loop in the grouped-MAP and plain-MAP arms (JS, PHP, C++; check Python and Lisp); (c) the per-translation state reset shared by the expression and statement entry points (Python, PHP, C++; check JS and Lisp); (d) the Lisp collation-name check in `binding-column` and `binding-raw`. Keep the *walk* per host; only the arm bodies are shared.
 
 **Close when:** `sql/cases` (852) and the mutation catalogue pass unchanged on every host, the semantic oracle still agrees, and each repeat has one body per lane or a recorded reason.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-22; all four repeats have one body per lane.
+(a) The sargable-prefilter arm's two conditions (`sargable $== literal` and
+the mirror) share one body in all five translators. (b) `record_fields` /
+`recordFields` / `record-fields` gives the `(name, value)` pairs of a RECORD
+call with the evaluator's two refusals, and the bucket projection, the bucket
+key and the MAP projection read it — fifteen hand-written loops gone. (c) One
+prologue per host (`_begin`, `begin`, `Translator::begin`,
+`call-with-translation`) does the dialect and alias checks, the state reset,
+the constant scope, stage 1 and the planner's look; the two entry points
+differ only in what they do with the plan. Found while merging: JS's
+`translate` did not reset the subquery counter where `translateStatement`
+did — latent, since every public entry builds a fresh translator, and gone.
+Lisp keeps `*subquery-counter*` dynamically bound around the continuation,
+which is why its helper takes a function. (d) `check-collation` in
+`binding.lisp` returns `(values exact sargable)` for both constructors, as
+`_check_collation` does in Python. Every mutation anchor still matches (197).
+Validation: 856 SQL cases on all five, SQL fuzz host-versus-host 0
+disagreements on every dialect, Lisp unit 532, JS and PHP hybrid checks 135
+each, pytest 630; the full gate and database lanes in the closing run below.
 
 <a id="sel-0040"></a>
 ### SEL-0040 — Share PHP element iteration and optimizer child visits
 
-**Proposed · P3 · PHP · Owner: unassigned.**
+**Resolved 2026-09-22 · P3 · PHP · Owner: unassigned.**
 Source: [SEL-0019 triage](001-scan-triage.md) — windows #10, #12.
 
 **Next action:** (a) `Core::forEachElement` and `Structure::forEachElement` are the same function as two private statics; keep one (on `Value`, or one public static) and point 13 call sites at it. (b) `Optimizer::fieldRefs` and `Optimizer::readsVar` repeat the child-visit loops; one `forEachChild($node, $visit)` keyed by the node-shape table would give the optimizer one place that knows which keys hold children.
 
 **Close when:** PHP conformance, optimizer (135) and runtime checks pass; the aggregate/relational hot paths measure no worse (`tools/benchmark-php-runtime.php`).
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-22. (a) `Value::forEachElement` is the one
+body, walking each storage layout directly as before; the two private statics
+in `Builtins/Core.php` and `Builtins/Structure.php` are gone and their eleven
+call sites read `$value->forEachElement(...)`. (b) `Optimizer::forEachChild`
+visits a node's children through two constants, `CHILD_LISTS` and
+`CHILD_NODES`, the one place the optimizer's walks know the node shapes;
+`fieldRefs` and `readsVar` call it. Validation: PHP conformance 935, optimizer
+135, runtime 35, SQL cases 856. Performance: `tools/benchmark-php-runtime.php`
+measures scalars and decimals, not aggregates, and is within ±7% noise on
+sub-microsecond operations; the relational scale scenarios
+(`tools/scale-test/sel_benchmarks.php`, 7 runs, best of two rounds, against
+a worktree of `302a38e`) are the measure that exercises the change: S1 3,485
+→ 3,516 ms, S2 36.5 → 37.1, S3 1,109 → 1,120, S4 75.2 → 75.6, S5 2,250 →
+2,241, S6 1,224 → 1,234 — within 1.6% everywhere, no direction.
 
 <a id="sel-0041"></a>
 ### SEL-0041 — SQLite before 3.48 truncates SUBSTR lengths past 2^31
@@ -1160,6 +1225,261 @@ what is wrong, not the translation. With the rebuilt client the fuzz lane
 reports the two programs as agreeing (sqlite 276 agree, 0 differ) and the
 oracle stays 0 differing on all four dialects.
 
+<a id="sel-0042"></a>
+### SEL-0042 — Lisp leaves join columns unqualified when fields declare no table
+
+**Resolved 2026-09-22 · P2 · Common Lisp / SQL · Owner: unassigned.**
+Source: SEL-0037 reconciliation — 2026-09-15 review, low-severity report, reproduced 2026-09-22.
+
+**Next action:** With relation fields that carry no `table`, JS, PHP, Python and C++ qualify every column by the join source's alias once a join is present (Python: `_column_ref({**field, 'table': source['table']})`, `translator.py` ~430), and Lisp renders the field's own spec (`column-ref tr (cdr cell)` / `(first matches)` in `index-binder`, `translator.lisp` ~482–495, and the ON-clause path): `SELECT name AS name, amount AS amount FROM orders o INNER JOIN customers c ON (customer_id = id)` against the other four's `c.name`, `o.amount`, `o.customer_id = c.id`. Different bytes, and ambiguous-column errors on a real engine when both tables share a name. The fuzz corpus binds every field to a table, which is why the host-versus-host lane never saw it. Add the case first (`sql/cases/26-links.sqlt`, both with aliases and without — the other four spell the unaliased right side `_2`), then make Lisp substitute the source alias as Python does.
+
+**Close when:** The new cases pass byte-identical on all five; the SQL fuzz corpus gains a table-less field so the lane keeps watching.
+
+**Resolution:** Resolved 2026-09-22. Cases first: three `link.qualify.*`
+cases in `sql/cases/26-links.sqlt` (aliases on both sides; no aliases, where
+the left renders under its table name and the joined side under `_2`; a
+named binder) passed on JS, PHP, Python and C++ as written and failed on
+Lisp. Probing first showed the divergence is join-only: single-relation
+statements leave a table-less column bare in every host. The Lisp fix is one
+helper, `qualified-by`, applied at the three places a joined statement
+renders a row's field: the qualified index (`_1["X"]`, `translate-index`),
+the other side's field found through the joined row, and the row's own
+field (`index-binder`), the last using `joined-relation-alias` so the `_1` /
+`_2` rows of a join predicate and the joined row after it resolve alike; a
+RAW binding stays verbatim. All 860 SQL cases pass on all five. The fuzz
+runners now bind AMOUNT without a table in every host (`tools/README.md`
+says why), but the lane could not have watched this either way: it had
+never passed the generator's `--sql` flag, so every pipeline read in-memory
+lists and was refused before the translator (SEL-0048). Benchmark: the Lisp
+SQL case suite 1,361 / 1,369 / 1,370 ms on the previous commit against
+1,371 / 1,373 / 1,379 ms here (three more cases), and the five-host
+benchmark against `6568201` within spread (table in the changelog).
+
+<a id="sel-0043"></a>
+### SEL-0043 — Positional index on a relation row: one refusal code and position
+
+**Resolved 2026-09-22 · P2 · All five / SQL · Owner: unassigned.**
+Source: SEL-0037 reconciliation — 2026-09-15 review, low-severity report, reproduced 2026-09-22.
+
+**Next action:** `ORDERS .> MAP(RECORD("a", _[1]["AMOUNT"]))` and `ORDERS .> MAP(_["AMOUNT"]["Q"])` are refused as `E_SQL_BINDING` ("unknown joined relation '1'", the numeric index falling into the join-alias lookup) by JS, PHP and Python and as `E_SQL_SHAPE` by C++ and Lisp; inside a bucket (`… .> BUCKET(_["CUSTOMER_ID"]) .> MAP(RECORD("a", _[1]["AMOUNT"]))`) all five say `E_SQL_SHAPE`, but C++ reports 1:59 where the others report 1:56. Decide the code (E_SQL_SHAPE: a row of a relation is a map of named fields, and a position is a shape the row does not have — the accident is the alias lookup), pin the four shapes with positions in `sql/cases/09-refusals.sqlt`, then align JS, PHP, Python (code) and C++ (position). `tools/fuzz-sql.sh` compares codes and positions, so this is a red result waiting for the generator to emit a positional index on a binder.
+
+**Close when:** The cases pass on all five; `tools/gen-programs.mjs` emits the shape.
+
+**Resolution:** Resolved 2026-09-22. Analysed first: a 26-shape probe of
+the nested index `_[k][field]` through every host's statement and plan
+lanes. The rule that fell out: `k` is a qualifier when it names a relation
+of the statement — its binding name, its table, its alias, or a binder the
+join predicate declared — and every other `k` (a position, a text "1", a
+stray name, a field) is the shape the row does not have: `E_SQL_SHAPE` at
+the outer index. Four divergences, not one: (1) JS, PHP and Python answered
+`E_SQL_BINDING` "unknown joined relation" for the non-qualifier case, the
+alias lookup's accident; (2) C++ reported a bucket's projected row at the
+outer bracket where the other four refuse at the inner one, because its
+pre-walk of the inner index accepted only a text key; (3) C++ accepted the
+positional `_`, `_1`, `_N` and Lisp `_1` as qualifiers, so `_["_2"]["NAME"]`
+after a join was pure SQL there and pure memory elsewhere; (4) C++ rendered
+the qualified column bare in a single-relation statement where the other
+three that reach it qualify it by the relation's alias. All four fixed to
+the rule. Coverage: thirteen `refuse.index.*` statement cases pin every
+refusing variant with its position (positions are the index's own bracket),
+six `plan.index.*` planner cases pin the qualified reads that succeed and
+the three positional names that do not, and `tools/gen-programs.mjs` now
+emits a nested index on a row binder (a position, a text position, a stray
+name, an alias) so both fuzz lanes compare the codes and positions from
+here on. Validation: 879 SQL cases on all five, language fuzz 4,000
+programs 0 disagreements, SQL fuzz 0 disagreements on every dialect,
+hybrid checks 135 (JS, PHP), pytest 630, Lisp unit 532, C++ unit 171 and
+SQL unit 85, C++ conformance 935. Left as found, and noted for SEL-0047:
+`translate_statement` refuses the successful qualified read at 0:0 in every
+host while `plan_hybrid` renders it, so the positive forms are pinned as
+planner cases.
+
+<a id="sel-0044"></a>
+### SEL-0044 — Probe physical_ast and plan_hybrid in the API-parity lane
+
+**Resolved 2026-09-22 · P3 · All five / validation · Owner: unassigned.**
+Source: SEL-0037 reconciliation — 2026-09-15 review, critic gap.
+
+**Next action:** `tools/api.*` (the 54-probe `tools/check-api.sh` lane) mentions neither `physicalAst()`/`physical_ast()`/`program-physical-ast` nor any of `plan_hybrid`'s fields. Add probes for the physical tree's identity rule (built once, dropped when the AST is reassigned) and for each planner field on one pure-SQL, one hybrid and one pure-memory program.
+
+**Close when:** The lane's probe count rises accordingly and every host answers the same lines.
+
+**Resolution:** Resolved 2026-09-22, after SEL-0049 fixed the rule the
+identity probe asserts. Four `program.physical.*` probes in the five `api`
+runners (built once; the AST's dependencies unchanged by the build; run
+agrees on a join over real rows after an explicit build; the same tree after
+runs over two different contexts) — 64 probes, all seven roster entries
+agree. Five new `sqlapi` runners (`tools/sqlapi.mjs`, `tools/sqlapi.php`,
+`python/bin/sqlapi`, `cpp/bin/sqlapi.cpp`, `lisp/bin/sqlapi`), an
+`impl_sqlapi` entry, `tools/check-sqlapi.sh` and a "host SQL API parity" gate
+step: 27 probes over one pure-SQL, one hybrid and one pure-memory program —
+kind, dialect, statement, prefix and continuation presence, the
+continuation's dependencies, source variable, tables, selected member — the
+five hosts with a SQL layer agree on every one; the JS bundles print nothing
+and are left out, as the case runner leaves them out. Values are compared,
+not spellings. The analysis below stands as written.
+Analysed 2026-09-22 first, no change then; the lane had
+60 probes, not 54. Two constraints shape the work. (1) The C++ probe
+binary is in the Makefile's LINKED list — "sel.hpp alone is enough" is a
+checked claim — and the JS runner serves js-bundle and js-bundle-min through
+`SEL_JS_ENTRY`, whose bundle carries no SQL layer; so the planner probes
+cannot go into `tools/api.*` and need a second runner set (`sqlapi`), run for
+the SQL-capable hosts only, exactly as `impl_sql` skips the bundles. The
+physical-tree probes are core-only and belong in the existing runners.
+(2) A finding the probes would surface at once: Python's `physical_ast`
+takes a context and rebuilds whenever the context object changes, because its
+join-filter pushdown reads the rows' keys to decide which side of a LINK a
+field belongs to (`optimizer.py` `pushdown_join_filters` / `get_table_columns`);
+the other four build once per AST and decide from the tree alone. Verified:
+`ORDERS .> LINK(CUSTOMERS, …) .> FILTER(_["amount"] > 1 AND _["name"] $== "x")`
+yields one tree in JS and in Python without a context, and a different one in
+Python with rows (the amount filter pushed under the LINK). Data-dependent
+physical trees are unobservable in results when correct, but they break the
+"built once" identity rule the item wants to pin and are a Python-only
+behaviour nobody else has — opened as SEL-0049 to decide before the probe is
+written (align Python to a tree-only rule, measuring the scale scenarios, or
+document the exception and probe identity without a context). Suggested
+probes, files and shape are in the 2026-09-22 session report and summarised
+here: `program.physical.*` (built once; reassigning `ast` drops it; the AST is
+unchanged by the build; run agrees with and without an explicit build) in the
+five `api` runners; `plan.*` values (classification, dialect, statement text,
+prefix and continuation presence, continuation dependencies, source var,
+source tables, selected member) for one pure-SQL, one hybrid and one
+pure-memory program over fixed ORDERS/CUSTOMERS bindings in five new
+`sqlapi` runners, an `impl_sqlapi` entry, a `check-sqlapi.sh` driver (or the
+existing driver parameterised by runner) and a gate step; values, not
+spellings, since the snake/camel aliases are host convention.
+
+<a id="sel-0045"></a>
+### SEL-0045 — Sanitize the C++ SQL layer and planner
+
+**Resolved 2026-09-22 · P3 · C++ / validation · Owner: unassigned.**
+Source: SEL-0037 reconciliation — 2026-09-15 review, critic gap.
+
+**Next action:** `make asan` compiles `tests/unit.cpp` and `bin/conformance.cpp` alone; `sel_sql*.cpp`, `sel_sql_hybrid.cpp` and `bin/sqlt.cpp` have no sanitizer target, so a leak or an out-of-bounds in the translator or planner is caught by nothing in the tree. Add `sqlt-asan` (and `sqlunit-asan`) to the `asan` target, built from the SQL objects with the same flags.
+
+**Close when:** `make asan` runs the SQL case suite and the SQL unit binary under the sanitizers, clean.
+
+**Resolution:** Resolved 2026-09-22. `make asan` now builds and runs four
+binaries: `unit-asan` and `conformance-asan` as before, plus `sqlunit-asan`
+(executed plans, the shared physical tree) and `sqlt-asan` (stage 1, the
+translator and the planner over all 879 committed cases). The sanitized
+objects of the core and the nine SQL sources are compiled once into
+`build/asan/` and shared by three of the binaries, and the target is
+incremental (a second `make asan` compiles nothing). First run: unit
+171/171, conformance 935, SQL unit 85/85, SQL cases 879, no sanitizer report.
+Confirmed load-bearing by a probe: a deliberate heap overflow in
+`Translator::translate` of a scratch worktree made `sqlt-asan` abort with
+`heap-buffer-overflow` at the injected line. The optimised build is untouched
+(the normal targets and flags are the same): C++ Mandelbrot 148.6 / 147.9 →
+146.3 / 148.8 ms against `6568201`, conformance 126 → 129 ms with ten more
+cases, the SQL case suite 192 / 180 / 183 → 185 / 185 / 189 ms against the
+previous commit, startup ~2.2 ms per process. `tools/check.sh` still leaves
+`make asan` out deliberately, as the README says: it takes minutes.
+
+<a id="sel-0046"></a>
+### SEL-0046 — Compare refused-plan error positions in every runner
+
+**Proposed · P3 · All five / validation · Owner: unassigned.**
+Source: SEL-0037 reconciliation — 2026-09-15 review, low-severity report.
+
+**Next action:** For a `--- plan refused` case every runner parses `CODE line:col` and compares only the code (Python `python/bin/sqlt` ~172; Lisp `(declare (ignore line col))`), and `tools/gen-sql-cases.mjs` accepts a position it will never assert. Either compare the position when one is written, in all five runners, or have the generator refuse a position on a refused plan.
+
+**Close when:** A refused-plan case with a wrong position fails on every host, or cannot be written.
+
+**Resolution:** Pending.
+
+<a id="sel-0047"></a>
+### SEL-0047 — Cover binding kinds and multi-line programs under plan_hybrid
+
+**Proposed · P3 · All five / SQL · Owner: unassigned.**
+Source: SEL-0037 reconciliation — 2026-09-15 review, critic gaps.
+
+**Next action:** `Binding.raw`, relation `scalar` / `correlate` / `prefilter` bindings and `Binding.columns()` appear in a handful of `.sqlt` cases and none under `plan_hybrid` / `execute_hybrid`; multi-line programs (positions with line > 1) through the hybrid continuation were probed only by hand. Add planner cases for each binding kind and one multi-line program whose continuation error is reported at its line.
+
+**Close when:** The cases pass on all five.
+
+**Resolution:** Pending.
+
+<a id="sel-0048"></a>
+### SEL-0048 — SELECT_COLS after a sort wrapped the plan in four hosts; the SQL fuzz lane never ran the generator's SQL mode
+
+**Resolved 2026-09-22 · P2 · All five / SQL · Owner: unassigned.**
+Source: found while closing SEL-0042.
+
+**Next action:** Done. (a) `tools/fuzz-sql.sh` generated its corpus without
+`--sql`, so every pipeline read the prelude's in-memory lists and was refused
+as unbound before reaching the translator or the planner: 66 join programs,
+0 translated. The lane now passes `--sql`, as `tools/README.md` and the
+generator's own comment always said it should. (b) Its first run in that mode
+found one disagreement: `CUSTOMERS .> SORT_BY(r, r["id"], "DESC") .>
+SELECT_COLS("name")` planned as `SELECT _sub1.name FROM (SELECT c.* FROM
+customers c ORDER BY c.id DESC) _sub1` on JS, PHP, Python and C++ and as
+`SELECT c.name FROM customers c ORDER BY c.id DESC` on Lisp. Lisp was right:
+the MAP arm's own comment records that a derived table is where MariaDB
+drops an ORDER BY with no LIMIT beside it, and the four hosts' SELECT_COLS
+arm was testing "anything above the rows" instead of the MAP rule. The four
+now use the MAP predicate; `plan.select-cols.after-a-sort-keeps-one-statement`
+pins the flat statement.
+
+**Close when:** The case passes on all five; the SQL fuzz lane reports 0 disagreements in SQL mode.
+
+**Resolution:** Resolved 2026-09-22: 860 SQL cases on all five, the SQL fuzz
+lane 0 disagreements on every dialect in SQL mode, hybrid checks 135 (JS,
+PHP), pytest 630, Lisp unit 532, C++ SQL unit 85. Still thin: only 5 of the
+corpus's 66 join programs receive a plan, so the join seam SEL-0042 fixed
+is pinned by its cases rather than by the fuzzer; widening the generator's
+translatable join shapes is a fair follow-up under SEL-0047.
+
+<a id="sel-0049"></a>
+### SEL-0049 — Python's physical tree depends on the context's data; the other four depend on the AST alone
+
+**Resolved 2026-09-22 · P2 · Python · Owner: unassigned.**
+Source: SEL-0044 analysis, 2026-09-22.
+
+**Next action:** `Program.physical_ast(context)` in `python/sel/__init__.py` is keyed by the AST *and* the context object, and `optimizer.pushdown_join_filters` reads the context's rows (`get_table_columns`) to decide which side of a LINK an unqualified field belongs to; JS, PHP, C++ and Lisp take no context and decide from the tree. Consequences: a fresh context per run rebuilds the optimised tree (SEL-0030 saw this cost as optimiser garbage), the tree a program runs can differ by data, and the "built once per AST" identity rule of docs/SQL-TRANSLATION.md §12.1 is false for Python. Decide: either make Python's pushdown tree-only like the other four (measure S1–S6 on `tools/scale-test` before and after, since the pushdown exists for those joins), or keep it and document it as a Python-only physical optimisation with its own identity rule. Then SEL-0044's identity probes can be written to the decided rule.
+
+**Close when:** The rule is written in §12.1 and pinned by a Python unit test; the scale scenarios measure no worse than the recorded figures; SEL-0044's probes pass on all five.
+
+**Resolution:** Resolved 2026-09-22, the first way: Python's physical tree
+is a function of the AST alone. `physical_ast()` takes no context and is
+keyed by the AST like the other four; `optimize_ast` and the join-filter
+pushdown take no context or schema; an unqualified field of the joined row
+names no side (JS's rule: "ambiguous"), only a qualified `_["O"]["f"]` does.
+§12.1 says so; `test_physical_tree_is_a_function_of_the_ast_alone` pins it.
+The data-driven pushdown was also unsound — it read the FIRST row's keys to
+decide a side, and rows may differ — so its speed was borrowed. Its sound
+form now lives in the evaluator: a FILTER whose source is a LINK hands the
+join its leading field conjuncts; the join pre-applies them to left rows
+where the joined row's field is provably the left row's (the field is a key
+of no right row, over every row), keeps a row on any error so the full
+predicate raises where it would have, numbers the kept rows as the
+unfiltered join would (FILTER keeps its input's keys), travels down a chain
+of joins when both sources are pure, and does nothing on the nested-loop
+join, whose numbering would need the scan it avoids. Two tests pin results,
+keys and errors against the same program evaluated through a helper
+variable. Scale scenarios, before → final: S1 1,997 → 1,983 ms, S2 37.5 →
+37.5, S3 925 → 917, S4 62.0 → 62.4, S6 793 → 781, and **S5 630 → 1,382 ms**
+(1,175–1,224 isolated): the pre-filter reaches only the outermost of S5's
+three joins, because the logical optimiser (every host) has pushed the
+qualified `_["orders"]["order_year"]` conjunct below it as a FILTER, and
+carrying conjuncts through that FILTER would change which error surfaces on
+a dropped row. The JS host runs S5 in 529 ms; Python's 1.2–1.4 s is the
+proportion its other scenarios show, and the 630 ms was the unsound rewrite's.
+Recovering it soundly is SEL-0050.
+
+<a id="sel-0050"></a>
+### SEL-0050 — Carry Python's join pre-filter through a pushed FILTER to recover scenario 5
+
+**Proposed · P3 · Python · Owner: unassigned.**
+Source: SEL-0049 closure, 2026-09-22.
+
+**Next action:** Scenario 5's leading conjuncts (`status`, `tier`) cannot travel below the FILTER the logical optimiser pushed between its joins: a row dropped before that FILTER would skip the error its predicate might raise, and dropping rows inside it would renumber the join above. One sound design: hand the conjuncts through the FILTER as *marks* rather than drops — a marked row still passes the intermediate predicate (so its error surfaces in order), the join above computes its key and match count for a marked row and advances its numbering without emitting — so the base joins shrink as the old rewrite made them. Measure S5 (`tools/scale-test/sel_benchmarks.py --only scenario5`) and the whole set; pin results, keys and errors as SEL-0049's tests do.
+
+**Close when:** S5 measures near its former 630 ms with results, keys and error order unchanged; the physical tree stays a function of the AST.
+
+**Resolution:** Pending.
+
 ## Suggested order
 
 Start with SEL-0001–0004 and revalidate SEL-0034. Take verified cleanup items
@@ -1185,3 +1505,6 @@ closure when its evidence is recorded.
 | Surrounding correctness/performance follow-ups | SEL-0001, SEL-0003, SEL-0027–0032 |
 | Earlier SQL boundaries / history reconciliation | SEL-0034–0037 |
 | Database fuzz lane findings, 2026-09-21 | SEL-0034 (closure), SEL-0041 |
+| Review reconciliation, 2026-09-22 | SEL-0037 (closure), SEL-0042–0047 |
+| SQL fuzz lane in SQL mode, 2026-09-22 | SEL-0048 |
+| API-lane analysis, 2026-09-22 | SEL-0044, SEL-0049 (closures), SEL-0050 |

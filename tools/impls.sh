@@ -223,6 +223,23 @@ impl_deps() {
   esac
 }
 
+# The planner's contract through each host's SQL binding (tools/check-sqlapi.sh).
+# Hosts with no SQL layer -- the JS bundles -- print nothing and succeed, and the
+# driver leaves them out, as impl_sql does.
+impl_sqlapi() {
+  local impl="$1"; shift
+  case "$impl" in
+    js)   node tools/sqlapi.mjs "$@" ;;
+    js-bundle|js-bundle-min) return 0 ;;
+    php)  sel_php tools/sqlapi.php "$@" ;;
+    cpp)  cpp/build/sqlapi "$@" ;;
+    lisp) lisp/bin/sqlapi "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 python/bin/sqlapi "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlapi "$@" ;;
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
 impl_api() {
   local impl="$1"; shift
   case "$impl" in
@@ -360,9 +377,18 @@ impl_unit() {
     js|js-bundle|js-bundle-min|php) return 0 ;;
     # `python3 -m pytest`, not `pytest`: the binary is often only on a venv's
     # PATH while the module is importable by the interpreter we actually use.
+    # A missing test dependency is an infrastructure failure, not a passing
+    # result: this lane holds checks no other host has (the executed-plan
+    # comparison against SQLite, the planner contract, the physical-tree
+    # cache), and it used to print a skip and succeed when python3 had no
+    # pytest -- ALL GREEN without them (review 2026-09-15, critic). Put a
+    # venv with pytest first on PATH, or opt out with SEL_SKIP_PYTHON_UNIT=1.
     python)
       python3 -c 'import pytest' 2>/dev/null || {
-        echo "python: pytest not installed, unit tests skipped"; return 0; }
+        if [ "${SEL_SKIP_PYTHON_UNIT:-0}" = 1 ]; then
+          echo "python: pytest not installed, unit tests skipped (SEL_SKIP_PYTHON_UNIT=1)"; return 0; fi
+        echo "python: pytest is not installed for $(command -v python3); the unit lane cannot run (SEL_SKIP_PYTHON_UNIT=1 opts out)" >&2
+        return 1; }
       PYTHONPATH="$PWD/python" python3 -m pytest -q python/tests ;;
     # Deliberately not given PYTHONPATH: these run against the installed package.
     python-wheel)

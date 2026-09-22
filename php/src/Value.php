@@ -534,6 +534,44 @@ final class Value
         return array_values($this->children);
     }
 
+    /**
+     * Calls $callback(key, item) once per ELEMENT, in order, in the sense the
+     * aggregates use: a collection's children under their keys, a scalar as a
+     * single element under "1", and NONE as nothing. Each storage layout is
+     * walked directly rather than through entries(), because this is the hot
+     * loop of every aggregate and the intermediate list is what it cost. Two
+     * builtin classes each carried a private copy of this (SEL-0040).
+     *
+     * @param callable(string,Value):void $callback
+     */
+    public function forEachElement(callable $callback): void
+    {
+        if ($this->isNull()) return;
+        if ($this->isList && $this->storage !== null) {
+            if ($this->listKeys !== null) {
+                foreach ($this->storage as $i => $item) {
+                    $callback($this->listKeys[$i], $item);
+                }
+            } else {
+                foreach ($this->storage as $i => $item) {
+                    $callback((string) ($i + 1), $item);
+                }
+            }
+            return;
+        }
+        if ($this->shape !== null && $this->storage !== null) {
+            foreach ($this->shape->keys as $i => $key) {
+                $callback($key, $this->storage[$i]);
+            }
+            return;
+        }
+        if ($this->size() > 0) {
+            foreach ($this->children as $key => $item) $callback((string) $key, $item);
+            return;
+        }
+        if ($this->kind !== Value::NONE) $callback('1', $this);
+    }
+
     /** @return list<array{0:string,1:Value}> */
     public function entries(): array
     {

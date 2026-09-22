@@ -135,7 +135,11 @@ Translator::Translator(std::string dialect, Bindings bindings, Options options)
       bindings_(std::move(bindings)),
       strict_(options.strict) {}
 
-Fragment Translator::translate(const NodePtr& ast) {
+// What both entry points do before they differ: the dialect and alias checks,
+// the per-translation state, the constant scope, stage 1, and the planner's
+// look at the result. Returns the normalised tree and the plan, empty where
+// the tree is an expression.
+Translator::Begun Translator::begin(const NodePtr& ast) {
   // The order is contract: a caller with both a bad dialect and a duplicate
   // alias gets E_SQL_DIALECT, so these two must not be fused into one pass.
   Map::require_target(dialect_);
@@ -152,12 +156,39 @@ Fragment Translator::translate(const NodePtr& ast) {
   const_names_ = std::move(scope.names);
   const_root_ = std::move(scope.root);
 
-  const SNodePtr normalised = normalise(ast, const_names_, const_root_);
+  // Stage 1 and nothing else: the translator renders the tree it is handed;
+  // the planner is the one place that optimises first.
+  SNodePtr normalised = normalise(ast, const_names_, const_root_);
   auto plan = analyze_pipeline(normalised);
-  if (plan) {
-    return compile_statement(*plan);
+  return {std::move(normalised), std::move(plan)};
+}
+
+// The (name, value) pairs of a RECORD(k, v, ...) call, refusing what the
+// evaluator would: an odd count at the call, a name that is not a text literal
+// at the name. The planner reads RECORD in three places -- a bucket's
+// projection, a bucket's key, a MAP's projection -- and each used to walk the
+// pairs itself.
+static std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node) {
+  const auto& args = node->kids();
+  if (args.size() % 2 != 0) {
+    refuse("E_ARITY", "RECORD takes an even number of arguments", node->pos());
   }
-  const Fragment f = node(normalised);
+  std::vector<std::pair<std::string, SNodePtr>> fields;
+  for (std::size_t i = 0; i < args.size(); i += 2) {
+    if (args[i]->t() != SNode::T::Text) {
+      refuse("E_BAD_ARG", "RECORD field names must be string literals", args[i]->pos());
+    }
+    fields.emplace_back(args[i]->s(), args[i + 1]);
+  }
+  return fields;
+}
+
+Fragment Translator::translate(const NodePtr& ast) {
+  Begun b = begin(ast);
+  if (b.plan) {
+    return compile_statement(*b.plan);
+  }
+  const Fragment f = node(b.norm);
 
   // Only this final Fragment carries the vectors; every intermediate one built
   // during the walk has none.
@@ -169,26 +200,11 @@ Fragment Translator::translate(const NodePtr& ast) {
 }
 
 Fragment Translator::translate_statement(const NodePtr& ast) {
-  Map::require_target(dialect_);
-  bindings_.check_aliases();
-
-  params_.clear();
-  param_kinds_.clear();
-  caveats_.clear();
-  frames_.clear();
-  depth_ = 0;
-  subquery_counter_ = 0;
-
-  ConstScope scope = const_scope(&bindings_);
-  const_names_ = std::move(scope.names);
-  const_root_ = std::move(scope.root);
-
-  const SNodePtr normalised = normalise(ast, const_names_, const_root_);
-  auto plan = analyze_pipeline(normalised);
-  if (!plan) {
+  Begun b = begin(ast);
+  if (!b.plan) {
     refuse("E_SQL_SHAPE", "expected a relational query or pipeline");
   }
-  return compile_statement(*plan);
+  return compile_statement(*b.plan);
 }
 
 void Translator::add_caveat(std::string name) {
@@ -372,8 +388,12 @@ Fragment Translator::index(const SNode& n) {
   // plan so the emitted SQL names the owning relation directly; treating it
   // as an index into the left relation would stop hybrid planning at the first
   // multi-table projection.
+  // A numeric inner key takes the same path: over a bucket's members or a
+  // projected row it is refused at the inner index like the other four hosts
+  // do, instead of falling out to the outer one (SEL-0043).
   if (obj.t() == SNode::T::Index && obj.l() && obj.l()->t() == SNode::T::Var &&
-      obj.r() && obj.r()->t() == SNode::T::Text && statement_plan_) {
+      obj.r() && (obj.r()->t() == SNode::T::Text || obj.r()->t() == SNode::T::Num) &&
+      statement_plan_) {
     // ... when the inner name is a row. Over a bucket's members or a
     // projected row the inner index is itself the thing to refuse.
     if (const Binder* inner = binder(obj.l()->s())) {
@@ -386,17 +406,19 @@ Fragment Translator::index(const SNode& n) {
       return ascii_upper(qualifier) == ascii_upper(candidate);
     };
     const RelationSpec* relation = nullptr;
+    // A qualifier names a relation by its binding name, its table, its alias
+    // or a binder the join predicate declared -- never by the positional
+    // `_`, `_1`, `_2`, which this host alone accepted and the other four plan
+    // in memory (SEL-0043).
     if (same_name(statement_plan_->source_name) ||
         same_name(statement_plan_->source_relation.from) ||
-        (statement_plan_->source_alias && same_name(*statement_plan_->source_alias)) ||
-        same_name("_") || same_name("_1")) {
+        (statement_plan_->source_alias && same_name(*statement_plan_->source_alias))) {
       relation = &statement_plan_->source_relation;
     } else {
       for (std::size_t i = 0; i < statement_plan_->joins.size(); ++i) {
         const RelationalJoin& join = statement_plan_->joins[i];
         if (same_name(join.source_name) || same_name(join.source_relation.from) ||
             (join.source_alias && same_name(*join.source_alias)) ||
-            same_name("_" + std::to_string(i + 2)) ||
             same_name(join.left_binder) || same_name(join.right_binder)) {
           relation = &join.source_relation;
           break;
@@ -417,7 +439,13 @@ Fragment Translator::index(const SNode& n) {
                qualifier + "[\"" + key + "\"] is not a field of that relation",
                n.pos());
       }
-      return relation_column(*relation, *field);
+      // The qualifier's whole point is to name the relation, so the column
+      // is qualified by the alias it renders under, join or no join, as the
+      // other four hosts spell it (SEL-0043); a RAW binding stays verbatim.
+      if (field->is_raw) return column_ref(*field);
+      ColumnSpec qualified = *field;
+      qualified.table = relation_table_alias(*relation);
+      return column_ref(qualified);
     }
   }
   // A PARENTHESISED variable still has t == Var -- the parser sets only a
@@ -1155,19 +1183,9 @@ Fragment Translator::binary(const SNode& n) {
     const bool sargable_prefilter = (spf && spf->kind == LexKind::Text && spf->text == "true");
     if ((l_exact && (r_exact || r_lit)) || (r_exact && l_lit)) {
       // bare comparison
-    } else if (op == "$==" && l.sargable() && r_lit) {
-      if (sargable_prefilter) {
-        const Fragment coarse_args[] = {l, r};
-        const Fragment coarse = apply(Section::Ops, "$==", coarse_args, n.pos(), variant);
-        const Fragment res_args[] = {emit_.text_operand(l), emit_.text_operand(r)};
-        const Fragment residual = apply(Section::Ops, "$==", res_args, n.pos(), variant);
-        const Fragment and_args[] = {coarse, residual};
-        Fragment res = apply(Section::Ops, "AND", and_args, n.pos());
-        res.set_prefilter(std::make_shared<Fragment>(coarse));
-        res.set_separate_prefilter(l.separate_prefilter() || r.separate_prefilter());
-        return res;
-      }
-    } else if (op == "$==" && r.sargable() && l_lit) {
+    } else if (op == "$==" && ((l.sargable() && r_lit) || (r.sargable() && l_lit))) {
+      // A sargable column against a literal, either way round: the coarse
+      // comparison the index can serve, AND the exact one.
       if (sargable_prefilter) {
         const Fragment coarse_args[] = {l, r};
         const Fragment coarse = apply(Section::Ops, "$==", coarse_args, n.pos(), variant);
@@ -1943,8 +1961,12 @@ Translator::Source Translator::classify(const SNodePtr& src) {
           break;
         case Binder::Shape::Column:
           break;
+        // The key of the group being rendered is one value, like a column:
+        // the scalar rule below. Spelled out so -Wswitch can see every shape.
+        case Binder::Shape::Key:
+          break;
       }
-      // A COLUMN, or a ROW with exactly one field: the scalar rule.
+      // A COLUMN, a KEY, or a ROW with exactly one field: the scalar rule.
       out.elements.emplace_back("1", *bound);
       out.scalar_rule = true;
       return out;
@@ -2520,18 +2542,8 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
                                    const SNodePtr& agg_node) {
   if (agg_node) {
     if (agg_node->t() == SNode::T::Call && agg_node->s() == "RECORD") {
-      const auto& rec_args = agg_node->kids();
-      if (rec_args.size() % 2 != 0) {
-        refuse("E_ARITY", "RECORD takes an even number of arguments", agg_node->pos());
-      }
       std::vector<RelationalProjection> projections;
-      for (std::size_t i = 0; i < rec_args.size(); i += 2) {
-        const auto& k_node = rec_args[i];
-        const auto& v_node = rec_args[i + 1];
-        if (k_node->t() != SNode::T::Text) {
-          refuse("E_BAD_ARG", "RECORD field names must be string literals", k_node->pos());
-        }
-        std::string alias = k_node->s();
+      for (const auto& [alias, v_node] : record_fields(agg_node)) {
         SNodePtr actual_node = v_node;
         // _K is the key, which was written against the KEY's binder -- the MAP
         // spelling may name the group differently, so the projection keeps the
@@ -2549,7 +2561,7 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
       plan.projections = std::move(projections);
     } else {
       std::vector<RelationalProjection> projections;
-      projections.push_back({std::nullopt, binder, agg_node});
+      projections.push_back({std::nullopt, binder, agg_node, {}});
       plan.projections = std::move(projections);
     }
   } else {
@@ -2702,15 +2714,8 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
           group_by.push_back({std::nullopt, binder, k_arg, k_arg->pos()});
         }
       } else if (key_node->t() == SNode::T::Call && key_node->s() == "RECORD") {
-        const auto& r_args = key_node->kids();
-        if (r_args.size() % 2 != 0) {
-          refuse("E_ARITY", "RECORD takes an even number of arguments", key_node->pos());
-        }
-        for (std::size_t i = 0; i < r_args.size(); i += 2) {
-          if (r_args[i]->t() != SNode::T::Text) {
-            refuse("E_BAD_ARG", "RECORD field names must be string literals", r_args[i]->pos());
-          }
-          group_by.push_back({r_args[i]->s(), binder, r_args[i + 1], r_args[i + 1]->pos()});
+        for (const auto& [alias, value] : record_fields(key_node)) {
+          group_by.push_back({alias, binder, value, value->pos()});
         }
       } else {
         group_by.push_back({std::nullopt, binder, key_node, key_node->pos()});
@@ -2720,7 +2725,10 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       plan.bare_key = !agg_node;
       bucket_projection(plan, binder, agg_node);
     } else if (name == "SELECT_COLS") {
-      const bool need_derived = plan_has_rows_above(plan);
+      // The same rule as a MAP's: an ORDER BY alone does not wrap (a derived
+      // table is where MariaDB drops an ORDER BY with no LIMIT beside it),
+      // everything else above the rows does (SEL-0048).
+      const bool need_derived = plan_needs_wrap_before_map(plan);
       plan = ensure_derived(std::move(plan), need_derived);
       std::vector<SNodePtr> items;
       if (args.size() == 2 && args[1]->t() == SNode::T::List) {
@@ -2795,23 +2803,14 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       plan = ensure_derived(std::move(plan), need_derived);
 
       if (expr->t() == SNode::T::Call && expr->s() == "RECORD") {
-        const auto& rec_args = expr->kids();
-        if (rec_args.size() % 2 != 0) {
-          refuse("E_ARITY", "RECORD takes an even number of arguments", expr->pos());
-        }
         std::vector<RelationalProjection> projections;
-        for (std::size_t i = 0; i < rec_args.size(); i += 2) {
-          const auto& k_node = rec_args[i];
-          const auto& v_node = rec_args[i + 1];
-          if (k_node->t() != SNode::T::Text) {
-            refuse("E_BAD_ARG", "RECORD field names must be string literals", k_node->pos());
-          }
-          projections.push_back({k_node->s(), binder, v_node});
+        for (const auto& [alias, value] : record_fields(expr)) {
+          projections.push_back({alias, binder, value, {}});
         }
         plan.projections = std::move(projections);
       } else {
         std::vector<RelationalProjection> projections;
-        projections.push_back({std::nullopt, binder, expr});
+        projections.push_back({std::nullopt, binder, expr, {}});
         plan.projections = std::move(projections);
       }
       plan.select_cols = std::nullopt;

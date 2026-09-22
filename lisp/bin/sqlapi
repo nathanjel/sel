@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# See sqlapi.lisp beside this wrapper. Run from the repository root.
+here="$(cd "$(dirname "$0")" && pwd)"
+exec sbcl --noinform --disable-debugger --non-interactive \
+  --load "$here/boot.lisp" \
+  --load "$here/sqlapi.lisp" \
+  --eval '(sel-sqlapi:main)' \
+  --end-toplevel-options "$@"

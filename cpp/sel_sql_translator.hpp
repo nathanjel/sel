@@ -184,6 +184,9 @@ class Translator {
 
   Fragment translate(const NodePtr& ast);
   Fragment translate_statement(const NodePtr& ast);
+  // What both entry points do before they differ; see the definition.
+  struct Begun { SNodePtr norm; std::optional<RelationalPlan> plan; };
+  Begun begin(const NodePtr& ast);
 
   std::optional<RelationalPlan> analyze_pipeline(const SNodePtr& ast);
   Fragment compile_statement(const RelationalPlan& plan);

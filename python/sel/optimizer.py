@@ -571,41 +571,7 @@ def collect_pipeline_source_names(node: Node | None) -> list[str]:
     return names
 
 
-def get_table_columns(context: Any, schema: Any, table_name: str) -> set[str] | None:
-    cols: set[str] = set()
-    if schema and isinstance(schema, dict):
-        binding = schema.get(table_name) or schema.get(table_name.lower()) or schema.get(table_name.upper())
-        if binding is not None:
-            if hasattr(binding, 'columns') and binding.columns:
-                cols.update(k.upper() for k in binding.columns.keys())
-    if context is not None and table_name:
-        from .value import Value
-        val = None
-        if isinstance(context, Value):
-            val = context.get(table_name) or context.get(table_name.upper()) or context.get(table_name.lower())
-        elif isinstance(context, dict):
-            val = context.get(table_name) or context.get(table_name.upper()) or context.get(table_name.lower())
-            if not isinstance(val, Value):
-                try:
-                    val = Value.from_native(val)
-                except Exception:
-                    val = None
-        if val is not None and not val.is_null():
-            sample = None
-            if val.is_list and val.storage is not None and val.storage:
-                sample = val.storage[0]
-            elif val.size() > 0:
-                entries = val.entries()
-                sample = entries[0][1] if entries else None
-            if sample is not None:
-                if sample.shape is not None:
-                    cols.update(k.upper() for k in sample.shape.keys)
-                elif sample.children:
-                    cols.update(k.upper() for k in sample.children.keys())
-    return cols if cols else None
-
-
-def pushdown_join_filters(steps: list[Node], context: Any = None, schema: Any = None) -> tuple[list[Node], bool]:
+def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
     result = []
     changed = False
     i = 0
@@ -627,16 +593,6 @@ def pushdown_join_filters(steps: list[Node], context: Any = None, schema: Any = 
         left_names.update(name.upper() for name in collect_pipeline_source_names(left_source))
         right_names.update(name.upper() for name in collect_pipeline_source_names(right_source))
 
-        left_cols: set[str] = set()
-        for t in collect_pipeline_source_names(left_source):
-            c = get_table_columns(context, schema, t)
-            if c:
-                left_cols.update(c)
-        right_cols: set[str] = set()
-        for t in collect_pipeline_source_names(right_source):
-            c = get_table_columns(context, schema, t)
-            if c:
-                right_cols.update(c)
 
         info = filter_details(filter_node)
         if not info['valid']:
@@ -667,17 +623,18 @@ def pushdown_join_filters(steps: list[Node], context: Any = None, schema: Any = 
                             unknown = True
                         return
                     if item.obj is not None and item.obj.t == 'var' and item.idx.t == 'text':
+                        # An unqualified field of the joined row names no side:
+                        # after a LINK only the joined row is in scope (spec
+                        # §7.4), and which side owns `_["amount"]` is a fact
+                        # about the data, not the tree. This host used to read
+                        # the context's first row to decide, and so built a
+                        # different physical tree per context object -- the
+                        # one host whose tree depended on data (SEL-0049). Only
+                        # `_["O"]["id"]`, a read through the joined row's key,
+                        # names a side, as in the other four hosts.
                         name = item.obj.name.upper()
                         if name in (info['binder'].upper(), '_'):
-                            col = item.idx.v.upper()
-                            in_left = col in left_cols
-                            in_right = col in right_cols
-                            if in_left and not in_right:
-                                has_left = True
-                            elif in_right and not in_left:
-                                has_right = True
-                            else:
-                                ambiguous = True
+                            ambiguous = True
                         else:
                             unknown = True
                         return
@@ -783,11 +740,7 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
         final_steps = logical_steps(optimized_source, optimized_steps, options)
         if physical:
             while True:
-                final_steps, pushed = pushdown_join_filters(
-                    final_steps,
-                    options.get('context'),
-                    options.get('schema'),
-                )
+                final_steps, pushed = pushdown_join_filters(final_steps)
                 if not pushed:
                     break
                 final_steps = logical_steps(optimized_source, final_steps, options)
@@ -868,17 +821,14 @@ def optimize_ast_logical(ast: Node, options: dict[str, Any] | None = None) -> No
     return optimize_root(ast, False, options or {})
 
 
-def optimize_ast_in_memory(ast: Node, context: Any = None, schema: Any = None) -> Node:
-    opts: dict[str, Any] = {}
-    if context is not None:
-        opts['context'] = context
-    if schema is not None:
-        opts['schema'] = schema
-    return optimize_root(ast, True, opts)
+def optimize_ast_in_memory(ast: Node) -> Node:
+    # The physical tree is a function of the AST alone, in every host: no
+    # context, no schema. It is built once per program and kept (SEL-0049).
+    return optimize_root(ast, True, {})
 
 
-def optimize_ast(ast: Node, context: Any = None, schema: Any = None) -> Node:
-    return optimize_ast_in_memory(ast, context=context, schema=schema)
+def optimize_ast(ast: Node) -> Node:
+    return optimize_ast_in_memory(ast)
 
 
 # Camel-case aliases keep the API spelling aligned with the JS host.

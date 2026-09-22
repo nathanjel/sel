@@ -195,6 +195,24 @@ int main() {
                               std::to_string(e.col()));
   }
 
+  // --- the physical tree (docs/SQL-TRANSLATION.md §12.1; SEL-0044, SEL-0049).
+  // One tree per AST (pointer equality here), the same whatever data ran, the
+  // AST untouched, run() the same after an explicit build.
+  {
+    Program joined = compile("ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> FILTER(_[\"orders\"][\"amount\"] > 1)");
+    const std::string before = join(joined.dependencies(), " ");
+    const auto first = joined.physical_ast();
+    say("program.physical.built-once", b(joined.physical_ast() == first));
+    say("program.physical.keeps.ast", b(join(joined.dependencies(), " ") == before) + " " + before);
+    Value data = Value::none();
+    compile("ORDERS = LIST(RECORD(\"id\", 1, \"customer_id\", 7, \"amount\", 5), RECORD(\"id\", 2, \"customer_id\", 7, \"amount\", 0), RECORD(\"id\", 3, \"customer_id\", 9, \"amount\", 9)); CUSTOMERS = LIST(RECORD(\"id\", 7, \"name\", \"x\")); 0").run(data);
+    say("program.physical.run.agrees", joined.run(data).dump());
+    Value empty = Value::none();
+    compile("ORDERS = LIST(); CUSTOMERS = LIST(); 0").run(empty);
+    joined.run(empty);
+    say("program.physical.independent.of.data", b(joined.physical_ast() == first));
+  }
+
   std::cout << join(out, "\n") << "\n";
   return 0;
 }

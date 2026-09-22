@@ -174,5 +174,22 @@ try:
 except SelError as e:
     say('deps.depth.over', f'{e.code} {e.line}:{e.col}')
 
+# --- the physical tree (docs/SQL-TRANSLATION.md §12.1; SEL-0044, SEL-0049).
+# One tree per AST, the same whatever data ran (this host keyed it on the
+# context until SEL-0049), the AST untouched, run() the same after an explicit
+# build.
+join = sel_compile('ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["amount"] > 1)')
+before = ' '.join(join.dependencies())
+first = join.physical_ast()
+say('program.physical.built-once', b(join.physical_ast() is first))
+say('program.physical.keeps.ast', b(' '.join(join.dependencies()) == before) + ' ' + before)
+ctx = Value.none()
+sel_compile('ORDERS = LIST(RECORD("id", 1, "customer_id", 7, "amount", 5), RECORD("id", 2, "customer_id", 7, "amount", 0), RECORD("id", 3, "customer_id", 9, "amount", 9)); CUSTOMERS = LIST(RECORD("id", 7, "name", "x")); 0').run(ctx)
+say('program.physical.run.agrees', join.run(ctx).dump())
+empty = Value.none()
+sel_compile('ORDERS = LIST(); CUSTOMERS = LIST(); 0').run(empty)
+join.run(empty)
+say('program.physical.independent.of.data', b(join.physical_ast() is first))
+
 sys.stdout.reconfigure(encoding='utf-8', newline='\n')
 sys.stdout.write('\n'.join(out) + '\n')

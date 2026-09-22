@@ -26,7 +26,7 @@ final class Structure
                 }
                 $buckets = [];
                 $out = [];
-                self::forEachElement($value, static function (string $key, Value $item) use (&$buckets, &$out): void {
+                $value->forEachElement(static function (string $key, Value $item) use (&$buckets, &$out): void {
                     $hash = $item->structuralHash();
                     $found = false;
                     foreach ($buckets[$hash] ?? [] as $existing) {
@@ -59,37 +59,6 @@ final class Structure
             'fn' => static fn (Args $a, Context $ctx): Value => self::doLink($a, $ctx, false)]);
         Registry::define(['name' => 'LINK_LEFT', 'min' => 3, 'max' => 5, 'lazy' => true, 'binds' => true,
             'fn' => static fn (Args $a, Context $ctx): Value => self::doLink($a, $ctx, true)]);
-    }
-
-    /** @param callable(string,Value):void $callback */
-    private static function forEachElement(Value $value, callable $callback): void
-    {
-        if ($value->isNull()) return;
-        if ($value->isList && $value->storage !== null) {
-            if ($value->listKeys !== null) {
-                foreach ($value->storage as $i => $item) {
-                    $callback($value->listKeys[$i], $item);
-                }
-            } else {
-                foreach ($value->storage as $i => $item) {
-                    $callback((string) ($i + 1), $item);
-                }
-            }
-            return;
-        }
-        if ($value->shape !== null && $value->storage !== null) {
-            foreach ($value->shape->keys as $i => $key) {
-                $callback($key, $value->storage[$i]);
-            }
-            return;
-        }
-        if ($value->size() > 0) {
-            foreach ($value->children as $key => $item) {
-                $callback((string) $key, $item);
-            }
-            return;
-        }
-        if ($value->kind !== Value::NONE) $callback('1', $value);
     }
 
     private static function firstCollectionItem(Value $value): ?Value
@@ -795,7 +764,7 @@ final class Structure
                         $ctx->setFrameValue('_1', $left);
                         $ctx->setFrameValue('_', $left);
                     $matched = false;
-                    self::forEachElement($rightValue, function (string $rightKey, Value $rightItem) use (
+                    $rightValue->forEachElement(function (string $rightKey, Value $rightItem) use (
                         &$frame, &$output, &$matched, $b1, $b2, $left, $aliasRight, $a, $predicate, $project, $ctx,
                     ): void {
                         $right = $aliasRight($rightItem);
@@ -917,7 +886,7 @@ final class Structure
                     foreach ($value->storage as $i => $item) $consume((string) ($i + 1), $item);
                 }
             } else {
-                self::forEachElement($value, $consume);
+                $value->forEachElement($consume);
             }
         } finally {
             if ($frame !== null) $ctx->popFrame();
@@ -964,7 +933,7 @@ final class Structure
         $ctx->pushFrame($frame);
         try {
             $index = 0;
-            self::forEachElement($value, function (string $key, Value $item) use (
+            $value->forEachElement(function (string $key, Value $item) use (
                 &$index, &$frame, &$groups, &$buckets, $a, $ctx, $keyNode, $aggregateNode, $binder,
             ): void {
                 $frame[$binder] = $item;

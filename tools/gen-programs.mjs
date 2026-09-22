@@ -131,7 +131,12 @@ const ROW_SOURCES = SQL_MODE
   : ['ROWS', 'ROWS', 'ITEMS', 'LST', 'LIST(RECORD("id", 1, "amount", 5, "name", "a"), RECORD("id", 2, "amount", 6, "name", "b"))'];
 const JOIN_RIGHT = SQL_MODE ? 'CUSTOMERS' : 'CUSTS';
 const FIELDS = ['id', 'amount', 'name', 'customer_id', 'QTY', 'ID', 'Amount'];
-const rowRef = (b) => (chance(0.12) ? '_K' : chance(0.08) ? b : `${b}["${pick(FIELDS)}"]`);
+// A nested index on the row now and then: a position (`_[1]["amount"]`), a
+// stray name, or a real qualifier (the relation's alias) -- the shapes whose
+// refusal code and position the hosts once disagreed on (SEL-0043).
+const rowRef = (b) => (chance(0.12) ? '_K' : chance(0.08) ? b
+  : chance(0.06) ? `${b}[${pick(['1', '0', '"1"', '"nope"', '"o"', '"c"'])}]["${pick(FIELDS)}"]`
+  : `${b}["${pick(FIELDS)}"]`);
 const pred = (b) => (chance(0.7)
   ? `${rowRef(b)} ${pick(NUMCMP)} ${pick(['1', '2', '5', '0', '"a"'])}`
   : `${rowRef(b)} ${pick(TXTCMP)} ${pick(['"a"', '"Ann"', '"b"'])}`);

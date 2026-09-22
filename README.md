@@ -525,7 +525,10 @@ passes the same suite; `tools/impls.sh` is where it registers itself, and
 tools/check.sh
 ```
 
-Eleven layers, each catching what the others miss:
+Eleven layers, each catching what the others miss. The three that ask a real
+database start pinned Docker servers for themselves and fail the run if they
+cannot; `SEL_SKIP_DB_TESTS=1` opts out, and `SEL_SQL_<DIALECT>_DSN` points them
+at servers of your own (`sql/oracle/README.md`).
 
 - **Conformance** — the normative suite, run by every implementation.
 - **Unit tests** — for the layers underneath the suite, where a bug otherwise
@@ -575,8 +578,8 @@ in the fixed order above once every layer has finished.
 
 Two more exist and are not in `tools/check.sh`, deliberately, because they take
 minutes rather than seconds: `tools/stress.sh` (deep structures, the shapes a
-fuzzer never emits) and `cd cpp && make asan` (the suite under the leak and
-undefined-behaviour checkers).
+fuzzer never emits) and `cd cpp && make asan` (the suite, the SQL cases and the
+SQL unit under the leak and undefined-behaviour checkers).
 
 The fuzzer is the one that earns its keep. It caught the `\d` UCP divergence; it
 caught C++ evaluating `TRUE $== FALSE`'s operands right-to-left, because the

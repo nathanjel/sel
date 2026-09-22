@@ -158,4 +158,21 @@ try {
     say('deps.depth.over', $e->code . ' ' . $e->line . ':' . $e->col);
 }
 
+// --- the physical tree (docs/SQL-TRANSLATION.md §12.1; SEL-0044, SEL-0049).
+// PHP arrays are values, so "the same tree" is value equality here; the other
+// hosts compare identity. One tree per AST, the same whatever data ran, the
+// AST untouched, run() the same after an explicit build.
+$join = Sel::compile('ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["amount"] > 1)');
+$before = implode(' ', $join->dependencies());
+$first = $join->physicalAst();
+say('program.physical.built-once', $b($join->physicalAst() === $first));
+say('program.physical.keeps.ast', $b(implode(' ', $join->dependencies()) === $before) . ' ' . $before);
+$ctx = Value::none();
+Sel::compile('ORDERS = LIST(RECORD("id", 1, "customer_id", 7, "amount", 5), RECORD("id", 2, "customer_id", 7, "amount", 0), RECORD("id", 3, "customer_id", 9, "amount", 9)); CUSTOMERS = LIST(RECORD("id", 7, "name", "x")); 0')->run($ctx);
+say('program.physical.run.agrees', $join->run($ctx)->dump());
+$empty = Value::none();
+Sel::compile('ORDERS = LIST(); CUSTOMERS = LIST(); 0')->run($empty);
+$join->run($empty);
+say('program.physical.independent.of.data', $b($join->physicalAst() === $first));
+
 echo implode("\n", $out), "\n";

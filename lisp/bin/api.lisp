@@ -156,5 +156,22 @@
              (format nil "~a ~d:~d" (sel:sel-error-code e)
                      (sel:sel-error-line e) (sel:sel-error-col e))))))
 
+  ;; --- the physical tree (docs/SQL-TRANSLATION.md 12.1; SEL-0044, SEL-0049).
+  ;; One tree per AST (EQ here), the same whatever data ran, the AST
+  ;; untouched, RUN the same after an explicit build.
+  (let* ((joined (sel:compile-source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> FILTER(_[\"orders\"][\"amount\"] > 1)"))
+         (before (format nil "~{~a~^ ~}" (sel:dependencies joined)))
+         (first (sel:program-physical-ast joined)))
+    (say "program.physical.built-once" (yn (eq (sel:program-physical-ast joined) first)))
+    (say "program.physical.keeps.ast"
+         (format nil "~a ~a" (yn (equal (format nil "~{~a~^ ~}" (sel:dependencies joined)) before)) before))
+    (let ((data (sel:make-none)))
+      (sel:run (sel:compile-source "ORDERS = LIST(RECORD(\"id\", 1, \"customer_id\", 7, \"amount\", 5), RECORD(\"id\", 2, \"customer_id\", 7, \"amount\", 0), RECORD(\"id\", 3, \"customer_id\", 9, \"amount\", 9)); CUSTOMERS = LIST(RECORD(\"id\", 7, \"name\", \"x\")); 0") data)
+      (say "program.physical.run.agrees" (sel:value-dump (sel:run joined data))))
+    (let ((empty (sel:make-none)))
+      (sel:run (sel:compile-source "ORDERS = LIST(); CUSTOMERS = LIST(); 0") empty)
+      (sel:run joined empty))
+    (say "program.physical.independent.of.data" (yn (eq (sel:program-physical-ast joined) first))))
+
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

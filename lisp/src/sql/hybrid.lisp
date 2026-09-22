@@ -735,10 +735,13 @@ list, which a driver could not bind as it was)."
             (db-rows (funcall db-runner (as-statement frag :params) (bindings frag)))
             (cont-prog (hybrid-plan-continuation-program plan))
             (input-var (hybrid-plan-continuation-source-var plan)))
-       (let ((cont-context (sel:make-none)))
-         (when context
-           (let ((c-val (if (sel:value-p context) context (sel:from-native context))))
-             (dolist (k (sel:value-keys c-val))
-               (sel:value-set cont-context k (sel:value-get c-val k)))))
+       ;; A COPY of the caller's context, as the other four hosts make: the
+       ;; continuation may assign, and an indexed assignment into an aliased
+       ;; child would otherwise write into the caller's tree (review
+       ;; 2026-09-15, low). The rows the database returned are added to the
+       ;; copy, never to the caller's value.
+       (let ((cont-context (if context
+                               (sel:value-copy (if (sel:value-p context) context (sel:from-native context)))
+                               (sel:make-none))))
          (sel:value-set cont-context input-var (if (sel:value-p db-rows) db-rows (sel:from-native db-rows)))
          (sel:run cont-prog cont-context))))))

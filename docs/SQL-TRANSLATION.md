@@ -2449,7 +2449,8 @@ The ordinary prefix planner promises:
   and compare after. A program is reusable: `run` it, plan it, `run` it again,
   and it answers the same. What `run` evaluates is a *physical* rewrite of the
   AST (join predicate pushdown) that is built once
-  per program and kept privately; the SQL layer never sees that tree, because
+  per program, from the AST alone -- the data a program runs over never
+  changes it -- and kept privately; the SQL layer never sees that tree, because
   a physical rewrite is not something a database can be asked to run. The
   price of that cache is the immutability rule above: a caller who constructs
   a `Program` from an AST of their own must not write into its nodes afterwards

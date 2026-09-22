@@ -866,3 +866,96 @@ def test_anchors_do_not_match_before_a_trailing_newline():
     """Python's $ does, like PCRE's; SEL anchors to the ends of the subject."""
     assert evaluate('RMATCH(\'^a$\', "a\\n")').as_bool() is False
     assert evaluate('RMATCH(\'^a$\', "a")').as_bool() is True
+
+
+def test_physical_tree_is_a_function_of_the_ast_alone():
+    """SEL-0049: the physical tree is built once per AST and does not depend
+    on the data a program runs over. This host used to key it on the context
+    and read the rows to push an unqualified field's filter under a LINK."""
+    from sel.optimizer import unwind_pipeline
+    program = sel_compile(
+        'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+        ' .> FILTER(_["amount"] > 1 AND _["customer_id"] == 7)')
+    first = program.physical_ast()
+    rows = {'ORDERS': [{'id': 1, 'customer_id': 7, 'amount': 5, 'name': 'a'}],
+            'CUSTOMERS': [{'id': 7, 'name': 'x'}]}
+    program.run(rows)
+    program.run({'ORDERS': [], 'CUSTOMERS': []})
+    assert program.physical_ast() is first
+    # An unqualified field names no side, so nothing is pushed under the join;
+    # the qualified form still is (the test above this one).
+    _, steps = unwind_pipeline(first)
+    assert [step.name for step in steps] == ['LINK', 'FILTER']
+    # The answer is the same either way: one joined row.
+    assert program.run(rows).size() == 1
+
+
+def _rows(*records):
+    return [dict(r) for r in records]
+
+
+def _joined(program_source, ctx):
+    """Evaluates PROGRAM_SOURCE both as written (FILTER straight over the join,
+    where the run-time pre-filter engages) and through a helper variable
+    (assignment copies the joined rows, so the FILTER sees a plain list and no
+    pre-filter runs), and returns both dumps or both error codes."""
+    def go(src):
+        try:
+            return 'ok ' + sel_compile(src).run(dict(ctx)).dump()
+        except SelError as e:
+            return f'err {e.code}'
+    head, tail = program_source.replace('FILTER_SRC', '').rsplit(' .> FILTER(', 1)
+    return go(head + ' .> FILTER(' + tail), go('J = ' + head + '; J .> FILTER(' + tail)
+
+
+def test_join_prefilter_keeps_results_and_errors():
+    """SEL-0049: a FILTER over a LINK pre-applies its leading field conjuncts to
+    the left rows at run time; the outcome must be exactly what filtering the
+    joined rows gives -- rows, keys, and which error surfaces."""
+    ctx = {
+        'ORDERS': _rows({'id': 1, 'customer_id': 7, 'status': 'A', 'amount': 5},
+                        {'id': 2, 'customer_id': 7, 'status': 'B', 'amount': 'x'},
+                        {'id': 3, 'customer_id': 9, 'status': 'A', 'amount': 1},
+                        {'id': 4, 'customer_id': 7, 'status': 'A'}),
+        'CUSTOMERS': _rows({'id': 7, 'name': 'n7', 'tier': 'P'}),
+    }
+    join = 'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+    left = 'ORDERS .> LINK_LEFT(CUSTOMERS, _1["customer_id"] == _2["id"])'
+    for src in [
+        # plain left-field conjuncts, the shape that is pre-applied
+        f'FILTER_SRC{join} .> FILTER(_["status"] $== "A")',
+        f'FILTER_SRC{join} .> FILTER(_["status"] $== "A" AND _["tier"] $== "P")',
+        f'FILTER_SRC{left} .> FILTER(_["status"] $== "A")',
+        # a conjunct that raises on a left row that joins nothing (id 3):
+        # nothing may raise, in either evaluation
+        f'FILTER_SRC{join} .> FILTER(_["status"] $== "B" AND _["amount"] > 2)',
+        # a conjunct that raises on a row that DOES join (id 2, amount "x"):
+        # the same error, at the same place
+        f'FILTER_SRC{join} .> FILTER(_["amount"] > 2)',
+        # a field the row lacks (id 4): E_NO_KEY where it joins, either way
+        f'FILTER_SRC{join} .> FILTER(_["amount"] > 0 AND _["status"] $== "A")',
+        # a field both sides carry is ambiguous on the joined row: E_NO_KEY,
+        # not a pre-filter on the left side's copy
+        f'FILTER_SRC{join} .> FILTER(_["id"] > 0)',
+        # a named binder, and a conjunct after one that reads _K
+        f'FILTER_SRC{join} .> FILTER(r, r["status"] $== "A" AND r["amount"] > 0)',
+        f'FILTER_SRC{join} .> FILTER(_K > 1 AND _["status"] $== "A")',
+    ]:
+        as_written, through_a_variable = _joined(src, ctx)
+        assert as_written == through_a_variable, src
+
+
+def test_join_prefilter_travels_down_a_chain_of_pure_joins():
+    ctx = {
+        'ORDERS': _rows({'id': 1, 'customer_id': 7, 'status': 'A'},
+                        {'id': 2, 'customer_id': 7, 'status': 'B'}),
+        'CUSTOMERS': _rows({'id': 7, 'name': 'n7'}),
+        'ITEMS': _rows({'order_id': 1, 'sku': 's1'}, {'order_id': 2, 'sku': 's2'}),
+    }
+    src = ('FILTER_SRCORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+           ' .> LINK(ITEMS, _["orders"]["id"] == _2["order_id"])'
+           ' .> FILTER(_["status"] $== "A" AND _["sku"] $== "s1")')
+    as_written, through_a_variable = _joined(src, ctx)
+    assert as_written == through_a_variable
+    assert as_written.startswith('ok ') and 's1' in as_written and 's2' not in as_written
+

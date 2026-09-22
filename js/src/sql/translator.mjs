@@ -136,33 +136,14 @@ export class Translator {
     this.subqueryCounter = 0;
   }
 
-  translate(ast) {
-    map.requireTarget(this.dialect);
-    this.bindings.checkAliases();
-
-    this.params = [];
-    this.paramKinds = [];
-    this.caveats = new Set();
-    this.frames = [];
-    this.depth = 0;
-    [this.constNames, this.constCtx] = constants.scope(this.bindings);
-    // Stage 1 and nothing else: the translator renders the tree it is handed.
-    // Two hosts ran the logical optimiser here and three did not, so the same
-    // program rendered different SQL per host (review 2026-09-15 finding C).
-    // The planner is the one place that optimises before translating, and
-    // it does so in every host.
-    const norm = normalise.run(ast, this.constNames, this.constCtx);
-    const plan = this.analyzePipeline(norm);
-    if (plan !== null) {
-      return this.compileStatement(plan);
-    }
-    const f = this.node(norm);
-
-    return new Fragment(f.parts, f.kind, this.dialect, this.params,
-      this.paramKinds, [...this.caveats]);
-  }
-
-  translateStatement(ast) {
+  // What both entry points do before they differ: the dialect and alias checks
+  // (in that order -- a caller with both a bad dialect and a duplicate alias
+  // gets E_SQL_DIALECT), the per-translation state, the constant scope, stage 1,
+  // and the planner's look at the result. Returns the normalised tree and the
+  // plan, null where the tree is an expression. One body, because the two had
+  // drifted: `translate` alone did not reset the subquery counter, so a
+  // translator reused after a statement numbered its derived tables on.
+  begin(ast) {
     map.requireTarget(this.dialect);
     this.bindings.checkAliases();
 
@@ -173,12 +154,52 @@ export class Translator {
     this.depth = 0;
     this.subqueryCounter = 0;
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
+    // Stage 1 and nothing else: the translator renders the tree it is handed.
+    // Two hosts ran the logical optimiser here and three did not, so the same
+    // program rendered different SQL per host (review 2026-09-15 finding C).
+    // The planner is the one place that optimises before translating, and
+    // it does so in every host.
     const norm = normalise.run(ast, this.constNames, this.constCtx);
-    const plan = this.analyzePipeline(norm);
+    return { norm, plan: this.analyzePipeline(norm) };
+  }
+
+  translate(ast) {
+    const { norm, plan } = this.begin(ast);
+    if (plan !== null) {
+      return this.compileStatement(plan);
+    }
+    const f = this.node(norm);
+
+    return new Fragment(f.parts, f.kind, this.dialect, this.params,
+      this.paramKinds, [...this.caveats]);
+  }
+
+  translateStatement(ast) {
+    const { plan } = this.begin(ast);
     if (plan === null) {
       refuse('E_SQL_SHAPE', 'expected a relational query or pipeline');
     }
     return this.compileStatement(plan);
+  }
+
+  // The [name, value] pairs of a RECORD(k, v, …) call, refusing what the
+  // evaluator would: an odd count at the call, a name that is not a text
+  // literal at the name. The planner reads RECORD in three places -- a
+  // bucket's projection, a bucket's key, a MAP's projection -- and each used
+  // to walk the pairs itself.
+  static recordFields(node) {
+    if (node.args.length % 2 !== 0) {
+      refuse('E_ARITY', 'RECORD takes an even number of arguments', node.pos);
+    }
+    const fields = [];
+    for (let i = 0; i < node.args.length; i += 2) {
+      const key = node.args[i];
+      if (key.t !== 'text') {
+        refuse('E_BAD_ARG', 'RECORD field names must be string literals', key.pos);
+      }
+      fields.push([key.v, node.args[i + 1]]);
+    }
+    return fields;
   }
 
   // --- the walk ------------------------------------------------------------
@@ -429,7 +450,20 @@ export class Translator {
     const source = sources.find((item) => item.names.some((name) => name !== null
       && name !== undefined && String(name).toUpperCase() === qualifier.toUpperCase()));
     if (!source) {
-      refuse('E_SQL_BINDING', `unknown joined relation '${qualifier}'`, n.pos);
+      // A qualifier names a relation by its binding name, its table, its alias
+      // or a binder the join predicate declared, and nothing else: a position
+      // (`_[1]["amount"]`) or a stray name is the shape the row does not
+      // have, E_SQL_SHAPE as C++ and Lisp always said (SEL-0043). It used to
+      // be E_SQL_BINDING "unknown joined relation" here, the accident of the
+      // alias lookup.
+      if (listKey(qualifier) !== null) {
+        refuse('E_SQL_SHAPE',
+          `[${qualifier}] asks for a row by position, and a relation has no first row `
+          + 'without an ORDER BY that nothing here can supply', n.pos);
+      }
+      refuse('E_SQL_SHAPE',
+        'only a bound name can be indexed here; SQL has no way to index into the '
+        + `result of an expression (${qualifier} names no relation of this statement)`, n.pos);
     }
     const field = source.relation.fields?.[asciiUpper(key)] ?? null;
     if (!field) {
@@ -546,17 +580,9 @@ export class Translator {
       const rLit = (n.r.t === 'text');
       if ((lExact && (rExact || rLit)) || (rExact && lLit)) {
         // bare comparison
-      } else if (op === '$==' && l.sargable && rLit) {
-        if (this.emit.lex('sargablePrefilter') === 'true') {
-          const coarse = this.apply('ops', '$==', [l, r], n.pos, variant);
-          const residual = this.apply('ops', '$==',
-            [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, variant);
-          const res = this.apply('ops', 'AND', [coarse, residual], n.pos);
-          res.prefilter = coarse;
-          res.separatePrefilter = l.separatePrefilter || r.separatePrefilter;
-          return res;
-        }
-      } else if (op === '$==' && r.sargable && lLit) {
+      } else if (op === '$==' && ((l.sargable && rLit) || (r.sargable && lLit))) {
+        // A sargable column against a literal, either way round: the coarse
+        // comparison the index can serve, AND the exact one.
         if (this.emit.lex('sargablePrefilter') === 'true') {
           const coarse = this.apply('ops', '$==', [l, r], n.pos, variant);
           const residual = this.apply('ops', '$==',
@@ -1926,18 +1952,8 @@ export class Translator {
   bucketProjection(plan, binder, aggNode) {
     if (aggNode !== null) {
       if (aggNode.t === 'call' && aggNode.name === 'RECORD') {
-        const recArgs = aggNode.args;
-        if (recArgs.length % 2 !== 0) {
-          refuse('E_ARITY', 'RECORD takes an even number of arguments', aggNode.pos);
-        }
         const projections = [];
-        for (let i = 0; i < recArgs.length; i += 2) {
-          const kNode = recArgs[i];
-          const vNode = recArgs[i + 1];
-          if (kNode.t !== 'text') {
-            refuse('E_BAD_ARG', 'RECORD field names must be string literals', kNode.pos);
-          }
-          const alias = kNode.v;
+        for (const [alias, vNode] of Translator.recordFields(aggNode)) {
           let actualNode = vNode;
           // _K is the key, which was written against the KEY's binder -- the
           // MAP spelling may name the group differently, so the projection
@@ -2107,20 +2123,8 @@ export class Translator {
               });
             }
           } else if (keyNode.t === 'call' && keyNode.name === 'RECORD') {
-            const rArgs = keyNode.args;
-            if (rArgs.length % 2 !== 0) {
-              refuse('E_ARITY', 'RECORD takes an even number of arguments', keyNode.pos);
-            }
-            for (let i = 0; i < rArgs.length; i += 2) {
-              if (rArgs[i].t !== 'text') {
-                refuse('E_BAD_ARG', 'RECORD field names must be string literals', rArgs[i].pos);
-              }
-              groupBy.push({
-                alias: rArgs[i].v,
-                binder,
-                node: rArgs[i + 1],
-                pos: rArgs[i + 1].pos ?? step.pos,
-              });
+            for (const [alias, value] of Translator.recordFields(keyNode)) {
+              groupBy.push({ alias, binder, node: value, pos: value.pos ?? step.pos });
             }
           } else {
             groupBy.push({
@@ -2139,7 +2143,13 @@ export class Translator {
         }
 
         case 'SELECT_COLS': {
-          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
+          // The same rule as a MAP's: an ORDER BY alone does not wrap (a
+          // derived table is where MariaDB drops an ORDER BY with no LIMIT
+          // beside it), everything else above the rows does. Four hosts used
+          // the rows-above test here and wrapped a sorted plan; the Lisp host
+          // did not, and the SQL fuzz corpus in its SQL mode found the
+          // difference (SEL-0048).
+          plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
           const colArgs = args.slice(1);
           const items = colArgs.length === 1 && colArgs[0].t === 'list'
             ? colArgs[0].items
@@ -2203,24 +2213,8 @@ export class Translator {
           plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
 
           if (expr.t === 'call' && expr.name === 'RECORD') {
-            const recArgs = expr.args;
-            if (recArgs.length % 2 !== 0) {
-              refuse('E_ARITY', 'RECORD takes an even number of arguments', expr.pos);
-            }
-            const projections = [];
-            for (let i = 0; i < recArgs.length; i += 2) {
-              const kNode = recArgs[i];
-              const vNode = recArgs[i + 1];
-              if (kNode.t !== 'text') {
-                refuse('E_BAD_ARG', 'RECORD field names must be string literals', kNode.pos);
-              }
-              projections.push({
-                alias: kNode.v,
-                binder,
-                node: vNode,
-              });
-            }
-            plan.projections = projections;
+            plan.projections = Translator.recordFields(expr)
+              .map(([alias, value]) => ({ alias, binder, node: value }));
           } else {
             plan.projections = [
               {

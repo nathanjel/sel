@@ -2,7 +2,8 @@
 #
 #   make          build everything into build/
 #   make test     unit tests, then the conformance suite
-#   make asan     the same, with the address and leak sanitizers
+#   make asan     the same, plus the SQL suite and SQL unit, under the address,
+#                 leak and undefined-behaviour sanitizers
 #
 # The drop-in is sel.hpp + sel.cpp + sel_ast.hpp + third_party/srell/. Everything
 # under bin/ and tests/ is this repository's harness, not part of what you copy.
@@ -36,7 +37,7 @@ SQL_OBJS := $(addprefix $(BUILD)/,$(SQL_SRCS:.cpp=.o))
 SQL_HDRS := sel_ast.hpp sel_sql.hpp sel_sql_emit.hpp sel_sql_map.hpp sel_sql_node.hpp \
             sel_sql_stage1.hpp sel_sql_translator.hpp
 # Tools over that layer.
-SQLTOOLS := sqlmap sqlfuzz sqlt sqlreplay
+SQLTOOLS := sqlmap sqlfuzz sqlt sqlreplay sqlapi
 SCALETOOLS := scale-bench
 
 # The worked examples under ../examples/. They use the public interface only,
@@ -92,7 +93,7 @@ $(addprefix $(BUILD)/example-,$(SQL_EXAMPLES)): $(BUILD)/example-%: ../examples/
 $(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(addprefix $(BUILD)/,sqlmap sqlfuzz): $(BUILD)/%: bin/%.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+$(addprefix $(BUILD)/,sqlmap sqlfuzz sqlapi): $(BUILD)/%: bin/%.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS) $(BUILD)/sel.o
 
 # The SQL suite, plus the case table tools/gen-sql-cases.mjs writes. That table
@@ -141,14 +142,49 @@ test: $(BINS)
 # stores one value inside another clones first — but that is an invariant now
 # rather than something the type guarantees, so it gets checked. LeakSanitizer
 # reports a cycle as a leak, which is exactly the signal wanted here.
+#
+# The SQL layer and the planner run under the same sanitizers: the SQL case
+# suite (stage 1, the translator, the planner over every committed case) and
+# the SQL unit binary (executed plans, the shared physical tree). Until they
+# did, a leak or an out-of-bounds in the translator was caught by nothing in
+# the tree (review 2026-09-15, critic; SEL-0045). The sanitized objects live
+# under build/asan/ so the two SQL binaries share one compile of the core.
+ASAN_FLAGS := -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer
+ASAN_DIR   := $(BUILD)/asan
+ASAN_SQL_OBJS := $(addprefix $(ASAN_DIR)/,$(SQL_SRCS:.cpp=.o))
+
+$(ASAN_DIR):
+	mkdir -p $(ASAN_DIR)
+
+$(ASAN_DIR)/sel.o: sel.cpp sel.hpp sel_ast.hpp | $(ASAN_DIR)
+	$(CXX) $(ASAN_FLAGS) -c -o $@ $<
+
+$(ASAN_SQL_OBJS): $(ASAN_DIR)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(ASAN_DIR)
+	$(CXX) $(ASAN_FLAGS) -c -o $@ $<
+
+$(ASAN_DIR)/case_data.o: bin/case_data.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp | $(ASAN_DIR)
+	$(CXX) $(ASAN_FLAGS) -c -o $@ $<
+
+# unit-asan includes the translation unit (whitebox), so it compiles sel.cpp
+# itself; the other three link the shared sanitized object.
+$(BUILD)/unit-asan: tests/unit.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
+	$(CXX) $(ASAN_FLAGS) -o $@ $<
+
+$(BUILD)/conformance-asan: bin/conformance.cpp sel.hpp $(ASAN_DIR)/sel.o | $(BUILD)
+	$(CXX) $(ASAN_FLAGS) -o $@ $< $(ASAN_DIR)/sel.o
+
+$(BUILD)/sqlunit-asan: tests/sql_unit.cpp $(SQL_HDRS) sel.hpp $(ASAN_SQL_OBJS) $(ASAN_DIR)/sel.o | $(BUILD)
+	$(CXX) $(ASAN_FLAGS) -o $@ $< $(ASAN_SQL_OBJS) $(ASAN_DIR)/sel.o
+
+$(BUILD)/sqlt-asan: bin/sqlt.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp $(ASAN_DIR)/case_data.o $(ASAN_SQL_OBJS) $(ASAN_DIR)/sel.o | $(BUILD)
+	$(CXX) $(ASAN_FLAGS) -o $@ $< $(ASAN_DIR)/case_data.o $(ASAN_SQL_OBJS) $(ASAN_DIR)/sel.o
+
 .PHONY: asan
-asan: | $(BUILD)
-	$(CXX) -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
-	  -o $(BUILD)/unit-asan tests/unit.cpp
-	$(CXX) -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
-	  -o $(BUILD)/conformance-asan bin/conformance.cpp sel.cpp
+asan: $(BUILD)/unit-asan $(BUILD)/conformance-asan $(BUILD)/sqlunit-asan $(BUILD)/sqlt-asan
 	$(BUILD)/unit-asan
 	cd .. && cpp/$(BUILD)/conformance-asan
+	$(BUILD)/sqlunit-asan
+	cd .. && cpp/$(BUILD)/sqlt-asan
 
 clean:
 	rm -rf $(BUILD)

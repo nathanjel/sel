@@ -159,3 +159,14 @@ LIST(RECORD("cat", "B"), RECORD("cat", "A"), RECORD("cat", "B")) .> BUCKET(_["ca
 --- expect
 tree -{"1"=-{"cat"=t"A", "n"=t"1"}, "2"=-{"cat"=t"B", "n"=t"2"}}
 ===
+### name: bucket.group-by-is-not-a-function
+--- note
+The grouping verb is BUCKET; GROUP_BY was retired from every registry and
+nothing pinned that a host cannot quietly re-register the alias (review
+2026-09-15, critic gap). An unknown function is a compile-time error at the
+name.
+--- source
+LIST(1) .> GROUP_BY(_)
+--- expect
+error E_UNKNOWN_FUNC at 1:12
+===

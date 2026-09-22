@@ -1527,3 +1527,119 @@ orders
 --- expect
 SELECT `o`.* FROM `orders` `o` LIMIT 2
 ===
+
+### name: plan.select-cols.after-a-sort-keeps-one-statement
+--- note
+SELECT_COLS follows the MAP rule: an ORDER BY alone does not wrap the plan,
+because the projection and the sort share one statement (ORDER BY may name
+the input's columns), and a derived table is where MariaDB drops an ORDER BY
+that has no LIMIT beside it. Four hosts tested "anything above the rows" here
+and wrapped -- `SELECT _sub1.name FROM (SELECT c.* ... ORDER BY c.id DESC)
+_sub1`, an order the server may discard -- and the Lisp host did not. Found
+by the SQL fuzz lane the first time it ran the generator's SQL mode
+(SEL-0048, with SEL-0042).
+--- dialect
+mariadb
+--- bindings
+{"CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+CUSTOMERS .> SORT_BY(r, r["id"], "DESC") .> SELECT_COLS("name")
+--- plan
+pure_sql
+--- tables
+customers
+--- expect
+SELECT `c`.`name` FROM `customers` `c` ORDER BY `c`.`id` DESC
+===
+
+### name: plan.index.qualified-by-binding-name
+--- note
+The qualified read that the refusals above are the shape of: `_["CUSTOMERS"]["NAME"]` names the joined relation by its binding name (SEL-0043).
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("n", _["CUSTOMERS"]["NAME"]))
+--- plan
+pure_sql
+--- tables
+orders
+customers
+--- expect
+SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
+===
+
+### name: plan.index.qualified-by-alias-qualifies-without-a-join
+--- note
+A qualifier's whole point is to name the relation, so the column renders under the relation's alias even where the plain `_["AMOUNT"]` would render bare; C++ rendered it bare.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(RECORD("a", _["o"]["AMOUNT"]))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.`amount` AS `a` FROM `orders` `o`
+===
+
+### name: plan.index.qualified-by-a-declared-binder
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, O, C, O["CUSTOMER_ID"] == C["ID"]) .> MAP(RECORD("n", _["C"]["NAME"]))
+--- plan
+pure_sql
+--- tables
+orders
+customers
+--- expect
+SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
+===
+
+### name: plan.index.positional-binder-names-are-not-qualifiers
+--- note
+`_1`, `_2` and `_` are positions, not names of relations: after the join only `_` is in scope, and `_["_2"]` names nothing. C++ accepted all three and Lisp `_1`; the read stays in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("n", _["_2"]["NAME"]))
+--- plan
+pure_memory
+===
+
+### name: plan.index.positional-left-binder-is-not-a-qualifier
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("a", _["_1"]["AMOUNT"]))
+--- plan
+pure_memory
+===
+
+### name: plan.index.the-row-itself-is-not-a-qualifier
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("a", _["_"]["AMOUNT"]))
+--- plan
+pure_memory
+===

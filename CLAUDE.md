@@ -21,6 +21,10 @@ Everything runs from the repository root. `tools/impls.sh` is the host registry;
 ```
 tools/check.sh                       everything (~11 layers); "ALL GREEN" or it isn't done
                                      refuses a partial roster — build C++ and the JS bundle first
+                                     starts pinned Docker databases for the DSN-backed layers and
+                                     FAILS if it cannot; SEL_SKIP_DB_TESTS=1 opts out,
+                                     SEL_SQL_<DIALECT>_DSN supplies your own servers; likewise
+                                     the Python unit lane fails without pytest (SEL_SKIP_PYTHON_UNIT=1)
 cd cpp && make                       build build/{conformance,batch,e2e,api,sel,unit,sqlt,...}
 npm run build                        dist/sel.mjs + dist/sel.min.mjs (js-bundle roster entries)
 ```
@@ -45,7 +49,8 @@ lisp/bin/sqlt                          PYTHONPATH=$PWD/python python3 python/bin
 Unit tests (layers under the suite — decimal, utf8, value; JS and PHP have `tools/check-js-optimizer.mjs` / `tools/check-php-optimizer.php` instead, which also execute hybrid plans):
 
 ```
-cd cpp && make test                  unit then conformance;  make asan  for sanitizers
+cd cpp && make test                  unit then conformance;  make asan  runs unit, conformance, the SQL suite
+                                     and the SQL unit under the address, leak and UB sanitizers
 lisp/bin/test                        FiveAM
 PYTHONPATH=$PWD/python python3 -m pytest -q python/tests
 ```
@@ -59,7 +64,7 @@ tools/check-docs.sh                  every `=>` example in docs runs on every ho
 tools/check-decimal.sh 20000         decimal cores vs Python's decimal module
 tools/e2e.sh / tools/check-api.sh    host API parity
 tools/mutate-sql.sh                  breaks the SQL layer ~160 ways; checks must notice
-tools/check-sql-oracle.sh            translated SQL vs a real DB (skips without a DSN)
+tools/check-sql-oracle.sh            translated SQL vs a real DB (skips without a DSN; the gate provides one)
 tools/oracle-db.sh                   spins up throwaway MySQL/Postgres containers for the above
 ```
 

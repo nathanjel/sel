@@ -56,7 +56,7 @@ if ($path === null) {
 $bindings = [
     'ORDERS' => Binding::relation('orders', 'o', [
         'ID' => Binding::column('id', 'o', 'NUM'), 'CUSTOMER_ID' => Binding::column('customer_id', 'o', 'NUM'),
-        'AMOUNT' => Binding::column('amount', 'o', 'NUM'), 'NAME' => Binding::column('name', 'o', 'TEXT')]),
+        'AMOUNT' => Binding::column('amount', null, 'NUM'), 'NAME' => Binding::column('name', 'o', 'TEXT')]),
     'CUSTOMERS' => Binding::relation('customers', 'c', [
         'ID' => Binding::column('id', 'c', 'NUM'), 'NAME' => Binding::column('name', 'c', 'TEXT')]),
 ];

@@ -154,7 +154,12 @@ class Translator:
         self.in_having: bool = False
         self.subquery_counter = 0
 
-    def translate(self, ast: Node) -> Fragment:
+    def _begin(self, ast: Node):
+        """What both entry points do before they differ: the dialect and alias
+        checks (in that order -- a caller with both a bad dialect and a duplicate
+        alias gets E_SQL_DIALECT), the per-translation state, the constant scope,
+        stage 1, and the planner's look at the result. Returns the normalised
+        tree and the plan, or None where the tree is an expression."""
         _map.require_target(self.dialect)
         self.bindings.check_aliases()
 
@@ -172,7 +177,10 @@ class Translator:
         # 2026-09-15 finding C). The planner is the one place that optimises
         # before translating, and it does so in every host.
         norm = _normalise.run(ast, self.const_names, self.const_ctx)
-        plan = self.analyze_pipeline(norm)
+        return norm, self.analyze_pipeline(norm)
+
+    def translate(self, ast: Node) -> Fragment:
+        norm, plan = self._begin(ast)
         if plan is not None:
             return self.compile_statement(plan)
         f = self._node(norm)
@@ -181,22 +189,27 @@ class Translator:
                         self.param_kinds, list(self.caveats))
 
     def translate_statement(self, ast: Node) -> Fragment:
-        _map.require_target(self.dialect)
-        self.bindings.check_aliases()
-
-        self.params = []
-        self.param_kinds = []
-        self.caveats = {}
-        self.frames = []
-        self.depth = 0
-        self.subquery_counter = 0
-        self.statement_plan = None
-        self.const_names, self.const_ctx = _constants.scope(self.bindings)
-        norm = _normalise.run(ast, self.const_names, self.const_ctx)
-        plan = self.analyze_pipeline(norm)
+        _norm, plan = self._begin(ast)
         if plan is None:
             refuse('E_SQL_SHAPE', 'expected a relational query or pipeline')
         return self.compile_statement(plan)
+
+    @staticmethod
+    def _record_fields(node: Node) -> list[tuple[str, Node]]:
+        """The (name, value) pairs of a RECORD(k, v, ...) call, refusing what the
+        evaluator would: an odd count at the call, a name that is not a text
+        literal at the name. The planner reads RECORD in three places -- a
+        bucket's projection, a bucket's key, a MAP's projection -- and each
+        used to walk the pairs itself."""
+        if len(node.args) % 2:
+            refuse('E_ARITY', 'RECORD takes an even number of arguments', node.pos)
+        fields: list[tuple[str, Node]] = []
+        for i in range(0, len(node.args), 2):
+            key = node.args[i]
+            if key.t != 'text':
+                refuse('E_BAD_ARG', 'RECORD field names must be string literals', key.pos)
+            fields.append((key.v, node.args[i + 1]))
+        return fields
 
     # --- the walk ------------------------------------------------------------
 
@@ -408,7 +421,20 @@ class Translator:
                        if any(name is not None and str(name).upper() == qualifier.upper()
                               for name in item['names'])), None)
         if source is None:
-            refuse('E_SQL_BINDING', f"unknown joined relation '{qualifier}'", n.pos)
+            # A qualifier names a relation by its binding name, its table, its
+            # alias or a binder the join predicate declared, and nothing else:
+            # a position (`_[1]["amount"]`) or a stray name is the shape the
+            # row does not have, E_SQL_SHAPE as C++ and Lisp always said
+            # (SEL-0043). It used to be E_SQL_BINDING "unknown joined
+            # relation" here, the accident of the alias lookup.
+            if _list_key(qualifier) is not None:
+                refuse('E_SQL_SHAPE',
+                       f'[{qualifier}] asks for a row by position, and a relation has no '
+                       'first row without an ORDER BY that nothing here can supply', n.pos)
+            refuse('E_SQL_SHAPE',
+                   'only a bound name can be indexed here; SQL has no way to index into '
+                   f'the result of an expression ({qualifier} names no relation of this statement)',
+                   n.pos)
         field = (source['relation'].get('fields') or {}).get(ascii_upper(key))
         if field is None:
             refuse('E_SQL_BINDING', f'{qualifier}["{key}"] is not a field of that relation', n.pos)
@@ -514,18 +540,10 @@ class Translator:
             r_lit = (n.r.t == 'text')
             if (l_exact and (r_exact or r_lit)) or (r_exact and l_lit):
                 pass
-            elif op == '$==' and getattr(l, 'sargable', False) and r_lit:
-                if self.emit.lex('sargablePrefilter') == 'true':
-                    coarse = self._apply('ops', '$==', [l, r], n.pos, variant)
-                    residual = self._apply('ops', '$==',
-                                           [self.emit.text_operand(l), self.emit.text_operand(r)],
-                                           n.pos, variant)
-                    res = self._apply('ops', 'AND', [coarse, residual], n.pos)
-                    res.prefilter = coarse
-                    res.separate_prefilter = bool(getattr(l, 'separate_prefilter', False)
-                                                  or getattr(r, 'separate_prefilter', False))
-                    return res
-            elif op == '$==' and getattr(r, 'sargable', False) and l_lit:
+            elif op == '$==' and ((getattr(l, 'sargable', False) and r_lit)
+                                  or (getattr(r, 'sargable', False) and l_lit)):
+                # A sargable column against a literal, either way round: the
+                # coarse comparison the index can serve, AND the exact one.
                 if self.emit.lex('sargablePrefilter') == 'true':
                     coarse = self._apply('ops', '$==', [l, r], n.pos, variant)
                     residual = self._apply('ops', '$==',
@@ -1912,14 +1930,9 @@ class Translator:
         if aggregate_node is not None:
             if (aggregate_node.t == 'call'
                     and aggregate_node.name == 'RECORD'):
-                if len(aggregate_node.args) % 2:
-                    refuse('E_ARITY', 'RECORD takes an even number of arguments', aggregate_node.pos)
                 projections = []
-                for i in range(0, len(aggregate_node.args), 2):
-                    key_arg, value_node = aggregate_node.args[i:i + 2]
-                    if key_arg.t != 'text':
-                        refuse('E_BAD_ARG', 'RECORD field names must be string literals', key_arg.pos)
-                    alias, actual = key_arg.v, value_node
+                for alias, value_node in self._record_fields(aggregate_node):
+                    actual = value_node
                     # _K is the key, which was written against the KEY's
                     # binder -- the MAP spelling may name the group
                     # differently, so the projection keeps the binder the
@@ -2047,14 +2060,9 @@ class Translator:
                         group_by.append({'alias': None, 'binder': binder, 'node': item,
                                          'pos': item.pos or step.pos})
                 elif key_node.t == 'call' and key_node.name == 'RECORD':
-                    if len(key_node.args) % 2:
-                        refuse('E_ARITY', 'RECORD takes an even number of arguments', key_node.pos)
-                    for i in range(0, len(key_node.args), 2):
-                        if key_node.args[i].t != 'text':
-                            refuse('E_BAD_ARG', 'RECORD field names must be string literals', key_node.args[i].pos)
-                        group_by.append({'alias': key_node.args[i].v, 'binder': binder,
-                                         'node': key_node.args[i + 1],
-                                         'pos': key_node.args[i + 1].pos or step.pos})
+                    for alias, value in self._record_fields(key_node):
+                        group_by.append({'alias': alias, 'binder': binder, 'node': value,
+                                         'pos': value.pos or step.pos})
                 else:
                     group_by.append({'alias': None, 'binder': binder, 'node': key_node,
                                      'pos': key_node.pos or step.pos})
@@ -2064,7 +2072,10 @@ class Translator:
                 self._bucket_projection(plan, binder, aggregate_node)
 
             elif name == 'SELECT_COLS':
-                plan = self._ensure_derived(plan, self._plan_has_rows_above)
+                # The same rule as a MAP's: an ORDER BY alone does not wrap (a
+                # derived table is where MariaDB drops an ORDER BY with no LIMIT
+                # beside it), everything else above the rows does (SEL-0048).
+                plan = self._ensure_derived(plan, self._plan_needs_wrap_before_map)
                 column_args = args[1:]
                 items = (column_args[0].items if len(column_args) == 1
                          and column_args[0].t == 'list' else column_args)
@@ -2115,15 +2126,8 @@ class Translator:
                     continue
                 plan = self._ensure_derived(plan, self._plan_needs_wrap_before_map)
                 if expr.t == 'call' and expr.name == 'RECORD':
-                    if len(expr.args) % 2:
-                        refuse('E_ARITY', 'RECORD takes an even number of arguments', expr.pos)
-                    projections = []
-                    for i in range(0, len(expr.args), 2):
-                        if expr.args[i].t != 'text':
-                            refuse('E_BAD_ARG', 'RECORD field names must be string literals', expr.args[i].pos)
-                        projections.append({'alias': expr.args[i].v, 'binder': binder,
-                                            'node': expr.args[i + 1]})
-                    plan.projections = projections
+                    plan.projections = [{'alias': alias, 'binder': binder, 'node': value}
+                                        for alias, value in self._record_fields(expr)]
                 else:
                     plan.projections = [{'alias': None, 'binder': binder, 'node': expr}]
                 plan.select_cols = None

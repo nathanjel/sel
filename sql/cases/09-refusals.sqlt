@@ -186,3 +186,190 @@ RGROUPS("(a)", "a")
 --- error
 E_SQL_UNSUPPORTED 1:1
 ===
+### name: refuse.index.row-by-position-then-field
+--- note
+A nested index on a row, `_[k][field]`, is a qualified read when `k` names a
+relation of the statement -- its binding name, its table, its alias, or a
+binder the join predicate declared -- and the shape the row does not have
+otherwise: a position, a stray name, a field. Every such shape is E_SQL_SHAPE
+at the outer index, as C++ and Lisp always said; JS, PHP and Python answered
+E_SQL_BINDING "unknown joined relation" (the alias lookup's accident), and C++
+reported a bucket's projected row at the outer bracket where the other four
+refuse at the inner one. Review 2026-09-15 low-severity report, reproduced and
+widened 2026-09-22 (SEL-0043); the fuzz generator now emits the shapes.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> MAP(RECORD("a", _[1]["AMOUNT"]))
+--- error
+E_SQL_SHAPE 1:31
+===
+### name: refuse.index.row-by-position-zero
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> MAP(RECORD("a", _[0]["AMOUNT"]))
+--- error
+E_SQL_SHAPE 1:31
+===
+### name: refuse.index.row-by-text-position
+--- note
+A text "1" is a list key too: the same position, spelled as text.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> MAP(RECORD("a", _["1"]["AMOUNT"]))
+--- error
+E_SQL_SHAPE 1:33
+===
+### name: refuse.index.field-then-key
+--- note
+The inner index is a column, and a column has no parts.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> MAP(_["AMOUNT"]["Q"])
+--- error
+E_SQL_SHAPE 1:26
+===
+### name: refuse.index.stray-qualifier
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> MAP(RECORD("a", _["NOPE"]["AMOUNT"]))
+--- error
+E_SQL_SHAPE 1:36
+===
+### name: refuse.index.row-by-position-in-a-filter
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> FILTER(_[1]["AMOUNT"] > 1)
+--- error
+E_SQL_SHAPE 1:22
+===
+### name: refuse.index.row-by-position-through-a-named-binder
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> MAP(r, RECORD("a", r[1]["AMOUNT"]))
+--- error
+E_SQL_SHAPE 1:34
+===
+### name: refuse.index.row-by-position-in-a-sort-key
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_[1]["AMOUNT"])
+--- error
+E_SQL_SHAPE 1:23
+===
+### name: refuse.index.row-by-position-in-a-bucket-key
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> BUCKET(_[1]["CUSTOMER_ID"])
+--- error
+E_SQL_SHAPE 1:22
+===
+### name: refuse.index.row-by-position-three-deep
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> MAP(RECORD("a", _[1]["AMOUNT"]["X"]))
+--- error
+E_SQL_SHAPE 1:41
+===
+### name: refuse.index.joined-row-by-position
+--- note
+After a join the row is `_`; `_[2]` is a position, not the second side.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("n", _[2]["NAME"]))
+--- error
+E_SQL_SHAPE 1:81
+===
+### name: refuse.index.projected-row-by-position
+--- note
+Over a bucket's projected row the inner index is itself the thing to refuse, at ITS bracket: C++ reported the outer one.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> BUCKET(_["CUSTOMER_ID"]) .> MAP(RECORD("a", _[1]["AMOUNT"]))
+--- error
+E_SQL_SHAPE 1:56
+===
+### name: refuse.index.bucket-projection-row-by-position
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> BUCKET(_["CUSTOMER_ID"], RECORD("a", _[1]["AMOUNT"]))
+--- error
+E_SQL_SHAPE 1:49
+===

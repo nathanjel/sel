@@ -540,7 +540,8 @@ right-hand side, a wrong tree from an aggregate binder that named a copy rather
 than the element, and one confidently wrong number. There is no
 cycle collector behind the handle, so the five clone sites are also what stops
 `A[1] = A` from leaking; `cd cpp && make asan` runs the suite under the leak
-checker to keep that true.
+checker to keep that true — and the SQL case suite and SQL unit with it, so the
+translator and the planner are held to the same checkers (SEL-0045).
 
 **Resolving an assignment target to a path is not a C++ workaround.** Every host
 walks the target chain into a list of keys and re-derives from the root
@@ -585,6 +586,19 @@ about ten closure objects per plan, reclaimed at the first pass after the run;
 `python/tests/test_gc_pause.py` measures both facts. An application that
 serves many queries over one large context can go further with `gc.freeze()`
 after loading it, which removes the context from every future full pass.
+
+**The physical tree is a function of the AST alone, in every host.** `run`
+evaluates a rewritten tree (join predicate pushdown, TOP fusion, whatever a
+host adds), built once per program and kept; the data a program runs over
+never changes it, and `tools/check-api.sh` probes that. Python once keyed the
+tree on the context and read the rows' keys to push an unqualified field's
+filter under a LINK (SEL-0049); the sound form of that optimisation lives in
+the evaluator now: a FILTER over a LINK hands its leading field conjuncts to
+the join, which pre-applies them to left rows only where the joined row's
+field is provably the left row's (the field is a key of no right row, checked
+over every row), keeps a row on any error so the full predicate raises where
+it would have, and numbers the kept rows as the unfiltered join would. A
+physical optimisation that reads data belongs at run time, never in the tree.
 
 **Never call `round()`, and never let a float in.** Python's `round()` is half to
 even — `round(2.5)` is 2 — and SEL rounds half away from zero everywhere. `/` on
@@ -793,6 +807,8 @@ three hosts accept, the `run()` cache — and nothing else.
 
 ```
 tools/check.sh                 everything, side by side; the report in a fixed order
+                               starts Docker databases for the DSN-backed layers, or fails;
+                               SEL_SKIP_DB_TESTS=1 opts out, SEL_SQL_<DIALECT>_DSN supplies your own
 ```
 
 The layers run concurrently under two bounds from `tools/impls.sh`: `SEL_JOBS`
@@ -806,7 +822,7 @@ ASDF's cache before the rest start.
 C++ has to be built first, or it is skipped with a note:
 
 ```
-cd cpp && make            builds build/{sel,conformance,batch,e2e,api,ast,check-decimal,unit}
+cd cpp && make            builds build/{sel,conformance,batch,e2e,api,ast,check-decimal,unit,sqlt,sqlunit,sqlfuzz,sqlreplay,...}
 cd cpp && make test       unit tests, then the suite
 lisp/bin/test             the Lisp unit tests
 PYTHONPATH=$PWD/python pytest python/tests    the Python unit tests

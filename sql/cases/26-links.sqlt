@@ -285,3 +285,54 @@ pure_memory
 orders
 customers
 ===
+### name: link.qualify.fields-without-a-table-take-the-relation-alias
+--- note
+A field binding may leave `table` out; on its own relation the column renders
+bare in every host. Once a join is present the column must say which side it
+is on -- two tables may share a name, and the server refuses an ambiguous one
+-- so it is qualified by the alias its relation renders under, whatever the
+binding declared. Four hosts did; the Lisp host rendered the binding as
+written and emitted `name`, `amount` and `ON (customer_id = id)` (review
+2026-09-15, low-severity report reproduced 2026-09-22; SEL-0042). The fuzz
+corpus binds every field to a table, so it could not see it.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"column": "id", "type": "NUM"}, "CUSTOMER_ID": {"column": "customer_id", "type": "NUM"}, "AMOUNT": {"column": "amount", "type": "NUM"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"column": "id", "type": "NUM"}, "NAME": {"column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("name", _["NAME"], "amount", _["AMOUNT"]))
+--- expect
+SELECT `c`.`name` AS `name`, `o`.`amount` AS `amount` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
+===
+### name: link.qualify.the-table-name-without-an-alias-and-the-joined-side-by-position
+--- note
+With no alias on either side the left renders under its table name and the
+joined side under the positional `_2` every host gives it.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "fields": {"ID": {"column": "id", "type": "NUM"}, "CUSTOMER_ID": {"column": "customer_id", "type": "NUM"}, "AMOUNT": {"column": "amount", "type": "NUM"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "fields": {"ID": {"column": "id", "type": "NUM"}, "NAME": {"column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("name", _["NAME"], "amount", _["AMOUNT"]))
+--- expect
+SELECT `_2`.`name` AS `name`, `orders`.`amount` AS `amount` FROM `orders` INNER JOIN `customers` `_2` ON (`orders`.`customer_id` = `_2`.`id`)
+===
+### name: link.qualify.a-named-binder-is-the-same-row
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"column": "id", "type": "NUM"}, "CUSTOMER_ID": {"column": "customer_id", "type": "NUM"}, "AMOUNT": {"column": "amount", "type": "NUM"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"column": "id", "type": "NUM"}, "NAME": {"column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(r, RECORD("n", r["NAME"]))
+--- expect
+SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
+===

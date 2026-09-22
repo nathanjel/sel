@@ -21,10 +21,14 @@ import { Binding, Sql, SqlError } from '../src/sql/index.mjs';
 // The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
 // same in every host's runner: two tables, a NUM join key, a TEXT field whose
 // name both sides share.
+// AMOUNT declares no table on purpose: a field without one renders bare on its
+// own relation and must be qualified by the relation's alias once a join is
+// present, and one host did not (SEL-0042). Every runner binds it this way, so
+// the host-versus-host lane keeps watching that seam.
 const bindings = {
   ORDERS: Binding.relation('orders', 'o', {
     ID: Binding.column('id', 'o', 'NUM'), CUSTOMER_ID: Binding.column('customer_id', 'o', 'NUM'),
-    AMOUNT: Binding.column('amount', 'o', 'NUM'), NAME: Binding.column('name', 'o', 'TEXT') }),
+    AMOUNT: Binding.column('amount', null, 'NUM'), NAME: Binding.column('name', 'o', 'TEXT') }),
   CUSTOMERS: Binding.relation('customers', 'c', {
     ID: Binding.column('id', 'c', 'NUM'), NAME: Binding.column('name', 'c', 'TEXT') }),
 };

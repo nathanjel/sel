@@ -86,6 +86,17 @@ canonical, so pass it as text or drop the leading zeros" where text)))))
          "inline")
         (t (refuse "E_SQL_BINDING" (format nil "unknown prefilter ~s; use 'separate' or 'inline'" p)))))))
 
+(defun check-collation (collation)
+  "What a COLLATION spelling asks for, as (VALUES EXACT SARGABLE), refusing any
+other spelling. One body for BINDING-COLUMN and BINDING-RAW, as
+_check_collation is in the Python host."
+  (let ((c (string-downcase (string collation))))
+    (cond
+      ((or (string= c "binary") (string= c "exact")) (values t nil))
+      ((or (string= c "sargable") (string= c "prefilter")) (values nil t))
+      ((or (string= c "default") (string= c "none")) (values nil nil))
+      (t (refuse "E_SQL_BINDING" (format nil "unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'" collation))))))
+
 (defun binding-column (column &optional table (type :unknown) &key exact sargable guard collation prefilter split-sargable)
   "One column, optionally qualified by a table, optionally typed.
 
@@ -100,12 +111,9 @@ condition has to say so here."
   (when table (check-name "table" table))
   (check-binding-type type)
   (when collation
-    (let ((c (string-downcase (string collation))))
-      (cond
-        ((or (string= c "binary") (string= c "exact")) (setf exact t))
-        ((or (string= c "sargable") (string= c "prefilter")) (setf sargable t))
-        ((or (string= c "default") (string= c "none")))
-        (t (refuse "E_SQL_BINDING" (format nil "unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'" collation))))))
+    (multiple-value-bind (c-exact c-sargable) (check-collation collation)
+      (when c-exact (setf exact t))
+      (when c-sargable (setf sargable t))))
   (let ((pref (check-prefilter (or prefilter (when split-sargable "separate"))))
         (spec (list :column column :table table :type type
                     :exact (not (null exact))
@@ -126,12 +134,9 @@ in a map by accident."
     (refuse "E_SQL_BINDING" "a raw column binding cannot be empty"))
   (check-binding-type type)
   (when collation
-    (let ((c (string-downcase (string collation))))
-      (cond
-        ((or (string= c "binary") (string= c "exact")) (setf exact t))
-        ((or (string= c "sargable") (string= c "prefilter")) (setf sargable t))
-        ((or (string= c "default") (string= c "none")))
-        (t (refuse "E_SQL_BINDING" (format nil "unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'" collation))))))
+    (multiple-value-bind (c-exact c-sargable) (check-collation collation)
+      (when c-exact (setf exact t))
+      (when c-sargable (setf sargable t))))
   (let ((pref (check-prefilter (or prefilter (when split-sargable "separate"))))
         (spec (list :raw sql :type type
                     :exact (not (null exact))

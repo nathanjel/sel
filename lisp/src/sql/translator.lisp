@@ -142,6 +142,15 @@ aggregate iterates" (snode-pos n)))
 
 ;;; --- values ---------------------------------------------------------------
 
+(defun qualified-by (spec table)
+  "SPEC rendered under TABLE. In a joined statement a field is qualified by the
+alias its relation renders under, whatever table the binding declared -- as
+JS, PHP, Python and C++ do -- because two tables may share a column name and
+an unqualified one is ambiguous to the server. A RAW binding is emitted
+verbatim and is left alone. Single-relation statements never come here: their
+columns are unqualified in every host (SEL-0042)."
+  (if (or (null table) (getf spec :raw)) spec (list* :table table spec)))
+
 (defun column-ref (tr spec)
   "Turns a column SPEC into a fragment with no parameter slots. A raw binding is
 emitted VERBATIM -- the one place application-written SQL enters, which is why
@@ -223,10 +232,13 @@ known before the query runs" (snode-pos idx))))
               (let ((match-table nil)
                     (match-field nil))
                 (cond
+                  ;; A qualifier names a relation by its binding name, its
+                  ;; table, its alias or a binder the join predicate declared
+                  ;; -- never the positional `_1`, which this host alone
+                  ;; accepted (SEL-0043).
                   ((or (string-equal table-alias (relational-plan-source-alias plan))
                        (string-equal table-alias (relational-plan-source-name plan))
                        (string-equal table-alias (relational-plan-source-table plan))
-                       (string-equal table-alias "_1")
                        (and (relational-plan-source-subquery plan)
                             (or (string-equal table-alias (relational-plan-source-alias (relational-plan-source-subquery plan)))
                                 (string-equal table-alias (relational-plan-source-name (relational-plan-source-subquery plan)))))
@@ -251,7 +263,7 @@ known before the query runs" (snode-pos idx))))
                        (return)))))
                 (when match-table
                   (if match-field
-                      (return-from translate-index (column-ref tr match-field))
+                      (return-from translate-index (column-ref tr (qualified-by match-field match-table)))
                       (return-from translate-index
                         (%fragment (list (emit-column (translator-dialect tr) match-table col-name))
                                    :param (translator-dialect tr)))))))))))
@@ -478,7 +490,10 @@ no first row without an ORDER BY that nothing here can supply" name key)
                  (dolist (j (relational-plan-joins plan))
                    (let* ((j-fields (getf (join-plan-source-relation j) :fields))
                           (j-cell (assoc uc-key j-fields :test #'equal)))
-                     (when j-cell (push (cdr j-cell) matches))))
+                     (when j-cell
+                       (push (qualified-by (cdr j-cell)
+                                           (or (join-plan-source-alias j) (join-plan-source-table j)))
+                             matches))))
                  (when (= (length matches) 1)
                    (return-from index-binder (column-ref tr (first matches))))
                  (when (> (length matches) 1)
@@ -493,7 +508,13 @@ no first row without an ORDER BY that nothing here can supply" name key)
                                        (sort (mapcar #'car fields) #'string<))
                                "; it declares none"))
                    (snode-pos n)))
-         (column-ref tr (cdr cell)))))
+         ;; In a joined statement a row's own field renders under the alias
+         ;; its relation renders under -- the joined row's source, or the `_1`
+         ;; / `_2` side a join predicate names -- like the other side's fields
+         ;; above; a row of a single relation is left as the binding declared it.
+         (column-ref tr (if (and plan (relational-plan-joins plan))
+                            (qualified-by (cdr cell) (joined-relation-alias plan (binder-payload b)))
+                            (cdr cell))))))
     (:node
      (let ((elem (child-of (binder-payload b) key)))
        (unless elem
@@ -824,19 +845,11 @@ those differ per aggregate."
                    (and r-exact l-lit))
                ;; bare comparison
                nil)
-              ((and (equal op "$==") (fragment-sargable l) r-lit)
-               (when (equal (dialect-lexical (translator-dialect tr) "sargablePrefilter") "true")
-                 (let* ((coarse (apply-entry tr :ops "$==" (list l r) (snode-pos n) variant))
-                        (residual (apply-entry tr :ops "$=="
-                                               (list (emit-text-operand (translator-dialect tr) l)
-                                                     (emit-text-operand (translator-dialect tr) r))
-                                               (snode-pos n) variant))
-                        (res (apply-entry tr :ops "AND" (list coarse residual) (snode-pos n))))
-                   (setf (fragment-prefilter res) coarse)
-                   (setf (fragment-separate-prefilter res)
-                         (or (fragment-separate-prefilter l) (fragment-separate-prefilter r)))
-                   (return-from translate-binary res))))
-              ((and (equal op "$==") (fragment-sargable r) l-lit)
+              ((and (equal op "$==")
+                    (or (and (fragment-sargable l) r-lit)
+                        (and (fragment-sargable r) l-lit)))
+               ;; A sargable column against a literal, either way round: the
+               ;; coarse comparison the index can serve, AND the exact one.
                (when (equal (dialect-lexical (translator-dialect tr) "sargablePrefilter") "true")
                  (let* ((coarse (apply-entry tr :ops "$==" (list l r) (snode-pos n) variant))
                         (residual (apply-entry tr :ops "$=="
@@ -2036,6 +2049,19 @@ one otherwise (the JS host's relationTableAlias, for the promoted fields)."
      :source-subquery plan
      :bucket (and (relational-plan-bucket plan) :sealed))))
 
+(defun record-fields (node)
+  "The (name . value) pairs of a RECORD(k, v, ...) call, refusing what the
+evaluator would: an odd count at the call, a name that is not a text literal at
+the name. The planner reads RECORD in three places -- a bucket's projection, a
+bucket's key, a MAP's projection -- and each used to walk the pairs itself."
+  (let ((args (sel::node-items node)))
+    (unless (evenp (length args))
+      (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos node)))
+    (loop for (k-node v-node) on args by #'cddr
+          do (unless (eq (snode-kind k-node) :text)
+               (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
+          collect (cons (sel::node-s k-node) v-node))))
+
 (defun bucket-projection (plan binder agg-node)
   "The projection of a bucket: the RECORD (or single expression) evaluated once
 per group, with BINDER bound to the group and _K to its key. Shared by the two
@@ -2046,15 +2072,9 @@ can say about a bucket on its own."
   (if agg-node
       (if (and (not (clist-p agg-node)) (eq (snode-kind agg-node) :call)
                (equal (sel::node-s agg-node) "RECORD"))
-          (let ((rec-args (sel::node-items agg-node))
-                (projs '()))
-            (unless (evenp (length rec-args))
-              (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos agg-node)))
-            (loop for (k-node v-node) on rec-args by #'cddr do
-              (unless (eq (snode-kind k-node) :text)
-                (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
-              (let* ((alias (sel::node-s k-node))
-                     ;; _K is the key, which was written against the KEY's
+          (let ((projs '()))
+            (loop for (alias . v-node) in (record-fields agg-node) do
+              (let* (;; _K is the key, which was written against the KEY's
                      ;; binder -- the MAP spelling may name the group
                      ;; differently, so the projection keeps the binder the key
                      ;; node was written for.
@@ -2273,13 +2293,8 @@ can say about a bucket on its own."
                         (dolist (k-arg (sel::node-items key-node))
                           (push (list nil binder k-arg (snode-pos k-arg)) group-by)))
                        ((and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "RECORD"))
-                        (let ((r-args (sel::node-items key-node)))
-                          (unless (evenp (length r-args))
-                            (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos key-node)))
-                          (loop for (k-node v-node) on r-args by #'cddr do
-                            (unless (eq (snode-kind k-node) :text)
-                              (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
-                            (push (list (sel::node-s k-node) binder v-node (snode-pos v-node)) group-by))))
+                        (loop for (alias . v-node) in (record-fields key-node) do
+                          (push (list alias binder v-node (snode-pos v-node)) group-by)))
                        (t
                         (push (list nil binder key-node (snode-pos key-node)) group-by)))
                      (setf (relational-plan-group-by plan) (nreverse group-by)))
@@ -2411,14 +2426,9 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                      (setf plan (wrap-plan-as-derived-table plan)))
                    (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
                             (equal (sel::node-s expr) "RECORD"))
-                       (let ((rec-args (sel::node-items expr))
-                             (projs '()))
-                         (unless (evenp (length rec-args))
-                           (refuse "E_ARITY" (format nil "~a takes an even number of arguments" (sel::node-s expr)) (snode-pos expr)))
-                         (loop for (k-node v-node) on rec-args by #'cddr do
-                           (unless (eq (snode-kind k-node) :text)
-                             (refuse "E_BAD_ARG" (format nil "~a field names must be string literals" (sel::node-s expr)) (snode-pos k-node)))
-                           (push (list (sel::node-s k-node) binder v-node) projs))
+                       (let ((projs '()))
+                         (loop for (alias . v-node) in (record-fields expr) do
+                           (push (list alias binder v-node) projs))
                          (setf (relational-plan-projections plan) (nreverse projs)))
                        (setf (relational-plan-projections plan) (list (list nil binder expr))))
                    (setf (relational-plan-select-cols plan) nil))))
@@ -2739,11 +2749,14 @@ field is on both sides, and the binders are nested records")
 
 ;;; --- the public interface -------------------------------------------------
 
-(defun translate (program dialect &optional bindings options)
-  "Translate a compiled program into a SQL expression for one dialect.
-
-Signals SQL-ERROR, whose message is written to be READ. Use this when you want
-to know why a rule cannot be pushed down."
+(defun call-with-translation (program dialect bindings options fn)
+  "What both entry points do before they differ: the dialect and alias checks
+(in that order -- a caller with both a bad dialect and a duplicate alias gets
+E_SQL_DIALECT), a fresh translator, the constant scope, stage 1, and the
+planner's look at the result. FN is then called with the translator, the
+normalised tree and the plan (NIL for an expression), inside the dynamic
+binding of *SUBQUERY-COUNTER* that the rest of the translation must see -- which
+is why this is a function taking FN rather than one returning three values."
   (require-target dialect)
   (let ((tr (%translator dialect (make-bindings (or bindings '()))
                          (and (getf options :strict) t))))
@@ -2751,16 +2764,30 @@ to know why a rule cannot be pushed down."
     (multiple-value-bind (names root) (const-scope (translator-bindings tr))
       (setf (translator-const-names tr) names
             (translator-const-root tr) root)
+      ;; Stage 1 and nothing else: the translator renders the tree it is
+      ;; handed, as the other four hosts do (review 2026-09-15 finding C:
+      ;; TRANSLATE-STATEMENT alone once ran the full optimiser). The planner
+      ;; is the one place that optimises before translating.
       (let* ((*subquery-counter* 0)
              (norm (normalise (sel:program-ast program) names root))
              (plan (analyze-pipeline tr norm)))
-        (if plan
-            (compile-statement tr plan)
-            (let ((f (walk-node tr norm)))
-              (%fragment (fragment-parts f) (fragment-kind f) dialect
-                         (reverse (translator-params tr))
-                         (reverse (translator-param-kinds tr))
-                         (reverse (translator-caveats tr)))))))))
+        (funcall fn tr norm plan)))))
+
+(defun translate (program dialect &optional bindings options)
+  "Translate a compiled program into a SQL expression for one dialect.
+
+Signals SQL-ERROR, whose message is written to be READ. Use this when you want
+to know why a rule cannot be pushed down."
+  (call-with-translation
+   program dialect bindings options
+   (lambda (tr norm plan)
+     (if plan
+         (compile-statement tr plan)
+         (let ((f (walk-node tr norm)))
+           (%fragment (fragment-parts f) (fragment-kind f) dialect
+                      (reverse (translator-params tr))
+                      (reverse (translator-param-kinds tr))
+                      (reverse (translator-caveats tr))))))))
 
 (defun try-translate (program dialect &optional bindings options)
   "The same, returning NIL instead of signalling.
@@ -2772,23 +2799,13 @@ must not be swallowed by the path that exists to handle refusals."
 
 (defun translate-statement (program dialect &optional bindings options)
   "Translate a compiled relational program into a SQL statement (SELECT ...)."
-  (require-target dialect)
-  (let* ((b (make-bindings (or bindings '())))
-         (tr (%translator dialect b (and (getf options :strict) t))))
-    (bindings-check-aliases (translator-bindings tr))
-    (multiple-value-bind (names root) (const-scope (translator-bindings tr))
-      (setf (translator-const-names tr) names
-            (translator-const-root tr) root)
-      ;; Stage 1 and nothing else: the translator renders the tree it is
-      ;; handed, as TRANSLATE does and as the other four hosts do (review
-      ;; 2026-09-15 finding C: this entry point alone ran the full optimiser).
-      ;; The planner is the one place that optimises before translating.
-      (let* ((*subquery-counter* 0)
-             (norm (normalise (sel:program-ast program) names root))
-             (plan (analyze-pipeline tr norm)))
-        (unless plan
-          (refuse "E_SQL_SHAPE" "expected a relational query or pipeline"))
-        (compile-statement tr plan)))))
+  (call-with-translation
+   program dialect bindings options
+   (lambda (tr norm plan)
+     (declare (ignore norm))
+     (unless plan
+       (refuse "E_SQL_SHAPE" "expected a relational query or pipeline"))
+     (compile-statement tr plan))))
 
 (defun try-translate-statement (program dialect &optional bindings options)
   "The same, returning NIL instead of signalling."

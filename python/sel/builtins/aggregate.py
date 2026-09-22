@@ -97,11 +97,67 @@ def _map(args, ctx):
     return Value.list(out)
 
 
+def _leading_field_conjuncts(body, binder):
+    """The leading AND-conjuncts of a FILTER body that read nothing but fields
+    of the element -- ``_["status"] $== "x"`` -- as (node, fields) pairs, in
+    order, stopping at the first conjunct that reads anything else: another
+    variable, ``_K``, the element as a whole, a call, an assignment. The list
+    is what a LINK may pre-apply to its left rows (see ``_link``).
+    """
+    conjuncts = []
+    node = body
+    while node is not None and node.t == 'bin' and node.op == 'AND':
+        conjuncts.append(node.r)
+        node = node.l
+    conjuncts.append(node)
+    conjuncts.reverse()
+    names = {binder.upper(), '_'}
+    out = []
+    for c in conjuncts:
+        fields = set()
+        def reads_only_fields(n):
+            if n is None:
+                return True
+            if n.t == 'index':
+                if (n.obj is not None and n.obj.t == 'var' and n.obj.name.upper() in names
+                        and n.idx is not None and n.idx.t == 'text'):
+                    fields.add(n.idx.v.upper())
+                    return True
+                return False
+            if n.t in ('num', 'text', 'bool'):
+                return True
+            if n.t == 'bin':
+                return reads_only_fields(n.l) and reads_only_fields(n.r)
+            if n.t == 'un':
+                return reads_only_fields(n.x)
+            return False
+        if not reads_only_fields(c) or not fields:
+            break
+        out.append((c, fields))
+    return out
+
+
 def _filter(args, ctx):
     """The one aggregate that preserves keys — a filtered list should still be
     addressable the way the original was.
     """
-    in_val = args.val(0)
+    # Over a join, the leading conjuncts that read only fields of the row are
+    # offered to the LINK, which pre-applies them to its left rows where that
+    # is provably the same as filtering the joined rows; the full predicate
+    # still runs over the joined rows below, so results and errors are what
+    # they were. This is where this host used to push a filter under the join
+    # in its physical tree by reading the context's first row (SEL-0049); the
+    # tree is now the same for any data, and the join decides at run time.
+    src = args.node(0)
+    if src is not None and src.t == 'call' and src.name in ('LINK', 'LINK_LEFT'):
+        binder, body = shape(args)
+        leading = _leading_field_conjuncts(body, binder)
+        if leading:
+            ctx.join_prefilter = (binder, leading)
+    try:
+        in_val = args.val(0)
+    finally:
+        ctx.join_prefilter = None
     is_dense = in_val.is_list and in_val.storage is not None and in_val.list_keys is None
     storage = []
     keys = None

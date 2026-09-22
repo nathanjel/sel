@@ -571,6 +571,32 @@ final class Optimizer
             || count(self::mapPassthroughs($step)) * 2 !== count($body['args']);
     }
 
+    /**
+     * The keys under which a parser node holds children: the two list-valued
+     * ones and the seven single-valued ones. The one place the optimizer's
+     * walks know the node shapes; fieldRefs and readsVar each used to spell
+     * the loops out (SEL-0040).
+     */
+    private const CHILD_LISTS = ['args', 'items'];
+    private const CHILD_NODES = ['l', 'r', 'x', 'obj', 'idx', 'target', 'value'];
+
+    /**
+     * Calls $visit on every direct child of $node, lists first, in the order
+     * the keys are declared above.
+     *
+     * @param array<string,mixed> $node
+     * @param callable(?array):void $visit
+     */
+    private static function forEachChild(array $node, callable $visit): void
+    {
+        foreach (self::CHILD_LISTS as $key) {
+            foreach ($node[$key] ?? [] as $child) $visit($child);
+        }
+        foreach (self::CHILD_NODES as $key) {
+            if (isset($node[$key]) && is_array($node[$key])) $visit($node[$key]);
+        }
+    }
+
     /** @return list<string> */
     private static function fieldRefs(?array $node, string $binder = '_'): array
     {
@@ -582,12 +608,7 @@ final class Optimizer
                 && in_array(strtoupper($item['obj']['name']), array_map('strtoupper', [$binder, '_', '_1', '_2']), true)) {
                 $result[] = (string) $item['idx']['v'];
             }
-            foreach (['args', 'items'] as $key) {
-                foreach ($item[$key] ?? [] as $child) $visit($child);
-            }
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($item[$key]) && is_array($item[$key])) $visit($item[$key]);
-            }
+            self::forEachChild($item, $visit);
         };
         $visit($node);
         return array_values(array_unique($result));
@@ -615,12 +636,7 @@ final class Optimizer
                 && ($item['idx']['t'] ?? null) === 'text') {
                 return;
             }
-            foreach (['args', 'items'] as $key) {
-                foreach ($item[$key] ?? [] as $child) $visit($child);
-            }
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($item[$key]) && is_array($item[$key])) $visit($item[$key]);
-            }
+            self::forEachChild($item, $visit);
         };
         $visit($node);
         return $found;
