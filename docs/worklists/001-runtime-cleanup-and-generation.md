@@ -88,6 +88,7 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0053](#sel-0053) | Joined rows over records of different shapes: Lisp builds wrong rows and crashes, and the hosts disagree on missing, null and boolean fields | All five | Resolved | P1 |
 | [SEL-0054](#sel-0054) | The physical join-predicate pushdown changes values: renumbered keys, lost join-key errors, relation names under explicit binders, first-row promotion | All five | Proposed | P2 |
 | [SEL-0055](#sel-0055) | The scale harness's database lane expects SQL for scenario 6, which the planner keeps in memory | Validation | Proposed | P3 |
+| [SEL-0056](#sel-0056) | Python's per-pair joined rows cost scenario 6 about 5% | Python | Proposed | P3 |
 
 ## Working items
 
@@ -1881,7 +1882,7 @@ often — so PHP reads fields in place. *Scale,* against this tree with the
 pre-SEL-0053 row builders (a scratch copy), interleaved, seven runs after
 two warm-ups, medians: S1 C++ +1.1%, JS +2.5%, PHP +3.5%, Python +2.9%,
 Lisp 0; S6 C++ +0.4%, JS +1.5%, PHP +0.9%, Python +4.8% (its guards are
-generated code, and the right-row pass does not pay there), Lisp −2.8%;
+generated code, and the right-row pass does not pay there; SEL-0056), Lisp −2.8%;
 S2–S4 within spread; S5 faster everywhere (C++ −13%, JS −6%, PHP −30%,
 Lisp −16%, Python −1%), since the retired gates had held the pre-filter
 back. *Validation:* 980 conformance cases per host; pytest 635 (one caught a
@@ -1955,6 +1956,45 @@ without `--only`.
 
 **Resolution:** Pending.
 
+<a id="sel-0056"></a>
+### SEL-0056 — Python's per-pair joined rows cost scenario 6 about 5%
+
+**Proposed · P3 · Python · Owner: unassigned.**
+Source: SEL-0053 closure, 2026-09-23; present at `b791679`.
+
+**Next action:** SEL-0053 made every host build each joined row from its own
+pair, and Python kept the largest residual: S6 800.0 → 838.4 ms median
+(+4.8%, min 799 → 836), S1 +2.9%, against the same tree with the
+pre-SEL-0053 row builders. S6 is `PRODUCTS .> LINK_LEFT(ORDER_ITEMS, …)`,
+one-to-many, about 180,000 pairs, and every pair runs the generated plan's
+right-field guards (`r_s[i].kind != "NONE" or r_s[i].is_list` per promoted
+field); the left guards run once per left row and the plan is found through
+the last-pair memo, so the guards are what is left. What was tried: the pass
+that recovered S6 in JS, C++ and Lisp — learn while bucketing that every
+right row is flat and skip the right guards — made Python worse (S6 +10%,
+S1 +7.6%, S5 +7%), since a Python-level loop over each right row's fields
+costs more than the generated guards it saves; it was removed. In JS the cost
+was proved (by ablation) to be reading right values scattered in bucket
+order; in Python that is unverified — profile first. Candidates: the
+flatness test as generated code per right shape, fused into the bucketing
+loop (one expression, no `zip`, no set lookups); a flatness fact recorded
+where rows are made (`Value.from_native` rows, cleared by any in-place
+store), which touches `value.py` and needs every mutation path audited; or
+accepting the cost with the measurement recorded. Baseline: SEL-0052 and
+SEL-0053 landed together in `b791679`, so no commit holds the tree those
+figures were measured against (SEL-0052's pre-filter with the old row
+builders). Measure in a scratch worktree at `b791679` with `0f9031d`'s
+first-row projector restored in `python/sel/builtins/structure.py` (S1 and S6
+only; S5 moves with the pre-filter), or against `0f9031d` whole for S6, which
+the pre-filter does not touch — never by swapping files in the shared
+checkout.
+
+**Close when:** Python S6 and S1 are within run-to-run spread of that
+baseline (interleaved, seven runs after two warm-ups) with the joined-row
+oracle 0 wrong, or the cost is accepted with the profile that explains it.
+
+**Resolution:** Pending.
+
 ## Suggested order
 
 Start with SEL-0001–0004 and revalidate SEL-0034. Take verified cleanup items
@@ -1985,3 +2025,4 @@ closure when its evidence is recorded.
 | API-lane analysis, 2026-09-22 | SEL-0044, SEL-0049, SEL-0050 (closures), SEL-0051 |
 | SEL-0051 closure, 2026-09-22 | SEL-0052 |
 | SEL-0052's differential oracle and real-database run, 2026-09-22 | SEL-0053, SEL-0054, SEL-0055 |
+| SEL-0053 closure, 2026-09-23 | SEL-0056 |
