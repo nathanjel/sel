@@ -24,7 +24,8 @@
           (node-math-plan copy) (node-math-plan n)
           (node-tentative copy) (node-tentative n)
           (node-pushed-down copy) (node-pushed-down n)
-          (node-remaining copy) (node-remaining n))
+          (node-remaining copy) (node-remaining n)
+          (node-keys-unobserved copy) (node-keys-unobserved n))
     copy))
 
 ;; A fold that replaces a node by one of its children must not move the error
@@ -848,7 +849,20 @@ needs."
         (when pass8-changed
           (setf curr-steps next-steps
                 changed t)))))
-  curr-steps)
+  ;; A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
+  ;; anything can see the keys a FILTER's result carries. A following step
+  ;; that renumbers without reading `_K` hides them (KEYS-RENUMBERED-BY-P, the
+  ;; same notion the logical rewrites use). Stamped on copies, never on the
+  ;; caller's AST.
+  (loop for (step next) on curr-steps
+        collect (if (string= (node-s step) "FILTER")
+                    (let* ((copy (copy-node-shallow step))
+                           (items (node-items copy))
+                           (body (copy-node-shallow (car (last items)))))
+                      (setf (node-keys-unobserved body) (and next (keys-renumbered-by-p next) t)
+                            (node-items copy) (append (butlast items) (list body)))
+                      copy)
+                    step)))
 
 (defun optimize-children (node physical depth in-math)
   "A shallow copy of NODE with every child optimised. NODE itself is never

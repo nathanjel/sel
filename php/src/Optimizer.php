@@ -116,6 +116,17 @@ final class Optimizer
                     if (!$pushed['changed']) break;
                     $steps = self::logicalSteps($source, $steps, $options);
                 }
+                // A tree fact the evaluator's join pre-filter needs (SEL-0050):
+                // whether anything can see the keys a FILTER's result carries.
+                // A following step that renumbers without reading `_K` hides
+                // them (keysRenumberedBy, the same notion the logical rewrites
+                // use); the end of the pipeline or another FILTER does not.
+                foreach ($steps as $index => $step) {
+                    if ($step['name'] === 'FILTER') {
+                        $last = count($step['args']) - 1;
+                        $steps[$index]['args'][$last]['keysUnobserved'] = self::keysRenumberedBy($steps[$index + 1] ?? null);
+                    }
+                }
             }
             return self::buildPipeline($source, $steps);
         }

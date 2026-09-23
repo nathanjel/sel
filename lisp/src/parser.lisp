@@ -39,7 +39,11 @@
   ;; With pushed-down: the conjuncts that were not pushed (TRUE when all
   ;; were), which FILTER evaluates instead of the whole predicate when no
   ;; tentative body kept a row on an error while its source ran.
-  (remaining nil))
+  (remaining nil)
+  ;; On a FILTER body: whether the step after the FILTER renumbers without
+  ;; reading `_K`, so nothing observes the keys its result carries and the
+  ;; evaluator's join pre-filter may drop rows below the join (SEL-0052).
+  (keys-unobserved nil))
 
 ;;; The operator families, named once for the PARSER. The precedence table below
 ;;; is BUILT from these rather than repeating them, and EVAL-BINARY asks

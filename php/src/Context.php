@@ -25,6 +25,15 @@ final class Context
      * every row it sees (SEL-0051).
      */
     public int $tentativeKept = 0;
+    /**
+     * A FILTER whose source is a LINK hands the join its conjuncts here, for
+     * the join to pre-apply to left rows where that is provably the same as
+     * filtering the joined rows (Builtins\Structure::doLink; SEL-0052).
+     * @var array{0: list<array{0: string, 1: list<array>}>, 1: bool, 2: list<object>}|null
+     */
+    public ?array $joinPrefilter = null;
+    /** What a join below reported: the conjuncts every row it emitted has passed, and whether a row was kept on an error. @var array{0: array<string, true>, 1: bool}|null */
+    public ?array $joinPrefilterReport = null;
 
     public function __construct(?Value $root = null)
     {

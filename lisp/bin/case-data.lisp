@@ -11413,6 +11413,137 @@
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
+   :name "plan.bindings.correlated-relation-with-a-scalar"
+   :at "25-hybrid-plans.sqlt:1678"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(ANY(ITEMS, _ > 0)) .> TAKE(1)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS TRUE) LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders" "order_items")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) "QTY" "`oi`.`order_id` = `o`.`id`")))))
+  (list
+   :name "plan.bindings.correlated-relation-in-the-prefix-of-a-hybrid"
+   :at "25-hybrid-plans.sqlt:1698"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(ANY(ITEMS, _ > 0)) .> SORT_BY(_[\"ID\"]) .> FILTER(_K > 1)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS TRUE) ORDER BY `o`.`id` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders" "order_items")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) "QTY" "`oi`.`order_id` = `o`.`id`")))))
+  (list
+   :name "plan.bindings.correlated-relation-only-in-the-continuation"
+   :at "25-hybrid-plans.sqlt:1715"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"ID\"]) .> FILTER(_K > 1) .> FILTER(ANY(ITEMS, _ > 0))"
+   :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) "QTY" "`oi`.`order_id` = `o`.`id`")))))
+  (list
+   :name "plan.bindings.prefilter-separate-relation"
+   :at "25-hybrid-plans.sqlt:1734"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(ANY(FIELDS, _[\"FNAME\"] $== \"x\")) .> TAKE(1)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `o`.`id` AND (`g`.`fname` = 'x')) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `o`.`id` AND (((`g`.`fname` = 'x') AND (CAST(`g`.`fname` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin))) IS TRUE)) LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders" "cms_fields")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "FNAME" (binding-column "fname" "g" :text :exact nil :sargable t :guard nil))) nil "`g`.`cmsid` = `o`.`id`" :prefilter "separate")))))
+  (list
+   :name "plan.bindings.columns-in-a-body"
+   :at "25-hybrid-plans.sqlt:1754"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(JOIN(V, \"-\") $== \"x\") .> TAKE(1)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (CAST(CONCAT(CONCAT(`o`.`a`, '-'), `o`.`b`) AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin) LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "V" (binding-columns (binding-column "a" "o" :unknown) (binding-column "b" "o" :unknown))))))
+  (list
+   :name "plan.bindings.raw-in-a-body"
+   :at "25-hybrid-plans.sqlt:1771"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(R > 1) .> TAKE(1)"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`total` > 1) LIMIT 1"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "R" (binding-raw "`o`.`total`" :num)))))
+  (list
+   :name "plan.multi-line.hybrid-splits-across-lines"
+   :at "25-hybrid-plans.sqlt:1787"
+   :dialect "mariadb"
+   :source "ORDERS
+  .> SORT_BY(_[\"ID\"])
+  .> FILTER(_K > 1)"
+   :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
+   :name "plan.multi-line.statement-on-its-own-line-is-pure-memory"
+   :at "25-hybrid-plans.sqlt:1809"
+   :dialect "mariadb"
+   :source "A += 1;
+ORDERS .> TAKE(1)"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
    :name "link.row.is-the-promoted-fields"
    :at "26-links.sqlt:5"
    :dialect "mariadb"

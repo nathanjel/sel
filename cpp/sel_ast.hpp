@@ -67,6 +67,10 @@ struct Node {
   // leaves it alone. Fusion only merges bodies of equal tentativeness.
   bool tentative = false;
   bool pushed_down = false;
+  // On a FILTER body: whether the step after the FILTER renumbers without
+  // reading `_K`, so nothing observes the keys its result carries and the
+  // evaluator's join pre-filter may drop rows below the join (SEL-0050/0052).
+  bool keys_unobserved = false;
   // With pushed_down: the conjuncts that were not pushed (TRUE when all
   // were), which the FILTER evaluates instead of the whole predicate when no
   // tentative body kept a row on an error while its source ran.

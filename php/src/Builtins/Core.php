@@ -478,6 +478,63 @@ final class Core
                 $expectedIndex = 1;
                 $written = $a->node($a->count() - 1);
                 $tentative = !empty($written['tentative']);
+                // Over a join, the conjuncts are offered to the LINK, which
+                // pre-applies what it can to its left rows (SEL-0052): this
+                // FILTER's first -- it runs before the FILTER that handed the
+                // rest down -- then the handed ones. Deep drops, below the
+                // join directly under this FILTER, change its keys, so they
+                // are allowed only where nothing observes them
+                // (`keysUnobserved`, stamped by the physical optimiser).
+                $src = $a->node(0);
+                $handed = $ctx->joinPrefilter;
+                $ctx->joinPrefilter = null;
+                if ($src !== null && $src['t'] === 'call' && in_array($src['name'], ['LINK', 'LINK_LEFT'], true)) {
+                    ['binder' => $binder, 'body' => $body] = self::shape($a);
+                    $own = Structure::leadingFieldConjuncts($body, $binder);
+                    // Conjuncts the physical optimiser already pushed under
+                    // the join (a tentative FILTER below, SEL-0051) held on
+                    // every row the join sees unless one kept a row on an
+                    // error; the join checks that and skips them.
+                    if (!empty($written['pushedDown'])) {
+                        $rem = $written['remaining'];
+                        $kept = [];
+                        if (!($rem['t'] === 'bool' && $rem['v'] === true)) {
+                            $n = $rem;
+                            while ($n !== null && $n['t'] === 'bin' && $n['op'] === 'AND') {
+                                $kept[] = $n['r'];
+                                $n = $n['l'];
+                            }
+                            $kept[] = $n;
+                        }
+                        foreach ($own as $i => $entry) {
+                            if (!in_array($entry['node'], $kept, true)) $own[$i]['pushed'] = true;
+                        }
+                    }
+                    $anyOwn = false;
+                    foreach ($own as $entry) if (!$entry['pushed']) { $anyOwn = true; break; }
+                    // A first conjunct that is neither a field test nor total
+                    // nor pushed ends every walk before it starts: hand
+                    // nothing, gather nothing.
+                    $blocked = $own !== [] && $own[0]['fields'] === null && $own[0]['total'] === null && !$own[0]['pushed'];
+                    $stages = (!$blocked && ($anyOwn || $handed !== null)) ? [[$binder, $own]] : [];
+                    if ($handed !== null && !$blocked) foreach ($handed[0] as $stage) $stages[] = $stage;
+                    $deep = $handed === null ? !empty($body['keysUnobserved']) : true;
+                    if ($stages !== []) {
+                        $ctx->joinPrefilter = [$stages, $deep, $handed === null ? [] : $handed[2], $handed === null ? [] : $handed[3]];
+                    }
+                }
+                $before = $ctx->tentativeKept;
+                try {
+                    $source = $a->val(0);
+                } finally {
+                    $ctx->joinPrefilter = null;
+                }
+                // The join's report -- which conjuncts every row that came up
+                // has passed, and whether a row was kept on an error -- goes
+                // up as it is.
+                $report = $ctx->joinPrefilterReport;
+                $ctx->joinPrefilterReport = null;
+                if ($report !== null && $handed !== null) $ctx->joinPrefilterReport = $report;
                 // A predicate whose leading conjuncts were pushed under the
                 // LINK below: when no tentative body kept a row on an error
                 // while the source ran, every row here passed them, and only
@@ -486,8 +543,6 @@ final class Core
                 // and raises -- in the source's order.
                 $bodyOverride = null;
                 if (!empty($written['pushedDown'])) {
-                    $before = $ctx->tentativeKept;
-                    $source = $a->val(0);
                     if ($ctx->tentativeKept === $before) {
                         $bodyOverride = $written['remaining'];
                         // Nothing remains: every row of the join below passed,

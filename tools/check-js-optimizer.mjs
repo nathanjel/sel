@@ -267,6 +267,8 @@ for (const [source, kind, want] of [
   ['C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_["id"] + C)', 'hybrid', 'E_NOT_NUM@1:21'],
   ['X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _["id"] + "x")', 'hybrid', 'E_NOT_NUM@1:54'],
   ['Y = ABORT("x"); ORDERS .> TAKE(2) .> MAP(Y)', 'pure_memory', 'E_ABORT@1:11'],
+  // SEL-0047: a continuation on line 3 reports its error on line 3.
+  ['X = ORDERS .> TAKE(2);\nX .> MAP(COUNT(X) + _["id"]\n   + "x")', 'hybrid', 'E_NOT_NUM@3:6'],
 ]) {
   const program = compile(source);
   const plan = Sql.planHybrid(program, 'postgresql', orders);

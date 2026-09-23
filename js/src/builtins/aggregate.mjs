@@ -130,21 +130,129 @@ define({
 
 // The one aggregate that preserves keys — a filtered list should still be
 // addressable the way the original was.
+const TEXT_COMPARE = new Set(['$==', '$!=', '$<', '$<=', '$>', '$>=']);
+const NUM_COMPARE = new Set(['==', '!=', '<', '<=', '>', '>=']);
+
+// Every AND-conjunct of a FILTER body, in order, as { node, fields, total }
+// for a LINK to pre-apply to its left rows (structure.mjs, doLink; SEL-0052).
+// `fields`: the upper-cased fields of the row the conjunct reads -- a bare
+// `_["status"]` reads STATUS, a nested `_["orders"]["year"]` reads ORDERS --
+// or null when it reads anything else (another variable, `_K`, the element
+// as a whole, a call, an assignment). `total`: for a comparison between
+// literals and bare field reads, the [name, kind] requirements under which
+// it cannot raise (every such field on every row of its owning side, as
+// text or as a number); null when not provable.
+export function leadingFieldConjuncts(body, binder) {
+  const conjuncts = [];
+  let node = body;
+  while (node && node.t === 'bin' && node.op === 'AND') {
+    conjuncts.push(node.r);
+    node = node.l;
+  }
+  conjuncts.push(node);
+  conjuncts.reverse();
+  // The element is the binder, exactly as named (names are canonical): under
+  // an explicit binder `_` is not the element.
+  const isRowVar = (n) => n && n.t === 'var' && n.name === binder;
+  const bareRead = (n) => n && n.t === 'index' && isRowVar(n.obj) && n.idx && n.idx.t === 'text';
+  const literalKind = (n) => (n && n.t === 'num' ? 'NUM' : n && n.t === 'text' ? 'TEXT' : null);
+  return conjuncts.map((c) => {
+    const fields = new Set();
+    const readsOnlyFields = (n) => {
+      if (!n) return true;
+      if (n.t === 'index') {
+        if (bareRead(n)) { fields.add(n.idx.v.toUpperCase()); return true; }
+        if (n.obj && n.obj.t === 'index') return readsOnlyFields(n.obj) && readsOnlyFields(n.idx);
+        return false;
+      }
+      if (n.t === 'num' || n.t === 'text' || n.t === 'bool') return true;
+      if (n.t === 'bin') return readsOnlyFields(n.l) && readsOnlyFields(n.r);
+      if (n.t === 'un') return readsOnlyFields(n.x);
+      return false;
+    };
+    const ok = readsOnlyFields(c) && fields.size > 0;
+    let total = null;
+    if (c.t === 'bin' && (TEXT_COMPARE.has(c.op) || NUM_COMPARE.has(c.op))) {
+      const kind = TEXT_COMPARE.has(c.op) ? 'TEXT' : 'NUM';
+      total = [];
+      for (const operand of [c.l, c.r]) {
+        const lit = literalKind(operand);
+        if (lit !== null) {
+          // A text literal is not a number: that operand raises on every row.
+          if (kind === 'NUM' && lit !== 'NUM') { total = null; break; }
+          continue;
+        }
+        if (!bareRead(operand)) { total = null; break; }
+        total.push([operand.idx.v, kind]);
+      }
+    }
+    return { node: c, fields: ok ? fields : null, total, pushed: false, binder };
+  });
+}
+
 define({
   name: 'FILTER', min: 2, max: 3, lazy: true, binds: true,
   fn: (args, ctx) => {
     const out = new Value(NONE, null, true);
     const written = args.node(args.nodes.length - 1);
     const tentative = Boolean(written.tentative);
+    // Over a join, the conjuncts are offered to the LINK, which pre-applies
+    // what it can to its left rows (SEL-0052): this FILTER's first -- it runs
+    // before the FILTER that handed the rest down -- then the handed ones.
+    // Deep drops, below the join directly under this FILTER, change its
+    // keys, so they are allowed only where nothing observes them
+    // (`keysUnobserved`, stamped by the physical optimiser).
+    const src = args.node(0);
+    const handed = ctx.joinPrefilter;
+    ctx.joinPrefilter = null;
+    if (src && src.t === 'call' && (src.name === 'LINK' || src.name === 'LINK_LEFT')) {
+      const { binder, body } = shape(args);
+      const own = leadingFieldConjuncts(body, binder);
+      // Conjuncts the physical optimiser already pushed under the join (a
+      // tentative FILTER below, SEL-0051) held on every row the join sees
+      // unless one kept a row on an error; the join checks that and skips
+      // them, rather than testing them again.
+      if (written.pushedDown) {
+        const rem = written.remaining;
+        const kept = new Set();
+        if (!(rem.t === 'bool' && rem.v === true)) {
+          let n = rem;
+          while (n && n.t === 'bin' && n.op === 'AND') { kept.add(n.r); n = n.l; }
+          kept.add(n);
+        }
+        for (const c of own) if (!kept.has(c.node)) c.pushed = true;
+      }
+      // A first conjunct that is neither a field test nor total nor pushed
+      // ends every walk before it starts: hand nothing, gather nothing.
+      const blocked = own.length > 0 && own[0].fields === null && own[0].total === null && !own[0].pushed;
+      const stages = !blocked && (own.some((c) => !c.pushed) || handed !== null)
+        ? [{ binder, conjuncts: own }] : [];
+      if (handed !== null && !blocked) stages.push(...handed.stages);
+      const deep = handed === null ? Boolean(body.keysUnobserved) : true;
+      if (stages.length) {
+        ctx.joinPrefilter = { stages, deep, above: handed === null ? [] : handed.above,
+          obligations: handed === null ? [] : handed.obligations };
+      }
+    }
     // A predicate whose leading conjuncts were pushed under the LINK below:
     // when no tentative body kept a row on an error while the source ran,
     // every row here passed them, and only the remaining conjuncts are
     // evaluated (TRUE when there are none); otherwise the whole predicate,
     // as written, decides -- and raises -- in the source's order.
     let bodyOverride = null;
+    const before = ctx.tentativeKept;
+    let source;
+    try {
+      source = args.val(0);
+    } finally {
+      ctx.joinPrefilter = null;
+    }
+    // The join's report -- which conjuncts every row that came up has
+    // passed, and whether a row was kept on an error -- goes up as it is.
+    const report = ctx.joinPrefilterReport;
+    ctx.joinPrefilterReport = null;
+    if (report !== null && handed !== null) ctx.joinPrefilterReport = report;
     if (written.pushedDown) {
-      const before = ctx.tentativeKept;
-      const source = args.val(0);
       if (ctx.tentativeKept === before) {
         bodyOverride = written.remaining;
         // Nothing remains: every row of the join below passed, and the join

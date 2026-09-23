@@ -1224,7 +1224,12 @@ identity, and a snapshot is compared by value."
               ("Y = LABEL; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + Y)" :hybrid "E_NOT_NUM@1:47")
               ("C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_[\"id\"] + C)" :hybrid "E_NOT_NUM@1:21")
               ("X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _[\"id\"] + \"x\")" :hybrid "E_NOT_NUM@1:54")
-              ("Y = ABORT(\"x\"); ORDERS .> TAKE(2) .> MAP(Y)" :pure-memory "E_ABORT@1:11"))
+              ("Y = ABORT(\"x\"); ORDERS .> TAKE(2) .> MAP(Y)" :pure-memory "E_ABORT@1:11")
+              ;; SEL-0047: a continuation on line 3 reports its error on line
+              ;; 3. A quoted list, so the newlines are inside the literal.
+              ("X = ORDERS .> TAKE(2);
+X .> MAP(COUNT(X) + _[\"id\"]
+   + \"x\")" :hybrid "E_NOT_NUM@3:6"))
             do (let* ((program (sel:compile-source source))
                       (plan (sel.sql:plan-hybrid program "postgresql" orders))
                       (context (sel:make-none)))

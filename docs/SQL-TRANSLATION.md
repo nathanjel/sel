@@ -2312,7 +2312,12 @@ The ordinary prefix planner promises:
   bindings of one table reads that table once. The binding name is what the
   caller already has; the table is what a grant or a connection is chosen by.
   A `pure_memory` plan still reports them, from the original tree, because
-  what a rule reads does not depend on who answers it.
+  what a rule reads does not depend on who answers it. A `hybrid` plan reports
+  what its *prefix* reads: a relation only the continuation reads — a
+  correlated `ITEMS` under an `ANY` after the split — is not a physical
+  source of the plan, since the continuation reads `ITEMS` from the caller's
+  context at run time, as `run()` would (`plan.bindings.correlated-relation-
+  only-in-the-continuation`).
 - **`options` is one object, and it reaches both the logical optimiser and the
   translator.** `strict` is the translator's and is the one every host accepts;
   the three dynamic hosts also accept the optimiser's `fuseFilters` and
@@ -2472,8 +2477,16 @@ The ordinary prefix planner promises:
   move under the `LINK`, and they run there *tentatively* — a row the pushed
   body raises on is kept for the `FILTER` above, whose predicate still
   carries every conjunct in the source's order, so which error surfaces, and
-  where, is what the program as written says (spec §7.4; SEL-0051). And a
-  fold never changes the *form* of a
+  where, is what the program as written says (spec §7.4; SEL-0051). What the
+  tree cannot decide, the evaluator's join decides from the rows: a `FILTER`
+  over a `LINK` hands the join its conjuncts, and the join pre-applies to its
+  left rows those whose fields the joined row takes from them (no right side
+  carries the field), passing over an earlier conjunct only when it cannot
+  raise on any joined row (its fields carried by every row of the one side
+  that has them, with the operator's kind); below the FILTER's own join it
+  drops rows only where no upper join key could raise on them — the same
+  tree for any data, the drops decided where the data is (SEL-0049,
+  SEL-0050, SEL-0052). And a fold never changes the *form* of a
   call the evaluator resolves by shape: the third slot of a three-argument
   `SORT_BY` or `TOP_BY` whose second is a bare name is the binder form's key,
   and `IF(TRUE, "DESC", "ASC")` there stays an `IF` rather than becoming the

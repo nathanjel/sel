@@ -830,3 +830,142 @@ ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), REC
 --- expect
 error E_NOT_NUM at 1:361
 ===
+### name: rel.link.then-filter.passed-over.total-conjunct-lets-a-later-one-drop-early
+--- note
+The tier conjunct cannot raise -- every customer carries a text tier and no
+order does -- so an implementation may test the amount before it, on the
+orders; the value is what the predicate as written gives (spec §7.4).
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "tier", "Q"), RECORD("id", 8, "name", "n8", "tier", "P")); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["tier"] $== "P" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+tree -{"1"=-{"id"=t"1"}}
+===
+### name: rel.link.then-filter.passed-over.a-customer-without-the-field-raises-where-written
+--- note
+Customer 7 has no tier: the joined row of order 2 raises E_NO_KEY in the
+first conjunct, and testing the amount early would have dropped that order.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7"), RECORD("id", 8, "name", "n8", "tier", "P")); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["tier"] $== "P" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NO_KEY at 1:303
+===
+### name: rel.link.then-filter.passed-over.a-null-field-is-not-carried
+--- note
+A null value is not promoted onto the joined row (§7.4), so the read is
+E_NO_KEY as for a missing key; the conjunct is not one that cannot raise.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "tier", NULL), RECORD("id", 8, "name", "n8", "tier", "P")); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["tier"] $== "P" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NO_KEY at 1:317
+===
+### name: rel.link.then-filter.passed-over.a-boolean-field-raises-where-written
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "tier", TRUE), RECORD("id", 8, "name", "n8", "tier", "P")); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["tier"] $== "P" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NOT_BIN at 1:317
+===
+### name: rel.link.then-filter.passed-over.a-text-that-is-not-a-number-raises-where-written
+--- note
+The numeric comparison's field must be a number on every customer; `"y"`
+is text, so the conjunct can raise and nothing after it is tested early.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["credit"] > 2 AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NOT_NUM at 1:318
+===
+### name: rel.link.then-filter.passed-over.a-field-both-sides-carry-is-neither-side-s
+--- note
+Order 2 and its customer both carry a tier, so their joined row has none
+(§7.4, pair by pair): `_["tier"]` is E_NO_KEY there. Order 1 has no tier and
+takes its customer's. An implementation must not take the field for one
+side's when rows of the other side carry it too.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1, "tier", "P")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "tier", "Q"), RECORD("id", 8, "name", "n8", "tier", "P")); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["tier"] $== "P" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NO_KEY at 1:329
+===
+### name: rel.link-left.then-filter.passed-over.the-null-extended-side-can-raise
+--- note
+Order 2 has no customer: its null-extended row has no tier, and the first
+conjunct raises there; under LINK_LEFT the right side's field is never one
+that cannot raise.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 8, "name", "n8", "tier", "P")); ORDERS .> LINK_LEFT(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["tier"] $== "P" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
+--- expect
+error E_NO_KEY at 1:277
+===
+### name: rel.link.chain.then-filter.nested-read-tested-on-the-base-rows
+--- note
+`_["orders"]["amount"]` after two joins reads the orders row nested in the
+joined row -- on the base rows themselves, the row; an implementation may
+test it there, behind the status and tier conjuncts that cannot raise.
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "tier", "Q"), RECORD("id", 8, "name", "n8", "tier", "P")); ITEMS = LIST(RECORD("order_id", 1, "sku", "s1"), RECORD("order_id", 2, "sku", "s2")); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> LINK(ITEMS, _["orders"]["id"] == _2["order_id"]) .> FILTER(_["status"] $== "A" AND _["tier"] $== "P" AND _["orders"]["amount"] > 2) .> MAP(RECORD("sku", _["sku"]))
+--- expect
+tree -{"1"=-{"sku"=t"s1"}}
+===
+### name: rel.link.chain.then-filter.nested-read-raises-in-its-place
+--- source
+ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", 1)); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "tier", "Q"), RECORD("id", 8, "name", "n8", "tier", "P")); ITEMS = LIST(RECORD("order_id", 1, "sku", "s1"), RECORD("order_id", 2, "sku", "s2")); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> LINK(ITEMS, _["orders"]["id"] == _2["order_id"]) .> FILTER(_["status"] $== "B" AND _["tier"] $== "Q" AND _["orders"]["amount"] > "x") .> MAP(RECORD("sku", _["sku"]))
+--- expect
+error E_NOT_NUM at 1:523
+===
+### name: rel.link.then-filter.early.a-left-field-an-element-lacks-raises-on-its-row
+--- note
+The first order has no status, so neither has its joined row (§7.4 promotes
+the left element's own fields, pair by pair): `_["status"]` is E_NO_KEY on the
+first row. Testing the conjunct on the orders keeps that order -- the read
+raises there too -- and the error surfaces as written.
+--- source
+A = LIST(RECORD("id", 1, "bid", 2), RECORD("id", 2, "bid", 2, "status", 0)); B = LIST(RECORD("id", 2, "name", "n")); A .> LINK(B, _1["bid"] == _2["id"]) .> FILTER(_["status"] >= 2) .> MAP(1)
+--- expect
+error E_NO_KEY at 1:165
+===
+### name: rel.link.chain.then-filter.early.an-upper-join-key-still-raises
+--- note
+The second join computes `L["A"]["cid"]` for every row it receives, and order
+2 has no cid: E_NO_KEY there, before the FILTER runs. Testing the status
+conjunct on the orders would drop both and lose that error.
+--- source
+A = LIST(RECORD("id", 1, "bid", 2, "cid", 7, "status", 0), RECORD("id", 2, "bid", 2, "status", 1)); B = LIST(RECORD("id", 2, "name", "n")); C = LIST(RECORD("id", 7, "sku", "s")); A .> LINK(B, _1["bid"] == _2["id"]) .> LINK(C, L, R, L["A"]["cid"] == R["id"]) .> FILTER(_["status"] == 5) .> MAP(1)
+--- expect
+error E_NO_KEY at 1:239
+===
+### name: rel.link.chain.then-filter.early.tested-on-the-base-rows
+--- note
+The same shape where every key the upper join reads is present: the status
+conjunct may be tested on the orders, and the answer is the one row.
+--- source
+A = LIST(RECORD("id", 1, "bid", 2, "cid", 7, "status", 0), RECORD("id", 2, "bid", 2, "cid", 7, "status", 5)); B = LIST(RECORD("id", 2, "name", "n")); C = LIST(RECORD("id", 7, "sku", "s")); A .> LINK(B, _1["bid"] == _2["id"]) .> LINK(C, L, R, L["A"]["cid"] == R["id"]) .> FILTER(_["status"] == 5) .> MAP(RECORD("id", _["A"]["id"]))
+--- expect
+tree -{"1"=-{"id"=t"2"}}
+===
+### name: rel.link.chain.then-filter.early.a-pushed-conjunct-kept-on-error-stops-the-rest
+--- note
+Under explicit binders `_["C"]` is no member of the joined row: E_NO_KEY on
+every row. A conjunct an implementation tests early on C's own rows, where
+it raised, must not let the status conjunct after it drop the orders.
+--- source
+A = LIST(RECORD("id", 1, "bid", 2, "cid", 7, "status", 0)); B = LIST(RECORD("id", 2, "name", "n")); C = LIST(RECORD("id", 7, "sku", "s")); A .> LINK(B, _1["bid"] == _2["id"]) .> LINK(C, L, R, L["A"]["cid"] == R["id"]) .> FILTER(_["C"]["amt"] $== "y" AND _["status"] $< "0") .> MAP(1)
+--- expect
+error E_NO_KEY at 1:230
+===
+### name: rel.link.then-filter.early.under-an-explicit-binder-underscore-is-not-the-row
+--- note
+With FILTER(r, ...) the element is `r`; `_` is an unbound name, E_UNDEF_VAR,
+whatever the rows hold.
+--- source
+A = LIST(RECORD("id", 1, "bid", 2, "status", 0)); B = LIST(RECORD("id", 2, "name", "n")); A .> LINK(B, _1["bid"] == _2["id"]) .> FILTER(r, _["status"] == 5) .> MAP(1)
+--- expect
+error E_UNDEF_VAR at 1:140
+===
+### name: rel.link.chain.then-filter.early.a-left-field-reaches-through-two-joins
+--- note
+Order 2's tier is promoted by the first join (its customer has none) and again
+by the second (C has none), pair by pair: the row answers, whatever order 1
+lacks.
+--- source
+A = LIST(RECORD("id", 1, "bid", 2, "status", 0), RECORD("id", 2, "bid", 2, "status", 5, "tier", "P")); B = LIST(RECORD("id", 2, "name", "n")); C = LIST(RECORD("id", 2, "sku", "s")); A .> LINK(B, _1["bid"] == _2["id"]) .> LINK(C, L, R, L["A"]["bid"] == R["id"]) .> FILTER(_["status"] == 5 AND _["tier"] $== "P") .> MAP(RECORD("id", _["A"]["id"]))
+--- expect
+tree -{"1"=-{"id"=t"2"}}
+===

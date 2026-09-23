@@ -377,6 +377,8 @@ def test_optimizer_hoisted_literals_take_the_folded_node_position():
     ('C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_["id"] + C)', 'hybrid', 'E_NOT_NUM@1:21'),
     ('X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _["id"] + "x")', 'hybrid', 'E_NOT_NUM@1:54'),
     ('Y = ABORT("x"); ORDERS .> TAKE(2) .> MAP(Y)', 'pure_memory', 'E_ABORT@1:11'),
+    # SEL-0047: a continuation on line 3 reports its error on line 3.
+    ('X = ORDERS .> TAKE(2);\nX .> MAP(COUNT(X) + _["id"]\n   + "x")', 'hybrid', 'E_NOT_NUM@3:6'),
 ])
 def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
     """The planner folds one tree for both halves of a split, so a hoisted
@@ -1023,7 +1025,7 @@ def test_join_prefilter_through_a_pushed_filter_keeps_results_keys_and_errors():
         # source program's AND would have short-circuited -- with the join
         # pre-filter switched off.
         real = aggregate._leading_field_conjuncts
-        aggregate._leading_field_conjuncts = lambda body, binder: ([], False)
+        aggregate._leading_field_conjuncts = lambda body, binder: []
         try:
             return _joined(src, ctx)[0]
         finally:

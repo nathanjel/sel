@@ -1674,3 +1674,148 @@ ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("a", _["_
 --- plan
 pure_memory
 ===
+
+### name: plan.bindings.correlated-relation-with-a-scalar
+--- note
+SEL-0047: every binding kind was pinned under translate() and none under the
+planner. A correlated relation with a `scalar` (what a bare `_` means inside
+ANY) is pushed down whole, and the relation it correlates to is a physical
+source of the plan, after the pipeline's own.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}, "ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "scalar": "QTY", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(ANY(ITEMS, _ > 0)) .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+order_items
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS TRUE) LIMIT 1
+===
+### name: plan.bindings.correlated-relation-in-the-prefix-of-a-hybrid
+--- note
+The correlated relation is read by the prefix, so the split plan reports it.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}, "ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "scalar": "QTY", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ORDERS .> FILTER(ANY(ITEMS, _ > 0)) .> SORT_BY(_["ID"]) .> FILTER(_K > 1)
+--- plan
+hybrid
+--- tables
+orders
+order_items
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS TRUE) ORDER BY `o`.`id` ASC
+===
+### name: plan.bindings.correlated-relation-only-in-the-continuation
+--- note
+The decision (docs/SQL-TRANSLATION.md §12.1): a hybrid plan's tables are what
+its prefix reads. ITEMS is read only after the split, by the continuation,
+from the caller's context at run time -- as run() would -- so it is not a
+physical source of this plan.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}, "ITEMS": {"kind": "relation", "from": "order_items", "alias": "oi", "scalar": "QTY", "correlate": {"raw": "`oi`.`order_id` = `o`.`id`"}, "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ORDERS .> SORT_BY(_["ID"]) .> FILTER(_K > 1) .> FILTER(ANY(ITEMS, _ > 0))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC
+===
+### name: plan.bindings.prefilter-separate-relation
+--- note
+`prefilter: separate` on a correlated relation with a sargable text field:
+the coarse index prefilter becomes its own EXISTS beside the exact one
+(bind.sargable.* pins the translate() side), and planning pushes it down
+whole.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}, "FIELDS": {"kind": "relation", "from": "cms_fields", "alias": "g", "correlate": {"raw": "`g`.`cmsid` = `o`.`id`"}, "prefilter": "separate", "fields": {"FNAME": {"table": "g", "column": "fname", "type": "TEXT", "sargable": true}}}}
+--- source
+ORDERS .> FILTER(ANY(FIELDS, _["FNAME"] $== "x")) .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+cms_fields
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `o`.`id` AND (`g`.`fname` = 'x')) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `o`.`id` AND (((`g`.`fname` = 'x') AND (CAST(`g`.`fname` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin))) IS TRUE)) LIMIT 1
+===
+### name: plan.bindings.columns-in-a-body
+--- note
+A `columns` binding (a positional list of columns) read in a step body: no
+physical source of its own -- its columns belong to the pipeline's relation.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}, "V": {"kind": "columns", "items": [{"column": "a", "table": "o"}, {"column": "b", "table": "o"}]}}
+--- source
+ORDERS .> FILTER(JOIN(V, "-") $== "x") .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (CAST(CONCAT(CONCAT(`o`.`a`, '-'), `o`.`b`) AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin) LIMIT 1
+===
+### name: plan.bindings.raw-in-a-body
+--- note
+A top-level `raw` binding is emitted as written and names no source.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}, "R": {"kind": "raw", "raw": "`o`.`total`", "type": "NUM"}}
+--- source
+ORDERS .> FILTER(R > 1) .> TAKE(1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`total` > 1) LIMIT 1
+===
+### name: plan.multi-line.hybrid-splits-across-lines
+--- note
+SEL-0047: no planner case had a source of more than one line. The prefix
+is the first two lines, the continuation the third; the per-host
+continuation tables (check-js-optimizer, check-php-optimizer, pytest,
+sql_unit, FiveAM) pin that an error in a continuation on line 3 is reported
+at line 3.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+ORDERS
+  .> SORT_BY(_["ID"])
+  .> FILTER(_K > 1)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC
+===
+### name: plan.multi-line.statement-on-its-own-line-is-pure-memory
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+A += 1;
+ORDERS .> TAKE(1)
+--- plan
+pure_memory
+--- tables
+orders
+===

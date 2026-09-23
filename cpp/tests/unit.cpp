@@ -366,9 +366,11 @@ void test_relational_optimizations() {
                             evaluate("RECORD(\"id\", 2)")}));
   const Value mixed_join =
       evaluate("LINK(LEFT, RIGHT, _1[\"id\"] == _2[\"id\"])", mixed_shape_context);
-  const Value* missing_promoted = mixed_join.get("2")->get("x");
-  selt::ok(missing_promoted && missing_promoted->is_null(),
-           "mixed-shape joins use key lookup instead of a stale sample slot");
+  // Each row is built from its own pair (spec §7.4, SEL-0053): the second
+  // row carries its own `z` and no `x` -- not a NULL `x` from the first row.
+  const Value* second = mixed_join.get("2");
+  selt::ok(second && !second->get("x") && second->get("z") && second->get("z")->as_text({}) == "second",
+           "mixed-shape joins promote each pair's own fields");
 
   Value sort_context = Value::none();
   sort_context.set(

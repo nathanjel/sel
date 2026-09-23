@@ -26,6 +26,14 @@ export class Context {
     // its source's evaluation to know whether the pushed conjuncts held on
     // every row it sees (SEL-0051).
     this.tentativeKept = 0;
+    // A FILTER whose source is a LINK hands the join its conjuncts here, for
+    // the join to pre-apply to left rows where that is provably the same as
+    // filtering the joined rows (builtins/structure.mjs, doLink; SEL-0052).
+    this.joinPrefilter = null;
+    // What a join below reported after applying them: which conjuncts every
+    // row that came up has passed, and whether any row was kept on an error
+    // -- in which case the join above applies them all again.
+    this.joinPrefilterReport = null;
   }
 
   lookup(name) {

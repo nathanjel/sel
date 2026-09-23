@@ -40,6 +40,10 @@ const SHAPE_CACHE_ENTRIES = 256;
 const SHAPE_CACHE_MAX_KEYS = 256;
 const SHAPE_CACHE_MAX_CHARS = 16384;
 
+// The one shape object for these keys (interned while the cache holds it), so
+// rows built by different calls share their shape and shape-keyed caches hit.
+export function internRecordShape(keys) { return recordShape(keys); }
+
 function recordShape(keys) {
   // Keys are arbitrary SEL text.  A delimiter-joined signature would alias
   // distinct schemas when a key itself contains that delimiter.

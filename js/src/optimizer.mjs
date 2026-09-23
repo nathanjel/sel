@@ -693,6 +693,19 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
         if (!pushed.changed) break;
         finalSteps = logicalSteps(optimizedSource, finalSteps, options);
       }
+      // A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
+      // anything can see the keys a FILTER's result carries. A following step
+      // that renumbers without reading `_K` hides them (keysRenumberedBy, the
+      // same notion the logical rewrites use); the end of the pipeline or
+      // another FILTER does not. Stamped on the body node of the physical
+      // copy, never on the caller's AST.
+      finalSteps.forEach((step, index) => {
+        if (step.name === 'FILTER') {
+          const body = copyNode(step.args[step.args.length - 1]);
+          body.keysUnobserved = keysRenumberedBy(finalSteps[index + 1]);
+          step.args[step.args.length - 1] = body;
+        }
+      });
     }
     return buildPipeline(optimizedSource, finalSteps);
   }

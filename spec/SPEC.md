@@ -748,20 +748,29 @@ earlier `LINK` in the same pipeline bound), the left binders, the right
 binders, then the *promoted* fields — the left element's scalar fields whose
 names, compared ASCII-case-insensitively, do not occur in the right element,
 followed by the right element's non-`NULL` scalar fields whose names do not
-occur in the left. The left binders are `_1`, the name given in the
+occur in the left. This is decided for each pair from its own two elements, in
+each element's own field order: elements of one side need not share a shape,
+and no row takes its keys from another. A *nested record* is a field whose
+value is a record with at least one field; every other field — text, a
+number, `BOOL`, `BIN`, `NULL`, a list — is a scalar field. The left binders are `_1`, the name given in the
 five-argument form, and — when the argument is a bare name, or a pipeline whose
 source is one — that name and its ASCII lowercase; the right binders are `_2`
 and likewise. A binder holds the element as `pred` saw it, which for a named
 argument is the element extended with the name and its lowercase as keys
-holding the element, and for an argument with no name (a literal, or any
+holding the element (the lowercase only where the element has no such key,
+and neither when the element already has a field of the name itself, which it
+is then bound as), and for an argument with no name (a literal, or any
 other expression) is the bare element — `_1` and `_2` are never added as
 keys. Each key appears once, where it first occurred: a binder
 key holds the row *this* `LINK` bound even when the left element carried a
 nested record of the same name from an earlier one (the earlier `_1`, or a
 relation joined twice), and every other key holds its first value. An
 unmatched `LINK_LEFT` row holds under each right binder a record shaped like
-the right elements whose every field is `NULL`, and promotes nothing from the
-right.
+the right elements whose every field is `NULL` — shaped like the first right
+element as the right binder holds it (with its name keys); with no right
+elements, a record of just those name keys, or `NULL` when the right argument
+has no name — and promotes nothing from the right; that record is the right
+element its left fields are compared with.
 
 **How a `LINK` evaluates.** The pairs are the left elements in order, each with
 every right element in order. A `NULL` element, or one with no fields, is an
@@ -783,9 +792,13 @@ joined rows in order and the predicate left to right, `AND` short-circuiting
 as §5 says: a conjunct tested early that would raise keeps the element for the
 `FILTER` to decide, so no error is reported that the predicate as written would
 not have reached on that row, and none is missed — which also means a conjunct
-is tested early only when every conjunct before it is tested there too, since
-an earlier conjunct left for the join might raise on a row the early test
-would have dropped. `ORDERS .> LINK(C, …) .>
+is tested early only when every conjunct before it is tested there too, or
+cannot raise on any row of the join: an earlier conjunct left for the join
+might otherwise raise on a row the early test would have dropped. A
+comparison (§5.3, or `==` and its kin) between literals and fields cannot
+raise when every such field is carried by every row of the one side that
+carries it at all, with the kind the operator takes — text, or a number —
+and that side is not the null-extended side of a `LINK_LEFT`. `ORDERS .> LINK(C, …) .>
 FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2)` over an order whose
 status is `"B"` and whose amount is text answers the rows it would answer had
 the join been assigned to a variable first; the same predicate with its

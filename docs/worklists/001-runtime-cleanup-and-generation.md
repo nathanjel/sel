@@ -79,12 +79,15 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0044](#sel-0044) | Probe physical_ast and plan_hybrid in the API-parity lane | All five / validation | Resolved | P3 |
 | [SEL-0045](#sel-0045) | Sanitize the C++ SQL layer and planner | C++ / validation | Resolved | P3 |
 | [SEL-0046](#sel-0046) | Compare refused-plan error positions in every runner | All five / validation | Resolved | P3 |
-| [SEL-0047](#sel-0047) | Cover binding kinds and multi-line programs under plan_hybrid | All five / SQL | Proposed | P3 |
+| [SEL-0047](#sel-0047) | Cover binding kinds and multi-line programs under plan_hybrid | All five / SQL | Resolved | P3 |
 | [SEL-0048](#sel-0048) | SELECT_COLS after a sort wrapped the plan in four hosts; the SQL fuzz lane never ran the generator's SQL mode | All five / SQL | Resolved | P2 |
 | [SEL-0049](#sel-0049) | Python's physical tree depends on the context's data; the other four depend on the AST alone | Python | Resolved | P2 |
 | [SEL-0050](#sel-0050) | Carry Python's join pre-filter through a pushed FILTER to recover scenario 5 | Python | Resolved | P3 |
 | [SEL-0051](#sel-0051) | The logical FILTER pushdown evaluates a pushed conjunct on rows an earlier conjunct would have short-circuited | All five | Resolved | P3 |
-| [SEL-0052](#sel-0052) | Recover scenario 5 exactly: a run-time join pre-filter that proves side ownership and totality, in every host | All five | Proposed | P3 |
+| [SEL-0052](#sel-0052) | Recover scenario 5 exactly: a run-time join pre-filter that proves side ownership and totality, in every host | All five | Resolved | P3 |
+| [SEL-0053](#sel-0053) | Joined rows over records of different shapes: Lisp builds wrong rows and crashes, and the hosts disagree on missing, null and boolean fields | All five | Resolved | P1 |
+| [SEL-0054](#sel-0054) | The physical join-predicate pushdown changes values: renumbered keys, lost join-key errors, relation names under explicit binders, first-row promotion | All five | Proposed | P2 |
+| [SEL-0055](#sel-0055) | The scale harness's database lane expects SQL for scenario 6, which the planner keeps in memory | Validation | Proposed | P3 |
 
 ## Working items
 
@@ -1448,14 +1451,92 @@ versus host and 0 differing against every server.
 <a id="sel-0047"></a>
 ### SEL-0047 — Cover binding kinds and multi-line programs under plan_hybrid
 
-**Proposed · P3 · All five / SQL · Owner: unassigned.**
+**Resolved 2026-09-22 · P3 · All five / SQL · Owner: unassigned.**
 Source: SEL-0037 reconciliation — 2026-09-15 review, critic gaps.
 
 **Next action:** `Binding.raw`, relation `scalar` / `correlate` / `prefilter` bindings and `Binding.columns()` appear in a handful of `.sqlt` cases and none under `plan_hybrid` / `execute_hybrid`; multi-line programs (positions with line > 1) through the hybrid continuation were probed only by hand. Add planner cases for each binding kind and one multi-line program whose continuation error is reported at its line.
 
 **Close when:** The cases pass on all five.
 
-**Resolution:** Pending.
+**Analysis (2026-09-22, before the change):** *The gap is real, and it is coverage, not behaviour.* Of 168 planner cases,
+the bindings under `--- plan` use plain `column` and `relation` bindings, one
+relation query (`plan.tables.relation-query-is-reported-verbatim`) and four
+raw fields (`plan.group-identity.raw-derived-prefix.*`); none uses a
+`correlate`, `scalar` or `prefilter` relation, a `columns` binding or a
+top-level `raw` binding, and no planner case has a source of more than one
+line. The five per-host continuation tables (12 identical rows each:
+`tools/check-js-optimizer.mjs`, `tools/check-php-optimizer.php`,
+`python/tests/test_unit.py`, `cpp/tests/sql_unit.cpp`, `lisp/tests/unit.lisp`)
+are single-line too. Probed with temporary cases and scripts, all reverted:
+every host agrees today — a correlated relation with a `scalar` under
+`ANY` in a FILTER over ORDERS is `pure_sql` with tables `orders, order_items`;
+a `prefilter: separate` relation renders the two-`EXISTS` form; a `columns`
+binding and a top-level `raw` binding in a body are `pure_sql` over `orders`;
+a three-line source plans as a `hybrid` whose prefix is `ORDER BY`; a
+correlated relation read only in the continuation reports `orders` alone
+(tables are read off the prefix tree in every host) and `orders, order_items`
+when the prefix reads it; and a helper on line 1 read on line 3 reports
+`E_NOT_NUM@3:6` from both `run()` and the executed plan on JS, PHP, Python,
+Lisp and C++. So the cases will pin agreement, not find a divergence.
+*Plan.* (1) `sql/cases/25-hybrid-plans.sqlt`, a `plan.bindings.*` block:
+`correlated-relation-with-a-scalar` (pure_sql, `orders`/`order_items`),
+`correlated-relation-in-the-prefix-of-a-hybrid` (hybrid, both tables),
+`correlated-relation-only-in-the-continuation` (hybrid, `orders` — the
+decision that tables are what the *database* reads; say so in a note and in
+§12.1's `source_tables` row), `prefilter-separate-relation` (pure_sql, the
+two-`EXISTS` statement), `columns-in-a-body` and `raw-in-a-body` (pure_sql,
+`orders`); and a `plan.multi-line.*` pair: the three-line hybrid and
+`A += 1;` on its own line before the pipeline (pure_memory). Nothing is
+written per host: `node tools/gen-sql-cases.mjs` renders each into the five
+runners' case data — for Lisp, a `:bindings (lambda () (list (cons "ITEMS"
+(binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty"
+"oi" :num))) "QTY" "`oi`.`order_id` = `o`.`id`"))))` thunk and a `:source`
+string with embedded newlines, exactly as `warrant.numeric.the-guard-reaches-
+into-a-relation-body` and `mode.params.join-separator-is-bound-per-gap` are
+rendered today; JS gets the same as `Binding.relation("order_items", "oi",
+{...}, "QTY", "…")`, and PHP, Python and C++ their constructors. (2) The
+continuation error at its line cannot be a `.sqlt` case — a planner case
+executes nothing, and a refused plan carries no position (SEL-0046) — so one
+row goes into each of the five tables: `"X = ORDERS .> TAKE(2);⏎X .>
+MAP(COUNT(X) + _[\"id\"]⏎   + \"x\")"`, `hybrid`, `E_NOT_NUM@3:6`. In
+Lisp the table is a quoted literal list, so the row is a string literal with
+real newlines inside it (not `format` and `~%`), beside the `E_NOT_NUM@1:54`
+row at `lisp/tests/unit.lisp` ~1226; JS, PHP, Python and C++ write `\n` in
+their string literals beside the same row. *Risks.* The expectations are
+copied from today's output, so they pin behaviour rather than a written
+decision — the one decision worth writing first is `source_tables` for a
+relation only the continuation reads (`orders` alone; the continuation reads
+`ITEMS` from the caller's context at run time, which is not a physical
+source). The generator trims a section, so a multi-line source must start
+flush left or its line-1 columns shift; lines 2+ keep their indentation. The
+`prefilter` expectation is long and MariaDB-specific, and the runner mirrors
+MariaDB cases onto MySQL automatically. Test-only change: no runtime code,
+no generated map, no gate-time cost worth measuring. The larger option — a
+`--- run` section so the twelve per-host rows become shared `.sqlt` data —
+would be a format change touching all five runners and the generator; not
+proposed here.
+
+**Resolution:** Resolved 2026-09-22, working tree on `0f9031d` (commit
+pending), as planned. Eight planner cases in `sql/cases/25-hybrid-plans.sqlt`:
+`plan.bindings.correlated-relation-with-a-scalar` (pure_sql; `orders`,
+`order_items`), `…-in-the-prefix-of-a-hybrid` (hybrid; both tables),
+`…-only-in-the-continuation` (hybrid; `orders` alone — the decision, now
+written in docs/SQL-TRANSLATION.md §12.1's `source_tables` promise: a hybrid
+plan reports what its prefix reads, and a relation the continuation reads
+comes from the caller's context at run time), `prefilter-separate-relation`
+(pure_sql, the two-`EXISTS` statement; `orders`, `cms_fields`),
+`columns-in-a-body` and `raw-in-a-body` (pure_sql; `orders`),
+`plan.multi-line.hybrid-splits-across-lines` (a three-line source, `ORDER BY`
+prefix) and `plan.multi-line.statement-on-its-own-line-is-pure-memory`. The
+generator rendered them into the five runners' case data; no host code. One
+row in each of the five continuation tables — the three-line helper program,
+`hybrid`, `E_NOT_NUM@3:6` — in `tools/check-js-optimizer.mjs`,
+`tools/check-php-optimizer.php` (a double-quoted string, since PHP's single
+quotes keep `\n` as two characters), `python/tests/test_unit.py`,
+`cpp/tests/sql_unit.cpp` and `lisp/tests/unit.lisp` (real newlines inside the
+literal of the quoted list). Results: 889 SQL cases per host (from 881); JS
+optimizer 142 checks, PHP 139, pytest 635, C++ SQL unit 85, Lisp 553; SQL
+docs 27 and language docs 150 examples right; `tools/check.sh` ALL GREEN.
 
 <a id="sel-0048"></a>
 ### SEL-0048 — SELECT_COLS after a sort wrapped the plan in four hosts; the SQL fuzz lane never ran the generator's SQL mode
@@ -1656,12 +1737,223 @@ disagreements; API 64, SQL API 27 and the end-to-end scenarios agreeing;
 <a id="sel-0052"></a>
 ### SEL-0052 — Recover scenario 5 exactly: a run-time join pre-filter that proves side ownership and totality, in every host
 
-**Proposed · P3 · All five · Owner: unassigned.**
+**Resolved 2026-09-22 · P3 · All five · Owner: unassigned.**
 Source: SEL-0051 closure, 2026-09-22.
 
 **Next action:** The physical pushdown can move only a leading run of one-sided conjuncts (SEL-0051), and a predicate that opens with unqualified reads — scenario 5's `_["status"] $== "COMPLETED" AND _["tier"] $== "PLATINUM" AND _["orders"]["order_year"] == 2026` — moves nothing, which costs JS, PHP, C++ and Lisp 21–42% there against the unsound rewrite. What the tree cannot know, the join can: Python's `_link` already pre-applies a FILTER's leading conjuncts to left rows where the read field is a key of no right row (SEL-0049/0050), and reached 698 ms while the unsound push still thinned ORDERS below it, 902 without. Two steps. (1) Extend Python's staging so a conjunct may be applied below an earlier one that is *total* over the joined rows — its field owned by one side and present, with the operator's type, in every row of that side (`$==` on `tier` needs a text in every customer), a per-relation scan cached beside the key sets — so `order_year` reaches ORDERS while `tier` waits for the customer join; the report upward becomes a set of passed conjuncts rather than a count. (2) Port the pre-filter — stages, reports, key gathering, the literal-key fast path and the totality proof — to the other four hosts, whose `LINK` builtins take the same shape. Measure S5 per host with the scale harness against `b274aa2`; the rest of the set must stay flat.
 
 **Close when:** S5 is within run-to-run spread of the `b274aa2` figure on every host (C++ 524 ms, JS 494, PHP 2,208, Lisp 396; Python 698, the SEL-0050 figure) with the SEL-0051 cases green; the physical tree stays a function of the AST.
+
+**Resolution:** Resolved 2026-09-22, working tree on `0f9031d` (commit
+pending). *Designs weighed.* (a) More reordering in the physical tree —
+rejected: which side owns an unqualified field, and whether a conjunct can
+raise, are facts about data, and the tree must stay a function of the AST
+(SEL-0049). (b) SEL-0050's first sketch, drop-marks carried through every
+join — rejected: every join would carry per-row mark state and still need the
+same proof. (c) A run-time pre-filter in every host's `LINK`, extending
+Python's SEL-0049/0050 one with a totality proof — chosen, prototyped in
+Python (the lane that already had a pre-filter, and the only one whose
+drops reached below a join), validated there, then ported. *The mechanism*
+(docs/EXTENDING.md has the full rule): a FILTER over a LINK hands the join
+all its conjuncts with the fields each reads and, for a comparison of
+literals and bare fields, the (field, kind) requirements under which it
+cannot raise; the join applies to its left rows those whose fields the
+joined row takes from them, passes over a total one, stops at anything else,
+keeps a row a conjunct raises on, and reports upward which conjuncts every
+row passed. S5's `status` and `tier` are total (every order and every
+customer carries them as text), so `order_year` reaches ORDERS below all
+three joins. *What validating the prototype found.* A new differential
+oracle (`tools/join-filter-oracle/`: join-then-filter programs over small
+relations with missing, null, boolean and non-numeric fields, each as
+written and with every join result bound to a helper variable, where no
+pre-filter can apply) showed the first prototype and SEL-0050 itself losing
+errors in three ways, each fixed in Python first: a join below the FILTER's
+own join skipped the upper joins' key evaluation for dropped rows (an
+`E_NO_KEY` in `L["A"]["cid"]` lost) — each handing join now sends its left
+key down and the dropping join proves it present on every row; a joined row
+promotes a left field only when the left input's FIRST row has it (§7.4) —
+ownership now requires that, and drops below the FILTER's own join require
+one key set per relation and no null or null-extended right rows, since a
+drop changes which row comes first into the joins above; and the hand-down
+read the optimiser's tentative-keep state before the join's right side had
+run. Also: only the FILTER's own binder, exactly as named, is the element.
+Python's oracle mismatches fell by 7–11 per 3,000-pair corpus (its
+SEL-0050 losses); no host gained one (Lisp's five on mixed-shape data are on
+rows its own join already builds wrongly, SEL-0053). Fifteen conformance
+cases pin the boundaries (`passed-over.*`, `early.*`, `nested-read-*`).
+*Scale*, `0f9031d` against this tree, interleaved, seven runs after two
+warm-ups: S5 C++ 647 → 277 ms, JS 675 → 276, PHP 3,129 → 1,165, Lisp 559
+→ 261, Python 897 → 786 — below the `b274aa2` figures on four hosts (524,
+494, 2,208, 396) and 42% below Python's (1,362); Python's 698 of SEL-0050
+was the unsound drops' figure, and the 13% between is the three checks.
+S1–S4 and S6 within run-to-run spread on every host (a first-cut C++ S6 +6%
+came from gathering facts behind an `IS_NULL` conjunct; the FILTER now hands
+nothing when its first conjunct can neither be applied nor passed over).
+*Validation:* 959 conformance cases on five hosts; pytest 635, JS optimizer
+142, PHP optimizer 139 and runtime 35, C++ unit 173 and SQL unit 85, Lisp
+553, SQL cases 889; `make asan` clean; the differential oracle 15,000 pairs
+× five hosts; `tools/check.sh` ALL GREEN (49 layers, 590 s) with the gate's
+Docker servers, 197 mutations caught; and on real servers — the 10x fixtures
+loaded into Docker PostgreSQL 17 and MariaDB 11.8, the scale harness's
+database lane executed S1–S5's planned SQL and matched the reference rows
+exactly on both, the same reference every host's in-memory run (with the
+pre-filter) matches (S6 could not run there, SEL-0055). *Amended by
+SEL-0053 (2026-09-23):* joined rows are now built pair by pair, so the
+first-row ownership rule and the one-shape-per-relation gate above are
+retired, and three of the fifteen cases were corrected to the per-pair rule.
+
+<a id="sel-0053"></a>
+### SEL-0053 — Joined rows over records of different shapes: Lisp builds wrong rows and crashes, and the hosts disagree on missing, null and boolean fields
+
+**Resolved 2026-09-23 · P1 · All five · Owner: unassigned.**
+Source: SEL-0052's differential oracle, 2026-09-22; present at `0f9031d`.
+
+**Next action:** Lisp's compiled join projector reads each row's storage by
+the FIRST row's shape: over `A = LIST(RECORD("id", 1, "bid", 2), RECORD("id",
+2, "bid", 2, "cid", 4, "amt", 5), …)` a joined row's `amt` is a whole record
+and another row's `status` holds another field's value, and 4–32 programs per
+3,000 end in `INVALID-ARRAY-INDEX-ERROR`. Separately the five hosts disagree
+on 14–51 of 6,000 programs with uniform shapes and 169–242 with mixed shapes
+(C++ and Lisp most often alone; e.g. a missing, null or boolean field read
+through a joined row answers `E_NO_KEY` in three hosts, `E_NULL` in C++,
+`E_NOT_BIN` in Lisp). Reproduce with `tools/join-filter-oracle/run.sh 3000
+52001 mixed`; write the minimal `.selt` cases first, then fix each host's row
+building against spec §7.4.
+
+**Close when:** No host crashes and the hosts agree on every program of the
+oracle's mixed and uniform corpora.
+
+**History (2026-09-22, the oracle's two fixed corpora replayed on 19
+commits from `e4b0432` to the working tree):** not a worklist regression.
+C++ and Lisp stand apart on mixed-shape rows from the commit that gave each
+host `LINK` (`e4b0432` for Lisp, `8fe0e3a` for the rest); the pattern
+settled at `70d532a` (09-16, a cross-host fix), which also made every Lisp
+joined row take a record shape while Lisp's compiled projector kept reading
+each row's storage by the first row's shape — the crashes date from there.
+JS's lone answers on uniform rows doubled at `c5a8991` (09-20, "wip
+optimizations"): shaped `RECORD` literals moved JS joins onto its compiled
+projector, which drops a null right field the generic row builder promotes —
+two code paths of one host disagreeing, found by no test. A Python burst of
+109 changed answers at `1614eed` (09-20, "python optimizations") was undone
+by `061358b`, the worklist's first commit. Common cause: each host's
+row-building fast paths were checked against conformance cases whose rows
+all share one shape and hold no nulls.
+
+**Resolution:** Resolved 2026-09-23, working tree on `0f9031d` (commit
+pending). *Tests first.* The spec text was the thing missing: §7.4 said how
+a joined row is built but not from which elements, and every host had
+answered "the first ones". A model of §7.4 written from the text and no
+host (`tools/join-rows-oracle/model.py`) settled the reading, and the spec
+now states it: the fields a joined row carries are decided for each pair
+from its own two elements, in each element's own field order; a *nested
+record* is a record with at least one field (a list, BOOL, BIN or NULL is a
+scalar field); the lowercase binder key is added only where the element has
+none, and an element that already has a field named like its relation is
+bound as it is; LINK_LEFT's null record is shaped like the first right
+element as bound, just the name keys with no right elements, NULL with no
+name. From the model: 21 conformance cases (`16-joined-rows.selt`: per-pair
+promotion left and right, field order, a clash on one pair only, case
+folding, NULL on either side, nested-or-scalar per element, lists and
+booleans as scalars, the null record's shapes, empty and literal sides,
+mixed matched and unmatched rows, chains, five-argument binders, the binder
+rules), and a generator of mixed-shape `LINK`/`LINK_LEFT` programs checked
+against the model (`tools/join-rows-oracle/`, a gate lane at 2,000
+programs). Before the fix every host failed some of both. *Fix.* Every host builds
+each row by the rule; the compiled fast path keeps a plan per pair of
+shapes that carries the only two facts that change a row — whether each
+left field is a nested record, whether each right field it takes is a
+non-NULL scalar — checks them as it copies, checks the left row once per
+left row, and (JS, C++, Lisp) skips the right checks when the join's own
+bucketing pass saw every right row flat; in Python and PHP that pass costs
+more than the checks it saves, so they check pair by pair. SEL-0052's
+first-row ownership rule and its one-shape-per-relation gate are retired —
+no row depends on another — and three of its conformance cases, written to
+the first-row rule, now say what the per-pair rule answers
+(`early.a-left-field-an-element-lacks-raises-on-its-row`,
+`passed-over.a-field-both-sides-carry-is-neither-side-s`,
+`chain.then-filter.early.a-left-field-reaches-through-two-joins`).
+*Designs weighed for speed.* A signature of every field's category per
+pair (first cut) cost JS 78% on S6 and Lisp 30%; the two-fact guards with
+fused checks brought every host within a few percent; PHP's last few
+percent were its cycle collector — a local that lets go of a still-held
+Value queues a GC root, and one per field per row made the collector run
+often — so PHP reads fields in place. *Scale,* against this tree with the
+pre-SEL-0053 row builders (a scratch copy), interleaved, seven runs after
+two warm-ups, medians: S1 C++ +1.1%, JS +2.5%, PHP +3.5%, Python +2.9%,
+Lisp 0; S6 C++ +0.4%, JS +1.5%, PHP +0.9%, Python +4.8% (its guards are
+generated code, and the right-row pass does not pay there), Lisp −2.8%;
+S2–S4 within spread; S5 faster everywhere (C++ −13%, JS −6%, PHP −30%,
+Lisp −16%, Python −1%), since the retired gates had held the pre-filter
+back. *Validation:* 980 conformance cases per host; pytest 635 (one caught a
+reference cycle in the first cut's generated Python), JS optimizer 142, PHP
+optimizer 139, C++ unit 173 and SQL unit 85, Lisp 553, SQL cases 889;
+`make asan` clean; the joined-row oracle 0 wrong on seven roster entries
+over 14 seeds × 3,000 programs; the join-filter oracle 0 cross-host
+disagreements on both corpora and no crash, its as-written-vs-helper count
+(SEL-0054) unchanged at 63 per host; `tools/check.sh` ALL GREEN on seven roster entries (598 s) with the gate's Docker servers, the new joined-rows lane among its layers, 197 mutations caught.
+
+<a id="sel-0054"></a>
+### SEL-0054 — The physical join-predicate pushdown changes values: renumbered keys, lost join-key errors, relation names under explicit binders, first-row promotion
+
+**Proposed · P2 · All five · Owner: unassigned.**
+Source: SEL-0052's differential oracle, 2026-09-22; present at `0f9031d`, every host alike.
+
+**Next action:** On 49–84 of 3,000 join-then-filter programs every host
+answers differently from the same program through helper variables, and the
+cases trace to the physical pushdown (SEL-0051's tentative FILTERs), not to
+the run-time pre-filter: a FILTER pushed before a join renumbers the joined
+rows, so a FILTER whose keys are observed answers `"1"` where the program
+says `"2"`; a FILTER pushed between two joins drops rows before the upper
+join computes its key, losing that key's `E_NO_KEY`; under explicit binders
+(`LINK(C, L, R, …)`) `_["C"]` is no member of the joined row, yet the
+optimiser takes the relation's name for the right side and pushes the read
+into C; and a drop before a join changes which row is first, and so what the
+join promotes. The rules SEL-0052 gave the run-time pre-filter (upper-key
+obligations, first-row ownership, uniform shapes) are what the pushdown lacks
+— but the tree cannot check them. Decide: restrict the pushdown to what is
+provable from the tree (keys unobserved, no join above, binder names not
+relation names), or retire it in favour of the run-time pre-filter, which
+now recovers S5 on its own. Measure the scale set either way.
+
+**Close when:** No host disagrees with its own helper form on the oracle's
+corpora, beyond SEL-0053's cases.
+
+**History (2026-09-22, the same replay):** there from the start, and the
+same in every host. The join-predicate pushdown arrived with `LINK` itself
+(`e4b0432` in Lisp, ported to the other four at `8fe0e3a`), faithfully
+including its unsoundness: at introduction 1,017–1,058 of 3,000 programs
+per host answered differently from their helper form, 111–127 of them in
+this item's classes (an error lost, a value or keys changed) and the rest the
+SEL-0051 class (a pushed conjunct raising where the program would not). The
+counts stayed flat through the optimisation rounds and the worklist until
+SEL-0051 (`0f9031d`) removed its class, leaving 49–66; SEL-0052 left them
+unchanged. The one worklist-era regression in this measure was Python's own:
+SEL-0049's run-time pre-filter (committed in `b274aa2`) lost errors on 4–21
+more programs, SEL-0050 kept that, and SEL-0052 removed it. Cause: the
+rewrite was written as a performance transformation and checked by
+conformance cases and cross-host fuzzing, both of which every host passes
+while making the same mistake; nothing compared a program with its own
+unoptimised form until this oracle.
+
+**Resolution:** Pending.
+
+<a id="sel-0055"></a>
+### SEL-0055 — The scale harness's database lane expects SQL for scenario 6, which the planner keeps in memory
+
+**Proposed · P3 · Validation · Owner: unassigned.**
+Source: SEL-0052's real-database run, 2026-09-22; present at `0f9031d`.
+
+**Next action:** `tools/scale-test/run_benchmarks.py` refuses to start —
+"postgresql has no SQL statement for scenario6" — because
+`benchmark_results.json` still records S6 as pushed down while every host's
+planner classifies it `pure_memory`. Either the reference or the planner is
+out of date; decide which, regenerate the reference if it is the former, and
+run the lane over all six scenarios.
+
+**Close when:** The database lane runs S1–S6 against PostgreSQL and MariaDB
+without `--only`.
+
+**Resolution:** Pending.
 
 ## Suggested order
 
@@ -1692,3 +1984,4 @@ closure when its evidence is recorded.
 | SQL fuzz lane in SQL mode, 2026-09-22 | SEL-0048 |
 | API-lane analysis, 2026-09-22 | SEL-0044, SEL-0049, SEL-0050 (closures), SEL-0051 |
 | SEL-0051 closure, 2026-09-22 | SEL-0052 |
+| SEL-0052's differential oracle and real-database run, 2026-09-22 | SEL-0053, SEL-0054, SEL-0055 |

@@ -110,13 +110,27 @@ def _map(args, ctx):
     return Value.list(out)
 
 
+_TEXT_COMPARE = ('$==', '$!=', '$<', '$<=', '$>', '$>=')
+_NUM_COMPARE = ('==', '!=', '<', '<=', '>', '>=')
+
+
 def _leading_field_conjuncts(body, binder):
-    """The leading AND-conjuncts of a FILTER body that read nothing but fields
-    of the element -- ``_["status"] $== "x"`` -- as (node, fields) pairs, in
-    order, stopping at the first conjunct that reads anything else: another
-    variable, ``_K``, the element as a whole, a call, an assignment. The list
-    is what a LINK may pre-apply to its left rows (see ``_link``). The second
-    value says whether EVERY conjunct qualified.
+    """Every AND-conjunct of a FILTER body, in order, as (node, fields, total)
+    triples for a LINK to pre-apply to its left rows (see ``_link``).
+
+    ``fields`` is the set of the row's fields the conjunct reads -- a bare
+    ``_["status"]`` reads STATUS, a nested ``_["orders"]["year"]`` reads
+    ORDERS -- or None when it reads anything else (another variable, ``_K``,
+    the element as a whole, a call, an assignment): such a conjunct cannot be
+    evaluated on a side's rows, and nothing after it can run before it unless
+    it is TOTAL.
+
+    ``total`` says when the conjunct cannot raise, so that a later conjunct
+    may be applied where this one cannot be (SEL-0052): a comparison between
+    literals and bare field reads is total when every such field is present
+    on every row of its owning side with the kind the operator takes -- TEXT
+    for the text comparisons (a number is text), a number for the numeric
+    ones -- listed as (FIELD, kind) requirements. None means "not provable".
     """
     conjuncts = []
     node = body
@@ -125,7 +139,20 @@ def _leading_field_conjuncts(body, binder):
         node = node.l
     conjuncts.append(node)
     conjuncts.reverse()
-    names = {binder.upper(), '_'}
+    # The element is the binder, exactly as named: a variable is not the
+    # binder because it differs only in case, and under an explicit binder
+    # `_` is not the element.
+    names = {binder}
+
+    def literal_kind(n):
+        if n is None:
+            return None
+        if n.t == 'num':
+            return 'NUM'
+        if n.t == 'text':
+            return 'TEXT'
+        return None
+
     out = []
     for c in conjuncts:
         fields = set()
@@ -133,10 +160,12 @@ def _leading_field_conjuncts(body, binder):
             if n is None:
                 return True
             if n.t == 'index':
-                if (n.obj is not None and n.obj.t == 'var' and n.obj.name.upper() in names
+                if (n.obj is not None and n.obj.t == 'var' and n.obj.name in names
                         and n.idx is not None and n.idx.t == 'text'):
                     fields.add(n.idx.v.upper())
                     return True
+                if n.obj is not None and n.obj.t == 'index':
+                    return reads_only_fields(n.obj) and reads_only_fields(n.idx)
                 return False
             if n.t in ('num', 'text', 'bool'):
                 return True
@@ -145,10 +174,30 @@ def _leading_field_conjuncts(body, binder):
             if n.t == 'un':
                 return reads_only_fields(n.x)
             return False
-        if not reads_only_fields(c) or not fields:
-            return out, False
-        out.append((c, fields))
-    return out, True
+        ok = reads_only_fields(c) and bool(fields)
+        total = None
+        if c.t == 'bin' and (c.op in _TEXT_COMPARE or c.op in _NUM_COMPARE):
+            kind = 'TEXT' if c.op in _TEXT_COMPARE else 'NUM'
+            reqs = []
+            for operand in (c.l, c.r):
+                lit = literal_kind(operand)
+                if lit is not None:
+                    # A text literal is not a number: such an operand raises
+                    # on every row, which is not total.
+                    if kind == 'NUM' and lit != 'NUM':
+                        reqs = None
+                        break
+                    continue
+                bare = (operand is not None and operand.t == 'index' and operand.obj is not None
+                        and operand.obj.t == 'var' and operand.obj.name in names
+                        and operand.idx is not None and operand.idx.t == 'text')
+                if not bare:
+                    reqs = None
+                    break
+                reqs.append((operand.idx.v, kind))
+            total = reqs
+        out.append([c, fields if ok else None, total, False, binder])
+    return out
 
 
 def _filter(args, ctx):
@@ -174,16 +223,42 @@ def _filter(args, ctx):
     src = args.node(0)
     handed = ctx.join_prefilter
     ctx.join_prefilter = None
+    own = None
+    written = args.node(args.count() - 1)
     if src is not None and src.t == 'call' and src.name in ('LINK', 'LINK_LEFT'):
         binder, body = shape(args)
-        own, complete = _leading_field_conjuncts(body, binder)
-        stages = [(binder, own)] if own else []
-        if handed is not None and own and complete:
+        own = _leading_field_conjuncts(body, binder)
+        # Conjuncts the physical optimiser already pushed under the join (a
+        # tentative FILTER below, SEL-0051) held on every row the join sees
+        # unless one kept a row on an error; the join checks that and skips
+        # them, rather than testing them again.
+        if written.pushed_down:
+            rem = written.remaining
+            kept = set()
+            if not (rem.t == 'bool' and rem.v is True):
+                n = rem
+                while n is not None and n.t == 'bin' and n.op == 'AND':
+                    kept.add(id(n.r))
+                    n = n.l
+                kept.add(id(n))
+            for entry in own:
+                if id(entry[0]) not in kept:
+                    entry[3] = True
+        # This FILTER's conjuncts first -- it runs before the FILTER that
+        # handed the rest down -- then the handed ones; the join decides, in
+        # that order, which it may apply and where it must stop (SEL-0052).
+        stages = [(binder, own)] if (any(not e[3] for e in own) or handed is not None) else []
+        # A first conjunct that is neither a field test nor total nor pushed
+        # ends every walk before it starts: hand nothing, gather nothing.
+        if own and own[0][1] is None and own[0][2] is None and not own[0][3]:
+            stages = []
+        if handed is not None:
             stages.extend(handed[0])
         deep = bool(getattr(body, 'keys_unobserved', False)) if handed is None else True
         if stages:
-            ctx.join_prefilter = (stages, deep)
-    written = args.node(args.count() - 1)
+            ctx.join_prefilter = (stages, deep,
+                                  handed[2] if handed is not None else [],
+                                  handed[3] if handed is not None else [])
     kept_before = ctx.tentative_kept
     try:
         in_val = args.val(0)
@@ -201,12 +276,13 @@ def _filter(args, ctx):
         # built a fresh list this FILTER would only copy.
         if body_override.t == 'bool' and body_override.v is True:
             return in_val
-    # Pass the join's report up past this FILTER's own stage, so the join
-    # above counts only the conjuncts that were its own.
+    # The join's report -- which conjuncts every row that came up has passed,
+    # by identity, and whether a row was kept on an error -- goes up as it is:
+    # the join above skips the ones it finds there.
     report = ctx.join_prefilter_report
     ctx.join_prefilter_report = None
-    if report is not None and handed is not None and own and complete:
-        ctx.join_prefilter_report = (max(0, report[0] - len(own)), report[1])
+    if report is not None and handed is not None:
+        ctx.join_prefilter_report = report
     is_dense = in_val.is_list and in_val.storage is not None and in_val.list_keys is None
     tentative = bool(written.tentative)
     def keep(r, body):

@@ -203,6 +203,10 @@ step "documentation quotes" sel_slot ./tools/check-snippets.py
 step "decimal vs python oracle" ./tools/check-decimal.sh "${DECIMAL_COUNT:-4000}"
 step "end to end, every host API" ./tools/e2e.sh
 step "differential fuzz" ./tools/fuzz.sh "${FUZZ_COUNT:-4000}" "${FUZZ_SEED:-20260813}"
+# Joined rows over relations of mixed shapes, every host against a model of
+# spec §7.4 written from the text (SEL-0053): conformance cases use rows of one
+# shape, which is how five hosts came to build rows from their first element.
+step "joined rows vs spec model" ./tools/join-rows-oracle/run.sh "${JOIN_ROWS_COUNT:-2000}" "${JOIN_ROWS_SEED:-530001}"
 db_step "differential fuzz, sql" ./tools/fuzz-sql.sh "${SQL_FUZZ_COUNT:-2000}" "${SQL_FUZZ_SEED:-20260905}"
 
 report

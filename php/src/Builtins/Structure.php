@@ -6,6 +6,8 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\BuiltinManifest;
+use Sel\SelError;
 use Sel\Context;
 use Sel\Dec;
 use Sel\RecordShape;
@@ -332,10 +334,12 @@ final class Structure
 
     private static function compileRowTableAliaser(string $tableName, ?Value $sample): callable
     {
-        if ($tableName === '' || self::isPositionalBinder($tableName) || ($sample !== null && $sample->has($tableName))) {
+        if ($tableName === '' || self::isPositionalBinder($tableName)) {
             return static fn (Value $row): Value => $row;
         }
-        if ($sample !== null && $sample->shape !== null) {
+        // Each element is extended unless IT has the key (spec §7.4, pair by
+        // pair); the shaped fast path serves rows of the sample's shape only.
+        if ($sample !== null && $sample->shape !== null && !$sample->has($tableName)) {
             $sampleShape = $sample->shape;
             $cached = $sampleShape->alias($tableName);
             $targetShape = $cached['shape'];
@@ -380,23 +384,31 @@ final class Structure
         return Value::record($keys, $values);
     }
 
+    /**
+     * An unmatched LINK_LEFT row's right side (spec §7.4): shaped like the first
+     * right element as bound -- SAMPLE, already extended with the name -- every
+     * field NULL; with no right elements, just the name keys; with no name
+     * either, NULL.
+     */
     private static function makeNullRecord(?Value $sample, string $tableName): Value
     {
         $keys = [];
         $values = [];
+        $seen = [];
         if ($sample !== null) {
             foreach ($sample->keys() as $key) {
+                $key = (string) $key;
                 $keys[] = $key;
                 $values[] = Value::none();
+                $seen[$key] = true;
             }
         }
-        if ($tableName !== '' && !self::isPositionalBinder($tableName)) {
-            $keys[] = $tableName;
-            $values[] = Value::none();
-            $lower = strtolower($tableName);
-            if ($lower !== $tableName) {
-                $keys[] = $lower;
+        if ($sample === null && $tableName !== '' && !self::isPositionalBinder($tableName)) {
+            foreach ([$tableName, strtolower($tableName)] as $name) {
+                if (isset($seen[$name])) continue;
+                $keys[] = $name;
                 $values[] = Value::none();
+                $seen[$name] = true;
             }
         }
         return Value::record($keys, $values);
@@ -407,23 +419,41 @@ final class Structure
         return $value->size() > 0 && !$value->isList;
     }
 
-    private static function makeJoinedRow(
-        Value $left,
-        ?Value $right,
-        string $b1,
-        string $b2,
-        array $promotedLeft,
-        array $promotedRight,
-        array $tableLeft,
-        ?Value $nullRight,
-    ): Value {
-        // Each key once, where it first occurred (spec §7.4): a carried or promoted
-        // key keeps its first value, a binder key holds the row this LINK bound
-        // even where an earlier LINK's `_1` or a relation joined twice carried a
-        // record of the same name. That is the row the compiled projector below
-        // builds from the shape (binders first, then slots); first-wins for the
-        // binders too kept the old `_1` on this path while the projector resolved
-        // it to the new row.
+    // A field's category for the joined row (spec §7.4): a nested record (a
+    // record with a field) is carried, anything else is a scalar field -- and a
+    // right scalar that is NULL is not promoted.
+    private const SCALAR = 0;
+    private const NULL_FIELD = 1;
+    private const NESTED = 2;
+
+    private static function category(Value $value): int
+    {
+        if ($value->kind !== Value::NONE || $value->isList) return self::SCALAR;
+        return $value->size() > 0 ? self::NESTED : self::NULL_FIELD;
+    }
+
+    /** @return list<string> */
+    private static function binderKeys(string $name, string $positional): array
+    {
+        $keys = [$name];
+        $lower = strtolower($name);
+        if ($lower !== $name) $keys[] = $lower;
+        if ($name !== $positional) $keys[] = $positional;
+        return $keys;
+    }
+
+    /**
+     * One joined row, from THIS pair's two elements (spec §7.4): the nested
+     * records the left element carries, the left binders, the right binders,
+     * then the left element's scalar fields whose names (ASCII-case-
+     * insensitively) are not the right element's, then the right element's
+     * non-NULL scalar fields whose names are not the left's -- each key once,
+     * where it first occurred, a binder key holding the row this LINK bound.
+     * RIGHT is null for an unmatched LINK_LEFT row, whose right element is
+     * NULLRIGHT and promotes nothing.
+     */
+    private static function makeJoinedRow(Value $left, ?Value $right, string $b1, string $b2, ?Value $nullRight): Value
+    {
         $keys = [];
         $values = [];
         $slot = [];
@@ -437,162 +467,565 @@ final class Structure
             if (isset($slot[$key])) $values[$slot[$key]] = $value;
             else $put($key, $value);
         };
-
-        $leftKeys = $left->keys();
+        $leftKeys = array_map('strval', $left->keys());
         $leftValues = $left->values();
         foreach ($leftKeys as $i => $key) {
-            if (self::isNestedRecord($leftValues[$i])) $put($key, $leftValues[$i]);
+            if (self::category($leftValues[$i]) === self::NESTED) $put($key, $leftValues[$i]);
         }
-
-        $low1 = strtolower($b1);
-        $bind($b1, $left);
-        if ($low1 !== $b1) $bind($low1, $left);
-        if ($b1 !== '_1') $bind('_1', $left);
-
-        $actualRight = $right ?? $nullRight ?? Value::none();
-        $low2 = strtolower($b2);
-        $bind($b2, $actualRight);
-        if ($low2 !== $b2) $bind($low2, $actualRight);
-        if ($b2 !== '_2') $bind('_2', $actualRight);
-
-        foreach ($promotedLeft as $key) {
-            $value = $left->get($key);
-            if ($value !== null) $put($key, $value);
+        foreach (self::binderKeys($b1, '_1') as $name) $bind($name, $left);
+        $rside = $right ?? $nullRight ?? Value::none();
+        foreach (self::binderKeys($b2, '_2') as $name) $bind($name, $rside);
+        $rightKeys = ($rside->size() > 0 && !$rside->isList) ? array_map('strval', $rside->keys()) : [];
+        $rightValues = $rightKeys === [] ? [] : $rside->values();
+        $rightNames = [];
+        foreach ($rightKeys as $key) $rightNames[strtoupper($key)] = true;
+        foreach ($leftKeys as $i => $key) {
+            if (self::category($leftValues[$i]) !== self::NESTED && !isset($rightNames[strtoupper($key)])) {
+                $put($key, $leftValues[$i]);
+            }
         }
         if ($right !== null) {
-            foreach ($promotedRight as $key) {
-                $value = $right->get($key);
-                if ($value !== null && !$value->isNull()) $put($key, $value);
+            $leftNames = [];
+            foreach ($leftKeys as $key) $leftNames[strtoupper($key)] = true;
+            foreach ($rightKeys as $i => $key) {
+                if (self::category($rightValues[$i]) === self::SCALAR && !isset($leftNames[strtoupper($key)])) {
+                    $put($key, $rightValues[$i]);
+                }
             }
         }
         return Value::record($keys, $values);
     }
 
-    private static function makeJoinProjector(
-        ?Value $sampleLeft,
-        ?Value $sampleRight,
-        string $b1,
-        string $b2,
-        array $promotedLeft,
-        array $promotedRight,
-        array $tableLeft,
-        ?Value $nullRight,
-    ): callable {
-        $leftShape = $sampleLeft?->shape;
-        $rightShape = $sampleRight?->shape;
-        $leftAliases = [$b1 => true, strtolower($b1) => true, '_1' => true];
-        $rightAliases = [$b2 => true, strtolower($b2) => true, '_2' => true];
-
-        // Compile two plans: matched rows use the real right shape, while a
-        // LINK_LEFT miss uses the null-right shape and intentionally omits
-        // promoted right columns, just like makeJoinedRow(). The integer action
-        // codes keep the hot path free of key membership scans and nested action
-        // arrays. A shape mismatch falls back for heterogeneous input rows.
-        $compile = static function (?Value $joined, ?RecordShape $sourceLeft, ?RecordShape $sourceRight)
-            use ($leftAliases, $rightAliases, $tableLeft, $promotedLeft, $promotedRight): ?array {
-            if ($joined === null || $joined->shape === null) return null;
-            $leftKeys = array_fill_keys([...$tableLeft, ...$promotedLeft], true);
-            $rightKeys = array_fill_keys($promotedRight, true);
-            $actions = [];
-            $slots = [];
-            foreach ($joined->shape->keys as $i => $key) {
-                if (isset($leftAliases[$key])) {
-                    $actions[$i] = 0; // source left record
-                    $slots[$i] = null;
-                } elseif (isset($rightAliases[$key])) {
-                    $actions[$i] = 1; // source right record
-                    $slots[$i] = null;
-                } elseif (isset($leftKeys[$key])) {
-                    $slot = $sourceLeft?->keyMap[$key] ?? null;
-                    $actions[$i] = $slot === null ? 4 : 2; // left slot / lookup
-                    $slots[$i] = $slot === null ? $key : $slot;
-                } elseif (isset($rightKeys[$key])) {
-                    $slot = $sourceRight?->keyMap[$key] ?? null;
-                    $actions[$i] = $slot === null ? 5 : 3; // right slot / lookup
-                    $slots[$i] = $slot === null ? $key : $slot;
-                } else {
-                    $actions[$i] = 6; // defensive semantic fallback
-                    $slots[$i] = null;
-                }
-            }
-            return [
-                'shape' => $joined->shape,
-                'leftShape' => $sourceLeft,
-                'rightShape' => $sourceRight,
-                'actions' => $actions,
-                'slots' => $slots,
-            ];
+    /**
+     * The joined row of a pair as a plan over the two elements' storage, for
+     * every pair whose elements have these shapes and field categories: the
+     * output shape and, per output key, [op, slot] -- 0 left slot, 1 right
+     * slot, 2 the left element, 3 the right one. makeJoinedRow is the rule;
+     * this is it, compiled.
+     * @return array{shape: RecordShape, ops: list<int>, slots: list<int>}
+     */
+    private static function rowPlan(Value $left, Value $rside, bool $matched, string $b1, string $b2): array
+    {
+        $keys = [];
+        $ops = [];
+        $slots = [];
+        $at = [];
+        $put = static function (string $key, int $op, int $slot) use (&$keys, &$ops, &$slots, &$at): void {
+            if (isset($at[$key])) return;
+            $at[$key] = count($keys);
+            $keys[] = $key;
+            $ops[] = $op;
+            $slots[] = $slot;
         };
+        $bind = static function (string $key, int $op) use (&$ops, &$slots, &$at, $put): void {
+            if (isset($at[$key])) { $ops[$at[$key]] = $op; $slots[$at[$key]] = -1; }
+            else $put($key, $op, -1);
+        };
+        $lkeys = array_map('strval', $left->shape->keys);
+        $lcat = array_map([self::class, 'category'], $left->storage);
+        foreach ($lkeys as $i => $key) if ($lcat[$i] === self::NESTED) $put($key, 0, $i);
+        foreach (self::binderKeys($b1, '_1') as $name) $bind($name, 2);
+        foreach (self::binderKeys($b2, '_2') as $name) $bind($name, 3);
+        $rkeys = $rside->shape !== null ? array_map('strval', $rside->shape->keys) : [];
+        $rightNames = [];
+        foreach ($rkeys as $key) $rightNames[strtoupper($key)] = true;
+        foreach ($lkeys as $i => $key) {
+            if ($lcat[$i] !== self::NESTED && !isset($rightNames[strtoupper($key)])) $put($key, 0, $i);
+        }
+        if ($matched) {
+            $rcat = array_map([self::class, 'category'], $rside->storage);
+            $leftNames = [];
+            foreach ($lkeys as $key) $leftNames[strtoupper($key)] = true;
+            foreach ($rkeys as $i => $key) {
+                if ($rcat[$i] === self::SCALAR && !isset($leftNames[strtoupper($key)])) $put($key, 1, $i);
+            }
+        }
+        return ['shape' => RecordShape::intern($keys), 'ops' => $ops, 'slots' => $slots];
+    }
 
-        $matchedSample = $sampleLeft !== null && $sampleRight !== null
-            ? self::makeJoinedRow($sampleLeft, $sampleRight, $b1, $b2, $promotedLeft, $promotedRight, $tableLeft, $nullRight)
-            : null;
-        $matchedPlan = $compile($matchedSample, $leftShape, $rightShape);
-        $nullSample = $sampleLeft !== null && $nullRight !== null
-            ? self::makeJoinedRow($sampleLeft, null, $b1, $b2, $promotedLeft, $promotedRight, $tableLeft, $nullRight)
-            : null;
-        $nullPlan = $compile($nullSample, $leftShape, $nullRight?->shape);
+    // Only two facts about a field decide a joined row (spec §7.4): on the
+    // left, whether it is a nested record (carried first) or not (promoted,
+    // NULL or not); on the right, whether it is a non-NULL scalar (promoted).
+    private static function leftNested(Value $v): bool
+    {
+        return $v->kind === Value::NONE && !$v->isList && $v->size() > 0;
+    }
 
-        $makeBuilder = static function (array $plan): callable {
-            $actions = $plan['actions'];
+    /**
+     * project(left, right): makeJoinedRow, through compiled plans. For each
+     * pair of shapes the plans built so far are tried in turn; each checks the
+     * two facts it assumed of the fields it reads -- every left field, and the
+     * right fields whose names the left does not have -- and a pair none fits
+     * gets its own plan from the rule (rowPlan). A left row's matches come one
+     * after another, so the plan whose left checks it passed is tried first
+     * without repeating them.
+     */
+    private static function makeJoinProjector(string $b1, string $b2, ?Value $nullRight): callable
+    {
+        $plans = [];
+        // The last pair's shapes, its builder and the left row that builder
+        // was last checked against (or built from), and the key of the plans
+        // for those shapes. Plain variables, and fields read in place rather
+        // than through locals: an object a variable lets go of while it is
+        // still referenced is a candidate root for PHP's cycle collector, and
+        // one per field per row makes the collector run often (SEL-0053).
+        $lastLeft = $lastBuild = $pairL = $pairR = $pairKey = null;
+        $pairMatched = false;
+        // A plan's builder: the row, or null when the pair breaks the plan's
+        // assumptions -- with CHECKLEFT, that each left field is (or is not)
+        // a nested record as it was; and always, that a right field it copies
+        // (promotes) is a non-NULL scalar, and that one it leaves out for
+        // being NULL or a record still is one. Each field is checked as it is
+        // copied: op 0 copies a left field that was not a nested record, op 4
+        // one that was; the left fields the row leaves out are checked apart
+        // (lrest: slot => nested). (The right fields are checked pair by
+        // pair: a pass over the right rows to learn they are all flat, as JS,
+        // C++ and Lisp make, saves PHP nothing measurable.)
+        $builder = static function (array $plan): \Closure {
+            $ops = $plan['ops'];
             $slots = $plan['slots'];
             $shape = $plan['shape'];
-            return static function (Value $left, Value $right) use ($actions, $slots, $shape): Value {
+            $rkept = $plan['rkept'];
+            $lnested = $plan['lnested'];
+            $lrest = $lnested;
+            foreach ($ops as $i => $op) {
+                if ($op === 0) {
+                    if ($lnested[$slots[$i]]) $ops[$i] = 4;
+                    unset($lrest[$slots[$i]]);
+                }
+            }
+            return static function (Value $left, Value $rside, bool $checkLeft)
+                use ($ops, $slots, $shape, $lrest, $rkept): ?Value {
+                $ls = $left->storage;
+                $rs = $rside->storage;
                 $storage = [];
-                $leftStorage = $left->storage;
-                $rightStorage = $right->storage;
-                foreach ($actions as $i => $action) {
-                    $slot = $slots[$i];
-                    $storage[] = match ($action) {
-                        0 => $left,
-                        1 => $right,
-                        2 => $leftStorage[$slot],
-                        3 => $rightStorage[$slot],
-                        4 => $left->get($slot) ?? Value::none(),
-                        5 => $right->get($slot) ?? Value::none(),
-                        default => Value::none(),
-                    };
+                foreach ($ops as $i => $op) {
+                    if ($op === 0) {
+                        if ($checkLeft && $ls[$slots[$i]]->kind === Value::NONE && !$ls[$slots[$i]]->isList
+                                && ($ls[$slots[$i]]->storage ?? $ls[$slots[$i]]->children) !== []) return null;
+                        $storage[] = $ls[$slots[$i]];
+                    } elseif ($op === 1) {
+                        if ($rs[$slots[$i]]->kind === Value::NONE && !$rs[$slots[$i]]->isList) return null;
+                        $storage[] = $rs[$slots[$i]];
+                    } elseif ($op === 4) {
+                        if ($checkLeft && ($ls[$slots[$i]]->kind !== Value::NONE || $ls[$slots[$i]]->isList
+                                || ($ls[$slots[$i]]->storage ?? $ls[$slots[$i]]->children) === [])) return null;
+                        $storage[] = $ls[$slots[$i]];
+                    } else {
+                        $storage[] = $op === 2 ? $left : $rside;
+                    }
+                }
+                if ($checkLeft) {
+                    foreach ($lrest as $i => $nested) {
+                        if (($ls[$i]->kind === Value::NONE && !$ls[$i]->isList
+                                && ($ls[$i]->storage ?? $ls[$i]->children) !== []) !== $nested) return null;
+                    }
+                }
+                foreach ($rkept as $i) {
+                    if ($rs[$i]->kind !== Value::NONE || $rs[$i]->isList) return null;
                 }
                 return Value::fromShape($shape, $storage);
             };
         };
-
-        $matchedBuilder = $matchedPlan !== null ? $makeBuilder($matchedPlan) : null;
-        $nullBuilder = $nullPlan !== null ? $makeBuilder($nullPlan) : null;
-        $matchedLeftShape = $matchedPlan['leftShape'] ?? null;
-        $matchedRightShape = $matchedPlan['rightShape'] ?? null;
-        $nullLeftShape = $nullPlan['leftShape'] ?? null;
-
-        if ($matchedPlan === null && $nullPlan === null) {
-            return static fn (Value $left, ?Value $right): Value =>
-                self::makeJoinedRow($left, $right, $b1, $b2, $promotedLeft, $promotedRight, $tableLeft, $nullRight);
-        }
-
-        return static function (Value $left, ?Value $right) use (
-            $matchedBuilder, $nullBuilder, $matchedLeftShape, $matchedRightShape, $nullLeftShape,
-            $nullRight, $b1, $b2, $promotedLeft, $promotedRight, $tableLeft,
-        ): Value {
-            if ($right !== null && $matchedBuilder !== null
-                && $left->shape === $matchedLeftShape
-                && $right->shape === $matchedRightShape) {
-                return $matchedBuilder($left, $right);
+        return static function (Value $left, ?Value $right) use (&$plans, &$lastLeft, &$lastBuild, &$pairL, &$pairR, &$pairKey, &$pairMatched, $builder, $b1, $b2, $nullRight): Value {
+            $rside = $right ?? $nullRight;
+            if ($left->shape === null || $left->storage === null || $rside === null
+                    || $rside->shape === null || $rside->storage === null) {
+                return self::makeJoinedRow($left, $right, $b1, $b2, $nullRight);
             }
-            if ($right === null && $nullBuilder !== null
-                && $left->shape === $nullLeftShape) {
-                return $nullBuilder($left, $nullRight ?? Value::none());
+            $matched = $right !== null;
+            // The same shapes as the last pair: its builder first, checking
+            // the left row only when it is a new one.
+            if ($pairL === $left->shape && $pairR === $rside->shape && $pairMatched === $matched) {
+                $row = $lastBuild($left, $rside, $lastLeft !== $left);
+                if ($row !== null) {
+                    if ($lastLeft !== $left) $lastLeft = $left;
+                    return $row;
+                }
+                $key = $pairKey;
+            } else {
+                $key = spl_object_id($left->shape) . ':' . spl_object_id($rside->shape) . ':' . ($matched ? 1 : 0);
             }
-            return self::makeJoinedRow($left, $right, $b1, $b2, $promotedLeft, $promotedRight, $tableLeft, $nullRight);
+            foreach ($plans[$key] ?? [] as $build) {
+                $row = $build($left, $rside, true);
+                if ($row !== null) {
+                    $lastLeft = $left; $lastBuild = $build;
+                    $pairL = $left->shape; $pairR = $rside->shape; $pairMatched = $matched; $pairKey = $key;
+                    return $row;
+                }
+            }
+            $plan = self::rowPlan($left, $rside, $matched, $b1, $b2);
+            $plan['lnested'] = array_map([self::class, 'leftNested'], $left->storage);
+            // Right fields the left does not name that were left out for being
+            // NULL or records: they must still be, for the plan to hold. (A
+            // scalar left out because its name is already a key of the row
+            // stays out whatever it holds; so does one named like a binder
+            // key, which the binder holds.)
+            $leftNames = [];
+            foreach ($left->shape->keys as $k) $leftNames[strtoupper((string) $k)] = true;
+            $binderNames = array_flip([...self::binderKeys($b1, '_1'), ...self::binderKeys($b2, '_2')]);
+            $kept = [];
+            if ($matched) {
+                foreach ($rside->shape->keys as $i => $k) {
+                    $k = (string) $k;
+                    if (!isset($leftNames[strtoupper($k)]) && !isset($binderNames[$k])
+                            && $rside->storage[$i]->kind === Value::NONE && !$rside->storage[$i]->isList) {
+                        $kept[] = $i;
+                    }
+                }
+            }
+            $plan['rkept'] = $kept;
+            $build = $builder($plan);
+            $plans[$key][] = $build;
+            $lastLeft = $left; $lastBuild = $build;
+            $pairL = $left->shape; $pairR = $rside->shape; $pairMatched = $matched; $pairKey = $key;
+            return $build($left, $rside, false);
         };
+    }
+
+    // --- the join pre-filter (SEL-0049, SEL-0050, SEL-0052) -----------------
+    //
+    // A FILTER over a LINK hands the join its conjuncts (leadingFieldConjuncts,
+    // called from Core's FILTER); the join pre-applies to its left rows those
+    // whose fields no right side carries, so the joined rows they would have
+    // produced -- all dropped by the same conjunct -- are never built. Decided
+    // here from the rows, at run time, so the physical tree stays a function
+    // of the AST.
+
+    private const TEXT_COMPARE = ['$==' => true, '$!=' => true, '$<' => true, '$<=' => true, '$>' => true, '$>=' => true];
+    private const NUM_COMPARE = ['==' => true, '!=' => true, '<' => true, '<=' => true, '>' => true, '>=' => true];
+
+    /**
+     * Every AND-conjunct of a FILTER body, in order, as
+     * ['node' => ..., 'fields' => set|null, 'total' => reqs|null, 'pushed' => false]
+     * for a LINK to pre-apply to its left rows. `fields`: the upper-cased
+     * fields of the row the conjunct reads (a nested `_["orders"]["year"]`
+     * reads ORDERS), or null when it reads anything else. `total`: for a
+     * comparison between literals and bare field reads, the [name, kind]
+     * requirements under which it cannot raise; null when not provable.
+     * @return list<array{node: array, fields: array<string,true>|null, total: list<array{0:string,1:string}>|null, pushed: bool}>
+     */
+    public static function leadingFieldConjuncts(array $body, string $binder): array
+    {
+        $conjuncts = [];
+        $node = $body;
+        while ($node !== null && $node['t'] === 'bin' && $node['op'] === 'AND') {
+            $conjuncts[] = $node['r'];
+            $node = $node['l'];
+        }
+        $conjuncts[] = $node;
+        $conjuncts = array_reverse($conjuncts);
+        // The element is the binder, exactly as named (names are canonical):
+        // under an explicit binder `_` is not the element.
+        $isRowVar = static fn (?array $n): bool => $n !== null && $n['t'] === 'var' && $n['name'] === $binder;
+        $bareRead = static fn (?array $n): bool => $n !== null && $n['t'] === 'index' && $isRowVar($n['obj'] ?? null)
+            && isset($n['idx']) && $n['idx']['t'] === 'text';
+        $out = [];
+        foreach ($conjuncts as $c) {
+            $fields = [];
+            $readsOnlyFields = static function (?array $n) use (&$readsOnlyFields, &$fields, $bareRead): bool {
+                if ($n === null) return true;
+                if ($n['t'] === 'index') {
+                    if ($bareRead($n)) { $fields[strtoupper($n['idx']['v'])] = true; return true; }
+                    if (isset($n['obj']) && $n['obj']['t'] === 'index') return $readsOnlyFields($n['obj']) && $readsOnlyFields($n['idx'] ?? null);
+                    return false;
+                }
+                if ($n['t'] === 'num' || $n['t'] === 'text' || $n['t'] === 'bool') return true;
+                if ($n['t'] === 'bin') return $readsOnlyFields($n['l']) && $readsOnlyFields($n['r']);
+                if ($n['t'] === 'un') return $readsOnlyFields($n['x']);
+                return false;
+            };
+            $ok = $readsOnlyFields($c) && $fields !== [];
+            $total = null;
+            if ($c['t'] === 'bin' && (isset(self::TEXT_COMPARE[$c['op']]) || isset(self::NUM_COMPARE[$c['op']]))) {
+                $kind = isset(self::TEXT_COMPARE[$c['op']]) ? 'TEXT' : 'NUM';
+                $total = [];
+                foreach ([$c['l'], $c['r']] as $operand) {
+                    $lit = $operand['t'] === 'num' ? 'NUM' : ($operand['t'] === 'text' ? 'TEXT' : null);
+                    if ($lit !== null) {
+                        if ($kind === 'NUM' && $lit !== 'NUM') { $total = null; break; }
+                        continue;
+                    }
+                    if (!$bareRead($operand)) { $total = null; break; }
+                    $total[] = [$operand['idx']['v'], $kind];
+                }
+            }
+            $out[] = ['node' => $c, 'fields' => $ok ? $fields : null, 'total' => $total, 'pushed' => false, 'binder' => $binder];
+        }
+        return $out;
+    }
+
+    /** Whether evaluating NODE can be observed only through its value (no assignment, sequence, host function or ABORT), so it may run out of order. */
+    private static function pureSource(?array $node): bool
+    {
+        if ($node === null) return true;
+        switch ($node['t']) {
+            case 'var': case 'num': case 'text': case 'bool': return true;
+            case 'index': return self::pureSource($node['obj'] ?? null) && self::pureSource($node['idx'] ?? null);
+            case 'bin': return self::pureSource($node['l']) && self::pureSource($node['r']);
+            case 'un': return self::pureSource($node['x']);
+            case 'list':
+                foreach ($node['items'] as $item) if (!self::pureSource($item)) return false;
+                return true;
+            case 'call':
+                if (!isset(BuiltinManifest::BUILTINS[$node['name']]) || $node['name'] === 'ABORT') return false;
+                foreach ($node['args'] as $arg) if (!self::pureSource($arg)) return false;
+                return true;
+            default: return false;
+        }
+    }
+
+    /**
+     * The conjuncts a join may pre-apply to its left rows, in stage order, and
+     * where the walk stopped. One whose fields are all owned by the left rows
+     * is applied; one that reads a field of some right side ends the walk
+     * (AND short-circuits left to right) UNLESS it is total here, in which case
+     * it is passed over for the join above; one that reads anything but fields
+     * ends the walk too; one the optimiser pushed below is skipped while its
+     * tentative FILTER kept no row on an error. A deferral relies on no lower
+     * relation carrying the field; the join that has those rows repeats the
+     * walk with them.
+     * @return array{0: list<array>, 1: array{0:int,1:int}|null}
+     */
+    private static function stageWalk(array $stages, callable $ownedHere, callable $totalHere, bool $pushedHeld): array
+    {
+        $applied = [];
+        foreach ($stages as $si => [$binder, $conjuncts]) {
+            foreach ($conjuncts as $ci => $c) {
+                if ($c['pushed']) {
+                    if ($pushedHeld) continue;
+                    return [$applied, [$si, $ci]];
+                }
+                if ($c['fields'] !== null && $ownedHere($c['fields'])) { $applied[] = $c; continue; }
+                if ($c['total'] !== null && $totalHere($c['total'])) continue;
+                return [$applied, [$si, $ci]];
+            }
+        }
+        return [$applied, null];
+    }
+
+    /** A key naming one conjunct node of the tree: arrays have no identity, and the position and shape of a node do. */
+    private static function conjunctId(array $node): string
+    {
+        return json_encode($node['pos']) . '|' . ($node['op'] ?? $node['t']) . '|' . md5((string) json_encode($node, JSON_PARTIAL_OUTPUT_ON_ERROR));
+    }
+
+    private static function truncateStages(array $stages, ?array $stop): array
+    {
+        if ($stop === null) return $stages;
+        [$si, $ci] = $stop;
+        $out = array_slice($stages, 0, $si);
+        if ($ci) $out[] = [$stages[$si][0], array_slice($stages[$si][1], 0, $ci)];
+        return $out;
+    }
+
+    /** NODE with every `_["orders"]` -- a read through the left binder's own name (NAMES, upper-cased) -- replaced by `_`. */
+    private static function readSelf(?array $node, array $names, string $binder): ?array
+    {
+        if ($node === null) return null;
+        if ($node['t'] === 'index' && isset($node['obj']) && $node['obj']['t'] === 'var' && $node['obj']['name'] === $binder
+                && isset($node['idx']) && $node['idx']['t'] === 'text' && isset($names[strtoupper($node['idx']['v'])])) {
+            return ['t' => 'var', 'name' => $binder, 'pos' => $node['pos']];
+        }
+        $copy = $node;
+        unset($copy['mathPlan'], $copy['recordShape']);   // a plan of the original reads the original
+        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $slot) {
+            if (isset($node[$slot])) $copy[$slot] = self::readSelf($node[$slot], $names, $binder);
+        }
+        if (isset($node['args'])) $copy['args'] = array_map(static fn ($a) => self::readSelf($a, $names, $binder), $node['args']);
+        if (isset($node['items'])) $copy['items'] = array_map(static fn ($a) => self::readSelf($a, $names, $binder), $node['items']);
+        return $copy;
+    }
+
+    /** @return array<string,true> the upper-cased keys of every row (a shape's keys read once), plus the names the row is bound under. */
+    private static function rowKeys(Value $value, array $bound = []): array
+    {
+        $keys = [];
+        foreach ($bound as $b) $keys[strtoupper($b)] = true;
+        $shapes = [];
+        self::forEachRow($value, static function (Value $row) use (&$keys, &$shapes): void {
+            if ($row->shape !== null) {
+                $id = spl_object_id($row->shape);
+                if (isset($shapes[$id])) return;
+                $shapes[$id] = true;
+                foreach ($row->shape->keys as $k) $keys[strtoupper($k)] = true;
+            } else {
+                foreach ($row->keys() as $k) $keys[strtoupper($k)] = true;
+            }
+        });
+        return $keys;
+    }
+
+    private static function forEachRow(Value $value, callable $callback): void
+    {
+        if ($value->storage !== null && ($value->isList || $value->shape !== null)) {
+            foreach ($value->storage as $item) $callback($item);
+            return;
+        }
+        if ($value->size() > 0) {
+            foreach ($value->children as $item) $callback($item);
+            return;
+        }
+        if ($value->kind !== Value::NONE) $callback($value);
+    }
+
+    /** Whether every row carries the field NAME (as written) as text (a number is text), or, for kind NUM, as a number. */
+    public static function rowFactOf(Value $value, string $name, string $kind): bool
+    {
+        return self::rowFact($value, $name, $kind);
+    }
+
+    private static function rowFact(Value $value, string $name, string $kind): bool
+    {
+        $ok = true;
+        $rows = 0;
+        self::forEachRow($value, static function (Value $row) use (&$ok, &$rows, $name, $kind): void {
+            $rows++;
+            if (!$ok) return;
+            $v = $row->get($name);
+            if ($kind === 'PRESENT') { if ($v === null) $ok = false; return; }
+            if ($kind === 'ANY') { if ($v === null || $v->isNull() || self::isNestedRecord($v)) $ok = false; return; }
+            if ($v === null || $v->kind !== Value::TEXT) { $ok = false; return; }
+            if ($kind === 'NUM') {
+                try { $v->asDecimal(); } catch (SelError $e) { $ok = false; }
+            }
+        });
+        return $ok && ($kind !== 'PRESENT' || $rows > 0);
+    }
+
+    /**
+     * Whether every handed-down join key -- the left key of each join above this
+     * one that handed its conjuncts down -- cannot raise on a joined row built
+     * from a left row dropped here (a row dropped below never reaches those
+     * joins, so an E_NO_KEY there would be lost). Canonical keys never raise,
+     * only the reads do, so presence suffices: `r["m"]["f"]` needs f on every
+     * row of m's relation; `r["f"]` needs f carried, non-null, by every row of
+     * the one side below the join that has it. Anything else is not proved.
+     * @param list<array{key: array, rowNames: array<string,true>, outer: int}> $obligations
+     * @param list<JoinSideFacts> $above
+     */
+    private static function keysSafe(array $obligations, JoinSideFacts $left, JoinSideFacts $right, array $above): bool
+    {
+        foreach ($obligations as $ob) {
+            $below = array_slice($above, 0, count($above) - $ob['outer']);
+            $key = $ob['key'];
+            if (($key['t'] ?? null) !== 'index' || !isset($key['idx'], $key['obj']) || $key['idx']['t'] !== 'text') return false;
+            $field = $key['idx']['v'];
+            $obj = $key['obj'];
+            if ($obj['t'] === 'index' && isset($obj['obj'], $obj['idx']) && $obj['obj']['t'] === 'var'
+                    && isset($ob['rowNames'][$obj['obj']['name']]) && $obj['idx']['t'] === 'text') {
+                $member = $obj['idx']['v'];
+                if (isset($left->names[$member])) { if (!$left->present($field)) return false; continue; }
+                $side = null;
+                foreach ([$right, ...$below] as $candidate) if (isset($candidate->names[$member])) { $side = $candidate; break; }
+                if ($side !== null) { if (!$side->present($field)) return false; continue; }
+                $ok = true;
+                self::forEachRow($left->value, static function (Value $row) use (&$ok, $member, $field): void {
+                    if (!$ok) return;
+                    $inner = $row->get($member);
+                    if ($inner === null || $inner->get($field) === null) $ok = false;
+                });
+                if (!$ok) return false;
+                continue;
+            }
+            if ($obj['t'] === 'var' && isset($ob['rowNames'][$obj['name']])) {
+                if (!self::totality([[$field, 'ANY']], $left, $right, $below)) return false;
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Whether every [field, kind] requirement is met over the joined rows of this
+     * join: exactly one side -- the left rows, this right side, or a right side
+     * above -- carries the field at all, and that side carries it on every row
+     * with the kind (a field two sides carry is promoted from neither, spec §7.4).
+     * @param list<JoinSideFacts> $above
+     */
+    private static function totality(array $reqs, ?JoinSideFacts $left, JoinSideFacts $right, array $above): bool
+    {
+        foreach ($reqs as [$name, $kind]) {
+            $key = strtoupper($name);
+            $owners = [];
+            foreach ([$left, $right, ...$above] as $side) {
+                if ($side !== null && isset($side->keys[$key])) $owners[] = $side;
+            }
+            if (count($owners) !== 1 || !$owners[0]->total($name, $kind)) return false;
+        }
+        return true;
     }
 
     private static function doLink(Args $a, Context $ctx, bool $leftJoin): Value
     {
+        // Taken before anything else is evaluated, so a LINK nested in this
+        // one's sources cannot pick it up by accident; it is handed down on
+        // purpose below.
+        $prefilter = $ctx->joinPrefilter;
+        $ctx->joinPrefilter = null;
         $count = $a->count();
         if ($count !== 3 && $count !== 5) {
             fail('E_ARITY', "{$a->name} takes 3 or 5 arguments, got {$count}", $a->pos);
         }
-        $leftValue = $a->val(0);
-        $rightValue = $a->val(1);
+        $leftNode = $a->node(0);
+        $rightNode = $a->node(1);
+        [$stages, $deep, $above, $obligations] = $prefilter ?? [[], false, [], []];
+        $jb1 = $count === 5 ? $a->symbol(2) : (self::singleRelationName($a->node(0)) ?? '_1');
+        $jb2 = $count === 5 ? $a->symbol(3) : (self::singleRelationName($a->node(1)) ?? '_2');
+        $jequi = self::tryExtractEquiKeys($a->node($count === 5 ? 4 : 2), $jb1, $jb2);
+        $aboveKeys = [];
+        foreach ($above as $side) foreach ($side->keys as $k => $_) $aboveKeys[$k] = true;
+        // The keys a side contributes to the joined row include the names its
+        // row is bound under: `_["products"]` after LINK(PRODUCTS, ...) is the
+        // right row, not a field of the left ones.
+        $b2Names = $count === 5 ? [$a->symbol(3), '_2'] : [self::singleRelationName($rightNode) ?? '_2', '_2'];
+        $b1Names = $count === 5 ? [$a->symbol(2), '_1'] : [self::singleRelationName($leftNode) ?? '_1', '_1'];
+        $keptBefore = $ctx->tentativeKept;
+        $rightSide = null;
+        // With conjuncts to pre-apply and a left source that is itself a join,
+        // the right source is evaluated first -- unobservable when both
+        // sources are pure -- so that the conjuncts still askable of the rows
+        // below can travel down to the join below, and from there to the base
+        // rows, where dropping a row saves every join above it.
+        if ($deep && $stages !== [] && $jequi !== null && $leftNode !== null && $leftNode['t'] === 'call'
+                && in_array($leftNode['name'], ['LINK', 'LINK_LEFT', 'FILTER'], true)
+                && self::pureSource($leftNode) && self::pureSource($rightNode)) {
+            $rightValue = $a->val(1);
+            $rightSide = new JoinSideFacts($rightValue, self::rowKeys($rightValue, $b2Names), $leftJoin, $b2Names);
+            $ownedBelow = static function (array $fields) use ($rightSide, $aboveKeys): bool {
+                foreach ($fields as $f => $_) if (isset($rightSide->keys[$f]) || isset($aboveKeys[$f])) return false;
+                return true;
+            };
+            $totalBelow = static fn (array $reqs): bool => self::totality($reqs, null, $rightSide, $above);
+            // Whether the conjuncts the optimiser pushed below held so far: a
+            // tentative FILTER on this join's right side has just run.
+            [, $stop] = self::stageWalk($stages, $ownedBelow, $totalBelow, $ctx->tentativeKept === $keptBefore);
+            $handed = self::truncateStages($stages, $stop);
+            if ($handed !== []) {
+                // This join computes its left key on every row it receives; a
+                // row dropped below never arrives, so the key goes down as an
+                // obligation for the join that drops to prove (keysSafe).
+                $ownKey = ['key' => $jequi['left'], 'rowNames' => [$jb1 => true, strtolower($jb1) => true, '_1' => true, '_' => true],
+                           'outer' => count($above) + 1];
+                $ctx->joinPrefilter = [$handed, true, [$rightSide, ...$above], [$ownKey, ...$obligations]];
+            }
+            try {
+                $leftValue = $a->val(0);
+            } finally {
+                $ctx->joinPrefilter = null;
+            }
+        } else {
+            $leftValue = $a->val(0);
+            $rightValue = $a->val(1);
+        }
+        $pushedHeld = $ctx->tentativeKept === $keptBefore;
+        // The join below, if it applied some of these conjuncts, says which
+        // ones every row that came up has passed; those are skipped here
+        // unless a row was kept on an error below.
+        $below = $ctx->joinPrefilterReport;
+        $ctx->joinPrefilterReport = null;
+        $appliedBelow = ($below !== null && !$below[1]) ? $below[0] : [];
         if ($count === 3) {
             $b1 = self::singleRelationName($a->node(0)) ?? '_1';
             $b2 = self::singleRelationName($a->node(1)) ?? '_2';
@@ -613,32 +1046,11 @@ final class Structure
         $sampleRight = $firstRight === null ? null : self::ensureRowTableAlias($firstRight, $b2);
         $aliasLeft = self::compileRowTableAliaser($b1, $firstLeft);
         $aliasRight = self::compileRowTableAliaser($b2, $firstRight);
+        // Every row is built from its own pair (spec §7.4): nothing is decided
+        // from a first element except the shape of LINK_LEFT's null record.
         $nullRight = $leftJoin ? self::makeNullRecord($sampleRight, $b2) : null;
-        $leftKeys = $sampleLeft?->keys() ?? [];
-        $rightKeys = $sampleRight?->keys() ?? [];
-        $rightKeySet = array_fill_keys(array_map('strtoupper', $rightKeys), true);
-        $leftKeySet = array_fill_keys(array_map('strtoupper', $leftKeys), true);
-        $promotedLeft = [];
-        foreach ($leftKeys as $key) {
-            $value = $sampleLeft->get($key);
-            if ($value !== null && !self::isNestedRecord($value) && !isset($rightKeySet[strtoupper($key)])) {
-                $promotedLeft[] = $key;
-            }
-        }
-        $promotedRight = [];
-        foreach ($rightKeys as $key) {
-            $value = $sampleRight->get($key);
-            if ($value !== null && !self::isNestedRecord($value) && !isset($leftKeySet[strtoupper($key)])) {
-                $promotedRight[] = $key;
-            }
-        }
-        $tableLeft = [];
-        foreach ($leftKeys as $key) {
-            $value = $sampleLeft->get($key);
-            if ($value !== null && self::isNestedRecord($value)) $tableLeft[] = $key;
-        }
-        $project = self::makeJoinProjector($sampleLeft, $sampleRight, $b1, $b2,
-            $promotedLeft, $promotedRight, $tableLeft, $nullRight);
+        if ($nullRight !== null && $nullRight->isNull()) $nullRight = null;
+        $project = self::makeJoinProjector($b1, $b2, $nullRight);
         $equi = self::tryExtractEquiKeys($predicate, $b1, $b2);
         $output = [];
         $each = static function (Value $value, callable $callback): void {
@@ -695,8 +1107,124 @@ final class Structure
                 }
             }
 
+            // The pre-filter, decided from the rows themselves (stageWalk). On
+            // a left row a conjunct evaluates FALSE the row is dropped -- the
+            // joined rows it would have produced would all have been dropped
+            // by the same conjunct. On an error the row is KEPT: the full
+            // predicate runs over the joined rows afterwards and raises there.
+            $prefix = [];
+            $binders = [];
+            $appliedIds = [];
+            $errored = false;
+            if ($prefilter !== null) {
+                if ($rightSide === null) {
+                    $rightSide = new JoinSideFacts($rightValue, self::rowKeys($rightValue, $b2Names), $leftJoin, $b2Names);
+                }
+                foreach ($stages as [$binder, ]) $binders[] = $binder;
+                $leftSide = new JoinSideFacts($leftValue, self::rowKeys($leftValue, $b1Names), false, $b1Names);
+                // A handed-down join key that could raise on a dropped row,
+                // and nothing is dropped.
+                $safe = $obligations === [] || self::keysSafe($obligations, $leftSide, $rightSide, $above);
+                // A joined row carries a left element's field exactly as the
+                // element does whenever no right element has the name (§7.4,
+                // pair by pair); no row depends on another.
+                $ownedHere = static function (array $fields) use ($rightSide, $aboveKeys): bool {
+                    foreach ($fields as $f => $_) {
+                        if (isset($rightSide->keys[$f]) || isset($aboveKeys[$f])) return false;
+                    }
+                    return true;
+                };
+                $totalHere = static fn (array $reqs): bool => self::totality($reqs, $leftSide, $rightSide, $above);
+                $selfNames = [strtoupper($b1) => true, '_1' => true];
+                [$applied, ] = $safe ? self::stageWalk($stages, $ownedHere, $totalHere, $pushedHeld) : [[], null];
+                foreach ($applied as $c) {
+                    $key = self::conjunctId($c['node']);
+                    $appliedIds[$key] = true;
+                    if (isset($appliedBelow[$key])) continue;
+                    $node = $c['node'];
+                    foreach ($c['fields'] as $f => $_) {
+                        if (isset($selfNames[$f]) && !isset($leftSide->first[$f])) { $node = self::readSelf($node, $selfNames, $c['binder']); break; }
+                    }
+                    $prefix[] = $node;
+                }
+            }
+            $rejects = static function (Value $row) use (&$prefix, &$binders, &$errored, $a, $ctx): bool {
+                foreach ($binders as $binder) $ctx->setFrameValue($binder, $row);
+                foreach ($prefix as $conjunct) {
+                    try {
+                        $keep = $a->evalNode($conjunct)->asBool($conjunct['pos']);
+                    } catch (SelError $e) {
+                        $errored = true;
+                        return false;
+                    }
+                    if (!$keep) return true;
+                }
+                return false;
+            };
+
             $leftAllowed = [$b1, strtolower($b1), '_1', '_'];
             $leftExtractor = self::compileEquiKeyExtractor($equi['left'], $leftAllowed, $equi['numeric'], $sampleLeft);
+            if ($prefix !== []) {
+                // A FILTER keeps its input's keys, so the rows dropped here
+                // still count towards the numbering of the rows kept (the
+                // matches say how many joined rows a dropped row stood for),
+                // unless nothing observes it (deep). When the join key is a
+                // literal field of the row, a row that HAS it may be rejected
+                // before its key is computed.
+                $keys = $deep ? null : [];
+                $position = 1;
+                $fastField = null;
+                $el = $equi['left'];
+                if ($deep && $el['t'] === 'index' && isset($el['obj']) && $el['obj']['t'] === 'var'
+                        && isset($el['idx']) && $el['idx']['t'] === 'text'
+                        && in_array(strtoupper($el['obj']['name']), [strtoupper($b1), '_1', '_'], true)) {
+                    $fastField = $el['idx']['v'];
+                }
+                $b1Lower = strtolower($b1);
+                $hasLower1 = $b1Lower !== $b1;
+                $frameLeft = [$b1 => Value::none(), '_1' => Value::none(), '_' => Value::none()];
+                if ($hasLower1) $frameLeft[$b1Lower] = Value::none();
+                foreach ($binders as $binder) $frameLeft[$binder] ??= Value::none();
+                $ctx->pushFrame($frameLeft);
+                try {
+                    $each($leftValue, function (Value $item) use (&$buckets, &$output, &$keys, &$position, $b1, $b1Lower, $hasLower1, $aliasLeft, $leftExtractor, $equi, $a, $leftJoin, $project, $ctx, $rejects, $fastField, $deep): void {
+                        $row = $aliasLeft($item);
+                        $asked = false;
+                        if ($fastField !== null && $row->get($fastField) !== null) {
+                            $asked = true;
+                            if ($rejects($row)) return;
+                        }
+                        $ctx->setFrameValue($b1, $row);
+                        if ($hasLower1) $ctx->setFrameValue($b1Lower, $row);
+                        $ctx->setFrameValue('_1', $row);
+                        $ctx->setFrameValue('_', $row);
+                        $key = $leftExtractor !== null ? $leftExtractor($row)
+                            : self::canonicalJoinKey($a->evalNode($equi['left']), $equi['numeric']);
+                        $matches = $key === null ? null : ($buckets[$key] ?? null);
+                        if (!$asked && $rejects($row)) {
+                            if (!$deep) $position += $matches !== null ? count($matches) : ($leftJoin ? 1 : 0);
+                            return;
+                        }
+                        if ($matches !== null) {
+                            foreach ($matches as $right) {
+                                $output[] = $project($row, $right);
+                                if ($keys !== null) $keys[] = (string) $position;
+                                $position++;
+                            }
+                        } elseif ($leftJoin) {
+                            $output[] = $project($row, null);
+                            if ($keys !== null) $keys[] = (string) $position;
+                            $position++;
+                        }
+                    });
+                } finally {
+                    $ctx->popFrame();
+                }
+                $ctx->joinPrefilterReport = [$appliedIds, $errored];
+                if ($keys !== null && count($keys) !== $position - 1) return Value::list($output, $keys);
+                return Value::list($output);
+            }
+            if ($prefilter !== null) $ctx->joinPrefilterReport = [$appliedIds, $errored];
             if ($leftExtractor !== null) {
                 if ($leftValue->isList && $leftValue->storage !== null) {
                     foreach ($leftValue->storage as $item) {
@@ -989,5 +1517,59 @@ final class Structure
             $ctx->popFrame();
         }
         return Value::list($out);
+    }
+}
+
+/**
+ * What the totality check knows about one side's rows: the union of its keys
+ * (with the names its row is bound under), the keys of its first row (a field
+ * every row carries is on the first one: a cheap refusal before a scan),
+ * per-field presence and kind on demand, and whether its rows may be
+ * null-extended (a LINK_LEFT's right).
+ */
+final class JoinSideFacts
+{
+    /** @var array<string,true> */
+    public array $first;
+    /** @var array<string,bool> */
+    private array $facts = [];
+
+    /** @var array<string,true> the member names the row is bound under (binder and its lower-case alias; never `_1`/`_2`) */
+    public array $names = [];
+
+    /** @param array<string,true> $keys @param list<string> $bound */
+    public function __construct(public readonly Value $value, public readonly array $keys, public readonly bool $nullable, array $bound = [])
+    {
+        foreach ($bound as $b) {
+            if ($b === '_1' || $b === '_2' || $b === '_') continue;
+            $this->names[$b] = true;
+            $this->names[strtolower($b)] = true;
+        }
+        $this->first = [];
+        $firstRow = null;
+        if ($value->storage !== null && $value->storage !== [] && ($value->isList || $value->shape !== null)) {
+            $firstRow = $value->storage[0];
+        } elseif ($value->size() > 0) {
+            foreach ($value->children as $item) { $firstRow = $item; break; }
+        }
+        if ($firstRow !== null) foreach ($firstRow->keys() as $k) $this->first[strtoupper($k)] = true;
+    }
+
+    /** The field NAME is a key of every row, whatever its value. */
+    public function present(string $name): bool
+    {
+        $id = 'PRESENT:' . $name;
+        if (!array_key_exists($id, $this->facts)) $this->facts[$id] = Structure::rowFactOf($this->value, $name, 'PRESENT');
+        return $this->facts[$id];
+    }
+
+    public function total(string $name, string $kind): bool
+    {
+        if (!isset($this->first[strtoupper($name)]) || $this->nullable) return false;
+        $id = $kind . ':' . $name;
+        if (!array_key_exists($id, $this->facts)) {
+            $this->facts[$id] = Structure::rowFactOf($this->value, $name, $kind);
+        }
+        return $this->facts[$id];
     }
 }
