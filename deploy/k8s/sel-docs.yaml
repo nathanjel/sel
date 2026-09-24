@@ -7,8 +7,10 @@
 #   (bump the image tag below)
 #   sg microk8s -c "/snap/bin/microk8s kubectl apply -f deploy/k8s/sel-docs.yaml"
 #
-# HTTPS: cert-manager's `letsencrypt` ClusterIssuer (ACME HTTP-01, the same
-# issuer the other sites on this cluster use) issues and renews sel-docs-tls.
+# HTTPS: certbot (deploy/certbot/) issues and renews the Let's Encrypt
+# certificate and loads it into the sel-docs-tls secret; its HTTP-01 challenges
+# are answered by deploy/k8s/sel-acme.yaml. No cert-manager annotation here, so
+# nothing else writes that secret.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -47,7 +49,6 @@ kind: Ingress
 metadata:
   name: sel-docs
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt
     traefik.ingress.kubernetes.io/router.middlewares: default-redirect-https@kubernetescrd
 spec:
   ingressClassName: public

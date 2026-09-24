@@ -1,0 +1,12 @@
+# Installed as ~/.config/systemd/user/sel-certbot-renew.timer; see README.md.
+# Twice a day, as certbot recommends: renew does nothing until 30 days remain.
+[Unit]
+Description=Twice-daily certbot renewal check for sel.spelnianiemarzenspzoo.com
+
+[Timer]
+OnCalendar=*-*-* 03,15:17:00
+RandomizedDelaySec=45min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
