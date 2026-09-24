@@ -1,0 +1,17 @@
+# What `git archive` leaves out — and so what Packagist's dist and GitHub's
+# tag tarballs (the source vcpkg and Conan Center fetch) leave out.
+#
+# Only the user documentation ships. docs/ is an allowlist, as in package.json
+# and pyproject.toml: everything under it is excluded, then the user documents
+# are let back in, so a new interim note cannot reach a release by default.
+# tools/check-package-docs.sh holds all three to the same list.
+docs/**                  export-ignore
+docs/LANGUAGE.md         -export-ignore
+docs/BUILTINS.md         -export-ignore
+docs/LIMITS.md           -export-ignore
+docs/SQL-TRANSLATION.md  -export-ignore
+docs/SQL-KINDS.md        -export-ignore
+
+# Maintainer and agent instructions.
+PACKAGING.md             export-ignore
+CLAUDE.md                export-ignore

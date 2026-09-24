@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sel-lang"
-version = "0.7.4"
+version = "0.8.0"
 description = "A small expression language for validation rules — one rule file evaluates identically on Python, PHP, JavaScript, C++23 and Common Lisp. Exact decimal arithmetic, no floating point, no truthiness."
 readme = "README.md"
 license = "MIT"
@@ -62,6 +62,8 @@ packages = ["python/sel"]
 [tool.hatch.build.targets.sdist]
 # What npm's `files` ships, in Python spelling: the package, the normative
 # documents, and enough of the harness to see what "identically" is measured by.
+# docs/ is listed file by file: only the user documentation ships, never the
+# contributor, interim or historical notes beside it (tools/check-package-docs.sh).
 #
 # Every pattern is anchored with a leading slash, because these are gitignore
 # syntax and an unanchored `python/` matches that directory at ANY depth. It
@@ -72,7 +74,11 @@ packages = ["python/sel"]
 # which is the only reason this was ever noticed.
 include = [
     "/python/",
-    "/docs/",
+    "/docs/LANGUAGE.md",
+    "/docs/BUILTINS.md",
+    "/docs/LIMITS.md",
+    "/docs/SQL-TRANSLATION.md",
+    "/docs/SQL-KINDS.md",
     "/spec/",
     "/conformance/",
     "/examples/order-validation.sel",
@@ -81,9 +87,8 @@ include = [
     "/examples/integration-python.py",
     "/LICENSE",
     "/README.md",
-    "/PACKAGING.md",
     "/pyproject.toml",
-    "CHANGELOG.md"
+    "/CHANGELOG.md"
 ]
 
 # The venv above is inside `/python/` and would come with it. `__pycache__` is

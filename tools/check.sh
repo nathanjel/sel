@@ -196,6 +196,7 @@ db_step() { local name="$1"; shift; step "$name" flock "$LOGS/db.lock" "$@"; }
 db_step "sql mutations" ./tools/mutate-sql.sh
 db_step "sql semantic oracle" ./tools/check-sql-oracle.sh
 step "manifest versions" sel_slot ./tools/check-version.sh
+step "package contents: user docs only" sel_slot ./tools/check-package-docs.sh
 step "host API parity" ./tools/check-api.sh
 step "host SQL API parity" ./tools/check-sqlapi.sh
 step "documentation examples" ./tools/check-docs.sh

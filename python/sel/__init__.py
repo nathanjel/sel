@@ -32,7 +32,7 @@ __all__ = [
     'function_names', 'NONE', 'TEXT', 'BIN', 'BOOL', '__version__',
 ]
 
-__version__ = '0.7.4'
+__version__ = '0.8.0'
 
 
 class Program:

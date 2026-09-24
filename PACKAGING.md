@@ -31,10 +31,23 @@ tools/check.sh                                    # ALL GREEN, full roster
 SEL_IMPLS="$SEL_IMPLS python-wheel" tools/check.sh # and through the built wheel
 tools/oracle-db.sh                                # the map, against real servers
 tools/oracle-db.sh run python3 tools/mutate-sql.py # every mutation, none skipped
-tools/check-version.sh 0.6.1                      # every manifest agrees
+tools/check-version.sh 0.8.0                      # every manifest agrees
+tools/check-package-docs.sh                       # user docs only, in every package
 ```
 
-The first is what makes the rest of this document possible. The SEL→SQL map is
+**Only the user documentation ships.** `docs/LANGUAGE.md`, `BUILTINS.md`,
+`LIMITS.md`, `SQL-TRANSLATION.md` and `SQL-KINDS.md` go out with every package;
+the contributor guide (`EXTENDING.md`), the math-plan table (`MATH-OPS.md`),
+`docs/interim/`, `docs/worklists/`, `docs/history/`, this file and `CLAUDE.md` do
+not. Three configurations carry that list — `files` in `package.json`, the sdist
+`include` in `pyproject.toml`, and `.gitattributes`' `export-ignore`, which is
+what `git archive` and so Packagist's dist and GitHub's tag tarballs honour — and
+each lists the user documents file by file, so a new note in `docs/` stays out
+until someone lets it in. `tools/check-package-docs.sh` (a gate layer) holds all
+three to one list; a new user document is added to all four places. Quicklisp and
+Ultralisp clone the repository, so they alone carry everything.
+
+The first command above is what makes the rest of this document possible. The SEL→SQL map is
 authored once, in `sql/dialects/*.json`, and rendered by `tools/gen-sql-map.mjs`
 into each host's own source language — `MapData.php`, `_map.py`, `_map.mjs`,
 `sel_sql_map_data.cpp`. Those renderings are committed and published, so a C++,
@@ -53,8 +66,8 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.7.4 -m "SEL 0.7.4"
-git push origin v0.7.4
+git tag -a v0.8.0 -m "SEL 0.8.0"
+git push origin v0.8.0
 ```
 
 **Never re-tag or move an existing tag.** Upstream registries forbid republishing under an existing version: Packagist blocks re-tagged releases with `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`, while npm and PyPI permanently refuse file uploads for already-published versions. If a defect or correction is needed after pushing a tag, always bump to the next patch version.
@@ -62,17 +75,17 @@ git push origin v0.7.4
 Versions live in six manifests. Keep them in step:
 
 ```
-package.json                     "version": "0.7.4"
-pyproject.toml                   version = "0.7.4"
-cpp/conanfile.py                 version = "0.7.4"
-cpp/vcpkg.json                   "version-semver": "0.7.4"
-cpp/CMakeLists.txt               project(... VERSION 0.7.4 ...)
-lisp/sel-lang.asd                :version "0.7.4"
+package.json                     "version": "0.8.0"
+pyproject.toml                   version = "0.8.0"
+cpp/conanfile.py                 version = "0.8.0"
+cpp/vcpkg.json                   "version-semver": "0.8.0"
+cpp/CMakeLists.txt               project(... VERSION 0.8.0 ...)
+lisp/sel-lang.asd                :version "0.8.0"
 ```
 
 `python/sel/__init__.py` carries `__version__`, `CHANGELOG.md`'s top heading
 carries the version being released, and `composer.json` carries
-`extra.branch-alias.dev-main` (`0.7.x-dev`). All are checked against the release
+`extra.branch-alias.dev-main` (`0.8.x-dev`). All are checked against the release
 version by `tools/check-version.sh`, so they are places fewer to remember rather
 than more — and a release whose notes or branch alias were never updated fails
 the check before the tag is cut.
@@ -97,8 +110,9 @@ holds the JavaScript bundle; letting `build` write beside it would mix two
 languages' artefacts in one directory and eventually upload the wrong thing.
 
 The wheel ships `python/sel/` and nothing else — the package, its `py.typed`
-marker and the licence, about 50 kB. The sdist adds `docs/`, `spec/`,
-`conformance/` and the Python examples, mirroring what npm's `files` whitelists.
+marker and the licence, about 50 kB. The sdist adds the user documents,
+`spec/`, `conformance/` and the Python examples, mirroring what npm's `files`
+whitelists.
 
 The package has **no runtime dependencies**, and that is a property worth
 keeping: the regex subset is small enough that `re` covers it after the anchor
@@ -149,9 +163,9 @@ npm pack --dry-run      # inspect the file list first
 npm publish --access public
 ```
 
-`files` in `package.json` whitelists what ships: `js/`, `docs/`, `spec/`, the JS
-examples, the licence and the README. The PHP, C++ and Lisp trees are excluded,
-so the tarball is ~73 kB rather than the whole repository.
+`files` in `package.json` whitelists what ships: `js/`, the user documents,
+`spec/`, the JS examples, the licence and the README. The PHP, C++ and Lisp
+trees are excluded, so the tarball is ~515 kB rather than the whole repository.
 
 The package is ESM-only (`"type": "module"`) and exposes one entry point plus the
 `sel` CLI:
@@ -190,7 +204,7 @@ Packagist infers release versions from git tags, but it reads `extra.branch-alia
 ```json
   "extra": {
     "branch-alias": {
-      "dev-main": "0.7.x-dev"
+      "dev-main": "0.8.x-dev"
     }
   }
 ```
@@ -203,7 +217,7 @@ Never delete, move, or re-tag an existing release tag. Packagist explicitly trac
 
 > `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`
 
-Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.7.5`) rather than moving `v0.7.4`.
+Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.8.1`) rather than moving `v0.8.0`.
 
 ---
 
@@ -277,7 +291,7 @@ profile would only make the package unusable out of the box.
 To publish, either upload to your own remote:
 
 ```
-conan upload sel-lang/0.6.0 -r <remote> --confirm
+conan upload sel-lang/0.8.0 -r <remote> --confirm
 ```
 
 or open a pull request against

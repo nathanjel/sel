@@ -10,7 +10,46 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
-## [Unreleased]
+## 0.8.0 — 2026-09-24
+
+Everything since 0.7.4: the hybrid SQL/in-memory planner and the relational
+engine ported to all five hosts and held to one answer, a new builtin, a new
+grouping verb name, and a repository gate that brings its own databases. The
+entries below were written as the work landed, newest first.
+
+  - **Incompatible changes.** `GROUP_BY` is gone; the grouping verb is `BUCKET`
+    (it was an alias in four hosts). `LAZY_RECORD` is gone; `MAP(RECORD(…))`
+    evaluates every field, as `RECORD` always said it did.
+  - **`CANON(x)`**, the canonical form of a number, so a rule can compare
+    numbers by value and SQL can prove it; with it, `DISTINCT` and grouping over
+    numeric keys push down. An `IF`/`COND` of text literals also keeps SEL's
+    identity in SQL.
+  - **Two new SQL caveats**, `scale-limit` (the MySQL family's `DECIMAL(65,10)`
+    casts) and `text-order` (sorting number-shaped text), both refused under
+    strict and handled in memory by the planner.
+  - **The hybrid planner** (maximal SQL prefix, in-memory suffix) runs in every
+    host; bucket pipelines translate as one grouped statement; joins, join keys,
+    join pre-filters and `FILTER` after `LINK` agree everywhere. All six scale
+    scenarios run through the database lanes with parity on PostgreSQL 17 and
+    MariaDB 11.8.
+  - **Authored once, rendered per host:** limits and error codes
+    (`spec/limits.json`), math-plan opcodes (`spec/math-ops.json`) and the
+    builtin table (`spec/builtins.json`), each checked by the gate.
+  - **Performance** work in every host (math plans, lazy decimal strings,
+    prepared record layouts, bounded metadata caches), each measured against a
+    baseline and none regressing.
+  - **Packages carry the user documentation only.** npm, the PyPI sdist and
+    `git archive` (Packagist, GitHub tag tarballs) each list the shipped
+    documents file by file — `LANGUAGE`, `BUILTINS`, `LIMITS`,
+    `SQL-TRANSLATION`, `SQL-KINDS` — and leave out the contributor guide,
+    interim notes, worklists, history, `PACKAGING.md` and `CLAUDE.md`; the npm
+    tarball falls from 1.5 MB to 515 kB. `tools/check-package-docs.sh` holds
+    the three to one list.
+  - **The gate** (`tools/check.sh`) starts its own pinned Docker databases and
+    fails rather than skips without them; the C++ SQL layer runs under the
+    sanitizers.
+
+conformance 1027 · sql cases 973 · mutations 222
 
 Scenario 6 leaves memory: an `IF` or `COND` of text literals keeps SEL's identity in SQL (2026-09-24; WL-001 SEL-0057).
 
