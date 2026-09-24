@@ -36,6 +36,3 @@ docs/reference/limits.md      -export-ignore
 # Maintainer and agent instructions.
 PACKAGING.md             export-ignore
 CLAUDE.md                export-ignore
-
-# The maintainer's deployment of the documentation site; not part of any package.
-deploy/                  export-ignore
