@@ -153,7 +153,7 @@ The package is `sel-lang` everywhere:
 pip install sel-lang
 npm install sel-lang
 composer require nathanjel/sel-lang
-vcpkg install sel-lang            # or: conan install --requires sel-lang/0.8.0
+vcpkg install sel-lang            # or: conan install --requires sel-lang/0.8.1
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
 ```
 

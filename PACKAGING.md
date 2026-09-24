@@ -31,7 +31,7 @@ tools/check.sh                                    # ALL GREEN, full roster
 SEL_IMPLS="$SEL_IMPLS python-wheel" tools/check.sh # and through the built wheel
 tools/oracle-db.sh                                # the map, against real servers
 tools/oracle-db.sh run python3 tools/mutate-sql.py # every mutation, none skipped
-tools/check-version.sh 0.8.0                      # every manifest agrees
+tools/check-version.sh 0.8.1                      # every manifest agrees
 tools/check-package-docs.sh                       # user docs only, in every package
 tools/check-usage.sh                              # the SQL examples, every host, real servers
 ```
@@ -69,8 +69,8 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.8.0 -m "SEL 0.8.0"
-git push origin v0.8.0
+git tag -a v0.8.1 -m "SEL 0.8.1"
+git push origin v0.8.1
 ```
 
 **Never re-tag or move an existing tag.** Upstream registries forbid republishing under an existing version: Packagist blocks re-tagged releases with `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`, while npm and PyPI permanently refuse file uploads for already-published versions. If a defect or correction is needed after pushing a tag, always bump to the next patch version.
@@ -78,12 +78,12 @@ git push origin v0.8.0
 Versions live in six manifests. Keep them in step:
 
 ```
-package.json                     "version": "0.8.0"
-pyproject.toml                   version = "0.8.0"
-cpp/conanfile.py                 version = "0.8.0"
-cpp/vcpkg.json                   "version-semver": "0.8.0"
-cpp/CMakeLists.txt               project(... VERSION 0.8.0 ...)
-lisp/sel-lang.asd                :version "0.8.0"
+package.json                     "version": "0.8.1"
+pyproject.toml                   version = "0.8.1"
+cpp/conanfile.py                 version = "0.8.1"
+cpp/vcpkg.json                   "version-semver": "0.8.1"
+cpp/CMakeLists.txt               project(... VERSION 0.8.1 ...)
+lisp/sel-lang.asd                :version "0.8.1"
 ```
 
 `python/sel/__init__.py` carries `__version__`, `CHANGELOG.md`'s top heading
@@ -220,7 +220,7 @@ Never delete, move, or re-tag an existing release tag. Packagist explicitly trac
 
 > `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`
 
-Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.8.1`) rather than moving `v0.8.0`.
+Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.8.2`) rather than moving `v0.8.1`.
 
 ---
 
@@ -294,7 +294,7 @@ profile would only make the package unusable out of the box.
 To publish, either upload to your own remote:
 
 ```
-conan upload sel-lang/0.8.0 -r <remote> --confirm
+conan upload sel-lang/0.8.1 -r <remote> --confirm
 ```
 
 or open a pull request against

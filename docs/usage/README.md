@@ -76,7 +76,7 @@ use Sel\Sql\Sql;                     // the SQL layer: also require php/src/Sql/
 <summary>C++</summary>
 
 ```sh
-vcpkg install sel-lang               # or: conan install --requires sel-lang/0.8.0
+vcpkg install sel-lang               # or: conan install --requires sel-lang/0.8.1
                                      # or add cpp/sel.hpp, sel_ast.hpp, sel.cpp and third_party/srell/
 ```
 ```cpp

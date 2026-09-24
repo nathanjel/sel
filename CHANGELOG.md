@@ -10,9 +10,10 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
-## Unreleased
+## 0.8.1 — 2026-09-24
 
-The documentation, rebuilt — and the one API addition it needed.
+The documentation, rebuilt, and the two API additions it led to: an
+application's own functions, and a SQL spelling for them.
 
   - **Host functions** (spec §8.1): `register_function` / `registerFunction` /
     `Sel::registerFunction` / `sel::register_function` / `sel:register-function`
@@ -58,6 +59,10 @@ The documentation, rebuilt — and the one API addition it needed.
     `docs/worklists/`, `docs/history/`, the adversarial audit's reports and
     captured results, and superseded benchmark results. They remain in the git
     history; the measurement tools now write to ignored `tools/<tool>/results/`.
+
+Lanes: 1027 conformance cases in every host; 1010 SQL translation cases in
+every host; 222 mutations caught, none survived. The seven database-backed
+examples agree across all five hosts on PostgreSQL 17, MariaDB 11.8 and SQLite.
 
 ## 0.8.0 — 2026-09-24
 
