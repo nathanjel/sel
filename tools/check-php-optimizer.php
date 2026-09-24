@@ -48,38 +48,26 @@ check($dead['t'] === 'bool' && $dead['v'] === false, 'short-circuit literal fold
 $branch = Optimizer::optimize(Sel::compile('IF(TRUE, 2 + 3, 1 / 0)')->ast, true);
 check($branch['t'] === 'num' && $branch['v'] === '5', 'literal IF folding');
 
-$leftQualified = optimized_steps(
-    'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
-    . ' .> FILTER(_["orders"]["status"] $== "COMPLETED")',
-);
-// The pushed conjuncts run tentatively under the join and the FILTER above
-// keeps its whole predicate (spec §7.4; SEL-0051).
-check(array_map(static fn (array $step): string => $step['name'], $leftQualified) === ['FILTER', 'LINK', 'FILTER']
-    && !empty($leftQualified[0]['args'][1]['tentative']) && !empty($leftQualified[2]['args'][1]['pushedDown']),
-    'qualified left join-filter pushdown');
-
-$rightQualified = optimized_steps(
-    'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
-    . ' .> FILTER(_["customers"]["country"] $== "DE")',
-);
-check(count($rightQualified) === 2 && $rightQualified[0]['name'] === 'LINK'
-    && ($rightQualified[0]['args'][1]['name'] ?? null) === 'FILTER'
-    && !empty($rightQualified[0]['args'][1]['args'][1]['tentative'])
-    && $rightQualified[1]['name'] === 'FILTER'
-    && ($rightQualified[1]['args'][1]['remaining']['t'] ?? null) === 'bool',
-    'qualified right join-filter pushdown; a wholly pushed predicate leaves TRUE as the remaining body');
-
-// Only the leading run of conjuncts naming one side is pushed: a customer
-// conjunct after an order conjunct stays above the join, as `remaining`.
-$mixed = optimized_steps(
-    'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
-    . ' .> FILTER(_["orders"]["status"] $== "COMPLETED" AND _["customers"]["country"] $== "DE")',
-);
-check(array_map(static fn (array $step): string => $step['name'], $mixed) === ['FILTER', 'LINK', 'FILTER']
-    && !empty($mixed[0]['args'][1]['tentative']) && ($mixed[1]['args'][1]['t'] ?? null) === 'var'
-    && !empty($mixed[2]['args'][1]['pushedDown'])
-    && ($mixed[2]['args'][1]['remaining']['op'] ?? null) === '$==',
-    'a conjunct after the pushed run stays above the join as the remaining body');
+// The physical tree never moves a FILTER across a LINK (spec §7.4; SEL-0054):
+// a FILTER moved onto a side renumbered the joined rows, skipped the join
+// keys of the rows it dropped, and read relation names under explicit
+// binders. The join tests conjuncts itself, at run time, where it can prove
+// that is the same.
+foreach ([
+    'a left conjunct' => ' .> FILTER(_["orders"]["status"] $== "COMPLETED")',
+    'a right conjunct' => ' .> FILTER(_["customers"]["country"] $== "DE")',
+    'a left and a right conjunct' => ' .> FILTER(_["orders"]["status"] $== "COMPLETED" AND _["customers"]["country"] $== "DE")',
+] as $why => $filter) {
+    $steps = optimized_steps('ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])' . $filter);
+    check(step_names($steps) === ['LINK', 'FILTER'] && ($steps[0]['args'][1]['t'] ?? null) === 'var',
+        "no FILTER crosses a LINK: {$why}");
+}
+// Whether a FILTER's keys can be seen, for the join's pre-filter: a step that
+// renumbers without reading `_K` hides them; the end of a pipeline does not.
+$observed = optimized_steps('ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["status"] $== "A")');
+$hidden = optimized_steps('ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["orders"]["status"] $== "A") .> MAP(1)');
+check(($observed[1]['args'][1]['keysUnobserved'] ?? null) === false && ($hidden[1]['args'][1]['keysUnobserved'] ?? null) === true,
+    'a FILTER followed by a MAP has unobserved keys, one ending the pipeline observed ones');
 
 // Only a read through the joined row's key names a side. `O["x"]`, `C["x"]`
 // or `ORDERS["x"]` after the LINK is E_UNDEF_VAR / E_NO_KEY as written (spec
@@ -110,8 +98,8 @@ $fixedPoint = optimized_steps(
     . ' .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
     . ' .> FILTER(_["orders"]["status"] $== "ACTIVE")',
 );
-check(step_names($fixedPoint) === ['FILTER', 'FILTER', 'LINK', 'FILTER'],
-    'a pushed (tentative) FILTER does not fuse with the real FILTER already before the LINK');
+check(step_names($fixedPoint) === ['FILTER', 'LINK', 'FILTER'],
+    'a FILTER before a LINK stays before it, one after stays after');
 
 $groupKey = optimized_steps(
     'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'

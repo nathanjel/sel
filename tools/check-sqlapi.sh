@@ -42,6 +42,18 @@ for impl in $IMPLS; do
     status=1
   fi
 done
+# Agreement alone passes a defect every host shares -- the canonical flag was
+# dropped by every host's top-level translate at once, and parity was green.
+# These lines are the contract's values, pinned (SEL-0058).
+for want in 'fragment.canon.postgresql.kind = NUM' 'fragment.canon.postgresql.canonical = true' \
+            'fragment.canon.mariadb.kind = TEXT' 'fragment.canon.mariadb.canonical = true' \
+            'fragment.canon.sqlite.canonical = true' 'fragment.canon.sqlite.caveats = decimal-float' \
+            'fragment.abs.postgresql.canonical = false'; do
+  if ! sed 's/^[0-9]* //' "$WORK/$REF.txt" | grep -qxF "$want"; then
+    echo "SQL API: $REF does not report \`$want\`"
+    status=1
+  fi
+done
 if [ "$status" -eq 0 ]; then
   echo "$(wc -l < "$WORK/$REF.txt") SQL API probes, $IMPLS agree on every one"
 fi

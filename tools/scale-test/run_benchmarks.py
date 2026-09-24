@@ -36,6 +36,22 @@ DB_FIELD_TOLERANCES = {
 }
 _DECIMAL_TEXT = re.compile(r"^-?[0-9]+(?:\.[0-9]+)?$")
 
+# Why each scenario the planner keeps wholly in memory stays there. The lane
+# runs such a scenario the way execute_hybrid runs a pure-memory plan -- the
+# program over the relations it reads, fetched whole -- but only with a reason
+# on record here, backed by planner cases every host runs: a scenario that
+# drifts into memory without one fails the lane instead of being measured as
+# if that were the plan (SEL-0055).
+PURE_MEMORY_REASONS: dict[str, str] = {
+    # None today. scenario6 was here until SEL-0057: its DEDUPE reads a
+    # `status` computed with IF, and once an IF of text literals was proved to
+    # keep SEL's identity in SQL, the planner split it after the MAP.
+}
+
+
+class DatabaseUnavailable(RuntimeError):
+    """No server answered: the one failure a caller may report as a skip."""
+
 
 class PersistentPdoClient:
     """One PHP/PDO connection driven by a newline-delimited JSON protocol."""
@@ -63,10 +79,10 @@ class PersistentPdoClient:
             line = self.process.stdout.readline()
             if not line:
                 stderr = self.process.stderr.read() if self.process.stderr else ""
-                raise RuntimeError(f"{dialect} persistent client did not start: {stderr}")
+                raise DatabaseUnavailable(f"{dialect} persistent client did not start: {stderr}")
             ready = json.loads(line)
             if ready.get("ready") is not True:
-                raise RuntimeError(f"{dialect} persistent client rejected connection: {ready}")
+                raise DatabaseUnavailable(f"{dialect} persistent client rejected connection: {ready}")
             self.connect_ms = float(ready.get("connect_ms", 0.0))
             self.boundary = str(ready.get("boundary", "execute/fetch combined"))
             self.prepared_statement_policy = str(ready.get("prepared_statement_policy", "unknown"))
@@ -153,6 +169,68 @@ def compare_rows_exact(
     return True, "PARITY"
 
 
+def plan_kind(plan: Any) -> str:
+    return "pure_sql" if plan.pure_sql else "pure_memory" if plan.pure_memory else "hybrid"
+
+
+def reference_kind(expected: dict[str, Any], dialect: str) -> str:
+    """The plan the Lisp reference recorded: no statement is a pure-memory
+    plan (its continuation is the program itself)."""
+    if expected["sql_postgres" if dialect == "postgresql" else "sql_mariadb"] is None:
+        return "pure_memory"
+    hybrid = expected.get("is_hybrid") is True or expected.get("has_continuation") is True
+    return "hybrid" if hybrid else "pure_sql"
+
+
+def memory_sources(plan: Any, dialect: str, bindings: dict[str, Any]) -> list[dict[str, Any]]:
+    """The statements that fetch what a pure-memory plan reads: each relation
+    over one of its source tables, its declared columns (a raw binding is a
+    database computation, which the in-memory context derives itself), in id
+    order -- the fixture's order, since a relation has none and the program's
+    answer may depend on it."""
+    quote = (lambda name: f'"{name}"') if dialect == "postgresql" else (lambda name: f"`{name}`")
+    sources = []
+    for table in plan.source_tables:
+        for name, binding in bindings.items():
+            spec = binding.spec
+            if spec["kind"] != "relation" or spec["from"] != table:
+                continue
+            columns = [field["column"] for field in spec["fields"].values()
+                       if "column" in field and "raw" not in field]
+            if "id" not in columns:
+                raise RuntimeError(f"relation {name} has no id column to fetch it in fixture order")
+            sources.append({
+                "relation": name,
+                "table": table,
+                "sql": f"SELECT {', '.join(map(quote, columns))} FROM {quote(table)} ORDER BY {quote('id')}",
+            })
+    if not sources:
+        raise RuntimeError(f"a pure-memory plan reads no relation the {dialect} schema binds")
+    return sources
+
+
+def memory_rows(plan: Any, client: "PersistentPdoClient", scenario_id: str,
+                sources: list[dict[str, Any]]) -> tuple[list[dict[str, object]], float, float, float]:
+    """Execute a pure-memory plan over its relations fetched from the database."""
+    from sel_benchmarks import benchmark_value, load_context
+
+    fetched: dict[str, list[dict[str, object]]] = {}
+    fetch_ms = 0.0
+    for source in sources:
+        response = client.query(scenario_id, source["sql"])
+        fetch_ms += float(response["db_execute_fetch_ms"])
+        fetched[source["relation"]] = response["rows"]
+    materialize_start = time.perf_counter()
+    context = load_context(fetched)
+    materialize_ms = (time.perf_counter() - materialize_start) * 1000.0
+    run_start = time.perf_counter()
+    final_rows = benchmark_value(plan.continuation_program.run(context))
+    run_ms = (time.perf_counter() - run_start) * 1000.0
+    if not isinstance(final_rows, list):
+        raise RuntimeError("a pure-memory plan did not return a row list")
+    return final_rows, fetch_ms, materialize_ms, run_ms
+
+
 def continuation_rows(plan: Any, raw_rows: list[dict[str, object]]) -> tuple[list[dict[str, object]], float, float]:
     """Materialize and execute the generated Python SEL continuation."""
     from sel import Value
@@ -191,21 +269,46 @@ def database_plans(reference: list[dict[str, Any]]) -> dict[str, dict[str, Any]]
         program = compile(expected["query"])
         dialect_plans: dict[str, Any] = {}
         for dialect in ("postgresql", "mariadb"):
-            plan = Sql.plan_hybrid(program, dialect, schema(dialect))
-            if plan.sql_statement is None:
-                raise RuntimeError(f"{dialect} has no SQL statement for {expected['id']}")
+            bindings = schema(dialect)
+            plan = Sql.plan_hybrid(program, dialect, bindings)
+            kind, recorded = plan_kind(plan), reference_kind(expected, dialect)
+            if kind != recorded:
+                raise RuntimeError(
+                    f"{dialect} plans {expected['id']} as {kind}, the Lisp reference records "
+                    f"{recorded}: regenerate the reference if the planner changed on purpose")
+            if kind == "pure_memory":
+                if expected["id"] not in PURE_MEMORY_REASONS:
+                    raise RuntimeError(
+                        f"{dialect} keeps {expected['id']} wholly in memory and no reason is on "
+                        f"record: find out why, pin it with a planner case, and record it in "
+                        f"PURE_MEMORY_REASONS")
+                dialect_plans[dialect] = {"plan": plan, "kind": kind,
+                                          "sources": memory_sources(plan, dialect, bindings)}
+                continue
             sql = plan.sql_statement.as_statement("inline")
             expected_sql = expected["sql_postgres" if dialect == "postgresql" else "sql_mariadb"]
             if sql != expected_sql:
                 raise RuntimeError(f"database {dialect} SQL differs from Lisp reference for {expected['id']}")
-            expected_hybrid = expected.get("is_hybrid") is True or expected.get("has_continuation") is True
-            if plan.is_hybrid != expected_hybrid or plan.pure_sql != (not expected_hybrid):
-                raise RuntimeError(f"database {dialect} hybrid metadata differs for {expected['id']}")
             if (plan.continuation_program is not None) != (expected.get("has_continuation") is True):
                 raise RuntimeError(f"database {dialect} continuation metadata differs for {expected['id']}")
-            dialect_plans[dialect] = plan
+            dialect_plans[dialect] = {"plan": plan, "kind": kind, "sql": sql}
+        # A reason for a scenario the planner pushes is stale.
+        if expected["id"] in PURE_MEMORY_REASONS and not all(
+                item["kind"] == "pure_memory" for item in dialect_plans.values()):
+            raise RuntimeError(f"{expected['id']} has a pure-memory reason on record but is pushed down")
         plans[expected["id"]] = dialect_plans
     return plans
+
+
+def run_scenario(entry: dict[str, Any], client: "PersistentPdoClient",
+                 scenario_id: str) -> tuple[list[dict[str, object]], float, float, float]:
+    """One execution: rows, then database, materialisation and SEL milliseconds."""
+    plan = entry["plan"]
+    if entry["kind"] == "pure_memory":
+        return memory_rows(plan, client, scenario_id, entry["sources"])
+    response = client.query(scenario_id, entry["sql"])
+    final_rows, materialize_ms, continuation_ms = continuation_rows(plan, response["rows"])
+    return final_rows, float(response["db_execute_fetch_ms"]), materialize_ms, continuation_ms
 
 
 def run_corrected_database_benchmark(
@@ -287,14 +390,18 @@ def run_corrected_database_benchmark(
                     "runs": runs,
                     "warmups": warmups,
                     "scenario_order": [item["id"] for item in reference],
+                    "plans": {item["id"]: plans[item["id"]][dialect]["kind"] for item in reference},
+                    "pure_memory_reasons": {
+                        item["id"]: PURE_MEMORY_REASONS[item["id"]] for item in reference
+                        if plans[item["id"]][dialect]["kind"] == "pure_memory"
+                    },
                 },
                 "scenarios": [],
             }
 
             for expected in reference:
                 scenario_id = expected["id"]
-                plan = plans[scenario_id][dialect]
-                sql = plan.sql_statement.as_statement("inline")
+                entry = plans[scenario_id][dialect]
                 failures: list[str] = []
                 for warmup in range(warmups):
                     if timing_mode == "gc-controlled":
@@ -303,8 +410,7 @@ def run_corrected_database_benchmark(
                         f"[database] {dialect} {scenario_id} warmup {warmup + 1}/{warmups}",
                         flush=True,
                     )
-                    response = client.query(scenario_id, sql)
-                    continuation_rows(plan, response["rows"])
+                    run_scenario(entry, client, scenario_id)
 
                 samples: list[dict[str, float]] = []
                 for run in range(runs):
@@ -315,13 +421,11 @@ def run_corrected_database_benchmark(
                         flush=True,
                     )
                     hybrid_start = time.perf_counter()
-                    response = client.query(scenario_id, sql)
-                    final_rows, materialize_ms, continuation_ms = continuation_rows(
-                        plan, response["rows"]
+                    final_rows, db_ms, materialize_ms, continuation_ms = run_scenario(
+                        entry, client, scenario_id
                     )
                     hybrid_total_ms = (time.perf_counter() - hybrid_start) * 1000.0
                     raw_outputs[dialect][scenario_id].append(final_rows)
-                    db_ms = float(response["db_execute_fetch_ms"])
                     samples.append({
                         "db_execute_fetch_ms": db_ms,
                         "db_materialize_ms": materialize_ms,
@@ -337,6 +441,7 @@ def run_corrected_database_benchmark(
 
                 scenario_report: dict[str, Any] = {
                     "id": scenario_id,
+                    "plan": entry["kind"],
                     "rows": len(raw_outputs[dialect][scenario_id][-1]),
                     "samples": samples,
                     "statistics": {
@@ -390,6 +495,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmups", type=int, default=2)
     parser.add_argument("--timing-mode", choices=("steady-state", "gc-controlled"), default="steady-state")
     parser.add_argument("--only", default=None, help="comma-separated scenario ids")
+    parser.add_argument(
+        "--plans-only",
+        action="store_true",
+        help="plan every scenario and check it against the reference, with no database",
+    )
     parser.add_argument("--database", default=None)
     parser.add_argument("--dialect", choices=("postgresql", "mariadb"), default=None)
     parser.add_argument("--output", type=Path, default=ROOT / "tools/scale-test/database_results_corrected.json")
@@ -409,6 +519,16 @@ def main() -> int:
     reference_path = resolve_path(args.reference)
     output = resolve_path(args.output)
     reference = json.loads(reference_path.read_text(encoding="utf-8"))
+    if args.plans_only:
+        # What the database lane checks before it connects -- each plan's kind
+        # and SQL against the reference, and a reason for each pure-memory
+        # plan -- needs no server, so the gate runs it: the reference and the
+        # planner once drifted apart unseen, because only a lane that needs
+        # loaded servers compared them (SEL-0055).
+        plans = database_plans(reference)
+        for scenario_id, dialect_plans in plans.items():
+            print(scenario_id, " ".join(f"{d}={item['kind']}" for d, item in dialect_plans.items()))
+        return 0
     if args.only:
         wanted = set(args.only.split(","))
         reference = [item for item in reference if item["id"] in wanted]
@@ -450,6 +570,11 @@ def main() -> int:
     output.write_text(json.dumps(artifact, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     for dialect, report in reports.items():
         print(f"{dialect}: {'PASS' if report['passed'] else 'FAIL'}", flush=True)
+        for item in report["scenarios"]:
+            median = item["statistics"]["hybrid_total_ms"]["median_ms"]
+            print(f"  {item['id']}: {item['plan']}, median {median:.1f} ms", flush=True)
+    for scenario_id, reason in next(iter(reports.values()))["metadata"]["pure_memory_reasons"].items():
+        print(f"{scenario_id} runs in memory: {reason}", flush=True)
     print(f"Machine-readable report: {output}")
     return 0 if artifact["passed"] else 1
 

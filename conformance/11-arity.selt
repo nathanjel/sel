@@ -93,6 +93,18 @@ BTL(1, 1)
 --- expect
 error E_ARITY at 1:1
 ===
+### name: arity.canon.too-few
+--- source
+CANON()
+--- expect
+error E_ARITY at 1:1
+===
+### name: arity.canon.too-many
+--- source
+CANON(1, 1)
+--- expect
+error E_ARITY at 1:1
+===
 ### name: arity.ceil.too-few
 --- source
 CEIL()

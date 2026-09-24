@@ -406,22 +406,29 @@ def _compile_plan(plan, left, rside, matched, b1, b2):
     field the left names, or named like a binder key, is never promoted and
     needs no check. (Python checks the right fields pair by pair: a pass over
     the right rows to learn they are all flat, as the other hosts make, costs
-    more here than the checks it saves.)"""
+    more here than the checks it saves, and nothing where each right row is
+    paired once.)
+
+    Beside it, many(left, rights, i, out, project): the rows of LEFT with
+    rights[i:], appended to OUT in one loop, for a LEFT this plan already
+    fits -- one call per left row instead of one per pair. A pair the plan
+    does not fit goes to PROJECT, and the loop goes on with the next."""
     shape, ops = plan
     lnested = [_left_nested(v) for v in left.storage]
     # Inline, and a shaped record's size read off its shape: no calls for the
     # common values -- text and shaped records.
-    lguards = []
+    lscalar, lrecord = [], []
     for i, nested in enumerate(lnested):
         x = f'l_s[{i}]'
         if nested:
-            lguards.append(f'({x}.shape.size > 0 if {x}.shape is not None else '
+            lrecord.append(f'({x}.shape.size > 0 if {x}.shape is not None else '
                            f'({x}.kind == "NONE" and not {x}.is_list and {x}.size() > 0))')
         else:
-            lguards.append(f'({x}.kind != "NONE" or {x}.is_list or '
-                           f'({x}.shape.size == 0 if {x}.shape is not None else {x}.size() == 0))')
+            lscalar.append((f'{x}.kind', f'({x}.kind != "NONE" or {x}.is_list or '
+                                         f'({x}.shape.size == 0 if {x}.shape is not None else {x}.size() == 0))'))
     promoted = {op[1] for op in ops if op[0] == 'R'}
-    rguards = [f'(r_s[{i}].kind != "NONE" or r_s[{i}].is_list)' for i in sorted(promoted)]
+    rscalar = [(f'r_s[{i}].kind', f'(r_s[{i}].kind != "NONE" or r_s[{i}].is_list)') for i in sorted(promoted)]
+    rnull = []
     if matched:
         left_names = {k.upper() for k in left.shape.keys}
         binder_names = set(_binder_keys(b1, '_1')) | set(_binder_keys(b2, '_2'))
@@ -429,24 +436,47 @@ def _compile_plan(plan, left, rside, matched, b1, b2):
             v = rside.storage[i]
             if (i not in promoted and k.upper() not in left_names and k not in binder_names
                     and v.kind == NONE and not v.is_list):
-                rguards.append(f'(r_s[{i}].kind == "NONE" and not r_s[{i}].is_list)')
+                rnull.append(f'(r_s[{i}].kind == "NONE" and not r_s[{i}].is_list)')
+    lguard = ' and '.join(_scalars(lscalar) + lrecord) or 'True'
+    rguard = ' and '.join(_scalars(rscalar) + rnull) or 'True'
     items = []
     for op in ops:
         tag = op[0]
         items.append(f'l_s[{op[1]}]' if tag == 'L' else f'r_s[{op[1]}]' if tag == 'R'
                      else 'left' if tag == 'LS' else 'rside')
+    row = f"_from_shape(_shape, [{', '.join(items)}])"
     code = (f"def build(left, rside, left_ok):\n"
             f"    l_s = left.storage\n    r_s = rside.storage\n"
-            f"    if not left_ok and not ({' and '.join(lguards) or 'True'}):\n        return None\n"
-            f"    if not ({' and '.join(rguards) or 'True'}):\n        return None\n"
-            f"    return _from_shape(_shape, [{', '.join(items)}])\n")
-    # The function lands in a namespace of its own, not in its globals: a
+            f"    if not left_ok and not ({lguard}):\n        return None\n"
+            f"    if not ({rguard}):\n        return None\n"
+            f"    return {row}\n"
+            f"def many(left, rights, i, out, project):\n"
+            f"    append = out.append\n    l_s = left.storage\n"
+            f"    for rside in rights[i:]:\n"
+            f"        if rside.shape is _rshape:\n"
+            f"            r_s = rside.storage\n"
+            f"            if {rguard}:\n"
+            f"                append({row})\n"
+            f"                continue\n"
+            f"        append(project(left, rside))\n")
+    # The functions land in a namespace of their own, not in their globals: a
     # function held by its own globals is a reference cycle, garbage for the
     # collector every run pays for.
-    ns = {'_from_shape': Value._from_shape, '_shape': shape}
+    ns = {'_from_shape': Value._from_shape, '_shape': shape, '_rshape': rside.shape}
     local = {}
     exec(code, ns, local)
-    return local['build']
+    return local['build'], local['many']
+
+
+def _scalars(tests):
+    """TESTS, (kind, test) per field that must not be a record, as guard
+    terms: with two or more, one membership test of their kinds first -- no
+    field of kind NONE passes them all at once, and only a row where one is
+    (a list, a NULL, a record) pays for the tests one by one."""
+    if len(tests) < 2:
+        return [test for _, test in tests]
+    return [f'("NONE" not in ({", ".join(kind for kind, _ in tests)}) or '
+            f'({" and ".join(test for _, test in tests)}))']
 
 
 def make_join_projector(b1, b2, null_right):
@@ -455,8 +485,13 @@ def make_join_projector(b1, b2, null_right):
     the facts it assumed (_compile_plan) and a pair none fits gets its own
     plan from make_joined_row's rule (_row_plan). A left row's matches come
     one after another, so the last pair's plan is tried first, checking the
-    left row only when it is a new one."""
+    left row only when it is a new one.
+
+    project_many(left, rights, out): the rows of LEFT with each of RIGHTS
+    (none of them None), appended to OUT -- the first through project, the
+    rest through the loop compiled beside the plan that fit it."""
     plans = {}
+    manys = {}
     last_left = last_build = pair_l = pair_r = pair_candidates = None
     pair_matched = False
 
@@ -487,13 +522,26 @@ def make_join_projector(b1, b2, null_right):
             if row is not None:
                 break
         else:
-            build = _compile_plan(_row_plan(left, rside, matched, b1, b2), left, rside, matched, b1, b2)
+            build, manys[build] = _compile_plan(_row_plan(left, rside, matched, b1, b2),
+                                                left, rside, matched, b1, b2)
             candidates.append(build)
             row = build(left, rside, True)
         last_left, last_build = left, build
         pair_l, pair_r, pair_matched, pair_candidates = lshape, rside.shape, matched, candidates
         return row
-    return project
+
+    def project_many(left, rights, out):
+        out.append(project(left, rights[0]))
+        if len(rights) > 1:
+            # A plan fits LEFT when the last pair was LEFT's (the general
+            # path, for a shapeless side, leaves the memo as it was).
+            many = manys.get(last_build) if last_left is left else None
+            if many is not None:
+                many(left, rights, 1, out, project)
+            else:
+                for right in rights[1:]:
+                    out.append(project(left, right))
+    return project, project_many
 
 
 def _pure_source(node):
@@ -524,38 +572,40 @@ def _pure_source(node):
     return False
 
 
-def _stage_walk(stages, owned_here, total_here, pushed_held):
-    """The conjuncts a join may pre-apply to its left rows, in stage order,
-    and the fields whose absence below is relied on (SEL-0052).
+def _stage_walk(stages, owned_here, total_here, right_here=None):
+    """The conjuncts a join may test before it joins, in stage order (SEL-0052,
+    SEL-0054).
 
     Walking the conjuncts in the order the FILTERs run: one whose fields are
-    all owned by the left rows (``owned_here``) is applied; one that reads a
-    field of some right side -- this join's or one above -- ends the walk,
-    since AND short-circuits left to right and a later conjunct may not run
-    before it, UNLESS it is TOTAL here (``total_here``: it cannot raise on any
-    joined row), in which case it is deferred to the join above and the walk
-    goes on. A conjunct that reads anything but fields ends the walk too.
+    all owned by the left rows (``owned_here``) is applied to them; one that
+    reads only through this join's right binder (``right_here``,
+    `_["products"]["is_active"]`) is applied to the right rows; one that
+    reads a field of some right side -- this join's or one above -- ends the
+    walk, since AND short-circuits left to right and a later conjunct may not
+    run before it, UNLESS it is TOTAL here (``total_here``: it cannot raise
+    on any joined row), in which case it is deferred to the join above and
+    the walk goes on. A conjunct that reads anything but fields ends the walk
+    too. Each stage is judged against the joins between its FILTER and this
+    join (its third member, the count of them): a FILTER in the middle of a
+    chain reads rows no join above it has touched.
 
-    Returns (applied, stop): the (conjunct, fields) pairs to apply, and where
-    the walk ended -- (stage index, conjunct index) -- or None when it did
-    not. A deferral relies on no lower relation carrying the field; the join
-    that has those rows repeats the walk with them, so a shadowed deferral
-    stops the walk there before anything after it is applied.
+    Returns (applied, stop): (conjunct, fields, binder, stage, right) for each
+    conjunct to apply, and where the walk ended -- (stage index, conjunct
+    index) -- or None when it did not. A deferral relies on no lower relation
+    carrying the field; the join that has those rows repeats the walk with
+    them, so a shadowed deferral stops the walk there before anything after
+    it is applied.
     """
     applied = []
-    for si, (_binder, conjuncts) in enumerate(stages):
-        for ci, (conjunct, fields, total, pushed, _b) in enumerate(conjuncts):
-            # A conjunct the optimiser pushed below already held on every row
-            # (unless a tentative FILTER kept a row on an error: then nothing
-            # after it may run before it).
-            if pushed:
-                if pushed_held:
-                    continue
-                return applied, (si, ci)
-            if fields is not None and owned_here(fields):
-                applied.append((conjunct, fields, _b))
+    for si, stage in enumerate(stages):
+        for ci, (conjunct, fields, total, binder) in enumerate(stage[1]):
+            if fields is not None and owned_here(fields, stage):
+                applied.append((conjunct, fields, binder, stage, False))
                 continue
-            if total is not None and total_here(total):
+            if fields is not None and right_here is not None and right_here(fields, stage):
+                applied.append((conjunct, fields, binder, stage, True))
+                continue
+            if total is not None and total_here(total, stage):
                 continue
             return applied, (si, ci)
     return applied, None
@@ -569,8 +619,8 @@ def _truncate_stages(stages, stop):
     si, ci = stop
     out = [stage for stage in stages[:si]]
     if ci:
-        binder, conjuncts = stages[si]
-        out.append((binder, conjuncts[:ci]))
+        binder, conjuncts, above = stages[si]
+        out.append((binder, conjuncts[:ci], above))
     return out
 
 
@@ -811,8 +861,15 @@ def _link(args, ctx, left_join):
     # right row, not a field of the left ones.
     b2_names = (args.symbol(3), '_2') if count == 5 else (single_relation_name(right_node) or '_2', '_2')
     b1_names = (args.symbol(2), '_1') if count == 5 else (single_relation_name(left_node) or '_1', '_1')
-    above_keys = set().union(*(side.keys for side in above)) if above else set()
-    kept_before = ctx.tentative_kept
+    # The upper-cased keys of the joins between a stage's FILTER and this
+    # join, per count of them.
+    above_keys_cache = {}
+    def above_keys(stage):
+        n = stage[2]
+        keys = above_keys_cache.get(n)
+        if keys is None:
+            keys = above_keys_cache[n] = set().union(*(side.keys for side in above[:n])) if n else set()
+        return keys
     if (deep and stages and jequi is not None and left_node is not None and left_node.t == 'call'
             and left_node.name in ('LINK', 'LINK_LEFT', 'FILTER')
             and _pure_source(left_node) and _pure_source(right_node)):
@@ -825,15 +882,13 @@ def _link(args, ctx, left_join):
         # and this one again once its left rows are known (below), so a
         # deferral a lower relation's field would shadow is caught where the
         # rows are, before anything after it is applied there.
-        def owned_below(fields):
-            return not (fields & right_side.keys) and not (fields & above_keys)
-        def total_below(reqs):
-            return _totality(reqs, None, right_side, above)
-        # Whether the conjuncts the optimiser pushed below held so far: a
-        # tentative FILTER on this join's right side has just run.
-        _applied, stop = _stage_walk(stages, owned_below, total_below,
-                                     ctx.tentative_kept == kept_before)
-        handed = _truncate_stages(stages, stop)
+        def owned_below(fields, stage):
+            return not (fields & right_side.keys) and not (fields & above_keys(stage))
+        def total_below(reqs, stage):
+            return _totality(reqs, None, right_side, above[:stage[2]])
+        _applied, stop = _stage_walk(stages, owned_below, total_below)
+        # Below this join, every stage has one more join above it: this one.
+        handed = [(b, c, n + 1) for b, c, n in _truncate_stages(stages, stop)]
         if handed:
             # This join computes its left key on every row it receives; a row
             # dropped below never arrives, so the key is handed down as an
@@ -847,14 +902,23 @@ def _link(args, ctx, left_join):
     else:
         left_value = args.val(0)
         right_value = args.val(1)
-    pushed_held = ctx.tentative_kept == kept_before
     # The join below, if it applied some of these conjuncts, says which ones
     # (by identity) every row that came up has passed; those are skipped here
     # unless a row was kept on an error below, since such a row must reach
     # the FILTER untouched and cannot be told apart from the others.
     below = ctx.join_prefilter_report
     ctx.join_prefilter_report = None
+    # Drops below that left this join no left rows: as written it may have
+    # had some, and then it computes every right key (and raises where one
+    # cannot be) before it finds that no row survives. Only the rows as
+    # written can say, so the left side -- pure, or nothing was handed down --
+    # is evaluated again without them, and this join runs as written.
+    if below is not None and below[2] and first_collection_item(left_value) is None:
+        left_value = args.eval_node(args.node(0))
+        ctx.join_prefilter_report = None
+        below = None
     applied_below = below[0] if (below is not None and not below[1]) else set()
+    dropped = [below is not None and below[2]]
     b1, b2 = '_1', '_2'
     if count == 3:
         b1 = single_relation_name(args.node(0)) or b1
@@ -882,7 +946,7 @@ def _link(args, ctx, left_join):
     null_right = make_null_record(sample_right, b2) if left_join else None
     if null_right is not None and null_right.is_null():
         null_right = None
-    project = make_join_projector(b1, b2, null_right)
+    project, project_many = make_join_projector(b1, b2, null_right)
     equi = try_extract_equi_keys(predicate, b1, b2)
     output = []
 
@@ -899,11 +963,25 @@ def _link(args, ctx, left_join):
     # row order, or does not raise at all for a left row that joins nothing.
     gather = _KeySet() if (prefilter is not None and right_side is None) else None
     prefix = []
+    right_prefix = []
+    # How many left conjuncts come before the first right one: with a right
+    # row kept on an error, a later left conjunct may not drop a left row --
+    # the joined row would have raised in the right conjunct first.
+    left_before_right = [-1]
     if prefilter is not None:
-        binders = [binder for binder, _conjuncts in stages]
+        binders = [stage[0] for stage in stages]
         applied_ids = set()
         errored = [False]
         self_names = {b1.upper(), '_1'}
+        # A read through this join's right binder is the right element in
+        # every joined row -- the binder is bound last (spec §7.4) -- unless
+        # the left binder has the same name, or a join above rebinds it.
+        def right_names(stage):
+            return {b2.upper(), '_2'} if stage[2] == 0 else {b2.upper()}
+        right_here = None
+        if not left_join and b1.upper() != b2.upper():
+            def right_here(fields, stage):
+                return fields <= right_names(stage) and not (fields & above_keys(stage))
         def settle_prefix():
             # With both sides at hand: a field no right side carries is the
             # left rows' (a read through the left binder's own name,
@@ -915,35 +993,41 @@ def _link(args, ctx, left_join):
                                               {n for b in b1_names if not is_positional_binder(b)
                                                for n in (b, b.lower())}):
                 return
-            def owned_here(fields):
+            def owned_here(fields, stage):
                 # A joined row carries a left element's field exactly as the
                 # element does whenever no right element has the name (§7.4,
                 # pair by pair) -- and no row depends on another, so a drop
                 # below changes nothing above but the rows it drops.
-                return not (fields & right_side.keys) and not (fields & above_keys)
-            def total_here(reqs):
-                return _totality(reqs, left_side, right_side, above)
-            applied, _stop = _stage_walk(stages, owned_here, total_here, pushed_held)
-            for conjunct, fields, binder in applied:
+                return not (fields & right_side.keys) and not (fields & above_keys(stage))
+            def total_here(reqs, stage):
+                return _totality(reqs, left_side, right_side, above[:stage[2]])
+            applied, _stop = _stage_walk(stages, owned_here, total_here, right_here)
+            for conjunct, fields, binder, stage, right in applied:
                 applied_ids.add(id(conjunct))
                 if id(conjunct) in applied_below:
+                    continue
+                if right:
+                    if left_before_right[0] < 0:
+                        left_before_right[0] = len(prefix)
+                    right_prefix.append(_read_self(conjunct, right_names(stage), binder))
                     continue
                 if fields & self_names and not (fields & left_side.first):
                     conjunct = _read_self(conjunct, self_names, binder)
                 prefix.append(conjunct)
-        def rejects(row, frame):
-            # The left loop's frame, every stage's binder naming the row.
+        def verdict(conjuncts, row, frame):
+            """0: keep the row; 1: drop it; 2: keep it, a conjunct raised on it.
+            The frame names the row by every stage's binder."""
             for binder in binders:
                 frame[binder] = row
-            for conjunct in prefix:
+            for conjunct in conjuncts:
                 try:
                     keep = args.eval_node(conjunct).as_bool(conjunct.pos)
                 except SelError:
                     errored[0] = True
-                    return False
+                    return 2
                 if not keep:
-                    return True
-            return False
+                    return 1
+            return 0
 
     if equi is not None and sample_right is not None:
         left_expr, right_expr, numeric = equi
@@ -968,13 +1052,35 @@ def _link(args, ctx, left_join):
                 right_side = _SideFacts(right_value, gather.keys | {b.upper() for b in b2_names}, left_join,
                                         b2_names)
             settle_prefix()
+        # The right rows the right conjuncts reject, once each, after every
+        # right key was computed. They stay in their buckets: a left row still
+        # counts them towards the numbering, and one kept on an error joins
+        # them.
+        rejected = None
+        if right_prefix:
+            rejected = set()
+            frame = {binder: None for binder in binders}
+            before = errored[0]
+            errored[0] = False
+            ctx.push_frame(frame)
+            try:
+                for bucket in buckets.values():
+                    for right in bucket:
+                        if verdict(right_prefix, right, frame) == 1:
+                            rejected.add(id(right))
+            finally:
+                ctx.pop_frame()
+            if errored[0]:
+                del prefix[left_before_right[0]:]
+            errored[0] = errored[0] or before
 
         # A FILTER keeps its input's keys, so the rows dropped here still count
         # towards the numbering of the rows kept: the join key is computed
         # first, as it is for every row (and raises where it would have), the
         # matches say how many joined rows the dropped row stood for, and the
         # kept rows are emitted under the positions they would have had.
-        keys = [] if (prefix and not deep) else None
+        numbered = bool(prefix or rejected is not None) and not deep
+        keys = [] if numbered else None
         position = 1
         # The join key is computed for every left row before the pre-filter
         # is asked, so that a key that raises still raises. When the key is a
@@ -997,10 +1103,11 @@ def _link(args, ctx, left_join):
         try:
             for item in iter_collection_items(left_value):
                 row = ensure_row_table_alias(item, b1) if needs_left_alias else item
-                asked = False
+                asked = -1
                 if fast_field is not None and row.get(fast_field) is not None:
-                    asked = True
-                    if rejects(row, frame_left):
+                    asked = verdict(prefix, row, frame_left)
+                    if asked == 1:
+                        dropped[0] = True
                         continue
                 frame_left[b1] = row
                 frame_left[b1.lower()] = row
@@ -1008,16 +1115,33 @@ def _link(args, ctx, left_join):
                 frame_left['_'] = row
                 key = canonical_join_key(args.eval_node(left_expr), numeric)
                 matches = buckets.get(key) if key is not None else None
-                if prefix and not asked and rejects(row, frame_left):
-                    if not deep:
+                if asked < 0:
+                    asked = verdict(prefix, row, frame_left) if prefix else 0
+                if asked == 1:
+                    dropped[0] = True
+                    if numbered:
                         position += len(matches) if matches else (1 if left_join else 0)
                     continue
                 if matches:
-                    for right in matches:
-                        output.append(project(row, right))
+                    # A left row kept on an error meets every right row: its
+                    # joined rows raise in the FILTER, in order, where they
+                    # would have.
+                    skip = rejected if (rejected is not None and asked == 0) else None
+                    if skip is None:
+                        project_many(row, matches, output)
                         if keys is not None:
-                            keys.append(str(position))
-                        position += 1
+                            keys.extend([str(p) for p in range(position, position + len(matches))])
+                        position += len(matches)
+                    else:
+                        for right in matches:
+                            if id(right) in skip:
+                                dropped[0] = True
+                                position += 1
+                                continue
+                            output.append(project(row, right))
+                            if keys is not None:
+                                keys.append(str(position))
+                            position += 1
                 elif left_join:
                     output.append(project(row, None))
                     if keys is not None:
@@ -1026,7 +1150,7 @@ def _link(args, ctx, left_join):
         finally:
             ctx.pop_frame()
         if prefilter is not None:
-            ctx.join_prefilter_report = (applied_ids, errored[0])
+            ctx.join_prefilter_report = (applied_ids, errored[0], dropped[0])
         if keys is not None and len(keys) != position - 1:
             return Value.list(output, keys)
     else:

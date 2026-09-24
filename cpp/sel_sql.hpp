@@ -148,6 +148,8 @@ class Fragment {
   void set_prefilter(std::shared_ptr<Fragment> p) { prefilter_ = std::move(p); }
   bool separate_prefilter() const { return separate_prefilter_; }
   void set_separate_prefilter(bool v) { separate_prefilter_ = v; }
+  bool canonical() const { return canonical_; }
+  void set_canonical(bool v) { canonical_ = v; }
 
  private:
   friend class Translator;
@@ -177,6 +179,12 @@ class Fragment {
   bool guard_ = false;
   std::shared_ptr<Fragment> prefilter_;
   bool separate_prefilter_ = false;
+  // A number in its canonical form (spec §7.6 CANON): one spelling per value,
+  // so its SQL identity is its value's and DISTINCT/GROUP BY over it are exact.
+  // Its kind is the dialect's: NUM where the server keeps a per-value scale
+  // (PostgreSQL), TEXT where it cannot (the MySQL family, SQLite, ansi) -- and
+  // text is what SQL sorts by its bytes.
+  bool canonical_ = false;
 };
 
 // --- the builder escape hatch -----------------------------------------------
@@ -235,6 +243,9 @@ struct ColumnSpec {
   bool sargable = false;
   bool guard = false;
   std::optional<std::string> prefilter;
+  // Set only on a derived table's column that projects CANON(...): the
+  // fragment reading it carries Fragment::canonical. No binding can declare it.
+  bool canonical = false;
 };
 
 struct RelationSpec {

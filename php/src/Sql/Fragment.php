@@ -43,6 +43,14 @@ final class Fragment
     public bool $guard;
     public ?self $prefilter = null;
     public bool $separatePrefilter = false;
+    /**
+     * A number in its canonical form (spec §7.6 CANON): one spelling per
+     * value, so its SQL identity is its value's and DISTINCT/GROUP BY over it
+     * are exact. Its kind is the dialect's: NUM where the server keeps a
+     * per-value scale (PostgreSQL), TEXT where it cannot (the MySQL family,
+     * SQLite, ansi) -- and text is what SQL sorts by its bytes.
+     */
+    public bool $canonical = false;
 
     /**
      * @param list<string|int> $parts

@@ -92,6 +92,30 @@ X = LIST(RECORD("k", 1, "l", LIST(1, 2), "b", TRUE)); Y = LIST(RECORD("id", 1, "
 --- expect
 tree -{"1"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"l", "9"=t"b", "10"=t"id", "11"=t"r"}, "2"=-{"1"=t"1", "2"=t"2"}, "3"=TRUE, "4"=-{"1"=t"3"}}}
 ===
+### name: rel.link.promotion.per-pair.a-run-of-matches-is-built-pair-by-pair
+--- note
+One left element meets a run of right elements of one shape whose `v` is a
+text, NULL, a text, a record, a list, an empty record and a boolean: each
+row promotes `v` or not from its own pair, and a pair that breaks the run
+does not change the rows after it. An implementation that builds a left
+row's matches in one loop (Python's, SEL-0056) sends a pair that breaks the
+run the general way and picks the run up again after it.
+--- source
+X = LIST(RECORD("k", 1, "a", "x")); Y = LIST(RECORD("id", 1, "v", "t"), RECORD("id", 1, "v", NULL), RECORD("id", 1, "v", "u"), RECORD("id", 1, "v", RECORD("q", 1)), RECORD("id", 1, "v", LIST(2)), RECORD("id", 1, "v", RECORD()), RECORD("id", 1, "v", FALSE)); J = X .> LINK(Y, _1["k"] == _2["id"]); J .> MAP(LIST(INDEXES(_), _["v"] ?? "absent"))
+--- expect
+tree -{"1"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"a", "9"=t"id", "10"=t"v"}, "2"=t"t"}, "2"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"a", "9"=t"id"}, "2"=t"absent"}, "3"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"a", "9"=t"id", "10"=t"v"}, "2"=t"u"}, "4"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"a", "9"=t"id"}, "2"=t"absent"}, "5"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"a", "9"=t"id", "10"=t"v"}, "2"=-{"1"=t"2"}}, "6"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"a", "9"=t"id"}, "2"=t"absent"}, "7"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"a", "9"=t"id", "10"=t"v"}, "2"=FALSE}}
+===
+### name: rel.link.promotion.per-pair.runs-of-matches-under-left-elements-that-differ
+--- note
+Four left elements, `m` a record, a number, NULL and a record again, each
+meeting the same three right elements, `s` a text, NULL, a text: the
+nested-or-scalar fact is each left element's, and the NULL-or-not fact each
+pair's, through every run.
+--- source
+X = LIST(RECORD("k", 1, "m", RECORD("x", 1)), RECORD("k", 1, "m", 7), RECORD("k", 1, "m", NULL), RECORD("k", 1, "m", RECORD("x", 2))); Y = LIST(RECORD("id", 1, "s", "a"), RECORD("id", 1, "s", NULL), RECORD("id", 1, "s", "b")); J = X .> LINK(Y, _1["k"] == _2["id"]); J .> MAP(LIST(INDEXES(_), _["s"] ?? "absent"))
+--- expect
+tree -{"1"=-{"1"=-{"1"=t"m", "2"=t"X", "3"=t"x", "4"=t"_1", "5"=t"Y", "6"=t"y", "7"=t"_2", "8"=t"k", "9"=t"id", "10"=t"s"}, "2"=t"a"}, "2"=-{"1"=-{"1"=t"m", "2"=t"X", "3"=t"x", "4"=t"_1", "5"=t"Y", "6"=t"y", "7"=t"_2", "8"=t"k", "9"=t"id"}, "2"=t"absent"}, "3"=-{"1"=-{"1"=t"m", "2"=t"X", "3"=t"x", "4"=t"_1", "5"=t"Y", "6"=t"y", "7"=t"_2", "8"=t"k", "9"=t"id", "10"=t"s"}, "2"=t"b"}, "4"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"m", "9"=t"id", "10"=t"s"}, "2"=t"a"}, "5"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"m", "9"=t"id"}, "2"=t"absent"}, "6"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"m", "9"=t"id", "10"=t"s"}, "2"=t"b"}, "7"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"m", "9"=t"id", "10"=t"s"}, "2"=t"a"}, "8"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"m", "9"=t"id"}, "2"=t"absent"}, "9"=-{"1"=-{"1"=t"X", "2"=t"x", "3"=t"_1", "4"=t"Y", "5"=t"y", "6"=t"_2", "7"=t"k", "8"=t"m", "9"=t"id", "10"=t"s"}, "2"=t"b"}, "10"=-{"1"=-{"1"=t"m", "2"=t"X", "3"=t"x", "4"=t"_1", "5"=t"Y", "6"=t"y", "7"=t"_2", "8"=t"k", "9"=t"id", "10"=t"s"}, "2"=t"a"}, "11"=-{"1"=-{"1"=t"m", "2"=t"X", "3"=t"x", "4"=t"_1", "5"=t"Y", "6"=t"y", "7"=t"_2", "8"=t"k", "9"=t"id"}, "2"=t"absent"}, "12"=-{"1"=-{"1"=t"m", "2"=t"X", "3"=t"x", "4"=t"_1", "5"=t"Y", "6"=t"y", "7"=t"_2", "8"=t"k", "9"=t"id", "10"=t"s"}, "2"=t"b"}}
+===
 ### name: rel.link-left.null-record-is-shaped-like-the-first-right-element
 --- note
 An unmatched row's right binders hold "a record shaped like the right

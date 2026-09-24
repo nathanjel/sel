@@ -434,6 +434,54 @@ ABS(TO_UTF8("1"))
 --- expect
 error E_NOT_NUM at 1:5
 ===
+### name: mis.not-num.canon-bool
+--- source
+CANON(TRUE)
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.canon-text
+--- source
+CANON("x")
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.canon-untrimmed
+--- note
+CANON gives a number's canonical form; it does not make text into one. " 2"
+is text that looks numeric, as for every other numeric function (§4).
+--- source
+CANON(" 2")
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.canon-bare-point
+--- note
+"1." and ".5" are not numbers in SEL's grammar (§4), though SQL's CAST
+accepts both; CANON asks SEL's question.
+--- source
+CANON("1.")
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.canon-leading-point
+--- source
+CANON(".5")
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.canon-exponent
+--- source
+CANON("1e3")
+--- expect
+error E_NOT_NUM at 1:7
+===
+### name: mis.not-num.canon-bin
+--- source
+CANON(TO_UTF8("1"))
+--- expect
+error E_NOT_NUM at 1:7
+===
 ### name: mis.not-num.sign
 --- source
 SIGN(TRUE)

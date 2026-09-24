@@ -355,19 +355,6 @@ def numeric_literal(node: Node | None) -> int | None:
         return None
 
 
-def split_and(node: Node | None) -> list[Node]:
-    return split_and(node.l) + split_and(node.r) if node is not None and node.t == 'bin' and node.op == 'AND' else [node]
-
-
-def combine_and(nodes: list[Node], pos=None) -> Node | None:
-    if not nodes:
-        return None
-    result = nodes[0]
-    for node in nodes[1:]:
-        result = Node('bin', pos or result.pos, op='AND', l=result, r=node)
-    return result
-
-
 def rename_var(node: Node | None, old_name: str, new_name: str) -> Node | None:
     if node is None:
         return None
@@ -496,11 +483,7 @@ def logical_steps(source: Node | None, steps: list[Node],
             if (options.get('fuseFilters', True) is not False
                     and second is not None and first.name == 'FILTER' and second.name == 'FILTER'):
                 left, right = filter_details(first), filter_details(second)
-                # A tentative FILTER (a pushed conjunct, kept on error) never
-                # fuses with a real one: the fused predicate could only be one
-                # or the other.
-                if (not left['valid'] or not right['valid']
-                        or left['predicate'].tentative != right['predicate'].tentative):
+                if not left['valid'] or not right['valid']:
                     next_steps.append(first)
                     i += 1
                     continue
@@ -508,17 +491,7 @@ def logical_steps(source: Node | None, steps: list[Node],
                              else rename_var(right['predicate'], right['binder'], left['binder']))
                 merged = copy_node(first)
                 combined = Node('bin', left['predicate'].pos, op='AND',
-                                l=left['predicate'], r=predicate,
-                                tentative=left['predicate'].tentative,
-                                pushed_down=left['predicate'].pushed_down or right['predicate'].pushed_down)
-                if combined.pushed_down:
-                    def rest(p):
-                        return p.remaining if p.pushed_down else p
-                    def is_true(p):
-                        return p.t == 'bool' and p.v is True
-                    l, r = rest(left['predicate']), rest(predicate)
-                    combined.remaining = (r if is_true(l) else l if is_true(r)
-                                          else Node('bin', left['predicate'].pos, op='AND', l=l, r=r))
+                                l=left['predicate'], r=predicate)
                 merged.args = ([first.args[0], first.args[1], combined]
                                if left['explicit'] else [first.args[0], combined])
                 next_steps.append(merged)
@@ -548,214 +521,6 @@ def logical_steps(source: Node | None, steps: list[Node],
     return current
 
 
-def _single_relation_name(node: Node | None) -> str | None:
-    if node is None:
-        return None
-    if node.t == 'var':
-        return node.name
-    if node.t == 'call' and node.args and node.name not in ('LINK', 'LINK_LEFT'):
-        return _single_relation_name(node.args[0])
-    return None
-
-
-def collect_pipeline_source_names(node: Node | None) -> list[str]:
-    names, seen = [], set()
-
-    def add(name):
-        upper = name.upper()
-        if upper not in seen:
-            seen.add(upper)
-            names.append(name)
-
-    def visit(item):
-        if item is None:
-            return
-        if item.t == 'var':
-            add(item.name)
-            return
-        if item.t != 'call' or not item.args:
-            return
-        if item.name in ('LINK', 'LINK_LEFT'):
-            visit(item.args[0])
-            visit(item.args[1])
-        elif item.name in PIPELINE_OPS:
-            visit(item.args[0])
-
-    visit(node)
-    return names
-
-
-def pushdown_join_filters(steps: list[Node]) -> tuple[list[Node], bool]:
-    result = []
-    changed = False
-    i = 0
-    while i < len(steps):
-        link = steps[i]
-        filter_node = steps[i + 1] if i + 1 < len(steps) else None
-        if (filter_node is None or link.name not in ('LINK', 'LINK_LEFT')
-                or filter_node.name != 'FILTER'):
-            result.append(link)
-            i += 1
-            continue
-        left_source, right_source = link.args[0], link.args[1]
-        left_binder = (link.args[2].name if len(link.args) == 5 and link.args[2].t == 'var'
-                       and not link.args[2].grouped else _single_relation_name(left_source) or '_1')
-        right_binder = (link.args[3].name if len(link.args) == 5 and link.args[3].t == 'var'
-                        and not link.args[3].grouped else _single_relation_name(right_source) or '_2')
-        left_names = {left_binder.upper(), '_1'}
-        right_names = {right_binder.upper(), '_2'}
-        left_names.update(name.upper() for name in collect_pipeline_source_names(left_source))
-        right_names.update(name.upper() for name in collect_pipeline_source_names(right_source))
-
-
-        info = filter_details(filter_node)
-        # A FILTER whose conjuncts were already pushed keeps them all (see
-        # below), so it must not be pushed again on the next pass.
-        if not info['valid'] or info['predicate'].pushed_down:
-            result.append(link)
-            i += 1
-            continue
-
-        left, right, remaining = [], [], []
-
-        def classify(node):
-            has_left = has_right = ambiguous = unknown = False
-
-            def visit(item):
-                nonlocal has_left, has_right, ambiguous, unknown
-                if item is None:
-                    return
-                if item.t == 'index':
-                    if (item.obj is not None and item.obj.t == 'index'
-                            and item.obj.obj is not None and item.obj.obj.t == 'var'
-                            and item.obj.obj.name.upper() in (info['binder'].upper(), '_')
-                            and item.obj.idx is not None and item.obj.idx.t == 'text'):
-                        table = item.obj.idx.v.upper()
-                        if table in left_names:
-                            has_left = True
-                        elif table in right_names:
-                            has_right = True
-                        else:
-                            unknown = True
-                        return
-                    if item.obj is not None and item.obj.t == 'var' and item.idx.t == 'text':
-                        # An unqualified field of the joined row names no side:
-                        # after a LINK only the joined row is in scope (spec
-                        # §7.4), and which side owns `_["amount"]` is a fact
-                        # about the data, not the tree. This host used to read
-                        # the context's first row to decide, and so built a
-                        # different physical tree per context object -- the
-                        # one host whose tree depended on data (SEL-0049). Only
-                        # `_["O"]["id"]`, a read through the joined row's key,
-                        # names a side, as in the other four hosts.
-                        name = item.obj.name.upper()
-                        if name in (info['binder'].upper(), '_'):
-                            ambiguous = True
-                        else:
-                            unknown = True
-                        return
-                if item.t == 'var':
-                    name = item.name.upper()
-                    if name != info['binder'].upper() and name != '_':
-                        unknown = True
-                for child in item.args:
-                    visit(child)
-                for child in item.items:
-                    visit(child)
-                visit(item.l); visit(item.r); visit(item.x)
-                visit(item.obj); visit(item.idx)
-                visit(item.target); visit(item.value)
-
-            visit(node)
-            return has_left, has_right, ambiguous, unknown
-
-        def rewrite(node, target_names):
-            if node is None:
-                return None
-            copy = copy_node(node)
-            if copy.t == 'index':
-                if (copy.obj is not None and copy.obj.t == 'index'
-                        and copy.obj.obj is not None and copy.obj.obj.t == 'var'
-                        and copy.obj.obj.name.upper() in (info['binder'].upper(), '_')
-                        and copy.obj.idx is not None and copy.obj.idx.t == 'text'
-                        and copy.obj.idx.v.upper() in target_names):
-                    return Node('index', copy.pos,
-                                obj=Node('var', copy.obj.obj.pos, name='_'),
-                                idx=copy.idx)
-            copy.args = [rewrite(item, target_names) for item in copy.args]
-            copy.items = [rewrite(item, target_names) for item in copy.items]
-            if copy.l is not None:
-                copy.l = rewrite(copy.l, target_names)
-            if copy.r is not None:
-                copy.r = rewrite(copy.r, target_names)
-            if copy.x is not None:
-                copy.x = rewrite(copy.x, target_names)
-            if copy.obj is not None:
-                copy.obj = rewrite(copy.obj, target_names)
-            if copy.idx is not None:
-                copy.idx = rewrite(copy.idx, target_names)
-            if copy.target is not None:
-                copy.target = rewrite(copy.target, target_names)
-            if copy.value is not None:
-                copy.value = rewrite(copy.value, target_names)
-            return copy
-
-        # Only the LEADING run of conjuncts that name one side is pushed: a
-        # conjunct left for the join might raise on a row an early test of a
-        # later conjunct would drop, and the program as written reaches that
-        # raise first (spec §7.4; SEL-0051). The rest stays for the FILTER above.
-        side = None
-        for conjunct in split_and(info['predicate']):
-            has_left, has_right, ambiguous, unknown = classify(conjunct)
-            pure = not ambiguous and not unknown
-            if not remaining and pure and has_left and not has_right and side != 'right':
-                side = 'left'
-                left.append(rewrite(conjunct, left_names))
-            elif (not remaining and pure and has_right and not has_left
-                  and link.name == 'LINK' and side != 'left'):
-                side = 'right'
-                right.append(rewrite(conjunct, right_names))
-            else:
-                remaining.append(conjunct)
-        if not left and not right:
-            result.append(link)
-            i += 1
-            continue
-        # The pushed conjuncts run TENTATIVELY under the join -- a row they
-        # raise on is kept -- and the FILTER above keeps its whole predicate in
-        # the source's order, so the program raises what it raises as written,
-        # where it would have (spec §7.4; SEL-0051). The marks are
-        # physical-tree metadata on the body nodes; copies and filter fusion
-        # keep them.
-        def tentative(conjuncts):
-            body = combine_and(conjuncts, filter_node.pos)
-            body.tentative = True
-            return body
-        if left:
-            result.append(call('FILTER', [left_source, tentative(left)], filter_node.pos))
-        new_link = link
-        if right:
-            new_link = copy_node(link)
-            new_link.args = list(link.args)
-            new_link.args[1] = call('FILTER', [right_source, tentative(right)], filter_node.pos)
-        result.append(new_link)
-        # The retained predicate is the whole one; `remaining` is what the
-        # FILTER evaluates instead when no tentative body kept a row on an
-        # error while its source ran (the pushed conjuncts then held on every
-        # row it sees).
-        predicate = copy_node(info['predicate'])
-        predicate.pushed_down = True
-        predicate.remaining = (combine_and(remaining, filter_node.pos) if remaining
-                               else Node('bool', filter_node.pos, v=True))
-        new_filter = copy_node(filter_node)
-        new_filter.args = ([new_link, filter_node.args[1], predicate]
-                           if info['explicit'] else [new_link, predicate])
-        result.append(new_filter)
-        changed = True
-        i += 2
-    return result, changed
-
-
 def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
                   options: dict[str, Any] | None = None,
                   in_math: bool = False) -> Node | None:
@@ -780,11 +545,6 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
             optimized_steps.append(copy)
         final_steps = logical_steps(optimized_source, optimized_steps, options)
         if physical:
-            while True:
-                final_steps, pushed = pushdown_join_filters(final_steps)
-                if not pushed:
-                    break
-                final_steps = logical_steps(optimized_source, final_steps, options)
             # A tree fact the evaluator's join pre-filter needs (SEL-0050):
             # whether anything can see the keys a FILTER's result carries. A
             # following step that renumbers without reading `_K` hides them

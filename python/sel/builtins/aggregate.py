@@ -5,8 +5,9 @@ once per element, which is the same move IF makes, repeated.
 from functools import cmp_to_key
 
 from .. import decimal as D
-from ..errors import SelError, fail
+from ..errors import fail
 from ..eval import bytes_compare
+from ..parser import Node
 from ..registry import define
 from ..value import NONE, Value, iter_elements, structural_hash
 
@@ -49,20 +50,9 @@ def node_contains_var(node, name):
     return False
 
 
-def _eval_body(args, body, tentative):
-    if not tentative:
-        return args.eval_node(body)
-    try:
-        return args.eval_node(body)
-    except SelError:
-        return None
-
-
-def walk(args, ctx, visit, tentative=False, body_override=None):
+def walk(args, ctx, visit, body_override=None):
     """Runs `visit` per element with the binder and _K in scope. Returning a
-    value from `visit` stops the walk and becomes the result. ``tentative``: a
-    body that raises keeps the element -- `visit` sees None -- for the FILTER
-    above to decide (a pushed conjunct, spec §7.4).
+    value from `visit` stops the walk and becomes the result.
 
     The frame is popped in a finally, so a body that raises does not leave the
     binder in scope for whatever runs next.
@@ -79,7 +69,7 @@ def walk(args, ctx, visit, tentative=False, body_override=None):
             frame[binder] = item
             if '_K' in frame:
                 frame['_K'] = Value.text(key)
-            result = visit(_eval_body(args, body, tentative), key, item, body)
+            result = visit(args.eval_node(body), key, item, body)
             if result is not None:
                 return result
     finally:
@@ -196,7 +186,7 @@ def _leading_field_conjuncts(body, binder):
                     break
                 reqs.append((operand.idx.v, kind))
             total = reqs
-        out.append([c, fields if ok else None, total, False, binder])
+        out.append([c, fields if ok else None, total, binder])
     return out
 
 
@@ -224,81 +214,55 @@ def _filter(args, ctx):
     handed = ctx.join_prefilter
     ctx.join_prefilter = None
     own = None
-    written = args.node(args.count() - 1)
     if src is not None and src.t == 'call' and src.name in ('LINK', 'LINK_LEFT'):
         binder, body = shape(args)
         own = _leading_field_conjuncts(body, binder)
-        # Conjuncts the physical optimiser already pushed under the join (a
-        # tentative FILTER below, SEL-0051) held on every row the join sees
-        # unless one kept a row on an error; the join checks that and skips
-        # them, rather than testing them again.
-        if written.pushed_down:
-            rem = written.remaining
-            kept = set()
-            if not (rem.t == 'bool' and rem.v is True):
-                n = rem
-                while n is not None and n.t == 'bin' and n.op == 'AND':
-                    kept.add(id(n.r))
-                    n = n.l
-                kept.add(id(n))
-            for entry in own:
-                if id(entry[0]) not in kept:
-                    entry[3] = True
         # This FILTER's conjuncts first -- it runs before the FILTER that
         # handed the rest down -- then the handed ones; the join decides, in
         # that order, which it may apply and where it must stop (SEL-0052).
-        stages = [(binder, own)] if (any(not e[3] for e in own) or handed is not None) else []
-        # A first conjunct that is neither a field test nor total nor pushed
-        # ends every walk before it starts: hand nothing, gather nothing.
-        if own and own[0][1] is None and own[0][2] is None and not own[0][3]:
+        # A stage is (binder, conjuncts, how many joins lie between its
+        # FILTER and the join testing it): none, for this FILTER's own.
+        stages = [(binder, own, 0)]
+        # A first conjunct that is neither a field test nor total ends every
+        # walk before it starts: hand nothing, gather nothing.
+        if own and own[0][1] is None and own[0][2] is None:
             stages = []
-        if handed is not None:
+        elif handed is not None:
             stages.extend(handed[0])
         deep = bool(getattr(body, 'keys_unobserved', False)) if handed is None else True
         if stages:
             ctx.join_prefilter = (stages, deep,
                                   handed[2] if handed is not None else [],
                                   handed[3] if handed is not None else [])
-    kept_before = ctx.tentative_kept
     try:
         in_val = args.val(0)
     finally:
         ctx.join_prefilter = None
-    # A predicate whose leading conjuncts were pushed under the LINK below:
-    # when no tentative body kept a row on an error while the source ran,
-    # every row here passed them, and only the remaining conjuncts are
-    # evaluated (TRUE when there are none); otherwise the whole predicate, as
-    # written, decides -- and raises -- in the source's order.
-    body_override = None
-    if written.pushed_down and ctx.tentative_kept == kept_before:
-        body_override = written.remaining
-        # Nothing remains: every row of the join below passed, and the join
-        # built a fresh list this FILTER would only copy.
-        if body_override.t == 'bool' and body_override.v is True:
-            return in_val
     # The join's report -- which conjuncts every row that came up has passed,
-    # by identity, and whether a row was kept on an error -- goes up as it is:
-    # the join above skips the ones it finds there.
+    # by identity, whether a row was kept on an error, and whether any row was
+    # dropped -- goes up as it is: the join above skips the ones it finds
+    # there.
     report = ctx.join_prefilter_report
     ctx.join_prefilter_report = None
     if report is not None and handed is not None:
         ctx.join_prefilter_report = report
+    # The conjuncts of this FILTER the join below applied held on every row
+    # it built, unless it kept a row on an error: then they are TRUE there,
+    # raise nowhere, and only the rest is evaluated, in the source's order
+    # (with none left, the join's list is the FILTER's result as it is).
+    body_override = None
+    if own is not None and report is not None and not report[1]:
+        applied = report[0]
+        if any(id(e[0]) in applied for e in own):
+            rest = [e[0] for e in own if id(e[0]) not in applied]
+            if not rest:
+                return in_val
+            body_override = rest[0]
+            for node in rest[1:]:
+                body_override = Node('bin', body_override.pos, op='AND', l=body_override, r=node)
     is_dense = in_val.is_list and in_val.storage is not None and in_val.list_keys is None
-    tentative = bool(written.tentative)
     def keep(r, body):
-        # A tentative body (a pushed conjunct, spec §7.4) that raised gives
-        # None, and one whose value is not a BOOL is kept too: the FILTER
-        # above decides, in the source's order.
-        if r is None:
-            ctx.tentative_kept += 1
-            return True
-        try:
-            return r.as_bool(body.pos)
-        except SelError:
-            if not tentative:
-                raise
-            ctx.tentative_kept += 1
-            return True
+        return r.as_bool(body.pos)
     storage = []
     keys = None
     needs_custom_keys = False
@@ -333,7 +297,7 @@ def _filter(args, ctx):
                 expected_index += 1
             return None
 
-    walk(args, ctx, visit, tentative, body_override)
+    walk(args, ctx, visit, body_override)
     return Value.list(storage, keys if needs_custom_keys else None)
 
 

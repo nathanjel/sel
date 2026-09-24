@@ -42,3 +42,4 @@ for i in range(0, n, 2):
     else: values += 1
 print(f'{n // 2} pairs x {len(hosts)} hosts: {values} answered values, {errors} raised; '
       f'{cross} cross-host disagreements, {oracle_bad} as-written vs oracle disagreements')
+sys.exit(1 if cross or oracle_bad else 0)

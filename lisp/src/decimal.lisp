@@ -204,6 +204,33 @@ ISNUM's probe -- catch it and answer no."
           (%make-dec neg (dec-digits d) (dec-scale d) niv))
         (dec-make (not (dec-neg d)) (dec-digits d) (dec-scale d)))))
 
+;;; The value with the fraction's trailing zeros removed (§7.6 CANON): 1.50 is
+;;; 1.5, 2.000 is 2, 100 stays 100, and zero is 0 with no scale and no sign. A
+;;; bignum's zeros are counted on its digit string rather than by repeated
+;;; division, so a million-digit scale costs one pass.
+(defun dec-trim-scale (d)
+  (declare (type dec d))
+  (let ((digits (dec-digits d))
+        (scale (dec-scale d)))
+    (cond
+      ((zerop digits) (dec-make nil 0 0))
+      ((zerop scale) d)
+      ((<= (integer-length digits) 62)
+       (loop while (and (> scale 0) (zerop (rem digits 10)))
+             do (setf digits (truncate digits 10))
+                (decf scale))
+       (if (= scale (dec-scale d)) d (dec-make (dec-neg d) digits scale)))
+      (t
+       (let* ((text (write-to-string digits :base 10 :radix nil))
+              (len (length text))
+              (stop (max 0 (- len scale)))
+              (end len))
+         (loop while (and (> end stop) (char= (char text (1- end)) #\0))
+               do (decf end))
+         (if (= end len)
+             d
+             (dec-make (dec-neg d) (parse-integer text :end end) (- scale (- len end)))))))))
+
 (declaim (inline dec-abs))
 (defun dec-abs (d)
   (declare (optimize (speed 3) (safety 1)))

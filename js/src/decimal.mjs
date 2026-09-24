@@ -142,6 +142,21 @@ export function negate(d) {
   return make(!d.neg, d.digits, d.scale);
 }
 
+// The value with the fraction's trailing zeros removed (§7.6 CANON): 1.50 is
+// 1.5, 2.000 is 2, 100 stays 100, and zero is 0 with no scale and no sign.
+// Counted on the digit string, not by repeated division, so a number with a
+// million-digit scale costs one pass.
+export function trimScale(d) {
+  if (d.digits === 0n) return ZERO;
+  if (d.scale === 0) return d;
+  const text = d.digits.toString();
+  let end = text.length;
+  const stop = text.length - d.scale;
+  while (end > stop && text.charCodeAt(end - 1) === 48) end--;
+  if (end === text.length) return d;
+  return make(d.neg, BigInt(text.slice(0, end)), d.scale - (text.length - end));
+}
+
 export function abs(d) {
   return make(false, d.digits, d.scale);
 }

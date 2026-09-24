@@ -55,10 +55,23 @@
     (say (format nil "plan.~a.tables" label) (format nil "~{~a~^,~}" (hybrid-plan-source-tables plan)))
     (say (format nil "plan.~a.selected.member" label) (if (hybrid-plan-selected-member plan) "present" "-"))))
 
+;;; The canonical flag is public: an application (and the SQL oracle) reads it
+;;; to know the fragment promised a spelling, not only a value (SEL-0058).
+(defun fragment-probe (label dialect source)
+  (let ((f (translate (sel:compile-source source) dialect (probe-bindings))))
+    (say (format nil "fragment.~a.kind" label) (string-upcase (string (fragment-kind f))))
+    (say (format nil "fragment.~a.canonical" label) (yn (fragment-canonical f)))
+    (say (format nil "fragment.~a.caveats" label)
+         (if (fragment-caveats f) (format nil "~{~a~^,~}" (fragment-caveats f)) "-"))))
+
 (defun main ()
   (setf *probes* '() *probe-n* 0)
   (probe "sql" "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))")
   (probe "hybrid" "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> FILTER(_K > 1)")
   (probe "memory" "A += 1; ORDERS .> TAKE(1)")
+  (fragment-probe "canon.postgresql" "postgresql" "CANON(1.50)")
+  (fragment-probe "canon.mariadb" "mariadb" "CANON(1.50)")
+  (fragment-probe "canon.sqlite" "sqlite" "CANON(1.50)")
+  (fragment-probe "abs.postgresql" "postgresql" "ABS(1.50)")
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

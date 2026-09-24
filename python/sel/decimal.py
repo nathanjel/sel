@@ -191,6 +191,22 @@ def format(d: Dec) -> str:  # noqa: A001 - mirrors format() in the other hosts
     return sign + body[:len(body) - d.scale] + '.' + body[len(body) - d.scale:]
 
 
+def trim_scale(d: Dec) -> Dec:
+    """The value with the fraction's trailing zeros removed (§7.6 CANON):
+    1.50 is 1.5, 2.000 is 2, 100 stays 100, and zero is 0 with no scale and no
+    sign. Counted on the digit string, not by repeated division, so a number
+    with a million-digit scale costs one pass."""
+    if d.digits == 0:
+        return make(False, 0, 0)
+    if d.scale == 0:
+        return d
+    text = str(d.digits)
+    zeros = min(d.scale, len(text) - len(text.rstrip('0')))
+    if zeros == 0:
+        return d
+    return make(d.neg, int(text[:len(text) - zeros]), d.scale - zeros)
+
+
 def from_int(n: int) -> Dec:
     return make(n < 0, abs(n), 0)
 

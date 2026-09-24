@@ -63,7 +63,7 @@ const CAVEATS = new Set([
   'rounding-mode',
   'modulo-integer',
   'power-float', 'text-collation', 'regex-engine', 'concat-null',
-  'trim-charset', 'length-units', 'input-laxity',
+  'trim-charset', 'length-units', 'input-laxity', 'text-order',
 ]);
 
 const RET_KINDS = new Set(['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN']);
@@ -84,7 +84,7 @@ const LEXICAL_KEYS = [
   'identQuote', 'identEscape', 'textQuote', 'textEscape', 'true', 'false',
   'binaryLiteral', 'numericLiteral', 'textCollate', 'textCharset', 'textCast',
   'numericCast', 'binaryCast', 'isTrue', 'isNotTrue', 'placeholder',
-  'numericGuard', 'sargablePrefilter',
+  'numericGuard', 'sargablePrefilter', 'numericCastScale',
 ];
 // Keys a target may leave undeclared, where the absence is itself the answer.
 //
@@ -96,12 +96,17 @@ const LEXICAL_KEYS = [
 // would force a wrong answer into the map; leaving it out is the map saying
 // "not here", the same convention an unmapped function uses, and the translator
 // refuses rather than guessing.
-const OPTIONAL_LEXICAL = new Set(['numericGuard']);
+//
+// numericCastScale is the other: it is the number of fractional digits the
+// dialect's numericCast and numericGuard keep, and a dialect whose casts keep
+// every digit has no such number to declare (sql/MAP.md §3).
+const OPTIONAL_LEXICAL = new Set(['numericGuard', 'numericCastScale']);
 
 // Substitutable in a template. textEscape is an object and binaryLiteral is
 // filled by the renderer, so neither is spliceable.
 const LEXICAL_TEMPLATE_KEYS = LEXICAL_KEYS.filter(
-  (k) => k !== 'textEscape' && k !== 'binaryLiteral' && k !== 'sargablePrefilter',
+  (k) => k !== 'textEscape' && k !== 'binaryLiteral' && k !== 'sargablePrefilter'
+    && k !== 'numericCastScale',
 );
 
 // sql/MAP.md §4.3. A variants object may use only the names its family defines.
@@ -146,7 +151,7 @@ const LEXICAL_TYPES = {
   textCharset: 'string',
   textCast: 'string', numericCast: 'string', binaryCast: 'string',
   isTrue: 'string', isNotTrue: 'string', placeholder: 'string',
-  numericGuard: 'string', sargablePrefilter: 'string',
+  numericGuard: 'string', sargablePrefilter: 'string', numericCastScale: 'string',
 };
 
 /**
@@ -525,6 +530,29 @@ function validate(flat) {
                       + 'carry what ISNUM tests');
       }
     }
+  }
+
+  // A cast that fixes a scale truncates past it, and the translator marks what
+  // may pass through it scale-limit by reading numericCastScale -- so the
+  // number it reads must be the one the SQL actually imposes, or a widened cast
+  // would keep a stale caveat and a narrowed one would lose it (SEL-0059).
+  const fixed = new Set();
+  for (const k of ['numericCast', 'numericGuard']) {
+    if (typeof lexical[k] !== 'string') continue;
+    for (const m of lexical[k].matchAll(/DECIMAL\(\s*[0-9]+\s*,\s*([0-9]+)\s*\)/gi)) fixed.add(m[1]);
+  }
+  const cap = lexical.numericCastScale;
+  if (cap !== undefined && cap !== null && !/^[0-9]+$/.test(cap)) {
+    fail(dialect, `lexical.numericCastScale "${cap}" is not a count of fractional digits`);
+  }
+  if (fixed.size > 1) {
+    fail(dialect, `numericCast and numericGuard fix different scales (${[...fixed].join(', ')})`);
+  } else if (fixed.size === 1 && cap !== [...fixed][0]) {
+    fail(dialect, `numericCast/numericGuard keep ${[...fixed][0]} fractional digits and `
+                  + `lexical.numericCastScale says ${cap === undefined ? 'nothing' : cap}; `
+                  + 'declare the scale the cast imposes');
+  } else if (fixed.size === 0 && cap !== undefined && cap !== null) {
+    fail(dialect, 'declares lexical.numericCastScale but its casts fix no scale');
   }
 
   for (const [k, e] of Object.entries(flat.ops)) checkEntry(e, k, 'ops', dialect, lexical);

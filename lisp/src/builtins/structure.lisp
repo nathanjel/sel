@@ -624,12 +624,13 @@ holds for every flat row of its shape."
   fields          ; upper-cased names; `_["orders"]["x"]` reads ORDERS
   has-total       ; a comparison of literals and bare field reads
   total           ; ((field-as-written . numeric-p) ...)
-  pushed          ; the physical optimiser pushed it below already
   binder)         ; the FILTER's element name
 
-;; stages: ((binder . jconjs) ...); obligations: JOIN-OBLIGATIONs.
+;; stages: ((binder jconjs above) ...), ABOVE the count of joins between the
+;; stage's FILTER and the join testing it; obligations: JOIN-OBLIGATIONs.
 (defstruct join-prefilter stages deep above obligations)
-(defstruct join-report applied errored)       ; applied: EQ hash table of nodes
+;; applied: EQ hash table of nodes; dropped: whether any row was dropped.
+(defstruct join-report applied errored dropped)
 ;; names: the member names the side's row is bound under (never `_1`/`_2`).
 (defstruct join-side value keys first nullable names (facts (make-hash-table :test #'equal)))
 ;; A join's left key, handed down with its conjuncts: the join that drops
@@ -705,25 +706,27 @@ assignment, sequence, host function or ABORT -- so it may run out of order."
                     (every #'join-pure-source-p (node-items node))))
         (t nil))))
 
-(defun join-stage-walk (stages owned-here total-here pushed-held)
-  "The JCONJs a join may pre-apply to its left rows, in stage order, and where
-the walk stopped as (stage-index . conjunct-index), or NIL. One whose fields
-are all the left rows' is applied; one reading a right side's field ends the
-walk (AND short-circuits left to right) unless it is total here, in which
-case it is passed over for the join above; one reading anything else ends it
-too; one the optimiser pushed below is skipped while its tentative FILTER
-kept no row on an error."
+(defun join-stage-walk (stages owned-here total-here &optional right-here)
+  "The JCONJs a join may test before it joins, in stage order, as (jconj stage
+right-p) entries, and where the walk stopped as (stage-index .
+conjunct-index), or NIL. One whose fields are all the left rows' is applied to
+them; one that reads only through this join's right binder (RIGHT-HERE,
+`_[\"products\"][\"is_active\"]`) is applied to the right rows; one reading a
+right side's field ends the walk (AND short-circuits left to right) unless it
+is total here, in which case it is passed over for the join above; one
+reading anything else ends it too. Each stage is judged against the joins
+between its FILTER and this join (its third element, the count of them): a
+FILTER in the middle of a chain reads rows no join above it has touched."
   (let ((applied '()))
-    (loop for (nil . conjuncts) in stages
+    (loop for stage in stages
           for si from 0
-          do (loop for c in conjuncts
+          do (loop for c in (second stage)
                    for ci from 0
-                   do (cond ((jconj-pushed c)
-                             (unless pushed-held
-                               (return-from join-stage-walk (values (nreverse applied) (cons si ci)))))
-                            ((and (jconj-field-only c) (funcall owned-here (jconj-fields c)))
-                             (push c applied))
-                            ((and (jconj-has-total c) (funcall total-here (jconj-total c))))
+                   do (cond ((and (jconj-field-only c) (funcall owned-here (jconj-fields c) stage))
+                             (push (list c stage nil) applied))
+                            ((and (jconj-field-only c) right-here (funcall right-here (jconj-fields c) stage))
+                             (push (list c stage t) applied))
+                            ((and (jconj-has-total c) (funcall total-here (jconj-total c) stage)))
                             (t (return-from join-stage-walk (values (nreverse applied) (cons si ci)))))))
     (values (nreverse applied) nil)))
 
@@ -734,7 +737,22 @@ kept no row on an error."
         (append (subseq stages 0 si)
                 (when (plusp ci)
                   (let ((stage (nth si stages)))
-                    (list (cons (car stage) (subseq (cdr stage) 0 ci)))))))))
+                    (list (list (first stage) (subseq (second stage) 0 ci) (third stage)))))))))
+
+(defun join-raw-safe-p (node binders avoid)
+  "Whether NODE reads the element bound to BINDERS only as `r[\"f\"]` with F,
+upper-cased, not AVOID: then it reads the same on the element as it arrives
+and on the element extended with its relation's name (ENSURE-ROW-TABLE-ALIAS
+adds only that name), and may run before the extension is made."
+  (cond ((or (null node) (not (node-p node))) t)
+        ((and (eq (node-kind node) :index) (node-l node) (eq (node-kind (node-l node)) :var)
+              (member (node-s (node-l node)) binders :test #'string=))
+         (and (node-r node) (eq (node-kind (node-r node)) :text)
+              (string/= (string-upcase (node-s (node-r node))) avoid)))
+        ((and (eq (node-kind node) :var) (member (node-s node) binders :test #'string=)) nil)
+        (t (and (join-raw-safe-p (node-l node) binders avoid)
+                (join-raw-safe-p (node-r node) binders avoid)
+                (every (lambda (item) (join-raw-safe-p item binders avoid)) (node-items node))))))
 
 (defun join-read-self (node names binder)
   "NODE with every `r[\"orders\"]` -- a read through the left binder's own
@@ -887,10 +905,17 @@ carry is promoted from neither, spec §7.4)."
          (stages (and prefilter (join-prefilter-stages prefilter)))
          (deep (and prefilter (join-prefilter-deep prefilter)))
          (above (and prefilter (join-prefilter-above prefilter)))
-         (above-keys (let ((h (make-hash-table :test #'equal)))
-                       (dolist (side above h)
-                         (maphash (lambda (k v) (declare (ignore v)) (setf (gethash k h) t))
-                                  (join-side-keys side)))))
+         ;; The upper-cased keys of the joins between a stage's FILTER and
+         ;; this join, per count of them.
+         (above-keys-cache (make-hash-table))
+         (above-keys (lambda (stage)
+                       (let ((n (third stage)))
+                         (or (gethash n above-keys-cache)
+                             (setf (gethash n above-keys-cache)
+                                   (let ((h (make-hash-table :test #'equal)))
+                                     (dolist (side (subseq above 0 (min n (length above))) h)
+                                       (maphash (lambda (k v) (declare (ignore v)) (setf (gethash k h) t))
+                                                (join-side-keys side)))))))))
          (node0 (args-node a 0))
          (node1 (args-node a 1))
          ;; The keys a side contributes to the joined row include the names
@@ -898,16 +923,16 @@ carry is promoted from neither, spec §7.4)."
          ;; is the right row, not a field of the left ones.
          (b1-names (if (= count 5) (list (args-symbol a 2) "_1") (list (or (single-relation-name node0) "_1") "_1")))
          (b2-names (if (= count 5) (list (args-symbol a 3) "_2") (list (or (single-relation-name node1) "_2") "_2")))
-         (kept-before (context-tentative-kept ctx))
          (obligations (and prefilter (join-prefilter-obligations prefilter)))
          (jb1 (if (= count 5) (args-symbol a 2) (or (single-relation-name node0) "_1")))
          (jb2 (if (= count 5) (args-symbol a 3) (or (single-relation-name node1) "_2")))
          (jequi-left (and (member count '(3 5))
                           (nth-value 0 (try-extract-equi-keys (args-node a (if (= count 5) 4 2)) jb1 jb2))))
          (right-side nil)
-         (owned-by-left (lambda (fields)
-                          (notany (lambda (f) (or (gethash f (join-side-keys right-side)) (gethash f above-keys)))
-                                  fields))))
+         (owned-by-left (lambda (fields stage)
+                          (let ((upper (funcall above-keys stage)))
+                            (notany (lambda (f) (or (gethash f (join-side-keys right-side)) (gethash f upper)))
+                                    fields)))))
     ;; With conjuncts to pre-apply and a left source that is itself a join,
     ;; the right source is evaluated first -- unobservable when both sources
     ;; are pure -- so the conjuncts still askable of the rows below travel down
@@ -917,14 +942,14 @@ carry is promoted from neither, spec §7.4)."
                (join-pure-source-p node0) (join-pure-source-p node1))
       (let ((rv (args-val a 1)))
         (setf right-side (make-join-side-of rv (join-row-keys rv b2-names) is-left b2-names))
-        ;; Whether the conjuncts the optimiser pushed below held so far: a
-        ;; tentative FILTER on this join's right side has just run.
         (multiple-value-bind (applied stop)
             (join-stage-walk stages owned-by-left
-                             (lambda (reqs) (join-totality-p reqs nil right-side above))
-                             (= (context-tentative-kept ctx) kept-before))
+                             (lambda (reqs stage)
+                               (join-totality-p reqs nil right-side (subseq above 0 (min (third stage) (length above))))))
           (declare (ignore applied))
-          (let ((handed (join-truncate-stages stages stop)))
+          ;; Below this join, every stage has one more join above it: this one.
+          (let ((handed (mapcar (lambda (stage) (list (first stage) (second stage) (1+ (third stage))))
+                                (join-truncate-stages stages stop))))
             (when handed
               ;; This join computes its left key on every row it receives; a
               ;; row dropped below never arrives, so the key goes down as an
@@ -940,21 +965,33 @@ carry is promoted from neither, spec §7.4)."
         (unwind-protect (args-val a 0)
           (setf (context-join-prefilter ctx) nil))))
     (do-link-rows a ctx is-left prefilter stages deep above above-keys b1-names b2-names
-                  kept-before right-side obligations)))
+                  right-side obligations)))
 
 (defun do-link-rows (a ctx is-left prefilter stages deep above above-keys b1-names b2-names
-                     kept-before right-side obligations)
-  (let* ((owned-by-left (lambda (fields)
-                          (notany (lambda (f) (or (gethash f (join-side-keys right-side)) (gethash f above-keys)))
-                                  fields)))
+                     right-side obligations)
+  (let* ((owned-by-left (lambda (fields stage)
+                          (let ((upper (funcall above-keys stage)))
+                            (notany (lambda (f) (or (gethash f (join-side-keys right-side)) (gethash f upper)))
+                                    fields))))
          (count (args-count a))
-         (val1 (args-val a 0))
+         (given1 (args-val a 0))
          (val2 (args-val a 1))
-         (pushed-held (= (context-tentative-kept ctx) kept-before))
          ;; The join below, if it applied some of these conjuncts, says which
          ;; ones every row that came up has passed; those are skipped here
          ;; unless a row was kept on an error below.
          (below (prog1 (context-join-prefilter-report ctx) (setf (context-join-prefilter-report ctx) nil)))
+         ;; Drops below that left this join no left rows: as written it may
+         ;; have had some, and then it computes every right key (and raises
+         ;; where one cannot be) before it finds that no row survives. Only
+         ;; the rows as written can say, so the left side -- pure, or nothing
+         ;; was handed down -- is evaluated again without them, and this join
+         ;; runs as written.
+         (val1 (if (and below (join-report-dropped below)
+                        (or (value-null-p given1) (null (first-collection-item given1))))
+                   (prog1 (args-eval a (args-node a 0))
+                     (setf (context-join-prefilter-report ctx) nil
+                           below nil))
+                   given1))
          (applied-below (and below (not (join-report-errored below)) (join-report-applied below)))
          (b1 "_1")
          (b2 "_2")
@@ -1031,16 +1068,41 @@ carry is promoted from neither, spec §7.4)."
                     ;; (JOIN-STAGE-WALK). On a left row a conjunct evaluates
                     ;; FALSE the row is dropped -- the joined rows it would
                     ;; have produced would all have been dropped by the same
-                    ;; conjunct. On an error the row is KEPT: the full
+                    ;; conjunct; likewise a right row, whose joined rows are
+                    ;; then not built. On an error the row is KEPT: the full
                     ;; predicate runs over the joined rows afterwards and
                     ;; raises there, in row order.
-                    (let ((prefix '())
-                          (binders '())
-                          (report (make-join-report :applied (make-hash-table :test #'eq))))
+                    (let* ((prefix '())
+                           (right-prefix '())
+                           ;; How many left conjuncts come before the first
+                           ;; right one: with a right row kept on an error, a
+                           ;; later left conjunct may not drop a left row --
+                           ;; the joined row would have raised in the right
+                           ;; conjunct first.
+                           (left-before-right nil)
+                           (binders '())
+                           (report (make-join-report :applied (make-hash-table :test #'eq)
+                                                     :dropped (and below (join-report-dropped below))))
+                           ;; A read through this join's right binder is the
+                           ;; right element in every joined row -- the binder
+                           ;; is bound last (spec §7.4) -- unless the left
+                           ;; binder has the same name, or a join above
+                           ;; rebinds it.
+                           (right-names (lambda (stage)
+                                          (if (zerop (third stage))
+                                              (list (string-upcase b2) "_2")
+                                              (list (string-upcase b2)))))
+                           (right-here (unless (or is-left (string-equal b1 b2))
+                                         (lambda (fields stage)
+                                           (let ((names (funcall right-names stage))
+                                                 (upper (funcall above-keys stage)))
+                                             (every (lambda (f) (and (member f names :test #'string=)
+                                                                     (not (gethash f upper))))
+                                                    fields))))))
                       (when prefilter
                         (unless right-side
                           (setf right-side (make-join-side-of val2 (join-row-keys val2 b2-names) is-left b2-names)))
-                        (setf binders (mapcar #'car stages))
+                        (setf binders (mapcar #'first stages))
                         (let* ((left-side (make-join-side-of val1 (join-row-keys val1 b1-names) nil b1-names))
                                (self-names (list (string-upcase b1) "_1"))
                                ;; A joined row carries a left element's field
@@ -1052,25 +1114,35 @@ carry is promoted from neither, spec §7.4)."
                                ;; dropped row, and nothing is dropped.
                                (safe (or (null obligations)
                                          (join-keys-safe-p obligations left-side right-side above))))
-                          (dolist (c (and safe
+                          (loop for (c stage right-p)
+                                  in (and safe
                                           (join-stage-walk stages owned-here
-                                                           (lambda (reqs) (join-totality-p reqs left-side right-side above))
-                                                           pushed-held)))
-                            (setf (gethash (jconj-node c) (join-report-applied report)) t)
-                            (unless (and applied-below (gethash (jconj-node c) applied-below))
-                              (push (if (some (lambda (f) (and (member f self-names :test #'string=)
-                                                               (not (gethash f (join-side-first left-side)))))
-                                              (jconj-fields c))
-                                        (join-read-self (jconj-node c) self-names (jconj-binder c))
-                                        (jconj-node c))
-                                    prefix)))
-                          (setf prefix (nreverse prefix))))
+                                                           (lambda (reqs stage)
+                                                             (join-totality-p reqs left-side right-side
+                                                                              (subseq above 0 (min (third stage) (length above)))))
+                                                           right-here))
+                                do (setf (gethash (jconj-node c) (join-report-applied report)) t)
+                                   (unless (and applied-below (gethash (jconj-node c) applied-below))
+                                     (if right-p
+                                         (progn
+                                           (unless left-before-right (setf left-before-right (length prefix)))
+                                           (push (join-read-self (jconj-node c) (funcall right-names stage) (jconj-binder c))
+                                                 right-prefix))
+                                         (push (if (some (lambda (f) (and (member f self-names :test #'string=)
+                                                                          (not (gethash f (join-side-first left-side)))))
+                                                         (jconj-fields c))
+                                                   (join-read-self (jconj-node c) self-names (jconj-binder c))
+                                                   (jconj-node c))
+                                               prefix))))
+                          (setf prefix (nreverse prefix)
+                                right-prefix (nreverse right-prefix))))
                       ;; A FILTER keeps its input's keys, so the rows dropped
                       ;; here still count towards the numbering of the rows
                       ;; kept, unless nothing observes it (DEEP). When the join
                       ;; key is a literal field of the row, a row that HAS it
                       ;; may be rejected before its key is computed.
-                      (let* ((numbered (and prefix (not deep)))
+                      (let* ((rejected (and right-prefix (make-hash-table :test #'eq)))
+                             (numbered (and (or prefix rejected) (not deep)))
                              (dropped nil)
                              (position 1)
                              (keyed '())
@@ -1090,28 +1162,73 @@ carry is promoted from neither, spec §7.4)."
                                                              (let ((cell (cons binder nil)))
                                                                (setf frame1 (append frame1 (list cell)))
                                                                cell)))))
-                        (flet ((rejects (row)
-                                 (dolist (cell binder-cells) (setf (cdr cell) row))
-                                 (dolist (conjunct prefix nil)
-                                   (let ((keep (handler-case (as-bool (args-eval a conjunct) (node-pos conjunct))
-                                                 (sel-error ()
-                                                   (setf (join-report-errored report) t)
-                                                   (return nil)))))
-                                     (unless keep (return t)))))
-                               (emit (joined)
-                                 (if numbered
-                                     (push (cons (format nil "~d" position) joined) keyed)
-                                     (push joined out))
-                                 (incf position)))
+                        ;; The binders the conjuncts read come first: a frame
+                        ;; is searched in order, once per read, every row.
+                        (setf frame1 (append binder-cells (set-difference frame1 binder-cells :test #'eq)))
+                        (labels ((verdict (conjuncts row cells)
+                                   ;; 0: keep the row; 1: drop it; 2: keep it,
+                                   ;; a conjunct raised on it.
+                                   (dolist (cell cells) (setf (cdr cell) row))
+                                   (dolist (conjunct conjuncts 0)
+                                     (let ((keep (handler-case (as-bool (args-eval a conjunct) (node-pos conjunct))
+                                                   (sel-error ()
+                                                     (setf (join-report-errored report) t)
+                                                     (return 2)))))
+                                       (unless keep (return 1)))))
+                                 (emit (joined)
+                                   (if numbered
+                                       (push (cons (format nil "~d" position) joined) keyed)
+                                       (push joined out))
+                                   (incf position)))
+                          ;; The right rows the right conjuncts reject, once
+                          ;; each, after every right key was computed. They
+                          ;; stay in their buckets: a left row still counts
+                          ;; them towards the numbering, and one kept on an
+                          ;; error joins them.
+                          (when rejected
+                            (let* ((cells (loop for binder in (remove-duplicates binders :test #'string=)
+                                                collect (cons binder nil)))
+                                   (before (join-report-errored report)))
+                              (setf (join-report-errored report) nil)
+                              (ctx-push-frame ctx cells)
+                              (unwind-protect
+                                   (maphash (lambda (key bucket)
+                                              (declare (ignore key))
+                                              (dolist (r2 bucket)
+                                                (when (= (verdict right-prefix r2 cells) 1)
+                                                  (setf (gethash r2 rejected) t))))
+                                            ht)
+                                (ctx-pop-frame ctx))
+                              (when (join-report-errored report)
+                                (setf prefix (subseq prefix 0 left-before-right)
+                                      fast-field (and prefix fast-field)))
+                              (setf (join-report-errored report) (or (join-report-errored report) before))))
+                          ;; A prefix that reads the left element only
+                          ;; through fields other than its relation's name is
+                          ;; asked of the element as it arrives, before it is
+                          ;; extended: a row it drops is never extended.
+                          (let ((raw (and prefix
+                                          (every (lambda (c) (join-raw-safe-p c binders (string-upcase b1))) prefix)
+                                          (or (null fast-field) (string-not-equal fast-field b1)))))
                           (ctx-push-frame ctx frame1)
                           (unwind-protect
                                (for-each-collection-item (item1 val1)
                                  (block row
-                                   (let ((r1 (ensure-row-table-alias item1 b1))
+                                   (let ((r1 nil)
                                          (asked nil))
-                                     (when (and fast-field (value-get r1 fast-field))
-                                       (setf asked t)
-                                       (when (rejects r1) (return-from row)))
+                                     (when raw
+                                       (setf asked (verdict prefix item1 binder-cells))
+                                       ;; A dropped row whose key is a field it
+                                       ;; has cannot raise in the key.
+                                       (when (and (= asked 1) fast-field (value-get item1 fast-field))
+                                         (setf dropped t)
+                                         (return-from row)))
+                                     (setf r1 (ensure-row-table-alias item1 b1))
+                                     (when (and (not asked) fast-field (value-get r1 fast-field))
+                                       (setf asked (verdict prefix r1 binder-cells))
+                                       (when (= asked 1)
+                                         (setf dropped t)
+                                         (return-from row)))
                                      (setf (cdr b1-cell) r1
                                            (cdr b1-low-cell) r1
                                            (cdr b1-1-cell) r1
@@ -1119,17 +1236,27 @@ carry is promoted from neither, spec §7.4)."
                                      (let* ((key-val (args-eval a left-expr))
                                             (key (extract-join-key key-val is-numeric))
                                             (matches (and key (gethash key ht))))
-                                       (when (and prefix (not asked) (rejects r1))
+                                       (unless asked
+                                         (setf asked (if prefix (verdict prefix r1 binder-cells) 0)))
+                                       (when (= asked 1)
                                          (setf dropped t)
                                          (when numbered
                                            (incf position (cond (matches (length matches)) (is-left 1) (t 0))))
                                          (return-from row))
                                        (if matches
-                                           (dolist (r2 (reverse matches))
-                                             (emit (funcall projector r1 r2)))
+                                           ;; A left row kept on an error
+                                           ;; meets every right row: its
+                                           ;; joined rows raise in the FILTER,
+                                           ;; in order, where they would have.
+                                           (let ((skip (and rejected (= asked 0) rejected)))
+                                             (dolist (r2 (reverse matches))
+                                               (if (and skip (gethash r2 skip))
+                                                   (progn (setf dropped t) (incf position))
+                                                   (emit (funcall projector r1 r2)))))
                                            (when is-left
                                              (emit (funcall projector r1 nil))))))))
-                            (ctx-pop-frame ctx)))
+                            (ctx-pop-frame ctx))))
+                        (when dropped (setf (join-report-dropped report) t))
                         (when prefilter (setf (context-join-prefilter-report ctx) report))
                         (when numbered
                           (if (and dropped keyed)

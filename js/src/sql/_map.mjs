@@ -225,6 +225,10 @@ export const DIALECTS = {
         "tpl": "ABS({0})",
         "ret": "NUM"
       },
+      "CANON": {
+        "tpl": "CASE WHEN POSITION('.' IN CAST({numericCast:0} AS CHARACTER VARYING)) > 0 THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST({numericCast:0} AS CHARACTER VARYING))) ELSE CAST({numericCast:0} AS CHARACTER VARYING) END",
+        "ret": "TEXT"
+      },
       "CEIL": {
         "tpl": "CEIL({0})",
         "ret": "NUM"
@@ -346,7 +350,8 @@ export const DIALECTS = {
       "placeholder": "?",
       "textCast": "CAST({0} AS CHAR)",
       "sargablePrefilter": "true",
-      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
+      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
+      "numericCastScale": "10"
     },
     "ops": {
       "+": {
@@ -538,6 +543,10 @@ export const DIALECTS = {
       "ABS": {
         "tpl": "ABS({0})",
         "ret": "NUM"
+      },
+      "CANON": {
+        "tpl": "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')",
+        "ret": "TEXT"
       },
       "CEIL": {
         "tpl": "CEIL({0})",
@@ -755,7 +764,8 @@ export const DIALECTS = {
       "placeholder": "?",
       "textCast": "CAST({0} AS CHAR)",
       "sargablePrefilter": "true",
-      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
+      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
+      "numericCastScale": "10"
     },
     "ops": {
       "+": {
@@ -947,6 +957,10 @@ export const DIALECTS = {
       "ABS": {
         "tpl": "ABS({0})",
         "ret": "NUM"
+      },
+      "CANON": {
+        "tpl": "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')",
+        "ret": "TEXT"
       },
       "CEIL": {
         "tpl": "CEIL({0})",
@@ -1163,7 +1177,8 @@ export const DIALECTS = {
       "placeholder": "?",
       "textCast": "CAST({0} AS CHAR)",
       "sargablePrefilter": "true",
-      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"
+      "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
+      "numericCastScale": "10"
     },
     "ops": {
       "+": {
@@ -1355,6 +1370,10 @@ export const DIALECTS = {
       "ABS": {
         "tpl": "ABS({0})",
         "ret": "NUM"
+      },
+      "CANON": {
+        "tpl": "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')",
+        "ret": "TEXT"
       },
       "CEIL": {
         "tpl": "CEIL({0})",
@@ -1760,6 +1779,10 @@ export const DIALECTS = {
       },
       "ABS": {
         "tpl": "abs({numericCast:0})",
+        "ret": "NUM"
+      },
+      "CANON": {
+        "tpl": "trim_scale({numericCast:0})",
         "ret": "NUM"
       },
       "CEIL": {
@@ -2172,6 +2195,11 @@ export const DIALECTS = {
         "ret": "NUM",
         "caveat": "decimal-float"
       },
+      "CANON": {
+        "tpl": "(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT {numericCast:0} AS canon_n)))",
+        "ret": "TEXT",
+        "caveat": "decimal-float"
+      },
       "CEIL": {
         "tpl": "ceil({0})",
         "ret": "NUM",
@@ -2352,6 +2380,7 @@ export const RULES = {
     "rounding-mode",
     "scale-limit",
     "text-collation",
+    "text-order",
     "trim-charset",
     "unicode-case"
   ],
@@ -2504,6 +2533,10 @@ export const RULES = {
     "BUCKET": [
       2,
       4
+    ],
+    "CANON": [
+      1,
+      1
     ],
     "CEIL": [
       1,
@@ -2864,7 +2897,8 @@ export const RULES = {
     "isNotTrue": "string",
     "placeholder": "string",
     "numericGuard": "string",
-    "sargablePrefilter": "string"
+    "sargablePrefilter": "string",
+    "numericCastScale": "string"
   },
   "templateKeys": [
     "identQuote",

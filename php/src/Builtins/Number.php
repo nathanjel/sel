@@ -38,6 +38,8 @@ final class Number
             'fn' => static fn (Args $a): Value => Value::num(Dec::floor($a->dec(0)))]);
         Registry::define(['name' => 'TRUNC', 'min' => 1, 'max' => 1,
             'fn' => static fn (Args $a): Value => Value::num(Dec::trunc($a->dec(0)))]);
+        Registry::define(['name' => 'CANON', 'min' => 1, 'max' => 1,
+            'fn' => static fn (Args $a): Value => Value::num(Dec::trimScale($a->dec(0)))]);
 
         Registry::define(['name' => 'ROUND', 'min' => 2, 'max' => 2,
             'fn' => static fn (Args $a): Value => Value::num(Dec::round($a->dec(0), self::sized($a, 1, self::MAX_SCALE, 'ROUND scale'), $a->pos))]);

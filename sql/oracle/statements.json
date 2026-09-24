@@ -202,6 +202,67 @@
     {
       "name": "text equality in a where is the control",
       "sel": "ITEMS .> FILTER(_[\"cat\"] $== \"a\") .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
+      "name": "canon makes equal numbers spelled differently one row",
+      "sel": "ITEMS .> MAP(RECORD(\"k\", CANON(IF(_[\"v\"] > 5, 1, 1.0)))) .> DEDUPE()",
+      "why": "IF gives 1 or 1.0, two values to DEDUPE and one to DISTINCT; CANON makes them one spelling, so SQL's DISTINCT is SEL's DEDUPE (SEL-0058)"
+    },
+    {
+      "name": "canon groups equal numbers spelled differently",
+      "sel": "ITEMS .> BUCKET(CANON(IF(_[\"v\"] > 5, 2, 2.00)), RECORD(\"k\", _K, \"n\", COUNT(_)))",
+      "why": "without CANON the key is 2 or 2.00, two groups in SEL and one in SQL"
+    },
+    {
+      "name": "canon sorts as a number where it is one",
+      "ordered": true,
+      "sel": "ITEMS .> MAP(RECORD(\"k\", CANON(_[\"v\"] * 1.0))) .> SORT_BY(_[\"k\"])",
+      "refuse": {
+        "mariadb": "E_SQL_UNSUPPORTED",
+        "mysql": "E_SQL_UNSUPPORTED",
+        "sqlite": "E_SQL_UNSUPPORTED"
+      },
+      "why": "numeric on PostgreSQL; text on the others, which SQL would sort by its bytes, so the sort is refused there"
+    },
+    {
+      "name": "number-shaped text sorts by its bytes in SQL",
+      "ordered": true,
+      "sel": "ITEMS .> MAP(RECORD(\"s\", _[\"v\"] & \"\")) .> SORT_BY(_[\"s\"])",
+      "caveat": "text-order",
+      "why": "SEL sorts 9 before 10, SQL sorts 10 before 9: the text-order witness (SEL-0060)"
+    },
+    {
+      "name": "a text number past ten fractional digits loses them on the mysql family",
+      "sel": "ITEMS .> FILTER(_[\"v\"] == 1) .> MAP(RECORD(\"x\", (_[\"v\"] & \".00000000001\") + 0))",
+      "caveat": {
+        "mariadb": "scale-limit",
+        "mysql": "scale-limit"
+      },
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      },
+      "why": "the guard reads the text as DECIMAL(65,10): 1.00000000001 becomes 1.0000000000 on MariaDB and MySQL (SEL-0059); exact on PostgreSQL; sqlite cannot ask whether text is a number"
+    },
+    {
+      "name": "a text-literal IF dedupes in SQL",
+      "sel": "ITEMS .> MAP(RECORD(\"k\", IF(_[\"v\"] > 5, \"big\", \"small\"))) .> DEDUPE()",
+      "why": "SQL's CASE returns the literal it chose, so DISTINCT over it is SEL's DEDUPE (SEL-0057)"
+    },
+    {
+      "name": "text-literal branches keep case and trailing spaces",
+      "sel": "ITEMS .> MAP(RECORD(\"k\", COND(_[\"v\"] > 9, \"a \", _[\"v\"] > 5, \"A\", \"a\"))) .> DEDUPE()",
+      "why": "three spellings, three rows: the literals come back byte for byte and DISTINCT is collated exactly"
+    },
+    {
+      "name": "numeric branches stay refused",
+      "sel": "ITEMS .> MAP(RECORD(\"k\", IF(_[\"v\"] > 5, 1, 1.0))) .> DEDUPE()",
+      "refuse": {
+        "mariadb": "E_SQL_SHAPE",
+        "mysql": "E_SQL_SHAPE",
+        "postgresql": "E_SQL_SHAPE",
+        "sqlite": "E_SQL_SHAPE"
+      },
+      "why": "a CASE can re-spell a number (MariaDB answers 1.0 for the 1), so DISTINCT over it is not SEL's DEDUPE"
     }
   ]
 }

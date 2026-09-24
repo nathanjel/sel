@@ -588,54 +588,52 @@ serves many queries over one large context can go further with `gc.freeze()`
 after loading it, which removes the context from every future full pass.
 
 **The physical tree is a function of the AST alone, in every host.** `run`
-evaluates a rewritten tree (join predicate pushdown, TOP fusion, whatever a
-host adds), built once per program and kept; the data a program runs over
-never changes it, and `tools/check-api.sh` probes that. Python once keyed the
-tree on the context and read the rows' keys to push an unqualified field's
-filter under a LINK (SEL-0049); the sound form of that optimisation lives in
-the evaluator now: a FILTER over a LINK hands its leading field conjuncts to
-the join, which pre-applies them to left rows only where the joined row's
-field is provably the left row's (the field is a key of no right row, checked
-over every row), keeps a row on any error so the full predicate raises where
-it would have, numbers the kept rows as the unfiltered join would where the
-numbering can be seen, and travels down a chain of joins — through a FILTER
-the logical optimiser pushed between them only by pre-applying that FILTER's
-whole predicate too (SEL-0050). A physical optimisation that reads data
-belongs at run time, never in the tree. And the physical optimiser pushes
-under a `LINK` only the leading run of conjuncts that name one side, which
-runs *tentatively* there, keeping a row it raises on, while the `FILTER`
-above keeps the whole predicate: the source's `AND` short-circuit decides
-which error a program raises, not the rewrite (spec §7.4, SEL-0051). The
-pushed body carries the `tentative` mark; the retained body carries the
-`pushed_down` mark and its `remaining` conjuncts (`TRUE` when there are
-none), which the `FILTER` evaluates instead of the whole predicate when no
-tentative body kept a row on an error while its source ran — a counter on
-the context, bumped by every tentative keep. All three are physical-tree
-metadata every host's `copy` must keep and its FILTER-fusion must respect.
-The rest happens at run time, in every host's `LINK` (SEL-0052, after Python's
-SEL-0049/0050): a `FILTER` whose source is a join hands the join its
-conjuncts, each with the fields it reads (a nested `_["orders"]["year"]`
-reads `orders`; only the FILTER's own binder, exactly as named, is the
-element) and, for a comparison of literals and bare fields, the
-(field, kind) requirements under which it cannot raise. With both sides at
-hand the join walks the conjuncts in order: it applies to its left rows
-those whose fields no right side carries (a joined row takes a left
+evaluates a rewritten tree (TOP fusion, whatever a host adds), built once per
+program and kept; the data a program runs over never changes it, and
+`tools/check-api.sh` probes that. A physical optimisation that reads data
+belongs at run time, never in the tree — and **no rewrite moves a `FILTER`
+across a `LINK`.** Every host once pushed a FILTER's one-sided conjuncts under
+the join (a "join predicate pushdown"); SEL-0051 made it tentative, and
+SEL-0054 retired it: a FILTER moved onto a side renumbered the joined rows,
+skipped the join keys of the rows it dropped (and of the joins above them),
+and took relation names for members under explicit binders — none of which
+the tree can see (spec §7.4). What it bought, the join does at run time, in
+every host's `LINK` (SEL-0052, SEL-0054, after Python's SEL-0049/0050): a
+`FILTER` whose source is a join hands the join its conjuncts as *stages*,
+one per FILTER in the order they run, each conjunct with the fields it reads
+(a nested `_["orders"]["year"]` reads `orders`; only the FILTER's own binder,
+exactly as named, is the element) and, for a comparison of literals and bare
+fields, the (field, kind) requirements under which it cannot raise. With both
+sides at hand the join walks the conjuncts in order: it applies to its left
+rows those whose fields no right side carries (a joined row takes a left
 element's field whenever the right element of its pair lacks the name, spec
-§7.4; a read through the left binder's own name is the row itself), passes over one that is total —
-its field on every row of the one side that has it, with the kind, and that
-side not a `LINK_LEFT`'s null-extended one — and stops at the first that is
-neither, or at one the optimiser pushed below whose tentative FILTER kept a
-row on an error. A rejected row is dropped (the numbering kept where
-something observes it); a row a conjunct raises on is kept and reported, so
-the join above applies everything again. Two more rules govern dropping
-*below* the FILTER's own join, when an equi-join with pure sources evaluates
-its right side first and hands what is still askable down its left spine:
-the tentative-keep state is read after that right side ran; and each handing
-join sends its own left key down as an obligation, and the join that drops
-must prove, from the rows, that no such key can raise on a dropped row (the
-field it reads present on every row of the relation it reads through, or,
-for a promoted field, carried non-null by every row of its one owner) —
-otherwise an `E_NO_KEY` the upper join would have raised is lost. Joined
+§7.4; a read through the left binder's own name is the row itself); applies
+to its right rows, once each, those that read only through its own right
+binder (`_["products"]["is_active"]`: that member is the right element in
+every joined row), not over `LINK_LEFT`; passes over one that is total — its
+field on every row of the one side that has it, with the kind, and that side
+not a `LINK_LEFT`'s null-extended one — and stops at the first that is
+neither. **Each stage is judged against the joins between its FILTER and the
+join testing it**, never those above its FILTER: a FILTER in the middle of a
+chain reads rows no upper join has touched. A rejected left row is dropped
+(the numbering kept where something observes it); a rejected right row stays
+in its bucket, counted for the numbering and joined to any left row a
+conjunct raised on; a row a conjunct raises on is kept and reported, so the
+FILTER evaluates everything, and a right row kept on an error cancels the
+left drops after the first right conjunct. The join reports which conjuncts
+every row it built passed, whether it kept a row on an error, and whether it
+dropped any; **the FILTER skips the conjuncts its join applied** when nothing
+was kept on an error (the saving the pushdown had), and a join above skips
+those applied below. Two more rules govern dropping *below* the FILTER's own
+join, when an equi-join with pure sources evaluates its right side first and
+hands what is still askable down its left spine: each handing join sends its
+own left key down as an obligation, and the join that drops must prove, from
+the rows, that no such key can raise on a dropped row (the field it reads
+present on every row of the relation it reads through, or, for a promoted
+field, carried non-null by every row of its one owner) — otherwise an
+`E_NO_KEY` the upper join would have raised is lost; and a join whose left
+side came back empty with rows dropped below evaluates that side again as
+written, since as written it would have computed every right key. Joined
 rows are built pair by pair (SEL-0053), so a dropped row changes no other
 row. Every host's compiled row plans are keyed on the pair's two shapes and
 check, as they copy, the only two facts that change a row — each left
@@ -643,10 +641,11 @@ field nested record or not, each right field it takes a non-NULL scalar —
 never trusting a first element; a new fast path must keep both checks (or
 prove them, as the right-rows-all-flat pass does in JS, C++ and Lisp), and
 `tools/join-rows-oracle/run.sh` holds all five to a model of §7.4. Nothing here is visible in a
-value; `conformance/15-relational.selt`'s `passed-over.*` and `early.*`
-cases pin the boundaries where a wrong proof would lose an error, and the
-differential oracle that found them compares every join-then-filter program
-with the same program through helper variables (SEL-0052's record).
+value; `conformance/15-relational.selt`'s `passed-over.*`, `early.*` and
+`as-written.*` cases pin the boundaries where a wrong proof would lose an
+error, and the gate's join-then-filter lane (`tools/join-filter-oracle/`)
+compares generated join-then-filter programs with the same programs through
+helper variables on every host, and fails on any difference.
 
 **Never call `round()`, and never let a float in.** Python's `round()` is half to
 even — `round(2.5)` is 2 — and SEL rounds half away from zero everywhere. `/` on

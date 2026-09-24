@@ -1,0 +1,244 @@
+% An IF or COND whose every result is a text literal keeps SEL's
+% identity in SQL (SEL-0057). SQL's CASE hands back the literal it chose,
+% byte for byte -- verified on PostgreSQL 17 and MariaDB 11.8 with 'a'/'A' and
+% 'a'/'a ', in memory after a split and under SQL's own DISTINCT (which the
+% translator collates exactly). So DEDUPE and BUCKET over it are exact, and
+% the planner's identity barrier lets a MAP that computes one end a prefix.
+%
+% What stays refused: a numeric result, which a CASE can re-spell (MariaDB
+% answers 1.0 for IF(c, 1, 1.0)'s 1, and a DEDUPE then loses a row); a column
+% or any computed result, whose spelling the literal rule says nothing about;
+% results of different kinds, which the translator refuses outright. CANON is
+% how a rule makes a numeric result provable.
+
+### name: textif.postgresql.dedupe
+--- note
+Was E_SQL_SHAPE: "grouping depends on a computed projection without
+identity preservation".
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", "b"))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(CASE WHEN ("n" > 1) THEN 'a' ELSE 'b' END AS TEXT) COLLATE "C" AS "s" FROM "r"
+===
+
+### name: textif.postgresql.cond
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("s", COND(_["n"] > 1, "a", _["n"] > 0, "b", "c"))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(CASE WHEN ("n" > 1) THEN 'a' WHEN ("n" > 0) THEN 'b' ELSE 'c' END AS TEXT) COLLATE "C" AS "s" FROM "r"
+===
+
+### name: textif.mariadb.dedupe
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", "b"))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(CASE WHEN (`n` > 1) THEN 'a' ELSE 'b' END AS CHAR) COLLATE utf8mb4_nopad_bin AS `s` FROM `r`
+===
+
+### name: textif.mariadb.cond
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("s", COND(_["n"] > 1, "a", _["n"] > 0, "b", "c"))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(CASE WHEN (`n` > 1) THEN 'a' WHEN (`n` > 0) THEN 'b' ELSE 'c' END AS CHAR) COLLATE utf8mb4_nopad_bin AS `s` FROM `r`
+===
+
+### name: textif.sqlite.dedupe
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", "b"))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(CASE WHEN (CAST("n" AS NUMERIC) > CAST('1' AS NUMERIC)) THEN 'a' ELSE 'b' END AS TEXT) COLLATE BINARY AS "s" FROM "r"
+===
+
+### name: textif.sqlite.cond
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("s", COND(_["n"] > 1, "a", _["n"] > 0, "b", "c"))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(CASE WHEN (CAST("n" AS NUMERIC) > CAST('1' AS NUMERIC)) THEN 'a' WHEN (CAST("n" AS NUMERIC) > CAST('0' AS NUMERIC)) THEN 'b' ELSE 'c' END AS TEXT) COLLATE BINARY AS "s" FROM "r"
+===
+
+### name: textif.postgresql.nested
+--- note
+A result that is itself a conditional of text literals is one of them too.
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", IF(_["n"] > 0, "b", "c")))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(CASE WHEN ("n" > 1) THEN 'a' ELSE CASE WHEN ("n" > 0) THEN 'b' ELSE 'c' END END AS TEXT) COLLATE "C" AS "s" FROM "r"
+===
+
+### name: textif.postgresql.no-else
+--- note
+A two-argument IF gives "" otherwise (§7.2): a text literal too.
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a"))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(CASE WHEN ("n" > 1) THEN 'a' ELSE '' END AS TEXT) COLLATE "C" AS "s" FROM "r"
+===
+
+### name: plan.textif.mariadb.bucket-after-a-map-splits-at-the-map
+--- note
+The barrier lets the MAP end a prefix. The BUCKET stays in memory: a derived
+table types a computed column UNKNOWN, and a group key must be typed.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", "b"))) .> BUCKET(_["s"], RECORD("k", _K, "c", COUNT(_)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT CASE WHEN (`n` > 1) THEN 'a' ELSE 'b' END AS `s` FROM `r`
+===
+
+### name: plan.textif.postgresql.dedupe-is-one-statement
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", "b"))) .> DEDUPE()
+--- plan
+pure_sql
+--- tables
+r
+--- expect
+SELECT DISTINCT CAST(CASE WHEN ("n" > 1) THEN 'a' ELSE 'b' END AS TEXT) COLLATE "C" AS "s" FROM "r"
+===
+
+### name: plan.textif.postgresql.numeric-results-stay-local
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, 1, 1.0))) .> DEDUPE()
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.textif.postgresql.a-column-result-stays-local
+--- note
+The rule is about literals; a column read in a branch is not one.
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", _["t"]))) .> DEDUPE()
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.textif.mariadb.dedupe-is-one-statement
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", "b"))) .> DEDUPE()
+--- plan
+pure_sql
+--- tables
+r
+--- expect
+SELECT DISTINCT CAST(CASE WHEN (`n` > 1) THEN 'a' ELSE 'b' END AS CHAR) COLLATE utf8mb4_nopad_bin AS `s` FROM `r`
+===
+
+### name: plan.textif.mariadb.numeric-results-stay-local
+--- note
+The witness: MariaDB 11.8 answers 1.0 for this IF's 1, and a DEDUPE over
+it keeps one row where SEL keeps two.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, 1, 1.0))) .> DEDUPE()
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.textif.mariadb.a-column-result-stays-local
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", _["t"]))) .> DEDUPE()
+--- plan
+pure_memory
+--- tables
+r
+===
+
+### name: plan.textif.postgresql.mixed-results-stay-local
+--- note
+A text and a number: not all literals of text, and the translator refuses the
+CASE besides (known kinds must agree).
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("s", IF(_["n"] > 1, "a", 1))) .> DEDUPE()
+--- plan
+pure_memory
+--- tables
+r
+===

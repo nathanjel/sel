@@ -93,6 +93,7 @@ const NUMERIC_ARGUMENT_AT = {
   PADL: [1],
   PADR: [1],
   CHAR: [0],
+  CANON: [0],
 };
 
 // The runtime kind classes EQL and IN compare, which are not the static kinds. A
@@ -170,8 +171,13 @@ export class Translator {
     }
     const f = this.node(norm);
 
-    return new Fragment(f.parts, f.kind, this.dialect, this.params,
+    const out = new Fragment(f.parts, f.kind, this.dialect, this.params,
       this.paramKinds, [...this.caveats]);
+    // Public: it says the value is a canonical number, whose spelling is the
+    // contract and not only its value (the SQL oracle compares it as text).
+    // Lost here once, in every host at the same time.
+    out.canonical = f.canonical;
+    return out;
   }
 
   translateStatement(ast) {
@@ -336,6 +342,12 @@ export class Translator {
   }
 
   identityGroupKey(node, frag) {
+    if (frag.canonical && frag.kind === 'NUM') {
+      // One spelling per value, so the value's equality is the spelling's:
+      // grouped and compared as the number it is, which keeps it a number for
+      // whatever sorts it afterwards.
+      return frag;
+    }
     if (frag.kind === 'UNKNOWN') refuse('E_SQL_SHAPE', 'group keys require proven scalar identity', node.pos);
     if (frag.kind === 'NUM') {
       if (!['var', 'index', 'num'].includes(node.t)) {
@@ -345,6 +357,32 @@ export class Translator {
       const wrapped = this.emit.textOperand(numeric);
       return new Fragment(wrapped.parts, 'TEXT', this.dialect, wrapped.params, wrapped.paramKinds,
         wrapped.caveats, true, false, false);
+    }
+    return this.collatedKey(frag);
+  }
+
+  // A sort key, as SEL's sort compares it. SEL sorts numbers as numbers and
+  // other text by its bytes -- and number-shaped TEXT as a number, which SQL's
+  // ORDER BY cannot: it sorts a text key by its bytes throughout, so "10" comes
+  // before "9" (SEL-0060). A NUM key sorts as SEL sorts it. A canonical number
+  // the dialect can only carry as text is always a number to SEL, so sorting it
+  // in SQL is simply wrong: refused, and the planner sorts in memory
+  // (SEL-0058). Any other TEXT or UNKNOWN key is sorted anyway, declared
+  // text-order, and refused under strict.
+  orderKey(frag, pos) {
+    if (frag.kind === 'NUM') return frag;
+    if (frag.canonical) {
+      refuse('E_SQL_UNSUPPORTED',
+        `CANON is text on ${this.dialect}, which SQL sorts by its bytes, and SEL `
+        + 'sorts it as the number it is; sort it in memory', pos);
+    }
+    if (frag.kind === 'TEXT' || frag.kind === 'UNKNOWN') {
+      if (this.strict) {
+        refuse('E_SQL_UNSUPPORTED',
+          'a text key sorts by its bytes in SQL, where SEL sorts number-shaped '
+          + 'text as numbers (text-order); strict mode refuses that', pos);
+      }
+      this.caveats.add('text-order');
     }
     return this.collatedKey(frag);
   }
@@ -365,6 +403,7 @@ export class Translator {
     if ((c.prefilter ?? null) === 'separate') {
       frag.separatePrefilter = true;
     }
+    frag.canonical = Boolean(c.canonical);
     return frag;
   }
 
@@ -560,6 +599,9 @@ export class Translator {
       this.requireNotBoolOperand(r, n.r.pos, op);
     }
     const variant = this.variantFor(op, [l, r]);
+    if (variant === 'coerce') {
+      this.coerceScaleLimits([[l, n.l], [r, n.r]]);
+    }
     if (BYTE_COMPARISONS.includes(op)) {
       requireComparableKinds(l, r, op, n.pos);
       // See Emit.textOperand for why the operands are transformed here rather
@@ -792,7 +834,9 @@ export class Translator {
       }
       args.push(f);
     }
-    return this.apply('funcs', name, args, n.pos);
+    const out = this.apply('funcs', name, args, n.pos);
+    if (name === 'CANON') out.canonical = true;
+    return out;
   }
 
   // Refuse an argument whose kind SEL would refuse.
@@ -982,8 +1026,10 @@ export class Translator {
       }
       const collated = this.identityGroupKey(group.node, key);
       if (key.kind === 'NUM') {
-        return new Fragment(['MIN(', ...key.parts, ')'], 'NUM', this.dialect,
+        const out = new Fragment(['MIN(', ...key.parts, ')'], 'NUM', this.dialect,
           key.params, key.paramKinds, key.caveats);
+        out.canonical = key.canonical;
+        return out;
       }
       // In a HAVING, MariaDB and MySQL resolve a column only against the
       // GROUP BY columns and the select list, not against an equal
@@ -993,8 +1039,10 @@ export class Translator {
       // what every server lets a HAVING name.
       // Nested _K projections need the same aggregate under ONLY_FULL_GROUP_BY.
       if (collated !== key) {
-        return new Fragment(['MIN(', ...collated.parts, ')'], 'TEXT', this.dialect,
+        const out = new Fragment(['MIN(', ...collated.parts, ')'], 'TEXT', this.dialect,
           collated.params, collated.paramKinds, collated.caveats, true, false, false);
+        out.canonical = key.canonical;
+        return out;
       }
       return collated;
     }
@@ -1684,7 +1732,50 @@ export class Translator {
   // relation fields.
   guardNumeric(f, n) {
     if (constants.isConstant(n, this.constNames)) return f;
-    return this.emit.numericOperand(f, n.pos);
+    const guarded = this.emit.numericOperand(f, n.pos);
+    if (guarded !== f) {
+      // The guard reads the text as the dialect's numericCast type, and where
+      // that type fixes a scale the data's digits past it are gone before
+      // anything else sees them (SEL-0059).
+      this.scaleLimited(n.pos, 'this operand is read as a number');
+    }
+    return guarded;
+  }
+
+  // How many fractional digits the dialect's numericCast and numericGuard keep,
+  // or null where they keep every one (sql/MAP.md §3).
+  numericCastScale() {
+    const cap = this.emit.lex('numericCastScale');
+    return typeof cap === 'string' && /^[0-9]+$/.test(cap) ? Number(cap) : null;
+  }
+
+  scaleLimited(pos, what) {
+    const cap = this.numericCastScale();
+    if (cap === null) return;
+    if (this.strict) {
+      refuse('E_SQL_UNSUPPORTED',
+        `${what} through a DECIMAL that keeps ${cap} fractional digits, and a `
+        + `value with more loses them on ${this.dialect} (scale-limit); strict `
+        + 'mode refuses that', pos);
+    }
+    this.caveats.add('scale-limit');
+  }
+
+  // The coerce variant reads both operands through numericCast. A constant's
+  // scale is known and only one past the cap is truncated; a column's is not --
+  // NUM says it is a number, not how many fractional digits it has.
+  coerceScaleLimits(pairs) {
+    const cap = this.numericCastScale();
+    if (cap === null) return;
+    for (const [, node] of pairs) {
+      if (constants.isConstant(node, this.constNames)) {
+        if (constants.constantScale(node, this.constCtx) > cap) {
+          this.scaleLimited(node.pos, 'this constant is read as a number');
+        }
+      } else {
+        this.scaleLimited(node.pos, 'this operand is read as a number');
+      }
+    }
   }
 
   // An operand in a numeric position whose value is knowable here.
@@ -1870,6 +1961,16 @@ export class Translator {
       ? (matches[0].type ?? 'UNKNOWN') : 'UNKNOWN';
   }
 
+  // The kind of a projected CANON(...), which a derived table's column keeps:
+  // the dialect's CANON kind -- the map entry's ret, NUM or TEXT.
+  outputCanonKind(plan, name) {
+    if (plan.projections === null) return null;
+    const node = plan.projections.find(p => p.alias === name)?.node ?? null;
+    if (!(node !== null && node.t === 'call' && node.name === 'CANON')) return null;
+    const entry = map.entry(this.dialect, 'funcs', 'CANON');
+    return entry !== null && typeof entry === 'object' ? String(entry.ret) : null;
+  }
+
   wrapPlanAsDerivedTable(plan) {
     const alias = `_sub${++this.subqueryCounter}`;
     const fields = Object.create(null);
@@ -1887,6 +1988,11 @@ export class Translator {
       fields[asciiUpper(name)] = {
         kind: 'column', column: sourceField?.column ?? name, table: alias, type: this.outputFieldType(plan, name),
       };
+      const canonKind = this.outputCanonKind(plan, name);
+      if (canonKind !== null) {
+        fields[asciiUpper(name)].type = canonKind;
+        fields[asciiUpper(name)].canonical = true;
+      }
     }
     const derived = new RelationalPlan();
     derived.sourceName = alias;
@@ -2509,7 +2615,7 @@ export class Translator {
               ? this.withGroup(src, proj.binder, () => this.node(proj.node))
               : this.withRow(src, proj.binder, () => this.node(proj.node));
           if (plan.distinct) {
-            if (['UNKNOWN', 'NUM'].includes(pFrag.kind)) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', proj.node.pos);
+            if (['UNKNOWN', 'NUM'].includes(pFrag.kind) && !pFrag.canonical) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', proj.node.pos);
             pFrag = this.identityGroupKey(proj.node, pFrag);
           }
           for (const p of pFrag.parts) parts.push(p);
@@ -2669,7 +2775,7 @@ export class Translator {
           // its bytes, and a server's default collation would not.
           const withFrame = ord.overGroups ? this.withGroup
             : plan.groupBy !== null ? this.withProjected : this.withRow;
-          const oFrag = this.collatedKey(withFrame.call(this, src, ord.binder, () => this.node(ord.node)));
+          const oFrag = this.orderKey(withFrame.call(this, src, ord.binder, () => this.node(ord.node)), ord.node.pos);
           for (const p of oFrag.parts) parts.push(p);
           parts.push(' ' + ord.dir);
         }

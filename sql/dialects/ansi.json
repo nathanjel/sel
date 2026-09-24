@@ -215,6 +215,10 @@
       "tpl": "ABS({0})",
       "ret": "NUM"
     },
+    "CANON": {
+      "tpl": "CASE WHEN POSITION('.' IN CAST({numericCast:0} AS CHARACTER VARYING)) > 0 THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST({numericCast:0} AS CHARACTER VARYING))) ELSE CAST({numericCast:0} AS CHARACTER VARYING) END",
+      "ret": "TEXT"
+    },
     "CEIL": {
       "tpl": "CEIL({0})",
       "ret": "NUM"

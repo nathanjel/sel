@@ -697,13 +697,13 @@ final class Structure
 
     /**
      * Every AND-conjunct of a FILTER body, in order, as
-     * ['node' => ..., 'fields' => set|null, 'total' => reqs|null, 'pushed' => false]
+     * ['node' => ..., 'fields' => set|null, 'total' => reqs|null, 'binder' => ...]
      * for a LINK to pre-apply to its left rows. `fields`: the upper-cased
      * fields of the row the conjunct reads (a nested `_["orders"]["year"]`
      * reads ORDERS), or null when it reads anything else. `total`: for a
      * comparison between literals and bare field reads, the [name, kind]
      * requirements under which it cannot raise; null when not provable.
-     * @return list<array{node: array, fields: array<string,true>|null, total: list<array{0:string,1:string}>|null, pushed: bool}>
+     * @return list<array{node: array, fields: array<string,true>|null, total: list<array{0:string,1:string}>|null, binder: string}>
      */
     public static function leadingFieldConjuncts(array $body, string $binder): array
     {
@@ -750,7 +750,7 @@ final class Structure
                     $total[] = [$operand['idx']['v'], $kind];
                 }
             }
-            $out[] = ['node' => $c, 'fields' => $ok ? $fields : null, 'total' => $total, 'pushed' => false, 'binder' => $binder];
+            $out[] = ['node' => $c, 'fields' => $ok ? $fields : null, 'total' => $total, 'binder' => $binder];
         }
         return $out;
     }
@@ -776,28 +776,28 @@ final class Structure
     }
 
     /**
-     * The conjuncts a join may pre-apply to its left rows, in stage order, and
-     * where the walk stopped. One whose fields are all owned by the left rows
-     * is applied; one that reads a field of some right side ends the walk
-     * (AND short-circuits left to right) UNLESS it is total here, in which case
-     * it is passed over for the join above; one that reads anything but fields
-     * ends the walk too; one the optimiser pushed below is skipped while its
-     * tentative FILTER kept no row on an error. A deferral relies on no lower
-     * relation carrying the field; the join that has those rows repeats the
-     * walk with them.
-     * @return array{0: list<array>, 1: array{0:int,1:int}|null}
+     * The conjuncts a join may test before it joins, in stage order, and where
+     * the walk stopped. One whose fields are all owned by the left rows is
+     * applied to them; one that reads only through this join's right binder
+     * ($rightHere, `_["products"]["is_active"]`) is applied to the right rows;
+     * one that reads a field of some right side ends the walk (AND
+     * short-circuits left to right) UNLESS it is total here, in which case it
+     * is passed over for the join above; one that reads anything but fields
+     * ends the walk too. A deferral relies on no lower relation carrying the
+     * field; the join that has those rows repeats the walk with them. Each
+     * stage is judged against the joins between its FILTER and this join (its
+     * third member, the count of them): a FILTER in the middle of a chain
+     * reads rows no join above it has touched.
+     * @return array{0: list<array{0: array, 1: array, 2: bool}>, 1: array{0:int,1:int}|null}
      */
-    private static function stageWalk(array $stages, callable $ownedHere, callable $totalHere, bool $pushedHeld): array
+    private static function stageWalk(array $stages, callable $ownedHere, callable $totalHere, ?callable $rightHere = null): array
     {
         $applied = [];
-        foreach ($stages as $si => [$binder, $conjuncts]) {
-            foreach ($conjuncts as $ci => $c) {
-                if ($c['pushed']) {
-                    if ($pushedHeld) continue;
-                    return [$applied, [$si, $ci]];
-                }
-                if ($c['fields'] !== null && $ownedHere($c['fields'])) { $applied[] = $c; continue; }
-                if ($c['total'] !== null && $totalHere($c['total'])) continue;
+        foreach ($stages as $si => $stage) {
+            foreach ($stage[1] as $ci => $c) {
+                if ($c['fields'] !== null && $ownedHere($c['fields'], $stage)) { $applied[] = [$c, $stage, false]; continue; }
+                if ($c['fields'] !== null && $rightHere !== null && $rightHere($c['fields'], $stage)) { $applied[] = [$c, $stage, true]; continue; }
+                if ($c['total'] !== null && $totalHere($c['total'], $stage)) continue;
                 return [$applied, [$si, $ci]];
             }
         }
@@ -805,7 +805,7 @@ final class Structure
     }
 
     /** A key naming one conjunct node of the tree: arrays have no identity, and the position and shape of a node do. */
-    private static function conjunctId(array $node): string
+    public static function conjunctId(array $node): string
     {
         return json_encode($node['pos']) . '|' . ($node['op'] ?? $node['t']) . '|' . md5((string) json_encode($node, JSON_PARTIAL_OUTPUT_ON_ERROR));
     }
@@ -815,11 +815,34 @@ final class Structure
         if ($stop === null) return $stages;
         [$si, $ci] = $stop;
         $out = array_slice($stages, 0, $si);
-        if ($ci) $out[] = [$stages[$si][0], array_slice($stages[$si][1], 0, $ci)];
+        if ($ci) $out[] = [$stages[$si][0], array_slice($stages[$si][1], 0, $ci), $stages[$si][2]];
         return $out;
     }
 
     /** NODE with every `_["orders"]` -- a read through the left binder's own name (NAMES, upper-cased) -- replaced by `_`. */
+    /**
+     * Whether $node reads the element bound to $binders only as `r["f"]`
+     * with f, upper-cased, not $avoid: then it reads the same on the element
+     * as it arrives and on the element extended with its relation's name
+     * (ensureRowTableAlias adds only that name), and may run before the
+     * extension is made.
+     */
+    private static function rawSafe(?array $node, array $binders, string $avoid): bool
+    {
+        if ($node === null) return true;
+        if ($node['t'] === 'index' && isset($node['obj']) && $node['obj']['t'] === 'var' && isset($binders[$node['obj']['name']])) {
+            return isset($node['idx']) && $node['idx']['t'] === 'text' && strtoupper($node['idx']['v']) !== $avoid;
+        }
+        if ($node['t'] === 'var' && isset($binders[$node['name']])) return false;
+        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $k) {
+            if (isset($node[$k]) && is_array($node[$k]) && !self::rawSafe($node[$k], $binders, $avoid)) return false;
+        }
+        foreach (['args', 'items'] as $k) {
+            if (isset($node[$k])) foreach ($node[$k] as $child) if (!self::rawSafe($child, $binders, $avoid)) return false;
+        }
+        return true;
+    }
+
     private static function readSelf(?array $node, array $names, string $binder): ?array
     {
         if ($node === null) return null;
@@ -974,14 +997,23 @@ final class Structure
         $jb1 = $count === 5 ? $a->symbol(2) : (self::singleRelationName($a->node(0)) ?? '_1');
         $jb2 = $count === 5 ? $a->symbol(3) : (self::singleRelationName($a->node(1)) ?? '_2');
         $jequi = self::tryExtractEquiKeys($a->node($count === 5 ? 4 : 2), $jb1, $jb2);
-        $aboveKeys = [];
-        foreach ($above as $side) foreach ($side->keys as $k => $_) $aboveKeys[$k] = true;
+        // The upper-cased keys of the joins between a stage's FILTER and this
+        // join, per count of them.
+        $aboveKeysCache = [];
+        $aboveKeys = static function (array $stage) use (&$aboveKeysCache, $above): array {
+            $n = $stage[2];
+            if (!isset($aboveKeysCache[$n])) {
+                $keys = [];
+                foreach (array_slice($above, 0, $n) as $side) foreach ($side->keys as $k => $_) $keys[$k] = true;
+                $aboveKeysCache[$n] = $keys;
+            }
+            return $aboveKeysCache[$n];
+        };
         // The keys a side contributes to the joined row include the names its
         // row is bound under: `_["products"]` after LINK(PRODUCTS, ...) is the
         // right row, not a field of the left ones.
         $b2Names = $count === 5 ? [$a->symbol(3), '_2'] : [self::singleRelationName($rightNode) ?? '_2', '_2'];
         $b1Names = $count === 5 ? [$a->symbol(2), '_1'] : [self::singleRelationName($leftNode) ?? '_1', '_1'];
-        $keptBefore = $ctx->tentativeKept;
         $rightSide = null;
         // With conjuncts to pre-apply and a left source that is itself a join,
         // the right source is evaluated first -- unobservable when both
@@ -993,15 +1025,16 @@ final class Structure
                 && self::pureSource($leftNode) && self::pureSource($rightNode)) {
             $rightValue = $a->val(1);
             $rightSide = new JoinSideFacts($rightValue, self::rowKeys($rightValue, $b2Names), $leftJoin, $b2Names);
-            $ownedBelow = static function (array $fields) use ($rightSide, $aboveKeys): bool {
-                foreach ($fields as $f => $_) if (isset($rightSide->keys[$f]) || isset($aboveKeys[$f])) return false;
+            $ownedBelow = static function (array $fields, array $stage) use ($rightSide, $aboveKeys): bool {
+                $upper = $aboveKeys($stage);
+                foreach ($fields as $f => $_) if (isset($rightSide->keys[$f]) || isset($upper[$f])) return false;
                 return true;
             };
-            $totalBelow = static fn (array $reqs): bool => self::totality($reqs, null, $rightSide, $above);
-            // Whether the conjuncts the optimiser pushed below held so far: a
-            // tentative FILTER on this join's right side has just run.
-            [, $stop] = self::stageWalk($stages, $ownedBelow, $totalBelow, $ctx->tentativeKept === $keptBefore);
-            $handed = self::truncateStages($stages, $stop);
+            $totalBelow = static fn (array $reqs, array $stage): bool => self::totality($reqs, null, $rightSide, array_slice($above, 0, $stage[2]));
+            [, $stop] = self::stageWalk($stages, $ownedBelow, $totalBelow);
+            // Below this join, every stage has one more join above it: this one.
+            $handed = array_map(static fn (array $stage): array => [$stage[0], $stage[1], $stage[2] + 1],
+                self::truncateStages($stages, $stop));
             if ($handed !== []) {
                 // This join computes its left key on every row it receives; a
                 // row dropped below never arrives, so the key goes down as an
@@ -1019,13 +1052,24 @@ final class Structure
             $leftValue = $a->val(0);
             $rightValue = $a->val(1);
         }
-        $pushedHeld = $ctx->tentativeKept === $keptBefore;
         // The join below, if it applied some of these conjuncts, says which
         // ones every row that came up has passed; those are skipped here
         // unless a row was kept on an error below.
         $below = $ctx->joinPrefilterReport;
         $ctx->joinPrefilterReport = null;
+        // Drops below that left this join no left rows: as written it may have
+        // had some, and then it computes every right key (and raises where one
+        // cannot be) before it finds that no row survives. Only the rows as
+        // written can say, so the left side -- pure, or nothing was handed
+        // down -- is evaluated again without them, and this join runs as
+        // written.
+        if ($below !== null && $below[2] && self::firstCollectionItem($leftValue) === null) {
+            $leftValue = $a->evalNode($a->node(0));
+            $ctx->joinPrefilterReport = null;
+            $below = null;
+        }
         $appliedBelow = ($below !== null && !$below[1]) ? $below[0] : [];
+        $dropped = $below !== null && $below[2];
         if ($count === 3) {
             $b1 = self::singleRelationName($a->node(0)) ?? '_1';
             $b2 = self::singleRelationName($a->node(1)) ?? '_2';
@@ -1110,17 +1154,30 @@ final class Structure
             // The pre-filter, decided from the rows themselves (stageWalk). On
             // a left row a conjunct evaluates FALSE the row is dropped -- the
             // joined rows it would have produced would all have been dropped
-            // by the same conjunct. On an error the row is KEPT: the full
+            // by the same conjunct; likewise a right row, whose joined rows
+            // are then not built. On an error the row is KEPT: the full
             // predicate runs over the joined rows afterwards and raises there.
             $prefix = [];
+            $rightPrefix = [];
+            // How many left conjuncts come before the first right one: with a
+            // right row kept on an error, a later left conjunct may not drop a
+            // left row -- the joined row would have raised in the right
+            // conjunct first.
+            $leftBeforeRight = -1;
             $binders = [];
             $appliedIds = [];
             $errored = false;
+            // A read through this join's right binder is the right element in
+            // every joined row -- the binder is bound last (spec §7.4) --
+            // unless the left binder has the same name, or a join above
+            // rebinds it.
+            $rightNames = static fn (array $stage): array => $stage[2] === 0
+                ? [strtoupper($b2) => true, '_2' => true] : [strtoupper($b2) => true];
             if ($prefilter !== null) {
                 if ($rightSide === null) {
                     $rightSide = new JoinSideFacts($rightValue, self::rowKeys($rightValue, $b2Names), $leftJoin, $b2Names);
                 }
-                foreach ($stages as [$binder, ]) $binders[] = $binder;
+                foreach ($stages as $stage) $binders[] = $stage[0];
                 $leftSide = new JoinSideFacts($leftValue, self::rowKeys($leftValue, $b1Names), false, $b1Names);
                 // A handed-down join key that could raise on a dropped row,
                 // and nothing is dropped.
@@ -1128,19 +1185,33 @@ final class Structure
                 // A joined row carries a left element's field exactly as the
                 // element does whenever no right element has the name (§7.4,
                 // pair by pair); no row depends on another.
-                $ownedHere = static function (array $fields) use ($rightSide, $aboveKeys): bool {
+                $ownedHere = static function (array $fields, array $stage) use ($rightSide, $aboveKeys): bool {
+                    $upper = $aboveKeys($stage);
                     foreach ($fields as $f => $_) {
-                        if (isset($rightSide->keys[$f]) || isset($aboveKeys[$f])) return false;
+                        if (isset($rightSide->keys[$f]) || isset($upper[$f])) return false;
                     }
                     return true;
                 };
-                $totalHere = static fn (array $reqs): bool => self::totality($reqs, $leftSide, $rightSide, $above);
+                $totalHere = static fn (array $reqs, array $stage): bool => self::totality($reqs, $leftSide, $rightSide, array_slice($above, 0, $stage[2]));
+                $rightHere = (!$leftJoin && strtoupper($b1) !== strtoupper($b2))
+                    ? static function (array $fields, array $stage) use ($rightNames, $aboveKeys): bool {
+                        $names = $rightNames($stage);
+                        $upper = $aboveKeys($stage);
+                        foreach ($fields as $f => $_) if (!isset($names[$f]) || isset($upper[$f])) return false;
+                        return true;
+                    }
+                    : null;
                 $selfNames = [strtoupper($b1) => true, '_1' => true];
-                [$applied, ] = $safe ? self::stageWalk($stages, $ownedHere, $totalHere, $pushedHeld) : [[], null];
-                foreach ($applied as $c) {
+                [$applied, ] = $safe ? self::stageWalk($stages, $ownedHere, $totalHere, $rightHere) : [[], null];
+                foreach ($applied as [$c, $stage, $right]) {
                     $key = self::conjunctId($c['node']);
                     $appliedIds[$key] = true;
                     if (isset($appliedBelow[$key])) continue;
+                    if ($right) {
+                        if ($leftBeforeRight < 0) $leftBeforeRight = count($prefix);
+                        $rightPrefix[] = self::readSelf($c['node'], $rightNames($stage), $c['binder']);
+                        continue;
+                    }
                     $node = $c['node'];
                     foreach ($c['fields'] as $f => $_) {
                         if (isset($selfNames[$f]) && !isset($leftSide->first[$f])) { $node = self::readSelf($node, $selfNames, $c['binder']); break; }
@@ -1148,23 +1219,48 @@ final class Structure
                     $prefix[] = $node;
                 }
             }
-            $rejects = static function (Value $row) use (&$prefix, &$binders, &$errored, $a, $ctx): bool {
+            // 0: keep the row; 1: drop it; 2: keep it, a conjunct raised on it.
+            $verdict = static function (array $conjuncts, Value $row) use (&$binders, &$errored, $a, $ctx): int {
                 foreach ($binders as $binder) $ctx->setFrameValue($binder, $row);
-                foreach ($prefix as $conjunct) {
+                foreach ($conjuncts as $conjunct) {
                     try {
                         $keep = $a->evalNode($conjunct)->asBool($conjunct['pos']);
                     } catch (SelError $e) {
                         $errored = true;
-                        return false;
+                        return 2;
                     }
-                    if (!$keep) return true;
+                    if (!$keep) return 1;
                 }
-                return false;
+                return 0;
             };
+            // The right rows the right conjuncts reject, once each, after
+            // every right key was computed. They stay in their buckets: a
+            // left row still counts them towards the numbering, and one kept
+            // on an error joins them.
+            $rejected = null;
+            if ($rightPrefix !== []) {
+                $rejected = [];
+                $frame = [];
+                foreach ($binders as $binder) $frame[$binder] = Value::none();
+                $before = $errored;
+                $errored = false;
+                $ctx->pushFrame($frame);
+                try {
+                    foreach ($buckets as $bucket) {
+                        foreach ($bucket as $right) {
+                            if ($verdict($rightPrefix, $right) === 1) $rejected[spl_object_id($right)] = true;
+                        }
+                    }
+                } finally {
+                    $ctx->popFrame();
+                }
+                if ($errored) $prefix = array_slice($prefix, 0, $leftBeforeRight);
+                $errored = $errored || $before;
+            }
 
             $leftAllowed = [$b1, strtolower($b1), '_1', '_'];
             $leftExtractor = self::compileEquiKeyExtractor($equi['left'], $leftAllowed, $equi['numeric'], $sampleLeft);
-            if ($prefix !== []) {
+            if ($prefix !== [] || $rejected !== null) {
                 // A FILTER keeps its input's keys, so the rows dropped here
                 // still count towards the numbering of the rows kept (the
                 // matches say how many joined rows a dropped row stood for),
@@ -1175,7 +1271,7 @@ final class Structure
                 $position = 1;
                 $fastField = null;
                 $el = $equi['left'];
-                if ($deep && $el['t'] === 'index' && isset($el['obj']) && $el['obj']['t'] === 'var'
+                if ($prefix !== [] && $deep && $el['t'] === 'index' && isset($el['obj']) && $el['obj']['t'] === 'var'
                         && isset($el['idx']) && $el['idx']['t'] === 'text'
                         && in_array(strtoupper($el['obj']['name']), [strtoupper($b1), '_1', '_'], true)) {
                     $fastField = $el['idx']['v'];
@@ -1185,28 +1281,79 @@ final class Structure
                 $frameLeft = [$b1 => Value::none(), '_1' => Value::none(), '_' => Value::none()];
                 if ($hasLower1) $frameLeft[$b1Lower] = Value::none();
                 foreach ($binders as $binder) $frameLeft[$binder] ??= Value::none();
+                // A prefix that reads the left element only through fields
+                // other than its relation's name is asked of the element as
+                // it arrives, before it is extended: a row it drops is never
+                // extended.
+                $raw = $prefix !== [] && ($fastField === null || strtoupper($fastField) !== strtoupper($b1));
+                if ($raw) {
+                    $binderSet = array_fill_keys($binders, true);
+                    foreach ($prefix as $conjunct) {
+                        if (!self::rawSafe($conjunct, $binderSet, strtoupper($b1))) { $raw = false; break; }
+                    }
+                }
+                // The rows in order, walked in place: this loop runs once per
+                // left row and is the join's hot path.
+                if ($leftValue->isList && $leftValue->storage !== null) {
+                    $items = $leftValue->storage;
+                } else {
+                    $items = [];
+                    $each($leftValue, static function (Value $item) use (&$items): void { $items[] = $item; });
+                }
                 $ctx->pushFrame($frameLeft);
+                $top = &$ctx->frames[count($ctx->frames) - 1];
                 try {
-                    $each($leftValue, function (Value $item) use (&$buckets, &$output, &$keys, &$position, $b1, $b1Lower, $hasLower1, $aliasLeft, $leftExtractor, $equi, $a, $leftJoin, $project, $ctx, $rejects, $fastField, $deep): void {
-                        $row = $aliasLeft($item);
-                        $asked = false;
-                        if ($fastField !== null && $row->get($fastField) !== null) {
-                            $asked = true;
-                            if ($rejects($row)) return;
+                    foreach ($items as $item) {
+                        $asked = -1;
+                        if ($raw) {
+                            foreach ($binders as $binder) $top[$binder] = $item;
+                            $asked = 0;
+                            foreach ($prefix as $conjunct) {
+                                try {
+                                    $keep = $a->evalNode($conjunct)->asBool($conjunct['pos']);
+                                } catch (SelError $e) {
+                                    $errored = true;
+                                    $asked = 2;
+                                    break;
+                                }
+                                if (!$keep) { $asked = 1; break; }
+                            }
+                            // A dropped row whose key is a field it has
+                            // cannot raise in the key.
+                            if ($asked === 1 && $fastField !== null && $item->get($fastField) !== null) { $dropped = true; continue; }
                         }
-                        $ctx->setFrameValue($b1, $row);
-                        if ($hasLower1) $ctx->setFrameValue($b1Lower, $row);
-                        $ctx->setFrameValue('_1', $row);
-                        $ctx->setFrameValue('_', $row);
-                        $key = $leftExtractor !== null ? $leftExtractor($row)
-                            : self::canonicalJoinKey($a->evalNode($equi['left']), $equi['numeric']);
+                        $row = $aliasLeft($item);
+                        if ($asked < 0 && $fastField !== null && $row->get($fastField) !== null) {
+                            $asked = $verdict($prefix, $row);
+                            if ($asked === 1) { $dropped = true; continue; }
+                        }
+                        if ($leftExtractor !== null) {
+                            $key = $leftExtractor($row);
+                        } else {
+                            $top[$b1] = $row;
+                            if ($hasLower1) $top[$b1Lower] = $row;
+                            $top['_1'] = $row;
+                            $top['_'] = $row;
+                            $key = self::canonicalJoinKey($a->evalNode($equi['left']), $equi['numeric']);
+                        }
                         $matches = $key === null ? null : ($buckets[$key] ?? null);
-                        if (!$asked && $rejects($row)) {
+                        if ($asked < 0) $asked = $prefix !== [] ? $verdict($prefix, $row) : 0;
+                        if ($asked === 1) {
+                            $dropped = true;
                             if (!$deep) $position += $matches !== null ? count($matches) : ($leftJoin ? 1 : 0);
-                            return;
+                            continue;
                         }
                         if ($matches !== null) {
+                            // A left row kept on an error meets every right
+                            // row: its joined rows raise in the FILTER, in
+                            // order, where they would have.
+                            $skip = ($rejected !== null && $asked === 0) ? $rejected : null;
                             foreach ($matches as $right) {
+                                if ($skip !== null && isset($skip[spl_object_id($right)])) {
+                                    $dropped = true;
+                                    $position++;
+                                    continue;
+                                }
                                 $output[] = $project($row, $right);
                                 if ($keys !== null) $keys[] = (string) $position;
                                 $position++;
@@ -1216,15 +1363,16 @@ final class Structure
                             if ($keys !== null) $keys[] = (string) $position;
                             $position++;
                         }
-                    });
+                    }
                 } finally {
+                    unset($top);
                     $ctx->popFrame();
                 }
-                $ctx->joinPrefilterReport = [$appliedIds, $errored];
+                $ctx->joinPrefilterReport = [$appliedIds, $errored, $dropped];
                 if ($keys !== null && count($keys) !== $position - 1) return Value::list($output, $keys);
                 return Value::list($output);
             }
-            if ($prefilter !== null) $ctx->joinPrefilterReport = [$appliedIds, $errored];
+            if ($prefilter !== null) $ctx->joinPrefilterReport = [$appliedIds, $errored, $dropped];
             if ($leftExtractor !== null) {
                 if ($leftValue->isList && $leftValue->storage !== null) {
                     foreach ($leftValue->storage as $item) {

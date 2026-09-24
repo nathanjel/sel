@@ -31,6 +31,26 @@ from ..value import Value
 from .errors import refuse
 
 
+def _text_literal_results(node: Node, depth: int = 0) -> bool:
+    """Whether ``node`` is an IF or COND whose every result is a text literal --
+    or, in turn, such a conditional (SEL-0057). SQL's CASE returns the
+    literal it chose byte for byte, so its identity is SEL's; a number it can
+    re-spell (MariaDB types ``CASE ... THEN 1 ELSE 1.0`` as DECIMAL(2,1)), and
+    a column or a computation is not a literal at all. A two-argument IF's
+    otherwise is "" (§7.2), a text literal too."""
+    if node is None or depth >= 180 or node.t != 'call' or node.name not in ('IF', 'COND'):
+        return False
+    args = node.args
+    if node.name == 'IF':
+        results = args[1:]
+    else:
+        if len(args) < 3 or len(args) % 2 == 0:
+            return False
+        results = args[1::2] + [args[-1]]
+    return all(r is not None and (r.t == 'text' or _text_literal_results(r, depth + 1))
+               for r in results)
+
+
 def _identity_projection(node: Node, depth: int = 0) -> bool:
     if node is None or depth >= 180:
         return False
@@ -40,6 +60,13 @@ def _identity_projection(node: Node, depth: int = 0) -> bool:
         return _identity_projection(node.obj, depth + 1) and _identity_projection(node.idx, depth + 1)
     if node.t == 'call':
         if node.name in ('COUNT', 'LEN', 'BLEN'):
+            return True
+        # One spelling per value (§7.6): whatever computed the argument, the
+        # canonical form's identity is its value's, which SQL computes exactly
+        # wherever the translation does not declare otherwise (a caveat).
+        if node.name == 'CANON':
+            return True
+        if _text_literal_results(node, depth):
             return True
         if node.name == 'RECORD':
             return len(node.args) % 2 == 0 and all(_identity_projection(n, depth + 1) for n in node.args[1::2])
@@ -58,6 +85,14 @@ def _identity_inputs(node: Node, depth: int = 0):
             return True
         return {node.idx.v} if node.obj.t == 'var' else _identity_inputs(node.obj, depth + 1)
     if node.t == 'call' and node.name in ('COUNT', 'LEN', 'BLEN'):
+        return set()
+    # The canonical form does not depend on how its argument is spelled, so no
+    # field it reads needs its identity kept upstream.
+    if node.t == 'call' and node.name == 'CANON':
+        return set()
+    # The literal a conditional chose does not depend on how any field it
+    # tests is spelled.
+    if _text_literal_results(node, depth):
         return set()
     if node.t == 'list' or (node.t == 'call' and node.name in ('LIST', 'RECORD')):
         items = node.items if node.t == 'list' else node.args[1::2] if node.name == 'RECORD' else node.args
@@ -253,6 +288,12 @@ def require_numeric(n: Node, ctx: Context | None = None) -> None:
         eval_node(n, ctx if ctx is not None else Context()).as_decimal(n.pos)
     except SelError as e:
         refuse_as_sel(e, n)
+
+
+def constant_scale(n: Node, ctx: Context | None = None) -> int:
+    """The number of fractional digits of a constant already known to be a
+    number (``require_numeric`` ran first)."""
+    return eval_node(n, ctx if ctx is not None else Context()).as_decimal(n.pos).scale
 
 
 def refuse_as_sel(e: SelError, n: Node) -> None:

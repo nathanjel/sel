@@ -21,14 +21,10 @@ export class Context {
     this.root = root || Value.none();
     this.frames = [];     // aggregate binders: Map<name, Value>
     this.depth = 0;
-    // Bumped by a tentative FILTER body (a conjunct pushed under a LINK) each
-    // time it keeps a row it raised on; the FILTER above compares it around
-    // its source's evaluation to know whether the pushed conjuncts held on
-    // every row it sees (SEL-0051).
-    this.tentativeKept = 0;
     // A FILTER whose source is a LINK hands the join its conjuncts here, for
-    // the join to pre-apply to left rows where that is provably the same as
-    // filtering the joined rows (builtins/structure.mjs, doLink; SEL-0052).
+    // the join to test on the rows it joins where that is provably the same as
+    // filtering the joined rows (builtins/structure.mjs, doLink; SEL-0052,
+    // SEL-0054).
     this.joinPrefilter = null;
     // What a join below reported after applying them: which conjuncts every
     // row that came up has passed, and whether any row was kept on an error

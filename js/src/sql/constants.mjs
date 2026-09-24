@@ -49,12 +49,36 @@ import { asciiUpper } from '../lexer.mjs';
 // `ALL(V, (C), C > 0)` translated to working SQL for a rule that can never run.
 // A translation that is accepted where the language refuses is the one direction
 // this layer must never fail in.
+// Whether the node is an IF or COND whose every result is a text literal -- or,
+// in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
+// chose byte for byte, so its identity is SEL's; a number it can re-spell
+// (MariaDB types `CASE ... THEN 1 ELSE 1.0` as DECIMAL(2,1)), and a column or a
+// computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
+// a text literal too.
+function textLiteralResults(node, depth = 0) {
+  if (!node || depth >= 180 || node.t !== 'call' || !['IF', 'COND'].includes(node.name)) return false;
+  const args = node.args;
+  let results;
+  if (node.name === 'IF') {
+    results = args.slice(1);
+  } else {
+    if (args.length < 3 || args.length % 2 === 0) return false;
+    results = [...args.filter((_, i) => i % 2 === 1), args[args.length - 1]];
+  }
+  return results.every((r) => !!r && (r.t === 'text' || textLiteralResults(r, depth + 1)));
+}
+
 function identityProjection(node, depth = 0) {
   if (!node || depth >= 180) return false;
   if (['var', 'num', 'text', 'bool', 'null'].includes(node.t)) return true;
   if (node.t === 'index') return identityProjection(node.obj, depth + 1) && identityProjection(node.idx, depth + 1);
   if (node.t === 'call') {
     if (['COUNT', 'LEN', 'BLEN'].includes(node.name)) return true;
+    // One spelling per value (§7.6): whatever computed the argument, the
+    // canonical form's identity is its value's, which SQL computes exactly
+    // wherever the translation does not declare otherwise (a caveat).
+    if (node.name === 'CANON') return true;
+    if (textLiteralResults(node, depth)) return true;
     if (node.name === 'RECORD') return node.args.length % 2 === 0
       && node.args.every((n, i) => i % 2 === 0 || identityProjection(n, depth + 1));
   }
@@ -67,6 +91,12 @@ function identityInputs(n, depth = 0) {
   if (n.t === 'var') return n.name === '_K' ? new Set() : true;
   if (n.t === 'index') return n.idx.t !== 'text' ? true : n.obj.t === 'var' ? new Set([n.idx.v]) : identityInputs(n.obj, depth + 1);
   if (n.t === 'call' && ['COUNT', 'LEN', 'BLEN'].includes(n.name)) return new Set();
+  // The canonical form does not depend on how its argument is spelled, so no
+  // field it reads needs its identity kept upstream.
+  if (n.t === 'call' && n.name === 'CANON') return new Set();
+  // The literal a conditional chose does not depend on how any field it tests
+  // is spelled.
+  if (textLiteralResults(n, depth)) return new Set();
   if (n.t === 'list' || (n.t === 'call' && ['LIST', 'RECORD'].includes(n.name))) {
     const items = n.t === 'list' ? n.items : n.name === 'RECORD' ? n.args.filter((_, i) => i % 2) : n.args;
     const out = new Set();
@@ -235,6 +265,12 @@ export function requireNumeric(n, ctx = null) {
   } catch (e) {
     refuseAsSel(e, n);
   }
+}
+
+// The number of fractional digits of a constant already known to be a number
+// (requireNumeric ran first).
+export function constantScale(n, ctx = null) {
+  return evalNode(n, ctx ?? new Context()).asDecimal(n.pos).scale;
 }
 
 // SEL's own refusal, reported as the translator's.

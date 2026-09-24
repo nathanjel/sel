@@ -48,6 +48,7 @@ inline const Entry ENTRIES[] = {
   {"BLEN", 1, 1, false, false, nullptr},
   {"BTL", 1, 1, false, false, nullptr},
   {"BUCKET", 2, 4, true, true, nullptr},
+  {"CANON", 1, 1, false, false, nullptr},
   {"CEIL", 1, 1, false, false, nullptr},
   {"CHAR", 1, 1, false, false, nullptr},
   {"COALESCE", 1, -1, true, false, nullptr},
@@ -119,7 +120,7 @@ inline const Entry ENTRIES[] = {
   {"UPPER", 1, 1, false, false, nullptr},
 };
 
-inline constexpr int COUNT = 77;
+inline constexpr int COUNT = 78;
 
 // The binding forms (spec/builtins.md): per accepted count, in the order the
 // evaluator tries them, each argument's scope, an optional guard on one

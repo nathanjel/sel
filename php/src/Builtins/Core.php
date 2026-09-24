@@ -9,7 +9,6 @@ use Sel\Args;
 use Sel\Context;
 use Sel\Dec;
 use Sel\Registry;
-use Sel\SelError;
 use Sel\Value;
 
 use function Sel\fail;
@@ -351,21 +350,7 @@ final class Core
      * Runs $visit per element with the binder and _K in scope. Returning a Value
      * from $visit stops the walk and becomes the result.
      */
-    // $tentative: a body that raises keeps the element -- the visitor sees null --
-    // for the FILTER above to decide (a pushed conjunct, spec §7.4).
-    private static function evalBody(Args $a, array $body, bool $tentative): ?Value
-    {
-        if (!$tentative) {
-            return $a->evalNode($body);
-        }
-        try {
-            return $a->evalNode($body);
-        } catch (SelError) {
-            return null;
-        }
-    }
-
-    private static function walk(Args $a, Context $ctx, callable $visit, bool $tentative = false, ?array $bodyOverride = null): ?Value
+    private static function walk(Args $a, Context $ctx, callable $visit, ?array $bodyOverride = null): ?Value
     {
         ['binder' => $binder, 'body' => $body] = self::shape($a);
         if ($bodyOverride !== null) $body = $bodyOverride;
@@ -384,7 +369,7 @@ final class Core
                         $key = $value->listKeys[$i];
                         $topFrame[$binder] = $item;
                         if ($needsK) $topFrame['_K'] = Value::text($key);
-                        $result = $visit(self::evalBody($a, $body, $tentative), $key, $item, $body);
+                        $result = $visit($a->evalNode($body), $key, $item, $body);
                     }
                 } else {
                     foreach ($value->storage as $i => $item) {
@@ -392,7 +377,7 @@ final class Core
                         $key = $needsK ? (string) ($i + 1) : ($i + 1);
                         $topFrame[$binder] = $item;
                         if ($needsK) $topFrame['_K'] = Value::text((string) $key);
-                        $result = $visit(self::evalBody($a, $body, $tentative), $key, $item, $body);
+                        $result = $visit($a->evalNode($body), $key, $item, $body);
                     }
                 }
             } elseif ($value->shape !== null && $value->storage !== null) {
@@ -476,97 +461,66 @@ final class Core
                 $keys = [];
                 $needsCustomKeys = false;
                 $expectedIndex = 1;
-                $written = $a->node($a->count() - 1);
-                $tentative = !empty($written['tentative']);
                 // Over a join, the conjuncts are offered to the LINK, which
-                // pre-applies what it can to its left rows (SEL-0052): this
-                // FILTER's first -- it runs before the FILTER that handed the
-                // rest down -- then the handed ones. Deep drops, below the
+                // tests what it can on the rows it joins (SEL-0052, SEL-0054):
+                // this FILTER's first -- it runs before the FILTER that handed
+                // the rest down -- then the handed ones. Deep drops, below the
                 // join directly under this FILTER, change its keys, so they
                 // are allowed only where nothing observes them
                 // (`keysUnobserved`, stamped by the physical optimiser).
                 $src = $a->node(0);
                 $handed = $ctx->joinPrefilter;
                 $ctx->joinPrefilter = null;
+                $own = null;
                 if ($src !== null && $src['t'] === 'call' && in_array($src['name'], ['LINK', 'LINK_LEFT'], true)) {
                     ['binder' => $binder, 'body' => $body] = self::shape($a);
                     $own = Structure::leadingFieldConjuncts($body, $binder);
-                    // Conjuncts the physical optimiser already pushed under
-                    // the join (a tentative FILTER below, SEL-0051) held on
-                    // every row the join sees unless one kept a row on an
-                    // error; the join checks that and skips them.
-                    if (!empty($written['pushedDown'])) {
-                        $rem = $written['remaining'];
-                        $kept = [];
-                        if (!($rem['t'] === 'bool' && $rem['v'] === true)) {
-                            $n = $rem;
-                            while ($n !== null && $n['t'] === 'bin' && $n['op'] === 'AND') {
-                                $kept[] = $n['r'];
-                                $n = $n['l'];
-                            }
-                            $kept[] = $n;
-                        }
-                        foreach ($own as $i => $entry) {
-                            if (!in_array($entry['node'], $kept, true)) $own[$i]['pushed'] = true;
-                        }
-                    }
-                    $anyOwn = false;
-                    foreach ($own as $entry) if (!$entry['pushed']) { $anyOwn = true; break; }
                     // A first conjunct that is neither a field test nor total
-                    // nor pushed ends every walk before it starts: hand
-                    // nothing, gather nothing.
-                    $blocked = $own !== [] && $own[0]['fields'] === null && $own[0]['total'] === null && !$own[0]['pushed'];
-                    $stages = (!$blocked && ($anyOwn || $handed !== null)) ? [[$binder, $own]] : [];
+                    // ends every walk before it starts: hand nothing, gather
+                    // nothing. A stage is [binder, conjuncts, how many joins
+                    // lie between its FILTER and the join testing it].
+                    $blocked = $own !== [] && $own[0]['fields'] === null && $own[0]['total'] === null;
+                    $stages = $blocked ? [] : [[$binder, $own, 0]];
                     if ($handed !== null && !$blocked) foreach ($handed[0] as $stage) $stages[] = $stage;
                     $deep = $handed === null ? !empty($body['keysUnobserved']) : true;
                     if ($stages !== []) {
                         $ctx->joinPrefilter = [$stages, $deep, $handed === null ? [] : $handed[2], $handed === null ? [] : $handed[3]];
                     }
                 }
-                $before = $ctx->tentativeKept;
                 try {
                     $source = $a->val(0);
                 } finally {
                     $ctx->joinPrefilter = null;
                 }
                 // The join's report -- which conjuncts every row that came up
-                // has passed, and whether a row was kept on an error -- goes
-                // up as it is.
+                // has passed, whether a row was kept on an error, and whether
+                // any row was dropped -- goes up as it is.
                 $report = $ctx->joinPrefilterReport;
                 $ctx->joinPrefilterReport = null;
                 if ($report !== null && $handed !== null) $ctx->joinPrefilterReport = $report;
-                // A predicate whose leading conjuncts were pushed under the
-                // LINK below: when no tentative body kept a row on an error
-                // while the source ran, every row here passed them, and only
-                // the remaining conjuncts are evaluated (TRUE when there are
-                // none); otherwise the whole predicate, as written, decides --
-                // and raises -- in the source's order.
+                // The conjuncts of this FILTER the join below applied held on
+                // every row it built, unless it kept a row on an error: then
+                // they are TRUE there, raise nowhere, and only the rest is
+                // evaluated, in the source's order (with none left, the
+                // join's list is the FILTER's result as it is).
                 $bodyOverride = null;
-                if (!empty($written['pushedDown'])) {
-                    if ($ctx->tentativeKept === $before) {
-                        $bodyOverride = $written['remaining'];
-                        // Nothing remains: every row of the join below passed,
-                        // and the join built a fresh list this FILTER would
-                        // only copy.
-                        if ($bodyOverride['t'] === 'bool' && $bodyOverride['v'] === true) return $source;
+                if ($own !== null && $report !== null && !$report[1]) {
+                    $rest = [];
+                    foreach ($own as $entry) {
+                        if (!isset($report[0][Structure::conjunctId($entry['node'])])) $rest[] = $entry['node'];
                     }
-                }
-                self::walk($a, $ctx, static function (?Value $r, string|int $key, Value $item, array $body) use (
-                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex, $tentative, $ctx
-                ): ?Value {
-                    if ($r === null) {
-                        $keep = true;
-                        $ctx->tentativeKept++;
-                    } else {
-                        try {
-                            $keep = $r->asBool($body['pos']);
-                        } catch (SelError $e) {
-                            if (!$tentative) throw $e;
-                            $keep = true;
-                            $ctx->tentativeKept++;
+                    if (count($rest) < count($own)) {
+                        if ($rest === []) return $source;
+                        $bodyOverride = array_shift($rest);
+                        foreach ($rest as $node) {
+                            $bodyOverride = ['t' => 'bin', 'op' => 'AND', 'l' => $bodyOverride, 'r' => $node, 'pos' => $bodyOverride['pos']];
                         }
                     }
-                    if ($keep) {
+                }
+                self::walk($a, $ctx, static function (Value $r, string|int $key, Value $item, array $body) use (
+                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex
+                ): ?Value {
+                    if ($r->asBool($body['pos'])) {
                         $storage[] = $item;
                         $keyInt = is_int($key) ? $key : (int) $key;
                         if (!$needsCustomKeys && $keyInt !== $expectedIndex) {
@@ -581,7 +535,7 @@ final class Core
                         $expectedIndex++;
                     }
                     return null;
-                }, $tentative, $bodyOverride);
+                }, $bodyOverride);
                 return Value::list($storage, $needsCustomKeys ? $keys : null);
             }]);
 

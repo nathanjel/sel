@@ -17,6 +17,7 @@ defines the semantics; this table only says what the function table knows.
 | `BLEN` | `BLEN(x)` | 1 | strict | §7.7 |
 | `BTL` | `BTL(x)` | 1 | strict | §7.7 |
 | `BUCKET` | `BUCKET(list, [binder,] key)`<br>`BUCKET(list, [binder,] key, proj)` | 2–4 | lazy, binds | §7.3 |
+| `CANON` | `CANON(x)` | 1 | strict | §7.6 |
 | `CEIL` | `CEIL(x)` | 1 | strict | §7.6 |
 | `CHAR` | `CHAR(n)` | 1 | strict | §7.5 |
 | `COALESCE` | `COALESCE(a, b, …)` | 1+ | lazy | §7.9 |
@@ -138,4 +139,4 @@ guard says which form a count takes when two would fit.
 | `TOP_DESC` | source, body, outer |  | `_` `_K` |
 | `TOP_DESC` | source, binder, body, outer |  | `_K` |
 
-77 builtins: 19 lazy, of which 14 bind; extra arity rules on `COND`, `LINK`, `LINK_LEFT`, `RECORD`.
+78 builtins: 19 lazy, of which 14 bind; extra arity rules on `COND`, `LINK`, `LINK_LEFT`, `RECORD`.

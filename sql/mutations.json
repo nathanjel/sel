@@ -1393,6 +1393,181 @@
       "file": "lisp/src/sql/hybrid.lisp",
       "from": "(defun join-rows-lack-binders-p (steps)",
       "to": "(defun join-rows-lack-binders-p (steps) (declare (ignore steps)) nil)\n(defun join-rows-lack-binders-p-unused (steps)"
+    },
+    {
+      "name": "py-canon-not-an-identity",
+      "file": "python/sel/sql/constants.py",
+      "from": "        if node.name == 'CANON':\n            return True\n",
+      "to": "",
+      "was": "SEL-0058: CANON is the one computed projection whose identity is provable; without it DEDUPE/BUCKET over CANON stay in memory."
+    },
+    {
+      "name": "py-canon-inputs-kept",
+      "file": "python/sel/sql/constants.py",
+      "from": "    if node.t == 'call' and node.name == 'CANON':\n        return set()\n",
+      "to": "",
+      "was": "SEL-0058: a canonical form does not depend on its argument's spelling, so the barrier must not reach through it to an earlier computed MAP."
+    },
+    {
+      "name": "py-canon-sorts-as-text",
+      "file": "python/sel/sql/translator.py",
+      "from": "        if fragment.canonical:\n            refuse('E_SQL_UNSUPPORTED',",
+      "to": "        if False:\n            refuse('E_SQL_UNSUPPORTED',",
+      "was": "SEL-0058: a text CANON sorted in SQL sorts \"10\" before \"9\"; SEL sorts it as a number."
+    },
+    {
+      "name": "py-text-order-spares-untyped-keys",
+      "file": "python/sel/sql/translator.py",
+      "from": "        if fragment.kind in ('TEXT', 'UNKNOWN'):\n            if self.strict:",
+      "to": "        if fragment.kind in ('TEXT',):\n            if self.strict:",
+      "was": "SEL-0060: an untyped key holds whatever the server has, and text there sorts by its bytes as a declared one does."
+    },
+    {
+      "name": "py-scale-limit-guard-silent",
+      "file": "python/sel/sql/translator.py",
+      "from": "        if guarded is not f:\n",
+      "to": "        if False:\n",
+      "was": "SEL-0059: the MySQL-family guard reads text as DECIMAL(65,10); a text number past ten fractional digits loses them."
+    },
+    {
+      "name": "py-scale-limit-constant-at-the-cap",
+      "file": "python/sel/sql/translator.py",
+      "from": "if _constants.constant_scale(node, self.const_ctx) > cap:",
+      "to": "if _constants.constant_scale(node, self.const_ctx) >= cap:",
+      "was": "SEL-0059: a constant with exactly ten fractional digits fits DECIMAL(65,10) and is exact."
+    },
+    {
+      "name": "py-canon-distinct-refused",
+      "file": "python/sel/sql/translator.py",
+      "from": "if fragment.kind in ('UNKNOWN', 'NUM') and not fragment.canonical:",
+      "to": "if fragment.kind in ('UNKNOWN', 'NUM'):",
+      "was": "SEL-0058: DISTINCT over a canonical number is exact; refusing it keeps every CANON dedupe in memory."
+    },
+    {
+      "name": "py-canon-flag-lost-by-translate",
+      "file": "python/sel/sql/translator.py",
+      "from": "        out.canonical = f.canonical\n        return out",
+      "to": "        return out",
+      "was": "SEL-0058: the flag is public (the oracle compares a canonical answer as text); every host's top-level translate once dropped it at once."
+    },
+    {
+      "name": "js-canon-not-an-identity",
+      "file": "js/src/sql/constants.mjs",
+      "from": "    if (node.name === 'CANON') return true;\n",
+      "to": "",
+      "was": "The JS half of py-canon-not-an-identity."
+    },
+    {
+      "name": "js-canon-sorts-as-text",
+      "file": "js/src/sql/translator.mjs",
+      "from": "    if (frag.canonical) {\n",
+      "to": "    if (false) {\n",
+      "was": "The JS half of py-canon-sorts-as-text."
+    },
+    {
+      "name": "js-scale-limit-guard-silent",
+      "file": "js/src/sql/translator.mjs",
+      "from": "    if (guarded !== f) {\n",
+      "to": "    if (false) {\n",
+      "was": "The JS half of py-scale-limit-guard-silent."
+    },
+    {
+      "name": "php-canon-not-an-identity",
+      "file": "php/src/Sql/Constants.php",
+      "from": "            if ($node['name'] === 'CANON') return true;\n",
+      "to": "",
+      "was": "The PHP half of py-canon-not-an-identity."
+    },
+    {
+      "name": "php-canon-sorts-as-text",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($f->canonical) {\n            refuse('E_SQL_UNSUPPORTED',",
+      "to": "        if (false) {\n            refuse('E_SQL_UNSUPPORTED',",
+      "was": "The PHP half of py-canon-sorts-as-text."
+    },
+    {
+      "name": "php-scale-limit-guard-silent",
+      "file": "php/src/Sql/Translator.php",
+      "from": "        if ($guarded !== $f) {\n",
+      "to": "        if (false) {\n",
+      "was": "The PHP half of py-scale-limit-guard-silent."
+    },
+    {
+      "name": "lisp-canon-sorts-as-text",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "  (when (fragment-canonical f)\n    (refuse \"E_SQL_UNSUPPORTED\"",
+      "to": "  (when nil\n    (refuse \"E_SQL_UNSUPPORTED\"",
+      "was": "The Lisp half of py-canon-sorts-as-text."
+    },
+    {
+      "name": "lisp-scale-limit-guard-silent",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "        (unless (eq guarded f)\n",
+      "to": "        (when nil\n",
+      "was": "The Lisp half of py-scale-limit-guard-silent."
+    },
+    {
+      "name": "cpp-canon-sorts-as-text",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "  if (f.canonical()) {\n    refuse(\"E_SQL_UNSUPPORTED\",",
+      "to": "  if (false) {\n    refuse(\"E_SQL_UNSUPPORTED\",",
+      "was": "The C++ half of py-canon-sorts-as-text."
+    },
+    {
+      "name": "cpp-scale-limit-guard-silent",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "  if (wraps) {\n",
+      "to": "  if (false) {\n",
+      "was": "The C++ half of py-scale-limit-guard-silent."
+    },
+    {
+      "name": "cpp-canon-flag-lost-by-translate",
+      "file": "cpp/sel_sql_translator.cpp",
+      "from": "  out.canonical_ = f.canonical_;\n",
+      "to": "",
+      "was": "The C++ half of py-canon-flag-lost-by-translate."
+    },
+    {
+      "name": "py-text-literal-if-not-an-identity",
+      "file": "python/sel/sql/constants.py",
+      "from": "        if _text_literal_results(node, depth):\n            return True\n",
+      "to": "",
+      "was": "SEL-0057: a conditional of text literals keeps SEL's identity; without it scenario 6 stays in memory."
+    },
+    {
+      "name": "py-text-literal-if-admits-numbers",
+      "file": "python/sel/sql/constants.py",
+      "from": "(r.t == 'text' or _text_literal_results(r, depth + 1))",
+      "to": "(r.t in ('text', 'num') or _text_literal_results(r, depth + 1))",
+      "was": "SEL-0057: a CASE can re-spell a number -- MariaDB answers 1.0 for IF(c, 1, 1.0)'s 1, and a DEDUPE then loses a row."
+    },
+    {
+      "name": "js-text-literal-if-admits-numbers",
+      "file": "js/src/sql/constants.mjs",
+      "from": "(r.t === 'text' || textLiteralResults(r, depth + 1))",
+      "to": "(r.t === 'text' || r.t === 'num' || textLiteralResults(r, depth + 1))",
+      "was": "The JS half of py-text-literal-if-admits-numbers."
+    },
+    {
+      "name": "php-text-literal-if-admits-numbers",
+      "file": "php/src/Sql/Constants.php",
+      "from": "($r['t'] !== 'text' && !self::textLiteralResults($r, $depth + 1))",
+      "to": "($r['t'] !== 'text' && $r['t'] !== 'num' && !self::textLiteralResults($r, $depth + 1))",
+      "was": "The PHP half of py-text-literal-if-admits-numbers."
+    },
+    {
+      "name": "cpp-text-literal-if-admits-numbers",
+      "file": "cpp/sel_sql_stage1.cpp",
+      "from": "(r->t() != T::Text && !text_literal_results(r, depth + 1))",
+      "to": "(r->t() != T::Text && r->t() != T::Num && !text_literal_results(r, depth + 1))",
+      "was": "The C++ half of py-text-literal-if-admits-numbers."
+    },
+    {
+      "name": "lisp-text-literal-if-admits-numbers",
+      "file": "lisp/src/sql/translator.lisp",
+      "from": "(or (eq (snode-kind r) :text)\n                             (text-literal-results-p r (1+ depth)))",
+      "to": "(or (member (snode-kind r) '(:text :num))\n                             (text-literal-results-p r (1+ depth)))",
+      "was": "The Lisp half of py-text-literal-if-admits-numbers."
     }
   ]
 }

@@ -103,6 +103,7 @@ NUMERIC_ARGUMENT_AT: dict[str, tuple[int, ...] | bool] = {
     'PADL': (1,),
     'PADR': (1,),
     'CHAR': (0,),
+    'CANON': (0,),
 }
 
 
@@ -185,8 +186,13 @@ class Translator:
             return self.compile_statement(plan)
         f = self._node(norm)
 
-        return Fragment(f.parts, f.kind, self.dialect, self.params,
-                        self.param_kinds, list(self.caveats))
+        out = Fragment(f.parts, f.kind, self.dialect, self.params,
+                       self.param_kinds, list(self.caveats))
+        # Public: it says the value is a canonical number, whose spelling is
+        # the contract and not only its value (the SQL oracle compares it as
+        # text). Lost here once, in every host at the same time.
+        out.canonical = f.canonical
+        return out
 
     def translate_statement(self, ast: Node) -> Fragment:
         _norm, plan = self._begin(ast)
@@ -342,6 +348,7 @@ class Translator:
                         guard=bool(c.get('guard', False)))
         if c.get('prefilter') == 'separate':
             frag.separate_prefilter = True
+        frag.canonical = bool(c.get('canonical', False))
         return frag
 
     def _index(self, n: Node) -> Fragment:
@@ -520,6 +527,8 @@ class Translator:
             self._require_not_bool_operand(l, n.l.pos, op)
             self._require_not_bool_operand(r, n.r.pos, op)
         variant = self._variant_for(op, [l, r])
+        if variant == 'coerce':
+            self._coerce_scale_limits([(l, n.l), (r, n.r)])
         if op in _BYTE_COMPARISONS:
             _require_comparable_kinds(l, r, op, n.pos)
             # See Emit.text_operand for why the operands are transformed here
@@ -742,7 +751,10 @@ class Translator:
                 self._require_numeric_constant(arg)
                 f = self._guard_numeric(f, arg)
             args.append(f)
-        return self._apply('funcs', name, args, n.pos)
+        out = self._apply('funcs', name, args, n.pos)
+        if name == 'CANON':
+            out.canonical = True
+        return out
 
     def _require_argument_kind(self, name: str, f: Fragment, pos: Pos) -> None:
         """Refuse an argument whose kind SEL would refuse.
@@ -926,6 +938,11 @@ class Translator:
         return identity
 
     def _identity_group_key(self, node: Node, fragment: Fragment) -> Fragment:
+        if fragment.canonical and fragment.kind == 'NUM':
+            # One spelling per value, so the value's equality is the spelling's:
+            # grouped and compared as the number it is, which keeps it a number
+            # for whatever sorts it afterwards.
+            return fragment
         if fragment.kind == 'UNKNOWN':
             refuse('E_SQL_SHAPE', 'group keys require proven scalar identity', node.pos)
         if fragment.kind == 'NUM':
@@ -936,6 +953,29 @@ class Translator:
             wrapped = self.emit.text_operand(numeric)
             return Fragment(wrapped.parts, 'TEXT', self.dialect, wrapped.params,
                             wrapped.param_kinds, wrapped.caveats, True, False, False)
+        return self._collated_key(fragment)
+
+    def _order_key(self, fragment: Fragment, pos: Pos) -> Fragment:
+        """A sort key, as SEL's sort compares it. SEL sorts numbers as numbers
+        and other text by its bytes -- and number-shaped TEXT as a number, which
+        SQL's ORDER BY cannot: it sorts a text key by its bytes throughout, so
+        "10" comes before "9" (SEL-0060). A NUM key sorts as SEL sorts it. A
+        canonical number the dialect can only carry as text is always a number
+        to SEL, so sorting it in SQL is simply wrong: refused, and the planner
+        sorts in memory (SEL-0058). Any other TEXT or UNKNOWN key is sorted
+        anyway, declared text-order, and refused under strict."""
+        if fragment.kind == 'NUM':
+            return fragment
+        if fragment.canonical:
+            refuse('E_SQL_UNSUPPORTED',
+                   f'CANON is text on {self.dialect}, which SQL sorts by its bytes, and SEL '
+                   'sorts it as the number it is; sort it in memory', pos)
+        if fragment.kind in ('TEXT', 'UNKNOWN'):
+            if self.strict:
+                refuse('E_SQL_UNSUPPORTED',
+                       'a text key sorts by its bytes in SQL, where SEL sorts number-shaped '
+                       'text as numbers (text-order); strict mode refuses that', pos)
+            self.caveats['text-order'] = True
         return self._collated_key(fragment)
 
     def _collated_key(self, fragment: Fragment) -> Fragment:
@@ -960,8 +1000,10 @@ class Translator:
             collated = self._identity_group_key(group['node'], key)
             if key.kind == 'NUM':
                 # Textual identity must not change arithmetic/order over _K.
-                return Fragment(['MIN(', *key.parts, ')'], 'NUM', self.dialect,
-                                key.params, key.param_kinds, key.caveats)
+                out = Fragment(['MIN(', *key.parts, ')'], 'NUM', self.dialect,
+                               key.params, key.param_kinds, key.caveats)
+                out.canonical = key.canonical
+                return out
             # In a HAVING, MariaDB and MySQL resolve a column only against the
             # GROUP BY columns and the select list, not against an equal
             # expression: `HAVING CAST(cat ...) COLLATE ...` is "unknown
@@ -971,9 +1013,11 @@ class Translator:
             # Nested key projections (e.g. LEN(_K)) also require an aggregate
             # under MySQL ONLY_FULL_GROUP_BY. Direct keys use _group_key.
             if collated is not key:
-                return Fragment(['MIN(', *collated.parts, ')'], 'TEXT', self.dialect,
-                                collated.params, collated.param_kinds, collated.caveats,
-                                True, False, False)
+                out = Fragment(['MIN(', *collated.parts, ')'], 'TEXT', self.dialect,
+                               collated.params, collated.param_kinds, collated.caveats,
+                               True, False, False)
+                out.canonical = key.canonical
+                return out
             return collated
         if b.shape == Binder.COLUMN:
             return self._column_ref(b.payload)
@@ -1646,7 +1690,44 @@ class Translator:
         """
         if _constants.is_constant(n, self.const_names):
             return f
-        return self.emit.numeric_operand(f, n.pos)
+        guarded = self.emit.numeric_operand(f, n.pos)
+        if guarded is not f:
+            # The guard reads the text as the dialect's numericCast type, and
+            # where that type fixes a scale the data's digits past it are gone
+            # before anything else sees them (SEL-0059).
+            self._scale_limited(n.pos, 'this operand is read as a number')
+        return guarded
+
+    def _numeric_cast_scale(self) -> int | None:
+        """How many fractional digits the dialect's numericCast and
+        numericGuard keep, or None where they keep every one (sql/MAP.md §3)."""
+        cap = self.emit.lex('numericCastScale')
+        return int(cap) if isinstance(cap, str) and cap.isascii() and cap.isdigit() else None
+
+    def _scale_limited(self, pos: Pos, what: str) -> None:
+        cap = self._numeric_cast_scale()
+        if cap is None:
+            return
+        if self.strict:
+            refuse('E_SQL_UNSUPPORTED',
+                   f'{what} through a DECIMAL that keeps {cap} fractional digits, and a '
+                   f'value with more loses them on {self.dialect} (scale-limit); strict '
+                   'mode refuses that', pos)
+        self.caveats['scale-limit'] = True
+
+    def _coerce_scale_limits(self, pairs: list[tuple[Fragment, Node]]) -> None:
+        """The coerce variant reads both operands through numericCast. A constant's
+        scale is known and only one past the cap is truncated; a column's is
+        not -- NUM says it is a number, not how many fractional digits it has."""
+        cap = self._numeric_cast_scale()
+        if cap is None:
+            return
+        for _f, node in pairs:
+            if _constants.is_constant(node, self.const_names):
+                if _constants.constant_scale(node, self.const_ctx) > cap:
+                    self._scale_limited(node.pos, 'this constant is read as a number')
+            else:
+                self._scale_limited(node.pos, 'this operand is read as a number')
 
     def _require_numeric_constant(self, n: Node) -> None:
         """An operand in a numeric position whose value is knowable here.
@@ -1870,6 +1951,18 @@ class Translator:
                 if len(matches) == 1 and not matches[0].get('guard')
                 and matches[0].get('raw') is None else 'UNKNOWN')
 
+    def _output_canon_kind(self, plan: RelationalPlan, name: str) -> str | None:
+        """The kind of a projected CANON(...), which a derived table's column
+        keeps: the dialect's CANON kind -- the map entry's ret, NUM or TEXT."""
+        if plan.projections is None:
+            return None
+        projection = next((p for p in plan.projections if p.get('alias') == name), None)
+        node = projection['node'] if projection else None
+        if not (node is not None and node.t == 'call' and node.name == 'CANON'):
+            return None
+        entry = _map.entry(self.dialect, 'funcs', 'CANON')
+        return str(entry['ret']) if isinstance(entry, dict) else None
+
     def _wrap_plan_as_derived_table(self, plan: RelationalPlan) -> RelationalPlan:
         self.subquery_counter += 1
         alias = f'_sub{self.subquery_counter}'
@@ -1889,6 +1982,10 @@ class Translator:
                 'table': alias,
                 'type': self._output_field_type(plan, name),
             }
+            canon_kind = self._output_canon_kind(plan, name)
+            if canon_kind is not None:
+                fields[ascii_upper(name)]['type'] = canon_kind
+                fields[ascii_upper(name)]['canonical'] = True
         derived = RelationalPlan()
         derived.source_name = alias
         derived.source_relation = {'kind': 'relation', 'from': {'raw': ''},
@@ -2306,7 +2403,7 @@ class Translator:
                         fragment = self._with_row(
                             src, projection['binder'], lambda p=projection: self._node(p['node']))
                     if plan.distinct:
-                        if fragment.kind in ('UNKNOWN', 'NUM'):
+                        if fragment.kind in ('UNKNOWN', 'NUM') and not fragment.canonical:
                             refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', projection['node'].pos)
                         fragment = self._identity_group_key(projection['node'], fragment)
                     parts.extend(fragment.parts)
@@ -2446,8 +2543,8 @@ class Translator:
                     with_frame = (self._with_group if order.get('over_groups')
                                   else self._with_projected if plan.group_by is not None
                                   else self._with_row)
-                    fragment = self._collated_key(with_frame(
-                        src, order['binder'], lambda o=order: self._node(o['node'])))
+                    fragment = self._order_key(with_frame(
+                        src, order['binder'], lambda o=order: self._node(o['node'])), order['node'].pos)
                     parts.extend(fragment.parts)
                     parts.append(' ' + order['dir'])
 

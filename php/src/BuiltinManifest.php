@@ -22,6 +22,7 @@ final class BuiltinManifest
         'BLEN' => [1, 1, false, false, null],
         'BTL' => [1, 1, false, false, null],
         'BUCKET' => [2, 4, true, true, null],
+        'CANON' => [1, 1, false, false, null],
         'CEIL' => [1, 1, false, false, null],
         'CHAR' => [1, 1, false, false, null],
         'COALESCE' => [1, PHP_INT_MAX, true, false, null],

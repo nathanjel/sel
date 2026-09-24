@@ -181,7 +181,8 @@ key. Every key below must resolve for a `target` dialect; the generator checks.
 | `textCharset` | string or null | the charset name a dialect spells when it converts bytes to text; `null` where the dialect names none |
 | `textCast` | string | template wrapping `{0}` to cast an operand to text |
 | `numericCast` | string | template wrapping `{0}` for numeric coercion |
-| `numericGuard` | string, **optional** | template wrapping `{0}`, yielding the number or NULL; the only key a target may leave undeclared |
+| `numericGuard` | string, **optional** | template wrapping `{0}`, yielding the number or NULL; a target may leave it undeclared |
+| `numericCastScale` | digit string, **optional** | the fractional digits `numericCast` and `numericGuard` keep, where their type fixes a scale; a value read through them may lose digits past it, and the translator marks it `scale-limit` (SEL-0059). The generator requires it to equal the `DECIMAL(p,s)` scale those two templates name, and requires it wherever they name one |
 | `binaryCast` | string | template wrapping `{0}` to cast a text or num operand to bytes |
 | `isTrue` / `isNotTrue` | string | templates folding SQL's third truth value into two |
 | `placeholder` | string | `params`-mode placeholder; `{n}` is the 1-based ordinal, absent for positional `?` |
@@ -539,7 +540,7 @@ than a bag of prose. Each is described in full in `docs/SQL-TRANSLATION.md` §11
 | `unicode-case` | `UPPER`/`LOWER` are ASCII-only in SEL, Unicode-aware in the server |
 | `division-scale` | `/` yields a different scale, or truncates |
 | `numeric-scale` | the result's decimal scale differs from SEL's, though the value is equal |
-| `scale-limit` | the server's decimal type caps the result scale, and a result needing more fractional digits is truncated to it |
+| `scale-limit` | the server's decimal type caps the result scale, and a result needing more fractional digits is truncated to it; also carried by a value read through a `numericCast`/`numericGuard` that declares `numericCastScale` |
 | `decimal-float` | the server has no exact decimal type; arithmetic is integer or binary floating point |
 | `rounding-mode` | rounding is not half-away-from-zero — **in the vocabulary, declared by no dialect**: `mysql-family` carried it on `ROUND` and was probed not to need it, because `numericCast` means the operands are `DECIMAL` and both servers round `DECIMAL` SEL's way |
 | `modulo-integer` | `%` is integer-only |
@@ -550,6 +551,7 @@ than a bag of prose. Each is described in full in `docs/SQL-TRANSLATION.md` §11
 | `trim-charset` | `TRIM` strips a different character set than SEL's space/tab/CR/LF |
 | `length-units` | a length or position is counted in something other than code points — **in the vocabulary, declared by no dialect**: every target's `LEN` counts what SEL counts. A mutation adds it to `ansi`'s `LEN` to prove the check would notice |
 | `input-laxity` | the server accepts input SEL rejects, though it agrees on everything SEL accepts |
+| `text-order` | a sort by a text key orders it by its bytes, where SEL sorts number-shaped text as numbers; carried by the sort, not declared by an entry |
 
 ---
 

@@ -221,6 +221,10 @@
       "tpl": "abs({numericCast:0})",
       "ret": "NUM"
     },
+    "CANON": {
+      "tpl": "trim_scale({numericCast:0})",
+      "ret": "NUM"
+    },
     "CEIL": {
       "tpl": "ceil({numericCast:0})",
       "ret": "NUM"

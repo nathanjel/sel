@@ -751,9 +751,10 @@ Spec 7.4: a FILTER after a LINK is evaluated as written. Every host's physical
 optimiser moves `_["orders"]["amount"] > 2` under the join, and evaluated it
 there on every order -- including order 2, whose status the first conjunct
 rejects and whose amount is text -- so the program raised E_NOT_NUM where its
-AND, short-circuiting, never reaches the amount. The pushed conjunct now runs
-tentatively: a row it raises on is kept for the FILTER above, which carries
-the whole predicate in the source's order (SEL-0051).
+AND, short-circuiting, never reaches the amount. The pushed conjunct then ran
+tentatively (SEL-0051); no rewrite moves it any more (SEL-0054), and the
+join's run-time test of it keeps a row it raises on, so the FILTER raises in
+the source's order.
 --- source
 ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", "x")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
 --- expect
@@ -770,9 +771,11 @@ error E_NOT_NUM at 1:330
 ===
 ### name: rel.link.then-filter.pushed-right-conjunct-keeps-the-source-order
 --- note
-The right side too: `_["customers"]["credit"] > 2` is pushed under the inner
+The right side too: `_["customers"]["credit"] > 2` was pushed under the inner
 join over CUSTOMERS, where customer 7's text credit raised -- but customer 7
-joins only order 2, which the status conjunct rejects first.
+joins only order 2, which the status conjunct rejects first. The join now
+tests it on the right rows only after the status conjunct, and keeps a right
+row it raises on.
 --- source
 ORDERS = LIST(RECORD("id", 1, "customer_id", 8, "status", "A", "amount", 5), RECORD("id", 2, "customer_id", 7, "status", "B", "amount", "x")); CUSTOMERS = LIST(RECORD("id", 7, "name", "n7", "credit", "y"), RECORD("id", 8, "name", "n8", "credit", 3)); ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> FILTER(_["status"] $== "A" AND _["customers"]["credit"] > 2) .> MAP(RECORD("id", _["orders"]["id"]))
 --- expect
@@ -968,4 +971,122 @@ lacks.
 A = LIST(RECORD("id", 1, "bid", 2, "status", 0), RECORD("id", 2, "bid", 2, "status", 5, "tier", "P")); B = LIST(RECORD("id", 2, "name", "n")); C = LIST(RECORD("id", 2, "sku", "s")); A .> LINK(B, _1["bid"] == _2["id"]) .> LINK(C, L, R, L["A"]["bid"] == R["id"]) .> FILTER(_["status"] == 5 AND _["tier"] $== "P") .> MAP(RECORD("id", _["A"]["id"]))
 --- expect
 tree -{"1"=-{"id"=t"2"}}
+===
+### name: rel.link.then-filter.as-written.renumbered.a-left-conjunct-keeps-the-joined-row-keys
+--- note
+A FILTER after a LINK keeps the joined rows' keys (spec 7.3). The physical
+optimiser moved `_["A"]["amt"] == 3` onto A before the join, so the kept row
+was the join's first, not its second, and `_K` answered "1" (SEL-0054).
+--- source
+A = LIST(RECORD("id", 1, "b", 1, "amt", 2), RECORD("id", 2, "b", 1, "amt", 3)); B = LIST(RECORD("bid", 1)); A .> LINK(B, _1["b"] == _2["bid"]) .> FILTER(_["A"]["amt"] == 3) .> MAP(_K)
+--- expect
+tree -{"1"=t"2"}
+===
+### name: rel.link.then-filter.as-written.renumbered.the-result-carries-the-joined-row-keys
+--- note
+The same, observed in the FILTER's own result.
+--- source
+A = LIST(RECORD("id", 1, "b", 1, "amt", 2), RECORD("id", 2, "b", 1, "amt", 3)); B = LIST(RECORD("bid", 1)); J = A .> LINK(B, _1["b"] == _2["bid"]) .> FILTER(_["A"]["amt"] == 3); INDEXES(J)
+--- expect
+tree -{"1"=t"2"}
+===
+### name: rel.link.then-filter.as-written.renumbered.a-right-conjunct-keeps-the-joined-row-keys
+--- note
+A conjunct on the right side, moved onto B, renumbered the joined rows the
+same way.
+--- source
+A = LIST(RECORD("id", 1, "b", 1)); B = LIST(RECORD("bid", 1, "t", 1), RECORD("bid", 1, "t", 2)); A .> LINK(B, _1["b"] == _2["bid"]) .> FILTER(_["B"]["t"] == 2) .> MAP(_K)
+--- expect
+tree -{"1"=t"2"}
+===
+### name: rel.link.then-filter.as-written.renumbered.link-left-keeps-the-joined-row-keys
+--- note
+LINK_LEFT: its left side was filtered before the join all the same.
+--- source
+A = LIST(RECORD("id", 1, "b", 1), RECORD("id", 2, "b", 3)); B = LIST(RECORD("bid", 1)); A .> LINK_LEFT(B, _1["b"] == _2["bid"]) .> FILTER(_["A"]["b"] > 2) .> MAP(_K)
+--- expect
+tree -{"1"=t"2"}
+===
+### name: rel.link.then-filter.as-written.join-key.a-left-key-raises-though-the-right-rows-all-fail
+--- note
+The join computes its left key for every left row that has a right row to
+meet; moved onto B, the conjunct emptied the right side, the join returned
+before reading any left key, and A's E_NO_KEY in `_1["b"]` was lost.
+--- source
+A = LIST(RECORD("id", 1)); B = LIST(RECORD("bid", 1, "t", 5)); A .> LINK(B, _1["b"] == _2["bid"]) .> FILTER(_["B"]["t"] < 2)
+--- expect
+error E_NO_KEY at 1:79
+===
+### name: rel.link.then-filter.as-written.join-key.a-right-key-raises-though-the-left-rows-all-fail
+--- note
+The mirror: moved onto A, the conjunct emptied the left side, and B's E_NO_KEY
+in `_2["bid"]` was lost.
+--- source
+A = LIST(RECORD("id", 1, "b", 1)); B = LIST(RECORD("x", 1)); A .> LINK(B, _1["b"] == _2["bid"]) .> FILTER(_["A"]["id"] == 5)
+--- expect
+error E_NO_KEY at 1:88
+===
+### name: rel.link.then-filter.as-written.join-key.a-dropped-left-row-still-raises-in-the-key
+--- note
+Row 2 has no `b`: the join raises reading its key, before any FILTER sees a
+row. Moved onto A, the conjunct dropped row 2 first.
+--- source
+A = LIST(RECORD("id", 1, "b", 1), RECORD("id", 2)); B = LIST(RECORD("bid", 1)); A .> LINK(B, _1["b"] == _2["bid"]) .> FILTER(_["A"]["id"] == 1) .> MAP(_K)
+--- expect
+error E_NO_KEY at 1:96
+===
+### name: rel.link.then-filter.as-written.join-key.an-upper-join-key-still-raises
+--- note
+The joined rows of A and B have no `cid`, so the second join raises reading
+`L["cid"]`; the conjunct, moved below both joins, dropped every row before the
+second join read a key.
+--- source
+A = LIST(RECORD("id", 1, "b", 1, "x", 1)); B = LIST(RECORD("bid", 1)); C = LIST(RECORD("id", 1)); A .> LINK(B, _1["b"] == _2["bid"]) .> LINK(C, L, R, L["cid"] == R["id"]) .> FILTER(_["a"]["x"] > 4)
+--- expect
+error E_NO_KEY at 1:152
+===
+### name: rel.link.then-filter.as-written.binders.an-explicit-binder-is-the-row-s-member-not-the-relation
+--- note
+Under explicit binders the joined row's right member is `R`; `_["C"]` is no
+key of it, so the FILTER raises. The optimiser took the relation's name for
+the right side and moved the conjunct onto C.
+--- source
+A = LIST(RECORD("id", 1, "b", 1)); B = LIST(RECORD("bid", 1)); C = LIST(RECORD("id", 3)); A .> LINK(B, _1["b"] == _2["bid"]) .> LINK(C, L, R, L["b"] == R["id"] - 2) .> FILTER(_["C"]["id"] == 3) .> MAP(1)
+--- expect
+error E_NO_KEY at 1:177
+===
+### name: rel.link.then-filter.as-written.binders.a-lower-relation-s-field-is-not-the-joined-row-s
+--- note
+`_["A"]["cid"]` reads A's element, which has no `cid`. The optimiser rewrote
+it to `_["cid"]` over the rows of the join below -- B's `cid` there -- and
+dropped the row on 9 == 1.
+--- source
+A = LIST(RECORD("id", 1, "b", 1)); B = LIST(RECORD("bid", 1, "cid", 9)); C = LIST(RECORD("id", 1)); A .> LINK(B, _1["b"] == _2["bid"]) .> LINK(C, L, R, L["id"] == R["id"]) .> FILTER(_["A"]["cid"] == 1)
+--- expect
+error E_NO_KEY at 1:189
+===
+### name: rel.link.then-filter.as-written.chain.a-middle-filter-reads-its-own-rows
+--- note
+The middle FILTER reads the rows of the join below it, which have no `sku`:
+it raises there. The run-time pre-filter judged its conjunct against every
+join up to the last FILTER, found `sku` on every row of C above, and passed it
+over as unable to raise -- so the last FILTER's `x == 2`, handed down, dropped
+the row first (SEL-0054). Each FILTER's conjuncts are judged against the
+joins between it and the join testing them, and no others.
+--- source
+A = LIST(RECORD("id", 1, "b", 1, "x", 1)); B = LIST(RECORD("bid", 1)); C = LIST(RECORD("id", 1, "sku", 5)); A .> LINK(B, _1["b"] == _2["bid"]) .> FILTER(_["sku"] != 2) .> LINK(C, L, R, L["A"]["id"] == R["id"]) .> FILTER(_["x"] == 2) .> MAP(1)
+--- expect
+error E_NO_KEY at 1:155
+===
+### name: rel.link.then-filter.as-written.chain.an-upper-join-computes-its-right-keys
+--- note
+As written, the rows of A and B reach the second join, which computes C's
+keys and raises: C's row has no `id`. A conjunct handed down to the first
+join drops every row there; the second join, left with none, must still
+compute what it would have (spec 7.4), so it runs as written on its left
+side as written.
+--- source
+A = LIST(RECORD("id", 1, "b", 1, "x", 1)); B = LIST(RECORD("bid", 1)); C = LIST(RECORD("sku", 1)); A .> LINK(B, _1["b"] == _2["bid"]) .> LINK(C, L, R, L["A"]["id"] == R["id"]) .> FILTER(_["x"] == 2)
+--- expect
+error E_NO_KEY at 1:169
 ===

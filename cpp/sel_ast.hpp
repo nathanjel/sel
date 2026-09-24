@@ -61,20 +61,10 @@ struct Node {
   std::string s;        // Num/Text: the literal. Var: the name. Un/Bin/Assign: the operator.
   bool b = false;       // Bool: the value.
   bool grouped = false; // came from ( ), so F((1,2)) passes one list not two arguments
-  // Physical join-predicate pushdown (SEL-0051): a FILTER body copied under a
-  // LINK runs tentatively (a raise keeps the element for the FILTER after the
-  // LINK to decide), and that FILTER's predicate is marked so the next pass
-  // leaves it alone. Fusion only merges bodies of equal tentativeness.
-  bool tentative = false;
-  bool pushed_down = false;
   // On a FILTER body: whether the step after the FILTER renumbers without
   // reading `_K`, so nothing observes the keys its result carries and the
   // evaluator's join pre-filter may drop rows below the join (SEL-0050/0052).
   bool keys_unobserved = false;
-  // With pushed_down: the conjuncts that were not pushed (TRUE when all
-  // were), which the FILTER evaluates instead of the whole predicate when no
-  // tentative body kept a row on an error while its source ran.
-  std::shared_ptr<const Node> remaining;
 
   std::shared_ptr<const Node> l, r;       // Bin: operands. Index: obj, idx. Assign: target, value.
   std::vector<std::shared_ptr<const Node>> items;   // Seq/List/Call arguments

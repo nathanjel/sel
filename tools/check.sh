@@ -186,6 +186,7 @@ check_replay() {
 step "sql map replay" check_replay
 
 step "sql documented examples" ./tools/check-sql-docs.sh
+case " $IMPLS " in *" python "*) step "scale plans vs reference" sel_slot python3 tools/scale-test/run_benchmarks.py --plans-only ;; esac
 # The three database layers share one schema and each drops and recreates its
 # tables, so they run one at a time under a lock while everything else keeps
 # going. The lock is held for the whole step: the fuzz lane's host-versus-host
@@ -207,6 +208,10 @@ step "differential fuzz" ./tools/fuzz.sh "${FUZZ_COUNT:-4000}" "${FUZZ_SEED:-202
 # spec §7.4 written from the text (SEL-0053): conformance cases use rows of one
 # shape, which is how five hosts came to build rows from their first element.
 step "joined rows vs spec model" ./tools/join-rows-oracle/run.sh "${JOIN_ROWS_COUNT:-2000}" "${JOIN_ROWS_SEED:-530001}"
+# A FILTER after a LINK against the same program with the join bound to a
+# variable first (SEL-0054): the join tests conjuncts early at run time, and
+# nothing that does may change a value, a key or an error.
+step "join then filter as written" sh -c './tools/join-filter-oracle/run.sh "${JOIN_FILTER_COUNT:-1500}" "${JOIN_FILTER_SEED:-54001}" mixed && ./tools/join-filter-oracle/run.sh "${JOIN_FILTER_COUNT:-1500}" "$(( ${JOIN_FILTER_SEED:-54001} + 1 ))" uniform'
 db_step "differential fuzz, sql" ./tools/fuzz-sql.sh "${SQL_FUZZ_COUNT:-2000}" "${SQL_FUZZ_SEED:-20260905}"
 
 report

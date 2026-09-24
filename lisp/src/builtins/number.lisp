@@ -24,6 +24,8 @@
   (lambda (a ctx) (declare (ignore ctx)) (make-num (dec-floor (args-dec a 0)))))
 (define-builtin "TRUNC" 1 1
   (lambda (a ctx) (declare (ignore ctx)) (make-num (dec-trunc (args-dec a 0)))))
+(define-builtin "CANON" 1 1
+  (lambda (a ctx) (declare (ignore ctx)) (make-num (dec-trim-scale (args-dec a 0)))))
 
 (define-builtin "ROUND" 2 2
   (lambda (a ctx)

@@ -19,20 +19,15 @@ final class Context
     public array $frames = [];
     public int $depth = 0;
     /**
-     * Bumped by a tentative FILTER body (a conjunct pushed under a LINK) each
-     * time it keeps a row it raised on; the FILTER above compares it around
-     * its source's evaluation to know whether the pushed conjuncts held on
-     * every row it sees (SEL-0051).
-     */
-    public int $tentativeKept = 0;
-    /**
      * A FILTER whose source is a LINK hands the join its conjuncts here, for
-     * the join to pre-apply to left rows where that is provably the same as
-     * filtering the joined rows (Builtins\Structure::doLink; SEL-0052).
-     * @var array{0: list<array{0: string, 1: list<array>}>, 1: bool, 2: list<object>}|null
+     * the join to test on the rows it joins where that is provably the same
+     * as filtering the joined rows (Builtins\Structure::doLink; SEL-0052,
+     * SEL-0054): the stages [binder, conjuncts, joins above], deep, the sides
+     * above, the key obligations.
+     * @var array{0: list<array{0: string, 1: list<array>, 2: int}>, 1: bool, 2: list<object>, 3: list<array>}|null
      */
     public ?array $joinPrefilter = null;
-    /** What a join below reported: the conjuncts every row it emitted has passed, and whether a row was kept on an error. @var array{0: array<string, true>, 1: bool}|null */
+    /** What a join below reported: the conjuncts every row it emitted has passed, whether a row was kept on an error, and whether any row was dropped. @var array{0: array<string, true>, 1: bool, 2: bool}|null */
     public ?array $joinPrefilterReport = null;
 
     public function __construct(?Value $root = null)

@@ -21,6 +21,7 @@ define('SIGN', 1, 1, fn=lambda a, ctx: Value.int(D.sign(a.dec(0))))
 define('CEIL', 1, 1, fn=lambda a, ctx: Value.num(D.ceil(a.dec(0))))
 define('FLOOR', 1, 1, fn=lambda a, ctx: Value.num(D.floor(a.dec(0))))
 define('TRUNC', 1, 1, fn=lambda a, ctx: Value.num(D.trunc(a.dec(0))))
+define('CANON', 1, 1, fn=lambda a, ctx: Value.num(D.trim_scale(a.dec(0))))
 
 define('ROUND', 2, 2,
        fn=lambda a, ctx: Value.num(D.round(a.dec(0), _sized(a, 1, MAX_SCALE, 'ROUND scale'), a.pos)))

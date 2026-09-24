@@ -12936,6 +12936,70 @@ ORDERS .> TAKE(1)"
    :register nil
    :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "CAT" (binding-column "cat" nil :text))) nil nil)))))
   (list
+   :name "plan.identity-barrier.text-literal-dedupe-after-a-join-splits-at-the-map.postgresql"
+   :at "34-safe-identity-prefix.sqlt:113"
+   :dialect "postgresql"
+   :source "PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _[\"products\"][\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"order_items\"][\"id\"])) .> MAP(RECORD(\"category_id\", _[\"products\"][\"category_id\"], \"status\", IF(_[\"products\"][\"is_active\"] == 1, \"ACTIVE_UNSOLD\", \"INACTIVE_UNSOLD\"))) .> DEDUPE() .> SORT_BY(_[\"category_id\"] * 2 + IF(_[\"status\"] $== \"ACTIVE_UNSOLD\", 0, 1), \"ASC\") .> TAKE(10)"
+   :expect "SELECT \"products\".\"category_id\" AS \"category_id\", CASE WHEN (\"products\".\"is_active\" = 1) THEN 'ACTIVE_UNSOLD' ELSE 'INACTIVE_UNSOLD' END AS \"status\" FROM \"products\" LEFT JOIN \"order_items\" \"_2\" ON (\"products\".\"id\" = \"_2\".\"product_id\") WHERE (CAST(\"_2\".\"id\" AS TEXT) IS NULL)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "products" "order_items")
+   :register nil
+   :bindings (lambda () (list (cons "PRODUCTS" (binding-relation "products" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "SKU" (binding-column "sku" nil :text)) (cons "CATEGORY_ID" (binding-column "category_id" nil :num)) (cons "IS_ACTIVE" (binding-column "is_active" nil :num))) nil nil)) (cons "ORDER_ITEMS" (binding-relation "order_items" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "PRODUCT_ID" (binding-column "product_id" nil :num))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.text-literal-dedupe-after-a-join-splits-at-the-map.mariadb"
+   :at "34-safe-identity-prefix.sqlt:137"
+   :dialect "mariadb"
+   :source "PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _[\"products\"][\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"order_items\"][\"id\"])) .> MAP(RECORD(\"category_id\", _[\"products\"][\"category_id\"], \"status\", IF(_[\"products\"][\"is_active\"] == 1, \"ACTIVE_UNSOLD\", \"INACTIVE_UNSOLD\"))) .> DEDUPE() .> SORT_BY(_[\"category_id\"] * 2 + IF(_[\"status\"] $== \"ACTIVE_UNSOLD\", 0, 1), \"ASC\") .> TAKE(10)"
+   :expect "SELECT `products`.`category_id` AS `category_id`, CASE WHEN (`products`.`is_active` = 1) THEN 'ACTIVE_UNSOLD' ELSE 'INACTIVE_UNSOLD' END AS `status` FROM `products` LEFT JOIN `order_items` `_2` ON (`products`.`id` = `_2`.`product_id`) WHERE (`_2`.`id` IS NULL)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "products" "order_items")
+   :register nil
+   :bindings (lambda () (list (cons "PRODUCTS" (binding-relation "products" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "SKU" (binding-column "sku" nil :text)) (cons "CATEGORY_ID" (binding-column "category_id" nil :num)) (cons "IS_ACTIVE" (binding-column "is_active" nil :num))) nil nil)) (cons "ORDER_ITEMS" (binding-relation "order_items" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "PRODUCT_ID" (binding-column "product_id" nil :num))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.column-dedupe-after-a-join-splits-at-the-map.postgresql"
+   :at "34-safe-identity-prefix.sqlt:161"
+   :dialect "postgresql"
+   :source "PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _[\"products\"][\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"order_items\"][\"id\"])) .> MAP(RECORD(\"category_id\", _[\"products\"][\"category_id\"], \"status\", _[\"products\"][\"sku\"])) .> DEDUPE() .> SORT_BY(_[\"category_id\"] * 2 + IF(_[\"status\"] $== \"ACTIVE_UNSOLD\", 0, 1), \"ASC\") .> TAKE(10)"
+   :expect "SELECT \"products\".\"category_id\" AS \"category_id\", \"products\".\"sku\" AS \"status\" FROM \"products\" LEFT JOIN \"order_items\" \"_2\" ON (\"products\".\"id\" = \"_2\".\"product_id\") WHERE (CAST(\"_2\".\"id\" AS TEXT) IS NULL)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "products" "order_items")
+   :register nil
+   :bindings (lambda () (list (cons "PRODUCTS" (binding-relation "products" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "SKU" (binding-column "sku" nil :text)) (cons "CATEGORY_ID" (binding-column "category_id" nil :num)) (cons "IS_ACTIVE" (binding-column "is_active" nil :num))) nil nil)) (cons "ORDER_ITEMS" (binding-relation "order_items" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "PRODUCT_ID" (binding-column "product_id" nil :num))) nil nil)))))
+  (list
+   :name "plan.identity-barrier.column-dedupe-after-a-join-splits-at-the-map.mariadb"
+   :at "34-safe-identity-prefix.sqlt:181"
+   :dialect "mariadb"
+   :source "PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _[\"products\"][\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"order_items\"][\"id\"])) .> MAP(RECORD(\"category_id\", _[\"products\"][\"category_id\"], \"status\", _[\"products\"][\"sku\"])) .> DEDUPE() .> SORT_BY(_[\"category_id\"] * 2 + IF(_[\"status\"] $== \"ACTIVE_UNSOLD\", 0, 1), \"ASC\") .> TAKE(10)"
+   :expect "SELECT `products`.`category_id` AS `category_id`, `products`.`sku` AS `status` FROM `products` LEFT JOIN `order_items` `_2` ON (`products`.`id` = `_2`.`product_id`) WHERE (`_2`.`id` IS NULL)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "products" "order_items")
+   :register nil
+   :bindings (lambda () (list (cons "PRODUCTS" (binding-relation "products" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "SKU" (binding-column "sku" nil :text)) (cons "CATEGORY_ID" (binding-column "category_id" nil :num)) (cons "IS_ACTIVE" (binding-column "is_active" nil :num))) nil nil)) (cons "ORDER_ITEMS" (binding-relation "order_items" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "PRODUCT_ID" (binding-column "product_id" nil :num))) nil nil)))))
+  (list
    :name "stmt.record-collision.map.mariadb"
    :at "35-record-projection-collisions.sqlt:1"
    :dialect "mariadb"
@@ -14326,4 +14390,1287 @@ ORDERS .> TAKE(1)"
    :plan "hybrid"
    :tables (list "r")
    :register nil
-   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-raw "v" :num))) nil nil)))))))
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "V" (binding-raw "v" :num))) nil nil)))))
+  (list
+   :name "func.canon.postgresql.num-column"
+   :at "42-canon.sqlt:26"
+   :dialect "postgresql"
+   :source "CANON(N)"
+   :expect "trim_scale(CAST(\"r\".\"n\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.postgresql.text-column-is-guarded"
+   :at "42-canon.sqlt:37"
+   :dialect "postgresql"
+   :source "CANON(T)"
+   :expect "trim_scale(CAST(CASE WHEN (CAST(\"r\".\"t\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"r\".\"t\" AS NUMERIC) ELSE NULL END AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.postgresql.constant"
+   :at "42-canon.sqlt:50"
+   :dialect "postgresql"
+   :source "CANON(1.50)"
+   :expect "trim_scale(CAST(1.50 AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.canon.postgresql.text-constant"
+   :at "42-canon.sqlt:59"
+   :dialect "postgresql"
+   :source "CANON(\"007\")"
+   :expect "trim_scale(CAST('007' AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.canon.postgresql.exact-under-strict"
+   :at "42-canon.sqlt:68"
+   :dialect "postgresql"
+   :source "CANON(N)"
+   :expect "trim_scale(CAST(\"r\".\"n\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.mariadb.num-column"
+   :at "42-canon.sqlt:81"
+   :dialect "mariadb"
+   :source "CANON(N)"
+   :expect "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`r`.`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.mariadb.text-column-is-guarded"
+   :at "42-canon.sqlt:92"
+   :dialect "mariadb"
+   :source "CANON(T)"
+   :expect "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(CASE WHEN (`r`.`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`r`.`t` AS DECIMAL(65,10)) ELSE NULL END AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.mariadb.constant"
+   :at "42-canon.sqlt:103"
+   :dialect "mariadb"
+   :source "CANON(1.50)"
+   :expect "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(1.50 AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.canon.mariadb.text-constant"
+   :at "42-canon.sqlt:112"
+   :dialect "mariadb"
+   :source "CANON(\"007\")"
+   :expect "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST('007' AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.canon.mariadb.exact-under-strict"
+   :at "42-canon.sqlt:123"
+   :dialect "mariadb"
+   :source "CANON(N)"
+   :expect "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`r`.`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.mariadb.guarded-text-is-scale-limited"
+   :at "42-canon.sqlt:136"
+   :dialect "mariadb"
+   :source "CANON(T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.sqlite.num-column"
+   :at "42-canon.sqlt:152"
+   :dialect "sqlite"
+   :source "CANON(N)"
+   :expect "(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT CAST(\"r\".\"n\" AS NUMERIC) AS canon_n)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.sqlite.constant"
+   :at "42-canon.sqlt:163"
+   :dialect "sqlite"
+   :source "CANON(1.50)"
+   :expect "(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT CAST('1.50' AS NUMERIC) AS canon_n)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.canon.sqlite.text-constant"
+   :at "42-canon.sqlt:172"
+   :dialect "sqlite"
+   :source "CANON(\"007\")"
+   :expect "(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT CAST('007' AS NUMERIC) AS canon_n)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.canon.sqlite.text-column-is-refused"
+   :at "42-canon.sqlt:181"
+   :dialect "sqlite"
+   :source "CANON(T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.sqlite.decimal-float-under-strict"
+   :at "42-canon.sqlt:194"
+   :dialect "sqlite"
+   :source "CANON(N)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.ansi.num-column"
+   :at "42-canon.sqlt:207"
+   :dialect "ansi-probe"
+   :source "CANON(N)"
+   :expect "CASE WHEN POSITION('.' IN CAST(CAST(\"r\".\"n\" AS NUMERIC) AS CHARACTER VARYING)) > 0 THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(CAST(\"r\".\"n\" AS NUMERIC) AS CHARACTER VARYING))) ELSE CAST(CAST(\"r\".\"n\" AS NUMERIC) AS CHARACTER VARYING) END"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.ansi.text-column-is-refused"
+   :at "42-canon.sqlt:220"
+   :dialect "ansi-probe"
+   :source "CANON(T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "func.canon.not-a-number-is-refused"
+   :at "42-canon.sqlt:233"
+   :dialect "mariadb"
+   :source "CANON(\"x\")"
+   :expect nil
+   :error "E_SQL_INVALID 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "func.canon.bool-is-refused"
+   :at "42-canon.sqlt:244"
+   :dialect "postgresql"
+   :source "CANON(TRUE)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "canon.dedupe.postgresql"
+   :at "42-canon.sqlt:255"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"k\", CANON(_[\"n\"]))) .> DEDUPE()"
+   :expect "SELECT DISTINCT trim_scale(CAST(\"n\" AS NUMERIC)) AS \"k\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.dedupe.mariadb"
+   :at "42-canon.sqlt:271"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"k\", CANON(_[\"n\"]))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.dedupe.sqlite"
+   :at "42-canon.sqlt:284"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"k\", CANON(_[\"n\"]))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST((SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT CAST(\"n\" AS NUMERIC) AS canon_n))) AS TEXT) COLLATE BINARY AS \"k\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.dedupe.of-arithmetic.postgresql"
+   :at "42-canon.sqlt:297"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"k\", CANON(_[\"n\"] * 1.0 + 0.50))) .> DEDUPE()"
+   :expect "SELECT DISTINCT trim_scale(CAST((CAST((CAST(\"n\" AS NUMERIC) * CAST(1.0 AS NUMERIC)) AS NUMERIC) + CAST(0.50 AS NUMERIC)) AS NUMERIC)) AS \"k\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.bucket.postgresql"
+   :at "42-canon.sqlt:313"
+   :dialect "postgresql"
+   :source "R .> BUCKET(CANON(_[\"n\"]), RECORD(\"k\", _K, \"c\", COUNT(_)))"
+   :expect "SELECT MIN(trim_scale(CAST(\"n\" AS NUMERIC))) AS \"k\", COUNT(*) AS \"c\" FROM \"r\" GROUP BY trim_scale(CAST(\"n\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.bucket.mariadb"
+   :at "42-canon.sqlt:329"
+   :dialect "mariadb"
+   :source "R .> BUCKET(CANON(_[\"n\"]), RECORD(\"k\", _K, \"c\", COUNT(_)))"
+   :expect "SELECT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k`, COUNT(*) AS `c` FROM `r` GROUP BY CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.bucket.of-arithmetic.mariadb"
+   :at "42-canon.sqlt:342"
+   :dialect "mariadb"
+   :source "R .> BUCKET(CANON(_[\"n\"] + 0.5), RECORD(\"k\", _K, \"c\", COUNT(_)))"
+   :expect "SELECT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST((`n` + 0.5) AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k`, COUNT(*) AS `c` FROM `r` GROUP BY CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST((`n` + 0.5) AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.sort.postgresql"
+   :at "42-canon.sqlt:355"
+   :dialect "postgresql"
+   :source "R .> SORT_BY(CANON(_[\"n\"]))"
+   :expect "SELECT * FROM \"r\" ORDER BY trim_scale(CAST(\"n\" AS NUMERIC)) ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.sort.mariadb-is-refused"
+   :at "42-canon.sqlt:372"
+   :dialect "mariadb"
+   :source "R .> SORT_BY(CANON(_[\"n\"]))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:14"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.sort.sqlite-is-refused"
+   :at "42-canon.sqlt:389"
+   :dialect "sqlite"
+   :source "R .> SORT_BY(CANON(_[\"n\"]))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:14"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.sort.ansi-is-refused"
+   :at "42-canon.sqlt:402"
+   :dialect "ansi-probe"
+   :source "R .> SORT_BY(CANON(_[\"n\"]))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:14"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.sort.through-a-derived-table.postgresql"
+   :at "42-canon.sqlt:417"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"k\", CANON(_[\"n\"]))) .> SORT_BY(_[\"k\"])"
+   :expect "SELECT \"_sub1\".* FROM (SELECT trim_scale(CAST(\"n\" AS NUMERIC)) AS \"k\" FROM \"r\") \"_sub1\" ORDER BY \"_sub1\".\"k\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.sort.through-a-derived-table.mariadb-is-refused"
+   :at "42-canon.sqlt:432"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"k\", CANON(_[\"n\"]))) .> SORT_BY(_[\"k\"])"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:50"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "canon.sort.after-dedupe.postgresql"
+   :at "42-canon.sqlt:448"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"k\", CANON(_[\"n\"]))) .> DEDUPE() .> SORT_BY(_[\"k\"])"
+   :expect "SELECT \"_sub1\".* FROM (SELECT DISTINCT trim_scale(CAST(\"n\" AS NUMERIC)) AS \"k\" FROM \"r\") \"_sub1\" ORDER BY \"_sub1\".\"k\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.canon.dedupe-after-a-join.postgresql"
+   :at "42-canon.sqlt:466"
+   :dialect "postgresql"
+   :source "PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _[\"products\"][\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"order_items\"][\"id\"])) .> MAP(RECORD(\"category_id\", CANON(_[\"products\"][\"category_id\"]), \"status\", CANON(IF(_[\"products\"][\"is_active\"] == 1, 1, 1.0)))) .> DEDUPE() .> SORT_BY(_[\"category_id\"]) .> TAKE(10)"
+   :expect "SELECT \"_sub1\".* FROM (SELECT DISTINCT trim_scale(CAST(\"products\".\"category_id\" AS NUMERIC)) AS \"category_id\", trim_scale(CAST(CASE WHEN (\"products\".\"is_active\" = 1) THEN 1 ELSE 1.0 END AS NUMERIC)) AS \"status\" FROM \"products\" LEFT JOIN \"order_items\" \"_2\" ON (\"products\".\"id\" = \"_2\".\"product_id\") WHERE (CAST(\"_2\".\"id\" AS TEXT) IS NULL)) \"_sub1\" ORDER BY \"_sub1\".\"category_id\" ASC LIMIT 10"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "products" "order_items")
+   :register nil
+   :bindings (lambda () (list (cons "PRODUCTS" (binding-relation "products" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "CATEGORY_ID" (binding-column "category_id" nil :num)) (cons "IS_ACTIVE" (binding-column "is_active" nil :num))) nil nil)) (cons "ORDER_ITEMS" (binding-relation "order_items" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "PRODUCT_ID" (binding-column "product_id" nil :num))) nil nil)))))
+  (list
+   :name "plan.canon.dedupe-after-a-join.mariadb"
+   :at "42-canon.sqlt:487"
+   :dialect "mariadb"
+   :source "PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _[\"products\"][\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"order_items\"][\"id\"])) .> MAP(RECORD(\"category_id\", CANON(_[\"products\"][\"category_id\"]), \"status\", CANON(IF(_[\"products\"][\"is_active\"] == 1, 1, 1.0)))) .> DEDUPE() .> SORT_BY(_[\"category_id\"]) .> TAKE(10)"
+   :expect "SELECT DISTINCT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`products`.`category_id` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `category_id`, CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(CASE WHEN (`products`.`is_active` = 1) THEN 1 ELSE 1.0 END AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `status` FROM `products` LEFT JOIN `order_items` `_2` ON (`products`.`id` = `_2`.`product_id`) WHERE (`_2`.`id` IS NULL)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "products" "order_items")
+   :register nil
+   :bindings (lambda () (list (cons "PRODUCTS" (binding-relation "products" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "CATEGORY_ID" (binding-column "category_id" nil :num)) (cons "IS_ACTIVE" (binding-column "is_active" nil :num))) nil nil)) (cons "ORDER_ITEMS" (binding-relation "order_items" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "PRODUCT_ID" (binding-column "product_id" nil :num))) nil nil)))))
+  (list
+   :name "plan.canon.lets-the-identity-barrier-through.mariadb"
+   :at "42-canon.sqlt:506"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"k\", CANON(_[\"n\"] * 1.0 + 0.50))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(((`n` * 1.0) + 0.50) AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.canon.a-computed-field-upstream-is-no-barrier.mariadb"
+   :at "42-canon.sqlt:521"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"x\", _[\"n\"] * 1.0)) .> MAP(RECORD(\"k\", CANON(_[\"x\"]))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(CASE WHEN (`_sub1`.`x` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`_sub1`.`x` AS DECIMAL(65,10)) ELSE NULL END AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k` FROM (SELECT (`n` * 1.0) AS `x` FROM `r`) `_sub1`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.canon.the-same-without-it-stays-in-memory.mariadb"
+   :at "42-canon.sqlt:540"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"k\", _[\"n\"] * 1.0 + 0.50)) .> DEDUPE()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "scale.mariadb.guarded-text-is-translated"
+   :at "43-scale-limit.sqlt:14"
+   :dialect "mariadb"
+   :source "T + 0"
+   :expect "(CASE WHEN (`r`.`t` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`r`.`t` AS DECIMAL(65,10)) ELSE NULL END + 0)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "scale.mariadb.guarded-text-is-refused-under-strict"
+   :at "43-scale-limit.sqlt:27"
+   :dialect "mariadb"
+   :source "T + 0"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "scale.mariadb.guarded-comparison-is-refused-under-strict"
+   :at "43-scale-limit.sqlt:40"
+   :dialect "mariadb"
+   :source "T == 25"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "scale.mariadb.guarded-function-argument-is-refused-under-strict"
+   :at "43-scale-limit.sqlt:53"
+   :dialect "mariadb"
+   :source "ABS(T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:5"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "scale.mariadb.a-declared-num-is-vouched-for"
+   :at "43-scale-limit.sqlt:66"
+   :dialect "mariadb"
+   :source "N + 0"
+   :expect "(`r`.`n` + 0)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "scale.mariadb.a-constant-within-the-cap"
+   :at "43-scale-limit.sqlt:79"
+   :dialect "mariadb"
+   :source "5 == \"5.0000000001\""
+   :expect "(CAST(5 AS DECIMAL(65,10)) = CAST('5.0000000001' AS DECIMAL(65,10)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "scale.mariadb.a-constant-past-the-cap-is-refused-under-strict"
+   :at "43-scale-limit.sqlt:93"
+   :dialect "mariadb"
+   :source "5 == \"5.00000000001\""
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:6"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "scale.mariadb.a-declared-num-read-through-the-cast"
+   :at "43-scale-limit.sqlt:106"
+   :dialect "mariadb"
+   :source "N == \"5\""
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "scale.mysql.the-same-cap"
+   :at "43-scale-limit.sqlt:122"
+   :dialect "mysql"
+   :source "T + 0"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "scale.postgresql.has-no-cap"
+   :at "43-scale-limit.sqlt:135"
+   :dialect "postgresql"
+   :source "T + 0"
+   :expect "(CAST(CASE WHEN (CAST(\"r\".\"t\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"r\".\"t\" AS NUMERIC) ELSE NULL END AS NUMERIC) + CAST(0 AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "N" (binding-column "n" "r" :num)) (cons "T" (binding-column "t" "r" :text)))))
+  (list
+   :name "order.postgresql.text-key-is-translated"
+   :at "44-text-order.sqlt:13"
+   :dialect "postgresql"
+   :source "R .> SORT_BY(_[\"t\"])"
+   :expect "SELECT * FROM \"r\" ORDER BY CAST(\"t\" AS TEXT) COLLATE \"C\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.postgresql.text-key-is-refused-under-strict"
+   :at "44-text-order.sqlt:26"
+   :dialect "postgresql"
+   :source "R .> SORT_BY(_[\"t\"])"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:15"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.postgresql.num-key-is-exact"
+   :at "44-text-order.sqlt:41"
+   :dialect "postgresql"
+   :source "R .> SORT_BY(_[\"n\"])"
+   :expect "SELECT * FROM \"r\" ORDER BY \"n\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.mariadb.text-key-is-translated"
+   :at "44-text-order.sqlt:56"
+   :dialect "mariadb"
+   :source "R .> SORT_BY(_[\"t\"])"
+   :expect "SELECT * FROM `r` ORDER BY CAST(`t` AS CHAR) COLLATE utf8mb4_nopad_bin ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.mariadb.text-key-is-refused-under-strict"
+   :at "44-text-order.sqlt:69"
+   :dialect "mariadb"
+   :source "R .> SORT_BY(_[\"t\"])"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:15"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.mariadb.num-key-is-exact"
+   :at "44-text-order.sqlt:84"
+   :dialect "mariadb"
+   :source "R .> SORT_BY(_[\"n\"])"
+   :expect "SELECT * FROM `r` ORDER BY `n` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.sqlite.text-key-is-translated"
+   :at "44-text-order.sqlt:99"
+   :dialect "sqlite"
+   :source "R .> SORT_BY(_[\"t\"])"
+   :expect "SELECT * FROM \"r\" ORDER BY CAST(\"t\" AS TEXT) COLLATE BINARY ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.sqlite.text-key-is-refused-under-strict"
+   :at "44-text-order.sqlt:112"
+   :dialect "sqlite"
+   :source "R .> SORT_BY(_[\"t\"])"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:15"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.sqlite.num-key-is-exact"
+   :at "44-text-order.sqlt:127"
+   :dialect "sqlite"
+   :source "R .> SORT_BY(_[\"n\"])"
+   :expect "SELECT * FROM \"r\" ORDER BY \"n\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.mariadb.untyped-key-is-refused-under-strict"
+   :at "44-text-order.sqlt:140"
+   :dialect "mariadb"
+   :source "R .> SORT_BY(_[\"u\"])"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:15"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "U" (binding-column "u" nil :unknown))) nil nil)))))
+  (list
+   :name "order.mariadb.computed-text-key-is-refused-under-strict"
+   :at "44-text-order.sqlt:158"
+   :dialect "mariadb"
+   :source "R .> SORT_BY(LEFT(_[\"t\"], 5))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:14"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.mariadb.arithmetic-key-is-exact"
+   :at "44-text-order.sqlt:176"
+   :dialect "mariadb"
+   :source "R .> SORT_BY(_[\"n\"] + 2)"
+   :expect "SELECT * FROM `r` ORDER BY (`n` + 2) ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.mariadb.a-text-group-key-is-refused-under-strict"
+   :at "44-text-order.sqlt:191"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"t\"], RECORD(\"k\", _K, \"c\", COUNT(_))) .> SORT_BY(_[\"k\"])"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:65"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "order.mariadb.a-numeric-group-key-is-exact"
+   :at "44-text-order.sqlt:206"
+   :dialect "mariadb"
+   :source "R .> BUCKET(_[\"n\"], RECORD(\"k\", _K, \"c\", COUNT(_))) .> SORT_BY(_[\"k\"])"
+   :expect "SELECT MIN(`n`) AS `k`, COUNT(*) AS `c` FROM `r` GROUP BY CAST(`n` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY MIN(`n`) ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.order.strict-sorts-text-in-memory.mariadb"
+   :at "44-text-order.sqlt:221"
+   :dialect "mariadb"
+   :source "R .> FILTER(_[\"n\"] > 1) .> SORT_BY(_[\"t\"])"
+   :expect "SELECT * FROM `r` WHERE (`n` > 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "textif.postgresql.dedupe"
+   :at "45-text-literal-branches.sqlt:14"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", \"b\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (\"n\" > 1) THEN 'a' ELSE 'b' END AS TEXT) COLLATE \"C\" AS \"s\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "textif.postgresql.cond"
+   :at "45-text-literal-branches.sqlt:30"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"s\", COND(_[\"n\"] > 1, \"a\", _[\"n\"] > 0, \"b\", \"c\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (\"n\" > 1) THEN 'a' WHEN (\"n\" > 0) THEN 'b' ELSE 'c' END AS TEXT) COLLATE \"C\" AS \"s\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "textif.mariadb.dedupe"
+   :at "45-text-literal-branches.sqlt:43"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", \"b\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (`n` > 1) THEN 'a' ELSE 'b' END AS CHAR) COLLATE utf8mb4_nopad_bin AS `s` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "textif.mariadb.cond"
+   :at "45-text-literal-branches.sqlt:56"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"s\", COND(_[\"n\"] > 1, \"a\", _[\"n\"] > 0, \"b\", \"c\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (`n` > 1) THEN 'a' WHEN (`n` > 0) THEN 'b' ELSE 'c' END AS CHAR) COLLATE utf8mb4_nopad_bin AS `s` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "textif.sqlite.dedupe"
+   :at "45-text-literal-branches.sqlt:69"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", \"b\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (CAST(\"n\" AS NUMERIC) > CAST('1' AS NUMERIC)) THEN 'a' ELSE 'b' END AS TEXT) COLLATE BINARY AS \"s\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "textif.sqlite.cond"
+   :at "45-text-literal-branches.sqlt:82"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"s\", COND(_[\"n\"] > 1, \"a\", _[\"n\"] > 0, \"b\", \"c\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (CAST(\"n\" AS NUMERIC) > CAST('1' AS NUMERIC)) THEN 'a' WHEN (CAST(\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) THEN 'b' ELSE 'c' END AS TEXT) COLLATE BINARY AS \"s\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "textif.postgresql.nested"
+   :at "45-text-literal-branches.sqlt:95"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", IF(_[\"n\"] > 0, \"b\", \"c\")))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (\"n\" > 1) THEN 'a' ELSE CASE WHEN (\"n\" > 0) THEN 'b' ELSE 'c' END END AS TEXT) COLLATE \"C\" AS \"s\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "textif.postgresql.no-else"
+   :at "45-text-literal-branches.sqlt:110"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (\"n\" > 1) THEN 'a' ELSE '' END AS TEXT) COLLATE \"C\" AS \"s\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.textif.mariadb.bucket-after-a-map-splits-at-the-map"
+   :at "45-text-literal-branches.sqlt:125"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", \"b\"))) .> BUCKET(_[\"s\"], RECORD(\"k\", _K, \"c\", COUNT(_)))"
+   :expect "SELECT CASE WHEN (`n` > 1) THEN 'a' ELSE 'b' END AS `s` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.textif.postgresql.dedupe-is-one-statement"
+   :at "45-text-literal-branches.sqlt:143"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", \"b\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (\"n\" > 1) THEN 'a' ELSE 'b' END AS TEXT) COLLATE \"C\" AS \"s\" FROM \"r\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.textif.postgresql.numeric-results-stay-local"
+   :at "45-text-literal-branches.sqlt:158"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, 1, 1.0))) .> DEDUPE()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.textif.postgresql.a-column-result-stays-local"
+   :at "45-text-literal-branches.sqlt:171"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", _[\"t\"]))) .> DEDUPE()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.textif.mariadb.dedupe-is-one-statement"
+   :at "45-text-literal-branches.sqlt:186"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", \"b\"))) .> DEDUPE()"
+   :expect "SELECT DISTINCT CAST(CASE WHEN (`n` > 1) THEN 'a' ELSE 'b' END AS CHAR) COLLATE utf8mb4_nopad_bin AS `s` FROM `r`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.textif.mariadb.numeric-results-stay-local"
+   :at "45-text-literal-branches.sqlt:201"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, 1, 1.0))) .> DEDUPE()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.textif.mariadb.a-column-result-stays-local"
+   :at "45-text-literal-branches.sqlt:217"
+   :dialect "mariadb"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", _[\"t\"]))) .> DEDUPE()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "plan.textif.postgresql.mixed-results-stay-local"
+   :at "45-text-literal-branches.sqlt:230"
+   :dialect "postgresql"
+   :source "R .> MAP(RECORD(\"s\", IF(_[\"n\"] > 1, \"a\", 1))) .> DEDUPE()"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))))

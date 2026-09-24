@@ -22,9 +22,6 @@
           (node-spec copy) (node-spec n)
           (node-record-shape copy) (node-record-shape n)
           (node-math-plan copy) (node-math-plan n)
-          (node-tentative copy) (node-tentative n)
-          (node-pushed-down copy) (node-pushed-down n)
-          (node-remaining copy) (node-remaining n)
           (node-keys-unobserved copy) (node-keys-unobserved n))
     copy))
 
@@ -401,26 +398,6 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
                  (every (lambda (c) (char<= #\0 c #\9)) s))
         (ignore-errors (parse-integer s))))))
 
-(defun split-and-conjuncts (node)
-  (if (and node (node-p node) (eq (node-kind node) :bin) (string= (node-s node) "AND"))
-      (append (split-and-conjuncts (node-l node))
-              (split-and-conjuncts (node-r node)))
-      (list node)))
-
-(defun combine-and-conjuncts (nodes &optional pos)
-  (cond
-    ((null nodes) nil)
-    ((= (length nodes) 1) (first nodes))
-    (t
-     (let ((res (first nodes)))
-       (dolist (nxt (rest nodes))
-         (let ((bin (make-node :bin (or pos (node-pos res)))))
-           (setf (node-s bin) "AND"
-                 (node-l bin) res
-                 (node-r bin) nxt)
-           (setf res bin)))
-       res))))
-
 (defun rename-var-in-node (node old-var new-var)
   (when (and node (node-p node))
     (let ((c (copy-node-shallow node)))
@@ -431,125 +408,6 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
       (when (node-items c)
         (setf (node-items c) (mapcar (lambda (it) (rename-var-in-node it old-var new-var)) (node-items c))))
       c)))
-
-(defun collect-pipeline-source-names (node)
-  "Collects table/relation names mentioned in NODE (left sources of joins/pipes)."
-  (let ((names '()))
-    (labels ((walk (n)
-               (when (and n (node-p n))
-                 (cond
-                   ((eq (node-kind n) :var)
-                    (pushnew (node-s n) names :test #'string-equal))
-                   ((eq (node-kind n) :call)
-                    (let ((op (node-s n))
-                          (items (node-items n)))
-                      (cond
-                        ((member op '("LINK" "LINK_LEFT") :test #'string=)
-                         (walk (first items))
-                         (walk (second items)))
-                        ((member op +pipeline-ops+ :test #'string=)
-                         (walk (first items)))
-                        (t nil))))))))
-      (walk node))
-    names))
-
-(defun conjunct-relation-affinity (c left-names right-names binder)
-  "Classifies CONJUNCT C as :LEFT, :RIGHT, or :UNKNOWN."
-  (let ((has-left nil)
-        (has-right nil)
-        (has-ambiguous nil)
-        (has-unknown nil))
-    (labels ((walk (n)
-               (when (and n (node-p n))
-                 (cond
-                   ;; Pattern 1: _['tbl']['col']
-                   ((and (eq (node-kind n) :index)
-                         (let ((l (node-l n)))
-                           (and l (eq (node-kind l) :index)
-                                (let ((ll (node-l l))
-                                      (lr (node-r l)))
-                                  (and ll (eq (node-kind ll) :var)
-                                       (or (string= (node-s ll) binder)
-                                           (string= (node-s ll) "_"))
-                                       lr (eq (node-kind lr) :text))))))
-                    (let* ((l (node-l n))
-                           (tbl (node-s (node-r l))))
-                      (cond
-                        ((member tbl left-names :test #'string-equal)
-                         (setf has-left t))
-                        ((member tbl right-names :test #'string-equal)
-                         (setf has-right t))
-                        (t
-                         (setf has-unknown t)))))
-
-                   ;; Pattern 2: NAME['col']. `O["id"]` or `ORDERS["id"]` after
-                   ;; the LINK: the binders are scoped to the predicate (spec
-                   ;; §7.4), so as written this is E_UNDEF_VAR, or E_NO_KEY on
-                   ;; the relation's list. Pushing it into the side it names
-                   ;; turned that error into rows (review 2026-09-15, W2) --
-                   ;; only `_["O"]["id"]`, a read through the joined row's key,
-                   ;; names a side.
-                   ((and (eq (node-kind n) :index)
-                         (let ((l (node-l n))
-                               (r (node-r n)))
-                           (and l (eq (node-kind l) :var) r (eq (node-kind r) :text))))
-                    (let ((var-name (node-s (node-l n))))
-                      (cond
-                        ((or (string= var-name binder) (string= var-name "_"))
-                         (setf has-ambiguous t))
-                        (t
-                         (setf has-unknown t)))))
-
-                   ;; Pattern 3: Bare variable
-                   ((eq (node-kind n) :var)
-                    (let ((v (node-s n)))
-                      (cond
-                        ((or (string= v binder) (string= v "_")) nil)
-                        (t (setf has-unknown t)))))
-
-                   (t
-                    (when (node-l n) (walk (node-l n)))
-                    (when (node-r n) (walk (node-r n)))
-                    (when (node-items n)
-                      (dolist (it (node-items n)) (walk it))))))))
-      (walk c))
-    (cond
-      ((and has-left (not has-right) (not has-ambiguous) (not has-unknown)) :left)
-      ((and has-right (not has-left) (not has-ambiguous) (not has-unknown)) :right)
-      (t :unknown))))
-
-(defun rewrite-conjunct-for-relation (c target-names binder)
-  "Rewrites references in C like _['tbl']['col'] into _['col']."
-  (when (and c (node-p c))
-    (let ((copy (copy-node-shallow c)))
-      (cond
-        ;; Pattern 1: _['tbl']['col'] -> _['col']
-        ((and (eq (node-kind copy) :index)
-              (let ((l (node-l copy)))
-                (and l (eq (node-kind l) :index)
-                     (let ((ll (node-l l))
-                           (lr (node-r l)))
-                       (and ll (eq (node-kind ll) :var)
-                            (or (string= (node-s ll) binder)
-                                (string= (node-s ll) "_"))
-                            lr (eq (node-kind lr) :text)
-                            (member (node-s lr) target-names :test #'string-equal))))))
-         (let ((new-index (make-node :index (node-pos copy)))
-               (var-node (make-node :var (node-pos copy))))
-           (setf (node-s var-node) "_")
-           (setf (node-l new-index) var-node
-                 (node-r new-index) (node-r copy))
-           new-index))
-
-        ;; No arm for NAME['col']: it is not attributed to a side (see
-        ;; CONJUNCT-RELATION-AFFINITY), so it is never rewritten.
-        (t
-         (when (node-l copy) (setf (node-l copy) (rewrite-conjunct-for-relation (node-l copy) target-names binder)))
-         (when (node-r copy) (setf (node-r copy) (rewrite-conjunct-for-relation (node-r copy) target-names binder)))
-         (when (node-items copy)
-           (setf (node-items copy)
-                 (mapcar (lambda (it) (rewrite-conjunct-for-relation it target-names binder)) (node-items copy))))
-         copy)))))
 
 (defun sort-step-p (step)
   (member (node-s step) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=))
@@ -651,13 +509,8 @@ everywhere else)."
                    (reads-row-or-key-p key binder))))
        (values (list s2 s1) 2))
       ;; FILTER + FILTER -> FILTER(p1 AND p2)
-      ;; A tentative (pushed) body never fuses with an as-written one: the
-      ;; merged body would be one or the other, and each is wrong for the
-      ;; other's conjuncts (SEL-0051).
       ((and s2 (string= n1 "FILTER") (string= n2 "FILTER")
-            (valid-filter-p s1) (valid-filter-p s2)
-            (eq (not (node-tentative (filter-predicate-of s1)))
-                (not (node-tentative (filter-predicate-of s2)))))
+            (valid-filter-p s1) (valid-filter-p s2))
        (let* ((args1 (node-items s1))
               (args2 (node-items s2))
               (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
@@ -669,22 +522,7 @@ everywhere else)."
               (fused (copy-node-shallow s1)))
          (setf (node-s and-node) "AND"
                (node-l and-node) pred1
-               (node-r and-node) renamed-pred2
-               (node-tentative and-node) (node-tentative pred1)
-               (node-pushed-down and-node) (or (node-pushed-down pred1) (node-pushed-down pred2)))
-         (when (node-pushed-down and-node)
-           (flet ((rest-of (p) (if (node-pushed-down p) (node-remaining p) p))
-                  (true-p (p) (and (eq (node-kind p) :bool) (node-b p))))
-             (let ((l (rest-of pred1))
-                   (r (rest-of renamed-pred2)))
-               (setf (node-remaining and-node)
-                     (cond ((true-p l) r)
-                           ((true-p r) l)
-                           (t (let ((rem (make-node :bin (node-pos pred1))))
-                                (setf (node-s rem) "AND"
-                                      (node-l rem) l
-                                      (node-r rem) r)
-                                rem)))))))
+               (node-r and-node) renamed-pred2)
          (setf (node-items fused)
                (if (= (length args1) 3)
                    (list (first args1) (second args1) and-node)
@@ -734,121 +572,9 @@ needs."
         (setf curr-steps (nreverse new-steps))))
     curr-steps))
 
-(defun pass-pushdown-link (curr-steps)
-  "Tier 2: In-memory join predicate pushdown through LINK and LINK_LEFT."
-  (let ((new-steps '())
-        (i 0)
-        (len (length curr-steps))
-        (changed nil))
-    (loop while (< i len) do
-      (let ((s1 (nth i curr-steps))
-            (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps))))
-        (if (and s2 (member (node-s s1) '("LINK" "LINK_LEFT") :test #'string=)
-                 (string= (node-s s2) "FILTER")
-                 (not (node-pushed-down (filter-predicate-of s2))))
-            (let* ((s1-args (node-items s1))
-                   (is-inner (string= (node-s s1) "LINK"))
-                   (left-src (first s1-args))
-                   (right-src (second s1-args))
-                   (b1 (cond ((>= (length s1-args) 5) (node-s (third s1-args)))
-                             ((eq (node-kind left-src) :var) (node-s left-src))
-                             (t "_1")))
-                   (b2 (cond ((>= (length s1-args) 5) (node-s (fourth s1-args)))
-                             ((eq (node-kind right-src) :var) (node-s right-src))
-                             (t "_2")))
-                   (left-names (append (list b1 (string-downcase b1) "_1")
-                                       (collect-pipeline-source-names left-src)))
-                   (right-names (append (list b2 (string-downcase b2) "_2")
-                                        (collect-pipeline-source-names right-src)))
-                   (s2-args (node-items s2))
-                   (f-binder (if (= (length s2-args) 3) (node-s (second s2-args)) "_"))
-                   (f-pred (if (= (length s2-args) 3) (third s2-args) (second s2-args)))
-                   (conjuncts (split-and-conjuncts f-pred))
-                   (left-conjuncts '())
-                   (right-conjuncts '())
-                   (remaining-conjuncts '()))
-              ;; Only the LEADING run of conjuncts that name one side is
-              ;; pushed: a conjunct left for the join might raise on a row an
-              ;; early test of a later conjunct would drop, and the program as
-              ;; written reaches that raise first (spec §7.4; SEL-0051). The
-              ;; rest stays for the FILTER above.
-              (dolist (c conjuncts)
-                (let ((affinity (conjunct-relation-affinity c left-names right-names f-binder)))
-                  (cond
-                    ((and (null remaining-conjuncts) (eq affinity :left) (null right-conjuncts))
-                     (push (rewrite-conjunct-for-relation c left-names f-binder) left-conjuncts))
-                    ((and (null remaining-conjuncts) (eq affinity :right) is-inner (null left-conjuncts))
-                     (push (rewrite-conjunct-for-relation c right-names f-binder) right-conjuncts))
-                    (t
-                     (push c remaining-conjuncts)))))
-              ;; Pushed conjuncts run tentatively under the LINK (a raise keeps
-              ;; the row), and the FILTER after it keeps the whole predicate as
-              ;; written, so the value -- including which error is reported --
-              ;; is the one the program states (spec §7.4, SEL-0051). The
-              ;; retained predicate is marked so the next pass leaves it.
-              (if (or left-conjuncts right-conjuncts)
-                  (progn
-                    ;; If left conjuncts exist, push a FILTER step before LINK
-                    (when left-conjuncts
-                      (let* ((left-pred (copy-node-shallow (combine-and-conjuncts (nreverse left-conjuncts) (node-pos s2))))
-                             (f-spec (registry-lookup "FILTER"))
-                             (left-filter (make-node :call (node-pos s2))))
-                        (setf (node-tentative left-pred) t)
-                        (setf (node-s left-filter) "FILTER"
-                              (node-spec left-filter) f-spec
-                              (node-items left-filter) (list left-src left-pred))
-                        (push left-filter new-steps)))
-                    ;; If right conjuncts exist, wrap right relation with FILTER
-                    (let ((new-s1 (copy-node-shallow s1)))
-                      (when right-conjuncts
-                        (let* ((right-pred (copy-node-shallow (combine-and-conjuncts (nreverse right-conjuncts) (node-pos s2))))
-                               (f-spec (registry-lookup "FILTER"))
-                               (wrapped-r (make-node :call (node-pos s2))))
-                          (setf (node-tentative right-pred) t)
-                          (setf (node-s wrapped-r) "FILTER"
-                                (node-spec wrapped-r) f-spec
-                                (node-items wrapped-r) (list right-src right-pred))
-                          (let ((new-args (copy-list (node-items new-s1))))
-                            (setf (second new-args) wrapped-r
-                                  (node-items new-s1) new-args))))
-                      (push new-s1 new-steps))
-                    ;; The FILTER after the LINK keeps its whole predicate;
-                    ;; `remaining` is what it evaluates instead when no
-                    ;; tentative body kept a row on an error while its source
-                    ;; ran (the pushed conjuncts then held on every row).
-                    (let ((kept-pred (copy-node-shallow f-pred))
-                          (new-s2 (copy-node-shallow s2)))
-                      (setf (node-pushed-down kept-pred) t
-                            (node-remaining kept-pred)
-                            (if remaining-conjuncts
-                                (combine-and-conjuncts (nreverse remaining-conjuncts) (node-pos s2))
-                                (let ((true-node (make-node :bool (node-pos s2))))
-                                  (setf (node-b true-node) t)
-                                  true-node)))
-                      (if (= (length s2-args) 3)
-                          (setf (node-items new-s2) (list (first s2-args) (second s2-args) kept-pred))
-                          (setf (node-items new-s2) (list (first s2-args) kept-pred)))
-                      (push new-s2 new-steps))
-                    (setf changed t)
-                    (incf i 2))
-                  (progn
-                    (push s1 new-steps)
-                    (incf i 1))))
-            (progn
-              (push s1 new-steps)
-              (incf i 1)))))
-    (values (nreverse new-steps) changed)))
-
 (defun optimize-inmemory-pipeline-steps (source curr-steps)
   "Tier 2: In-memory physical rewrites, extending Tier 1."
-  (let ((changed t))
-    (loop while changed do
-      (setf changed nil)
-      (setf curr-steps (optimize-logical-pipeline-steps source curr-steps))
-      (multiple-value-bind (next-steps pass8-changed) (pass-pushdown-link curr-steps)
-        (when pass8-changed
-          (setf curr-steps next-steps
-                changed t)))))
+  (setf curr-steps (optimize-logical-pipeline-steps source curr-steps))
   ;; A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
   ;; anything can see the keys a FILTER's result carries. A following step
   ;; that renumbers without reading `_K` hides them (KEYS-RENUMBERED-BY-P, the

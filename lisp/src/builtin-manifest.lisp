@@ -17,6 +17,7 @@
         ("BLEN" 1 1 nil nil nil)
         ("BTL" 1 1 nil nil nil)
         ("BUCKET" 2 4 t t nil)
+        ("CANON" 1 1 nil nil nil)
         ("CEIL" 1 1 nil nil nil)
         ("CHAR" 1 1 nil nil nil)
         ("COALESCE" 1 :variadic t nil nil)

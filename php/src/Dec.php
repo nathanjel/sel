@@ -512,6 +512,30 @@ final class Dec
     }
 
     /**
+     * The value with the fraction's trailing zeros removed (§7.6 CANON): 1.50 is
+     * 1.5, 2.000 is 2, 100 stays 100, and zero is 0 with no scale and no sign.
+     *
+     * @param array{neg:bool,digits:string,scale:int} $d
+     * @return array{neg:bool,digits:string,scale:int}
+     */
+    public static function trimScale(array $d): array
+    {
+        if ($d['digits'] === '0') {
+            return self::make(false, '0', 0);
+        }
+        if ($d['scale'] === 0) {
+            return $d;
+        }
+        $len = strlen($d['digits']);
+        $tail = substr($d['digits'], max(0, $len - $d['scale']));
+        $zeros = strlen($tail) - strlen(rtrim($tail, '0'));
+        if ($zeros === 0) {
+            return $d;
+        }
+        return self::make($d['neg'], substr($d['digits'], 0, $len - $zeros), $d['scale'] - $zeros);
+    }
+
+    /**
      * @param array{neg:bool,digits:string,scale:int} $d
      * @return array{neg:bool,digits:string,scale:int}
      */

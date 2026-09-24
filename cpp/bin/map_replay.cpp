@@ -140,6 +140,9 @@ int replay_register() {
               "ABS", EntrySpec::tpl("ABS({0})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
+              "CANON", EntrySpec::tpl("CASE WHEN POSITION('.' IN CAST({numericCast:0} AS CHARACTER VARYING)) > 0 THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST({numericCast:0} AS CHARACTER VARYING))) ELSE CAST({numericCast:0} AS CHARACTER VARYING) END", "TEXT"));
+  ++calls;
+  Map::define("ansi~replay", Section::Funcs,
               "CEIL", EntrySpec::tpl("CEIL({0})", "NUM"));
   ++calls;
   Map::define("ansi~replay", Section::Funcs,
@@ -290,7 +293,7 @@ int replay_register() {
               "join", EntrySpec::withdraw("LISTAGG is SQL:2016 and is spelled differently by every server that has it"));
   ++calls;
   Map::define_dialect("mysql-family~replay",
-                      DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_nopad_bin").lexical("textCharset", "utf8mb4").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("numericGuard", "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("textCast", "CAST({0} AS CHAR)").lexical("sargablePrefilter", "true"));
+                      DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_nopad_bin").lexical("textCharset", "utf8mb4").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("numericGuard", "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END").lexical("numericCastScale", "10").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("textCast", "CAST({0} AS CHAR)").lexical("sargablePrefilter", "true"));
   ++calls;
   Map::define("mysql-family~replay", Section::Ops,
               "*", EntrySpec::tpl("({0} * {1})", "NUM").caveat("scale-limit"));
@@ -378,6 +381,9 @@ int replay_register() {
   ++calls;
   Map::define("mysql-family~replay", Section::Funcs,
               "ISNUM", EntrySpec::tpl("({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')", "BOOL"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Funcs,
+              "CANON", EntrySpec::tpl("REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')", "TEXT"));
   ++calls;
   Map::define("mysql-family~replay", Section::Funcs,
               "BLEN", EntrySpec::tpl("LENGTH({binaryCast:0})", "NUM"));
@@ -572,6 +578,9 @@ int replay_register() {
               "ABS", EntrySpec::tpl("abs({numericCast:0})", "NUM"));
   ++calls;
   Map::define("postgresql~replay", Section::Funcs,
+              "CANON", EntrySpec::tpl("trim_scale({numericCast:0})", "NUM"));
+  ++calls;
+  Map::define("postgresql~replay", Section::Funcs,
               "CEIL", EntrySpec::tpl("ceil({numericCast:0})", "NUM"));
   ++calls;
   Map::define("postgresql~replay", Section::Funcs,
@@ -699,6 +708,9 @@ int replay_register() {
   ++calls;
   Map::define("sqlite~replay", Section::Funcs,
               "ABS", EntrySpec::tpl("abs({0})", "NUM").caveat("decimal-float"));
+  ++calls;
+  Map::define("sqlite~replay", Section::Funcs,
+              "CANON", EntrySpec::tpl("(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT {numericCast:0} AS canon_n)))", "TEXT").caveat("decimal-float"));
   ++calls;
   Map::define("sqlite~replay", Section::Funcs,
               "CEIL", EntrySpec::tpl("ceil({0})", "NUM").caveat("decimal-float"));

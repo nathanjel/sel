@@ -6,9 +6,8 @@
 # optimiser pushdown or join pre-filter can apply. A value must match exactly;
 # an error must match by code and by its offset inside the same segment.
 #
-# Not a gate lane: at the time of writing every host still disagrees with its
-# own helper form on some programs (SEL-0054) and the hosts disagree with each
-# other on mixed-shape rows (SEL-0053). Compare runs before and after a change.
+# A gate lane since SEL-0054: it exits 1 when any host disagrees with its own
+# helper form, or the hosts with each other.
 #
 #   tools/join-filter-oracle/run.sh [count] [seed] [mixed|uniform]
 set -euo pipefail

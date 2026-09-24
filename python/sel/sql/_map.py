@@ -230,6 +230,10 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "tpl": "ABS({0})",
                 "ret": "NUM",
             },
+            "CANON": {
+                "tpl": "CASE WHEN POSITION('.' IN CAST({numericCast:0} AS CHARACTER VARYING)) > 0 THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST({numericCast:0} AS CHARACTER VARYING))) ELSE CAST({numericCast:0} AS CHARACTER VARYING) END",
+                "ret": "TEXT",
+            },
             "CEIL": {
                 "tpl": "CEIL({0})",
                 "ret": "NUM",
@@ -352,6 +356,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "textCast": "CAST({0} AS CHAR)",
             "sargablePrefilter": "true",
             "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
+            "numericCastScale": "10",
         },
         "ops": {
             "+": {
@@ -543,6 +548,10 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "ABS": {
                 "tpl": "ABS({0})",
                 "ret": "NUM",
+            },
+            "CANON": {
+                "tpl": "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')",
+                "ret": "TEXT",
             },
             "CEIL": {
                 "tpl": "CEIL({0})",
@@ -755,6 +764,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "textCast": "CAST({0} AS CHAR)",
             "sargablePrefilter": "true",
             "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
+            "numericCastScale": "10",
         },
         "ops": {
             "+": {
@@ -946,6 +956,10 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "ABS": {
                 "tpl": "ABS({0})",
                 "ret": "NUM",
+            },
+            "CANON": {
+                "tpl": "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')",
+                "ret": "TEXT",
             },
             "CEIL": {
                 "tpl": "CEIL({0})",
@@ -1157,6 +1171,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "textCast": "CAST({0} AS CHAR)",
             "sargablePrefilter": "true",
             "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
+            "numericCastScale": "10",
         },
         "ops": {
             "+": {
@@ -1348,6 +1363,10 @@ DIALECTS: dict[str, dict[str, Any]] = {
             "ABS": {
                 "tpl": "ABS({0})",
                 "ret": "NUM",
+            },
+            "CANON": {
+                "tpl": "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')",
+                "ret": "TEXT",
             },
             "CEIL": {
                 "tpl": "CEIL({0})",
@@ -1747,6 +1766,10 @@ DIALECTS: dict[str, dict[str, Any]] = {
             },
             "ABS": {
                 "tpl": "abs({numericCast:0})",
+                "ret": "NUM",
+            },
+            "CANON": {
+                "tpl": "trim_scale({numericCast:0})",
                 "ret": "NUM",
             },
             "CEIL": {
@@ -2150,6 +2173,11 @@ DIALECTS: dict[str, dict[str, Any]] = {
                 "ret": "NUM",
                 "caveat": "decimal-float",
             },
+            "CANON": {
+                "tpl": "(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT {numericCast:0} AS canon_n)))",
+                "ret": "TEXT",
+                "caveat": "decimal-float",
+            },
             "CEIL": {
                 "tpl": "ceil({0})",
                 "ret": "NUM",
@@ -2310,7 +2338,7 @@ DIALECTS: dict[str, dict[str, Any]] = {
 #: rule; this is the rule, as data.
 RULES: dict[str, Any] = {
     "sections": ["ops", "funcs", "skel"],
-    "caveats": ["concat-null", "decimal-float", "division-scale", "input-laxity", "length-units", "modulo-integer", "numeric-scale", "power-float", "regex-engine", "rounding-mode", "scale-limit", "text-collation", "trim-charset", "unicode-case"],
+    "caveats": ["concat-null", "decimal-float", "division-scale", "input-laxity", "length-units", "modulo-integer", "numeric-scale", "power-float", "regex-engine", "rounding-mode", "scale-limit", "text-collation", "text-order", "trim-charset", "unicode-case"],
     "retKinds": ["BIN", "BOOL", "NUM", "TEXT", "UNKNOWN"],
     "opArity": {
         "!=": [2, 2],
@@ -2350,6 +2378,7 @@ RULES: dict[str, Any] = {
         "BLEN": [1, 1],
         "BTL": [1, 1],
         "BUCKET": [2, 4],
+        "CANON": [1, 1],
         "CEIL": [1, 1],
         "CHAR": [1, 1],
         "COALESCE": [1, None],
@@ -2458,6 +2487,7 @@ RULES: dict[str, Any] = {
         "placeholder": "string",
         "numericGuard": "string",
         "sargablePrefilter": "string",
+        "numericCastScale": "string",
     },
     "templateKeys": ["identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCharset", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder", "numericGuard"],
 }

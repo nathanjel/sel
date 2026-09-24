@@ -129,8 +129,13 @@ final class Translator
         }
         $f = $this->node($norm);
 
-        return new Fragment($f->parts, $f->kind, $this->dialect,
+        $out = new Fragment($f->parts, $f->kind, $this->dialect,
             $this->params, $this->paramKinds, array_keys($this->caveats));
+        // Public: it says the value is a canonical number, whose spelling is
+        // the contract and not only its value (php/bin/sqlo compares it as
+        // text). Lost here once, in every host at the same time.
+        $out->canonical = $f->canonical;
+        return $out;
     }
 
     /** @param array<string,mixed> $ast */
@@ -301,6 +306,7 @@ final class Translator
         if (($c['prefilter'] ?? null) === 'separate') {
             $frag->separatePrefilter = true;
         }
+        $frag->canonical = (bool) ($c['canonical'] ?? false);
         return $frag;
     }
 
@@ -475,6 +481,9 @@ final class Translator
             $this->requireNotBoolOperand($r, $n['r']['pos'], $op);
         }
         $variant = $this->variantFor($op, [$l, $r]);
+        if ($variant === 'coerce') {
+            $this->coerceScaleLimits([[$l, $n['l']], [$r, $n['r']]]);
+        }
         if (self::isByteComparison($op)) {
             self::requireComparableKinds($l, $r, $op, $n['pos']);
             // See Emit::textOperand for why the operands are transformed here
@@ -739,7 +748,11 @@ final class Translator
             }
             $args[] = $f;
         }
-        return $this->apply('funcs', $name, $args, $n['pos']);
+        $out = $this->apply('funcs', $name, $args, $n['pos']);
+        if ($name === 'CANON') {
+            $out->canonical = true;
+        }
+        return $out;
     }
 
     /**
@@ -908,6 +921,7 @@ final class Translator
         'PADL' => [1],
         'PADR' => [1],
         'CHAR' => [0],
+        'CANON' => [0],
     ];
 
     private static function isNumericArgument(string $name, int $i): bool
@@ -1141,6 +1155,12 @@ final class Translator
 
     private function identityGroupKey(array $node, Fragment $f): Fragment
     {
+        if ($f->canonical && $f->kind === 'NUM') {
+            // One spelling per value, so the value's equality is the spelling's:
+            // grouped and compared as the number it is, which keeps it a number
+            // for whatever sorts it afterwards.
+            return $f;
+        }
         if ($f->kind === 'UNKNOWN') refuse('E_SQL_SHAPE', 'group keys require proven scalar identity', $node['pos']);
         if ($f->kind === 'NUM') {
             if (!in_array($node['t'], ['var', 'index', 'num'], true)) {
@@ -1149,6 +1169,39 @@ final class Translator
             $numeric = new Fragment($f->parts, 'NUM', $this->dialect, $f->params, $f->paramKinds, $f->caveats);
             $w = $this->emit->textOperand($numeric);
             return new Fragment($w->parts, 'TEXT', $this->dialect, $w->params, $w->paramKinds, $w->caveats, true, false, false);
+        }
+        return $this->collatedKey($f);
+    }
+
+    /**
+     * A sort key, as SEL's sort compares it. SEL sorts numbers as numbers and
+     * other text by its bytes -- and number-shaped TEXT as a number, which
+     * SQL's ORDER BY cannot: it sorts a text key by its bytes throughout, so
+     * "10" comes before "9" (SEL-0060). A NUM key sorts as SEL sorts it. A
+     * canonical number the dialect can only carry as text is always a number
+     * to SEL, so sorting it in SQL is simply wrong: refused, and the planner
+     * sorts in memory (SEL-0058). Any other TEXT or UNKNOWN key is sorted
+     * anyway, declared text-order, and refused under strict.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private function orderKey(Fragment $f, array $pos): Fragment
+    {
+        if ($f->kind === 'NUM') {
+            return $f;
+        }
+        if ($f->canonical) {
+            refuse('E_SQL_UNSUPPORTED',
+                "CANON is text on {$this->dialect}, which SQL sorts by its bytes, and SEL "
+                . 'sorts it as the number it is; sort it in memory', $pos);
+        }
+        if ($f->kind === 'TEXT' || $f->kind === 'UNKNOWN') {
+            if ($this->strict) {
+                refuse('E_SQL_UNSUPPORTED',
+                    'a text key sorts by its bytes in SQL, where SEL sorts number-shaped '
+                    . 'text as numbers (text-order); strict mode refuses that', $pos);
+            }
+            $this->caveats['text-order'] = true;
         }
         return $this->collatedKey($f);
     }
@@ -1180,7 +1233,9 @@ final class Translator
                 }
                 $collated = $this->identityGroupKey($group['node'], $key);
                 if ($key->kind === 'NUM') {
-                    return new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect, $key->params, $key->paramKinds, $key->caveats);
+                    $out = new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect, $key->params, $key->paramKinds, $key->caveats);
+                    $out->canonical = $key->canonical;
+                    return $out;
                 }
                 // In a HAVING, MariaDB and MySQL resolve a column only against
                 // the GROUP BY columns and the select list, not against an
@@ -1191,7 +1246,9 @@ final class Translator
                 // HAVING name.
                 // Nested _K projections need the same aggregate under ONLY_FULL_GROUP_BY.
                 if ($collated !== $key) {
-                    return new Fragment(array_merge(['MIN('], $collated->parts, [')']), 'TEXT', $this->dialect, $collated->params, $collated->paramKinds, $collated->caveats, true, false, false);
+                    $out = new Fragment(array_merge(['MIN('], $collated->parts, [')']), 'TEXT', $this->dialect, $collated->params, $collated->paramKinds, $collated->caveats, true, false, false);
+                    $out->canonical = $key->canonical;
+                    return $out;
                 }
                 return $collated;
             case Binder::COLUMN:
@@ -2264,7 +2321,64 @@ final class Translator
         if (Constants::isConstant($n, $this->constNames)) {
             return $f;
         }
-        return $this->emit->numericOperand($f, $n['pos']);
+        $guarded = $this->emit->numericOperand($f, $n['pos']);
+        if ($guarded !== $f) {
+            // The guard reads the text as the dialect's numericCast type, and
+            // where that type fixes a scale the data's digits past it are gone
+            // before anything else sees them (SEL-0059).
+            $this->scaleLimited($n['pos'], 'this operand is read as a number');
+        }
+        return $guarded;
+    }
+
+    /**
+     * How many fractional digits the dialect's numericCast and numericGuard
+     * keep, or null where they keep every one (sql/MAP.md §3).
+     */
+    private function numericCastScale(): ?int
+    {
+        $cap = $this->emit->lex('numericCastScale');
+        return is_string($cap) && preg_match('/\A[0-9]+\z/', $cap) === 1 ? (int) $cap : null;
+    }
+
+    /** @param array{line:int,col:int,offset:int} $pos */
+    private function scaleLimited(array $pos, string $what): void
+    {
+        $cap = $this->numericCastScale();
+        if ($cap === null) {
+            return;
+        }
+        if ($this->strict) {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$what} through a DECIMAL that keeps {$cap} fractional digits, and a "
+                . "value with more loses them on {$this->dialect} (scale-limit); strict "
+                . 'mode refuses that', $pos);
+        }
+        $this->caveats['scale-limit'] = true;
+    }
+
+    /**
+     * The coerce variant reads both operands through numericCast. A constant's
+     * scale is known and only one past the cap is truncated; a column's is not
+     * -- NUM says it is a number, not how many fractional digits it has.
+     *
+     * @param list<array{0: Fragment, 1: array<string,mixed>}> $pairs
+     */
+    private function coerceScaleLimits(array $pairs): void
+    {
+        $cap = $this->numericCastScale();
+        if ($cap === null) {
+            return;
+        }
+        foreach ($pairs as [, $node]) {
+            if (Constants::isConstant($node, $this->constNames)) {
+                if (Constants::constantScale($node, $this->constCtx) > $cap) {
+                    $this->scaleLimited($node['pos'], 'this constant is read as a number');
+                }
+            } else {
+                $this->scaleLimited($node['pos'], 'this operand is read as a number');
+            }
+        }
     }
 
     /**
@@ -2622,6 +2736,27 @@ final class Translator
             ? ($matches[0]['type'] ?? 'UNKNOWN') : 'UNKNOWN';
     }
 
+    /**
+     * The kind of a projected CANON(...), which a derived table's column keeps:
+     * the dialect's CANON kind -- the map entry's ret, NUM or TEXT.
+     */
+    private function outputCanonKind(RelationalPlan $plan, string $name): ?string
+    {
+        if ($plan->projections === null) {
+            return null;
+        }
+        $projection = null;
+        foreach ($plan->projections as $p) {
+            if (($p['alias'] ?? null) === $name) { $projection = $p; break; }
+        }
+        $n = $projection['node'] ?? null;
+        if (!($n !== null && $n['t'] === 'call' && $n['name'] === 'CANON')) {
+            return null;
+        }
+        $entry = Map::entry($this->dialect, 'funcs', 'CANON');
+        return is_array($entry) ? (string) $entry['ret'] : null;
+    }
+
     private function wrapPlanAsDerivedTable(RelationalPlan $plan): RelationalPlan
     {
         $alias = '_sub' . (++$this->subqueryCounter);
@@ -2645,6 +2780,11 @@ final class Translator
                 'table' => $alias,
                 'type' => $this->outputFieldType($plan, $name),
             ];
+            $canonKind = $this->outputCanonKind($plan, $name);
+            if ($canonKind !== null) {
+                $fields[strtoupper($name)]['type'] = $canonKind;
+                $fields[strtoupper($name)]['canonical'] = true;
+            }
         }
         $derived = new RelationalPlan();
         $derived->sourceName = $alias;
@@ -3316,7 +3456,7 @@ final class Translator
                             ? $this->withGroup($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']))
                             : $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node'])));
                     if ($plan->distinct) {
-                        if (in_array($pFrag->kind, ['UNKNOWN', 'NUM'], true)) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', $proj['node']['pos']);
+                        if (in_array($pFrag->kind, ['UNKNOWN', 'NUM'], true) && !$pFrag->canonical) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', $proj['node']['pos']);
                         $pFrag = $this->identityGroupKey($proj['node'], $pFrag);
                     }
                     foreach ($pFrag->parts as $p) {
@@ -3507,11 +3647,11 @@ final class Translator
                     // A TEXT sort key is collated like a group key: SEL sorts text
                     // by its bytes, and a server's default collation would not.
                     $render = fn (): Fragment => $this->node($ord['node']);
-                    $oFrag = $this->collatedKey(($ord['overGroups'] ?? false)
+                    $oFrag = $this->orderKey(($ord['overGroups'] ?? false)
                         ? $this->withGroup($src, $ord['binder'], $render)
                         : ($plan->groupBy !== null
                             ? $this->withProjected($src, $ord['binder'], $render)
-                            : $this->withRow($src, $ord['binder'], $render)));
+                            : $this->withRow($src, $ord['binder'], $render)), $ord['node']['pos']);
                     foreach ($oFrag->parts as $p) {
                         $parts[] = $p;
                     }

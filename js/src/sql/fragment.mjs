@@ -30,6 +30,12 @@ export class Fragment {
     this.guard = Boolean(guard);
     this.prefilter = null;
     this.separatePrefilter = false;
+    // A number in its canonical form (spec §7.6 CANON): one spelling per
+    // value, so its SQL identity is its value's and DISTINCT/GROUP BY over it
+    // are exact. Its kind is the dialect's: NUM where the server keeps a
+    // per-value scale (PostgreSQL), TEXT where it cannot (the MySQL family,
+    // SQLite, ansi) -- and text is what SQL sorts by its bytes.
+    this.canonical = false;
   }
 
   // Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but LIST,

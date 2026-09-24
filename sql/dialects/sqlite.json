@@ -189,6 +189,11 @@
       "ret": "NUM",
       "caveat": "decimal-float"
     },
+    "CANON": {
+      "tpl": "(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT {numericCast:0} AS canon_n)))",
+      "ret": "TEXT",
+      "caveat": "decimal-float"
+    },
     "CEIL": {
       "tpl": "ceil({0})",
       "ret": "NUM",

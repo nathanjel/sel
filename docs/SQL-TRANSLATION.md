@@ -1866,11 +1866,12 @@ out to support both exactly as SEL means them.
 | `length-units` | In the vocabulary and used by nothing: every dialect's `LEN` counts what SEL counts. Kept because a dialect whose `LENGTH` is bytes is the obvious next one to be written, and a mutation exists that adds it to prove the check would notice. |
 | `modulo-integer` | **(verified)** SQLite truncates both operands to integers before `%`, so `5.5 % 2` is `1.0` rather than `1.5`. |
 | `numeric-scale` | **(verified)** The value is equal and the scale is not. MariaDB's `LEAST(17, 123.456)` is `17.000` where SEL's `MIN` returns `17` — invisible until the result is read as text. It is also the only caveat a **skeleton** carries: MariaDB gives a `CASE` over NUM branches one type and pads to the widest scale, so `IF(FALSE, 2.50, 3)` is `3.00` there and `3` in SEL and on MySQL 8.4. That is `mariadb.json`'s first and only override, and it is the reason `skel` entries reach `Fragment::caveats` at all — before it, a skeleton could declare an inexactness that `strict` never saw. |
-| `scale-limit` | **(verified)** DECIMAL caps the scale of a product and SEL does not, so a result needing more fractional digits is truncated to the cap — to zero, when every surviving digit is one. `0.00000000000000000000000000000001 * 2` is `2e-32` in SEL and on MariaDB and `0.000000000000000000000000000000` on MySQL 8.4: the boundary is **30** there and **38** on MariaDB. It sits on `mysql-family` because both truncate; only the digit they stop at differs. `+` and `-` do not truncate on either, and `/` already declares `division-scale` for the same shape of loss. PostgreSQL's `numeric` has no such cap and carries no caveat, so a multiplication defect still fails the build there. |
+| `scale-limit` | **(verified)** DECIMAL caps the scale of a product and SEL does not, so a result needing more fractional digits is truncated to the cap — to zero, when every surviving digit is one. `0.00000000000000000000000000000001 * 2` is `2e-32` in SEL and on MariaDB and `0.000000000000000000000000000000` on MySQL 8.4: the boundary is **30** there and **38** on MariaDB. It sits on `mysql-family` because both truncate; only the digit they stop at differs. `+` and `-` do not truncate on either, and `/` already declares `division-scale` for the same shape of loss. PostgreSQL's `numeric` has no such cap and carries no caveat, so a multiplication defect still fails the build there. **(verified, SEL-0059)** The same cap sits on the family's `numericCast` and `numericGuard`, `DECIMAL(65,10)`, so a value read through them loses its digits past the tenth: `(_["v"] & ".00000000001") + 0` is `1.00000000001` in SEL and `1.0000000000` on MariaDB 11.8 and MySQL 8.4. The dialect declares the cap (`numericCastScale`, sql/MAP.md §3) and the translator marks what passes through it: a guarded operand always, a column in a `coerce` comparison always (NUM says it is a number, not how many fractional digits it has), a constant only past ten digits. |
 | `power-float` | `POWER` returns a float in every dialect; SEL's is exact. |
 | `text-collation` | The `$` family is bytewise in SEL. The `textCollate` lexical entry forces a binary collation; a column with an incompatible declared collation can still defeat it. **(verified)** And `utf8mb4_bin` is PAD SPACE on MariaDB and MySQL: `'A'` and `'A '` compare equal under it, so `"A" $== "A "` is true there where SEL says FALSE, and a bucket keyed by `cat` merges the two — the same cast and collation now cover `GROUP BY`, `_K` and `ORDER BY` keys, so a grouped or sorted TEXT key is case-exact everywhere but not trailing-space-exact on the MySQL family. A NO PAD collation (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB) would close it and is a `textCollate` override away. |
 | `regex-engine` | SEL's regex subset is what PCRE and ECMAScript agree on. MySQL 8.0.4+ and MariaDB use ICU/PCRE, PostgreSQL uses POSIX ARE — the subset mostly survives, lazy quantifiers and some classes do not. SQLite has no `REGEXP` without a user function and refuses outright. |
 | `concat-null` | `CONCAT` / `\|\|` yields NULL if any operand is NULL; SEL's `&` cannot. |
+| `text-order` | **(verified, SEL-0060)** SEL's sort compares numbers as numbers and other text by its bytes, and number-shaped text *is* a number to it; SQL's `ORDER BY` sorts a text key by its bytes throughout. A text column holding `10`, `9`, `100` sorts `9, 10, 100` in SEL and `10, 100, 9` on every server. No `ORDER BY` reproduces SEL's comparison over text that may or may not look numeric, so every sort by a TEXT or UNKNOWN key carries this, strict refuses it, and the planner then sorts in memory. A NUM key sorts as SEL does and carries nothing. Declared by the sort rather than by a map entry, and witnessed by `sql/oracle/statements.json` on every server. |
 | — (refused) | `BAND`/`BOR`/`BXOR` — no portable byte-string bitwise operator exists. `ABORT` — a control-flow effect, not a value. `SPLIT`, `INDEXES`, `BTL`, `RGROUPS` — list-valued. **(verified)** `CHAR`/`CODE` on MariaDB, whose `ORD` and `CHAR` read bytes rather than code points — SQLite's `unicode()` and `char()` are code points and are mapped there. |
 
 ### 11.1 A caveat is about a value, not about a type
@@ -2441,6 +2442,43 @@ The ordinary prefix planner promises:
   move the split before the `MAP` instead. The continuation passes a
   projected pair through *by key* — `"cid", _["customer_id"]` comes back as
   `cid` and is read as `cid`, `_["amount"] + 1` is not added twice.
+- **A value a grouping or a whole-row comparison reads keeps SEL's identity.**
+  `BUCKET`, `DEDUPE` and `DISTINCT` tell values apart by structure, where SQL
+  compares by its own equality, which can merge values SEL keeps distinct:
+  numerically equal numbers (`1`, `1.0`) and, on MariaDB, texts with
+  different trailing spaces (findings F2 and F3). So the translator refuses
+  such a step over a value it cannot prove to be kept exactly (`E_SQL_SHAPE`).
+  The planner then refuses the prefix ending with the `MAP` that computed
+  the value (`identity_loss_before_grouping`), because the comparison would
+  run in memory over values SQL computed, which can already differ. On
+  MariaDB, a `CASE` with the branches `1` and `1.0` returns `1.0` for both,
+  and a `DEDUPE` over that loses a row. The proof admits reads, literals,
+  `COUNT`/`LEN`/`BLEN`, `RECORD` of those, `CANON` (below), and an `IF` or
+  `COND` whose every result is a text literal, or in turn such a
+  conditional (SEL-0057). A two-argument `IF`'s otherwise is `""`, so it
+  qualifies. `CASE` hands back the literal it chose byte for byte. That was
+  verified with `'a'`/`'A'` and `'a'`/`'a '` on PostgreSQL 17 and MariaDB
+  11.8, both in memory after a split and under SQL's own `DISTINCT`, which
+  the translator collates exactly. A numeric result, a column in a branch
+  and any other computation count as lossy. A `NULL` result is not
+  admitted, because the translator renders no `NULL` literal at all. The
+  scale harness's scenario 6 was kept in memory by this rule (SEL-0055)
+  until its text-literal `IF` was admitted. It now splits after the `MAP`
+  (`plan.identity-barrier.text-literal-dedupe-after-a-join-splits-at-the-map.*`):
+  SQL returns the 100 unsold products and memory does the rest, at 24 ms
+  on PostgreSQL and 8 ms on MariaDB instead of about 2,180 ms.
+  **`CANON` is the proof a rule can write** (spec §7.6, SEL-0058). A
+  canonical number has one spelling per value, so its identity is its
+  value's whatever computed it: the translator groups and deduplicates it,
+  the barrier lets it through and asks nothing about the fields its argument
+  reads. Its SQL is one statement on PostgreSQL (`trim_scale`, a number)
+  and a regex chain over the value's text on the MySQL family, a string
+  trim on SQLite and `TRIM`/`POSITION` on `ansi` (text, because a
+  `DECIMAL`'s scale belongs to its type there). A text CANON is refused as
+  a sort key, since SQL would sort it by its bytes and SEL sorts it as a
+  number; the planner sorts it in memory. The spellings were verified on all
+  four servers over typed columns, arithmetic, the guard and literals
+  (`sql/cases/42-canon.sqlt`, and `funcs.CANON` in the oracle corpus).
 - **RECORD writes are not SQL aliases.** Duplicate output or composite group-key
   aliases, including ASCII-case-only collisions, refuse statement translation
   with `E_SQL_SHAPE`. The planner backs up before the affected projection.
@@ -2472,21 +2510,22 @@ The ordinary prefix planner promises:
   a list literal or constructor — because over a scalar it is the one-element
   list spec §7.3 promises, and a bound relation is such a source: `ORDERS .>
   FILTER(TRUE)` is a one-step pipeline the planner pushes down, not a bare
-  relation it leaves in memory. The physical join-predicate pushdown keeps
-  the value the same way: only the *leading* conjuncts that name one side
-  move under the `LINK`, and they run there *tentatively* — a row the pushed
-  body raises on is kept for the `FILTER` above, whose predicate still
-  carries every conjunct in the source's order, so which error surfaces, and
-  where, is what the program as written says (spec §7.4; SEL-0051). What the
+  relation it leaves in memory. No rewrite moves a `FILTER` across a
+  `LINK`: a FILTER moved onto a side renumbered the joined rows, skipped the
+  join keys of the rows it dropped, and took relation names for members
+  under explicit binders, none of which the tree can see (spec §7.4;
+  SEL-0051 made the old pushdown tentative, SEL-0054 retired it). What the
   tree cannot decide, the evaluator's join decides from the rows: a `FILTER`
-  over a `LINK` hands the join its conjuncts, and the join pre-applies to its
-  left rows those whose fields the joined row takes from them (no right side
-  carries the field), passing over an earlier conjunct only when it cannot
-  raise on any joined row (its fields carried by every row of the one side
-  that has them, with the operator's kind); below the FILTER's own join it
-  drops rows only where no upper join key could raise on them — the same
+  over a `LINK` hands the join its conjuncts, and the join tests on its left
+  rows those whose fields the joined row takes from them (no right side
+  carries the field) and on its right rows those that read only through its
+  right binder, passing over an earlier conjunct only when it cannot raise on
+  any joined row (its fields carried by every row of the one side that has
+  them, with the operator's kind), keeping the numbering and every join key,
+  and the `FILTER` skips what the join applied; below the FILTER's own join
+  it drops rows only where no upper join key could raise on them — the same
   tree for any data, the drops decided where the data is (SEL-0049,
-  SEL-0050, SEL-0052). And a fold never changes the *form* of a
+  SEL-0050, SEL-0052, SEL-0054). And a fold never changes the *form* of a
   call the evaluator resolves by shape: the third slot of a three-argument
   `SORT_BY` or `TOP_BY` whose second is a bare name is the binder form's key,
   and `IF(TRUE, "DESC", "ASC")` there stays an `IF` rather than becoming the

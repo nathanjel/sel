@@ -166,6 +166,13 @@ operand, and the two would drift."
     (sel:sel-error (e) (refuse-as-sel e n)))
   (values))
 
+(defun constant-scale (n root)
+  "The number of fractional digits of a constant already known to be a number
+(REQUIRE-NUMERIC-CONSTANT ran first)."
+  (handler-case
+      (sel::dec-scale (sel::as-dec (sel:run (sel::%make-program "" n) root) (snode-pos n)))
+    (sel:sel-error (e) (refuse-as-sel e n))))
+
 (defun refuse-as-sel (e n)
   "SEL's own refusal, reported as the translator's.
 

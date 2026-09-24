@@ -38,7 +38,13 @@ the class of bug this shape exists to make unreachable."
   (sargable nil :type boolean)
   (guard nil :type boolean)
   (prefilter nil)
-  (separate-prefilter nil :type boolean))
+  (separate-prefilter nil :type boolean)
+  ;; A number in its canonical form (spec §7.6 CANON): one spelling per value,
+  ;; so its SQL identity is its value's and DISTINCT/GROUP BY over it are exact.
+  ;; Its kind is the dialect's: NUM where the server keeps a per-value scale
+  ;; (PostgreSQL), TEXT where it cannot (the MySQL family, SQLite, ansi) -- and
+  ;; text is what SQL sorts by its bytes.
+  (canonical nil :type boolean))
 
 (defun slot-inline-p (f slot)
   "True for a slot rendered as a literal in every mode, never as a parameter.

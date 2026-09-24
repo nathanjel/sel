@@ -25,7 +25,8 @@ class Fragment:
     """
 
     __slots__ = ('parts', 'params', 'param_kinds', 'kind', 'dialect', 'caveats',
-                 'exact', 'sargable', 'guard', 'prefilter', 'separate_prefilter')
+                 'exact', 'sargable', 'guard', 'prefilter', 'separate_prefilter',
+                 'canonical')
 
     def __init__(self, parts: list[Any], kind: str, dialect: str,
                  params: list[Value] | None = None,
@@ -48,6 +49,12 @@ class Fragment:
         self.guard = guard
         self.prefilter: Fragment | None = None
         self.separate_prefilter: bool = False
+        # A number in its canonical form (spec §7.6 CANON): one spelling per
+        # value, so its SQL identity is its value's and DISTINCT/GROUP BY over it
+        # are exact. Its kind is the dialect's: NUM where the server keeps a
+        # per-value scale (PostgreSQL), TEXT where it cannot (the MySQL family,
+        # SQLite, ansi) -- and text is what SQL sorts by its bytes.
+        self.canonical: bool = False
 
     def as_value(self, mode: str = 'inline') -> str:
         """Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but

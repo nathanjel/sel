@@ -206,6 +206,8 @@ class Translator {
   Fragment variable(const SNode& n);
   Fragment column_ref(const ColumnSpec& c);
   Fragment collated_key(const Fragment& f) const;
+  // Refuses or records a caveat, so neither const nor static.
+  Fragment order_key(const Fragment& f, Pos pos);
   Fragment identity_group_key(const SNodePtr& n, const Fragment& f) const;
   Fragment index(const SNode& n);
   std::string constant_index(const SNode& idx);
@@ -246,6 +248,11 @@ class Translator {
   // Transforms rather than checks: the operand comes back wrapped, so every
   // caller has to assign the result.
   Fragment guard_numeric(const Fragment& f, const SNode& n);
+  // scale-limit (sql/MAP.md §3): where the dialect's numericCast keeps a fixed
+  // number of fractional digits, a value read through it may lose some.
+  std::optional<std::int32_t> numeric_cast_scale() const;
+  void scale_limited(Pos pos, const std::string& what);
+  void coerce_scale_limits(std::span<const SNode* const> operands);
 
   Fragment from_binder(const Binder& b, const SNode& n);
   Fragment index_binder(const Binder& b, const std::string& name,
@@ -314,6 +321,8 @@ class Translator {
                          const SNodePtr& agg_node);
   std::vector<std::string> output_field_names(const RelationalPlan& plan) const;
   SqlKind output_field_type(const RelationalPlan& plan, std::string name) const;
+  std::optional<SqlKind> output_canon_kind(const RelationalPlan& plan,
+                                           const std::string& name) const;
   RelationalPlan ensure_derived(RelationalPlan plan, bool needed);
   // The programmatic CASE builder, for SUM over an absorbed FILTER. Its kind
   // rule is deliberately NOT unify's: two differing known kinds yield UNKNOWN

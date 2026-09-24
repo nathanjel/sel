@@ -5,7 +5,7 @@ import * as D from '../decimal.mjs';
 import { Value, NONE, structuralHash } from '../value.mjs';
 import { define } from '../registry.mjs';
 import { bytesCompare } from '../utf8.mjs';
-import { SelError, fail } from '../errors.mjs';
+import { fail } from '../errors.mjs';
 
 // Two-argument form binds `_`; three-argument form takes a bare identifier as
 // the binder, checked by inspecting the AST node the caller handed us.
@@ -43,7 +43,7 @@ function nodeContainsVar(node, name) {
 // from `visit` stops the walk and becomes the result.
 // `tentative`: a body that raises keeps the element -- the visitor sees null
 // -- for the FILTER above to decide (a pushed conjunct, spec §7.4).
-function walk(args, ctx, visit, tentative = false, bodyOverride = null) {
+function walk(args, ctx, visit, bodyOverride = null) {
   const { binder, body: written } = shape(args);
   const body = bodyOverride ?? written;
   const collection = args.val(0);
@@ -55,14 +55,7 @@ function walk(args, ctx, visit, tentative = false, bodyOverride = null) {
     const visitItem = (key, item) => {
       frame.set(binder, item);
       if (needsK) frame.set('_K', Value.text(key));
-      let r;
-      try {
-        r = args.evalNode(body);
-      } catch (e) {
-        if (!tentative || !(e instanceof SelError)) throw e;
-        r = null;
-      }
-      return visit(r, key, item, body);
+      return visit(args.evalNode(body), key, item, body);
     };
     // Match Lisp's vector fast paths: read the packed storage directly and
     // reuse the binder frame. `entries()` is intentionally reserved for the
@@ -186,7 +179,7 @@ export function leadingFieldConjuncts(body, binder) {
         total.push([operand.idx.v, kind]);
       }
     }
-    return { node: c, fields: ok ? fields : null, total, pushed: false, binder };
+    return { node: c, fields: ok ? fields : null, total, binder };
   });
 }
 
@@ -194,39 +187,23 @@ define({
   name: 'FILTER', min: 2, max: 3, lazy: true, binds: true,
   fn: (args, ctx) => {
     const out = new Value(NONE, null, true);
-    const written = args.node(args.nodes.length - 1);
-    const tentative = Boolean(written.tentative);
-    // Over a join, the conjuncts are offered to the LINK, which pre-applies
-    // what it can to its left rows (SEL-0052): this FILTER's first -- it runs
-    // before the FILTER that handed the rest down -- then the handed ones.
-    // Deep drops, below the join directly under this FILTER, change its
+    // Over a join, the conjuncts are offered to the LINK, which tests what it
+    // can on the rows it joins (SEL-0052, SEL-0054): this FILTER's first --
+    // it runs before the FILTER that handed the rest down -- then the handed
+    // ones. Deep drops, below the join directly under this FILTER, change its
     // keys, so they are allowed only where nothing observes them
     // (`keysUnobserved`, stamped by the physical optimiser).
     const src = args.node(0);
     const handed = ctx.joinPrefilter;
     ctx.joinPrefilter = null;
+    let own = null;
     if (src && src.t === 'call' && (src.name === 'LINK' || src.name === 'LINK_LEFT')) {
       const { binder, body } = shape(args);
-      const own = leadingFieldConjuncts(body, binder);
-      // Conjuncts the physical optimiser already pushed under the join (a
-      // tentative FILTER below, SEL-0051) held on every row the join sees
-      // unless one kept a row on an error; the join checks that and skips
-      // them, rather than testing them again.
-      if (written.pushedDown) {
-        const rem = written.remaining;
-        const kept = new Set();
-        if (!(rem.t === 'bool' && rem.v === true)) {
-          let n = rem;
-          while (n && n.t === 'bin' && n.op === 'AND') { kept.add(n.r); n = n.l; }
-          kept.add(n);
-        }
-        for (const c of own) if (!kept.has(c.node)) c.pushed = true;
-      }
-      // A first conjunct that is neither a field test nor total nor pushed
-      // ends every walk before it starts: hand nothing, gather nothing.
-      const blocked = own.length > 0 && own[0].fields === null && own[0].total === null && !own[0].pushed;
-      const stages = !blocked && (own.some((c) => !c.pushed) || handed !== null)
-        ? [{ binder, conjuncts: own }] : [];
+      own = leadingFieldConjuncts(body, binder);
+      // A first conjunct that is neither a field test nor total ends every
+      // walk before it starts: hand nothing, gather nothing.
+      const blocked = own.length > 0 && own[0].fields === null && own[0].total === null;
+      const stages = blocked ? [] : [{ binder, conjuncts: own, above: 0 }];
       if (handed !== null && !blocked) stages.push(...handed.stages);
       const deep = handed === null ? Boolean(body.keysUnobserved) : true;
       if (stages.length) {
@@ -234,13 +211,6 @@ define({
           obligations: handed === null ? [] : handed.obligations };
       }
     }
-    // A predicate whose leading conjuncts were pushed under the LINK below:
-    // when no tentative body kept a row on an error while the source ran,
-    // every row here passed them, and only the remaining conjuncts are
-    // evaluated (TRUE when there are none); otherwise the whole predicate,
-    // as written, decides -- and raises -- in the source's order.
-    let bodyOverride = null;
-    const before = ctx.tentativeKept;
     let source;
     try {
       source = args.val(0);
@@ -252,31 +222,20 @@ define({
     const report = ctx.joinPrefilterReport;
     ctx.joinPrefilterReport = null;
     if (report !== null && handed !== null) ctx.joinPrefilterReport = report;
-    if (written.pushedDown) {
-      if (ctx.tentativeKept === before) {
-        bodyOverride = written.remaining;
-        // Nothing remains: every row of the join below passed, and the join
-        // built a fresh list this FILTER would only copy.
-        if (bodyOverride.t === 'bool' && bodyOverride.v === true) return source;
-      }
+    // The conjuncts of this FILTER the join below applied held on every row
+    // it built, unless it kept a row on an error: then they are TRUE there,
+    // raise nowhere, and only the rest is evaluated, in the source's order
+    // (with none left, the join's list is the FILTER's result as it is).
+    let bodyOverride = null;
+    if (own !== null && report !== null && !report.errored && own.some((c) => report.applied.has(c.node))) {
+      const rest = own.filter((c) => !report.applied.has(c.node)).map((c) => c.node);
+      if (rest.length === 0) return source;
+      bodyOverride = rest.reduce((l, r) => ({ t: 'bin', op: 'AND', l, r, pos: l.pos }));
     }
     walk(args, ctx, (r, key, item, body) => {
-      let keep;
-      if (r === null) {
-        keep = true;
-        ctx.tentativeKept++;
-      } else {
-        try {
-          keep = r.asBool(body.pos);
-        } catch (e) {
-          if (!tentative || !(e instanceof SelError)) throw e;
-          keep = true;
-          ctx.tentativeKept++;
-        }
-      }
-      if (keep) out.set(key, item);
+      if (r.asBool(body.pos)) out.set(key, item);
       return undefined;
-    }, tentative, bodyOverride);
+    }, bodyOverride);
     return out;
   },
 });

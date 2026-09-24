@@ -136,6 +136,7 @@ constexpr Entry d0_ansi_funcs[] = {
     {.key = "LTRIM", .kind = EntryKind::Template, .one = "TRIM(LEADING FROM {textCast:0})", .ret = "TEXT", .caveat = "trim-charset"},
     {.key = "RTRIM", .kind = EntryKind::Template, .one = "TRIM(TRAILING FROM {textCast:0})", .ret = "TEXT", .caveat = "trim-charset"},
     {.key = "ABS", .kind = EntryKind::Template, .one = "ABS({0})", .ret = "NUM"},
+    {.key = "CANON", .kind = EntryKind::Template, .one = "CASE WHEN POSITION('.' IN CAST({numericCast:0} AS CHARACTER VARYING)) > 0 THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST({numericCast:0} AS CHARACTER VARYING))) ELSE CAST({numericCast:0} AS CHARACTER VARYING) END", .ret = "TEXT"},
     {.key = "CEIL", .kind = EntryKind::Template, .one = "CEIL({0})", .ret = "NUM"},
     {.key = "FLOOR", .kind = EntryKind::Template, .one = "FLOOR({0})", .ret = "NUM"},
     {.key = "POWER", .kind = EntryKind::Template, .one = "POWER({0}, {1})", .ret = "NUM", .caveat = "power-float"},
@@ -214,6 +215,7 @@ constexpr Lexical d1_mariadb_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
     {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "true"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
+    {.key = "numericCastScale", .kind = LexKind::Text, .text = "10"},
 };
 constexpr Keyed d1_mariadb_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
@@ -303,15 +305,15 @@ constexpr Keyed d1_mariadb_funcs1[] = {
     {.key = "2", .value = {.present = true, .text = "SUBSTRING({0}, {1})"}},
     {.key = "3", .value = {.present = true, .text = "SUBSTRING({0}, {1}, {2})"}},
 };
-constexpr Keyed d1_mariadb_funcs13[] = {
+constexpr Keyed d1_mariadb_funcs14[] = {
     {.key = "2", .value = {.present = true, .text = "INSTR({1}, {0})"}},
     {.key = "3", .value = {.present = true, .text = "LOCATE({0}, {1}, {2})"}},
 };
-constexpr Keyed d1_mariadb_funcs25[] = {
+constexpr Keyed d1_mariadb_funcs26[] = {
     {.key = "1", .value = {.present = true, .text = "{0}"}},
     {.key = "*", .value = {.present = true, .text = "LEAST({*})"}},
 };
-constexpr Keyed d1_mariadb_funcs26[] = {
+constexpr Keyed d1_mariadb_funcs27[] = {
     {.key = "1", .value = {.present = true, .text = "{0}"}},
     {.key = "*", .value = {.present = true, .text = "GREATEST({*})"}},
 };
@@ -324,12 +326,13 @@ constexpr Entry d1_mariadb_funcs[] = {
     {.key = "LTRIM", .kind = EntryKind::Template, .one = "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+', '')", .ret = "TEXT"},
     {.key = "RTRIM", .kind = EntryKind::Template, .one = "REGEXP_REPLACE({0}, '[ \\\\t\\\\r\\\\n]+$', '')", .ret = "TEXT"},
     {.key = "ABS", .kind = EntryKind::Template, .one = "ABS({0})", .ret = "NUM"},
+    {.key = "CANON", .kind = EntryKind::Template, .one = "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')", .ret = "TEXT"},
     {.key = "CEIL", .kind = EntryKind::Template, .one = "CEIL({0})", .ret = "NUM"},
     {.key = "FLOOR", .kind = EntryKind::Template, .one = "FLOOR({0})", .ret = "NUM"},
     {.key = "POWER", .kind = EntryKind::Template, .one = "POWER({0}, {1})", .ret = "NUM", .caveat = "power-float"},
     {.key = "LEFT", .kind = EntryKind::Template, .one = "LEFT({0}, {1})", .ret = "TEXT"},
     {.key = "RIGHT", .kind = EntryKind::Template, .one = "RIGHT({0}, {1})", .ret = "TEXT"},
-    {.key = "FIND", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d1_mariadb_funcs13, .ret = "NUM"},
+    {.key = "FIND", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d1_mariadb_funcs14, .ret = "NUM"},
     {.key = "REPLACE", .kind = EntryKind::Template, .one = "REPLACE({2}, {0}, {1})", .ret = "TEXT"},
     {.key = "SPLIT", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
     {.key = "BACKWARDS", .kind = EntryKind::Template, .one = "REVERSE({0})", .ret = "TEXT"},
@@ -341,8 +344,8 @@ constexpr Entry d1_mariadb_funcs[] = {
     {.key = "SIGN", .kind = EntryKind::Template, .one = "SIGN({0})", .ret = "NUM"},
     {.key = "TRUNC", .kind = EntryKind::Template, .one = "TRUNCATE({0}, 0)", .ret = "NUM"},
     {.key = "ROUND", .kind = EntryKind::Template, .one = "ROUND({0}, {1})", .ret = "NUM"},
-    {.key = "MIN", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d1_mariadb_funcs25, .ret = "NUM", .caveat = "numeric-scale"},
-    {.key = "MAX", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d1_mariadb_funcs26, .ret = "NUM", .caveat = "numeric-scale"},
+    {.key = "MIN", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d1_mariadb_funcs26, .ret = "NUM", .caveat = "numeric-scale"},
+    {.key = "MAX", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d1_mariadb_funcs27, .ret = "NUM", .caveat = "numeric-scale"},
     {.key = "ISNUM", .kind = EntryKind::Template, .one = "({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')", .ret = "BOOL"},
     {.key = "BLEN", .kind = EntryKind::Template, .one = "LENGTH({binaryCast:0})", .ret = "NUM"},
     {.key = "TO_UTF8", .kind = EntryKind::Template, .one = "CAST({0} AS BINARY)", .ret = "BIN"},
@@ -402,6 +405,7 @@ constexpr Lexical d2_mysql_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
     {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "true"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
+    {.key = "numericCastScale", .kind = LexKind::Text, .text = "10"},
 };
 constexpr Keyed d2_mysql_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
@@ -491,15 +495,15 @@ constexpr Keyed d2_mysql_funcs1[] = {
     {.key = "2", .value = {.present = true, .text = "SUBSTRING({0}, {1})"}},
     {.key = "3", .value = {.present = true, .text = "SUBSTRING({0}, {1}, {2})"}},
 };
-constexpr Keyed d2_mysql_funcs13[] = {
+constexpr Keyed d2_mysql_funcs14[] = {
     {.key = "2", .value = {.present = true, .text = "INSTR({1}, {0})"}},
     {.key = "3", .value = {.present = true, .text = "LOCATE({0}, {1}, {2})"}},
 };
-constexpr Keyed d2_mysql_funcs25[] = {
+constexpr Keyed d2_mysql_funcs26[] = {
     {.key = "1", .value = {.present = true, .text = "{0}"}},
     {.key = "*", .value = {.present = true, .text = "LEAST({*})"}},
 };
-constexpr Keyed d2_mysql_funcs26[] = {
+constexpr Keyed d2_mysql_funcs27[] = {
     {.key = "1", .value = {.present = true, .text = "{0}"}},
     {.key = "*", .value = {.present = true, .text = "GREATEST({*})"}},
 };
@@ -512,12 +516,13 @@ constexpr Entry d2_mysql_funcs[] = {
     {.key = "LTRIM", .kind = EntryKind::Template, .one = "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+', '')", .ret = "TEXT"},
     {.key = "RTRIM", .kind = EntryKind::Template, .one = "REGEXP_REPLACE({0}, '[ \\\\t\\\\r\\\\n]+$', '')", .ret = "TEXT"},
     {.key = "ABS", .kind = EntryKind::Template, .one = "ABS({0})", .ret = "NUM"},
+    {.key = "CANON", .kind = EntryKind::Template, .one = "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')", .ret = "TEXT"},
     {.key = "CEIL", .kind = EntryKind::Template, .one = "CEIL({0})", .ret = "NUM"},
     {.key = "FLOOR", .kind = EntryKind::Template, .one = "FLOOR({0})", .ret = "NUM"},
     {.key = "POWER", .kind = EntryKind::Template, .one = "POWER({0}, {1})", .ret = "NUM", .caveat = "power-float"},
     {.key = "LEFT", .kind = EntryKind::Template, .one = "LEFT({0}, {1})", .ret = "TEXT"},
     {.key = "RIGHT", .kind = EntryKind::Template, .one = "RIGHT({0}, {1})", .ret = "TEXT"},
-    {.key = "FIND", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d2_mysql_funcs13, .ret = "NUM"},
+    {.key = "FIND", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d2_mysql_funcs14, .ret = "NUM"},
     {.key = "REPLACE", .kind = EntryKind::Template, .one = "REPLACE({2}, {0}, {1})", .ret = "TEXT"},
     {.key = "SPLIT", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
     {.key = "BACKWARDS", .kind = EntryKind::Template, .one = "REVERSE({0})", .ret = "TEXT"},
@@ -529,8 +534,8 @@ constexpr Entry d2_mysql_funcs[] = {
     {.key = "SIGN", .kind = EntryKind::Template, .one = "SIGN({0})", .ret = "NUM"},
     {.key = "TRUNC", .kind = EntryKind::Template, .one = "TRUNCATE({0}, 0)", .ret = "NUM"},
     {.key = "ROUND", .kind = EntryKind::Template, .one = "ROUND({0}, {1})", .ret = "NUM"},
-    {.key = "MIN", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d2_mysql_funcs25, .ret = "NUM", .caveat = "numeric-scale"},
-    {.key = "MAX", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d2_mysql_funcs26, .ret = "NUM", .caveat = "numeric-scale"},
+    {.key = "MIN", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d2_mysql_funcs26, .ret = "NUM", .caveat = "numeric-scale"},
+    {.key = "MAX", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d2_mysql_funcs27, .ret = "NUM", .caveat = "numeric-scale"},
     {.key = "ISNUM", .kind = EntryKind::Template, .one = "({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')", .ret = "BOOL"},
     {.key = "BLEN", .kind = EntryKind::Template, .one = "LENGTH({binaryCast:0})", .ret = "NUM"},
     {.key = "TO_UTF8", .kind = EntryKind::Template, .one = "CAST({0} AS BINARY)", .ret = "BIN"},
@@ -590,6 +595,7 @@ constexpr Lexical d3_mysql_family_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS CHAR)"},
     {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "true"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
+    {.key = "numericCastScale", .kind = LexKind::Text, .text = "10"},
 };
 constexpr Keyed d3_mysql_family_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "CONCAT({0}, {1})"}},
@@ -679,15 +685,15 @@ constexpr Keyed d3_mysql_family_funcs1[] = {
     {.key = "2", .value = {.present = true, .text = "SUBSTRING({0}, {1})"}},
     {.key = "3", .value = {.present = true, .text = "SUBSTRING({0}, {1}, {2})"}},
 };
-constexpr Keyed d3_mysql_family_funcs13[] = {
+constexpr Keyed d3_mysql_family_funcs14[] = {
     {.key = "2", .value = {.present = true, .text = "INSTR({1}, {0})"}},
     {.key = "3", .value = {.present = true, .text = "LOCATE({0}, {1}, {2})"}},
 };
-constexpr Keyed d3_mysql_family_funcs25[] = {
+constexpr Keyed d3_mysql_family_funcs26[] = {
     {.key = "1", .value = {.present = true, .text = "{0}"}},
     {.key = "*", .value = {.present = true, .text = "LEAST({*})"}},
 };
-constexpr Keyed d3_mysql_family_funcs26[] = {
+constexpr Keyed d3_mysql_family_funcs27[] = {
     {.key = "1", .value = {.present = true, .text = "{0}"}},
     {.key = "*", .value = {.present = true, .text = "GREATEST({*})"}},
 };
@@ -700,12 +706,13 @@ constexpr Entry d3_mysql_family_funcs[] = {
     {.key = "LTRIM", .kind = EntryKind::Template, .one = "REGEXP_REPLACE({0}, '^[ \\\\t\\\\r\\\\n]+', '')", .ret = "TEXT"},
     {.key = "RTRIM", .kind = EntryKind::Template, .one = "REGEXP_REPLACE({0}, '[ \\\\t\\\\r\\\\n]+$', '')", .ret = "TEXT"},
     {.key = "ABS", .kind = EntryKind::Template, .one = "ABS({0})", .ret = "NUM"},
+    {.key = "CANON", .kind = EntryKind::Template, .one = "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')", .ret = "TEXT"},
     {.key = "CEIL", .kind = EntryKind::Template, .one = "CEIL({0})", .ret = "NUM"},
     {.key = "FLOOR", .kind = EntryKind::Template, .one = "FLOOR({0})", .ret = "NUM"},
     {.key = "POWER", .kind = EntryKind::Template, .one = "POWER({0}, {1})", .ret = "NUM", .caveat = "power-float"},
     {.key = "LEFT", .kind = EntryKind::Template, .one = "LEFT({0}, {1})", .ret = "TEXT"},
     {.key = "RIGHT", .kind = EntryKind::Template, .one = "RIGHT({0}, {1})", .ret = "TEXT"},
-    {.key = "FIND", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d3_mysql_family_funcs13, .ret = "NUM"},
+    {.key = "FIND", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d3_mysql_family_funcs14, .ret = "NUM"},
     {.key = "REPLACE", .kind = EntryKind::Template, .one = "REPLACE({2}, {0}, {1})", .ret = "TEXT"},
     {.key = "SPLIT", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "yields a list, and a SQL expression is a scalar"}},
     {.key = "BACKWARDS", .kind = EntryKind::Template, .one = "REVERSE({0})", .ret = "TEXT"},
@@ -717,8 +724,8 @@ constexpr Entry d3_mysql_family_funcs[] = {
     {.key = "SIGN", .kind = EntryKind::Template, .one = "SIGN({0})", .ret = "NUM"},
     {.key = "TRUNC", .kind = EntryKind::Template, .one = "TRUNCATE({0}, 0)", .ret = "NUM"},
     {.key = "ROUND", .kind = EntryKind::Template, .one = "ROUND({0}, {1})", .ret = "NUM"},
-    {.key = "MIN", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d3_mysql_family_funcs25, .ret = "NUM", .caveat = "numeric-scale"},
-    {.key = "MAX", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d3_mysql_family_funcs26, .ret = "NUM", .caveat = "numeric-scale"},
+    {.key = "MIN", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d3_mysql_family_funcs26, .ret = "NUM", .caveat = "numeric-scale"},
+    {.key = "MAX", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d3_mysql_family_funcs27, .ret = "NUM", .caveat = "numeric-scale"},
     {.key = "ISNUM", .kind = EntryKind::Template, .one = "({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')", .ret = "BOOL"},
     {.key = "BLEN", .kind = EntryKind::Template, .one = "LENGTH({binaryCast:0})", .ret = "NUM"},
     {.key = "TO_UTF8", .kind = EntryKind::Template, .one = "CAST({0} AS BINARY)", .ret = "BIN"},
@@ -875,6 +882,7 @@ constexpr Entry d4_postgresql_funcs[] = {
     {.key = "LTRIM", .kind = EntryKind::Template, .one = "ltrim({textCast:0}, E' \\t\\r\\n')", .ret = "TEXT"},
     {.key = "RTRIM", .kind = EntryKind::Template, .one = "rtrim({textCast:0}, E' \\t\\r\\n')", .ret = "TEXT"},
     {.key = "ABS", .kind = EntryKind::Template, .one = "abs({numericCast:0})", .ret = "NUM"},
+    {.key = "CANON", .kind = EntryKind::Template, .one = "trim_scale({numericCast:0})", .ret = "NUM"},
     {.key = "CEIL", .kind = EntryKind::Template, .one = "ceil({numericCast:0})", .ret = "NUM"},
     {.key = "FLOOR", .kind = EntryKind::Template, .one = "floor({numericCast:0})", .ret = "NUM"},
     {.key = "POWER", .kind = EntryKind::Template, .one = "power({numericCast:0}, {numericCast:1})", .ret = "NUM", .caveat = "numeric-scale"},
@@ -1049,6 +1057,7 @@ constexpr Entry d5_sqlite_funcs[] = {
     {.key = "LTRIM", .kind = EntryKind::Template, .one = "ltrim({0}, ' ' || char(9) || char(13) || char(10))", .ret = "TEXT"},
     {.key = "RTRIM", .kind = EntryKind::Template, .one = "rtrim({0}, ' ' || char(9) || char(13) || char(10))", .ret = "TEXT"},
     {.key = "ABS", .kind = EntryKind::Template, .one = "abs({0})", .ret = "NUM", .caveat = "decimal-float"},
+    {.key = "CANON", .kind = EntryKind::Template, .one = "(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT {numericCast:0} AS canon_n)))", .ret = "TEXT", .caveat = "decimal-float"},
     {.key = "CEIL", .kind = EntryKind::Template, .one = "ceil({0})", .ret = "NUM", .caveat = "decimal-float"},
     {.key = "FLOOR", .kind = EntryKind::Template, .one = "floor({0})", .ret = "NUM", .caveat = "decimal-float"},
     {.key = "POWER", .kind = EntryKind::Template, .one = "pow({0}, {1})", .ret = "NUM", .caveat = "power-float"},
@@ -1165,7 +1174,7 @@ constexpr Dialect DIALECTS[] = {
 // runtime would not, after which the hosts improvised differently. Improvising
 // is what code does when it has no rule; this is the rule, as data.
 
-constexpr std::string_view CAVEATS[] = {"concat-null", "decimal-float", "division-scale", "input-laxity", "length-units", "modulo-integer", "numeric-scale", "power-float", "regex-engine", "rounding-mode", "scale-limit", "text-collation", "trim-charset", "unicode-case"};
+constexpr std::string_view CAVEATS[] = {"concat-null", "decimal-float", "division-scale", "input-laxity", "length-units", "modulo-integer", "numeric-scale", "power-float", "regex-engine", "rounding-mode", "scale-limit", "text-collation", "text-order", "trim-charset", "unicode-case"};
 constexpr std::string_view RET_KINDS[] = {"BIN", "BOOL", "NUM", "TEXT", "UNKNOWN"};
 constexpr std::string_view TEMPLATE_KEYS[] = {"identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCharset", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder", "numericGuard"};
 constexpr Arity OP_ARITY[] = {
@@ -1206,6 +1215,7 @@ constexpr Arity FUNC_ARITY[] = {
     {.key = "BLEN", .min = 1, .max = 1},
     {.key = "BTL", .min = 1, .max = 1},
     {.key = "BUCKET", .min = 2, .max = 4},
+    {.key = "CANON", .min = 1, .max = 1},
     {.key = "CEIL", .min = 1, .max = 1},
     {.key = "CHAR", .min = 1, .max = 1},
     {.key = "COALESCE", .min = 1, .unbounded = true},
@@ -1338,6 +1348,7 @@ constexpr LexType LEX_TYPES[] = {
     {.key = "placeholder", .escapes = false},
     {.key = "numericGuard", .escapes = false},
     {.key = "sargablePrefilter", .escapes = false},
+    {.key = "numericCastScale", .escapes = false},
 };
 
 constexpr Rules RULES = {

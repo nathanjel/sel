@@ -47,5 +47,17 @@ $probe = function (string $label, string $source) use ($bindings, $b): void {
 $probe('sql', 'ORDERS .> FILTER(_["AMOUNT"] > 10) .> MAP(RECORD("id", _["ID"], "amount", _["AMOUNT"]))');
 $probe('hybrid', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> FILTER(_K > 1)');
 $probe('memory', 'A += 1; ORDERS .> TAKE(1)');
+// The canonical flag is public: an application (and php/bin/sqlo) reads it to
+// know the fragment promised a spelling, not only a value (SEL-0058).
+$fragmentProbe = function (string $label, string $dialect, string $source) use ($bindings, $b): void {
+    $f = Sql::translate(Sel::compile($source), $dialect, $bindings);
+    say("fragment.$label.kind", $f->kind);
+    say("fragment.$label.canonical", $b($f->canonical));
+    say("fragment.$label.caveats", implode(',', $f->caveats) ?: '-');
+};
+$fragmentProbe('canon.postgresql', 'postgresql', 'CANON(1.50)');
+$fragmentProbe('canon.mariadb', 'mariadb', 'CANON(1.50)');
+$fragmentProbe('canon.sqlite', 'sqlite', 'CANON(1.50)');
+$fragmentProbe('abs.postgresql', 'postgresql', 'ABS(1.50)');
 
 echo implode("\n", $out), "\n";

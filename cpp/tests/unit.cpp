@@ -495,36 +495,38 @@ void test_relational_optimizations() {
     return out;
   };
 
+  // The physical tree never moves a FILTER across a LINK (spec §7.4;
+  // SEL-0054): a FILTER moved onto a side renumbered the joined rows, skipped
+  // the join keys of the rows it dropped, and read relation names under
+  // explicit binders. The join tests conjuncts itself, at run time, where it
+  // can prove that is the same.
   const auto fixed_point = optimized_steps(
       "ORDERS .> FILTER(_[\"status\"] $== \"ACTIVE\")"
       " .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
       " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\")");
-  // The pushed (tentative) FILTER does not fuse with the as-written FILTER
-  // already before the LINK, and the FILTER after the LINK is retained with
-  // its whole predicate, marked so the next pass leaves it (SEL-0051).
-  selt::ok(fixed_point.size() == 4 && fixed_point[0]->s == "FILTER" &&
-               fixed_point[1]->s == "FILTER" && fixed_point[2]->s == "LINK" &&
-               fixed_point[3]->s == "FILTER" &&
-               !fixed_point[0]->items[1]->tentative && fixed_point[1]->items[1]->tentative &&
-               fixed_point[3]->items[1]->pushed_down,
-           "join pushdown returns to the logical fixed point");
-
-  // Only the leading run of conjuncts naming one side is pushed; a customer
-  // conjunct after an order conjunct stays above the join as `remaining`.
-  const auto mixed = optimized_steps(
-      "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
-      " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\" AND _[\"customers\"][\"country\"] $== \"DE\")");
-  selt::ok(mixed.size() == 3 && mixed[0]->s == "FILTER" && mixed[0]->items[1]->tentative &&
-               mixed[1]->s == "LINK" && mixed[1]->items[1]->t == NT::Var &&
-               mixed[2]->s == "FILTER" && mixed[2]->items[1]->pushed_down &&
-               mixed[2]->items[1]->remaining && mixed[2]->items[1]->remaining->s == "$==",
-           "a conjunct after the pushed run stays above the join as the remaining body");
-  const auto whole = optimized_steps(
-      "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
-      " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\")");
-  selt::ok(whole.size() == 3 && whole[2]->items[1]->remaining &&
-               whole[2]->items[1]->remaining->t == NT::Bool && whole[2]->items[1]->remaining->b,
-           "a wholly pushed predicate leaves TRUE as the remaining body");
+  selt::ok(fixed_point.size() == 3 && fixed_point[0]->s == "FILTER" &&
+               fixed_point[1]->s == "LINK" && fixed_point[2]->s == "FILTER",
+           "a FILTER before a LINK stays before it, one after stays after");
+  for (const char* filter : {
+           " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\" AND _[\"customers\"][\"country\"] $== \"DE\")",
+           " .> FILTER(_[\"customers\"][\"country\"] $== \"DE\")",
+           " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\")"}) {
+    const auto steps = optimized_steps(
+        std::string("ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])") + filter);
+    selt::ok(steps.size() == 2 && steps[0]->s == "LINK" && steps[0]->items[1]->t == NT::Var &&
+                 steps[1]->s == "FILTER",
+             std::string("no FILTER crosses a LINK:") + filter);
+  }
+  {
+    // Whether a FILTER's keys can be seen, for the join's pre-filter: a step
+    // that renumbers without reading `_K` hides them; the end does not.
+    const std::string join = "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
+                             " .> FILTER(_[\"orders\"][\"status\"] $== \"A\")";
+    const auto hidden = optimized_steps(join + " .> MAP(1)");
+    const auto observed = optimized_steps(join);
+    selt::ok(hidden[1]->items[1]->keys_unobserved && !observed[1]->items[1]->keys_unobserved,
+             "a FILTER followed by a MAP has unobserved keys, one ending the pipeline observed ones");
+  }
 
   const auto external_root = optimized_steps(
       "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])"
@@ -540,29 +542,8 @@ void test_relational_optimizations() {
                group_key[1]->s == "FILTER",
            "_K is an unknown join dependency");
 
-  // Only a read through the joined row's key names a side (spec §7.4): the
-  // binders are scoped to the predicate, so `O["x"]` after the LINK is
-  // E_UNDEF_VAR as written and is left where it is, not pushed into a side.
-  const auto through_key = optimized_steps(
-      "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
-      " .> FILTER(_[\"O\"][\"status\"] $== \"ACTIVE\")");
-  selt::ok(through_key.size() == 3 && through_key[0]->s == "FILTER" &&
-               through_key[1]->s == "LINK" && through_key[2]->s == "FILTER" &&
-               through_key[0]->items[1]->tentative && !through_key[2]->items[1]->tentative &&
-               through_key[2]->items[1]->pushed_down,
-           "a read through the joined row's left key pushes into the left side");
-
-  const auto through_right_key = optimized_steps(
-      "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
-      " .> FILTER(_[\"C\"][\"name\"] $== \"x\")");
-  selt::ok(through_right_key.size() == 2 && through_right_key[0]->s == "LINK" &&
-               through_right_key[0]->items.size() >= 2 &&
-               through_right_key[0]->items[1]->t == NT::Call &&
-               through_right_key[0]->items[1]->s == "FILTER" &&
-               through_right_key[0]->items[1]->items[1]->tentative &&
-               through_right_key[1]->s == "FILTER" && through_right_key[1]->items[1]->pushed_down,
-           "a read through the joined row's right key pushes into the right side");
-
+  // The binders are scoped to the predicate (spec §7.4), so `O["x"]` after
+  // the LINK is E_UNDEF_VAR as written and is left where it is.
   const auto bare_left_binder = optimized_steps(
       "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"])"
       " .> FILTER(O[\"status\"] $== \"ACTIVE\")");

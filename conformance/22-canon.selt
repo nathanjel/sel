@@ -1,0 +1,214 @@
+% CANON(x): the canonical form of a number -- §4.1's, with the fraction's
+% trailing zeros and a bare point removed. Identity in SEL is structural (§5.4):
+% DEDUPE, BUCKET, EQL, IN and index keys see 1, 1.0 and 1.00 as three values.
+% CANON is how a rule says "compare these by value": the one spelling every
+% equal number shares, so structural identity becomes numeric identity.
+
+### name: canon.drops-trailing-zeros
+--- note
+The fraction's trailing zeros go: the canonical form of a number is the one
+spelling every equal number shares (§4.1, §7.6).
+--- source
+CANON(1.50)
+--- expect
+num 1.5
+===
+
+### name: canon.drops-a-bare-point
+--- note
+A fraction of zeros goes with its point.
+--- source
+CANON(2.000)
+--- expect
+num 2
+===
+
+### name: canon.keeps-an-integer-s-zeros
+--- note
+Only a fraction's zeros are trailing zeros: 100 is not 1.
+--- source
+CANON(100)
+--- expect
+num 100
+===
+
+### name: canon.integer-with-a-zero-fraction
+--- source
+CANON(100.00)
+--- expect
+num 100
+===
+
+### name: canon.keeps-inner-zeros
+--- source
+CANON(10.010) & " " & CANON(1.0203)
+--- expect
+text "10.01 1.0203"
+===
+
+### name: canon.zero
+--- source
+CANON(0.000)
+--- expect
+num 0
+===
+
+### name: canon.negative-zero-text
+--- note
+A zero never carries a minus sign (§4.1), whatever the text said.
+--- source
+CANON("-0.0")
+--- expect
+num 0
+===
+
+### name: canon.negative
+--- source
+CANON(-1.10)
+--- expect
+num -1.1
+===
+
+### name: canon.leading-zeros-of-text
+--- note
+Text that is a number gives that number's canonical form, leading zeros
+and all.
+--- source
+CANON("007.50") & " " & CANON("-007")
+--- expect
+text "7.5 -7"
+===
+
+### name: canon.long
+--- note
+No length limit: the digits are the decimal core's, not a server's type.
+--- source
+CANON("123456789012345678901234567890.123000")
+--- expect
+num 123456789012345678901234567890.123
+===
+
+### name: canon.small
+--- note
+Nor a scale limit.
+--- source
+CANON(0.00000000000010)
+--- expect
+num 0.0000000000001
+===
+
+### name: canon.idempotent
+--- source
+CANON(CANON(2.50))
+--- expect
+num 2.5
+===
+
+### name: canon.of-sums-and-products
+--- note
+Equal results of different computations get one spelling: 0.5 + 0.5 is 1.0
+and 2 * 0.50 is 1.00 (§4.2), and both are 1 here.
+--- source
+CANON(0.5 + 0.5) & " " & CANON(2 * 0.50)
+--- expect
+text "1 1"
+===
+
+### name: canon.of-a-quotient
+--- note
+A quotient already has its minimal scale when exact (§4.3); an inexact one
+keeps its ten digits unless they end in zeros.
+--- source
+CANON(1 / 4) & " " & CANON(1 / 3) & " " & CANON(1 / 8)
+--- expect
+text "0.25 0.3333333333 0.125"
+===
+
+### name: canon.result-is-a-number
+--- note
+The result is an ordinary number, with the scale of its canonical form:
+2.5 * 2 has scale 1 (§4.2).
+--- source
+CANON(2.50) * 2
+--- expect
+num 5.0
+===
+
+### name: canon.first-child-of-a-list
+--- note
+The scalar context of every numeric argument (§3.2).
+--- source
+CANON(LIST(2.50, 9))
+--- expect
+num 2.5
+===
+
+### name: canon.null
+--- source
+CANON(NULL)
+--- expect
+error E_NULL at 1:7
+===
+
+### name: canon.dedupe-by-value
+--- note
+The reason CANON exists: DEDUPE compares structurally (§5.4), so equal
+numbers spelled differently are different elements. Through CANON they are
+one.
+--- source
+LIST(0.5 + 0.5, 4 / 4, 3 - 2, 1.00) .> MAP(CANON(_)) .> DEDUPE()
+--- expect
+tree -{"1"=t"1"}
+===
+
+### name: canon.dedupe-without-it
+--- note
+The contrast: the same four numbers, three spellings, three elements.
+--- source
+LIST(0.5 + 0.5, 4 / 4, 3 - 2, 1.00) .> DEDUPE()
+--- expect
+tree -{"1"=t"1.0", "2"=t"1", "3"=t"1.00"}
+===
+
+### name: canon.bucket-by-value
+--- note
+A group key through CANON groups equal numbers together, and _K is the
+canonical spelling.
+--- source
+LIST(RECORD("p", 0.5 + 0.5), RECORD("p", 4 / 4), RECORD("p", 1.50)) .> BUCKET(CANON(_["p"]), RECORD("k", _K, "n", COUNT(_)))
+--- expect
+tree -{"1"=-{"k"=t"1", "n"=t"2"}, "2"=-{"k"=t"1.5", "n"=t"1"}}
+===
+
+### name: canon.eql
+--- source
+CANON(1.0) EQL CANON(1)
+--- expect
+bool TRUE
+===
+
+### name: canon.in
+--- source
+CANON(1.0) IN LIST(1, 2)
+--- expect
+bool TRUE
+===
+
+### name: canon.index-key
+--- note
+An index key is the scalar verbatim (§3.3): 1.00 reads key "1.00", and
+CANON(1.00) reads "1".
+--- source
+A = RECORD("1", "one"); A[CANON(1.00)]
+--- expect
+text "one"
+===
+
+### name: canon.sort-is-numeric
+--- note
+CANON's results are numbers and sort as numbers.
+--- source
+LIST(10, 9.0, 100.00) .> MAP(CANON(_)) .> SORT()
+--- expect
+tree -{"1"=t"9", "2"=t"10", "3"=t"100"}
+===

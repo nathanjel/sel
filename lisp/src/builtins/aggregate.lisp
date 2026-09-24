@@ -49,11 +49,9 @@
 
 ;;; Runs VISIT per element with the binder and _K in scope. A non-NIL return from
 ;;; VISIT stops the walk and becomes the result.
-(defun aggregate-walk (a ctx visit &optional (pass-key nil) (tentative nil) (body-override nil))
-  "Runs VISIT per element with the binder and _K in scope. A TENTATIVE body (a
-conjunct the physical optimizer moved under a LINK, SEL-0051) that raises does
-not decide the element: only FILTER walks tentatively, and for it a raise means
-keep -- the visitor sees T and the FILTER after the LINK decides."
+(defun aggregate-walk (a ctx visit &optional (pass-key nil) (body-override nil))
+  "Runs VISIT per element with the binder and _K in scope; BODY-OVERRIDE, when
+given, is evaluated in place of the written body."
   (let* ((three (= (args-count a) 3))
          (binder (if three (args-symbol a 1) "_"))
          (body (or body-override (args-node a (if three 2 1))))
@@ -65,13 +63,7 @@ keep -- the visitor sees T and the FILTER after the LINK decides."
              (k-cell (when needs-k (cons "_K" nil)))
              (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
         (ctx-push-frame ctx frame)
-        (flet ((eval-body ()
-                 (if tentative
-                     (handler-case (args-eval a body)
-                       (sel-error ()
-                         (incf (context-tentative-kept ctx))
-                         (make-bool t)))
-                     (args-eval a body))))
+        (flet ((eval-body () (args-eval a body)))
           (declare (inline eval-body))
         (unwind-protect
              (cond
@@ -145,87 +137,75 @@ keep -- the visitor sees T and the FILTER after the LINK decides."
 (define-builtin "FILTER" 2 3
   (lambda (a ctx)
    (block filter-body
+    ;; Over a join, the conjuncts are offered to the LINK, which tests what
+    ;; it can on the rows it joins (SEL-0052, SEL-0054): this FILTER's first
+    ;; -- it runs before the FILTER that handed the rest down -- then the
+    ;; handed ones. Deep drops, below the join directly under this FILTER,
+    ;; change its keys, so they are allowed only where nothing observes them
+    ;; (KEYS-UNOBSERVED, stamped by the physical optimiser). A stage is
+    ;; (binder jconjs above): ABOVE counts the joins between its FILTER and
+    ;; the join testing it.
     (let* ((pairs '())
            (written (args-node a (1- (args-count a))))
-           (tentative (node-tentative written))
            (handed (prog1 (context-join-prefilter ctx) (setf (context-join-prefilter ctx) nil)))
-           (src (args-node a 0)))
-      ;; Over a join, the conjuncts are offered to the LINK, which pre-applies
-      ;; what it can to its left rows (SEL-0052): this FILTER's first -- it
-      ;; runs before the FILTER that handed the rest down -- then the handed
-      ;; ones. Deep drops, below the join directly under this FILTER, change
-      ;; its keys, so they are allowed only where nothing observes them
-      ;; (KEYS-UNOBSERVED, stamped by the physical optimiser).
+           (src (args-node a 0))
+           (own nil)
+           (over-join nil))
       (when (and src (eq (node-kind src) :call) (member (node-s src) '("LINK" "LINK_LEFT") :test #'string=))
-        (let* ((binder (if (= (args-count a) 3) (args-symbol a 1) "_"))
-               (own (leading-field-conjuncts written binder)))
-          ;; Conjuncts the physical optimiser already pushed under the join (a
-          ;; tentative FILTER below, SEL-0051) held on every row the join sees
-          ;; unless one kept a row on an error; the join checks that and skips
-          ;; them.
-          (when (node-pushed-down written)
-            (let ((rem (node-remaining written))
-                  (kept '()))
-              (unless (and (eq (node-kind rem) :bool) (node-b rem))
-                (let ((n rem))
-                  (loop while (and n (eq (node-kind n) :bin) (string= (node-s n) "AND"))
-                        do (push (node-r n) kept)
-                           (setf n (node-l n)))
-                  (push n kept)))
-              (dolist (c own)
-                (unless (member (jconj-node c) kept :test #'eq)
-                  (setf (jconj-pushed c) t)))))
-          ;; A first conjunct that is neither a field test nor total nor
-          ;; pushed ends every walk before it starts: hand nothing, gather
-          ;; nothing.
+        (let ((binder (if (= (args-count a) 3) (args-symbol a 1) "_")))
+          (setf own (leading-field-conjuncts written binder)
+                over-join t)
+          ;; A first conjunct that is neither a field test nor total ends
+          ;; every walk before it starts: hand nothing, gather nothing.
           (let* ((blocked (let ((c (first own)))
-                            (and c (not (jconj-field-only c)) (not (jconj-has-total c)) (not (jconj-pushed c)))))
+                            (and c (not (jconj-field-only c)) (not (jconj-has-total c)))))
                  (stages (unless blocked
-                           (append (when (or handed (notevery #'jconj-pushed own)) (list (cons binder own)))
-                                   (and handed (join-prefilter-stages handed))))))
+                           (cons (list binder own 0)
+                                 (and handed (join-prefilter-stages handed))))))
             (when stages
               (setf (context-join-prefilter ctx)
                     (make-join-prefilter :stages stages
                                          :deep (if handed t (and (node-keys-unobserved written) t))
                                          :above (and handed (join-prefilter-above handed))
                                          :obligations (and handed (join-prefilter-obligations handed))))))))
-      (let* (;; A predicate whose leading conjuncts were pushed under the LINK
-             ;; below: when no tentative body kept a row on an error while the
-             ;; source ran, every row here passed them, and only the remaining
-             ;; conjuncts are evaluated (TRUE when there are none); otherwise
-             ;; the whole predicate, as written, decides -- and raises -- in
-             ;; the source's order.
-             (kept-before (context-tentative-kept ctx))
-             (body-override (progn
-                              (unwind-protect (args-val a 0)
-                                (setf (context-join-prefilter ctx) nil))
-                              ;; The join's report goes up as it is.
-                              (let ((report (prog1 (context-join-prefilter-report ctx)
-                                              (setf (context-join-prefilter-report ctx) nil))))
-                                (when (and report handed)
-                                  (setf (context-join-prefilter-report ctx) report)))
-                              (when (and (node-pushed-down written)
-                                         (= (context-tentative-kept ctx) kept-before))
-                                (node-remaining written)))))
-      ;; Nothing remains: every row of the join below passed, and the join
-      ;; built a fresh list this FILTER would only copy.
-      (when (and body-override (eq (node-kind body-override) :bool) (node-b body-override))
-        (return-from filter-body (args-val a 0)))
-      (aggregate-walk a ctx
-                      (lambda (r key item body)
-                        (when (if tentative
-                                  (handler-case (as-bool r (node-pos body))
-                                    (sel-error ()
-                                      (incf (context-tentative-kept ctx))
-                                      t))
-                                  (as-bool r (node-pos body)))
-                          (push (cons key item) pairs))
-                        nil)
-                      t tentative body-override)
-      (if (null pairs)
-          (%make-value :none nil nil t)
-          (let ((entries (nreverse pairs)))
-            (%value-with-children :none nil entries t)))))))
+      (unwind-protect (args-val a 0)
+        (setf (context-join-prefilter ctx) nil))
+      ;; The join's report -- which conjuncts every row that came up has
+      ;; passed, whether a row was kept on an error, and whether any row was
+      ;; dropped -- goes up as it is.
+      (let* ((report (prog1 (context-join-prefilter-report ctx)
+                       (setf (context-join-prefilter-report ctx) nil)))
+             ;; The conjuncts of this FILTER the join below applied held on
+             ;; every row it built, unless it kept a row on an error: then
+             ;; they are TRUE there, raise nowhere, and only the rest is
+             ;; evaluated, in the source's order (with none left, the join's
+             ;; list is the FILTER's result as it is).
+             (body-override
+               (when (and over-join report (not (join-report-errored report))
+                          (some (lambda (c) (gethash (jconj-node c) (join-report-applied report))) own))
+                 (let ((rest (remove-if (lambda (c) (gethash (jconj-node c) (join-report-applied report))) own)))
+                   (when (null rest)
+                     (when handed (setf (context-join-prefilter-report ctx) report))
+                     (return-from filter-body (args-val a 0)))
+                   (let ((body (jconj-node (first rest))))
+                     (dolist (c (rest rest) body)
+                       (let ((and-node (make-node :bin (node-pos body))))
+                         (setf (node-s and-node) "AND"
+                               (node-l and-node) body
+                               (node-r and-node) (jconj-node c)
+                               body and-node))))))))
+        (when (and report handed)
+          (setf (context-join-prefilter-report ctx) report))
+        (aggregate-walk a ctx
+                        (lambda (r key item body)
+                          (when (as-bool r (node-pos body))
+                            (push (cons key item) pairs))
+                          nil)
+                        t body-override)
+        (if (null pairs)
+            (%make-value :none nil nil t)
+            (let ((entries (nreverse pairs)))
+              (%value-with-children :none nil entries t)))))))
   :lazy t :binds t)
 
 (define-builtin "SUM" 2 3

@@ -276,6 +276,30 @@ bool constant_call(const SNode& n, const std::set<std::string>& bound) {
 
 bool is_binder_name(const Node& n) { return is_binder_name_impl(n.t, n.grouped); }
 
+// Whether the node is an IF or COND whose every result is a text literal -- or,
+// in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
+// chose byte for byte, so its identity is SEL's; a number it can re-spell
+// (MariaDB types `CASE ... THEN 1 ELSE 1.0` as DECIMAL(2,1)), and a column or a
+// computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
+// a text literal too.
+static bool text_literal_results(const SNodePtr& n, int depth = 0) {
+  using T = SNode::T;
+  if (!n || depth >= 180 || n->t() != T::Call || (n->s() != "IF" && n->s() != "COND")) return false;
+  const auto& args = n->kids();
+  std::vector<SNodePtr> results;
+  if (n->s() == "IF") {
+    for (size_t i = 1; i < args.size(); ++i) results.push_back(args[i]);
+  } else {
+    if (args.size() < 3 || args.size() % 2 == 0) return false;
+    for (size_t i = 1; i < args.size(); i += 2) results.push_back(args[i]);
+    results.push_back(args.back());
+  }
+  for (const auto& r : results) {
+    if (!r || (r->t() != T::Text && !text_literal_results(r, depth + 1))) return false;
+  }
+  return true;
+}
+
 static bool identity_projection(const SNodePtr& n, int depth = 0) {
   if (!n || depth >= 180) return false;
   using T = SNode::T;
@@ -284,6 +308,11 @@ static bool identity_projection(const SNodePtr& n, int depth = 0) {
   if (n->t() == T::Index) return args.size() == 2 && identity_projection(args[0], depth + 1) && identity_projection(args[1], depth + 1);
   if (n->t() == T::Call) {
     if (n->s() == "COUNT" || n->s() == "LEN" || n->s() == "BLEN") return true;
+    // One spelling per value (§7.6): whatever computed the argument, the
+    // canonical form's identity is its value's, which SQL computes exactly
+    // wherever the translation does not declare otherwise (a caveat).
+    if (n->s() == "CANON") return true;
+    if (text_literal_results(n, depth)) return true;
     if (n->s() == "RECORD") {
       if (args.size() % 2) return false;
       for (size_t i = 1; i < args.size(); i += 2) if (!identity_projection(args[i], depth + 1)) return false;
@@ -305,6 +334,12 @@ static IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
     return a[0]->t() == T::Var ? IdentityInputs{false, {a[1]->s()}} : identity_inputs(a[0], depth + 1);
   }
   if (n->t() == T::Call && (n->s() == "COUNT" || n->s() == "LEN" || n->s() == "BLEN")) return {};
+  // The canonical form does not depend on how its argument is spelled, so no
+  // field it reads needs its identity kept upstream.
+  if (n->t() == T::Call && n->s() == "CANON") return {};
+  // The literal a conditional chose does not depend on how any field it tests
+  // is spelled.
+  if (text_literal_results(n, depth)) return {};
   if (n->t() == T::List || (n->t() == T::Call && (n->s() == "LIST" || n->s() == "RECORD"))) {
     IdentityInputs out;
     bool record = n->t() == T::Call && n->s() == "RECORD";
@@ -409,6 +444,20 @@ void require_numeric(const SNode& n, sel::Value& root) {
     // the other hosts write `evalNode(n, ctx)->asDecimal(n.pos)` and this is
     // that line. sel_ast.hpp says why the C++ spelling is a free function.
     require_number(Program("", node).run(root), n.pos());
+  } catch (const SelError& e) {
+    refuse_as_sel(e, n);
+  }
+}
+
+std::int32_t constant_scale(const SNode& n, sel::Value& root) {
+  const NodePtr node = n.to_node();
+  if (!node) return 0;   // unreachable: is_constant refuses anything with a clist
+  try {
+    const Value v = Program("", node).run(root);
+    // require_number is the operators' own coercion, and it leaves the parsed
+    // decimal on the scalar it read -- which is where the scale is.
+    require_number(v, n.pos());
+    return v.scalar_source(n.pos()).dec_ref().scale;
   } catch (const SelError& e) {
     refuse_as_sel(e, n);
   }

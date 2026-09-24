@@ -134,6 +134,17 @@ function parse_selo(string $text, string $file): array
  *
  * Returns null when they agree, else a description of how they differ.
  */
+/**
+ * The kind a fragment's answer is compared in. A canonical number (CANON,
+ * spec §7.6) promised its spelling, not only its value: compared as a decimal,
+ * a PostgreSQL CANON that answered 1.50 would pass as 1.5, and the spelling is
+ * the whole of what CANON is for.
+ */
+function comparison_kind(Fragment $frag): string
+{
+    return $frag->canonical ? 'TEXT' : $frag->kind;
+}
+
 function compare(Value $sel, $db, string $kind): ?string
 {
     if ($db === null) {
@@ -384,7 +395,7 @@ function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label
                 continue;
             }
 
-            $why = compare($sel, $db, $frag->kind);
+            $why = compare($sel, $db, comparison_kind($frag));
             if ($why === null) {
                 if ($mode === 'params') {
                     $stats['ok']++;
@@ -735,6 +746,7 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
     $bad = [];
     $ok = 0;
     $refused = 0;
+    $witnessed = 0;
     foreach ($spec['statements'] as $case) {
         $mustRefuse = $case['refuse'][$dialect] ?? null;
         try {
@@ -755,6 +767,19 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
         }
         if ($mustRefuse !== null) {
             $bad[] = [$case['name'], '', "translated, where the corpus expects {$mustRefuse} on {$dialect}"];
+            continue;
+        }
+        // A statement may name a caveat -- for every dialect, or per dialect --
+        // and is then a WITNESS for it: the fragment must carry the caveat, and
+        // SEL and the server must actually differ. A declared difference nobody
+        // can produce is a caveat that silences checks for nothing (the same
+        // symmetry run_expressions demands of the map's own caveats).
+        $mustDiffer = is_array($case['caveat'] ?? null)
+            ? ($case['caveat'][$dialect] ?? null)
+            : ($case['caveat'] ?? null);
+        if ($mustDiffer !== null && !in_array($mustDiffer, $frag->caveats, true)) {
+            $bad[] = [$case['name'], $frag->asStatement(), "the corpus declares `{$mustDiffer}` here and the "
+                . 'fragment carries [' . implode(' ', $frag->caveats) . ']'];
             continue;
         }
         $statement = $frag->asStatement();
@@ -789,7 +814,25 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
             sort($got);
             sort($parameterGot);
         }
-        if ($got !== $want || $parameterGot !== $want) {
+        if ($parameterGot !== $got) {
+            $bad[] = [$case['name'], $statement,
+                'the inline and the prepared statement disagree: DB=' . json_encode($got)
+                . "\n        PARAMS=" . json_encode($parameterGot)];
+            continue;
+        }
+        if ($mustDiffer !== null) {
+            if ($got === $want) {
+                $bad[] = [$case['name'], $statement, "declares `{$mustDiffer}` and SEL and the server agree: "
+                    . 'a caveat nothing witnesses; ' . json_encode($want)];
+                continue;
+            }
+            $witnessed++;
+            if ($verbose) {
+                printf("  caveat   %-56s [%s]\n", $case['name'], $mustDiffer);
+            }
+            continue;
+        }
+        if ($got !== $want) {
             $bad[] = [$case['name'], $statement,
                 'SEL=' . json_encode($want) . "\n        DB=" . json_encode($got)
                 . "\n        PARAMS=" . json_encode($parameterGot)];
@@ -804,7 +847,8 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
     foreach ($bad as [$name, $statement, $why]) {
         printf("DIFFER  %s\n        %s\n        %s\n", $name, $statement, $why);
     }
-    printf("{$label}statements: %d agree, %d differ, %d refused\n", $ok, count($bad), $refused);
+    printf("{$label}statements: %d agree, %d differ, %d refused, %d witness a declared caveat\n",
+        $ok, count($bad), $refused, $witnessed);
     return ['failed' => count($bad)];
 }
 
@@ -1022,7 +1066,7 @@ function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose, stri
                 break;
             }
 
-            $why = compare($sel, $db, $frag->kind);
+            $why = compare($sel, $db, comparison_kind($frag));
             if ($why === null) {
                 continue;
             }

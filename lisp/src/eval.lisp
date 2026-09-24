@@ -11,14 +11,10 @@
   ;; one element, pushed by the aggregates and popped again afterwards.
   (frames nil :type list)
   (depth 0 :type fixnum)
-  ;; Bumped by a tentative FILTER body (a conjunct pushed under a LINK) each
-  ;; time it keeps a row it raised on; the FILTER above compares it around
-  ;; its source's evaluation to know whether the pushed conjuncts held on
-  ;; every row it sees (SEL-0051).
-  (tentative-kept 0 :type fixnum)
   ;; A FILTER over a LINK hands the join its conjuncts here, a JOIN-PREFILTER;
-  ;; the join reports back which ones every row it emitted has passed, a
-  ;; JOIN-REPORT (builtins/structure.lisp, DO-LINK; SEL-0052).
+  ;; the join reports back which ones every row it emitted has passed, whether
+  ;; it kept a row on an error and whether it dropped any, a JOIN-REPORT
+  ;; (builtins/structure.lisp, DO-LINK; SEL-0052, SEL-0054).
   (join-prefilter nil)
   (join-prefilter-report nil))
 

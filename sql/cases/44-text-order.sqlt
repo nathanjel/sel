@@ -1,0 +1,239 @@
+% text-order on every sort by a text or untyped key (SEL-0060).
+%
+% SEL sorts number-shaped text as numbers and other text by its bytes (the
+% comparison every sort uses); SQL sorts a text key by its bytes throughout. A
+% text column holding "10", "9" and "100" sorts 9, 10, 100 in SEL and
+% 10, 100, 9 on MariaDB 11.8 (sql/oracle/statements.json witnesses it on every
+% server). No ORDER BY can reproduce SEL's comparison for text that may or may
+% not look numeric, so the difference is declared rather than hidden: text-order
+% on the fragment, fatal under strict, so the planner sorts in memory there. A
+% key that is a number -- a NUM column, arithmetic, a numeric CANON -- sorts
+% as SEL sorts it and carries nothing.
+
+### name: order.postgresql.text-key-is-translated
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> SORT_BY(_["t"])
+--- expect
+SELECT * FROM "r" ORDER BY CAST("t" AS TEXT) COLLATE "C" ASC
+===
+
+### name: order.postgresql.text-key-is-refused-under-strict
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(_["t"])
+--- error
+E_SQL_UNSUPPORTED 1:15
+===
+
+### name: order.postgresql.num-key-is-exact
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(_["n"])
+--- expect
+SELECT * FROM "r" ORDER BY "n" ASC
+===
+
+### name: order.mariadb.text-key-is-translated
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> SORT_BY(_["t"])
+--- expect
+SELECT * FROM `r` ORDER BY CAST(`t` AS CHAR) COLLATE utf8mb4_nopad_bin ASC
+===
+
+### name: order.mariadb.text-key-is-refused-under-strict
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(_["t"])
+--- error
+E_SQL_UNSUPPORTED 1:15
+===
+
+### name: order.mariadb.num-key-is-exact
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(_["n"])
+--- expect
+SELECT * FROM `r` ORDER BY `n` ASC
+===
+
+### name: order.sqlite.text-key-is-translated
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> SORT_BY(_["t"])
+--- expect
+SELECT * FROM "r" ORDER BY CAST("t" AS TEXT) COLLATE BINARY ASC
+===
+
+### name: order.sqlite.text-key-is-refused-under-strict
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(_["t"])
+--- error
+E_SQL_UNSUPPORTED 1:15
+===
+
+### name: order.sqlite.num-key-is-exact
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> SORT_BY(_["n"])
+--- expect
+SELECT * FROM "r" ORDER BY "n" ASC
+===
+
+### name: order.mariadb.untyped-key-is-refused-under-strict
+--- note
+An untyped column is whatever the server holds; text there sorts by its
+bytes as a declared one does.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "U": {"kind": "column", "column": "u"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(_["u"])
+--- error
+E_SQL_UNSUPPORTED 1:15
+===
+
+### name: order.mariadb.computed-text-key-is-refused-under-strict
+--- note
+A computed text key is text all the same: "10" and "9" sort as numbers in
+SEL whatever made them.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(LEFT(_["t"], 5))
+--- error
+E_SQL_UNSUPPORTED 1:14
+===
+
+### name: order.mariadb.arithmetic-key-is-exact
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(_["n"] + 2)
+--- expect
+SELECT * FROM `r` ORDER BY (`n` + 2) ASC
+===
+
+### name: order.mariadb.a-text-group-key-is-refused-under-strict
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> BUCKET(_["t"], RECORD("k", _K, "c", COUNT(_))) .> SORT_BY(_["k"])
+--- error
+E_SQL_UNSUPPORTED 1:65
+===
+
+### name: order.mariadb.a-numeric-group-key-is-exact
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> BUCKET(_["n"], RECORD("k", _K, "c", COUNT(_))) .> SORT_BY(_["k"])
+--- expect
+SELECT MIN(`n`) AS `k`, COUNT(*) AS `c` FROM `r` GROUP BY CAST(`n` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY MIN(`n`) ASC
+===
+
+### name: plan.order.strict-sorts-text-in-memory.mariadb
+--- note
+Under strict the text sort is refused, and the planner keeps it in memory
+over the rows the SQL filtered.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- source
+R .> FILTER(_["n"] > 1) .> SORT_BY(_["t"])
+--- plan
+hybrid
+--- tables
+r
+--- expect
+SELECT * FROM `r` WHERE (`n` > 1)
+===

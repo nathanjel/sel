@@ -57,9 +57,22 @@ def probe(label, source):
     say(f'plan.{label}.selected.member', 'present' if plan.selected_member is not None else '-')
 
 
+def fragment_probe(label, dialect, source):
+    f = Sql.translate(sel.compile(source), dialect, BINDINGS)
+    say(f'fragment.{label}.kind', f.kind)
+    say(f'fragment.{label}.canonical', b(f.canonical))
+    say(f'fragment.{label}.caveats', ','.join(f.caveats) or '-')
+
+
 probe('sql', 'ORDERS .> FILTER(_["AMOUNT"] > 10) .> MAP(RECORD("id", _["ID"], "amount", _["AMOUNT"]))')
 probe('hybrid', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> FILTER(_K > 1)')
 probe('memory', 'A += 1; ORDERS .> TAKE(1)')
+# The canonical flag is public: an application (and the SQL oracle) reads it
+# to know the fragment promised a spelling, not only a value (SEL-0058).
+fragment_probe('canon.postgresql', 'postgresql', 'CANON(1.50)')
+fragment_probe('canon.mariadb', 'mariadb', 'CANON(1.50)')
+fragment_probe('canon.sqlite', 'sqlite', 'CANON(1.50)')
+fragment_probe('abs.postgresql', 'postgresql', 'ABS(1.50)')
 
 sys.stdout.reconfigure(encoding='utf-8', newline='\n')
 sys.stdout.write('\n'.join(out) + '\n')

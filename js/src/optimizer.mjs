@@ -296,18 +296,6 @@ function numericLiteral(node) {
   } catch (_) { return null; }
 }
 
-function splitAnd(node) {
-  return node && node.t === 'bin' && node.op === 'AND'
-    ? [...splitAnd(node.l), ...splitAnd(node.r)] : [node];
-}
-
-function combineAnd(nodes, pos) {
-  if (nodes.length === 0) return null;
-  let result = nodes[0];
-  for (const node of nodes.slice(1)) result = { t: 'bin', op: 'AND', l: result, r: node, pos: pos || result.pos };
-  return result;
-}
-
 function renameVar(node, oldName, newName) {
   if (!node) return node;
   const copy = copyNode(node);
@@ -417,10 +405,7 @@ function logicalSteps(source, steps, options = {}) {
       }
       if (options.fuseFilters !== false && second && first.name === 'FILTER' && second.name === 'FILTER') {
         const left = filterDetails(first), right = filterDetails(second);
-        // A tentative FILTER (a pushed conjunct, kept on error) never fuses
-        // with a real one: the fused predicate could only be one or the other.
-        if (!left.valid || !right.valid
-            || Boolean(left.predicate.tentative) !== Boolean(right.predicate.tentative)) {
+        if (!left.valid || !right.valid) {
           next.push(first);
           continue;
         }
@@ -428,15 +413,6 @@ function logicalSteps(source, steps, options = {}) {
           ? right.predicate : renameVar(right.predicate, right.binder, left.binder);
         const merged = copyNode(first);
         const body = { t: 'bin', op: 'AND', l: left.predicate, r: predicate, pos: left.predicate.pos };
-        if (left.predicate.tentative) body.tentative = true;
-        if (left.predicate.pushedDown || right.predicate.pushedDown) {
-          body.pushedDown = true;
-          const rest = (p) => (p.pushedDown ? p.remaining : p);
-          const isTrue = (p) => p.t === 'bool' && p.v === true;
-          const l = rest(left.predicate), r = rest(predicate);
-          body.remaining = isTrue(l) ? r : isTrue(r) ? l
-            : { t: 'bin', op: 'AND', l, r, pos: left.predicate.pos };
-        }
         merged.args = left.explicit
           ? [first.args[0], first.args[1], body]
           : [first.args[0], body];
@@ -466,194 +442,6 @@ function logicalSteps(source, steps, options = {}) {
     current = next;
   }
   return current;
-}
-
-function pushdownJoinFilters(steps) {
-  const result = [];
-  let changed = false;
-  for (let i = 0; i < steps.length; i++) {
-    const link = steps[i], filter = steps[i + 1];
-    if (!filter || !['LINK', 'LINK_LEFT'].includes(link.name) || filter.name !== 'FILTER') {
-      result.push(link);
-      continue;
-    }
-    const leftSource = link.args[0], rightSource = link.args[1];
-    const leftBinder = link.args.length === 5 && link.args[2].t === 'var' && !link.args[2].grouped
-      ? link.args[2].name : singleRelationName(leftSource) || '_1';
-    const rightBinder = link.args.length === 5 && link.args[3].t === 'var' && !link.args[3].grouped
-      ? link.args[3].name : singleRelationName(rightSource) || '_2';
-    const leftNames = new Set([leftBinder, '_1']
-      .map((name) => name.toUpperCase()));
-    const rightNames = new Set([rightBinder, '_2']
-      .map((name) => name.toUpperCase()));
-    for (const name of collectPipelineSourceNames(leftSource)) leftNames.add(name.toUpperCase());
-    for (const name of collectPipelineSourceNames(rightSource)) rightNames.add(name.toUpperCase());
-    const info = filterDetails(filter);
-    // A FILTER whose conjuncts were already pushed keeps them all (see below),
-    // so it must not be pushed again on the next pass.
-    if (!info.valid || info.predicate.pushedDown) {
-      result.push(link);
-      continue;
-    }
-    const left = [], right = [], remaining = [];
-    // Only the LEADING run of conjuncts that name one side is pushed: a
-    // conjunct left for the join might raise on a row an early test of a
-    // later conjunct would drop, and the program as written reaches that
-    // raise first (spec §7.4; SEL-0051). The rest stays for the FILTER above.
-    let side = null;
-    const classify = (node) => {
-      let hasLeft = false, hasRight = false, ambiguous = false, unknown = false;
-      const visit = (item) => {
-        if (!item) return;
-        if (item.t === 'index') {
-          if (item.obj?.t === 'index' && item.obj.obj?.t === 'var'
-              && item.obj.idx?.t === 'text'
-              && [info.binder.toUpperCase(), '_'].includes(item.obj.obj.name.toUpperCase())) {
-            const table = item.obj.idx.v.toUpperCase();
-            if (leftNames.has(table)) hasLeft = true;
-            else if (rightNames.has(table)) hasRight = true;
-            else unknown = true;
-            return;
-          }
-          if (item.obj?.t === 'var' && item.idx?.t === 'text') {
-            // `O["id"]` or `ORDERS["id"]` after the LINK: the binders are
-            // scoped to the predicate (spec §7.4), so as written this is
-            // E_UNDEF_VAR, or E_NO_KEY on the relation's list. Pushing it into
-            // the side it names turned that error into rows (review
-            // 2026-09-15, W2) -- only `_["O"]["id"]`, a read through the
-            // joined row's key, names a side.
-            const name = item.obj.name.toUpperCase();
-            if (name === info.binder.toUpperCase() || name === '_') ambiguous = true;
-            else unknown = true;
-            return;
-          }
-        }
-        if (item.t === 'var') {
-          const name = item.name.toUpperCase();
-          if (name !== info.binder.toUpperCase() && name !== '_') unknown = true;
-        }
-        if (item.args) item.args.forEach(visit);
-        if (item.items) item.items.forEach(visit);
-        visit(item.l); visit(item.r); visit(item.x);
-        visit(item.obj); visit(item.idx);
-        visit(item.target); visit(item.value);
-      };
-      visit(node);
-      return { hasLeft, hasRight, ambiguous, unknown };
-    };
-    const rewrite = (node, targetNames, binder) => {
-      if (!node) return node;
-      const copy = copyNode(node);
-      if (copy.t === 'index') {
-        if (copy.obj?.t === 'index' && copy.obj.obj?.t === 'var'
-            && copy.obj.idx?.t === 'text'
-            && [binder.toUpperCase(), '_'].includes(copy.obj.obj.name.toUpperCase())
-            && targetNames.has(copy.obj.idx.v.toUpperCase())) {
-          return { t: 'index', obj: { t: 'var', name: '_', pos: copy.obj.obj.pos },
-            idx: copy.idx, pos: copy.pos };
-        }
-      }
-      if (copy.args) copy.args = copy.args.map((item) => rewrite(item, targetNames, binder));
-      if (copy.items) copy.items = copy.items.map((item) => rewrite(item, targetNames, binder));
-      if (copy.l) copy.l = rewrite(copy.l, targetNames, binder);
-      if (copy.r) copy.r = rewrite(copy.r, targetNames, binder);
-      if (copy.x) copy.x = rewrite(copy.x, targetNames, binder);
-      if (copy.obj) copy.obj = rewrite(copy.obj, targetNames, binder);
-      if (copy.idx) copy.idx = rewrite(copy.idx, targetNames, binder);
-      if (copy.target) copy.target = rewrite(copy.target, targetNames, binder);
-      if (copy.value) copy.value = rewrite(copy.value, targetNames, binder);
-      return copy;
-    };
-    for (const conjunct of splitAnd(info.predicate)) {
-      const affinity = classify(conjunct);
-      const pure = !affinity.ambiguous && !affinity.unknown;
-      if (remaining.length === 0 && pure && affinity.hasLeft && !affinity.hasRight
-          && side !== 'right') {
-        side = 'left';
-        left.push(rewrite(conjunct, leftNames, info.binder));
-      } else if (remaining.length === 0 && pure && affinity.hasRight && !affinity.hasLeft
-          && link.name === 'LINK' && side !== 'left') {
-        side = 'right';
-        right.push(rewrite(conjunct, rightNames, info.binder));
-      } else {
-        remaining.push(conjunct);
-      }
-    }
-    if (left.length === 0 && right.length === 0) {
-      result.push(link);
-      continue;
-    }
-    // The pushed conjuncts run TENTATIVELY under the join -- a row they raise
-    // on is kept -- and the FILTER above keeps its whole predicate in the
-    // source's order, so the program raises what it raises as written, where
-    // it would have (spec §7.4; SEL-0051). The marks are physical-tree
-    // metadata on the body nodes; copyNode and filter fusion keep them.
-    const tentative = (conjuncts) => { const body = combineAnd(conjuncts, filter.pos); body.tentative = true; return body; };
-    if (left.length) {
-      result.push(call('FILTER', [leftSource, tentative(left)], filter.pos));
-    }
-    let newLink = link;
-    if (right.length) {
-      newLink = copyNode(link);
-      newLink.args = [...link.args];
-      newLink.args[1] = call('FILTER', [rightSource, tentative(right)], filter.pos);
-    }
-    result.push(newLink);
-    // The retained predicate is the whole one; `remaining` is what the FILTER
-    // evaluates instead when no tentative body kept a row on an error while
-    // its source ran (the pushed conjuncts then held on every row it sees).
-    const predicate = copyNode(info.predicate);
-    predicate.pushedDown = true;
-    predicate.remaining = remaining.length
-      ? combineAnd(remaining, filter.pos)
-      : { t: 'bool', v: true, pos: filter.pos };
-    const newFilter = copyNode(filter);
-    newFilter.args = info.explicit
-      ? [newLink, filter.args[1], predicate]
-      : [newLink, predicate];
-    result.push(newFilter);
-    changed = true;
-    i++;
-  }
-  return { steps: result, changed };
-}
-
-function singleRelationName(node) {
-  if (!node) return null;
-  if (node.t === 'var') return node.name;
-  if (node.t === 'call' && node.args?.length
-      && node.name !== 'LINK' && node.name !== 'LINK_LEFT') {
-    return singleRelationName(node.args[0]);
-  }
-  return null;
-}
-
-function collectPipelineSourceNames(node) {
-  const names = [];
-  const seen = new Set();
-  const add = (name) => {
-    const upper = name.toUpperCase();
-    if (!seen.has(upper)) {
-      seen.add(upper);
-      names.push(name);
-    }
-  };
-  const visit = (item) => {
-    if (!item) return;
-    if (item.t === 'var') {
-      add(item.name);
-      return;
-    }
-    if (item.t !== 'call' || !item.args?.length) return;
-    if (item.name === 'LINK' || item.name === 'LINK_LEFT') {
-      visit(item.args[0]);
-      visit(item.args[1]);
-    } else if (PIPELINE_OPS.has(item.name)) {
-      visit(item.args[0]);
-    }
-  };
-  visit(node);
-  return names;
 }
 
 // The evaluator resolves the three-argument SORT_BY / TOP_BY form by shape
@@ -687,12 +475,6 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
     });
     let finalSteps = logicalSteps(optimizedSource, optimizedSteps, options);
     if (physical) {
-      while (true) {
-        const pushed = pushdownJoinFilters(finalSteps);
-        finalSteps = pushed.steps;
-        if (!pushed.changed) break;
-        finalSteps = logicalSteps(optimizedSource, finalSteps, options);
-      }
       // A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
       // anything can see the keys a FILTER's result carries. A following step
       // that renumbers without reading `_K` hides them (keysRenumberedBy, the

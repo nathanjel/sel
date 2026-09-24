@@ -23,6 +23,7 @@ define({ name: 'SIGN', min: 1, max: 1, fn: (a) => Value.int(D.sign(a.dec(0))) })
 define({ name: 'CEIL', min: 1, max: 1, fn: (a) => Value.num(D.ceil(a.dec(0))) });
 define({ name: 'FLOOR', min: 1, max: 1, fn: (a) => Value.num(D.floor(a.dec(0))) });
 define({ name: 'TRUNC', min: 1, max: 1, fn: (a) => Value.num(D.trunc(a.dec(0))) });
+define({ name: 'CANON', min: 1, max: 1, fn: (a) => Value.num(D.trimScale(a.dec(0))) });
 
 define({
   name: 'ROUND', min: 2, max: 2,

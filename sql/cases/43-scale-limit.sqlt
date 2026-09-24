@@ -1,0 +1,146 @@
+% scale-limit where a MySQL-family server reads text as a number (SEL-0059).
+%
+% The family's numericCast and numericGuard are DECIMAL(65,10): ten fractional
+% digits. A text operand read as a number goes through one of them, so a text
+% number with more fractional digits is truncated before anything else sees
+% it -- "0.00000000001" + 0 is 0.0000000000 on MariaDB 11.8 where SEL says
+% 0.00000000001, and nothing said so. The dialect now declares the cap
+% (lexical numericCastScale, sql/MAP.md §3), and a fragment that reads a value
+% through it carries scale-limit, fatal under strict: a guarded operand always
+% (its digits are the data's), a constant only when it has more fractional
+% digits than the cap. A declared NUM is vouched for, as the guard already
+% assumes, and PostgreSQL's NUMERIC has no cap.
+
+### name: scale.mariadb.guarded-text-is-translated
+--- note
+Advisory by default: the SQL is what it was.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+T + 0
+--- expect
+(CASE WHEN (`r`.`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`r`.`t` AS DECIMAL(65,10)) ELSE NULL END + 0)
+===
+
+### name: scale.mariadb.guarded-text-is-refused-under-strict
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+T + 0
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+
+### name: scale.mariadb.guarded-comparison-is-refused-under-strict
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+T == 25
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+
+### name: scale.mariadb.guarded-function-argument-is-refused-under-strict
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+ABS(T)
+--- error
+E_SQL_UNSUPPORTED 1:5
+===
+
+### name: scale.mariadb.a-declared-num-is-vouched-for
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+N + 0
+--- expect
+(`r`.`n` + 0)
+===
+
+### name: scale.mariadb.a-constant-within-the-cap
+--- note
+A constant's scale is known: ten fractional digits, and the cast keeps them
+all.
+--- dialect
+mariadb
+--- options
+{"strict": true}
+--- source
+5 == "5.0000000001"
+--- expect
+(CAST(5 AS DECIMAL(65,10)) = CAST('5.0000000001' AS DECIMAL(65,10)))
+===
+
+### name: scale.mariadb.a-constant-past-the-cap-is-refused-under-strict
+--- note
+Eleven: the cast drops one, and the comparison is 5 == 5.0000000000.
+--- dialect
+mariadb
+--- options
+{"strict": true}
+--- source
+5 == "5.00000000001"
+--- error
+E_SQL_UNSUPPORTED 1:6
+===
+
+### name: scale.mariadb.a-declared-num-read-through-the-cast
+--- note
+NUM says the column holds a number, not how many fractional digits it has;
+the coerce variant reads it through DECIMAL(65,10) all the same.
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+N == "5"
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+
+### name: scale.mysql.the-same-cap
+--- dialect
+mysql
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+T + 0
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+
+### name: scale.postgresql.has-no-cap
+--- dialect
+postgresql
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+T + 0
+--- expect
+(CAST(CASE WHEN (CAST("r"."t" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("r"."t" AS NUMERIC) ELSE NULL END AS NUMERIC) + CAST(0 AS NUMERIC))
+===

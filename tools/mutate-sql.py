@@ -87,6 +87,13 @@ CHECKS = [
     ('sql map replay (cpp)',
      ['sh', '-c', 'make -s -C cpp build/sqlreplay && cpp/build/sqlreplay']),
     ('oracle rows',       ['php', 'php/bin/sqlo', 'rows']),
+    # The SQL API contract, pinned. A mutation that drops a public flag --
+    # Fragment.canonical, lost by every host's top-level translate at once
+    # (SEL-0058) -- changes no emitted SQL, so nothing above can see it.
+    # C++ builds its probe first -- and conformance, which is what the roster
+    # checks C++ is present by: the mutated copy has no build output, and a
+    # host the check cannot run is a host it silently leaves out.
+    ('sql api',           ['sh', '-c', 'make -s -C cpp build/conformance build/sqlapi && tools/check-sqlapi.sh']),
 ]
 NEEDS_DB = {'oracle coverage', 'oracle expressions', 'oracle rows'}
 
@@ -113,6 +120,7 @@ CHECK_IMPLS = {
     'sqlt (cpp)': {'cpp'},
     'sql map replay (cpp)': {'cpp'},
     'oracle rows': {'php'},
+    'sql api': {'js', 'php', 'python', 'cpp', 'lisp'},
 }
 
 HOST_ROOTS = {
@@ -161,13 +169,23 @@ def jobs():
     return max(1, ((os.cpu_count() or 2) + 1) // 2)
 
 
-def run(cmd, cwd):
+# Checks that are not leaves: they start several leaves of their own, each
+# through a slot (tools/check-sqlapi.sh runs every host's probe under
+# sel_slot). Run inside a slot as well, a child can block on the very slot its
+# parent holds -- _sel_sem waits on one chosen at random -- and wait forever:
+# the first run with the SQL API check in this list hung for hours on its
+# unmutated baseline.
+NOT_LEAF = {'sql api'}
+
+
+def run(cmd, cwd, label=None):
     # PYTHONPATH points at the mutated copy, not at the source tree, or the
     # Python runner would import the unmutated package and report every
     # mutation caught for the wrong reason -- the exact failure this tool
     # exists to catch, committed by the tool itself.
     env = dict(os.environ, PYTHONPATH=os.path.join(cwd, 'python'))
-    return subprocess.run(SLOT + list(cmd), cwd=cwd, env=env, stdout=subprocess.DEVNULL,
+    prefix = [] if label in NOT_LEAF else SLOT
+    return subprocess.run(prefix + list(cmd), cwd=cwd, env=env, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL).returncode
 
 
@@ -195,7 +213,7 @@ def main(argv):
     # all reported `caught by sqldoc` for mutations sqldoc cannot see.
     pool = ThreadPoolExecutor(max_workers=jobs())
     live = [(label, cmd) for label, cmd in checks if label not in NEEDS_DB or any_db]
-    baseline = list(pool.map(lambda lc: (lc[0], run(lc[1], ROOT)), live))
+    baseline = list(pool.map(lambda lc: (lc[0], run(lc[1], ROOT, lc[0])), live))
     for label, rc in baseline:
         if rc != 0:
             print(f'BASELINE {label} fails on the unmutated tree; every mutation '
@@ -265,7 +283,7 @@ def main(argv):
                                            'map did not — the mutation is a no-op')
 
             for label, cmd in live:
-                if run(cmd, tree) != 0:
+                if run(cmd, tree, label) != 0:
                     return name, 'caught', label
             return name, 'survived', None
         finally:

@@ -124,6 +124,25 @@ until you make it one:
 TRIM(" 2") + 1  => 3
 ```
 
+Because scale is part of the value, it is part of the value's **identity**:
+`DEDUPE`, `BUCKET`, `EQL`, `IN` and record keys see `1`, `1.0` and `1.00` as
+three values (`==` compares numerically, and still says `TRUE`). Where a rule
+means "the same number", say so with `CANON`, which gives every number the one
+spelling all equal numbers share:
+
+```sel
+CANON(1.50)                                    => 1.5
+CANON(100.00)                                  => 100
+CANON("007.50")                                => 7.5
+1.0 EQL 1                                      => FALSE
+CANON(1.0) EQL CANON(1)                        => TRUE
+LIST(0.5 + 0.5, 4 / 4) .> DEDUPE() .> COUNT    => 2
+LIST(0.5 + 0.5, 4 / 4) .> MAP(CANON(_)) .> DEDUPE() .> COUNT  => 1
+```
+
+It also lets a SQL backend group and deduplicate a computed number exactly,
+which it otherwise refuses to do: see docs/SQL-TRANSLATION.md.
+
 `%` is the remainder of truncated division and takes the sign of the dividend:
 
 ```sel
@@ -647,6 +666,7 @@ IS_PRESENT("hello")      => TRUE
 | `ROUND(x, n)` | scale exactly n, half away from zero | `ROUND(2.5, 0)  => 3` |
 | `MIN(…)` `MAX(…)` | variadic | `MIN(3, 1, 2)  => 1` |
 | `POWER(x, n)` | n a non-negative integer | `POWER(2.5, 2)  => 6.25` |
+| `CANON(x)` | the canonical spelling: no trailing fraction zeros | `CANON(2.50)  => 2.5` |
 | `ISNUM(x)` | BOOL, never throws | `ISNUM(" 2")  => FALSE` |
 
 ### Binary

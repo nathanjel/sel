@@ -502,6 +502,7 @@ def aggregate_reports(reports: dict[str, dict[str, Any]], reference: list[dict[s
                 "compile_ms": scenario.get("compile_ms"),
                 "context_unchanged": scenario.get("context_unchanged", True),
                 "parity": scenario.get("parity", {"passed": scenario.get("passed", False)}),
+                "plan": scenario.get("plan"),
                 "statistics": phase_output,
                 "raw_samples": scenario["samples"],
             }
@@ -539,7 +540,11 @@ def print_report(aggregate: dict[str, Any], reference: list[dict[str, Any]]) -> 
         print(" | ".join(["Scenario"] + [lane.upper() for lane in db_lanes]))
         print("-" * (18 + 26 * len(db_lanes)))
         for item in reference:
-            cells = [item["id"]]
+            # The plan beside the id: a pure-memory scenario's time is its
+            # relations fetched whole and the program run over them, not a
+            # statement the database answered.
+            plans = {aggregate["lanes"][lane]["scenarios"][item["id"]].get("plan") for lane in db_lanes}
+            cells = [f"{item['id']} ({'/'.join(sorted(p for p in plans if p))})"]
             for lane in db_lanes:
                 value = aggregate["lanes"][lane]["scenarios"][item["id"]]["statistics"]["hybrid_total_ms"]
                 cells.append(format_stats(value))
@@ -618,13 +623,17 @@ def main() -> int:
             dataset, reference_path, report_dir / "python.json", args.runs,
             args.warmups, args.timing_mode, python_environment, args.only)
         if not args.skip_db:
+            # Only an unreachable server is a skip. A plan the reference does
+            # not record, a pure-memory scenario without a reason, or a parity
+            # failure fails the run: caught here, they once dropped both
+            # database lanes from every run without a word (SEL-0055).
+            from run_benchmarks import DatabaseUnavailable, run_corrected_database_benchmark
             try:
-                from run_benchmarks import run_corrected_database_benchmark
                 reports.update(run_corrected_database_benchmark(
                     dataset, reference_path, args.runs, args.warmups, args.timing_mode,
                     reference=reference, database=database))
-            except Exception as error:
-                print(f"[skip] database benchmark skipped: {error}", flush=True)
+            except DatabaseUnavailable as error:
+                print(f"[skip] database benchmark skipped, no server answered: {error}", flush=True)
 
         for lane, report in reports.items():
             validate_report(

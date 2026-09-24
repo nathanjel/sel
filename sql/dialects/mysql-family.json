@@ -15,6 +15,7 @@
     "textCharset": "utf8mb4",
     "numericCast": "CAST({0} AS DECIMAL(65,10))",
     "numericGuard": "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END",
+    "numericCastScale": "10",
     "binaryCast": "CAST({0} AS BINARY)",
     "textCast": "CAST({0} AS CHAR)",
     "sargablePrefilter": "true"
@@ -151,6 +152,10 @@
     "ISNUM": {
       "tpl": "({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')",
       "ret": "BOOL"
+    },
+    "CANON": {
+      "tpl": "REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE({textCast:0}, '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\\\.[0-9]*[1-9])?'), '^-0$', '0')",
+      "ret": "TEXT"
     },
     "BLEN": {
       "tpl": "LENGTH({binaryCast:0})",

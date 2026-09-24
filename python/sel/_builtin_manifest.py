@@ -15,6 +15,7 @@ BUILTIN_MANIFEST = {
     'BLEN': (1, 1, False, False, None),
     'BTL': (1, 1, False, False, None),
     'BUCKET': (2, 4, True, True, None),
+    'CANON': (1, 1, False, False, None),
     'CEIL': (1, 1, False, False, None),
     'CHAR': (1, 1, False, False, None),
     'COALESCE': (1, INF, True, False, None),

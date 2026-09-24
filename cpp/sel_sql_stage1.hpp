@@ -108,6 +108,10 @@ void validate(const SNode& n, sel::Value& root);
 // const.numeric.a-text-column-still-coerces so this check cannot grow into it.
 void require_numeric(const SNode& n, sel::Value& root);
 
+// The number of fractional digits of a constant already known to be a number
+// (require_numeric ran first).
+std::int32_t constant_scale(const SNode& n, sel::Value& root);
+
 // Turn a program into one expression, or refuse it.
 //
 // Can return a bare clist -- `R[1] = 1; R` -- which the translator then refuses

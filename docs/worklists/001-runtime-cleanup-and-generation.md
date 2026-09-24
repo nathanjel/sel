@@ -86,9 +86,13 @@ implementation queue. Safe fallback limitations are marked Deferred, not defects
 | [SEL-0051](#sel-0051) | The logical FILTER pushdown evaluates a pushed conjunct on rows an earlier conjunct would have short-circuited | All five | Resolved | P3 |
 | [SEL-0052](#sel-0052) | Recover scenario 5 exactly: a run-time join pre-filter that proves side ownership and totality, in every host | All five | Resolved | P3 |
 | [SEL-0053](#sel-0053) | Joined rows over records of different shapes: Lisp builds wrong rows and crashes, and the hosts disagree on missing, null and boolean fields | All five | Resolved | P1 |
-| [SEL-0054](#sel-0054) | The physical join-predicate pushdown changes values: renumbered keys, lost join-key errors, relation names under explicit binders, first-row promotion | All five | Proposed | P2 |
-| [SEL-0055](#sel-0055) | The scale harness's database lane expects SQL for scenario 6, which the planner keeps in memory | Validation | Proposed | P3 |
-| [SEL-0056](#sel-0056) | Python's per-pair joined rows cost scenario 6 about 5% | Python | Proposed | P3 |
+| [SEL-0054](#sel-0054) | The physical join-predicate pushdown changes values: renumbered keys, lost join-key errors, relation names under explicit binders, first-row promotion | All five | Resolved | P2 |
+| [SEL-0055](#sel-0055) | The scale harness's database lane expects SQL for scenario 6, which the planner keeps in memory | Validation | Resolved | P3 |
+| [SEL-0056](#sel-0056) | Python's per-pair joined rows cost scenario 6 about 5% | Python | Resolved | P3 |
+| [SEL-0057](#sel-0057) | The identity barrier treats an IF whose branches are all text literals as lossy, which keeps scenario 6 wholly in memory | All five / SQL | Resolved | P3 |
+| [SEL-0058](#sel-0058) | CANON: a canonical number, so a rule can compare numbers by value where SEL compares by identity, and SQL can prove it | All five / language + SQL | Resolved | P2 |
+| [SEL-0059](#sel-0059) | The MySQL family reads text as DECIMAL(65,10) and silently drops fractional digits past the tenth | All five / SQL | Resolved | P2 |
+| [SEL-0060](#sel-0060) | SQL sorts a text key by its bytes where SEL sorts number-shaped text as numbers, and nothing said so | All five / SQL | Resolved | P2 |
 
 ## Working items
 
@@ -1733,7 +1737,9 @@ SEL-0052. Validation: 944 conformance cases on seven roster entries;
 differential fuzz 4,000 programs and SQL fuzz 2,000 programs with 0
 disagreements; API 64, SQL API 27 and the end-to-end scenarios agreeing;
 `tools/check.sh` ALL GREEN (49 layers) with the gate's own Docker servers,
-197 mutations caught; no compiler warning.
+197 mutations caught; no compiler warning. *Superseded by SEL-0054
+(2026-09-23):* the tentative physical pushdown is retired; the rule this item
+wrote into §7.4 stands, now kept by the join's run-time pre-filter alone.
 
 <a id="sel-0052"></a>
 ### SEL-0052 — Recover scenario 5 exactly: a run-time join pre-filter that proves side ownership and totality, in every host
@@ -1896,7 +1902,7 @@ disagreements on both corpora and no crash, its as-written-vs-helper count
 <a id="sel-0054"></a>
 ### SEL-0054 — The physical join-predicate pushdown changes values: renumbered keys, lost join-key errors, relation names under explicit binders, first-row promotion
 
-**Proposed · P2 · All five · Owner: unassigned.**
+**Resolved 2026-09-23 · P2 · All five · Owner: unassigned.**
 Source: SEL-0052's differential oracle, 2026-09-22; present at `0f9031d`, every host alike.
 
 **Next action:** On 49–84 of 3,000 join-then-filter programs every host
@@ -1936,12 +1942,62 @@ conformance cases and cross-host fuzzing, both of which every host passes
 while making the same mistake; nothing compared a program with its own
 unoptimised form until this oracle.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-23, working tree on `7e450e1` (commit
+pending), the second way: the physical pushdown is retired in every host.
+*Tests first.* Spec §7.4 now says what an early test may not change beside
+errors: the `FILTER`'s result keeps the joined rows' keys, every join still
+computes every key it would have (an element dropped early still raises in
+its key, so does a join above it, and a side emptied early does not spare the
+other side's keys), and a member the predicate reads is the joined row's
+(under `LINK(C, L, R, …)` `_["C"]` is no member; `_["A"]["cid"]` never reads
+a field of that name on the rows of a join below). Ten `as-written.*` cases in
+`15-relational.selt`, minimised from the oracle's disagreements and checked
+against each program's unoptimised evaluation and its helper form, failed on
+all five hosts (renumbered keys four ways, lost left, right, dropped-row and
+upper-join key errors, a relation name under explicit binders, a lower
+join's field). *Decision.* Restricting the pushdown to what the tree can
+prove would have left it almost nothing — keys are observed at the end of
+most pipelines, and whether a key can raise is a fact about data — so it is
+gone, with its tentative-FILTER machinery (the `tentative`, `pushed_down`
+and `remaining` marks, the context's tentative-keep counter, the tentative
+walk). What it bought is kept at run time: a join now also tests, once per
+right row after every right key is computed, a conjunct that reads only
+through its own right binder (`_["products"]["is_active"]`; not over
+`LINK_LEFT`), leaving a rejected row in its bucket for the numbering and for
+a left row kept on an error; and a `FILTER` skips the conjuncts its join
+applied without error, as the pushed predicate's `remaining` did. Taking the
+pushdown away exposed two faults of SEL-0052's pre-filter the pushdown had
+hidden, both pinned by `as-written.chain.*`: every stage was judged against
+all the joins up to the last FILTER, so a middle FILTER's conjunct passed
+over as total on a field of a join above it lost that FILTER's `E_NO_KEY` —
+each stage now carries the count of joins between its FILTER and the join
+testing it; and drops below could empty an upper join's left side and spare
+its right keys — the join then evaluates its (pure) left side again as
+written, which the report's new `dropped` flag tells it. Measured JS first
+(no pushdown at all: S1 +5.6%, S3 +18%; with the FILTER skip and the right
+test: within spread), then ported. Lisp and PHP needed their pre-filter
+loops tuned to match the pushed FILTER on S3: Lisp's frame put `_` fourth
+(four name comparisons per read) and now puts the binders first, as C++'s
+does too; PHP walks the rows in place with direct frame writes and tests a
+left row before extending it with its relation's name when the conjuncts
+read no such name (Lisp too). *Scale,* `7e450e1` (with the pushdown)
+against this tree, interleaved, seven runs after two warm-ups, medians:
+every scenario on every host within run-to-run spread or faster — S1 C++
++0.2%, JS −2.6%, PHP −1.1%, Python +0.3%, Lisp −0.8%; S3 C++ +0.3%, JS +1.8%,
+PHP −0.1%, Python −0.1%, Lisp level on a three-round recheck (230–232 against
+228–235 ms); S5 C++ −1.1%, JS −3.7%, Python −4.2%, Lisp −5.1%, PHP faster
+on a three-round recheck (1.21–1.23 s against 1.50–1.53; the single run's
++27% median was a collector pause, its min −8%); S2, S4, S6 flat. *Validation:* 992 conformance
+cases per host; pytest 635, JS optimizer 142, PHP optimizer 140, C++ unit 173
+and SQL unit 85, Lisp 548, SQL cases 889; `make asan` clean; the join-filter
+oracle, now a gate lane that fails on any difference, 0 disagreements with
+the helper form and 0 across hosts on every corpus run, mixed and uniform
+shapes, 3,000 pairs each (from 49–66 per host); the joined-row oracle 0 wrong; `tools/check.sh` ALL GREEN on seven roster entries (610 s) with the gate's Docker servers, the new join-then-filter lane among its layers, 197 mutations caught.
 
 <a id="sel-0055"></a>
 ### SEL-0055 — The scale harness's database lane expects SQL for scenario 6, which the planner keeps in memory
 
-**Proposed · P3 · Validation · Owner: unassigned.**
+**Resolved 2026-09-23 · P3 · Validation · Owner: unassigned.**
 Source: SEL-0052's real-database run, 2026-09-22; present at `0f9031d`.
 
 **Next action:** `tools/scale-test/run_benchmarks.py` refuses to start —
@@ -1954,12 +2010,105 @@ run the lane over all six scenarios.
 **Close when:** The database lane runs S1–S6 against PostgreSQL and MariaDB
 without `--only`.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-23, working tree on `7e450e1` with SEL-0054
+and SEL-0056 (commit pending). The planner is right and the harness was out
+of date. The entry's premise needs one correction: the reference does not
+record S6 as pushed down. It recorded S6 with SQL until `8fe0e3a`
+(2026-09-13, `SELECT DISTINCT … CASE WHEN …`), the F2/F3 identity work
+(2026-09-16) stopped that, and `3e871cf` (2026-09-18) regenerated it with no
+statement: a pure-memory plan. `run_benchmarks.py` demanded a statement for
+every scenario, and `benchmark_all.py` caught that error along with every
+other and printed a skip, so both database lanes had been missing from every
+full benchmark run since then.
+
+*Why S6 stays in memory, step by step.* All five planners agree, and each
+step was probed:
+(1) The translator refuses the DEDUPE with `E_SQL_SHAPE`: "grouping depends
+on a computed projection without identity preservation", at the `IF` that
+computes `status`. With a column in its place it still refuses, because
+DISTINCT over `category_id` has no proof of structural identity.
+(2) So the DEDUPE runs in memory, over the MAP's rows. The identity barrier
+(`identity_loss_before_grouping`) refuses a SQL prefix that ends with a MAP
+computing a value the DEDUPE compares, because SQL may compute that value
+differently.
+(3) Before the MAP, the LINK_LEFT's rows lack the binders SEL's rows carry
+(`_join_rows_lack_binders`, finding Y), so no shorter prefix is a split
+point either.
+
+*Does the rule have a reason?* Against Docker PostgreSQL 17 and MariaDB
+11.8 loaded with the 10x fixture, with the barrier switched off in-process
+(measurement only), each variant of S6's shape was compared with SEL's
+in-memory answer:
+- **W1, S6 itself:** the same answer on both servers. For S6 the barrier
+  costs speed, not correctness.
+- **W2, `IF(c, 1, 1.0)` in place of the text branches:** MariaDB returns
+  `1.0` where SEL has `1`. Its CASE unifies the branches to DECIMAL.
+- **W3, DEDUPE on that value alone:** MariaDB returns 1 row where SEL
+  returns 2. A row disappears, which is F3's failure.
+- **Text branches:** `'a'`/`'a '`, `'a'`/`'A'` and S6's own gave the same
+  answer on both servers, even with DISTINCT itself in SQL.
+
+So the rule is justified, and S6 falls on its conservative side: nothing
+tells an IF whose branches are all text literals from one that is lossy.
+That refinement is SEL-0057.
+It is measured there: the refused hybrid plan is 23 ms (PostgreSQL) and
+8 ms (MariaDB) against about 2,180 ms pure memory.
+
+*The reason, pinned.* In `sql/cases/34-safe-identity-prefix.sqlt`:
+- `plan.identity-barrier.computed-dedupe-after-a-join-stays-local.{postgresql,mariadb}`,
+  S6's pipeline, `pure_memory`. It fails when the barrier is removed
+  (checked in a scratch copy).
+- `…column-dedupe-after-a-join-splits-at-the-map.*`, the control: with a
+  column in place of the IF, the plan is hybrid, split at the MAP.
+
+893 SQL cases pass on every host.
+
+*The harness.* `run_benchmarks.py`:
+- checks each plan's kind against the reference (no statement means pure
+  memory), and names the mismatch and the remedy;
+- runs a pure-memory scenario the way `execute_hybrid` does: the program
+  over the relations the plan reads, their declared columns fetched in id
+  order (the fixture's), built by the same `load_context` as the in-memory
+  lane, and timed as fetch, build and run;
+- requires each pure-memory scenario to have a reason in
+  `PURE_MEMORY_REASONS` that cites its planner cases, and fails on a missing
+  reason, and on a reason for a scenario that is pushed down;
+- gains `--plans-only`, which does those checks with no database. It is the
+  gate step "scale plans vs reference" (0.16 s), so a planner or reference
+  that drifts fails the gate, instead of waiting for someone to load
+  servers.
+
+`benchmark_all.py` now skips its database lanes only when no server answers
+(`DatabaseUnavailable`), and labels each database row with its plan.
+Each guard was checked to fire: a stale reference, a missing reason, and a
+reason for a pushed scenario.
+
+**Note 2026-09-24.** SEL-0057 retired scenario 6's reason: its text-literal
+`IF` is now proved, the plan is hybrid, and `PURE_MEMORY_REASONS` is empty.
+The machinery stays, for the next scenario that needs it.
+
+*Close.* The database lane ran S1–S6 against both servers without `--only`,
+10 runs after 2 warm-ups, parity passing (validation at the end):
+
+| | PostgreSQL (ms) | MariaDB (ms) |
+|---|---|---|
+| S1, pure SQL | 108 | 388 |
+| S2, hybrid | 0.6 | 0.5 |
+| S3, hybrid | 607 | 649 |
+| S4, pure SQL | 14 | 7.5 |
+| S5, pure SQL | 9.8 | 266 |
+| S6, pure memory | 2,181 | 2,181 |
+
+S6's time is a 92,100-row fetch of about 95 ms, 1,040 ms building the
+context and 820 ms running the program. `benchmark_all.py --runs 1` passed
+all seven lanes, S6 included. Validation: `tools/check.sh` ALL GREEN on seven
+roster entries (591 s) with the gate's Docker servers, the new step among its
+layers, 197 mutations caught.
 
 <a id="sel-0056"></a>
 ### SEL-0056 — Python's per-pair joined rows cost scenario 6 about 5%
 
-**Proposed · P3 · Python · Owner: unassigned.**
+**Resolved 2026-09-23 · P3 · Python · Owner: unassigned.**
 Source: SEL-0053 closure, 2026-09-23; present at `b791679`.
 
 **Next action:** SEL-0053 made every host build each joined row from its own
@@ -1989,11 +2138,314 @@ only; S5 moves with the pre-filter), or against `0f9031d` whole for S6, which
 the pre-filter does not touch — never by swapping files in the shared
 checkout.
 
+**Rechecked 2026-09-23, after SEL-0054** (which does not touch S6: its
+first conjunct is a call, so the FILTER hands the join nothing, and the
+retired pushdown never moved anything past a `LINK_LEFT`): still open. S6
+against `0f9031d`, interleaved, three rounds of seven runs: 839–849 ms
+against 798–818 (+3.5–5%). The cause is now measured, not assumed: with the
+right-field guards switched off in a scratch copy (wrong, for measuring only)
+S6 is 812–825 ms, so the guards are about two thirds of the gap and the left
+guards and plan dispatch the rest.
+
+**Analysed 2026-09-23.** S6's join makes 90,100 pairs, and each of its
+90,000 right rows is in exactly one of them. Replaying those pairs through
+the projectors alone (15 rounds, medians): the current projector 272 ms,
+`0f9031d`'s 227. The four right-field guards cost 33 ms, about 90 ns each in
+bytecode: a subscript, a slot load, a string compare and a branch. The second
+call per pair (`project` → the plan's `build`) and the memo stores cost
+12 ms. Unlike JS, the cost is not scattered reads: building the row
+increments every copied field's refcount, so CPython touches those objects
+anyway. That is also why the bucketing-pass candidate cannot help S6: with
+each right row paired once, testing it while bucketing is the same work in
+another place, and it checks every field, not only the promoted ones. S1 is
+the other case. Its right rows repeat, but its left rows mostly meet one
+match each, so the left memo rarely hits. In the prototype below with the
+guards off, S1 goes from 2115–2128 ms to 2041–2069 (the `0f9031d` level,
+2044–2057): about 45 ms left guards, 25 ms right. Options:
+(a) a per-left-row loop generated beside each plan's `build`, which the join
+calls once per left row with its matches, with the guards kept. Prototyped
+in a scratch copy: pytest 635, conformance 992, joined-rows oracle 0 wrong,
+join-filter oracle 0 disagreements. S6 802–815 ms against the `0f9031d`
+level of 805–807 (current 842–848), S5 unchanged, S1 unchanged, since its
+match lists are mostly one long. (b) cheaper guards, `"NONE" not in
+(r_s[1].kind, …)` with the full test only when it fails: −10 ms of the
+33 in the replay. It combines with (a) and applies to the left guards
+too. (c) facts recorded on the row where it is made, with the guard reduced
+to one slot read. This is the only option that reaches S1's left guards. It
+is sound only for "not a record" facts cleared by `Value.set`, because a
+store inside a child record changes whether the parent's field is nested
+(its size) without touching the parent. (d) accept S1's residual with this
+profile.
+
 **Close when:** Python S6 and S1 are within run-to-run spread of that
 baseline (interleaved, seven runs after two warm-ups) with the joined-row
 oracle 0 wrong, or the cost is accepted with the profile that explains it.
 
-**Resolution:** Pending.
+**Resolution:** Resolved 2026-09-23, working tree on `7e450e1` with
+SEL-0054 (commit pending), by options (a), (b) and (d). *Tests first.* Two
+cases in `16-joined-rows.selt` give a left element a run of right elements of
+one shape whose field changes category partway (text, NULL, text, record,
+list, empty record, boolean) and give left elements that differ the same run.
+They pass on all five hosts and fail in Python when the loop's right guard,
+or the fused test, is broken. A Python unit test covers what SEL source
+cannot reach: a left row whose first match is an unshaped record goes the
+general way, so the memo still names the previous left row's plan, and the
+loop must not take it. It fails with the `last_left is left` check removed.
+*(a)* `_compile_plan` generates `many(left, rights, i, out, project)` beside
+`build`: one loop per left row that checks the right element's shape and the
+plan's right guards, builds the row, and sends a pair that fails to
+`project`. `make_join_projector` returns `(project, project_many)`, and the
+equi-join calls `project_many` once per left row unless the right
+pre-filter rejected rows for it. The keys of a numbered result are extended
+in one step. *(b)* With two or more fields that must not be records, the
+guards test `"NONE" not in (kinds…)` first and run the per-field tests
+only when that fails, on both sides. *(d)* S1's residual is accepted: with
+every guard switched off in a scratch copy, S1 is 2027–2056 ms against
+2113–2118, level with `0f9031d`, so the residual is all guards. Its joins
+mostly meet one match per left row, which neither (a) nor the left memo can
+amortise. Only per-row facts (c) would reach it, at the cost of a mutation
+audit. *Benchmark*, the scale harness with seven runs after two warm-ups,
+three interleaved rounds of `0f9031d`, the tree before this change and this
+tree (medians): S6 781–793 / 822–836 / 789–795 ms, −5.3% against the tree
+before and +1.1% against `0f9031d`, within spread. S1 +0.4% and S3 +0.4%
+against the tree before, S2 −1.4%, S4 +0.4%, S5 +1.0%, all within spread.
+Against `0f9031d`, S5 is −17.4% and S1 +3.7% (the guards, above). S3 is
++4.1%, of which the guards are 10–20 ms by the same ablation. The rest of
+S3's gap came with SEL-0052's run-time pre-filter in `b791679` and is outside
+this item. Validation: conformance 994 on every host, pytest 636, the
+joined-row oracle 0 wrong, the join-filter oracle 0 disagreements (mixed and
+uniform); `tools/check.sh` ALL GREEN on seven roster entries (603 s) with the
+gate's Docker servers.
+
+<a id="sel-0057"></a>
+### SEL-0057 — The identity barrier treats an IF whose branches are all text literals as lossy, which keeps scenario 6 wholly in memory
+
+**Resolved 2026-09-24 · P3 · All five / SQL · Owner: unassigned.**
+Source: SEL-0055 closure, 2026-09-23.
+
+**Next action:** Every host's `_identity_projection` (and the translator's
+DISTINCT proof) admits only reads, literals, `COUNT`/`LEN`/`BLEN` and
+`RECORD`, so any `IF` or `COND` is a computation whose SEL identity SQL
+might not keep. For numeric branches that is true: MariaDB's CASE returns
+`1.0` for `IF(c, 1, 1.0)`'s `1`, and a DEDUPE over it loses a row (SEL-0055,
+W2/W3). For an IF or COND whose every result is a text literal (or NULL),
+SQL returns exactly those literals. SEL-0055 checked this on PostgreSQL 17
+and MariaDB 11.8, including `'a'`/`'a '` and `'a'`/`'A'`, even with DISTINCT
+in SQL. Admitting that case would give scenario 6 a hybrid plan: the join,
+the filter and the projection in SQL (100 rows), the DEDUPE, sort and TAKE
+in memory. With the barrier switched off in-process, that plan measured
+23 ms on PostgreSQL and 8 ms on MariaDB with parity, against about 2,180 ms
+pure memory. Spec the proof first (the identity bullet of `docs/SQL-TRANSLATION.md`'s
+hybrid section, and `docs/interim/sel-gaps-2026-09-15-03-numeric-group-key-identity.md`), then planner cases (S6's
+`plan.identity-barrier.computed-dedupe-after-a-join-stays-local.*` flip to
+hybrid; numeric, mixed and column branches stay refused), then every host,
+then the SQL oracle on the text-identity fixture. SQLite and MySQL collations
+need their own check: an exact text comparison there is spelled differently.
+
+**Note 2026-09-24.** SEL-0058 gives a rule author the explicit form:
+`CANON(IF(c, 1, 1.0))` makes a `DEDUPE` after it provable, and the S6 shape
+with `CANON` is one statement on PostgreSQL
+(`plan.canon.dedupe-after-a-join.*`). This item is unchanged by that. It is
+about the planner proving an `IF` of text literals safe without the author
+saying so, and the benchmark's own query keeps its `IF`.
+
+**Close when:** An IF/COND with only text-literal (or NULL) results passes
+the identity proof in all five hosts, and the numeric and mixed forms still
+do not. The oracle then agrees on all four servers, and S6 is hybrid in the
+database lane with `PURE_MEMORY_REASONS` empty. Or the refinement is
+declined, with the reason recorded.
+
+**Resolution:** Resolved 2026-09-24, working tree (commit pending), after
+SEL-0058 at the user's request. `CANON` could not help scenario 6: its
+blocking field is text.
+
+*Rule.* An `IF`/`COND` whose every result is a text literal, or in turn such
+a conditional, passes the identity proof: `_identity_projection`, which the
+translator and the planner's barrier share. It needs no field upstream
+(`_identity_inputs`). A two-argument `IF`'s `""` qualifies. `NULL` does not,
+because the translator renders no `NULL` literal. The proof is the
+SEL-0055/0057 measurement: `CASE` returns the literal it chose byte for byte
+on PostgreSQL 17 and MariaDB 11.8, `'a'`/`'A'` and `'a'`/`'a '` included,
+both after a split and under `DISTINCT`.
+
+*Tests first:*
+- **Flipped planner cases.** The two scenario-6 planner cases flip from
+  `pure_memory` to hybrid, split after the `MAP`, and are renamed
+  `plan.identity-barrier.text-literal-dedupe-after-a-join-splits-at-the-map.*`.
+- **`sql/cases/45-text-literal-branches.sqlt` (16 cases).** `DISTINCT` over an
+  `IF`, a `COND`, a nested one and one without an else, on three dialects.
+  Pure-SQL planner cases on PostgreSQL and MariaDB. Numeric, column and mixed
+  results pinned to stay in memory. `BUCKET` after the `MAP` pinned as a
+  split, because a derived table types a computed column `UNKNOWN`.
+- **Three oracle statements.** Deduplication over a text `IF`, over `"a "`,
+  `"A"` and `"a"`, and the numeric branches refused. They agree, or refuse as
+  declared, on all four servers.
+
+*Implementation.* One predicate per host (`_text_literal_results`,
+`textLiteralResults`, `text_literal_results`, `text-literal-results-p`), used
+by the proof and the inputs. There are six mutations: removing the rule,
+and per host admitting numeric literals, the boundary MariaDB breaks. All six
+are caught.
+
+*The harness.* `benchmark_results.json` was regenerated with the Lisp
+generator. Only S6's two SQL fields changed, besides every scenario's latency
+sample. `PURE_MEMORY_REASONS` is empty.
+
+*The database lane*, 10 runs after 2 warm-ups:
+
+| S6 | PostgreSQL | MariaDB |
+|---|---|---|
+| plan | hybrid | hybrid |
+| time (median) | 24.2 ms (db 21.5) | 7.7 ms (db 5.1) |
+| before (pure memory) | about 2,180 ms | about 2,180 ms |
+
+Parity passes on both servers, and SQL returns 100 rows instead of 92,100.
+The first PostgreSQL pass showed S1 at 2,778 ms, straight after the load. A
+rerun gave 109 ms, and 108.5 ms after `ANALYZE`: missing table statistics,
+not a regression.
+
+Validation: SQL cases 973 per host (16 new); the oracle 0 differ; 222
+mutations, all caught; `tools/check.sh` ALL GREEN on seven roster entries
+with the gate's Docker servers (753 s).
+
+<a id="sel-0058"></a>
+### SEL-0058 — CANON: a canonical number, so a rule can compare numbers by value where SEL compares by identity, and SQL can prove it
+
+**Resolved 2026-09-24 · P2 · All five / language + SQL · Owner: unassigned.**
+Source: the SEL-0057 discussion, 2026-09-24.
+
+**Problem.** Every identity in SEL is structural (§5.4): `DEDUPE`, `BUCKET`
+keys, `EQL`, `IN` and index keys see `1`, `1.0` and `1.00` as three values,
+though `==` says they are equal. So equal numbers computed differently
+(`0.5 + 0.5` is `1.0`, `4 / 4` is `1`) are different values to every
+identity, and a rule has no way to say "the same number". SQL has the
+opposite identity: `DISTINCT` and `GROUP BY` compare by value, and on MariaDB
+a computed `CASE` even changes a value's spelling (`IF(c, 1, 1.0)` answers
+`1.0` for both branches). That gap is why the translator refuses `DISTINCT`
+over a numeric column, and grouping by a computed numeric key, and why the
+planner's identity barrier keeps scenario 6 in memory. Making identity
+numeric was rejected: SEL has no number type, so `"007"` and `"7"` (a code, a
+postal code) would merge. And agreeing on equality does not settle which
+spelling a `DEDUPE` keeps.
+
+**Decision.** An explicit, opt-in canonical form. `CANON(x)` is the number's
+§4.1 canonical form, with the fraction's trailing zeros and then a bare point
+removed: `CANON(1.50)` is `1.5`, `CANON(100)` is `100`, `CANON("007.50")` is
+`7.5`, `CANON(-0.00)` is `0`. It reads its argument as every numeric
+argument is (`E_NOT_NUM`, `E_NULL`, the first child of a list), and its result
+is an ordinary number. It is one spelling per value, so structural identity
+over it is numeric identity, and SQL's identity over it is provable.
+
+**Verified before a line of code.** Each dialect's spelling was confirmed on
+PostgreSQL 17, MariaDB 11.8, MySQL 8.4 and SQLite 3.51 (ANSI through the
+PostgreSQL probe). The inputs were 25 valid and 15 invalid, each read through
+a typed numeric column, arithmetic over it, the dialect's guard over text,
+and literals, plus grouping:
+- **PostgreSQL:** `trim_scale`, which stays a number and has a scale per
+  value.
+- **MySQL family:** a regex chain over the value's text, with no
+  backreference, since MariaDB and MySQL spell one differently. The result is
+  text, because a `DECIMAL`'s scale belongs to its type.
+- **SQLite:** `rtrim` of the number's text in a correlated subquery, carrying
+  the dialect's `decimal-float` caveat. A value stored as a float in exponent
+  form is not SEL's number.
+- **ANSI:** `CAST`, `POSITION` and `TRIM`, returning text.
+
+Every route agreed except where a declared caveat said it would not.
+
+**Tests first:**
+- `conformance/22-canon.selt` (24 cases), two arity cases and seven misuse
+  cases.
+- `sql/cases/42-canon.sqlt` (39 cases): the spelling per dialect, the guard,
+  refusals, `DISTINCT`/`GROUP BY` over `CANON` in every dialect, sorting, and
+  planner cases. These include scenario 6's shape with `CANON` (pure SQL on
+  PostgreSQL; hybrid on MariaDB, with the sort in memory), and a `CANON`
+  reading a field an earlier `MAP` computed.
+- The oracle corpus gains a `funcs.CANON` group and three statements (dedupe,
+  grouping, the sort), run on every server.
+- `tools/check-sqlapi.sh` gains probes of the public `Fragment.canonical`, and
+  pins their values, because parity alone passes a defect every host shares.
+  That is how the next point was found.
+
+**Implementation.**
+- The builtin is `trim_scale` in each host's hand-written decimal core,
+  counted on the digit string.
+- In the SQL layer, `CANON` is a numeric argument like `ABS`'s. A
+  `Fragment.canonical` flag is carried by the call, by a derived table's
+  column and by `_K`.
+- The identity barrier admits `CANON` and needs no field upstream of it.
+  `DISTINCT` and group keys accept a canonical number; on PostgreSQL it stays
+  numeric, so a later sort is numeric too.
+- A text `CANON` is refused as a sort key, and the planner sorts it in
+  memory. That was the user's decision.
+- The oracle compares a canonical answer as text. Its numeric comparison is by
+  value and would pass a PostgreSQL `CANON` that answered `1.50`: that was
+  checked by breaking the template, with the comparison on and then off.
+- Every host's top-level `translate` dropped the flag, the reference's bug
+  ported faithfully, and the pinned probe caught it.
+
+`CANON` is not a math-plan operation: an unlisted builtin is simply evaluated
+as a call. The four other hosts' SQL ports were done in parallel from the
+Python reference and reviewed against it. Mutations cover every decision
+above in Python and in the other hosts' key sites.
+Validation: conformance 1027 per host (33 new), SQL cases 957 per host (64 new), the oracle 0 differ on all four servers and the probe, 216 mutations all caught (19 new), `tools/check.sh` ALL GREEN on seven roster entries with the gate's Docker servers.
+
+**Resolution:** Resolved 2026-09-24, working tree (commit pending).
+
+<a id="sel-0059"></a>
+### SEL-0059 — The MySQL family reads text as DECIMAL(65,10) and silently drops fractional digits past the tenth
+
+**Resolved 2026-09-24 · P2 · All five / SQL · Owner: unassigned.**
+Source: SEL-0058's design, 2026-09-24.
+
+**Problem.** `numericCast` and `numericGuard` are `CAST(… AS DECIMAL(65,10))`
+on the MySQL family. A text operand read as a number goes through one of
+them and loses its digits past the tenth, with no caveat. Witnessed on
+MariaDB 11.8: `"0.00000000001" + 0` over a text column is `0.0000000000`,
+and SEL answers `0.00000000001`.
+
+**Decision (the user's).** Keep the cast and declare the loss, so strict
+refuses it and callers can see it.
+
+**Resolution.** The dialect declares its cap as a new lexical key,
+`numericCastScale` (`"10"`, sql/MAP.md §3). The generator requires it wherever
+the two templates fix a `DECIMAL` scale, and requires it to equal that scale,
+so the cap cannot drift from the SQL. The translator marks `scale-limit`:
+- on every guarded operand;
+- on every column the `coerce` variant casts, because NUM says a column holds
+  a number, not how many fractional digits it has;
+- on a constant only when it has more than ten fractional digits.
+
+PostgreSQL has no cap and carries nothing. Tests:
+`sql/cases/43-scale-limit.sqlt` (10 cases), and an oracle statement that
+witnesses the loss on MariaDB and MySQL. The statement runner now requires a
+caveat a statement declares to be carried by its fragment and to actually
+differ.
+
+<a id="sel-0060"></a>
+### SEL-0060 — SQL sorts a text key by its bytes where SEL sorts number-shaped text as numbers, and nothing said so
+
+**Resolved 2026-09-24 · P2 · All five / SQL · Owner: unassigned.**
+Source: SEL-0058's design, 2026-09-24.
+
+**Problem.** SEL's sort compares numbers as numbers and other text by its
+bytes, and number-shaped text is a number to it. `ORDER BY` sorts a text key
+by its bytes throughout. A text column holding `10`, `9`, `100` sorts
+`9, 10, 100` in SEL and `10, 100, 9` on MariaDB 11.8, and the translation
+declared no difference. No `ORDER BY` reproduces SEL's comparison for text
+that may or may not look numeric.
+
+**Decision (the user's).** Keep pushing text sorts, and declare them.
+
+**Resolution.** A new caveat in the closed vocabulary, `text-order`. It is
+carried by every sort whose key is TEXT or UNKNOWN, is fatal under strict
+(the planner then sorts in memory), and a NUM key carries nothing. It is
+declared by the sort rather than by a map entry.
+
+Tests:
+- `sql/cases/44-text-order.sqlt` (15 cases, including the strict planner
+  split);
+- an oracle statement that witnesses the difference on every server.
 
 ## Suggested order
 
@@ -2026,3 +2478,5 @@ closure when its evidence is recorded.
 | SEL-0051 closure, 2026-09-22 | SEL-0052 |
 | SEL-0052's differential oracle and real-database run, 2026-09-22 | SEL-0053, SEL-0054, SEL-0055 |
 | SEL-0053 closure, 2026-09-23 | SEL-0056 |
+| SEL-0055 closure, 2026-09-23 | SEL-0057 |
+| SEL-0057 discussion: numeric identity, 2026-09-24 | SEL-0058, SEL-0059, SEL-0060 |

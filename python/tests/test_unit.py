@@ -199,6 +199,32 @@ def test_join_output_is_shaped_and_irregular_rows_use_fallback():
     assert irregular.get('1').get('right').as_text() == 'x'
 
 
+def test_join_rows_of_a_left_row_use_a_plan_that_fits_that_row():
+    # project_many builds a left row's first joined row through project and
+    # the rest through the loop of the plan that fit it. When the first pair
+    # goes the general way (an unshaped right element), the memo still names
+    # the previous left row's plan, which assumed that row's facts: `m` a
+    # record there, a number here. Unshaped records do not arise from SEL
+    # source, hence a unit test and not a conformance case (SEL-0056).
+    from sel.builtins.structure import make_join_projector, make_joined_row
+    def rec(*kv):
+        return Value.record(list(kv[::2]), list(kv[1::2]))
+    t = Value.text
+    left_1 = rec('k', t('1'), 'm', rec('x', t('1')))
+    left_2 = rec('k', t('1'), 'm', t('7'))
+    assert left_1.shape is left_2.shape
+    unshaped = Value.none().set('id', t('1')).set('v', t('a'))
+    assert unshaped.shape is None
+    rights = [unshaped, rec('id', t('1'), 'v', t('b')), rec('id', t('1'), 'v', Value.none())]
+    _, project_many = make_join_projector('X', 'Y', None)
+    out = []
+    project_many(left_1, rights[1:], out)
+    project_many(left_2, rights, out)
+    want = [make_joined_row(left, right, 'X', 'Y', None)
+            for left, rs in ((left_1, rights[1:]), (left_2, rights)) for right in rs]
+    assert [row.dump() for row in out] == [row.dump() for row in want]
+
+
 def test_scalar_context_takes_first_child():
     assert evaluate('(7, 8)').as_text() == '7'
     raises('E_NULL', Value.none().as_text)
@@ -483,49 +509,33 @@ def test_optimizer_physical_join_pushdown_keeps_record():
     assert steps[0].name == 'MAP'
     assert steps[0].args[1].name == 'RECORD'
 
-    physical = optimize_ast_in_memory(sel_compile(source).ast)
-    _, steps = unwind_pipeline(physical)
-    # Only the leading run of conjuncts naming one side is pushed, it runs
-    # tentatively under the join, and the FILTER above keeps its whole
-    # predicate with the rest as `remaining` (spec §7.4; SEL-0051): the
-    # customer conjunct follows an order conjunct, so the right side is
-    # untouched and that conjunct is the remaining body.
-    assert [step.name for step in steps] == ['FILTER', 'LINK', 'FILTER']
-    assert steps[0].args[1].tentative and steps[1].args[1].t == 'var'
-    assert steps[2].args[1].pushed_down and steps[2].args[1].remaining.op == '$=='
-
-    # A leading customer conjunct goes into the right side; the order
-    # conjunct after it is the remaining body.
-    physical = optimize_ast_in_memory(sel_compile(
-        'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
-        ' .> FILTER(_["customers"]["country"] $== "DE"'
-        ' AND _["orders"]["status"] $== "ACTIVE")'
-    ).ast)
-    _, steps = unwind_pipeline(physical)
-    assert [step.name for step in steps] == ['LINK', 'FILTER']
-    assert steps[0].args[1].name == 'FILTER' and steps[0].args[1].args[1].tentative
-    assert steps[1].args[1].pushed_down and steps[1].args[1].remaining.op == '$=='
-
-    # A wholly pushed predicate leaves TRUE as the remaining body.
-    physical = optimize_ast_in_memory(sel_compile(
-        'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
-        ' .> FILTER(_["orders"]["status"] $== "ACTIVE")'
-    ).ast)
-    _, steps = unwind_pipeline(physical)
-    assert [step.name for step in steps] == ['FILTER', 'LINK', 'FILTER']
-    assert steps[2].args[1].remaining.t == 'bool' and steps[2].args[1].remaining.v is True
-
-    # Join pushdown must return to the logical fixed point: a pushed left
-    # predicate must fuse with a FILTER that was already before the LINK.
+    # The physical tree never moves a FILTER across a LINK (spec §7.4;
+    # SEL-0054): a FILTER moved onto a side renumbered the joined rows,
+    # skipped the join keys of the rows it dropped, and read relation names
+    # under explicit binders. The join tests conjuncts itself, at run time,
+    # where it can prove that is the same.
+    for src in (source,
+                'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+                ' .> FILTER(_["customers"]["country"] $== "DE"'
+                ' AND _["orders"]["status"] $== "ACTIVE")',
+                'ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
+                ' .> FILTER(_["orders"]["status"] $== "ACTIVE")'):
+        _, steps = unwind_pipeline(optimize_ast_in_memory(sel_compile(src).ast))
+        assert [step.name for step in steps] == ['LINK', 'FILTER']
+        assert steps[0].args[1].t == 'var'
     fixed_point = optimize_ast_in_memory(sel_compile(
         'ORDERS .> FILTER(_["status"] $== "ACTIVE")'
         ' .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"])'
         ' .> FILTER(_["orders"]["status"] $== "ACTIVE")'
     ).ast)
     _, steps = unwind_pipeline(fixed_point)
-    # A pushed (tentative) FILTER does not fuse with the real FILTER that was
-    # already before the LINK: the fused predicate could only be one or the other.
-    assert [step.name for step in steps] == ['FILTER', 'FILTER', 'LINK', 'FILTER']
+    assert [step.name for step in steps] == ['FILTER', 'LINK', 'FILTER']
+    # Whether a FILTER's keys can be seen, for the join's pre-filter: a step
+    # that renumbers without reading `_K` hides them; the end does not.
+    _, steps = unwind_pipeline(optimize_ast_in_memory(sel_compile(source + ' .> MAP(1)').ast))
+    assert steps[1].args[1].keys_unobserved is True
+    _, steps = unwind_pipeline(optimize_ast_in_memory(sel_compile(source).ast))
+    assert steps[1].args[1].keys_unobserved is False
 
     # A qualified table reference is only affinity-safe when rooted at the
     # current filter binder or `_`; an external variable must remain above the
@@ -560,13 +570,9 @@ def test_optimizer_physical_join_pushdown_keeps_record():
         ' .> FILTER(_["C"]["country"] $== "DE")'
     ).ast)
     _, steps = unwind_pipeline(through_the_key)
-    # The right-side conjunct is pushed (tentatively) into the LINK's right
-    # source and the FILTER above keeps it (spec §7.4; SEL-0051).
+    # Not even a read through the key moves: the join tests it at run time.
     assert [step.name for step in steps] == ['LINK', 'FILTER']
-    assert steps[0].args[1].name == 'FILTER' and steps[0].args[1].args[1].tentative
-    pushed = steps[0].args[1]
-    assert pushed.name == 'FILTER' and pushed.args[0].name == 'CUSTOMERS'
-    assert pushed.args[1].l.obj.name == '_'
+    assert steps[0].args[1].t == 'var'
 
     # `_K` is an unknown dependency outside BUCKET and must not be treated as
     # a neutral variable while classifying join predicates.

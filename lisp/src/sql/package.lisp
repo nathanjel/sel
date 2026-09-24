@@ -34,6 +34,7 @@
    #:fragment-exact
    #:fragment-sargable
    #:fragment-guard
+   #:fragment-canonical
    #:as-value
    #:as-condition
    #:as-statement

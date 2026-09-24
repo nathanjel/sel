@@ -1,0 +1,551 @@
+% CANON(x) in SQL (spec §7.6). A number's canonical form is one spelling per
+% value, so it is the one computed value whose SQL identity can be proved:
+% DISTINCT and GROUP BY over it are exact, and the planner's identity barrier
+% lets it through (docs/SQL-TRANSLATION.md, "A value a grouping or a whole-row
+% comparison reads keeps SEL's identity").
+%
+% Where each spelling comes from, and what verified it (SEL-0058): every valid
+% input through a typed numeric column, arithmetic over it, the dialect's
+% numeric guard over text, and literals, on PostgreSQL 17, MariaDB 11.8,
+% MySQL 8.4 and SQLite 3.51, and the ANSI spelling on PostgreSQL through the
+% probe dialect.
+%
+%   postgresql  trim_scale of the number: numeric, and its scale is the value's.
+%   mysql       the value's text, trimmed by a regex chain with no backreference
+%               (MariaDB and MySQL spell those differently): text, because a
+%               DECIMAL's scale belongs to its type, not to the value.
+%   sqlite      the number's text, trimmed: text, and caveated decimal-float,
+%               as every SQLite number is; the float it holds past 15 digits
+%               or in exponent form is not SEL's number.
+%   ansi        CAST, POSITION and TRIM, all standard: text.
+%
+% The argument is a numeric argument like ABS's: a text operand is guarded
+% where the dialect can ask whether it is a number, and refused where it
+% cannot (sqlite, ansi).
+
+### name: func.canon.postgresql.num-column
+--- dialect
+postgresql
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+CANON(N)
+--- expect
+trim_scale(CAST("r"."n" AS NUMERIC))
+===
+
+### name: func.canon.postgresql.text-column-is-guarded
+--- note
+A text operand is read as a number only through the guard, as ABS reads one.
+--- dialect
+postgresql
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+CANON(T)
+--- expect
+trim_scale(CAST(CASE WHEN (CAST("r"."t" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("r"."t" AS NUMERIC) ELSE NULL END AS NUMERIC))
+===
+
+### name: func.canon.postgresql.constant
+--- dialect
+postgresql
+--- source
+CANON(1.50)
+--- expect
+trim_scale(CAST(1.50 AS NUMERIC))
+===
+
+### name: func.canon.postgresql.text-constant
+--- dialect
+postgresql
+--- source
+CANON("007")
+--- expect
+trim_scale(CAST('007' AS NUMERIC))
+===
+
+### name: func.canon.postgresql.exact-under-strict
+--- dialect
+postgresql
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+CANON(N)
+--- expect
+trim_scale(CAST("r"."n" AS NUMERIC))
+===
+
+### name: func.canon.mariadb.num-column
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+CANON(N)
+--- expect
+REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`r`.`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0')
+===
+
+### name: func.canon.mariadb.text-column-is-guarded
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+CANON(T)
+--- expect
+REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(CASE WHEN (`r`.`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`r`.`t` AS DECIMAL(65,10)) ELSE NULL END AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0')
+===
+
+### name: func.canon.mariadb.constant
+--- dialect
+mariadb
+--- source
+CANON(1.50)
+--- expect
+REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(1.50 AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0')
+===
+
+### name: func.canon.mariadb.text-constant
+--- note
+A text constant arrives with its leading zeros; the chain drops them.
+--- dialect
+mariadb
+--- source
+CANON("007")
+--- expect
+REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST('007' AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0')
+===
+
+### name: func.canon.mariadb.exact-under-strict
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+CANON(N)
+--- expect
+REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`r`.`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0')
+===
+
+### name: func.canon.mariadb.guarded-text-is-scale-limited
+--- note
+The guard reads a text operand as DECIMAL(65,10), so a text number with more
+than ten fractional digits loses them before CANON sees it (scale-limit).
+--- dialect
+mariadb
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+CANON(T)
+--- error
+E_SQL_UNSUPPORTED 1:7
+===
+
+### name: func.canon.sqlite.num-column
+--- dialect
+sqlite
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+CANON(N)
+--- expect
+(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT CAST("r"."n" AS NUMERIC) AS canon_n)))
+===
+
+### name: func.canon.sqlite.constant
+--- dialect
+sqlite
+--- source
+CANON(1.50)
+--- expect
+(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT CAST('1.50' AS NUMERIC) AS canon_n)))
+===
+
+### name: func.canon.sqlite.text-constant
+--- dialect
+sqlite
+--- source
+CANON("007")
+--- expect
+(SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT CAST('007' AS NUMERIC) AS canon_n)))
+===
+
+### name: func.canon.sqlite.text-column-is-refused
+--- note
+SQLite cannot ask whether text is a number, so it cannot be told one.
+--- dialect
+sqlite
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+CANON(T)
+--- error
+E_SQL_UNSUPPORTED 1:7
+===
+
+### name: func.canon.sqlite.decimal-float-under-strict
+--- dialect
+sqlite
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+CANON(N)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+
+### name: func.canon.ansi.num-column
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+CANON(N)
+--- expect
+CASE WHEN POSITION('.' IN CAST(CAST("r"."n" AS NUMERIC) AS CHARACTER VARYING)) > 0 THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(CAST("r"."n" AS NUMERIC) AS CHARACTER VARYING))) ELSE CAST(CAST("r"."n" AS NUMERIC) AS CHARACTER VARYING) END
+===
+
+### name: func.canon.ansi.text-column-is-refused
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"N": {"kind": "column", "table": "r", "column": "n", "type": "NUM"}, "T": {"kind": "column", "table": "r", "column": "t", "type": "TEXT"}}
+--- source
+CANON(T)
+--- error
+E_SQL_UNSUPPORTED 1:7
+===
+
+### name: func.canon.not-a-number-is-refused
+--- note
+SEL raises E_NOT_NUM, so there is nothing to translate.
+--- dialect
+mariadb
+--- source
+CANON("x")
+--- error
+E_SQL_INVALID 1:7
+===
+
+### name: func.canon.bool-is-refused
+--- note
+A BOOL is refused by kind, as ABS(TRUE) is.
+--- dialect
+postgresql
+--- source
+CANON(TRUE)
+--- error
+E_SQL_SHAPE 1:7
+===
+
+### name: canon.dedupe.postgresql
+--- note
+DISTINCT over a numeric column is refused (1 and 1.0 are two values in SEL
+and one in SQL); over its canonical form it is exact, and stays numeric.
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("k", CANON(_["n"]))) .> DEDUPE()
+--- expect
+SELECT DISTINCT trim_scale(CAST("n" AS NUMERIC)) AS "k" FROM "r"
+===
+
+### name: canon.dedupe.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("k", CANON(_["n"]))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k` FROM `r`
+===
+
+### name: canon.dedupe.sqlite
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("k", CANON(_["n"]))) .> DEDUPE()
+--- expect
+SELECT DISTINCT CAST((SELECT CASE WHEN canon_n = 0 THEN '0' WHEN instr(canon_s, '.') > 0 THEN rtrim(rtrim(canon_s, '0'), '.') ELSE canon_s END FROM (SELECT canon_n, CAST(canon_n AS TEXT) AS canon_s FROM (SELECT CAST("n" AS NUMERIC) AS canon_n))) AS TEXT) COLLATE BINARY AS "k" FROM "r"
+===
+
+### name: canon.dedupe.of-arithmetic.postgresql
+--- note
+Arithmetic changes a value's scale, and so its SEL identity; its canonical
+form does not depend on the scale.
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("k", CANON(_["n"] * 1.0 + 0.50))) .> DEDUPE()
+--- expect
+SELECT DISTINCT trim_scale(CAST((CAST((CAST("n" AS NUMERIC) * CAST(1.0 AS NUMERIC)) AS NUMERIC) + CAST(0.50 AS NUMERIC)) AS NUMERIC)) AS "k" FROM "r"
+===
+
+### name: canon.bucket.postgresql
+--- note
+A computed numeric group key is refused; a canonical one is exact, grouped
+as the number it is.
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(CANON(_["n"]), RECORD("k", _K, "c", COUNT(_)))
+--- expect
+SELECT MIN(trim_scale(CAST("n" AS NUMERIC))) AS "k", COUNT(*) AS "c" FROM "r" GROUP BY trim_scale(CAST("n" AS NUMERIC))
+===
+
+### name: canon.bucket.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(CANON(_["n"]), RECORD("k", _K, "c", COUNT(_)))
+--- expect
+SELECT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k`, COUNT(*) AS `c` FROM `r` GROUP BY CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`n` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin
+===
+
+### name: canon.bucket.of-arithmetic.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> BUCKET(CANON(_["n"] + 0.5), RECORD("k", _K, "c", COUNT(_)))
+--- expect
+SELECT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST((`n` + 0.5) AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k`, COUNT(*) AS `c` FROM `r` GROUP BY CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST((`n` + 0.5) AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin
+===
+
+### name: canon.sort.postgresql
+--- note
+Numeric on PostgreSQL, so it sorts as SEL sorts it, exactly.
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> SORT_BY(CANON(_["n"]))
+--- expect
+SELECT * FROM "r" ORDER BY trim_scale(CAST("n" AS NUMERIC)) ASC
+===
+
+### name: canon.sort.mariadb-is-refused
+--- note
+Text on the MySQL family, which SQL sorts by its bytes ("10" before "9")
+where SEL sorts it as the number it is. Refused, so the planner sorts in
+memory.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> SORT_BY(CANON(_["n"]))
+--- error
+E_SQL_UNSUPPORTED 1:14
+===
+
+### name: canon.sort.sqlite-is-refused
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> SORT_BY(CANON(_["n"]))
+--- error
+E_SQL_UNSUPPORTED 1:14
+===
+
+### name: canon.sort.ansi-is-refused
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> SORT_BY(CANON(_["n"]))
+--- error
+E_SQL_UNSUPPORTED 1:14
+===
+
+### name: canon.sort.through-a-derived-table.postgresql
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> MAP(RECORD("k", CANON(_["n"]))) .> SORT_BY(_["k"])
+--- expect
+SELECT "_sub1".* FROM (SELECT trim_scale(CAST("n" AS NUMERIC)) AS "k" FROM "r") "_sub1" ORDER BY "_sub1"."k" ASC
+===
+
+### name: canon.sort.through-a-derived-table.mariadb-is-refused
+--- note
+The canonical text reaches the sort through a derived table's column, and
+is still refused there.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("k", CANON(_["n"]))) .> SORT_BY(_["k"])
+--- error
+E_SQL_UNSUPPORTED 1:50
+===
+
+### name: canon.sort.after-dedupe.postgresql
+--- note
+DISTINCT keeps the canonical number numeric, so the sort after it is still
+numeric.
+--- dialect
+postgresql
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- options
+{"strict": true}
+--- as
+statement
+--- source
+R .> MAP(RECORD("k", CANON(_["n"]))) .> DEDUPE() .> SORT_BY(_["k"])
+--- expect
+SELECT "_sub1".* FROM (SELECT DISTINCT trim_scale(CAST("n" AS NUMERIC)) AS "k" FROM "r") "_sub1" ORDER BY "_sub1"."k" ASC
+===
+
+### name: plan.canon.dedupe-after-a-join.postgresql
+--- note
+Scenario 6's shape with the rule saying what it means: both DEDUPE fields
+compared by value. Without CANON this plan is pure_memory
+(plan.identity-barrier.computed-dedupe-after-a-join-stays-local.*); with it,
+the whole pipeline is one statement.
+--- dialect
+postgresql
+--- bindings
+{"PRODUCTS":{"kind":"relation","from":"products","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"CATEGORY_ID":{"kind":"column","column":"category_id","type":"NUM"},"IS_ACTIVE":{"kind":"column","column":"is_active","type":"NUM"}}},"ORDER_ITEMS":{"kind":"relation","from":"order_items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"PRODUCT_ID":{"kind":"column","column":"product_id","type":"NUM"}}}}
+--- source
+PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _["products"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["order_items"]["id"])) .> MAP(RECORD("category_id", CANON(_["products"]["category_id"]), "status", CANON(IF(_["products"]["is_active"] == 1, 1, 1.0)))) .> DEDUPE() .> SORT_BY(_["category_id"]) .> TAKE(10)
+--- plan
+pure_sql
+--- tables
+products
+order_items
+--- expect
+SELECT "_sub1".* FROM (SELECT DISTINCT trim_scale(CAST("products"."category_id" AS NUMERIC)) AS "category_id", trim_scale(CAST(CASE WHEN ("products"."is_active" = 1) THEN 1 ELSE 1.0 END AS NUMERIC)) AS "status" FROM "products" LEFT JOIN "order_items" "_2" ON ("products"."id" = "_2"."product_id") WHERE (CAST("_2"."id" AS TEXT) IS NULL)) "_sub1" ORDER BY "_sub1"."category_id" ASC LIMIT 10
+===
+
+### name: plan.canon.dedupe-after-a-join.mariadb
+--- note
+On the MySQL family the canonical form is text, so the sort by it runs in
+memory; everything before it is one statement.
+--- dialect
+mariadb
+--- bindings
+{"PRODUCTS":{"kind":"relation","from":"products","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"CATEGORY_ID":{"kind":"column","column":"category_id","type":"NUM"},"IS_ACTIVE":{"kind":"column","column":"is_active","type":"NUM"}}},"ORDER_ITEMS":{"kind":"relation","from":"order_items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"PRODUCT_ID":{"kind":"column","column":"product_id","type":"NUM"}}}}
+--- source
+PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _["products"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["order_items"]["id"])) .> MAP(RECORD("category_id", CANON(_["products"]["category_id"]), "status", CANON(IF(_["products"]["is_active"] == 1, 1, 1.0)))) .> DEDUPE() .> SORT_BY(_["category_id"]) .> TAKE(10)
+--- plan
+hybrid
+--- tables
+products
+order_items
+--- expect
+SELECT DISTINCT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(`products`.`category_id` AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `category_id`, CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(CASE WHEN (`products`.`is_active` = 1) THEN 1 ELSE 1.0 END AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `status` FROM `products` LEFT JOIN `order_items` `_2` ON (`products`.`id` = `_2`.`product_id`) WHERE (`_2`.`id` IS NULL)
+===
+
+### name: plan.canon.lets-the-identity-barrier-through.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("k", CANON(_["n"] * 1.0 + 0.50))) .> DEDUPE()
+--- plan
+pure_sql
+--- tables
+r
+--- expect
+SELECT DISTINCT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(((`n` * 1.0) + 0.50) AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k` FROM `r`
+===
+
+### name: plan.canon.a-computed-field-upstream-is-no-barrier.mariadb
+--- note
+The canonical form does not depend on how its argument is spelled, so the
+barrier does not ask whether the MAP before it kept `x`'s identity: `x` is
+computed, and read here through the guard like any undeclared column.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("x", _["n"] * 1.0)) .> MAP(RECORD("k", CANON(_["x"]))) .> DEDUPE()
+--- plan
+pure_sql
+--- tables
+r
+--- expect
+SELECT DISTINCT CAST(REGEXP_REPLACE(REGEXP_SUBSTR(REGEXP_REPLACE(CAST(CASE WHEN (`_sub1`.`x` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`_sub1`.`x` AS DECIMAL(65,10)) ELSE NULL END AS CHAR), '(?<=^-)0+(?=[0-9])|^0+(?=[0-9])', ''), '^-?[0-9]+(\\.[0-9]*[1-9])?'), '^-0$', '0') AS CHAR) COLLATE utf8mb4_nopad_bin AS `k` FROM (SELECT (`n` * 1.0) AS `x` FROM `r`) `_sub1`
+===
+
+### name: plan.canon.the-same-without-it-stays-in-memory.mariadb
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "fields": {"N": {"kind": "column", "column": "n", "type": "NUM"}, "T": {"kind": "column", "column": "t", "type": "TEXT"}}}}
+--- source
+R .> MAP(RECORD("k", _["n"] * 1.0 + 0.50)) .> DEDUPE()
+--- plan
+pure_memory
+--- tables
+r
+===

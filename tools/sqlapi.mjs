@@ -38,5 +38,17 @@ const probe = (label, source) => {
 probe('sql', 'ORDERS .> FILTER(_["AMOUNT"] > 10) .> MAP(RECORD("id", _["ID"], "amount", _["AMOUNT"]))');
 probe('hybrid', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> FILTER(_K > 1)');
 probe('memory', 'A += 1; ORDERS .> TAKE(1)');
+// The canonical flag is public: an application (and the SQL oracle) reads it
+// to know the fragment promised a spelling, not only a value (SEL-0058).
+const fragmentProbe = (label, dialect, source) => {
+  const f = Sql.translate(compile(source), dialect, bindings);
+  say(`fragment.${label}.kind`, f.kind);
+  say(`fragment.${label}.canonical`, bool(f.canonical));
+  say(`fragment.${label}.caveats`, f.caveats.join(',') || '-');
+};
+fragmentProbe('canon.postgresql', 'postgresql', 'CANON(1.50)');
+fragmentProbe('canon.mariadb', 'mariadb', 'CANON(1.50)');
+fragmentProbe('canon.sqlite', 'sqlite', 'CANON(1.50)');
+fragmentProbe('abs.postgresql', 'postgresql', 'ABS(1.50)');
 
 process.stdout.write(out.join('\n') + '\n');

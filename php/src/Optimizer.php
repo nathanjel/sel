@@ -110,12 +110,6 @@ final class Optimizer
             }
             $steps = self::logicalSteps($source, $steps, $options);
             if ($physical) {
-                while (true) {
-                    $pushed = self::pushdownJoinFilters($steps);
-                    $steps = $pushed['steps'];
-                    if (!$pushed['changed']) break;
-                    $steps = self::logicalSteps($source, $steps, $options);
-                }
                 // A tree fact the evaluator's join pre-filter needs (SEL-0050):
                 // whether anything can see the keys a FILTER's result carries.
                 // A following step that renumbers without reading `_K` hides
@@ -479,27 +473,13 @@ final class Optimizer
                     && $firstName === 'FILTER' && $secondName === 'FILTER') {
                     $left = self::filterDetails($first);
                     $right = self::filterDetails($second);
-                    // A tentative FILTER (a pushed conjunct, kept on error) never
-                    // fuses with a real one: the fused predicate could only be
-                    // one or the other.
-                    if ($left['valid'] && $right['valid']
-                        && !empty($left['predicate']['tentative']) === !empty($right['predicate']['tentative'])) {
+                    if ($left['valid'] && $right['valid']) {
                         $predicate = strcasecmp($right['binder'], $left['binder']) === 0
                             ? $right['predicate']
                             : self::renameVar($right['predicate'], $right['binder'], $left['binder']);
                         $merged = self::copyNode($first);
                         $and = ['t' => 'bin', 'op' => 'AND', 'l' => $left['predicate'],
                                 'r' => $predicate, 'pos' => $left['predicate']['pos']];
-                        if (!empty($left['predicate']['tentative'])) $and['tentative'] = true;
-                        if (!empty($left['predicate']['pushedDown']) || !empty($right['predicate']['pushedDown'])) {
-                            $and['pushedDown'] = true;
-                            $rest = static fn (array $p): array => !empty($p['pushedDown']) ? $p['remaining'] : $p;
-                            $isTrue = static fn (array $p): bool => $p['t'] === 'bool' && $p['v'] === true;
-                            $l = $rest($left['predicate']);
-                            $r = $rest($predicate);
-                            $and['remaining'] = $isTrue($l) ? $r : ($isTrue($r) ? $l
-                                : ['t' => 'bin', 'op' => 'AND', 'l' => $l, 'r' => $r, 'pos' => $left['predicate']['pos']]);
-                        }
                         $merged['args'] = $left['explicit']
                             ? [$first['args'][0], $first['args'][1], $and]
                             : [$first['args'][0], $and];
@@ -778,226 +758,6 @@ final class Optimizer
         }
         foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
             if (isset($copy[$key]) && is_array($copy[$key])) $copy[$key] = self::renameVar($copy[$key], $old, $new);
-        }
-        return $copy;
-    }
-
-    /** @param list<array<string,mixed>> $steps
-     * @return array{steps:list<array<string,mixed>>,changed:bool} */
-    private static function pushdownJoinFilters(array $steps): array
-    {
-        $out = [];
-        $changed = false;
-        for ($i = 0; $i < count($steps); $i++) {
-            $link = $steps[$i];
-            $filter = $steps[$i + 1] ?? null;
-            if ($filter === null || !in_array($link['name'], ['LINK', 'LINK_LEFT'], true)
-                || ($filter['name'] ?? '') !== 'FILTER') {
-                $out[] = $link;
-                continue;
-            }
-            $info = self::filterDetails($filter);
-            if (!$info['valid']) {
-                $out[] = $link;
-                continue;
-            }
-            // An unqualified `_` after a join denotes the composite row and is
-            // deliberately ambiguous; only the left binder may be pushed into
-            // the left input.
-            $leftNames = ['_1'];
-            $rightNames = ['_2'];
-            $leftNames = array_merge($leftNames, self::collectPipelineSourceNames($link['args'][0]));
-            $rightNames = array_merge($rightNames, self::collectPipelineSourceNames($link['args'][1]));
-            if (count($link['args']) === 5) {
-                if (($link['args'][2]['t'] ?? null) === 'var') $leftNames[] = $link['args'][2]['name'];
-                if (($link['args'][3]['t'] ?? null) === 'var') $rightNames[] = $link['args'][3]['name'];
-            }
-            // A FILTER whose conjuncts were already pushed keeps them all (see
-            // below), so it must not be pushed again on the next pass.
-            if (!empty($info['predicate']['pushedDown'])) {
-                $out[] = $link;
-                continue;
-            }
-            $left = [];
-            $right = [];
-            $remaining = [];
-            // Only the LEADING run of conjuncts that name one side is pushed: a
-            // conjunct left for the join might raise on a row an early test of
-            // a later conjunct would drop, and the program as written reaches
-            // that raise first (spec §7.4; SEL-0051). The rest stays above.
-            $side = null;
-            foreach (self::splitAnd($info['predicate']) as $conjunct) {
-                $affinity = self::predicateAffinity($conjunct, $info['binder'], $leftNames, $rightNames);
-                if ($remaining === [] && $affinity === 'left' && $side !== 'right') {
-                    $side = 'left';
-                    $left[] = self::rewriteJoinRefs($conjunct, $leftNames, $info['binder']);
-                } elseif ($remaining === [] && $affinity === 'right' && $link['name'] === 'LINK' && $side !== 'left') {
-                    $side = 'right';
-                    $right[] = self::rewriteJoinRefs($conjunct, $rightNames, $info['binder']);
-                } else {
-                    $remaining[] = $conjunct;
-                }
-            }
-            if ($left === [] && $right === []) {
-                $out[] = $link;
-                continue;
-            }
-            // The pushed conjuncts run TENTATIVELY under the join -- a row they
-            // raise on is kept -- and the FILTER above keeps its whole predicate
-            // in the source's order, so the program raises what it raises as
-            // written, where it would have (spec §7.4; SEL-0051). The marks are
-            // physical-tree metadata on the body nodes; copies and filter
-            // fusion keep them.
-            $tentative = static function (array $conjuncts, array $pos): array {
-                $body = self::combineAnd($conjuncts, $pos);
-                $body['tentative'] = true;
-                return $body;
-            };
-            if ($left !== []) {
-                $out[] = self::callNode('FILTER', [$link['args'][0], $tentative($left, $filter['pos'])], $filter['pos']);
-            }
-            $newLink = $link;
-            if ($right !== []) {
-                $newLink = self::copyNode($link);
-                $newLink['args'] = $link['args'];
-                $newLink['args'][1] = self::callNode('FILTER', [$link['args'][1], $tentative($right, $filter['pos'])], $filter['pos']);
-            }
-            $out[] = $newLink;
-            // The retained predicate is the whole one; `remaining` is what the
-            // FILTER evaluates instead when no tentative body kept a row on an
-            // error while its source ran (the pushed conjuncts then held on
-            // every row it sees).
-            $predicate = $info['predicate'];
-            $predicate['pushedDown'] = true;
-            $predicate['remaining'] = $remaining !== []
-                ? self::combineAnd($remaining, $filter['pos'])
-                : self::boolNode(true, $filter['pos']);
-            $newFilter = self::copyNode($filter);
-            $newFilter['args'] = $info['explicit']
-                ? [$newLink, $filter['args'][1], $predicate]
-                : [$newLink, $predicate];
-            $out[] = $newFilter;
-            $changed = true;
-            $i++;
-        }
-        return ['steps' => $out, 'changed' => $changed];
-    }
-
-    /** @param array<string,mixed>|null $node @return list<string> */
-    private static function collectPipelineSourceNames(?array $node): array
-    {
-        $names = [];
-        $visit = function (?array $item) use (&$visit, &$names): void {
-            if ($item === null) return;
-            if (($item['t'] ?? null) === 'var') {
-                $names[] = (string) $item['name'];
-                return;
-            }
-            if (($item['t'] ?? null) !== 'call') return;
-            $name = $item['name'] ?? '';
-            if (in_array($name, ['LINK', 'LINK_LEFT'], true)) {
-                $visit($item['args'][0] ?? null);
-                $visit($item['args'][1] ?? null);
-                return;
-            }
-            if (in_array($name, self::PIPELINE_OPS, true)) {
-                $visit($item['args'][0] ?? null);
-            }
-        };
-        $visit($node);
-        return array_values(array_unique($names, SORT_STRING));
-    }
-
-    /** @return list<array<string,mixed>> */
-    private static function splitAnd(array $node): array
-    {
-        return ($node['t'] ?? null) === 'bin' && ($node['op'] ?? null) === 'AND'
-            ? array_merge(self::splitAnd($node['l']), self::splitAnd($node['r']))
-            : [$node];
-    }
-
-    /** @param list<array<string,mixed>> $nodes */
-    private static function combineAnd(array $nodes, array $pos): array
-    {
-        $result = array_shift($nodes);
-        foreach ($nodes as $node) {
-            $result = ['t' => 'bin', 'op' => 'AND', 'l' => $result, 'r' => $node,
-                       'pos' => $result['pos'] ?? $pos];
-        }
-        return $result;
-    }
-
-    /** @return 'left'|'right'|'both'|'unknown'|'ambiguous' */
-    private static function predicateAffinity(array $node, string $binder, array $leftNames, array $rightNames): string
-    {
-        $hasLeft = false;
-        $hasRight = false;
-        $unknown = false;
-        $ambiguous = false;
-        $visit = function (?array $item) use (&$visit, &$hasLeft, &$hasRight, &$unknown, &$ambiguous, $binder, $leftNames, $rightNames): void {
-            if ($item === null) return;
-            if (($item['t'] ?? null) === 'index'
-                && ($item['obj']['t'] ?? null) === 'index'
-                && ($item['obj']['obj']['t'] ?? null) === 'var'
-                && ($item['obj']['idx']['t'] ?? null) === 'text'
-                && ($item['idx']['t'] ?? null) === 'text'
-                && in_array(strtoupper((string) $item['obj']['obj']['name']), [strtoupper($binder), '_'], true)) {
-                $table = strtoupper((string) $item['obj']['idx']['v']);
-                if (in_array($table, array_map('strtoupper', $leftNames), true)) $hasLeft = true;
-                elseif (in_array($table, array_map('strtoupper', $rightNames), true)) $hasRight = true;
-                else $unknown = true;
-                return;
-            }
-            if (($item['t'] ?? null) === 'index'
-                && ($item['obj']['t'] ?? null) === 'var'
-                && ($item['idx']['t'] ?? null) === 'text') {
-                // `O["id"]` or `ORDERS["id"]` after the LINK: the binders are
-                // scoped to the predicate (spec §7.4), so as written this is
-                // E_UNDEF_VAR, or E_NO_KEY on the relation's list. Pushing it into
-                // the side it names turned that error into rows (review
-                // 2026-09-15, W2) -- only `_["O"]["id"]`, a read through the
-                // joined row's key, names a side.
-                $name = strtoupper((string) $item['obj']['name']);
-                if ($name === strtoupper($binder) || $name === '_') $ambiguous = true;
-                else $unknown = true;
-                return;
-            }
-            if (($item['t'] ?? null) === 'var') {
-                $name = strtoupper((string) $item['name']);
-                if ($name !== strtoupper($binder) && $name !== '_') $unknown = true;
-            }
-            foreach (['args', 'items'] as $key) foreach ($item[$key] ?? [] as $child) $visit($child);
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($item[$key]) && is_array($item[$key])) $visit($item[$key]);
-            }
-        };
-        $visit($node);
-        if ($ambiguous || $unknown) return $ambiguous ? 'ambiguous' : 'unknown';
-        if ($hasLeft && $hasRight) return 'both';
-        if ($hasLeft) return 'left';
-        if ($hasRight) return 'right';
-        return 'unknown';
-    }
-
-    /** @param list<string> $names */
-    private static function rewriteJoinRefs(array $node, array $names, string $binder = '_'): array
-    {
-        $copy = self::copyNode($node);
-        if (($copy['t'] ?? null) === 'index'
-            && ($copy['obj']['t'] ?? null) === 'index'
-            && ($copy['obj']['obj']['t'] ?? null) === 'var'
-            && ($copy['obj']['idx']['t'] ?? null) === 'text'
-            && ($copy['idx']['t'] ?? null) === 'text'
-            && in_array(strtoupper((string) $copy['obj']['obj']['name']), ['_', strtoupper($binder)], true)
-            && in_array(strtoupper((string) $copy['obj']['idx']['v']), array_map('strtoupper', $names), true)) {
-            $copy['obj'] = ['t' => 'var', 'name' => '_', 'pos' => $copy['obj']['obj']['pos']];
-            return $copy;
-        }
-        foreach (['args', 'items'] as $key) if (isset($copy[$key])) {
-            $copy[$key] = array_map(static fn (array $item): array => self::rewriteJoinRefs($item, $names, $binder), $copy[$key]);
-        }
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($copy[$key]) && is_array($copy[$key])) $copy[$key] = self::rewriteJoinRefs($copy[$key], $names, $binder);
         }
         return $copy;
     }

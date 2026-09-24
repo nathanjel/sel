@@ -13,6 +13,7 @@ export const BUILTIN_MANIFEST = Object.freeze({
   BLEN: { min: 1, max: 1, lazy: false, binds: false, arity: null },
   BTL: { min: 1, max: 1, lazy: false, binds: false, arity: null },
   BUCKET: { min: 2, max: 4, lazy: true, binds: true, arity: null },
+  CANON: { min: 1, max: 1, lazy: false, binds: false, arity: null },
   CEIL: { min: 1, max: 1, lazy: false, binds: false, arity: null },
   CHAR: { min: 1, max: 1, lazy: false, binds: false, arity: null },
   COALESCE: { min: 1, max: Infinity, lazy: true, binds: false, arity: null },

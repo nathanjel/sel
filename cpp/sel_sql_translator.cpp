@@ -196,6 +196,10 @@ Fragment Translator::translate(const NodePtr& ast) {
   out.params_ = params_;
   out.param_kinds_ = param_kinds_;
   out.caveats_ = caveats_;
+  // Public: it says the value is a canonical number, whose spelling is the
+  // contract and not only its value (the SQL oracle compares it as text).
+  // Lost here once, in every host at the same time.
+  out.canonical_ = f.canonical_;
   return out;
 }
 
@@ -362,6 +366,7 @@ Fragment Translator::column_ref(const ColumnSpec& c) {
   if (c.prefilter && *c.prefilter == "separate") {
     f.set_separate_prefilter(true);
   }
+  f.set_canonical(c.canonical);
   return f;
 }
 
@@ -524,6 +529,10 @@ Fragment Translator::group_key(const Source& src, const RelationalGroup& gb, boo
 }
 
 Fragment Translator::identity_group_key(const SNodePtr& n, const Fragment& f) const {
+  // One spelling per value, so the value's equality is the spelling's: grouped
+  // and compared as the number it is, which keeps it a number for whatever
+  // sorts it afterwards.
+  if (f.canonical() && f.kind() == SqlKind::Num) return f;
   if (f.kind() == SqlKind::Unknown) refuse("E_SQL_SHAPE", "group keys require proven scalar identity", n->pos());
   if (f.kind() == SqlKind::Num) {
     if (n->t() != SNode::T::Var && n->t() != SNode::T::Index && n->t() != SNode::T::Num) {
@@ -532,6 +541,34 @@ Fragment Translator::identity_group_key(const SNodePtr& n, const Fragment& f) co
     const Fragment numeric(f.parts(), SqlKind::Num, dialect_, f.params(), f.param_kinds(), f.caveats());
     const Fragment w = emit_.text_operand(numeric);
     return Fragment(w.parts(), SqlKind::Text, dialect_, w.params(), w.param_kinds(), w.caveats(), true, false, false);
+  }
+  return collated_key(f);
+}
+
+// A sort key, as SEL's sort compares it. SEL sorts numbers as numbers and other
+// text by its bytes -- and number-shaped TEXT as a number, which SQL's ORDER BY
+// cannot: it sorts a text key by its bytes throughout, so "10" comes before "9"
+// (SEL-0060). A NUM key sorts as SEL sorts it. A canonical number the dialect
+// can only carry as text is always a number to SEL, so sorting it in SQL is
+// simply wrong: refused, and the planner sorts in memory (SEL-0058). Any other
+// TEXT or UNKNOWN key is sorted anyway, declared text-order, and refused under
+// strict.
+Fragment Translator::order_key(const Fragment& f, Pos pos) {
+  if (f.kind() == SqlKind::Num) return f;
+  if (f.canonical()) {
+    refuse("E_SQL_UNSUPPORTED",
+           "CANON is text on " + dialect_ + ", which SQL sorts by its bytes, and SEL "
+           "sorts it as the number it is; sort it in memory",
+           pos);
+  }
+  if (f.kind() == SqlKind::Text || f.kind() == SqlKind::Unknown) {
+    if (strict_) {
+      refuse("E_SQL_UNSUPPORTED",
+             "a text key sorts by its bytes in SQL, where SEL sorts number-shaped "
+             "text as numbers (text-order); strict mode refuses that",
+             pos);
+    }
+    add_caveat("text-order");
   }
   return collated_key(f);
 }
@@ -571,7 +608,9 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
         std::vector<Fragment::Part> parts{{false, "MIN(", 0}};
         parts.insert(parts.end(), key.parts().begin(), key.parts().end());
         parts.push_back({false, ")", 0});
-        return Fragment(parts, SqlKind::Num, dialect_, key.params(), key.param_kinds(), key.caveats());
+        Fragment out(parts, SqlKind::Num, dialect_, key.params(), key.param_kinds(), key.caveats());
+        out.set_canonical(key.canonical());
+        return out;
       }
       // In a HAVING, MariaDB and MySQL resolve a column only against the
       // GROUP BY columns and the select list, not against an equal
@@ -588,6 +627,7 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
         Fragment out(std::move(parts), SqlKind::Text, dialect_, collated.params(),
                      collated.param_kinds(), collated.caveats());
         out.set_exact(true);
+        out.set_canonical(key.canonical());
         return out;
       }
       return collated;
@@ -968,7 +1008,61 @@ void Translator::require_numeric_constant(const SNode& n) {
 // fields.
 Fragment Translator::guard_numeric(const Fragment& f, const SNode& n) {
   if (is_constant(n, const_names_)) return f;
-  return emit_.numeric_operand(f, n.pos());
+  // numeric_operand hands an unguarded NUM back untouched and wraps anything
+  // else; the other hosts test the result's identity, which a value cannot.
+  const bool wraps = f.kind() != SqlKind::Num || f.guard();
+  Fragment guarded = emit_.numeric_operand(f, n.pos());
+  if (wraps) {
+    // The guard reads the text as the dialect's numericCast type, and where
+    // that type fixes a scale the data's digits past it are gone before
+    // anything else sees them (SEL-0059).
+    scale_limited(n.pos(), "this operand is read as a number");
+  }
+  return guarded;
+}
+
+// How many fractional digits the dialect's numericCast and numericGuard keep,
+// or nullopt where they keep every one (sql/MAP.md §3). A cap too long for an
+// int saturates: no constant's scale reaches it either way.
+std::optional<std::int32_t> Translator::numeric_cast_scale() const {
+  const Lexical* cap = emit_.lex("numericCastScale");
+  if (!cap || cap->kind != LexKind::Text || cap->text.empty()) return std::nullopt;
+  std::int64_t out = 0;
+  for (char c : cap->text) {
+    if (c < '0' || c > '9') return std::nullopt;
+    out = std::min<std::int64_t>(out * 10 + (c - '0'), INT32_MAX);
+  }
+  return static_cast<std::int32_t>(out);
+}
+
+void Translator::scale_limited(Pos pos, const std::string& what) {
+  const std::optional<std::int32_t> cap = numeric_cast_scale();
+  if (!cap) return;
+  if (strict_) {
+    refuse("E_SQL_UNSUPPORTED",
+           what + " through a DECIMAL that keeps " + std::to_string(*cap) +
+               " fractional digits, and a value with more loses them on " +
+               dialect_ + " (scale-limit); strict mode refuses that",
+           pos);
+  }
+  add_caveat("scale-limit");
+}
+
+// The coerce variant reads both operands through numericCast. A constant's
+// scale is known and only one past the cap is truncated; a column's is not --
+// NUM says it is a number, not how many fractional digits it has.
+void Translator::coerce_scale_limits(std::span<const SNode* const> operands) {
+  const std::optional<std::int32_t> cap = numeric_cast_scale();
+  if (!cap) return;
+  for (const SNode* operand : operands) {
+    if (is_constant(*operand, const_names_)) {
+      if (constant_scale(*operand, const_root_) > *cap) {
+        scale_limited(operand->pos(), "this constant is read as a number");
+      }
+    } else {
+      scale_limited(operand->pos(), "this operand is read as a number");
+    }
+  }
 }
 
 // --- the map application path ------------------------------------------------
@@ -1172,6 +1266,10 @@ Fragment Translator::binary(const SNode& n) {
   // Captured BEFORE the rewrite below, which forces both kinds to TEXT.
   const Fragment before[] = {l, r};
   const std::optional<std::string> variant = variant_for(op, before);
+  if (variant == "coerce") {
+    const SNode* const operands[] = {n.l().get(), n.r().get()};
+    coerce_scale_limits(operands);
+  }
 
   if (contains(BYTE_COMPARISONS, op)) {
     require_comparable_kinds(l, r, op, n.pos());
@@ -1613,7 +1711,7 @@ bool is_numeric_argument(std::string_view name, size_t i) {
   if (i == 0) {
     return name == "ABS" || name == "SIGN" || name == "CEIL" ||
            name == "FLOOR" || name == "TRUNC" || name == "ROUND" ||
-           name == "POWER" || name == "CHAR";
+           name == "POWER" || name == "CHAR" || name == "CANON";
   }
   if (i == 1) {
     return name == "ROUND" || name == "POWER" || name == "LEFT" ||
@@ -1815,7 +1913,9 @@ Fragment Translator::call(const SNodePtr& n) {
   }
   // No variant is ever passed for funcs. SEL's own arity was enforced at parse
   // time, so apply() defends only the dialect's optional narrowing.
-  return apply(Section::Funcs, name, args, n->pos());
+  Fragment out = apply(Section::Funcs, name, args, n->pos());
+  if (name == "CANON") out.set_canonical(true);
+  return out;
 }
 
 }  // namespace sel::sql
@@ -2502,6 +2602,22 @@ SqlKind Translator::output_field_type(const RelationalPlan& plan, std::string na
   return match && !match->guard && !match->is_raw ? match->type : SqlKind::Unknown;
 }
 
+// The kind of a projected CANON(...), which a derived table's column keeps: the
+// dialect's CANON kind -- the map entry's ret, NUM or TEXT.
+std::optional<SqlKind> Translator::output_canon_kind(const RelationalPlan& plan,
+                                                     const std::string& name) const {
+  if (!plan.projections) return std::nullopt;
+  const RelationalProjection* projection = nullptr;
+  for (const auto& p : *plan.projections) {
+    if (p.alias && *p.alias == name) { projection = &p; break; }
+  }
+  const SNodePtr n = projection ? projection->node : nullptr;
+  if (!n || n->t() != SNode::T::Call || n->s() != "CANON") return std::nullopt;
+  const Entry* entry = Map::entry(dialect_, Section::Funcs, "CANON");
+  if (!entry || entry->kind != EntryKind::Template) return std::nullopt;
+  return kind_from_name(entry->ret);
+}
+
 RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
   if (!needed) return plan;
   const std::string alias = "_sub" + std::to_string(++subquery_counter_);
@@ -2533,6 +2649,10 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
     field.column = source_field ? source_field->column : name;
     field.table = alias;
     field.type = output_field_type(subquery, name);
+    if (const std::optional<SqlKind> canon_kind = output_canon_kind(subquery, name)) {
+      field.type = *canon_kind;
+      field.canonical = true;
+    }
     derived.source_relation.fields.emplace_back(ascii_upper(name), std::move(field));
   }
   return derived;
@@ -3089,7 +3209,7 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
               ? with_group(src, proj.binder, [&]() { return node(proj.node); })
               : with_row(src, proj.binder, [&]() { return node(proj.node); });
       if (plan.distinct) {
-        if (p_frag.kind() == SqlKind::Unknown || p_frag.kind() == SqlKind::Num) refuse("E_SQL_SHAPE", "DISTINCT requires proven structural output identity", proj.node->pos());
+        if ((p_frag.kind() == SqlKind::Unknown || p_frag.kind() == SqlKind::Num) && !p_frag.canonical()) refuse("E_SQL_SHAPE", "DISTINCT requires proven structural output identity", proj.node->pos());
         p_frag = identity_group_key(proj.node, p_frag);
       }
       for (const auto& p : p_frag.parts()) {
@@ -3273,11 +3393,13 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       if (!first) add_sql(", ");
       first = false;
       // A TEXT sort key is collated like a group key: SEL sorts text by its
-      // bytes, and a server's default collation would not.
+      // bytes, and a server's default collation would not. order_key says what
+      // SQL's sort cannot promise.
       const auto render = [&]() { return node(ord.node); };
-      Fragment o_frag = collated_key(ord.over_groups ? with_group(src, ord.binder, render)
-                                     : plan.group_by ? with_projected(src, ord.binder, render)
-                                                     : with_row(src, ord.binder, render));
+      Fragment o_frag = order_key(ord.over_groups ? with_group(src, ord.binder, render)
+                                  : plan.group_by ? with_projected(src, ord.binder, render)
+                                                  : with_row(src, ord.binder, render),
+                                  ord.node->pos());
       for (const auto& p : o_frag.parts()) {
         parts.push_back(p);
       }

@@ -109,3 +109,91 @@ pure_memory
 --- tables
 r
 ===
+
+### name: plan.identity-barrier.text-literal-dedupe-after-a-join-splits-at-the-map.postgresql
+--- note
+The scale harness's scenario 6. DEDUPE compares whole rows, and `status` is
+computed with IF -- but an IF whose every result is a text literal comes back
+from SQL as exactly that literal, so the barrier lets the MAP end a prefix
+(SEL-0057; until then this plan was pure_memory, SEL-0055). The DEDUPE itself
+stays in memory: `category_id` is a NUM column, and DISTINCT over a number
+compares values where SEL compares spellings (CANON is how a rule says it
+means values). What SQL returns is the 100 unsold products, not 92,100 rows.
+--- dialect
+postgresql
+--- bindings
+{"PRODUCTS":{"kind":"relation","from":"products","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"SKU":{"kind":"column","column":"sku","type":"TEXT"},"CATEGORY_ID":{"kind":"column","column":"category_id","type":"NUM"},"IS_ACTIVE":{"kind":"column","column":"is_active","type":"NUM"}}},"ORDER_ITEMS":{"kind":"relation","from":"order_items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"PRODUCT_ID":{"kind":"column","column":"product_id","type":"NUM"}}}}
+--- source
+PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _["products"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["order_items"]["id"])) .> MAP(RECORD("category_id", _["products"]["category_id"], "status", IF(_["products"]["is_active"] == 1, "ACTIVE_UNSOLD", "INACTIVE_UNSOLD"))) .> DEDUPE() .> SORT_BY(_["category_id"] * 2 + IF(_["status"] $== "ACTIVE_UNSOLD", 0, 1), "ASC") .> TAKE(10)
+--- plan
+hybrid
+--- tables
+products
+order_items
+--- expect
+SELECT "products"."category_id" AS "category_id", CASE WHEN ("products"."is_active" = 1) THEN 'ACTIVE_UNSOLD' ELSE 'INACTIVE_UNSOLD' END AS "status" FROM "products" LEFT JOIN "order_items" "_2" ON ("products"."id" = "_2"."product_id") WHERE (CAST("_2"."id" AS TEXT) IS NULL)
+===
+
+### name: plan.identity-barrier.text-literal-dedupe-after-a-join-splits-at-the-map.mariadb
+--- note
+The scale harness's scenario 6. DEDUPE compares whole rows, and `status` is
+computed with IF -- but an IF whose every result is a text literal comes back
+from SQL as exactly that literal, so the barrier lets the MAP end a prefix
+(SEL-0057; until then this plan was pure_memory, SEL-0055). The DEDUPE itself
+stays in memory: `category_id` is a NUM column, and DISTINCT over a number
+compares values where SEL compares spellings (CANON is how a rule says it
+means values). What SQL returns is the 100 unsold products, not 92,100 rows.
+--- dialect
+mariadb
+--- bindings
+{"PRODUCTS":{"kind":"relation","from":"products","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"SKU":{"kind":"column","column":"sku","type":"TEXT"},"CATEGORY_ID":{"kind":"column","column":"category_id","type":"NUM"},"IS_ACTIVE":{"kind":"column","column":"is_active","type":"NUM"}}},"ORDER_ITEMS":{"kind":"relation","from":"order_items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"PRODUCT_ID":{"kind":"column","column":"product_id","type":"NUM"}}}}
+--- source
+PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _["products"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["order_items"]["id"])) .> MAP(RECORD("category_id", _["products"]["category_id"], "status", IF(_["products"]["is_active"] == 1, "ACTIVE_UNSOLD", "INACTIVE_UNSOLD"))) .> DEDUPE() .> SORT_BY(_["category_id"] * 2 + IF(_["status"] $== "ACTIVE_UNSOLD", 0, 1), "ASC") .> TAKE(10)
+--- plan
+hybrid
+--- tables
+products
+order_items
+--- expect
+SELECT `products`.`category_id` AS `category_id`, CASE WHEN (`products`.`is_active` = 1) THEN 'ACTIVE_UNSOLD' ELSE 'INACTIVE_UNSOLD' END AS `status` FROM `products` LEFT JOIN `order_items` `_2` ON (`products`.`id` = `_2`.`product_id`) WHERE (`_2`.`id` IS NULL)
+===
+
+### name: plan.identity-barrier.column-dedupe-after-a-join-splits-at-the-map.postgresql
+--- note
+The control for the case above: with a column in place of the IF, the MAP
+is the end of a SQL prefix and the DEDUPE, the sort and the TAKE run over
+its rows. The computed projection is what keeps the other plan in memory.
+--- dialect
+postgresql
+--- bindings
+{"PRODUCTS":{"kind":"relation","from":"products","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"SKU":{"kind":"column","column":"sku","type":"TEXT"},"CATEGORY_ID":{"kind":"column","column":"category_id","type":"NUM"},"IS_ACTIVE":{"kind":"column","column":"is_active","type":"NUM"}}},"ORDER_ITEMS":{"kind":"relation","from":"order_items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"PRODUCT_ID":{"kind":"column","column":"product_id","type":"NUM"}}}}
+--- source
+PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _["products"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["order_items"]["id"])) .> MAP(RECORD("category_id", _["products"]["category_id"], "status", _["products"]["sku"])) .> DEDUPE() .> SORT_BY(_["category_id"] * 2 + IF(_["status"] $== "ACTIVE_UNSOLD", 0, 1), "ASC") .> TAKE(10)
+--- plan
+hybrid
+--- tables
+products
+order_items
+--- expect
+SELECT "products"."category_id" AS "category_id", "products"."sku" AS "status" FROM "products" LEFT JOIN "order_items" "_2" ON ("products"."id" = "_2"."product_id") WHERE (CAST("_2"."id" AS TEXT) IS NULL)
+===
+
+### name: plan.identity-barrier.column-dedupe-after-a-join-splits-at-the-map.mariadb
+--- note
+The control for the case above: with a column in place of the IF, the MAP
+is the end of a SQL prefix and the DEDUPE, the sort and the TAKE run over
+its rows. The computed projection is what keeps the other plan in memory.
+--- dialect
+mariadb
+--- bindings
+{"PRODUCTS":{"kind":"relation","from":"products","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"SKU":{"kind":"column","column":"sku","type":"TEXT"},"CATEGORY_ID":{"kind":"column","column":"category_id","type":"NUM"},"IS_ACTIVE":{"kind":"column","column":"is_active","type":"NUM"}}},"ORDER_ITEMS":{"kind":"relation","from":"order_items","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"PRODUCT_ID":{"kind":"column","column":"product_id","type":"NUM"}}}}
+--- source
+PRODUCTS .> LINK_LEFT(ORDER_ITEMS, _["products"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["order_items"]["id"])) .> MAP(RECORD("category_id", _["products"]["category_id"], "status", _["products"]["sku"])) .> DEDUPE() .> SORT_BY(_["category_id"] * 2 + IF(_["status"] $== "ACTIVE_UNSOLD", 0, 1), "ASC") .> TAKE(10)
+--- plan
+hybrid
+--- tables
+products
+order_items
+--- expect
+SELECT `products`.`category_id` AS `category_id`, `products`.`sku` AS `status` FROM `products` LEFT JOIN `order_items` `_2` ON (`products`.`id` = `_2`.`product_id`) WHERE (`_2`.`id` IS NULL)
+===

@@ -350,6 +350,11 @@ non-null value.
 children it is compared directly against `x`. `NULL IN list` is `TRUE` if any
 element of `list` is NULL.
 
+Every identity in the language is this one: `DISTINCT`/`DEDUPE`, `BUCKET`'s
+group key (§7.3) and an index key (§3.3) tell `1`, `1.0` and `1.00` apart as
+`EQL` does. To compare numbers by value there, compare their canonical forms:
+`CANON(x)` (§7.6) is the one spelling every equal number shares.
+
 ### 5.5 Coalescing — `??` and `???`
 
 `a ?? b` evaluates `a`. If `a` evaluates to NULL, or if evaluating `a` fails
@@ -803,6 +808,16 @@ FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2)` over an order whose
 status is `"B"` and whose amount is text answers the rows it would answer had
 the join been assigned to a variable first; the same predicate with its
 conjuncts swapped is `E_NOT_NUM` at the amount, in either form.
+Nothing else an early test does can be seen either. The `FILTER`'s result
+keeps the keys the joined rows had (§7.3), not the positions of the rows a
+smaller join would have made. Every join still computes every key it would
+have computed: an element dropped early still raises in a key expression it
+cannot evaluate, so does a join above it, and a side emptied early does not
+spare the other side's keys. And a member the predicate reads is the joined
+row's: under explicit binders, `LINK(C, L, R, …)`, the right element is
+`_["R"]` and `_["C"]` is no member, and `_["A"]["cid"]` reads the element
+`A` carries, never a field of the same name that the rows of a join below
+carry.
 
 ### 7.5 Text
 
@@ -841,7 +856,17 @@ silently rather than loudly.
 | `ROUND(x, n)` | scale exactly `n`, `n >= 0`, half away from zero |
 | `MIN(a, b, …)` `MAX(a, b, …)` | at least one argument |
 | `POWER(x, n)` | `n` a non-negative integer; result scale `scale(x) * n` |
+| `CANON(x)` | the canonical form of the number `x`: §4.1's, with the fraction's trailing zeros and then a bare point removed |
 | `ISNUM(x)` | BOOL — whether `x` parses as a number |
+
+`CANON` gives every number one spelling per value: `CANON(1.50)` is `1.5`,
+`CANON(2.000)` is `2`, `CANON(100)` is `100`, `CANON("007.50")` is `7.5` and
+`CANON(-0.00)` is `0`. Scale is part of a number (§4.1) and so of its identity
+(§5.4); `CANON` is how a rule compares numbers by value in the places that
+compare by identity — `LIST(1.0, 1) .> MAP(CANON(_)) .> DEDUPE()` has one
+element. Its argument is read as every numeric argument is: text that is not a
+number (`" 2"`, `"1."`, `".5"`, `"1e3"`) is `E_NOT_NUM`, BOOL and BIN are
+`E_NOT_NUM`, NULL is `E_NULL`. The result is an ordinary number and sorts as one.
 
 `SQRT`, `LOG` and `RANDOM` do not exist: the first two have no exact decimal
 result, and the third would make the conformance suite meaningless.

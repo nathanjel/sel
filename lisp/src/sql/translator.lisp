@@ -166,6 +166,7 @@ it is a named constructor and not a map key."
                            (not (null (getf spec :guard))))))
       (when (equal (getf spec :prefilter) "separate")
         (setf (fragment-separate-prefilter frag) t))
+      (setf (fragment-canonical frag) (not (null (getf spec :canonical))))
       frag)))
 
 (defun translate-variable (tr n)
@@ -334,9 +335,39 @@ only as the identical expression."
                    (fragment-params w) (fragment-param-kinds w) (fragment-caveats w)
                    t nil nil))))
 
+(defun order-key (tr f pos)
+  "A sort key, as SEL's sort compares it. SEL sorts numbers as numbers and
+other text by its bytes -- and number-shaped TEXT as a number, which SQL's ORDER
+BY cannot: it sorts a text key by its bytes throughout, so \"10\" comes before
+\"9\" (SEL-0060). A NUM key sorts as SEL sorts it. A canonical number the
+dialect can only carry as text is always a number to SEL, so sorting it in SQL
+is simply wrong: refused, and the planner sorts in memory (SEL-0058). Any other
+TEXT or UNKNOWN key is sorted anyway, declared text-order, and refused under
+strict."
+  (when (eq (fragment-kind f) :num)
+    (return-from order-key f))
+  (when (fragment-canonical f)
+    (refuse "E_SQL_UNSUPPORTED"
+            (format nil "CANON is text on ~a, which SQL sorts by its bytes, and SEL ~
+sorts it as the number it is; sort it in memory" (translator-dialect tr))
+            pos))
+  (when (member (fragment-kind f) '(:text :unknown))
+    (when (translator-strict tr)
+      (refuse "E_SQL_UNSUPPORTED"
+              "a text key sorts by its bytes in SQL, where SEL sorts number-shaped ~
+text as numbers (text-order); strict mode refuses that"
+              pos))
+    (add-caveat tr "text-order"))
+  (collated-key tr f))
+
 (defun identity-group-key (tr n f)
   "Numeric equality is not SEL key identity. Preserve stored/literal numeric
 text, but do not pretend SQL arithmetic preserved the evaluator's scale."
+  (when (and (fragment-canonical f) (eq (fragment-kind f) :num))
+    ;; One spelling per value, so the value's equality is the spelling's:
+    ;; grouped and compared as the number it is, which keeps it a number for
+    ;; whatever sorts it afterwards.
+    (return-from identity-group-key f))
   (when (eq (fragment-kind f) :unknown)
     (refuse "E_SQL_SHAPE" "group keys require proven scalar identity" (snode-pos n)))
   (if (eq (fragment-kind f) :num)
@@ -387,14 +418,18 @@ text, but do not pretend SQL arithmetic preserved the evaluator's scale."
               (cond
                 ((eq (fragment-kind key) :num)
                  ;; Identity is textual; arithmetic/order over _K remain numeric.
-                 (%fragment (append (list "MIN(") (fragment-parts key) (list ")"))
-                            :num (translator-dialect tr) (fragment-params key)
-                            (fragment-param-kinds key) (fragment-caveats key)))
+                 (let ((out (%fragment (append (list "MIN(") (fragment-parts key) (list ")"))
+                                       :num (translator-dialect tr) (fragment-params key)
+                                       (fragment-param-kinds key) (fragment-caveats key))))
+                   (setf (fragment-canonical out) (fragment-canonical key))
+                   out))
                 ((not (eq collated key))
-                  (%fragment (append (list "MIN(") (fragment-parts collated) (list ")"))
-                             :text (translator-dialect tr)
-                             (fragment-params collated) (fragment-param-kinds collated)
-                             (fragment-caveats collated) t nil nil))
+                 (let ((out (%fragment (append (list "MIN(") (fragment-parts collated) (list ")"))
+                                       :text (translator-dialect tr)
+                                       (fragment-params collated) (fragment-param-kinds collated)
+                                       (fragment-caveats collated) t nil nil)))
+                   (setf (fragment-canonical out) (fragment-canonical key))
+                   out))
                 (t collated)))))
     (:column (column-ref tr (binder-payload b)))
     (:group
@@ -618,7 +653,43 @@ would cost a bound value a second parameter for the repeated slot. What is left
 is what could not be settled at translation time: columns, raw, relation fields."
   (if (is-constant n (translator-const-names tr))
       f
-      (emit-numeric-operand (translator-dialect tr) f (snode-pos n))))
+      (let ((guarded (emit-numeric-operand (translator-dialect tr) f (snode-pos n))))
+        (unless (eq guarded f)
+          ;; The guard reads the text as the dialect's numericCast type, and
+          ;; where that type fixes a scale the data's digits past it are gone
+          ;; before anything else sees them (SEL-0059).
+          (scale-limited tr (snode-pos n) "this operand is read as a number"))
+        guarded)))
+
+(defun numeric-cast-scale (tr)
+  "How many fractional digits the dialect's numericCast and numericGuard keep,
+or NIL where they keep every one (sql/MAP.md §3)."
+  (let ((cap (dialect-lexical (translator-dialect tr) "numericCastScale")))
+    (when (and (stringp cap) (plusp (length cap)) (every #'ascii-digit-p cap))
+      (parse-integer cap))))
+
+(defun scale-limited (tr pos what)
+  (let ((cap (numeric-cast-scale tr)))
+    (when cap
+      (when (translator-strict tr)
+        (refuse "E_SQL_UNSUPPORTED"
+                (format nil "~a through a DECIMAL that keeps ~D fractional digits, ~
+and a value with more loses them on ~a (scale-limit); strict mode refuses that"
+                        what cap (translator-dialect tr))
+                pos))
+      (add-caveat tr "scale-limit"))))
+
+(defun coerce-scale-limits (tr nodes)
+  "The coerce variant reads both operands through numericCast. A constant's
+scale is known and only one past the cap is truncated; a column's is not -- NUM
+says it is a number, not how many fractional digits it has."
+  (let ((cap (numeric-cast-scale tr)))
+    (when cap
+      (dolist (n nodes)
+        (if (is-constant n (translator-const-names tr))
+            (when (> (constant-scale n (translator-const-root tr)) cap)
+              (scale-limited tr (snode-pos n) "this constant is read as a number"))
+            (scale-limited tr (snode-pos n) "this operand is read as a number"))))))
 
 (defun require-numeric-constant (tr n)
   "An operand in a numeric position whose value is knowable here.
@@ -834,6 +905,8 @@ those differ per aggregate."
         (require-not-bool-operand r rpos op))
       ;; Captured BEFORE the rewrite below, which forces both kinds to TEXT.
       (let ((variant (variant-for op (list l r))))
+        (when (equal variant "coerce")
+          (coerce-scale-limits tr (list (sel::node-l n) (sel::node-r n))))
         (when (member op +byte-comparisons+ :test #'equal)
           (require-comparable-kinds l r op (snode-pos n))
           (let ((l-exact (fragment-exact l))
@@ -1091,7 +1164,7 @@ raises here rather than reinterpreting bytes as characters" name)
   (cond
     ((or (equal name "MIN") (equal name "MAX")) t)
     ((= i 0)
-     (member name '("ABS" "SIGN" "CEIL" "FLOOR" "TRUNC" "ROUND" "POWER" "CHAR") :test #'equal))
+     (member name '("ABS" "SIGN" "CEIL" "FLOOR" "TRUNC" "ROUND" "POWER" "CHAR" "CANON") :test #'equal))
     ((= i 1)
      (member name '("ROUND" "POWER" "LEFT" "RIGHT" "SUBSTR" "REPEAT" "PADL" "PADR") :test #'equal))
     ((= i 2)
@@ -1233,7 +1306,10 @@ SQL expression is a scalar" name)
                        collect f)))
       ;; No variant is ever passed for funcs. SEL's own arity was enforced at
       ;; parse time, so APPLY-ENTRY defends only the dialect's narrowing.
-      (apply-entry tr :funcs name args (snode-pos n)))))
+      (let ((out (apply-entry tr :funcs name args (snode-pos n))))
+        (when (equal name "CANON")
+          (setf (fragment-canonical out) t))
+        out))))
 
 ;;; --- aggregates -----------------------------------------------------------
 
@@ -1996,7 +2072,20 @@ one otherwise (the JS host's relationTableAlias, for the promoted fields)."
                (not (getf (first matches) :raw)))
           (or (getf (first matches) :type) :unknown) :unknown))))
 
-(defun plan-output-fields (plan sub-alias)
+(defun output-canon-kind (tr plan name)
+  "The kind of a projected CANON(...), which a derived table's column keeps: the
+dialect's CANON kind -- the map entry's ret, NUM or TEXT."
+  (when (relational-plan-projections plan)
+    (let* ((p (find name (relational-plan-projections plan) :key #'first :test #'equal))
+           (n (third p)))
+      (when (and n (not (clist-p n)) (eq (snode-kind n) :call)
+                 (equal (sel::node-s n) "CANON"))
+        (let ((entry (dialect-entry (translator-dialect tr) :funcs "CANON")))
+          (when (consp entry)
+            (let ((ret (plist-get entry :ret)))
+              (and (stringp ret) (kind-from-name ret)))))))))
+
+(defun plan-output-fields (tr plan sub-alias)
   (cond
     ((relational-plan-projections plan)
      (let ((fields '()))
@@ -2011,7 +2100,11 @@ one otherwise (the JS host's relationTableAlias, for the promoted fields)."
                                 (sel::node-s (sel::node-r (third p))))
                               "col"))
                 (uc (sel::ascii-upcase col-name))
-                (spec (list :column col-name :table sub-alias :type (output-field-type plan col-name))))
+                (spec (list :column col-name :table sub-alias :type (output-field-type plan col-name)))
+                (canon-kind (output-canon-kind tr plan col-name)))
+           (when canon-kind
+             (setf (getf spec :type) canon-kind
+                   (getf spec :canonical) t))
            (push (cons uc spec) fields)))
        (nreverse fields)))
     ((relational-plan-select-cols plan)
@@ -2036,10 +2129,10 @@ one otherwise (the JS host's relationTableAlias, for the promoted fields)."
            (push (cons (car f) spec) fields)))
        (nreverse fields)))))
 
-(defun wrap-plan-as-derived-table (plan &optional custom-alias)
+(defun wrap-plan-as-derived-table (tr plan &optional custom-alias)
   (incf *subquery-counter*)
   (let* ((sub-alias (or custom-alias (format nil "_sub~d" *subquery-counter*)))
-         (fields (plan-output-fields plan sub-alias))
+         (fields (plan-output-fields tr plan sub-alias))
          (sub-rel (list :from sub-alias :alias sub-alias :fields fields :from-raw-p t)))
     (make-relational-plan
      :source-name sub-alias
@@ -2101,6 +2194,29 @@ can say about a bucket on its own."
         (setf (relational-plan-projections plan) (nreverse projs))))
   (setf (relational-plan-select-cols plan) nil))
 
+;;; Whether the node is an IF or COND whose every result is a text literal -- or,
+;;; in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
+;;; chose byte for byte, so its identity is SEL's; a number it can re-spell
+;;; (MariaDB types `CASE ... THEN 1 ELSE 1.0` as DECIMAL(2,1)), and a column or a
+;;; computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
+;;; a text literal too.
+(defun text-literal-results-p (n &optional (depth 0))
+  (when (and n (not (clist-p n)) (< depth 180) (eq (snode-kind n) :call)
+             (member (sel::node-s n) '("IF" "COND") :test #'equal))
+    (let* ((args (sel::node-items n))
+           (results (if (equal (sel::node-s n) "IF")
+                        (rest args)
+                        (and (>= (length args) 3) (oddp (length args))
+                             (append (loop for tail on (rest args) by #'cddr
+                                           when (rest tail) collect (first tail))
+                                     (last args))))))
+      (and results
+           (every (lambda (r)
+                    (and r (not (clist-p r))
+                         (or (eq (snode-kind r) :text)
+                             (text-literal-results-p r (1+ depth)))))
+                  results)))))
+
 (defun identity-preserving-projection-p (n &optional (depth 0))
   ;; A proof whitelist, not a numeric-kind guess. COUNT/LEN/BLEN yield
   ;; canonical integers; arithmetic can change scale on the SQL side.
@@ -2111,6 +2227,12 @@ can say about a bucket on its own."
                 (identity-preserving-projection-p (sel::node-r n) (1+ depth)))
            (and (eq (snode-kind n) :call)
                 (or (member (sel::node-s n) '("COUNT" "LEN" "BLEN") :test #'equal)
+                    ;; One spelling per value (§7.6): whatever computed the
+                    ;; argument, the canonical form's identity is its value's,
+                    ;; which SQL computes exactly wherever the translation does
+                    ;; not declare otherwise (a caveat).
+                    (equal (sel::node-s n) "CANON")
+                    (text-literal-results-p n depth)
                     (and (equal (sel::node-s n) "RECORD")
                          (loop for tail on (sel::node-items n) by #'cddr
                                always (and (second tail)
@@ -2127,6 +2249,12 @@ can say about a bucket on its own."
          (if (eq (snode-kind (sel::node-l n)) :var) (list (sel::node-s (sel::node-r n)))
              (identity-input-fields (sel::node-l n) (1+ depth)))))
     ((and (eq (snode-kind n) :call) (member (sel::node-s n) '("COUNT" "LEN" "BLEN") :test #'equal)) nil)
+    ;; The canonical form does not depend on how its argument is spelled, so no
+    ;; field it reads needs its identity kept upstream.
+    ((and (eq (snode-kind n) :call) (equal (sel::node-s n) "CANON")) nil)
+    ;; The literal a conditional chose does not depend on how any field it
+    ;; tests is spelled.
+    ((text-literal-results-p n depth) nil)
     ((or (eq (snode-kind n) :list)
          (and (eq (snode-kind n) :call) (member (sel::node-s n) '("LIST" "RECORD") :test #'equal)))
      (let ((out nil) (items (sel::node-items n)))
@@ -2226,7 +2354,7 @@ can say about a bucket on its own."
                                     (relational-plan-select-cols plan)
                                     (relational-plan-order-by plan)
                                     (relational-plan-distinct plan))))
-                   (setf plan (wrap-plan-as-derived-table plan)))
+                   (setf plan (wrap-plan-as-derived-table tr plan)))
                  (let (binder pred)
                    (cond
                      ((= (length args) 2)
@@ -2259,7 +2387,7 @@ can say about a bucket on its own."
                            (relational-plan-offset plan)
                            (relational-plan-distinct plan)
                            (relational-plan-order-by plan))
-                   (setf plan (wrap-plan-as-derived-table plan)))
+                   (setf plan (wrap-plan-as-derived-table tr plan)))
                  (let (binder key-node agg-node)
                    (cond
                      ((= (length args) 2)
@@ -2309,7 +2437,7 @@ can say about a bucket on its own."
                            (relational-plan-limit plan)
                            (relational-plan-offset plan)
                            (relational-plan-distinct plan))
-                   (setf plan (wrap-plan-as-derived-table plan)))
+                   (setf plan (wrap-plan-as-derived-table tr plan)))
                  (let* ((is-left (equal sname "LINK_LEFT"))
                         (step-args args))
                    (unless (or (= (length step-args) 3) (= (length step-args) 5))
@@ -2357,7 +2485,7 @@ can say about a bucket on its own."
                            (relational-plan-group-by plan)
                            (relational-plan-limit plan)
                            (relational-plan-offset plan))
-                   (setf plan (wrap-plan-as-derived-table plan)))
+                   (setf plan (wrap-plan-as-derived-table tr plan)))
                  (let* ((col-args (rest args))
                         (items (if (and (= (length col-args) 1) (eq (snode-kind (first col-args)) :list))
                                    (sel::node-items (first col-args))
@@ -2423,7 +2551,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                              (relational-plan-distinct plan)
                              (relational-plan-limit plan)
                              (relational-plan-offset plan))
-                     (setf plan (wrap-plan-as-derived-table plan)))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
                    (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
                             (equal (sel::node-s expr) "RECORD"))
                        (let ((projs '()))
@@ -2436,7 +2564,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                 ((or (equal sname "DISTINCT") (equal sname "DEDUPE"))
                  (when (or (relational-plan-limit plan)
                            (relational-plan-offset plan))
-                   (setf plan (wrap-plan-as-derived-table plan)))
+                   (setf plan (wrap-plan-as-derived-table tr plan)))
                  ;; Field bindings describe accessible reads, not a closed
                  ;; schema for r.*. Never deduplicate an untyped whole SQL row.
                  (unless (or (relational-plan-projections plan)
@@ -2464,7 +2592,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                                       (min off (relational-plan-limit plan)) off)))
                      (if (> (or (relational-plan-offset plan) 0)
                             (- 9007199254740991 skipped))
-                         (setf plan (wrap-plan-as-derived-table plan)
+                         (setf plan (wrap-plan-as-derived-table tr plan)
                                (relational-plan-offset plan) off)
                          (progn
                            (when (relational-plan-limit plan)
@@ -2486,7 +2614,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                                 (or (relational-plan-projections plan)
                                     (relational-plan-select-cols plan)
                                     (relational-plan-distinct plan))))
-                   (setf plan (wrap-plan-as-derived-table plan)))
+                   (setf plan (wrap-plan-as-derived-table tr plan)))
                  (let ((before (length (relational-plan-order-by plan))))
                    (analyze-sort-step tr step plan)
                    (setf (relational-plan-order-by plan)
@@ -2535,7 +2663,8 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                                      (with-group tr src binder (lambda () (walk-node tr node))))
                                     (t (with-row tr src binder (lambda () (walk-node tr node)))))))
                      (when (relational-plan-distinct plan)
-                       (when (member (fragment-kind p-frag) '(:unknown :num))
+                       (when (and (member (fragment-kind p-frag) '(:unknown :num))
+                                  (not (fragment-canonical p-frag)))
                          (refuse "E_SQL_SHAPE" "DISTINCT requires proven structural output identity" (snode-pos node)))
                        (setf p-frag (identity-group-key tr node p-frag)))
                      (dolist (p (fragment-parts p-frag))
@@ -2710,11 +2839,12 @@ field is on both sides, and the binders are nested records")
                             ;; sorts text by its bytes, and a server's default
                             ;; collation would not.
                             (render (lambda () (walk-node tr node)))
-                            (o-frag (collated-key tr (cond
-                                                       ((fifth ord) (with-group tr src binder render))
-                                                       ((relational-plan-group-by plan)
-                                                        (with-projected tr src binder render))
-                                                       (t (with-row tr src binder render))))))
+                            (o-frag (order-key tr (cond
+                                                    ((fifth ord) (with-group tr src binder render))
+                                                    ((relational-plan-group-by plan)
+                                                     (with-projected tr src binder render))
+                                                    (t (with-row tr src binder render)))
+                                               (snode-pos node))))
                        (dolist (p (fragment-parts o-frag))
                          (push p parts))
                        (push (format nil " ~a" dir) parts))))
@@ -2783,11 +2913,16 @@ to know why a rule cannot be pushed down."
    (lambda (tr norm plan)
      (if plan
          (compile-statement tr plan)
-         (let ((f (walk-node tr norm)))
-           (%fragment (fragment-parts f) (fragment-kind f) dialect
-                      (reverse (translator-params tr))
-                      (reverse (translator-param-kinds tr))
-                      (reverse (translator-caveats tr))))))))
+         (let* ((f (walk-node tr norm))
+                (out (%fragment (fragment-parts f) (fragment-kind f) dialect
+                                (reverse (translator-params tr))
+                                (reverse (translator-param-kinds tr))
+                                (reverse (translator-caveats tr)))))
+           ;; Public: it says the value is a canonical number, whose spelling is
+           ;; the contract and not only its value (the SQL oracle compares it
+           ;; as text). Lost here once, in every host at the same time.
+           (setf (fragment-canonical out) (fragment-canonical f))
+           out)))))
 
 (defun try-translate (program dialect &optional bindings options)
   "The same, returning NIL instead of signalling.

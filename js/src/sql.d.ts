@@ -26,6 +26,8 @@ export class Fragment {
   params: Value[];
   paramKinds: SqlKind[];
   caveats: string[];
+  // A number in its canonical form (spec §7.6 CANON).
+  canonical: boolean;
 
   constructor(
     parts: (string | number)[],

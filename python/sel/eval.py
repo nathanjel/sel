@@ -38,26 +38,22 @@ _MAX = OpCode.MAX
 
 
 class Context:
-    __slots__ = ('root', 'frames', 'depth', 'join_prefilter', 'join_prefilter_report',
-                 'tentative_kept')
+    __slots__ = ('root', 'frames', 'depth', 'join_prefilter', 'join_prefilter_report')
 
     def __init__(self, root: Value | None = None) -> None:
         self.root = root if root is not None else Value.none()
         self.frames: list[dict[str, Value]] = []   # aggregate binders
         self.depth = 0
-        # A FILTER whose source is a LINK hands the join its leading conjuncts
-        # here, for the join to pre-apply to left rows where that is provably
-        # the same as filtering the joined rows (builtins/structure.py, _link).
+        # A FILTER whose source is a LINK hands the join its conjuncts here,
+        # for the join to test on the rows it joins where that is provably
+        # the same as filtering the joined rows (builtins/structure.py, _link;
+        # SEL-0052, SEL-0054).
         self.join_prefilter = None
-        # What a join below reported after applying them: how many conjuncts
-        # every row that came up has passed, and whether any row was kept on
-        # an error -- in which case the join above applies them all again.
+        # What a join below reported after applying them: which conjuncts
+        # every row that came up has passed, whether any row was kept on an
+        # error -- in which case the join above applies them all again -- and
+        # whether any row was dropped.
         self.join_prefilter_report = None
-        # Bumped by a tentative FILTER body (a conjunct pushed under a LINK)
-        # each time it keeps a row it raised on; the FILTER above compares it
-        # around its source's evaluation to know whether the pushed conjuncts
-        # held on every row it sees (SEL-0051).
-        self.tentative_kept = 0
 
     def lookup(self, name: str) -> Value | None:
         frames = self.frames

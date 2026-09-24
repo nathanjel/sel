@@ -537,27 +537,33 @@ function pureSource(node) {
   }
 }
 
-// The conjuncts a join may pre-apply to its left rows, in stage order, and
-// where the walk stopped. One whose fields are all owned by the left rows is
-// applied; one that reads a field of some right side -- this join's or one
-// above -- ends the walk, since AND short-circuits left to right and a later
-// conjunct may not run before it, UNLESS it is total here (it cannot raise on
-// any joined row), in which case it is passed over for the join above; one
-// that reads anything but fields ends the walk too. A deferral relies on no
-// lower relation carrying the field; the join that has those rows repeats
-// the walk with them, so a shadowed deferral stops the walk there.
-function stageWalk(stages, ownedHere, totalHere, pushedHeld) {
+// The conjuncts a join may test before it joins, in stage order, and where
+// the walk stopped. One whose fields are all owned by the left rows is
+// applied to them; one that reads only through this join's right binder
+// (RIGHTHERE, `_["products"]["is_active"]`) is applied to the right rows;
+// one that reads a field of some right side -- this join's or one above --
+// ends the walk, since AND short-circuits left to right and a later
+// conjunct may not run before it, UNLESS it is total here (it cannot raise
+// on any joined row), in which case it is passed over for the join above;
+// one that reads anything but fields ends the walk too. A deferral relies on
+// no lower relation carrying the field; the join that has those rows repeats
+// the walk with them, so a shadowed deferral stops the walk there. Each
+// stage is judged against the joins between its FILTER and this join
+// (`stage.above` of them, the nearest first): a FILTER in the middle of a
+// chain reads rows no join above it has touched.
+function stageWalk(stages, ownedHere, totalHere, rightHere = null) {
   const applied = [];
   for (let si = 0; si < stages.length; si++) {
     const conjuncts = stages[si].conjuncts;
     for (let ci = 0; ci < conjuncts.length; ci++) {
       const c = conjuncts[ci];
-      // A conjunct the optimiser pushed below already held on every row
-      // (unless a tentative FILTER kept a row on an error: then nothing
-      // after it may run before it).
-      if (c.pushed) { if (pushedHeld) continue; return { applied, stop: [si, ci] }; }
-      if (c.fields !== null && ownedHere(c.fields)) { applied.push(c); continue; }
-      if (c.total !== null && totalHere(c.total)) continue;
+      const stage = stages[si];
+      if (c.fields !== null && ownedHere(c.fields, stage)) { applied.push({ c, stage, right: false }); continue; }
+      if (c.fields !== null && rightHere !== null && rightHere(c.fields, stage)) {
+        applied.push({ c, stage, right: true });
+        continue;
+      }
+      if (c.total !== null && totalHere(c.total, stage)) continue;
       return { applied, stop: [si, ci] };
     }
   }
@@ -568,7 +574,7 @@ function truncateStages(stages, stop) {
   if (stop === null) return stages;
   const [si, ci] = stop;
   const out = stages.slice(0, si);
-  if (ci) out.push({ binder: stages[si].binder, conjuncts: stages[si].conjuncts.slice(0, ci) });
+  if (ci) out.push({ ...stages[si], conjuncts: stages[si].conjuncts.slice(0, ci) });
   return out;
 }
 
@@ -759,9 +765,18 @@ function doLink(args, ctx, leftJoin) {
   const jb1 = count === 5 ? args.symbol(2) : (singleRelationName(args.node(0)) || '_1');
   const jb2 = count === 5 ? args.symbol(3) : (singleRelationName(args.node(1)) || '_2');
   const jequi = tryExtractEquiKeys(args.node(count === 5 ? 4 : 2), jb1, jb2);
-  const aboveKeys = new Set();
-  for (const side of above) for (const k of side.keys) aboveKeys.add(k);
-  const keptBefore = ctx.tentativeKept;
+  // The upper-cased keys of the joins between a stage's FILTER and this
+  // join, per count of them.
+  const aboveKeysCache = new Map();
+  const aboveKeys = (stage) => {
+    let keys = aboveKeysCache.get(stage.above);
+    if (!keys) {
+      keys = new Set();
+      for (const side of above.slice(0, stage.above)) for (const k of side.keys) keys.add(k);
+      aboveKeysCache.set(stage.above, keys);
+    }
+    return keys;
+  };
   let leftValue;
   let rightValue;
   if (deep && stages.length && jequi && leftNode && leftNode.t === 'call'
@@ -773,15 +788,15 @@ function doLink(args, ctx, leftJoin) {
     // carries is theirs; a conjunct on a right side's field is passed over
     // only when total on that side alone. The join below repeats the walk
     // with its own sides, and this one again once its left rows are known.
-    const ownedBelow = (fields) => {
-      for (const f of fields) if (rightSide.keys.has(f) || aboveKeys.has(f)) return false;
+    const ownedBelow = (fields, stage) => {
+      const upper = aboveKeys(stage);
+      for (const f of fields) if (rightSide.keys.has(f) || upper.has(f)) return false;
       return true;
     };
-    const totalBelow = (reqs) => totality(reqs, null, rightSide, above);
-    // Whether the conjuncts the optimiser pushed below held so far: a
-    // tentative FILTER on this join's right side has just run.
-    const walk = stageWalk(stages, ownedBelow, totalBelow, ctx.tentativeKept === keptBefore);
-    const handed = truncateStages(stages, walk.stop);
+    const totalBelow = (reqs, stage) => totality(reqs, null, rightSide, above.slice(0, stage.above));
+    const walk = stageWalk(stages, ownedBelow, totalBelow);
+    // Below this join, every stage has one more join above it: this one.
+    const handed = truncateStages(stages, walk.stop).map((stage) => ({ ...stage, above: stage.above + 1 }));
     if (handed.length) {
       // This join computes its left key on every row it receives; a row
       // dropped below never arrives, so the key goes down as an obligation
@@ -799,14 +814,24 @@ function doLink(args, ctx, leftJoin) {
     leftValue = args.val(0);
     rightValue = args.val(1);
   }
-  const pushedHeld = ctx.tentativeKept === keptBefore;
   // The join below, if it applied some of these conjuncts, says which ones
   // every row that came up has passed; those are skipped here unless a row
   // was kept on an error below, since such a row must reach the FILTER
   // untouched and cannot be told apart from the others.
-  const below = ctx.joinPrefilterReport;
+  let below = ctx.joinPrefilterReport;
   ctx.joinPrefilterReport = null;
+  // Drops below that left this join no left rows: as written it may have had
+  // some, and then it computes every right key (and raises where one cannot
+  // be) before it finds that no row survives. Only the rows as written can
+  // say, so the left side -- pure, or nothing was handed down -- is
+  // evaluated again without them, and this join runs as written.
+  if (below !== null && below.dropped && firstCollectionItem(leftValue) === null) {
+    leftValue = args.evalNode(args.node(0));
+    ctx.joinPrefilterReport = null;
+    below = null;
+  }
   const appliedBelow = below !== null && !below.errored ? below.applied : new Set();
+  let dropped = below !== null && below.dropped;
   let b1 = '_1';
   let b2 = '_2';
   let predicate;
@@ -839,14 +864,32 @@ function doLink(args, ctx, leftJoin) {
   // The pre-filter, decided from the rows themselves (see stageWalk). On a
   // left row a conjunct evaluates FALSE the row is dropped -- the joined rows
   // it would have produced (or its null-extended row, for LINK_LEFT) would
-  // all have been dropped by the same conjunct. On an error the row is KEPT:
-  // the full predicate runs over the joined rows afterwards and raises there,
-  // in row order, or does not raise at all for a left row that joins nothing.
+  // all have been dropped by the same conjunct; likewise a right row, whose
+  // joined rows are then not built. On an error the row is KEPT: the full
+  // predicate runs over the joined rows afterwards and raises there, in row
+  // order, or does not raise at all for a row that joins nothing.
   const prefix = [];
+  const rightPrefix = [];
+  // How many left conjuncts come before the first right one: with a right
+  // row kept on an error, a later left conjunct may not drop a left row --
+  // the joined row would have raised in the right conjunct first.
+  let leftBeforeRight = -1;
   let binders = [];
   const appliedIds = new Set();
   let errored = false;
   const selfNames = new Set([b1.toUpperCase(), '_1']);
+  // A read through this join's right binder is the right element in every
+  // joined row -- the binder is bound last (spec §7.4) -- unless the left
+  // binder has the same name, or a join above rebinds it.
+  const rightNames = (stage) => new Set(stage.above === 0 ? [b2.toUpperCase(), '_2'] : [b2.toUpperCase()]);
+  const rightHere = (!leftJoin && b1.toUpperCase() !== b2.toUpperCase())
+    ? (fields, stage) => {
+      const names = rightNames(stage);
+      const upper = aboveKeys(stage);
+      for (const f of fields) if (!names.has(f) || upper.has(f)) return false;
+      return true;
+    }
+    : null;
   const settlePrefix = () => {
     // With both sides at hand: a field no right side carries is the left
     // rows' (a read through the left binder's own name, `_["orders"]["year"]`
@@ -858,14 +901,20 @@ function doLink(args, ctx, leftJoin) {
     // does whenever no right element has the name (§7.4, pair by pair) --
     // and no row depends on another, so a drop below changes nothing above
     // but the rows it drops.
-    const ownedHere = (fields) => {
-      for (const f of fields) if (rightSide.keys.has(f) || aboveKeys.has(f)) return false;
+    const ownedHere = (fields, stage) => {
+      const upper = aboveKeys(stage);
+      for (const f of fields) if (rightSide.keys.has(f) || upper.has(f)) return false;
       return true;
     };
-    const totalHere = (reqs) => totality(reqs, leftSide, rightSide, above);
-    for (const c of stageWalk(stages, ownedHere, totalHere, pushedHeld).applied) {
+    const totalHere = (reqs, stage) => totality(reqs, leftSide, rightSide, above.slice(0, stage.above));
+    for (const { c, stage, right } of stageWalk(stages, ownedHere, totalHere, rightHere).applied) {
       appliedIds.add(c.node);
       if (appliedBelow.has(c.node)) continue;
+      if (right) {
+        if (leftBeforeRight < 0) leftBeforeRight = prefix.length;
+        rightPrefix.push(readSelf(c.node, rightNames(stage), c.binder));
+        continue;
+      }
       let node = c.node;
       let readsSelf = false;
       for (const f of c.fields) if (selfNames.has(f) && !leftSide.first.has(f)) readsSelf = true;
@@ -873,20 +922,21 @@ function doLink(args, ctx, leftJoin) {
       prefix.push(node);
     }
   };
-  const rejects = (row, frame) => {
+  // 0: keep the row; 1: drop it; 2: keep it, a conjunct raised on it.
+  const verdict = (conjuncts, row, frame) => {
     for (const binder of binders) frame.set(binder, row);
-    for (const conjunct of prefix) {
+    for (const conjunct of conjuncts) {
       let keep;
       try {
         keep = args.evalNode(conjunct).asBool(conjunct.pos);
       } catch (e) {
         if (!(e instanceof SelError)) throw e;
         errored = true;
-        return false;
+        return 2;
       }
-      if (!keep) return true;
+      if (!keep) return 1;
     }
-    return false;
+    return 0;
   };
 
   if (equi && sampleRight) {
@@ -934,13 +984,35 @@ function doLink(args, ctx, leftJoin) {
       binders = stages.map((stage) => stage.binder);
       settlePrefix();
     }
+    // The right rows the right conjuncts reject, once each, after every
+    // right key was computed. They stay in their buckets: a left row still
+    // counts them towards the numbering, and one kept on an error joins them.
+    let rejected = null;
+    if (rightPrefix.length) {
+      rejected = new Set();
+      const frame = new Map();
+      for (const binder of binders) frame.set(binder, null);
+      const before = errored;
+      errored = false;
+      ctx.pushFrame(frame);
+      try {
+        for (const bucket of buckets.values()) {
+          for (const row of bucket) if (verdict(rightPrefix, row, frame) === 1) rejected.add(row);
+        }
+      } finally {
+        ctx.popFrame();
+      }
+      if (errored) prefix.length = leftBeforeRight;
+      errored = errored || before;
+    }
 
     // A FILTER keeps its input's keys, so the rows dropped here still count
     // towards the numbering of the rows kept: the join key is computed first,
     // as it is for every row (and raises where it would have), the matches
     // say how many joined rows the dropped row stood for, and the kept rows
     // are emitted under the positions they would have had.
-    const keyed = prefix.length && !deep ? new Value(NONE, null, true) : null;
+    const numbered = (prefix.length || rejected !== null) && !deep;
+    const keyed = numbered ? new Value(NONE, null, true) : null;
     let position = 1;
     // When the join key is a literal field of the row -- `_1["customer_id"]`
     // -- the read can only raise for a row that lacks the field, so a row
@@ -958,10 +1030,10 @@ function doLink(args, ctx, leftJoin) {
     try {
       each(leftValue, (item) => {
         const row = ensureRowTableAlias(item, b1);
-        let asked = false;
+        let asked = -1;
         if (fastField !== null && row.get(fastField)) {
-          asked = true;
-          if (rejects(row, frameLeft)) return;
+          asked = verdict(prefix, row, frameLeft);
+          if (asked === 1) { dropped = true; return; }
         }
         frameLeft.set(b1, row);
         frameLeft.set(b1.toLowerCase(), row);
@@ -969,14 +1041,23 @@ function doLink(args, ctx, leftJoin) {
         frameLeft.set('_', row);
         const key = canonicalJoinKey(args.evalNode(equi.left), equi.numeric);
         const matches = key === null ? null : buckets.get(key);
-        if (prefix.length && !asked && rejects(row, frameLeft)) {
-          if (!deep) position += matches ? matches.length : (leftJoin ? 1 : 0);
+        if (asked < 0) asked = prefix.length ? verdict(prefix, row, frameLeft) : 0;
+        if (asked === 1) {
+          dropped = true;
+          if (numbered) position += matches ? matches.length : (leftJoin ? 1 : 0);
           return;
         }
         if (matches) {
+          // A left row kept on an error meets every right row: its joined
+          // rows raise in the FILTER, in order, where they would have.
+          const skip = rejected !== null && asked === 0 ? rejected : null;
           for (let i = 0; i < matches.length; i++) {
-            const joined = project(row, matches[i]);
-            if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
+            if (skip === null || !skip.has(matches[i])) {
+              const joined = project(row, matches[i]);
+              if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
+            } else {
+              dropped = true;
+            }
             position++;
           }
         } else if (leftJoin) {
@@ -988,7 +1069,7 @@ function doLink(args, ctx, leftJoin) {
     } finally {
       ctx.popFrame();
     }
-    if (prefilter) ctx.joinPrefilterReport = { applied: appliedIds, errored };
+    if (prefilter) ctx.joinPrefilterReport = { applied: appliedIds, errored, dropped };
     if (keyed !== null) return keyed;
   } else {
     const frame = new Map([

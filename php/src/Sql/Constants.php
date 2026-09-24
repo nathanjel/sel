@@ -73,6 +73,11 @@ final class Constants
             && self::identityProjection($node['idx'], $depth + 1);
         if ($node['t'] === 'call') {
             if (in_array($node['name'], ['COUNT', 'LEN', 'BLEN'], true)) return true;
+            // One spelling per value (§7.6): whatever computed the argument, the
+            // canonical form's identity is its value's, which SQL computes exactly
+            // wherever the translation does not declare otherwise (a caveat).
+            if ($node['name'] === 'CANON') return true;
+            if (self::textLiteralResults($node, $depth)) return true;
             if ($node['name'] === 'RECORD') {
                 if (count($node['args']) % 2 !== 0) return false;
                 for ($i = 1; $i < count($node['args']); $i += 2) {
@@ -84,6 +89,43 @@ final class Constants
         return false;
     }
 
+    /**
+     * Whether the node is an IF or COND whose every result is a text literal -- or,
+     * in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
+     * chose byte for byte, so its identity is SEL's; a number it can re-spell
+     * (MariaDB types `CASE ... THEN 1 ELSE 1.0` as DECIMAL(2,1)), and a column or a
+     * computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
+     * a text literal too.
+     *
+     * @param array<string,mixed>|null $node
+     */
+    private static function textLiteralResults(?array $node, int $depth = 0): bool
+    {
+        if ($node === null || $depth >= 180 || $node['t'] !== 'call'
+            || !in_array($node['name'], ['IF', 'COND'], true)) {
+            return false;
+        }
+        $args = $node['args'];
+        if ($node['name'] === 'IF') {
+            $results = array_slice($args, 1);
+        } else {
+            if (count($args) < 3 || count($args) % 2 === 0) {
+                return false;
+            }
+            $results = [];
+            for ($i = 1; $i < count($args); $i += 2) {
+                $results[] = $args[$i];
+            }
+            $results[] = $args[count($args) - 1];
+        }
+        foreach ($results as $r) {
+            if ($r === null || ($r['t'] !== 'text' && !self::textLiteralResults($r, $depth + 1))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static function identityInputs(?array $n, int $depth = 0): array|bool
     {
         if ($n === null || $depth >= 180) return true;
@@ -91,6 +133,12 @@ final class Constants
         if ($n['t'] === 'var') return $n['name'] === '_K' ? [] : true;
         if ($n['t'] === 'index') return $n['idx']['t'] !== 'text' ? true : ($n['obj']['t'] === 'var' ? [$n['idx']['v']] : self::identityInputs($n['obj'], $depth + 1));
         if ($n['t'] === 'call' && in_array($n['name'], ['COUNT', 'LEN', 'BLEN'], true)) return [];
+        // The canonical form does not depend on how its argument is spelled, so no
+        // field it reads needs its identity kept upstream.
+        if ($n['t'] === 'call' && $n['name'] === 'CANON') return [];
+        // The literal a conditional chose does not depend on how any field it
+        // tests is spelled.
+        if (self::textLiteralResults($n, $depth)) return [];
         if ($n['t'] === 'list' || ($n['t'] === 'call' && in_array($n['name'], ['LIST', 'RECORD'], true))) {
             $items = $n['t'] === 'list' ? $n['items'] : ($n['name'] === 'RECORD' ? array_values(array_filter($n['args'], fn ($i) => $i % 2, ARRAY_FILTER_USE_KEY)) : $n['args']);
             $out = [];
@@ -326,6 +374,17 @@ final class Constants
         } catch (SelError $e) {
             self::refuseAsSel($e, $n);
         }
+    }
+
+    /**
+     * The number of fractional digits of a constant already known to be a
+     * number (requireNumeric ran first).
+     *
+     * @param array<string,mixed> $n
+     */
+    public static function constantScale(array $n, ?Context $ctx = null): int
+    {
+        return Evaluator::evalNode($n, $ctx ?? new Context())->asDecimal($n['pos'])['scale'];
     }
 
     /**
