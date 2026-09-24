@@ -1,0 +1,5 @@
+# Words in the titles of the better-margin products: WORDS returns a list, so that pair stays in memory.
+PRODUCTS
+  .> FILTER(MARGIN_PCT(_["price"], _["cost"]) > 30)
+  .> SORT_BY(_["product_id"])
+  .> MAP(RECORD("product", SLUG(_["title"]), "words", COUNT(WORDS(_["title"]))))

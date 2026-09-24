@@ -15673,4 +15673,669 @@ ORDERS .> TAKE(1)"
    :plan "pure_memory"
    :tables (list "r")
    :register nil
-   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "R" (binding-relation "r" nil (list (cons "N" (binding-column "n" nil :num)) (cons "T" (binding-column "t" nil :text))) nil nil)))))
+  (list
+   :name "host.call.text-mapping"
+   :at "46-host-functions.sqlt:11"
+   :dialect "postgresql"
+   :source "SLUG(T) $== \"hello-world\""
+   :expect "(CAST(slug(\"t\".\"title\") AS TEXT) COLLATE \"C\" = CAST('hello-world' AS TEXT) COLLATE \"C\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.call.params-mode"
+   :at "46-host-functions.sqlt:27"
+   :dialect "postgresql"
+   :source "SLUG(\"Hello World\") $== \"hello-world\""
+   :expect "(CAST(slug(?) AS TEXT) COLLATE \"C\" = CAST(? AS TEXT) COLLATE \"C\")"
+   :error nil
+   :throws nil
+   :params "t\"Hello World\", t\"hello-world\""
+   :as "condition"
+   :mode "params"
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.call.key-is-case-insensitive"
+   :at "46-host-functions.sqlt:45"
+   :dialect "postgresql"
+   :source "SLUG(T)"
+   :expect "slug(\"t\".\"title\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "slug" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.call.inherited-by-a-derived-dialect"
+   :at "46-host-functions.sqlt:59"
+   :dialect "pg-numbered"
+   :source "SLUG(T) $== \"x\""
+   :expect "(CAST(slug(\"t\".\"title\") AS TEXT) COLLATE \"C\" = CAST($1 AS TEXT) COLLATE \"C\")"
+   :error nil
+   :throws nil
+   :params "t\"x\""
+   :as "condition"
+   :mode "params"
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT")))
+      (define-dialect "pg-numbered" (list :extends "postgresql" :version "15" :target t :lexical (list (cons "placeholder" "${n}")))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.refuse.no-spelling"
+   :at "46-host-functions.sqlt:79"
+   :dialect "postgresql"
+   :source "UNSPELLED(SPLIT(T, \",\"))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "UNSPELLED" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text ""))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.refuse.not-this-dialect"
+   :at "46-host-functions.sqlt:93"
+   :dialect "mariadb"
+   :source "SLUG(T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.refuse.strict"
+   :at "46-host-functions.sqlt:107"
+   :dialect "postgresql"
+   :source "SLUG(T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict t
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.arity.keyed-two"
+   :at "46-host-functions.sqlt:123"
+   :dialect "postgresql"
+   :source "MARGIN_PCT(PRICE, COST)"
+   :expect "margin_pct(\"p\".\"price\", CASE WHEN (CAST(\"p\".\"cost\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"p\".\"cost\" AS NUMERIC) ELSE NULL END)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "MARGIN_PCT" 2 3 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "MARGIN_PCT" (list :tpl (list (cons "2" "margin_pct({0}, {1})") (cons "3" "round(margin_pct({0}, {1}), {2})")) :ret "NUM" :args (list "NUM" "NUM" "NUM"))))
+   :bindings (lambda () (list (cons "PRICE" (binding-column "price" "p" :num)) (cons "COST" (binding-column "cost" "p" :unknown)))))
+  (list
+   :name "host.arity.keyed-three"
+   :at "46-host-functions.sqlt:137"
+   :dialect "postgresql"
+   :source "MARGIN_PCT(PRICE, PRICE, 1)"
+   :expect "round(margin_pct(\"p\".\"price\", \"p\".\"price\"), 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "MARGIN_PCT" 2 3 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "MARGIN_PCT" (list :tpl (list (cons "2" "margin_pct({0}, {1})") (cons "3" "round(margin_pct({0}, {1}), {2})")) :ret "NUM" :args (list "NUM" "NUM" "NUM"))))
+   :bindings (lambda () (list (cons "PRICE" (binding-column "price" "p" :num)) (cons "COST" (binding-column "cost" "p" :unknown)))))
+  (list
+   :name "host.arity.template-count-out-of-range"
+   :at "46-host-functions.sqlt:151"
+   :dialect "postgresql"
+   :source "1 + 1"
+   :expect nil
+   :error nil
+   :throws "LogicException"
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "ARITY_ONE" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "ARITY_ONE" (list :tpl (list (cons "2" "f({0}, {1})")) :ret "TEXT")))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.arity.entry-may-not-widen"
+   :at "46-host-functions.sqlt:163"
+   :dialect "postgresql"
+   :source "1 + 1"
+   :expect nil
+   :error nil
+   :throws "LogicException"
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "ARITY_TWO" 1 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "ARITY_TWO" (list :tpl "f({*})" :ret "TEXT" :arity (cons 1 3))))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.arity.entry-narrows"
+   :at "46-host-functions.sqlt:175"
+   :dialect "postgresql"
+   :source "ARITY_TWO(T, T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "ARITY_TWO" 1 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "ARITY_TWO" (list :tpl "f({*})" :ret "TEXT" :arity (cons 1 1))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.arity.reregistered-differently"
+   :at "46-host-functions.sqlt:189"
+   :dialect "postgresql"
+   :source "REREG(T)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "REREG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "REREG" (list :tpl "rereg({0})" :ret "TEXT"))
+      (sel:register-function "REREG" 1 2 (lambda (a) (declare (ignore a)) (sel:make-text ""))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.arity.reregistered-same"
+   :at "46-host-functions.sqlt:203"
+   :dialect "postgresql"
+   :source "REREG_SAME(T)"
+   :expect "rereg(\"t\".\"title\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "REREG_SAME" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "REREG_SAME" (list :tpl "rereg({0})" :ret "TEXT"))
+      (sel:register-function "REREG_SAME" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text ""))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.register.function-first"
+   :at "46-host-functions.sqlt:217"
+   :dialect "postgresql"
+   :source "1 + 1"
+   :expect nil
+   :error nil
+   :throws "LogicException"
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-entry "postgresql" :funcs "NEVER_REGISTERED_FN" (list :tpl "f({0})" :ret "TEXT")))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.register.args-on-a-builtin"
+   :at "46-host-functions.sqlt:229"
+   :dialect "postgresql"
+   :source "1 + 1"
+   :expect nil
+   :error nil
+   :throws "LogicException"
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-entry "postgresql" :funcs "UPPER" (list :tpl "UPPER({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.register.args-unknown-kind"
+   :at "46-host-functions.sqlt:241"
+   :dialect "postgresql"
+   :source "1 + 1"
+   :expect nil
+   :error nil
+   :throws "LogicException"
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "KIND_BAD" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "KIND_BAD" (list :tpl "f({0})" :ret "TEXT" :args (list "DATE"))))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.register.args-longer-than-max"
+   :at "46-host-functions.sqlt:253"
+   :dialect "postgresql"
+   :source "1 + 1"
+   :expect nil
+   :error nil
+   :throws "LogicException"
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "ARGS_LONG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "ARGS_LONG" (list :tpl "f({0})" :ret "TEXT" :args (list "TEXT" "TEXT"))))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.register.ret-is-scalar"
+   :at "46-host-functions.sqlt:265"
+   :dialect "postgresql"
+   :source "1 + 1"
+   :expect nil
+   :error nil
+   :throws "LogicException"
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "RET_LIST" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "RET_LIST" (list :tpl "f({0})" :ret "LIST")))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.args.num-constant-checked"
+   :at "46-host-functions.sqlt:277"
+   :dialect "postgresql"
+   :source "MARGIN_PCT(PRICE, \"abc\")"
+   :expect nil
+   :error "E_SQL_INVALID 1:19"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "MARGIN_PCT" 2 3 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "MARGIN_PCT" (list :tpl (list (cons "2" "margin_pct({0}, {1})") (cons "3" "round(margin_pct({0}, {1}), {2})")) :ret "NUM" :args (list "NUM" "NUM" "NUM"))))
+   :bindings (lambda () (list (cons "PRICE" (binding-column "price" "p" :num)) (cons "COST" (binding-column "cost" "p" :unknown)))))
+  (list
+   :name "host.args.text-refuses-bool"
+   :at "46-host-functions.sqlt:291"
+   :dialect "postgresql"
+   :source "SLUG(TRUE)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:6"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.args.any-takes-bool"
+   :at "46-host-functions.sqlt:303"
+   :dialect "postgresql"
+   :source "FLAG_TEXT(TRUE)"
+   :expect "flag_text(TRUE)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "FLAG_TEXT" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "FLAG_TEXT" (list :tpl "flag_text({0})" :ret "TEXT")))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.args.bool-requires-bool"
+   :at "46-host-functions.sqlt:315"
+   :dialect "postgresql"
+   :source "IS_OPEN(T)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:9"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "IS_OPEN" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "IS_OPEN" (list :tpl "is_open({0})" :ret "BOOL" :args (list "BOOL"))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.args.bool-result-is-a-condition"
+   :at "46-host-functions.sqlt:329"
+   :dialect "postgresql"
+   :source "IS_OPEN(TRUE) AND T $== \"x\""
+   :expect "(is_open(TRUE) AND (CAST(\"t\".\"title\" AS TEXT) COLLATE \"C\" = CAST('x' AS TEXT) COLLATE \"C\"))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "IS_OPEN" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "IS_OPEN" (list :tpl "is_open({0})" :ret "BOOL" :args (list "BOOL"))))
+   :bindings (lambda () (list (cons "T" (binding-column "title" "t" :text)))))
+  (list
+   :name "host.list.columns"
+   :at "46-host-functions.sqlt:345"
+   :dialect "postgresql"
+   :source "HAS_TAG(TAGS, \"gift\")"
+   :expect "('gift' = ANY(ARRAY[\"o\".\"tag1\", \"o\".\"tag2\", \"o\".\"tag3\"]))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list (cons "TAGS" (binding-columns (binding-column "tag1" "o" :text) (binding-column "tag2" "o" :text) (binding-column "tag3" "o" :text))))))
+  (list
+   :name "host.list.literal"
+   :at "46-host-functions.sqlt:361"
+   :dialect "postgresql"
+   :source "HAS_TAG((\"a\", \"b\"), TAG)"
+   :expect "(\"t\".\"tag\" = ANY(ARRAY['a', 'b']))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list (cons "TAG" (binding-column "tag" "t" :text)))))
+  (list
+   :name "host.list.literal-params"
+   :at "46-host-functions.sqlt:377"
+   :dialect "postgresql"
+   :source "HAS_TAG((\"a\", \"b\"), \"c\")"
+   :expect "(? = ANY(ARRAY[?, ?]))"
+   :error nil
+   :throws nil
+   :params "t\"c\", t\"a\", t\"b\""
+   :as "condition"
+   :mode "params"
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.list.value-binding"
+   :at "46-host-functions.sqlt:395"
+   :dialect "postgresql"
+   :source "HAS_TAG(ALLOWED, TAG)"
+   :expect "(\"t\".\"tag\" = ANY(ARRAY['x', 'y']))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list (cons "ALLOWED" (binding-value (value-tree (list (cons nil (sel:make-text "x")) (cons nil (sel:make-text "y")))) nil)) (cons "TAG" (binding-column "tag" "t" :text)))))
+  (list
+   :name "host.list.scalar-is-a-list-of-one"
+   :at "46-host-functions.sqlt:411"
+   :dialect "postgresql"
+   :source "HAS_TAG(TAG, \"x\")"
+   :expect "('x' = ANY(ARRAY[\"t\".\"tag\"]))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list (cons "TAG" (binding-column "tag" "t" :text)))))
+  (list
+   :name "host.list.relation-refused"
+   :at "46-host-functions.sqlt:427"
+   :dialect "postgresql"
+   :source "HAS_TAG(ITEMS, \"x\")"
+   :expect nil
+   :error "E_SQL_SHAPE 1:9"
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "sku" (binding-column "sku" "i" :text))) "sku" nil)))))
+  (list
+   :name "host.list.empty-refused"
+   :at "46-host-functions.sqlt:443"
+   :dialect "postgresql"
+   :source "HAS_TAG(NONE_ALLOWED, \"x\")"
+   :expect nil
+   :error "E_SQL_SHAPE 1:9"
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list (cons "NONE_ALLOWED" (binding-value (value-tree (list )) nil)))))
+  (list
+   :name "host.list.nested-refused"
+   :at "46-host-functions.sqlt:459"
+   :dialect "postgresql"
+   :source "HAS_TAG(NESTED, \"x\")"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list (cons "NESTED" (binding-value (value-tree (list (cons nil (value-tree (list (cons nil (sel:make-text "a"))))) (cons nil (sel:make-text "b")))) nil)))))
+  (list
+   :name "host.list.filtered-refused"
+   :at "46-host-functions.sqlt:475"
+   :dialect "postgresql"
+   :source "HAS_TAG(FILTER((\"a\", \"b\"), _ $!= \"a\"), \"x\")"
+   :expect nil
+   :error "E_SQL_SHAPE 1:9"
+   :throws nil
+   :params nil
+   :as "condition"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "HAS_TAG" 2 2 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "HAS_TAG" (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT"))))
+   :bindings (lambda () (list )))
+  (list
+   :name "host.list.outside-a-list-position"
+   :at "46-host-functions.sqlt:489"
+   :dialect "postgresql"
+   :source "SLUG((\"a\", \"b\"))"
+   :expect nil
+   :error "E_SQL_SHAPE"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list )))
+  (list
+   :name "plan.host.spelled-map-is-sql"
+   :at "46-host-functions.sqlt:501"
+   :dialect "postgresql"
+   :source "ARTICLES .> MAP(RECORD(\"id\", _[\"id\"], \"slug\", SLUG(_[\"title\"])))"
+   :expect "SELECT \"a\".\"id\" AS \"id\", slug(\"a\".\"title\") AS \"slug\" FROM \"articles\" \"a\""
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "articles")
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list (cons "ARTICLES" (binding-relation "articles" "a" (list (cons "id" (binding-column "id" "a" :num)) (cons "title" (binding-column "title" "a" :text))) nil nil)))))
+  (list
+   :name "plan.host.spelled-filter-is-sql"
+   :at "46-host-functions.sqlt:519"
+   :dialect "postgresql"
+   :source "ARTICLES .> FILTER(SLUG(_[\"title\"]) $== \"hello\") .> MAP(RECORD(\"id\", _[\"id\"]))"
+   :expect "SELECT \"a\".\"id\" AS \"id\" FROM \"articles\" \"a\" WHERE (CAST(slug(\"a\".\"title\") AS TEXT) COLLATE \"C\" = CAST('hello' AS TEXT) COLLATE \"C\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "articles")
+   :register (lambda ()
+      (sel:register-function "SLUG" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text "")))
+      (define-entry "postgresql" :funcs "SLUG" (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT"))))
+   :bindings (lambda () (list (cons "ARTICLES" (binding-relation "articles" "a" (list (cons "id" (binding-column "id" "a" :num)) (cons "title" (binding-column "title" "a" :text))) nil nil)))))
+  (list
+   :name "plan.host.unspelled-stays-in-memory"
+   :at "46-host-functions.sqlt:537"
+   :dialect "postgresql"
+   :source "ARTICLES .> FILTER(UNSPELLED(_[\"title\"]) $== \"x\")"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "articles")
+   :register (lambda ()
+      (sel:register-function "UNSPELLED" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text ""))))
+   :bindings (lambda () (list (cons "ARTICLES" (binding-relation "articles" "a" (list (cons "id" (binding-column "id" "a" :num)) (cons "title" (binding-column "title" "a" :text))) nil nil)))))))

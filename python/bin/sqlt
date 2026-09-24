@@ -105,7 +105,13 @@ def apply_registrations(ops) -> None:
             rest = {k: v for k, v in op.items() if k != 'dialect'}
             sqlmap.define_dialect(op['dialect'], rest)
             continue
-        raise SuiteError('a register op needs a dialect or a define')
+        if 'function' in op:
+            # A host function (spec §8.1) whose body no case runs: the cases are
+            # about translation, and a spelling is an assertion about the body.
+            name, lo, hi = op['function']
+            sel.register_function(name, lo, hi, lambda _args: sel.Value.text(''))
+            continue
+        raise SuiteError('a register op needs a dialect, a define or a function')
 
 
 ERROR_RE = re.compile(r'^(\S+)(?:\s+(\d+):(\d+))?$')

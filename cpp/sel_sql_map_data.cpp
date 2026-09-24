@@ -1174,8 +1174,9 @@ constexpr Dialect DIALECTS[] = {
 // runtime would not, after which the hosts improvised differently. Improvising
 // is what code does when it has no rule; this is the rule, as data.
 
-constexpr std::string_view CAVEATS[] = {"concat-null", "decimal-float", "division-scale", "input-laxity", "length-units", "modulo-integer", "numeric-scale", "power-float", "regex-engine", "rounding-mode", "scale-limit", "text-collation", "text-order", "trim-charset", "unicode-case"};
+constexpr std::string_view CAVEATS[] = {"concat-null", "decimal-float", "division-scale", "host-function", "input-laxity", "length-units", "modulo-integer", "numeric-scale", "power-float", "regex-engine", "rounding-mode", "scale-limit", "text-collation", "text-order", "trim-charset", "unicode-case"};
 constexpr std::string_view RET_KINDS[] = {"BIN", "BOOL", "NUM", "TEXT", "UNKNOWN"};
+constexpr std::string_view ARG_KINDS[] = {"ANY", "BIN", "BOOL", "LIST", "NUM", "TEXT"};
 constexpr std::string_view TEMPLATE_KEYS[] = {"identQuote", "identEscape", "textQuote", "true", "false", "numericLiteral", "textCollate", "textCharset", "textCast", "numericCast", "binaryCast", "isTrue", "isNotTrue", "placeholder", "numericGuard"};
 constexpr Arity OP_ARITY[] = {
     {.key = "!=", .min = 2, .max = 2},
@@ -1354,6 +1355,7 @@ constexpr LexType LEX_TYPES[] = {
 constexpr Rules RULES = {
     .caveats = CAVEATS,
     .ret_kinds = RET_KINDS,
+    .arg_kinds = ARG_KINDS,
     .template_keys = TEMPLATE_KEYS,
     .op_arity = OP_ARITY,
     .func_arity = FUNC_ARITY,

@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Registry;
 use Sel\Value;
 
 final class Translator
@@ -730,6 +731,9 @@ final class Translator
         if ($name === 'IF' || $name === 'COND') {
             return $this->conditional($n);
         }
+        if (Registry::hostArity($name) !== null) {
+            return $this->hostCall($n);
+        }
 
         $n = $this->rewriteRegex($n);
 
@@ -753,6 +757,124 @@ final class Translator
             $out->canonical = true;
         }
         return $out;
+    }
+
+    /**
+     * A call to an application's own function (sql/MAP.md §4.7).
+     *
+     * The entry is looked up first, because its `args` say how each argument
+     * renders: so a function with no spelling in this dialect is refused at the
+     * call before any argument is examined. None of the builtins' own argument
+     * rules apply -- which of them take a BOOL, which read a number -- only
+     * what the entry declares. And the fragment says whose promise it is: every
+     * use carries the caveat host-function, which strict mode refuses.
+     *
+     * @param array<string,mixed> $n
+     */
+    private function hostCall(array $n): Fragment
+    {
+        $name = $n['name'];
+        $entry = Map::entry($this->dialect, 'funcs', $name);
+        if ($entry === Map::MISSING || $entry === null) {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$name} is a host function with no SQL spelling in dialect "
+                . "{$this->dialect}; register one with the map, or evaluate it here", $n['pos']);
+        }
+        if (is_string($entry)) {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$name} has no mapping in dialect {$this->dialect} — {$entry}", $n['pos']);
+        }
+        $recorded = Map::hostSpellingArity($this->dialect, $name);
+        $current = Registry::hostArity($name);
+        if ($recorded !== null && $recorded !== $current) {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$name} was registered again with the arity [{$current[0]}, {$current[1]}] "
+                . "after its SQL spelling was defined for [{$recorded[0]}, {$recorded[1]}]; "
+                . 'define the spelling again', $n['pos']);
+        }
+        if ($this->strict) {
+            refuse('E_SQL_UNSUPPORTED',
+                "{$name} is spelled by the application, which SEL cannot check "
+                . '(host-function), and strict mode refuses that', $n['pos']);
+        }
+        $this->caveats['host-function'] = true;
+
+        $kinds = $entry['args'] ?? [];
+        $args = [];
+        foreach ($n['args'] as $i => $arg) {
+            $kind = $kinds[$i] ?? 'ANY';
+            if ($kind === 'LIST') {
+                $args[] = $this->hostListArgument($name, $arg, $n);
+                continue;
+            }
+            $f = $this->node($arg);
+            if ($f->kind === 'LIST') {
+                refuse('E_SQL_SHAPE',
+                    "argument to {$name} is a list, and its spelling does not "
+                    . 'declare a LIST there', $arg['pos']);
+            }
+            if (($kind === 'NUM' || $kind === 'TEXT') && ($f->kind === 'BOOL' || $f->kind === 'BIN')) {
+                refuse('E_SQL_SHAPE',
+                    "{$name} declares this argument {$kind}, and this is a {$f->kind}",
+                    $arg['pos']);
+            }
+            if (($kind === 'BOOL' || $kind === 'BIN') && $f->kind !== $kind) {
+                refuse('E_SQL_SHAPE',
+                    "{$name} declares this argument {$kind}, and this is "
+                    . ($f->kind === 'UNKNOWN' ? 'not one this layer can prove' : "a {$f->kind}"),
+                    $arg['pos']);
+            }
+            if ($kind === 'NUM') {
+                $this->requireNumericConstant($arg);
+                if ($f->kind !== 'NUM') {
+                    $f = $this->guardNumeric($f, $arg);
+                }
+            }
+            $args[] = $f;
+        }
+        return $this->apply('funcs', $name, $args, $n['pos']);
+    }
+
+    /**
+     * A LIST argument: a list known when translating, its elements rendered and
+     * joined with ', ' -- the template supplies the brackets.
+     *
+     * @param array<string,mixed> $arg
+     * @param array<string,mixed> $call
+     */
+    private function hostListArgument(string $name, array $arg, array $call): Fragment
+    {
+        $src = $this->source($arg, $call);
+        if ($src['shape'] === 'relation') {
+            refuse('E_SQL_SHAPE',
+                "argument to {$name} is a relation, rows the query has not read "
+                . 'yet; a LIST argument is a list known when translating', $arg['pos']);
+        }
+        if ($src['filters'] !== []) {
+            refuse('E_SQL_SHAPE',
+                "argument to {$name} is a filtered list, whose elements are decided "
+                . 'when it is evaluated; a template cannot express that', $arg['pos']);
+        }
+        if ($src['elements'] === []) {
+            refuse('E_SQL_SHAPE',
+                "argument to {$name} is an empty list, which has nothing for the "
+                . 'template to hold', $arg['pos']);
+        }
+        $parts = [];
+        $i = 0;
+        foreach ($src['elements'] as $elem) {
+            $f = $this->fromBinder($elem, $arg);
+            if ($f->kind === 'LIST') {
+                refuse('E_SQL_SHAPE',
+                    "argument to {$name} has a list as an element, which has no "
+                    . 'scalar rendering', $arg['pos']);
+            }
+            if ($i++ > 0) {
+                $parts[] = ', ';
+            }
+            array_push($parts, ...$f->parts);
+        }
+        return new Fragment($parts, 'UNKNOWN', $this->dialect);
     }
 
     /**

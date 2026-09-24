@@ -12,6 +12,7 @@
 // measure the same thing twice.
 
 import { asciiUpper } from '../lexer.mjs';
+import { hostArity } from '../registry.mjs';
 import { DIALECTS, RULES } from './_map.mjs';
 import { refuse } from './errors.mjs';
 
@@ -37,6 +38,12 @@ const overlay = new Map();
 // activity; throwing the whole set away costs one comparison per dialect
 // afterwards.
 const guardChecked = new Set();
+
+// sql/MAP.md §4.7: the arity a host function had when its spelling was defined,
+// per dialect. Translation compares it with the function's arity now, so a
+// function registered again with another arity is not rendered through a
+// template written for the old one.
+const hostArities = new Map();
 
 // Object.hasOwn throughout, never `in` and never a truthiness test: the
 // generated tables are plain objects parsed from JSON, so `'constructor' in d`
@@ -150,6 +157,13 @@ export function define(dialect, section, key, entry_) {
   const byDialect = overlay.get(dialect);
   if (!byDialect.has(section)) byDialect.set(section, new Map());
   byDialect.get(section).set(k, entry_);
+  const arity = section === 'funcs' ? hostArity(k) : null;
+  if (arity !== null) {
+    if (!hostArities.has(dialect)) hostArities.set(dialect, new Map());
+    hostArities.get(dialect).set(k, arity);
+  } else {
+    hostArities.get(dialect)?.delete(k);
+  }
   // A redefined ISNUM invalidates every memoised guard check: define() lets the
   // last writer win, and a redefinition against a BASE reaches every dialect
   // that inherits from it, so the whole set goes rather than one name.
@@ -169,6 +183,17 @@ export function reset() {
   extra.clear();
   overlay.clear();
   guardChecked.clear();
+  hostArities.clear();
+}
+
+// The arity recorded when the entry `entry(dialect, 'funcs', key)` finds was
+// defined for a host function, or null. Walks the chain the way entry() walks
+// the overlay, so it answers for the same entry.
+export function hostSpellingArity(dialect, key) {
+  for (const d of chain(dialect)) {
+    if (overlay.get(d)?.get('funcs')?.has(key)) return hostArities.get(d)?.get(key) ?? null;
+  }
+  return null;
 }
 
 // Every quoted run, not the first: two genuinely different numeral tests that
@@ -394,10 +419,11 @@ function checkKey(section, key) {
   // `funcs` keys are SEL function names and case-insensitive; ops and skel keys
   // are looked up verbatim, which is why define() upper-cases only the first.
   // Registering `and` or `Case` used to be silently dead.
-  if (section === 'funcs' && !has(RULES.funcArity, asciiUpper(key))) {
-    throw new Error(`${key} is not a SEL function this layer maps; the aggregates `
-      + 'and IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by stage 2 and never '
-      + 'reach the funcs table');
+  if (section === 'funcs' && !has(RULES.funcArity, asciiUpper(key)) && hostArity(key) === null) {
+    throw new Error(`${key} is neither a SEL function this layer maps nor a registered `
+      + 'host function. A host function is registered (registerFunction) before it '
+      + 'is given a SQL spelling; the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT '
+      + 'are lowered by stage 2 and never reach the funcs table');
   }
   if (section === 'skel' && !has(RULES.skelSlots, key)) {
     throw new Error(`${key} is not a skeleton; known ones are `
@@ -413,6 +439,8 @@ function checkEntry(section, key, e) {
   if (typeof e !== 'object' || Array.isArray(e)) {
     throw new Error(`${where} must be a map, a string or null, and is ${typeName(e)}`);
   }
+  const host = section === 'funcs' ? hostArity(key) : null;
+  if ((e.args ?? null) !== null) checkArgs(key, e.args, host, where);
   if ((e.builder ?? null) !== null) {
     if (typeof e.builder !== 'function') {
       throw new Error(`${where} has a builder that is not callable; use `
@@ -470,6 +498,10 @@ function checkEntry(section, key, e) {
       throw new Error(`${where} has an arity that is not [min, max] of two integers`);
     }
   }
+  if (arity !== null && host !== null && (arity[0] < host[0] || arity[1] > host[1])) {
+    throw new Error(`${where} has the arity [${arity.join(', ')}], which is wider than `
+      + `${key}'s registered [${host[0]}, ${host[1]}]; an entry may only narrow it`);
+  }
   if (has(e, 'variants')) {
     const vs = e.variants;
     if (vs === null || typeof vs !== 'object' || Array.isArray(vs)
@@ -499,7 +531,8 @@ function checkEntry(section, key, e) {
     // `b`. Against UPPER's arity of [1, 1] the count 0 is out of range, and the
     // list is refused for the reason it is actually wrong. A list is included
     // here so every host refuses it at the same line.
-    const base = section === 'ops' ? RULES.opArity[key] : RULES.funcArity[asciiUpper(key)];
+    const base = section === 'ops' ? RULES.opArity[key]
+      : host !== null ? host : RULES.funcArity[asciiUpper(key)];
     let [lo, hi] = base;
     if (arity !== null) {
       lo = Math.max(lo, arity[0]);
@@ -519,6 +552,27 @@ function checkEntry(section, key, e) {
           + 'be chosen');
       }
     }
+  }
+}
+
+// sql/MAP.md §4.7: `args` belongs to a host function's entry alone.
+function checkArgs(key, args, host, where) {
+  if (host === null) {
+    throw new Error(`${where} declares args, and ${key} is not a host function: `
+      + "a builtin's argument rules are SEL's own");
+  }
+  if (!Array.isArray(args) || !args.every((a) => typeof a === 'string')) {
+    throw new Error(`${where} has args that are not a list of kinds`);
+  }
+  for (const a of args) {
+    if (!RULES.argKinds.includes(a)) {
+      throw new Error(`${where} declares the argument kind ${JSON.stringify(a)}; use one of `
+        + RULES.argKinds.join(', '));
+    }
+  }
+  if (args.length > host[1]) {
+    throw new Error(`${where} declares ${args.length} argument kinds, and ${key} `
+      + `takes at most ${host[1]}`);
   }
 }
 

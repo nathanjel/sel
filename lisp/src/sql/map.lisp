@@ -25,6 +25,12 @@
 ;; afterwards.
 (defvar *guard-checked* '())
 
+;; sql/MAP.md §4.7: the arity a host function had when its spelling was defined,
+;; per dialect, as ((dialect . ((key . (min . max)) ...)) ...). Translation
+;; compares it with the function's arity now, so a function registered again
+;; with another arity is not rendered through a template written for the old one.
+(defvar *host-arity* '())
+
 ;;; Every key DEFINE-DIALECT accepts. sql/MAP.md §3 is the normative list.
 (defparameter +dialect-keys+ '(:extends :version :target :lexical))
 
@@ -34,8 +40,18 @@
 
 (defun map-reset ()
   "Forget every runtime registration. For tests; nothing else should need it."
-  (setf *extra* '() *overlay* '() *guard-checked* '())
+  (setf *extra* '() *overlay* '() *guard-checked* '() *host-arity* '())
   (values))
+
+(defun host-spelling-arity (dialect key)
+  "The arity recorded when the entry (DIALECT-ENTRY DIALECT :FUNCS KEY) finds
+was defined for a host function, or NIL. Walks the chain the way DIALECT-ENTRY
+walks the overlay, so it answers for the same entry."
+  (dolist (d (dialect-chain dialect) nil)
+    (let ((sec (cdr (assoc :funcs (cdr (assoc d *overlay* :test #'equal))))))
+      (when (assoc key sec :test #'equal)
+        (return (cdr (assoc key (cdr (assoc d *host-arity* :test #'equal))
+                            :test #'equal)))))))
 
 ;;; --- lookup ---------------------------------------------------------------
 
@@ -340,10 +356,12 @@ be looked up" key)))
     ;; `funcs` keys are SEL function names and case-insensitive; ops and skel
     ;; keys are looked up verbatim, which is why DEFINE-ENTRY upper-cases only
     ;; the first. Registering `and` or `Case` used to be silently dead.
-    (:funcs (unless (assoc (sel::ascii-upcase key) (rule :func-arity) :test #'equal)
-              (bad "~a is not a SEL function this layer maps; the aggregates and ~
-IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by stage 2 and never reach the funcs ~
-table" key)))
+    (:funcs (unless (or (assoc (sel::ascii-upcase key) (rule :func-arity) :test #'equal)
+                        (sel::host-arity key))
+              (bad "~a is neither a SEL function this layer maps nor a registered ~
+host function. A host function is registered (REGISTER-FUNCTION) before it is ~
+given a SQL spelling; the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are ~
+lowered by stage 2 and never reach the funcs table" key)))
     (:skel (unless (assoc key (rule :skel-slots) :test #'equal)
              (bad "~a is not a skeleton; known ones are ~{~a~^, ~}"
                   key (mapcar #'car (rule :skel-slots)))))))
@@ -381,13 +399,32 @@ table" key)))
                        (push (subseq rest start) out)
                        (nreverse out)))))))
 
+(defun check-args (key args host where)
+  "sql/MAP.md §4.7: :ARGS belongs to a host function's entry alone."
+  (unless host
+    (bad "~a declares args, and ~a is not a host function: a builtin's argument ~
+rules are SEL's own" where key))
+  (unless (and (listp args) (every #'stringp args))
+    (bad "~a has args that are not a list of kinds" where))
+  (dolist (a args)
+    (unless (member a (rule :arg-kinds) :test #'equal)
+      (bad "~a declares the argument kind ~s; use one of ~{~a~^, ~}"
+           where a (rule :arg-kinds))))
+  (when (> (length args) (cdr host))
+    (bad "~a declares ~D argument kinds, and ~a takes at most ~D"
+         where (length args) key (cdr host))))
+
 (defun check-entry (section key entry)
-  (let ((where (format nil "the ~(~a~) entry for ~a" section key)))
+  (let ((where (format nil "the ~(~a~) entry for ~a" section key))
+        (host (when (eq section :funcs) (sel::host-arity key))))
     ;; A string is a refusal carrying its reason; NIL is a refusal without one.
     ;; Both are entries, and neither has anything else to check.
     (when (or (null entry) (stringp entry)) (return-from check-entry))
     (unless (listp entry)
       (bad "~a must be a plist, a string or NIL" where))
+    (let ((args (plist-get entry :args)))
+      (when (and (presentp args) args)
+        (check-args key args host where)))
     (let ((builder (plist-get entry :builder)))
       (when (and (presentp builder) builder)
         (unless (functionp builder)
@@ -431,7 +468,11 @@ survive as literal text in every query" where slot key allowed)))))
         (when (and (presentp arity) arity)
           (unless (and (consp arity) (integerp (car arity)) (integerp (cdr arity))
                        (>= (car arity) 0) (>= (cdr arity) (car arity)))
-            (bad "~a has an arity that is not (min . max) of two integers" where))))
+            (bad "~a has an arity that is not (min . max) of two integers" where))
+          (when (and host (or (< (car arity) (car host)) (> (cdr arity) (cdr host))))
+            (bad "~a has the arity [~D, ~D], which is wider than ~a's registered ~
+[~D, ~D]; an entry may only narrow it"
+                 where (car arity) (cdr arity) key (car host) (cdr host)))))
 
       (when (presentp variants)
         (unless (and (listp variants) variants (every #'consp variants))
@@ -450,10 +491,11 @@ survive as literal text in every query" where slot key allowed)))))
       ;; chosen, and saying so at registration is the difference between a typo
       ;; and a query that silently takes the wrong arm.
       (when (and (presentp tpl) (listp tpl) tpl)
-        (let* ((sel-arity (cdr (if (eq section :ops)
-                                   (assoc key (rule :op-arity) :test #'equal)
-                                   (assoc (sel::ascii-upcase key) (rule :func-arity)
-                                          :test #'equal))))
+        (let* ((sel-arity (cond ((eq section :ops)
+                                 (cdr (assoc key (rule :op-arity) :test #'equal)))
+                                (host host)
+                                (t (cdr (assoc (sel::ascii-upcase key) (rule :func-arity)
+                                               :test #'equal)))))
                (lo (car sel-arity))
                (hi (cdr sel-arity))
                (arity (plist-get entry :arity)))
@@ -499,6 +541,21 @@ withdraws it without one."
     (if existing
         (setf (cdr existing) entry)
         (setf (cdr scell) (append (cdr scell) (list (cons k entry)))))
+    ;; The host function's arity as it is now, beside the spelling written for
+    ;; it; a non-host key defined here drops any arity an earlier host function
+    ;; of that name left behind.
+    (let ((arity (when (eq section :funcs) (sel::host-arity k)))
+          (hcell (assoc dialect *host-arity* :test #'equal)))
+      (cond (arity
+             (unless hcell
+               (setf hcell (cons dialect '()))
+               (push hcell *host-arity*))
+             (let ((cell (assoc k (cdr hcell) :test #'equal)))
+               (if cell
+                   (setf (cdr cell) arity)
+                   (push (cons k arity) (cdr hcell)))))
+            (hcell
+             (setf (cdr hcell) (remove k (cdr hcell) :key #'car :test #'equal)))))
     ;; A redefined ISNUM invalidates every memoised guard check: DEFINE-ENTRY
     ;; lets the last writer win, and a redefinition against a BASE reaches every
     ;; dialect that inherits from it, so the whole set goes rather than one name.

@@ -19,7 +19,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-USER_DOCS="docs/README.md docs/extending.md docs/functions.md docs/operators.md docs/overview.md docs/parity.md docs/reference/builtins.md docs/reference/limits.md docs/sql.md docs/syntax.md docs/usage/README.md docs/usage/in-memory.md docs/usage/repl.md docs/usage/scripting.md docs/usage/sql-3nf.md docs/usage/sql-conditions.md docs/usage/sql-eav.md docs/usage/sql-flat.md docs/usage/sql-pipelines.md docs/usage/sql-star.md docs/usage/validation.md"
+USER_DOCS="docs/README.md docs/extending.md docs/functions.md docs/operators.md docs/overview.md docs/parity.md docs/reference/builtins.md docs/reference/limits.md docs/sql.md docs/syntax.md docs/usage/README.md docs/usage/in-memory.md docs/usage/repl.md docs/usage/scripting.md docs/usage/sql-3nf.md docs/usage/sql-conditions.md docs/usage/sql-eav.md docs/usage/sql-flat.md docs/usage/sql-functions.md docs/usage/sql-pipelines.md docs/usage/sql-star.md docs/usage/validation.md"
 NEVER="PACKAGING.md CLAUDE.md"
 
 want="$(printf '%s\n' $USER_DOCS | sort)"

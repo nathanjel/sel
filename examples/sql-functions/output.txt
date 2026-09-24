@@ -1,0 +1,30 @@
+1. gifts with a margin of 40% or more
+   plan        pure_sql
+   sql         SELECT "_sub1".* FROM (SELECT slug("p"."title") AS "product", margin_pct("p"."price", "p"."cost") AS "margin" FROM "products" "p" WHERE (('gift' = ANY(ARRAY["p"."tag1", "p"."tag2", "p"."tag3"])) AND (margin_pct("p"."price", "p"."cost") >= 40))) "_sub1" ORDER BY "_sub1"."margin" DESC
+   caveats     host-function, text-order
+   | product=harbour-lights  margin=46.1
+   | product=cast-iron-pan  margin=46.0
+   | product=decimal-tales-2nd-edition  margin=44.9
+   in memory   same rows
+2. gross revenue and shipping per country
+   plan        pure_sql
+   sql         SELECT CAST("_sub1"."country" AS TEXT) COLLATE "C" AS "country", COALESCE(SUM("_sub1"."gross"), 0) AS "gross", COALESCE(SUM("_sub1"."shipping"), 0) AS "shipping" FROM (SELECT "o"."country" AS "country", (CAST((CAST("l"."qty" AS NUMERIC) * CAST("p"."price" AS NUMERIC)) AS NUMERIC) * CAST((CAST(1 AS NUMERIC) + CAST(vat_rate("o"."country", "p"."category") AS NUMERIC)) AS NUMERIC)) AS "gross", shipping_cost((CAST("p"."weight_kg" AS NUMERIC) * CAST("l"."qty" AS NUMERIC)), "o"."country") AS "shipping" FROM "order_lines" "l" INNER JOIN "orders" "o" ON ("l"."order_id" = "o"."order_id") INNER JOIN "products" "p" ON ("l"."product_id" = "p"."product_id")) "_sub1" GROUP BY CAST("_sub1"."country" AS TEXT) COLLATE "C" ORDER BY COALESCE(SUM("_sub1"."gross"), 0) DESC
+   caveats     host-function
+   | country=PL  gross=915.059700  shipping=93.40
+   | country=DE  gross=636.640100  shipping=79.40
+   | country=FR  gross=369.600000  shipping=117.80
+   in memory   same rows
+3. words in the titles of the better-margin products
+   plan        hybrid
+   sql         SELECT slug("p"."title") AS "product", "p"."title" AS "title" FROM "products" "p" WHERE (margin_pct("p"."price", "p"."cost") > 30) ORDER BY "p"."product_id" ASC
+   caveats     host-function
+   | product=cast-iron-pan  words=3
+   | product=chef-s-knife-8  words=4
+   | product=decimal-tales-2nd-edition  words=4
+   | product=rain-barrel-200l  words=3
+   | product=harbour-lights  words=2
+   | product=cardinal-rules  words=2
+   in memory   same rows
+4. strict translation
+   caveats     host-function
+   strict      E_SQL_UNSUPPORTED

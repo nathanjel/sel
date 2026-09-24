@@ -68,7 +68,7 @@ SQL_EXAMPLES := sql dialect memory-complex
 # into a directory of their own:
 #
 #   make BUILD=build-usage build-usage/example-sql-star
-DB_EXAMPLES := sql-conditions sql-star sql-eav sql-3nf sql-flat sql-complex
+DB_EXAMPLES := sql-conditions sql-star sql-eav sql-3nf sql-flat sql-complex sql-functions
 DB_LIBS     := -lpq -lmariadb -lsqlite3
 EXAMPLE_BINS := $(addprefix $(BUILD)/example-,$(EXAMPLES)) \
                 $(addprefix $(BUILD)/example-,$(SQL_EXAMPLES))

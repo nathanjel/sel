@@ -504,6 +504,13 @@ DIALECTS: dict[str, dict] = {
 Mirrors `Registry::define` in shape and in spirit, because an application that
 can add a SEL function must be able to add its SQL spelling in the same breath.
 
+That sentence became literal when host functions arrived (spec §8.1): a `funcs`
+entry may name a function registered with `registerFunction`, checked against
+its registered arity, with an optional `args` list declaring argument kinds, and
+rendered through a translator path of its own that applies none of the builtins'
+argument rules and marks the fragment `host-function`. `sql/MAP.md` §4.7 is the
+contract; `sql/cases/46-host-functions.sqlt` pins it.
+
 ```php
 use Sel\Sql\Map;
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
+from .. import registry as _registry
 from .. import utf8
 from ..builtins import regex as _regex
 from ..errors import Pos, SelError
@@ -736,6 +737,8 @@ class Translator:
                    'value a SQL expression can be', n.pos)
         if name in ('IF', 'COND'):
             return self._conditional(n)
+        if _registry.host_arity(name) is not None:
+            return self._host_call(n)
 
         n = self._rewrite_regex(n)
 
@@ -755,6 +758,94 @@ class Translator:
         if name == 'CANON':
             out.canonical = True
         return out
+
+    def _host_call(self, n: Node) -> Fragment:
+        """A call to an application's own function (sql/MAP.md §4.7).
+
+        The entry is looked up first, because its `args` say how each argument
+        renders: so a function with no spelling in this dialect is refused at the
+        call before any argument is examined. None of the builtins' own argument
+        rules apply -- which of them take a BOOL, which read a number -- only
+        what the entry declares. And the fragment says whose promise it is: every
+        use carries the caveat host-function, which strict mode refuses.
+        """
+        name = n.name
+        entry = _map.entry(self.dialect, 'funcs', name)
+        if entry is _map.MISSING or entry == _map.MISSING or entry is None:
+            refuse('E_SQL_UNSUPPORTED',
+                   f'{name} is a host function with no SQL spelling in dialect '
+                   f'{self.dialect}; register one with the map, or evaluate it here', n.pos)
+        if isinstance(entry, str):
+            refuse('E_SQL_UNSUPPORTED',
+                   f'{name} has no mapping in dialect {self.dialect} — {entry}', n.pos)
+        recorded = _map.host_spelling_arity(self.dialect, name)
+        current = _registry.host_arity(name)
+        if recorded is not None and recorded != current:
+            refuse('E_SQL_UNSUPPORTED',
+                   f'{name} was registered again with the arity {list(current)} after '
+                   f'its SQL spelling was defined for {list(recorded)}; define the '
+                   'spelling again', n.pos)
+        if self.strict:
+            refuse('E_SQL_UNSUPPORTED',
+                   f'{name} is spelled by the application, which SEL cannot check '
+                   '(host-function), and strict mode refuses that', n.pos)
+        self.caveats['host-function'] = True
+
+        kinds = entry.get('args') or []
+        args = []
+        for i, arg in enumerate(n.args):
+            kind = kinds[i] if i < len(kinds) else 'ANY'
+            if kind == 'LIST':
+                args.append(self._host_list_argument(name, arg, n))
+                continue
+            f = self._node(arg)
+            if f.kind == 'LIST':
+                refuse('E_SQL_SHAPE',
+                       f'argument to {name} is a list, and its spelling does not '
+                       'declare a LIST there', arg.pos)
+            if kind in ('NUM', 'TEXT') and f.kind in ('BOOL', 'BIN'):
+                refuse('E_SQL_SHAPE',
+                       f'{name} declares this argument {kind}, and this is a {f.kind}',
+                       arg.pos)
+            if kind in ('BOOL', 'BIN') and f.kind != kind:
+                refuse('E_SQL_SHAPE',
+                       f'{name} declares this argument {kind}, and this is '
+                       f'{"not one this layer can prove" if f.kind == "UNKNOWN" else "a " + f.kind}',
+                       arg.pos)
+            if kind == 'NUM':
+                self._require_numeric_constant(arg)
+                if f.kind != 'NUM':
+                    f = self._guard_numeric(f, arg)
+            args.append(f)
+        return self._apply('funcs', name, args, n.pos)
+
+    def _host_list_argument(self, name: str, arg: Node, call: Node) -> Fragment:
+        """A LIST argument: a list known when translating, its elements rendered
+        and joined with ', ' -- the template supplies the brackets."""
+        src = self._source(arg, call)
+        if src['shape'] == 'relation':
+            refuse('E_SQL_SHAPE',
+                   f'argument to {name} is a relation, rows the query has not read '
+                   'yet; a LIST argument is a list known when translating', arg.pos)
+        if src['filters']:
+            refuse('E_SQL_SHAPE',
+                   f'argument to {name} is a filtered list, whose elements are decided '
+                   'when it is evaluated; a template cannot express that', arg.pos)
+        if not src['elements']:
+            refuse('E_SQL_SHAPE',
+                   f'argument to {name} is an empty list, which has nothing for the '
+                   'template to hold', arg.pos)
+        parts: list[Any] = []
+        for i, elem in enumerate(src['elements'].values()):
+            f = self._from_binder(elem, arg)
+            if f.kind == 'LIST':
+                refuse('E_SQL_SHAPE',
+                       f'argument to {name} has a list as an element, which has no '
+                       'scalar rendering', arg.pos)
+            if i:
+                parts.append(', ')
+            parts.extend(f.parts)
+        return Fragment(parts, 'UNKNOWN', self.dialect)
 
     def _require_argument_kind(self, name: str, f: Fragment, pos: Pos) -> None:
         """Refuse an argument whose kind SEL would refuse.

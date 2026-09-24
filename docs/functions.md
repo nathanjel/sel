@@ -361,6 +361,8 @@ RMATCH('^\d$', "\u{0661}")   => FALSE
 
 An application can add functions of its own — to look up stock, to format money
 its way, to send a message — with one registration call in its host language.
-They are called like any builtin and follow the same rules. See
-[Scripting with host functions](usage/scripting.md) and
+They are called like any builtin and follow the same rules, and each can be given a
+SQL spelling so the rules that call it still reach the database. See
+[Scripting with host functions](usage/scripting.md),
+[Your own functions, in SQL](usage/sql-functions.md) and
 [Extending SEL](extending.md).

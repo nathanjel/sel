@@ -181,3 +181,12 @@ it."
                          result))))
     (setf (gethash upper *host-functions*) t)
     upper))
+
+(defun host-arity (name)
+  "The (MIN . MAX) of a host function registered with REGISTER-FUNCTION, or NIL
+when the name is not one. The SQL layer reads it: a host function's SQL spelling
+is checked against, and recorded with, this arity."
+  (let ((key (ascii-upcase name)))
+    (when (gethash key *host-functions*)
+      (let ((spec (gethash key *registry*)))
+        (cons (spec-min spec) (spec-max spec))))))

@@ -270,6 +270,10 @@ class Translator {
   Fragment conditional(const SNode& n);
   SNodePtr rewrite_regex(const SNodePtr& n);
   void require_argument_kind(const std::string& name, const Fragment& f, Pos pos);
+  // sql/MAP.md §4.7: a call to an application's own function, and the one
+  // argument shape only it has -- a LIST rendered as its joined elements.
+  Fragment host_call(const SNode& n);
+  Fragment host_list_argument(const std::string& name, const SNodePtr& arg);
   // What an aggregate iterates, once classified.
   struct Filter {
     std::string binder;

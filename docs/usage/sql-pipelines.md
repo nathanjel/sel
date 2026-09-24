@@ -660,7 +660,8 @@ Most of what keeps a step in memory is one of these:
 
 - **No SQL spelling.** `SPLIT` and `RGROUPS` yield lists; `CRC32` has no
   PostgreSQL spelling; a regex has none on SQLite; a host function has none
-  anywhere until the application registers one. The split lands before the step.
+  until the application [gives it one](sql-functions.md). The split lands before
+  the step.
 - **Rows SQL does not have.** After a `LINK`, SEL's row holds each side under its
   binder as well as the promoted fields; SQL's row has only the fields. So a
   joined row is only a split point once a `MAP` (or `SELECT_COLS`, or a
@@ -684,7 +685,8 @@ that wants the database's data but not its opinion loads them — which is what
 
 ## The example data
 
-Five small datasets, one per shape of schema, each in the database the brief
+Six small datasets — one per shape of schema, and one for the application's
+own functions — each in the database the brief
 asks of it and each with its own page. The seeds are in the example directories;
 `tools/check-usage.sh` loads them into throwaway servers and runs every example
 in every host against them.
@@ -695,6 +697,7 @@ in every host against them.
 | [Entity–attribute–value](sql-eav.md) | entities and `(entity, name, value)` rows, every value text | SQLite | `EXISTS` subqueries per attribute; counting by value in SQL; pivoting and numeric tests on text in memory |
 | [Third normal form](sql-3nf.md) | categories, products, customers, orders, order lines | PostgreSQL | a three-table join and aggregate in SQL; an application-defined hash (CRC32 cohorts) in memory |
 | [Unnormalised](sql-flat.md) | one wide export table with repeated customers and tags in one column | MariaDB | grouping in SQL; normalisation and de-duplication kept out of MariaDB's collation; splitting a list column in memory |
+| [Your own functions](sql-functions.md) | a shop with VAT rates, and the application's functions spelled as PostgreSQL stored functions | PostgreSQL | a list argument, SQL and PL/pgSQL functions inside joins and aggregates, a list-returning function kept in memory, strict mode |
 | [Complex, in memory](in-memory.md) | a support desk: teams, customers, SLAs, tickets, events | PostgreSQL, then no database at all | a report no database can take a share of: SQL loads, SEL computes — and the same report over generated data |
 
 Every example prints, for each pipeline, the plan, the tables it reads, the SQL,

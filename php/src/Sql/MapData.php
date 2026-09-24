@@ -2347,8 +2347,9 @@ final class MapData
      */
     public const RULES = [
         'sections' => ['ops', 'funcs', 'skel'],
-        'caveats' => ['concat-null', 'decimal-float', 'division-scale', 'input-laxity', 'length-units', 'modulo-integer', 'numeric-scale', 'power-float', 'regex-engine', 'rounding-mode', 'scale-limit', 'text-collation', 'text-order', 'trim-charset', 'unicode-case'],
+        'caveats' => ['concat-null', 'decimal-float', 'division-scale', 'host-function', 'input-laxity', 'length-units', 'modulo-integer', 'numeric-scale', 'power-float', 'regex-engine', 'rounding-mode', 'scale-limit', 'text-collation', 'text-order', 'trim-charset', 'unicode-case'],
         'retKinds' => ['BIN', 'BOOL', 'NUM', 'TEXT', 'UNKNOWN'],
+        'argKinds' => ['ANY', 'BIN', 'BOOL', 'LIST', 'NUM', 'TEXT'],
         'opArity' => [
             '!=' => [2, 2],
             '$!=' => [2, 2],

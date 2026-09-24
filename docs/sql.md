@@ -14,6 +14,7 @@ and [SQL pipelines](usage/sql-pipelines.md) are the guided tour, and
 - [Kinds, guards and strict mode](#kinds-guards-and-strict-mode)
 - [Refusals](#refusals)
 - [Caveats](#caveats)
+- [Your own functions](#your-own-functions)
 - [Extending the map](#extending-the-map)
 - [Loading the SQL layer](#loading-the-sql-layer)
 
@@ -187,11 +188,45 @@ so an application can branch on it:
 | `concat-null` | concatenation yields `NULL` if any operand is `NULL` |
 | `input-laxity` | the server accepts input SEL rejects (it agrees on everything SEL accepts) |
 | `text-order` | a text sort key orders by bytes where SEL orders number-shaped text as numbers |
+| `host-function` | the fragment uses the application's spelling of its own function, which SEL cannot check |
 | `text-collation`, `length-units`, `rounding-mode` | in the vocabulary; no shipped dialect declares them |
 
 An empty `caveats` list is the layer's promise that the fragment means exactly
 what the program means — a promise `tools/check-sql-oracle.sh` tests against real
 servers.
+
+## Your own functions
+
+A function the application registered ([spec §8.1](../spec/SPEC.md#81-host-functions))
+has no SQL until the application gives it a spelling for a dialect — a call to a
+database function, a stored function, or an inline expression — with the same
+`define` that respells a builtin. [Your own functions, in SQL](usage/sql-functions.md)
+is a worked example with PostgreSQL stored functions in all five languages;
+[sql/MAP.md §4.7](../sql/MAP.md#47-spelling-a-host-function) is the contract.
+
+| Rule | |
+|---|---|
+| Order | register the function first; a spelling for any other name is the host's start-up error |
+| Arity | the registration's, recorded with the spelling; an entry's `arity` may only narrow it; a later registration with a different arity makes translation refuse (`E_SQL_UNSUPPORTED`) until the spelling is defined again |
+| Result | `ret` is a scalar kind; a function that returns a list has no spelling |
+| Arguments | the builtins' argument rules do not apply; the entry's `args` does, per position |
+| Honesty | every use carries the caveat `host-function`; `strict` refuses it |
+| `reset()` | drops the spellings; the functions stay registered |
+| No spelling | `E_SQL_UNSUPPORTED` at the call, before its arguments are examined; the planner keeps the step in memory |
+
+`args` — one per position, `ANY` past the end:
+
+| Kind | The argument must be | It renders as |
+|---|---|---|
+| `ANY` | any scalar | itself |
+| `TEXT` | not a BOOL or a BIN | itself |
+| `NUM` | a number: a constant is checked when translating, a BOOL or BIN is refused | itself when declared `NUM`, otherwise through the numeric guard |
+| `BOOL` / `BIN` | proved to be of that kind | itself |
+| `LIST` | a list known when translating: a literal list, a `columns` binding, a list-valued `value` binding (a scalar is a list of one) — not a relation, an empty list, a nested or a filtered one | its elements, joined with `, `, for the template to bracket: `ARRAY[{0}]`, `({0})` |
+
+The application promises that the spelling computes what its function computes;
+nothing else can. Run the rules both ways over real data and compare — the
+examples do, on every run.
 
 ## Extending the map
 
@@ -199,9 +234,7 @@ At run time, an application can register a dialect of its own that extends a
 shipped one — for a driver that wants numbered placeholders, a server version with
 a missing function, an extension that adds one — and can respell, withdraw or
 add a builder for any of SEL's own functions. Only the difference is written;
-everything else is inherited. (A [host function](usage/scripting.md#host-functions-and-sql)
-has no SQL spelling and cannot be given one: the map spells SEL's functions
-only.)
+everything else is inherited.
 [Extending SEL](extending.md#extending-the-sql-layer) shows it in all five
 languages. A permanent addition to a shipped dialect is a change to
 `sql/dialects/*.json`, followed by `node tools/gen-sql-map.mjs`; the format is

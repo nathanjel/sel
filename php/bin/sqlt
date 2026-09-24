@@ -127,11 +127,12 @@ function mirror_parity(): array
 /**
  * Apply a case's runtime registrations before translating.
  *
- * A JSON list of operations, each either a dialect or an entry:
+ * A JSON list of operations, each a dialect, an entry or a host function:
  *
  *   [{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"},
  *    {"define": ["mariadb", "funcs", "CRC32", {"tpl": "X({0})", "ret": "TEXT"}]},
- *    {"define": ["mariadb", "funcs", "UPPER", "we do not allow this one"]}]
+ *    {"define": ["mariadb", "funcs", "UPPER", "we do not allow this one"]},
+ *    {"function": ["SLUG", 1, 1]}]
  *
  * The runner calls Map::reset() before every case, so nothing leaks between
  * them and a registration case cannot pass because of a neighbour.
@@ -153,7 +154,14 @@ function apply_registrations(?array $ops): void
             Map::defineDialect($name, $op);
             continue;
         }
-        throw new RuntimeException('a register op needs a dialect or a define');
+        if (isset($op['function'])) {
+            // A host function (spec §8.1) whose body no case runs: the cases are
+            // about translation, and a spelling is an assertion about the body.
+            [$name, $lo, $hi] = $op['function'];
+            Sel::registerFunction($name, $lo, $hi, static fn ($args): Value => Value::text(''));
+            continue;
+        }
+        throw new RuntimeException('a register op needs a dialect, a define or a function');
     }
 }
 

@@ -186,6 +186,22 @@ final class Registry
         self::$host[$key] = true;
     }
 
+    /**
+     * The [min, max] of a host function registered with registerFunction(), or
+     * null when the name is not one. The SQL layer reads it: a host function's
+     * SQL spelling is checked against, and recorded with, this arity.
+     *
+     * @return array{0:int,1:int}|null
+     */
+    public static function hostArity(string $name): ?array
+    {
+        $key = strtoupper($name);
+        if (!isset(self::$host[$key])) {
+            return null;
+        }
+        return [self::$table[$key]['min'], (int) self::$table[$key]['max']];
+    }
+
     public static function lookup(string $name): ?array
     {
         return self::$table[strtoupper($name)] ?? null;

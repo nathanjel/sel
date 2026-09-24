@@ -52,7 +52,7 @@ export function cppName(v, what) {
 
 export const SECTIONS = { ops: 'Ops', funcs: 'Funcs', skel: 'Skel' };
 
-const ENTRY_FIELDS = ['tpl', 'variants', 'ret', 'caveat', 'since', 'arity', 'builder'];
+const ENTRY_FIELDS = ['args', 'tpl', 'variants', 'ret', 'caveat', 'since', 'arity', 'builder'];
 
 export function cppEntrySpec(entry, section) {
   if (entry === null) return 'EntrySpec::withdraw()';
@@ -105,6 +105,15 @@ export function cppEntrySpec(entry, section) {
       throw new Unrepresentable(`an arity that is ${shapeOf(a)} of non-integers`);
     }
     out += `.arity(${a[0]}, ${a[1]})`;
+  }
+  // sql/MAP.md §4.7. A kind outside the vocabulary is still a string C++ can
+  // carry, so it is emitted and Map::define refuses it, as the other hosts do.
+  if (entry.args !== undefined && entry.args !== null) {
+    const a = entry.args;
+    if (!Array.isArray(a) || !a.every((x) => typeof x === 'string')) {
+      throw new Unrepresentable(`args that are ${shapeOf(a)}`);
+    }
+    out += `.args({${a.map(cppStr).join(', ')}})`;
   }
   for (const k of Object.keys(entry)) {
     if (!ENTRY_FIELDS.includes(k)) throw new Unrepresentable(`the entry field ${JSON.stringify(k)}`);

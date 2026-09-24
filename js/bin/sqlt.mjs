@@ -25,7 +25,7 @@
 //
 //     node js/bin/sqlt.mjs [name-substring ...]
 
-import { compile } from '../src/sel.mjs';
+import { compile, registerFunction, Value } from '../src/sel.mjs';
 import { SelError } from '../src/errors.mjs';
 import { Sql, SqlError, map as sqlmap } from '../src/sql/index.mjs';
 import { optimizeAstInMemory } from '../src/optimizer.mjs';
@@ -67,7 +67,14 @@ function applyRegistrations(ops) {
       sqlmap.defineDialect(op.dialect, rest);
       continue;
     }
-    throw new SuiteError('a register op needs a dialect or a define');
+    if (Object.hasOwn(op, 'function')) {
+      // A host function (spec §8.1) whose body no case runs: the cases are
+      // about translation, and a spelling is an assertion about the body.
+      const [name, lo, hi] = op.function;
+      registerFunction(name, lo, hi, () => Value.text(''));
+      continue;
+    }
+    throw new SuiteError('a register op needs a dialect, a define or a function');
   }
 }
 

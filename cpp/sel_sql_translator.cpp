@@ -1888,6 +1888,7 @@ Fragment Translator::call(const SNodePtr& n) {
            n->pos());
   }
   if (name == "IF" || name == "COND") return conditional(*n);
+  if (host_arity(name)) return host_call(*n);
 
   // Before any argument is rendered, so the deleted flag node never becomes a
   // parameter slot.
@@ -1916,6 +1917,125 @@ Fragment Translator::call(const SNodePtr& n) {
   Fragment out = apply(Section::Funcs, name, args, n->pos());
   if (name == "CANON") out.set_canonical(true);
   return out;
+}
+
+// A call to an application's own function (sql/MAP.md §4.7).
+//
+// The entry is looked up first, because its `args` say how each argument
+// renders: so a function with no spelling in this dialect is refused at the
+// call before any argument is examined. None of the builtins' own argument
+// rules apply -- which of them take a BOOL, which read a number -- only what
+// the entry declares. And the fragment says whose promise it is: every use
+// carries the caveat host-function, which strict mode refuses.
+Fragment Translator::host_call(const SNode& n) {
+  const std::string name = n.s();
+  const Entry* entry = Map::entry(dialect_, Section::Funcs, name);
+  if (!entry || (entry->kind == EntryKind::Refusal && !entry->reason.present)) {
+    refuse("E_SQL_UNSUPPORTED",
+           name + " is a host function with no SQL spelling in dialect " + dialect_ +
+               "; register one with the map, or evaluate it here",
+           n.pos());
+  }
+  if (entry->kind == EntryKind::Refusal) {
+    refuse("E_SQL_UNSUPPORTED",
+           name + " has no mapping in dialect " + dialect_ + " — " +
+               std::string(entry->reason.text),
+           n.pos());
+  }
+  const std::optional<std::pair<int, int>> recorded = Map::host_spelling_arity(dialect_, name);
+  const std::optional<std::pair<int, int>> current = host_arity(name);
+  if (recorded && recorded != current) {
+    const auto list = [](const std::pair<int, int>& a) {
+      return "[" + std::to_string(a.first) + ", " + std::to_string(a.second) + "]";
+    };
+    refuse("E_SQL_UNSUPPORTED",
+           name + " was registered again with the arity " + list(*current) +
+               " after its SQL spelling was defined for " + list(*recorded) +
+               "; define the spelling again",
+           n.pos());
+  }
+  if (strict_) {
+    refuse("E_SQL_UNSUPPORTED",
+           name + " is spelled by the application, which SEL cannot check "
+                  "(host-function), and strict mode refuses that",
+           n.pos());
+  }
+  add_caveat("host-function");
+
+  std::vector<Fragment> args;
+  // Left to right: slot numbers are allocated in render order.
+  for (std::size_t i = 0; i < n.kids().size(); ++i) {
+    const SNodePtr& arg = n.kids()[i];
+    const std::string_view kind = i < entry->args.size() ? entry->args[i] : "ANY";
+    if (kind == "LIST") {
+      args.push_back(host_list_argument(name, arg));
+      continue;
+    }
+    Fragment f = node(arg);
+    if (f.kind() == SqlKind::List) {
+      refuse("E_SQL_SHAPE",
+             "argument to " + name + " is a list, and its spelling does not "
+                                     "declare a LIST there",
+             arg->pos());
+    }
+    const std::string got(kind_name(f.kind()));
+    if ((kind == "NUM" || kind == "TEXT") &&
+        (f.kind() == SqlKind::Bool || f.kind() == SqlKind::Bin)) {
+      refuse("E_SQL_SHAPE",
+             name + " declares this argument " + std::string(kind) + ", and this is a " + got,
+             arg->pos());
+    }
+    if ((kind == "BOOL" || kind == "BIN") && got != kind) {
+      refuse("E_SQL_SHAPE",
+             name + " declares this argument " + std::string(kind) + ", and this is " +
+                 (f.kind() == SqlKind::Unknown ? std::string("not one this layer can prove")
+                                               : "a " + got),
+             arg->pos());
+    }
+    if (kind == "NUM") {
+      require_numeric_constant(*arg);
+      if (f.kind() != SqlKind::Num) f = guard_numeric(f, *arg);
+    }
+    args.push_back(std::move(f));
+  }
+  return apply(Section::Funcs, name, args, n.pos());
+}
+
+// A LIST argument: a list known when translating, its elements rendered and
+// joined with ', ' -- the template supplies the brackets.
+Fragment Translator::host_list_argument(const std::string& name, const SNodePtr& arg) {
+  const Source src = classify(arg);
+  if (src.shape == Source::Shape::Relation) {
+    refuse("E_SQL_SHAPE",
+           "argument to " + name + " is a relation, rows the query has not read "
+                                   "yet; a LIST argument is a list known when translating",
+           arg->pos());
+  }
+  if (!src.filters.empty()) {
+    refuse("E_SQL_SHAPE",
+           "argument to " + name + " is a filtered list, whose elements are decided "
+                                   "when it is evaluated; a template cannot express that",
+           arg->pos());
+  }
+  if (src.elements.empty()) {
+    refuse("E_SQL_SHAPE",
+           "argument to " + name + " is an empty list, which has nothing for the "
+                                   "template to hold",
+           arg->pos());
+  }
+  std::vector<Fragment::Part> parts;
+  for (std::size_t i = 0; i < src.elements.size(); ++i) {
+    const Fragment f = from_binder(src.elements[i].second, *arg);
+    if (f.kind() == SqlKind::List) {
+      refuse("E_SQL_SHAPE",
+             "argument to " + name + " has a list as an element, which has no "
+                                     "scalar rendering",
+             arg->pos());
+    }
+    if (i) parts.push_back({false, ", "});
+    parts.insert(parts.end(), f.parts().begin(), f.parts().end());
+  }
+  return Fragment(std::move(parts), SqlKind::Unknown, dialect_);
 }
 
 }  // namespace sel::sql

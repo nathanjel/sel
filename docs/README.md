@@ -16,7 +16,7 @@ question is.
 | filter rows in a database with a rule | [SQL conditions](usage/sql-conditions.md) |
 | run whole queries and data pipelines | [SQL pipelines](usage/sql-pipelines.md), then the schema that looks like yours |
 | look up a binding, a dialect or a refusal code | [SEL and SQL — reference](sql.md) |
-| add functions, dialects or SQL spellings | [Extending SEL](extending.md) |
+| add functions, dialects or SQL spellings | [Extending SEL](extending.md), then [Your own functions, in SQL](usage/sql-functions.md) |
 | change SEL itself | [Contributing](contributing.md) |
 
 ## Contents
@@ -56,6 +56,7 @@ suite runs
   - [Entity–attribute–value](usage/sql-eav.md) — SQLite
   - [Third normal form](usage/sql-3nf.md) — PostgreSQL
   - [Unnormalised data](usage/sql-flat.md) — MariaDB
+  - [Your own functions, in SQL](usage/sql-functions.md) — host functions spelled as PostgreSQL stored functions
   - [Complex data, in memory](usage/in-memory.md) — PostgreSQL, and no database at all
 - [SEL and SQL — reference](sql.md) — dialects, entry points, fragments,
   bindings, kinds, refusals, caveats

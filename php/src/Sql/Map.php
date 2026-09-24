@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Registry;
+
 final class Map
 {
     public const SECTIONS = ['ops', 'funcs', 'skel'];
@@ -38,6 +40,16 @@ final class Map
      * @var array<string,true>
      */
     private static array $guardChecked = [];
+
+    /**
+     * sql/MAP.md §4.7: the arity a host function had when its spelling was
+     * defined, per dialect. Translation compares it with the function's arity
+     * now, so a function registered again with another arity is not rendered
+     * through a template written for the old one.
+     *
+     * @var array<string, array<string, array{0:int,1:int}>>
+     */
+    private static array $hostArity = [];
 
     // --- registration -------------------------------------------------------
 
@@ -151,6 +163,12 @@ final class Map
         // documented escape hatch silently dead.
         $stored = $section === 'funcs' ? strtoupper($key) : $key;
         self::$overlay[$dialect][$section][$stored] = $entry;
+        $arity = $section === 'funcs' ? Registry::hostArity($stored) : null;
+        if ($arity !== null) {
+            self::$hostArity[$dialect][$stored] = $arity;
+        } else {
+            unset(self::$hostArity[$dialect][$stored]);
+        }
         if ($section === 'funcs' && $stored === 'ISNUM') {
             self::$guardChecked = [];
         }
@@ -174,6 +192,24 @@ final class Map
         self::$extra = [];
         self::$overlay = [];
         self::$guardChecked = [];
+        self::$hostArity = [];
+    }
+
+    /**
+     * The arity recorded when the entry `entry($dialect, 'funcs', $key)` finds
+     * was defined for a host function, or null. Walks the chain the way entry()
+     * walks the overlay, so it answers for the same entry.
+     *
+     * @return array{0:int,1:int}|null
+     */
+    public static function hostSpellingArity(string $dialect, string $key): ?array
+    {
+        foreach (self::chain($dialect) as $d) {
+            if (array_key_exists($key, self::$overlay[$d]['funcs'] ?? [])) {
+                return self::$hostArity[$d][$key] ?? null;
+            }
+        }
+        return null;
     }
 
     // --- lookup -------------------------------------------------------------
@@ -510,8 +546,11 @@ final class Map
         // `funcs` keys are SEL function names and case-insensitive; ops and skel
         // keys are looked up verbatim, which is why define() upper-cases only the
         // first. Registering `and` or `Case` used to be silently dead.
-        if ($section === 'funcs' && !isset($rules['funcArity'][strtoupper($key)])) {
-            throw new \LogicException("{$key} is not a SEL function this layer maps; "
+        if ($section === 'funcs' && !isset($rules['funcArity'][strtoupper($key)])
+            && Registry::hostArity($key) === null) {
+            throw new \LogicException("{$key} is neither a SEL function this layer maps nor a "
+                . 'registered host function. A host function is registered '
+                . '(registerFunction) before it is given a SQL spelling; '
                 . 'the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by '
                 . 'stage 2 and never reach the funcs table');
         }
@@ -533,6 +572,10 @@ final class Map
         if (!is_array($entry)) {
             throw new \LogicException("{$where} must be a map, a string or null, and is "
                 . get_debug_type($entry));
+        }
+        $host = $section === 'funcs' ? Registry::hostArity($key) : null;
+        if (isset($entry['args'])) {
+            self::checkArgs($key, $entry['args'], $host, $where);
         }
         if (isset($entry['builder'])) {
             if (!is_callable($entry['builder'])) {
@@ -597,6 +640,11 @@ final class Map
                 throw new \LogicException("{$where} has an arity that is not "
                     . '[min, max] of two integers');
             }
+            if ($host !== null && ($a[0] < $host[0] || $a[1] > $host[1])) {
+                throw new \LogicException("{$where} has the arity [{$a[0]}, {$a[1]}], which is "
+                    . "wider than {$key}'s registered [{$host[0]}, {$host[1]}]; an entry may "
+                    . 'only narrow it');
+            }
         }
         if (isset($entry['variants'])) {
             if (!is_array($entry['variants']) || $entry['variants'] === []) {
@@ -626,7 +674,7 @@ final class Map
             // range, and the list is refused for the reason it is actually wrong.
             [$min, $max] = $section === 'ops'
                 ? $rules['opArity'][$key]
-                : $rules['funcArity'][strtoupper($key)];
+                : ($host ?? $rules['funcArity'][strtoupper($key)]);
             if (isset($entry['arity'])) {
                 $min = max($min, $entry['arity'][0]);
                 $max = $max === null ? $entry['arity'][1]
@@ -648,6 +696,39 @@ final class Map
                         . ' argument(s), so that template could never be chosen');
                 }
             }
+        }
+    }
+
+    /**
+     * sql/MAP.md §4.7: `args` belongs to a host function's entry alone.
+     *
+     * @param mixed $args
+     * @param array{0:int,1:int}|null $host
+     */
+    private static function checkArgs(string $key, $args, ?array $host, string $where): void
+    {
+        if ($host === null) {
+            throw new \LogicException("{$where} declares args, and {$key} is not a host "
+                . "function: a builtin's argument rules are SEL's own");
+        }
+        if (!is_array($args) || !array_is_list($args)) {
+            throw new \LogicException("{$where} has args that are not a list of kinds");
+        }
+        foreach ($args as $a) {
+            if (!is_string($a)) {
+                throw new \LogicException("{$where} has args that are not a list of kinds");
+            }
+        }
+        foreach ($args as $a) {
+            if (!in_array($a, MapData::RULES['argKinds'], true)) {
+                throw new \LogicException("{$where} declares the argument kind "
+                    . var_export($a, true) . '; use one of '
+                    . implode(', ', MapData::RULES['argKinds']));
+            }
+        }
+        if (count($args) > $host[1]) {
+            throw new \LogicException("{$where} declares " . count($args) . " argument kinds, "
+                . "and {$key} takes at most {$host[1]}");
         }
     }
 

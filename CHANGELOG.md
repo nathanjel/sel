@@ -20,8 +20,19 @@ The documentation, rebuilt — and the one API addition it needed.
     its rules. A builtin's name or a reserved word is refused; re-registering
     replaces the function for programs compiled afterwards. C++ gains the public
     `HostArgs` accessor; Lisp exports the argument readers and `fail`. Sixteen
-    new probes in `tools/check-api.sh`, identical in all five hosts. A host
-    function has no SQL spelling.
+    new probes in `tools/check-api.sh`, identical in all five hosts.
+  - **SQL spellings for host functions** (spec §8.1, `sql/MAP.md` §4.7): an
+    application's function can be given a per-dialect SQL spelling with the same
+    `define` that respells a builtin — a database function, a stored function or
+    an inline expression — and then translates and pushes down like a builtin.
+    The spelling is checked against the registered arity (and refused after a
+    re-registration with another arity), a new `args` field declares argument
+    kinds (`ANY`, `TEXT`, `NUM`, `BOOL`, `BIN`, `LIST`, the last expanding a list
+    known when translating), and every use carries the new caveat
+    `host-function`, which `strict` refuses. `.sqlt` cases gain a `function`
+    registration op; 37 cases in `46-host-functions.sqlt`, new SQL-API probes, and
+    `examples/sql-functions` runs PostgreSQL SQL and PL/pgSQL functions from all
+    five hosts against their local implementations.
   - **Documentation, reorganised.** A lean `README.md`; `docs/overview.md`,
     `parity.md`, `syntax.md`, `operators.md` (now covering `.>`), `functions.md`
     (now covering sorting, grouping, slicing and joins), `sql.md` and

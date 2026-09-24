@@ -20,6 +20,7 @@ from ..errors import Pos
 from ..lexer import ascii_upper
 import re
 
+from .. import registry as _registry
 from ._map import DIALECTS, RULES
 from .errors import refuse
 
@@ -46,6 +47,12 @@ _overlay: dict[str, dict[str, dict[str, Any]]] = {}
 # activity; throwing the whole set away costs one comparison per dialect
 # afterwards.
 _guard_checked: set[str] = set()
+
+# sql/MAP.md §4.7: the arity a host function had when its spelling was defined,
+# per dialect. Translation compares it with the function's arity now, so a
+# function registered again with another arity is not rendered through a
+# template written for the old one.
+_host_arity: dict[str, dict[str, tuple[int, int]]] = {}
 
 # Every key define_dialect() accepts. sql/MAP.md §3 is the normative list.
 DIALECT_KEYS = ('extends', 'version', 'target', 'lexical')
@@ -154,6 +161,11 @@ def define(dialect: str, section: str, key: str, entry: Any) -> None:
     # the note in bindings.py on why str.upper() is not the same function.
     k = ascii_upper(key) if section == 'funcs' else key
     _overlay.setdefault(dialect, {}).setdefault(section, {})[k] = entry
+    arity = _registry.host_arity(k) if section == 'funcs' else None
+    if arity is not None:
+        _host_arity.setdefault(dialect, {})[k] = arity
+    else:
+        _host_arity.get(dialect, {}).pop(k, None)
     # A redefined ISNUM invalidates every memoised guard check: define() lets the
     # last writer win, and a redefinition against a BASE reaches every dialect
     # that inherits from it, so the whole set goes rather than one name.
@@ -175,6 +187,17 @@ def reset() -> None:
     _extra.clear()
     _overlay.clear()
     _guard_checked.clear()
+    _host_arity.clear()
+
+
+def host_spelling_arity(dialect: str, key: str) -> tuple[int, int] | None:
+    """The arity recorded when the entry ``entry(dialect, 'funcs', key)`` finds
+    was defined for a host function, or None. Walks the chain the way entry()
+    walks the overlay, so it answers for the same entry."""
+    for d in chain(dialect):
+        if key in _overlay.get(d, {}).get('funcs', {}):
+            return _host_arity.get(d, {}).get(key)
+    return None
 
 
 # --- lookup ------------------------------------------------------------------
@@ -390,9 +413,12 @@ def _check_key(section: str, key: str) -> None:
     # `funcs` keys are SEL function names and case-insensitive; ops and skel keys
     # are looked up verbatim, which is why define() upper-cases only the first.
     # Registering `and` or `Case` used to be silently dead.
-    if section == 'funcs' and ascii_upper(key) not in RULES['funcArity']:
-        raise RuntimeError(f'{key} is not a SEL function this layer maps; the '
-                           'aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are '
+    if (section == 'funcs' and ascii_upper(key) not in RULES['funcArity']
+            and _registry.host_arity(key) is None):
+        raise RuntimeError(f'{key} is neither a SEL function this layer maps nor a '
+                           'registered host function. A host function is registered '
+                           '(register_function) before it is given a SQL spelling; '
+                           'the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are '
                            'lowered by stage 2 and never reach the funcs table')
     if section == 'skel' and key not in RULES['skelSlots']:
         raise RuntimeError(f'{key} is not a skeleton; known ones are '
@@ -408,6 +434,9 @@ def _check_entry(section: str, key: str, entry: Any) -> None:
     if not isinstance(entry, dict):
         raise RuntimeError(f'{where} must be a map, a string or null, and is '
                            f'{type(entry).__name__}')
+    host = _registry.host_arity(key) if section == 'funcs' else None
+    if entry.get('args') is not None:
+        _check_args(key, entry['args'], host, where)
     if entry.get('builder') is not None:
         if not callable(entry['builder']):
             raise RuntimeError(f'{where} has a builder that is not callable; use '
@@ -454,6 +483,10 @@ def _check_entry(section: str, key: str, entry: Any) -> None:
         if not ok:
             raise RuntimeError(f'{where} has an arity that is not [min, max] of two '
                                'integers')
+    if arity is not None and host is not None and (arity[0] < host[0] or arity[1] > host[1]):
+        raise RuntimeError(f'{where} has the arity {arity}, which is wider than '
+                           f'{key}\'s registered [{host[0]}, {host[1]}]; an entry may '
+                           'only narrow it')
     if 'variants' in entry:
         if not isinstance(entry['variants'], dict) or not entry['variants']:
             raise RuntimeError(f'{where} has variants that are not a map')
@@ -477,6 +510,7 @@ def _check_entry(section: str, key: str, entry: Any) -> None:
         # range, and the list is refused for the reason it is actually wrong.
         # A list is included here so both hosts refuse it at the same line.
         lo, hi = (RULES['opArity'][key] if section == 'ops'
+                  else host if host is not None
                   else RULES['funcArity'][ascii_upper(key)])
         if arity is not None:
             lo = max(lo, arity[0])
@@ -493,6 +527,22 @@ def _check_entry(section: str, key: str, entry: Any) -> None:
                 raise RuntimeError(f'{where} keys a template by {c}, and {key} takes '
                                    f'{lo} to {hi if hi is not None else "any"} '
                                    'argument(s), so that template could never be chosen')
+
+
+def _check_args(key: str, args: Any, host: tuple[int, int] | None, where: str) -> None:
+    """sql/MAP.md §4.7: `args` belongs to a host function's entry alone."""
+    if host is None:
+        raise RuntimeError(f'{where} declares args, and {key} is not a host function: '
+                           "a builtin's argument rules are SEL's own")
+    if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+        raise RuntimeError(f'{where} has args that are not a list of kinds')
+    for a in args:
+        if a not in RULES['argKinds']:
+            raise RuntimeError(f'{where} declares the argument kind {a!r}; use one of '
+                               + ', '.join(RULES['argKinds']))
+    if len(args) > host[1]:
+        raise RuntimeError(f'{where} declares {len(args)} argument kinds, and {key} '
+                           f'takes at most {host[1]}')
 
 
 def _check_section(section: str) -> None:

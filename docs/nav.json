@@ -53,6 +53,7 @@
         "docs/usage/sql-eav.md",
         "docs/usage/sql-3nf.md",
         "docs/usage/sql-flat.md",
+        "docs/usage/sql-functions.md",
         "docs/usage/in-memory.md",
         {
           "page": "docs/sql.md",

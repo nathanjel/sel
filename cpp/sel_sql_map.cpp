@@ -3,6 +3,8 @@
 
 #include "sel_sql_map.hpp"
 
+#include "sel_ast.hpp"
+
 #include <algorithm>
 #include <array>
 #include <map>
@@ -133,6 +135,8 @@ std::vector<std::string_view> slots_in(std::string_view tpl) {
 struct OwnedEntry {
   std::string key, reason, one, ret, caveat, since;
   std::vector<std::string> arm_keys, arm_values;
+  std::vector<std::string> args;
+  std::vector<std::string_view> arg_views;
   std::vector<Keyed> keyed;
   std::shared_ptr<const Builder> builder;
   Entry view{};
@@ -170,6 +174,13 @@ struct Registry {
   // activity; throwing the whole set away costs one comparison per dialect
   // afterwards.
   std::set<std::string, std::less<>> guard_checked;
+
+  // sql/MAP.md §4.7: the arity a host function had when its spelling was
+  // defined, per dialect -> key. Translation compares it with the function's
+  // arity now, so a function registered again with another arity is not
+  // rendered through a template written for the old one.
+  std::map<std::string, std::map<std::string, std::pair<int, int>, std::less<>>, std::less<>>
+      host_arity;
 };
 
 // A function-local static: no static constructor, and no dependence on the
@@ -267,8 +278,11 @@ void check_key(Section section, const std::string& key) {
   }
   // `funcs` keys are SEL function names and case-insensitive; ops and skel keys
   // are looked up verbatim, which is why define() upper-cases only the first.
-  if (section == Section::Funcs && !find_arity(rules.func_arity, ascii_upper(key))) {
-    bad(key + " is not a SEL function this layer maps; the aggregates and "
+  if (section == Section::Funcs && !find_arity(rules.func_arity, ascii_upper(key)) &&
+      !host_arity(key)) {
+    bad(key + " is neither a SEL function this layer maps nor a registered host "
+               "function. A host function is registered (register_function) before "
+               "it is given a SQL spelling; the aggregates and "
                "IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by stage 2 and never "
                "reach the funcs table");
   }
@@ -359,6 +373,11 @@ EntrySpec& EntrySpec::arity(int lo, int hi) {
   has_arity_ = true;
   arity_min_ = lo;
   arity_max_ = hi;
+  return *this;
+}
+
+EntrySpec& EntrySpec::args(std::vector<std::string> kinds) {
+  args_ = std::move(kinds);
   return *this;
 }
 
@@ -533,6 +552,9 @@ void Map::define(const std::string& dialect, Section section,
   owned->caveat = spec.caveat_;
   owned->since = spec.since_;
   owned->builder = spec.builder_;
+  if (spec.args_) owned->args = *spec.args_;
+  // Strings to their final size first, views second. See the note on the type.
+  owned->arg_views.assign(owned->args.begin(), owned->args.end());
 
   owned->arm_keys.reserve(spec.arms_.size());
   owned->arm_values.reserve(spec.arms_.size());
@@ -561,10 +583,18 @@ void Map::define(const std::string& dialect, Section section,
   v.arity_min = spec.arity_min_;
   v.arity_max = spec.arity_max_;
   v.builder = owned->builder.get();
+  v.args = owned->arg_views;
 
   OwnedEntry* raw = owned.get();
   reg().entry_arena.push_back(std::move(owned));
   reg().overlay[dialect][index_of(section)][k] = raw;
+  const std::optional<std::pair<int, int>> host =
+      section == Section::Funcs ? host_arity(k) : std::nullopt;
+  if (host) {
+    reg().host_arity[dialect][k] = *host;
+  } else if (auto d = reg().host_arity.find(dialect); d != reg().host_arity.end()) {
+    d->second.erase(k);
+  }
   // A redefined ISNUM invalidates every memoised guard check: define() lets the
   // last writer win, and a redefinition against a BASE reaches every dialect
   // that inherits from it, so the whole set goes rather than one name.
@@ -646,6 +676,7 @@ void Map::reset() {
   r.entry_arena.clear();
   r.dialect_arena.clear();
   r.guard_checked.clear();
+  r.host_arity.clear();
 }
 
 // --- lookup ------------------------------------------------------------------
@@ -745,6 +776,28 @@ const Entry* Map::entry(const std::string& dialect, Section section,
   return nullptr;
 }
 
+std::optional<std::pair<int, int>> Map::host_spelling_arity(const std::string& dialect,
+                                                             std::string_view key) {
+  for (std::string_view d : chain(dialect)) {
+    auto it = reg().overlay.find(d);
+    if (it == reg().overlay.end()) continue;
+    const auto& funcs = it->second[index_of(Section::Funcs)];
+    if (funcs.find(key) == funcs.end()) continue;
+    auto h = reg().host_arity.find(d);
+    if (h == reg().host_arity.end()) return std::nullopt;
+    auto a = h->second.find(key);
+    if (a == h->second.end()) return std::nullopt;
+    return a->second;
+  }
+  return std::nullopt;
+}
+
+std::optional<std::pair<int, int>> host_arity(std::string_view name) {
+  const sel::Spec* spec = sel::lookup_builtin(ascii_upper(name));
+  if (!spec || !spec->host) return std::nullopt;
+  return std::pair<int, int>{spec->min, spec->max};
+}
+
 // --- versions ----------------------------------------------------------------
 
 bool version_at_least(std::string_view have, std::string_view want) {
@@ -770,10 +823,33 @@ bool version_at_least(std::string_view have, std::string_view want) {
 void Map::check_entry(Section section, const std::string& key,
                       const EntrySpec& spec, const std::string& where) {
   // A refusal carries its reason or carries nothing, and has nothing else to
-  // check. A builder is host code the map never looks inside.
-  if (spec.kind_ == EntryKind::Refusal || spec.kind_ == EntryKind::Builder) return;
+  // check.
+  if (spec.kind_ == EntryKind::Refusal) return;
 
   const Rules& rules = shipped_rules();
+  const std::optional<std::pair<int, int>> host =
+      section == Section::Funcs ? host_arity(key) : std::nullopt;
+
+  // sql/MAP.md §4.7: `args` belongs to a host function's entry alone.
+  if (spec.args_) {
+    if (!host) {
+      bad(where + " declares args, and " + key + " is not a host function: a "
+                  "builtin's argument rules are SEL's own");
+    }
+    for (const std::string& a : *spec.args_) {
+      if (!contains(rules.arg_kinds, a)) {
+        bad(where + " declares the argument kind '" + a + "'; use one of " +
+            join(rules.arg_kinds));
+      }
+    }
+    if (spec.args_->size() > static_cast<std::size_t>(host->second)) {
+      bad(where + " declares " + std::to_string(spec.args_->size()) +
+          " argument kinds, and " + key + " takes at most " +
+          std::to_string(host->second));
+    }
+  }
+  // A builder is host code the map never looks inside.
+  if (spec.kind_ == EntryKind::Builder) return;
 
   if (!spec.caveat_.empty() && !contains(rules.caveats, spec.caveat_)) {
     bad(where + " declares the caveat \"" + spec.caveat_ +
@@ -814,6 +890,13 @@ void Map::check_entry(Section section, const std::string& key,
       (spec.arity_min_ < 0 || spec.arity_max_ < spec.arity_min_)) {
     bad(where + " has an arity that is not [min, max] of two integers");
   }
+  if (spec.has_arity_ && host &&
+      (spec.arity_min_ < host->first || spec.arity_max_ > host->second)) {
+    bad(where + " has the arity [" + std::to_string(spec.arity_min_) + ", " +
+        std::to_string(spec.arity_max_) + "], which is wider than " + key +
+        "'s registered [" + std::to_string(host->first) + ", " +
+        std::to_string(host->second) + "]; an entry may only narrow it");
+  }
 
   if (spec.body_ == BodyKind::Variants) {
     if (spec.arms_.empty()) bad(where + " has variants that are not a map");
@@ -844,6 +927,12 @@ void Map::check_entry(Section section, const std::string& key,
   int lo = sel ? sel->min : 0;
   bool unbounded = sel ? sel->unbounded : true;
   int hi = sel ? sel->max : 0;
+  // A host function's own registration, where SEL has no arity for it.
+  if (host) {
+    lo = host->first;
+    hi = host->second;
+    unbounded = false;
+  }
   if (spec.has_arity_) {
     lo = std::max(lo, spec.arity_min_);
     hi = unbounded ? spec.arity_max_ : std::min(hi, spec.arity_max_);

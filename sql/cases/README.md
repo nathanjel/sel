@@ -31,6 +31,8 @@ TOTAL > 100
 | `params` | — | the bound values as SEL dumps, comma separated |
 | `plan` | — | a **planner** case: `pure_sql`, `hybrid`, `pure_memory` or `refused` |
 | `tables` | — | with `plan`: the physical sources, one per line, first-use order; empty means none |
+| `register` | — | JSON list of registrations run in order before translating: `{"dialect": name, …spec}` (`defineDialect`), `{"define": [dialect, section, key, entry]}` (`define`), and `{"function": [name, min, max]}`, which registers a host function (spec §8.1) whose body the case never runs |
+| `throws` | — | the host's start-up error class, for a registration that must be refused; mutually exclusive with `expect` and `error` |
 | `note` | — | prose, ignored |
 
 A case with `--- plan` asks `plan_hybrid` rather than `translate` (see
@@ -77,6 +79,7 @@ Categories:
 | `bind` | the binding kinds and what each refuses |
 | `const` | constant folding, and what counts as knowable |
 | `register` | runtime `define` and `defineDialect` |
+| `host` | host functions given a SQL spelling (sql/MAP.md §4.7): registration order, arity, `args`, lists, caveats, planning |
 | `pg` / `sqlite` | what one target does that the others do not |
 | `neutral` | that a host's own spelling does not reach the output |
 | `pin` | a rendering some other document quotes, so it cannot drift |

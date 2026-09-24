@@ -124,6 +124,12 @@ struct Entry {
   // Never shipped: no generated entry sets this, and a builder is the one thing
   // a dialect document cannot express. Points into storage the registry owns.
   const Builder* builder = nullptr;
+
+  // Never shipped either: sql/MAP.md §4.7's `args`, which only a host
+  // function's entry may carry -- one kind from Rules::arg_kinds per argument
+  // position, a position past the end being ANY. Empty when the entry declares
+  // none. Points into storage the registry owns.
+  std::span<const std::string_view> args{};
 };
 
 struct Escape {
@@ -169,7 +175,8 @@ static_assert(sizeof(Escape{.from = {}, .to = {}}) == sizeof(Escape));
 static_assert(sizeof(Entry{.key = {}, .kind = {}, .reason = {}, .body = {},
                            .one = {}, .keyed = {}, .ret = {}, .caveat = {},
                            .since = {}, .has_arity = {}, .arity_min = {},
-                           .arity_max = {}, .builder = {}}) == sizeof(Entry));
+                           .arity_max = {}, .builder = {},
+                           .args = {}}) == sizeof(Entry));
 static_assert(sizeof(Lexical{.key = {}, .kind = {}, .text = {},
                              .escapes = {}}) == sizeof(Lexical));
 static_assert(sizeof(Dialect{.name = {}, .extends = {}, .version = {},
@@ -202,6 +209,8 @@ struct LexType {
 struct Rules {
   std::span<const std::string_view> caveats{};
   std::span<const std::string_view> ret_kinds{};
+  // sql/MAP.md §4.7: what a host function's entry may declare an argument to be.
+  std::span<const std::string_view> arg_kinds{};
   std::span<const std::string_view> template_keys{};
   std::span<const Arity> op_arity{};
   std::span<const Arity> func_arity{};
@@ -214,7 +223,7 @@ static_assert(sizeof(Arity{.key = {}, .min = {}, .max = {},
                           .unbounded = {}}) == sizeof(Arity));
 static_assert(sizeof(Names{.key = {}, .names = {}}) == sizeof(Names));
 static_assert(sizeof(LexType{.key = {}, .escapes = {}}) == sizeof(LexType));
-static_assert(sizeof(Rules{.caveats = {}, .ret_kinds = {}, .template_keys = {},
+static_assert(sizeof(Rules{.caveats = {}, .ret_kinds = {}, .arg_kinds = {}, .template_keys = {},
                            .op_arity = {}, .func_arity = {}, .variants = {},
                            .skel_slots = {}, .lexical_types = {}}) == sizeof(Rules));
 
@@ -270,6 +279,10 @@ class EntrySpec {
   EntrySpec& caveat(std::string name);
   EntrySpec& since(std::string version);
   EntrySpec& arity(int lo, int hi);
+  // sql/MAP.md §4.7: what each argument of a HOST function must be, one of
+  // Rules::arg_kinds per position. Refused at define() on any other entry -- a
+  // builtin's argument rules are SEL's own.
+  EntrySpec& args(std::vector<std::string> kinds);
 
  private:
   friend class Map;
@@ -291,6 +304,7 @@ class EntrySpec {
   int arity_min_ = 0;
   int arity_max_ = 0;
   std::shared_ptr<const Builder> builder_;
+  std::optional<std::vector<std::string>> args_;
 };
 
 // One dialect, as an application declares it.
@@ -405,6 +419,15 @@ class Map {
   static const Entry* entry(const std::string& dialect, Section section,
                             std::string_view key);
 
+  // sql/MAP.md §4.7: the [min, max] a host function had when the `funcs` entry
+  // entry() finds for `key` was defined, or nullopt when that entry was not
+  // defined for a host function (or there is none). Walks the chain the way
+  // entry() walks the overlay, so it answers for the same entry. The translator
+  // compares it with the function's arity now: a function registered again with
+  // another arity is not rendered through a template written for the old one.
+  static std::optional<std::pair<int, int>> host_spelling_arity(const std::string& dialect,
+                                                                std::string_view key);
+
  private:
   // Registration validation, on the class because it reads an EntrySpec's
   // private state and nothing else should. What tools/gen-sql-map.mjs enforces
@@ -412,6 +435,12 @@ class Map {
   static void check_entry(Section section, const std::string& key,
                           const EntrySpec& spec, const std::string& where);
 };
+
+// The [min, max] of a function registered with sel::register_function (spec
+// §8.1), or nullopt when `name` is not one -- a builtin included. The SQL layer
+// reads it: a host function's spelling is checked against, and recorded with,
+// this arity (sql/MAP.md §4.7). Case-insensitive, as function names are.
+std::optional<std::pair<int, int>> host_arity(std::string_view name);
 
 // Dotted-numeric, as sql/MAP.md §4.5 specifies and nothing cleverer.
 bool version_at_least(std::string_view have, std::string_view want);

@@ -1067,10 +1067,19 @@ Lisp.
   argument. A `SelError` it raises propagates as raised; any other exception
   is the host's own and propagates unchanged.
 - **It is invisible to the analyses.** `dependencies()` treats a call to it
-  like a call to any strict builtin. The SQL layer has no spelling for it — the
-  dialect map spells SEL's own functions only — so translation refuses a program
-  that calls it (`E_SQL_UNSUPPORTED`) and the hybrid planner keeps those steps
-  in memory.
+  like a call to any strict builtin.
+- **It has a SQL spelling only if the application gives it one.** The
+  application may register, per dialect, a SQL expression for its function
+  (`sql/MAP.md` §4.7) — a call to a database function, a stored function, an
+  inline expression. Translation then renders a call to it like any mapped
+  builtin, and the hybrid planner may push the steps that call it into the
+  database. **The application asserts that the spelling computes what `fn`
+  computes**, for every argument a program can pass; SEL checks the shape — the
+  arity, the declared argument kinds, a scalar result — and cannot check the
+  meaning, so every fragment that uses such a spelling carries the caveat
+  `host-function`, and strict translation refuses it. Without a spelling for
+  the dialect, translation refuses a program that calls the function
+  (`E_SQL_UNSUPPORTED`) and the planner keeps those steps in memory.
 - **A bad registration is a programming error**, raised as the host's own
   argument error rather than as a `SelError`: a malformed or reserved name, a
   builtin's name, an arity outside the bounds above, or an `fn` that is not

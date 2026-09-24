@@ -1,0 +1,11 @@
+# Gross revenue and shipping per country: stored functions inside joins, arithmetic and a GROUP BY.
+LINES
+  .> LINK(ORDERS, L, O, L["order_id"] == O["order_id"])
+  .> LINK(PRODUCTS, X, P, X["product_id"] == P["product_id"])
+  .> MAP(RECORD(
+       "country", _["country"],
+       "gross", _["qty"] * _["price"] * (1 + VAT_RATE(_["country"], _["category"])),
+       "shipping", SHIPPING_COST(_["weight_kg"] * _["qty"], _["country"])))
+  .> BUCKET(_["country"], RECORD(
+       "country", _K, "gross", SUM(_, _["gross"]), "shipping", SUM(_, _["shipping"])))
+  .> SORT_BY(_["gross"], "DESC")

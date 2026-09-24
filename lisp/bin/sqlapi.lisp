@@ -64,6 +64,61 @@
     (say (format nil "fragment.~a.caveats" label)
          (if (fragment-caveats f) (format nil "~{~a~^,~}" (fragment-caveats f)) "-"))))
 
+;;; --- host functions with a SQL spelling (spec §8.1, sql/MAP.md §4.7) ---------
+;;; The registration order, the caveat, strict mode, a LIST argument, a builder,
+;;; MAP-RESET and a re-registration, through this host's own spelling of the API.
+
+(defun host-bindings ()
+  (list (cons "T" (binding-column "title" "t" :text))))
+
+(defmacro attempt (&body body)
+  "accepted, SqlError <code> for a refusal, refused for a malformed registration."
+  `(handler-case (progn ,@body "accepted")
+     (sql-error (e) (format nil "SqlError ~a" (sql-error-code e)))
+     (error () "refused")))
+
+(defun host-translate (source dialect &optional options)
+  (translate (sel:compile-source source) dialect (host-bindings) options))
+
+(defun local-slug (a)
+  (sel:make-text (concatenate 'string "local:" (sel:args-text a 0))))
+
+(defun host-spelling-probes ()
+  (say "host.spell.before-register"
+       (attempt (define-entry "postgresql" :funcs "HSLUG" (list :tpl "slug({0})" :ret "TEXT"))))
+  (sel:register-function "HSLUG" 1 1 #'local-slug)
+  (define-entry "postgresql" :funcs "HSLUG"
+                (list :tpl "slug({0})" :ret "TEXT" :args (list "TEXT")))
+  (let ((spelled (host-translate "HSLUG(T) $== \"x\"" "postgresql")))
+    (say "host.spell.condition" (as-condition spelled))
+    (say "host.spell.caveats"
+         (if (fragment-caveats spelled) (format nil "~{~a~^,~}" (fragment-caveats spelled)) "-")))
+  (say "host.spell.strict" (attempt (host-translate "HSLUG(T)" "postgresql" '(:strict t))))
+  (say "host.spell.other-dialect" (attempt (host-translate "HSLUG(T)" "mariadb")))
+
+  (sel:register-function "HHAS" 2 2 (lambda (a) (declare (ignore a)) (sel:make-bool nil)))
+  (define-entry "postgresql" :funcs "HHAS"
+                (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args (list "LIST" "TEXT")))
+  (let ((listed (host-translate "HHAS((\"a\", \"b\"), \"c\")" "postgresql")))
+    (say "host.spell.list.params" (as-condition listed :params))
+    (say "host.spell.list.bound" (format nil "~{~a~^,~}" (mapcar #'sel:value-dump (bindings listed)))))
+
+  (sel:register-function "HWRAP" 1 1 (lambda (a) (sel:value-copy (sel:args-val a 0))))
+  (define-builder "postgresql" :funcs "HWRAP"
+                  (lambda (dialect args pos)
+                    (declare (ignore pos))
+                    (sel.sql::%fragment (append (list "wrap(") (fragment-parts (first args)) (list ")"))
+                                        :text dialect)))
+  (say "host.spell.builder" (as-value (host-translate "HWRAP(T)" "postgresql")))
+
+  (sel:register-function "HSLUG" 1 2 #'local-slug)
+  (say "host.spell.reregistered-arity" (attempt (host-translate "HSLUG(T)" "postgresql")))
+  (sel:register-function "HSLUG" 1 1 #'local-slug)
+  (say "host.spell.arity-restored" (attempt (host-translate "HSLUG(T)" "postgresql")))
+  (map-reset)
+  (say "host.spell.after-reset" (attempt (host-translate "HSLUG(T)" "postgresql")))
+  (say "host.spell.after-reset.local" (sel:as-text (sel:evaluate "HSLUG(\"A\")"))))
+
 (defun main ()
   (setf *probes* '() *probe-n* 0)
   (probe "sql" "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))")
@@ -73,5 +128,6 @@
   (fragment-probe "canon.mariadb" "mariadb" "CANON(1.50)")
   (fragment-probe "canon.sqlite" "sqlite" "CANON(1.50)")
   (fragment-probe "abs.postgresql" "postgresql" "ABS(1.50)")
+  (host-spelling-probes)
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

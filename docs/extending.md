@@ -195,11 +195,127 @@ The rules, the same in every host ([spec §8.1](../spec/SPEC.md#81-host-function
 - **Fail with a code.** Raise the host's `SelError` with a code from the
   catalogue — `E_BAD_ARG` is usually right — and the argument's position; any
   other exception is the host's and passes through untouched.
-- **Not SQL.** A host function has no SQL spelling, so a rule that calls it is
-  refused by the translator and kept in memory by the planner.
+- **SQL only if you spell it.** Until it has a SQL spelling for a dialect, a rule
+  that calls it is refused by the translator and kept in memory by the planner —
+  [below](#giving-a-host-function-a-sql-spelling) is how to give it one.
 
 [Scripting with host functions](usage/scripting.md) is a complete program built
 this way.
+
+### Giving a host function a SQL spelling
+
+When the database can compute what your function computes, give the function a
+SQL spelling for that dialect, with the same `define` that respells a builtin —
+after registering the function. Here, from
+[Your own functions, in SQL](usage/sql-functions.md), four functions are spelled as
+PostgreSQL functions the application created, and one as an inline expression
+over a list:
+
+<!-- tabs -->
+<details open>
+<summary>Python</summary>
+
+<!-- from: examples/sql-functions/python.py#spell -->
+```python
+map.define('postgresql', 'funcs', 'SLUG',
+           {'tpl': 'slug({0})', 'ret': 'TEXT', 'args': ['TEXT']})
+map.define('postgresql', 'funcs', 'MARGIN_PCT',
+           {'tpl': 'margin_pct({0}, {1})', 'ret': 'NUM', 'args': ['NUM', 'NUM']})
+map.define('postgresql', 'funcs', 'VAT_RATE',
+           {'tpl': 'vat_rate({0}, {1})', 'ret': 'NUM', 'args': ['TEXT', 'TEXT']})
+map.define('postgresql', 'funcs', 'SHIPPING_COST',
+           {'tpl': 'shipping_cost({0}, {1})', 'ret': 'NUM', 'args': ['NUM', 'TEXT']})
+map.define('postgresql', 'funcs', 'HAS_TAG',
+           {'tpl': '({1} = ANY(ARRAY[{0}]))', 'ret': 'BOOL', 'args': ['LIST', 'TEXT']})
+# WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<details>
+<summary>JavaScript</summary>
+
+<!-- from: examples/sql-functions/js.mjs#spell -->
+```js
+map.define('postgresql', 'funcs', 'SLUG',
+  { tpl: 'slug({0})', ret: 'TEXT', args: ['TEXT'] });
+map.define('postgresql', 'funcs', 'MARGIN_PCT',
+  { tpl: 'margin_pct({0}, {1})', ret: 'NUM', args: ['NUM', 'NUM'] });
+map.define('postgresql', 'funcs', 'VAT_RATE',
+  { tpl: 'vat_rate({0}, {1})', ret: 'NUM', args: ['TEXT', 'TEXT'] });
+map.define('postgresql', 'funcs', 'SHIPPING_COST',
+  { tpl: 'shipping_cost({0}, {1})', ret: 'NUM', args: ['NUM', 'TEXT'] });
+map.define('postgresql', 'funcs', 'HAS_TAG',
+  { tpl: '({1} = ANY(ARRAY[{0}]))', ret: 'BOOL', args: ['LIST', 'TEXT'] });
+// WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<details>
+<summary>PHP</summary>
+
+<!-- from: examples/sql-functions/php.php#spell -->
+```php
+Map::define('postgresql', 'funcs', 'SLUG',
+    ['tpl' => 'slug({0})', 'ret' => 'TEXT', 'args' => ['TEXT']]);
+Map::define('postgresql', 'funcs', 'MARGIN_PCT',
+    ['tpl' => 'margin_pct({0}, {1})', 'ret' => 'NUM', 'args' => ['NUM', 'NUM']]);
+Map::define('postgresql', 'funcs', 'VAT_RATE',
+    ['tpl' => 'vat_rate({0}, {1})', 'ret' => 'NUM', 'args' => ['TEXT', 'TEXT']]);
+Map::define('postgresql', 'funcs', 'SHIPPING_COST',
+    ['tpl' => 'shipping_cost({0}, {1})', 'ret' => 'NUM', 'args' => ['NUM', 'TEXT']]);
+Map::define('postgresql', 'funcs', 'HAS_TAG',
+    ['tpl' => '({1} = ANY(ARRAY[{0}]))', 'ret' => 'BOOL', 'args' => ['LIST', 'TEXT']]);
+// WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<details>
+<summary>C++</summary>
+
+<!-- from: examples/sql-functions/cpp.cpp#spell -->
+```cpp
+Map::define("postgresql", Section::Funcs, "SLUG",
+            EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+Map::define("postgresql", Section::Funcs, "MARGIN_PCT",
+            EntrySpec::tpl("margin_pct({0}, {1})", "NUM").args({"NUM", "NUM"}));
+Map::define("postgresql", Section::Funcs, "VAT_RATE",
+            EntrySpec::tpl("vat_rate({0}, {1})", "NUM").args({"TEXT", "TEXT"}));
+Map::define("postgresql", Section::Funcs, "SHIPPING_COST",
+            EntrySpec::tpl("shipping_cost({0}, {1})", "NUM").args({"NUM", "TEXT"}));
+Map::define("postgresql", Section::Funcs, "HAS_TAG",
+            EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+// WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<details>
+<summary>Common Lisp</summary>
+
+<!-- from: examples/sql-functions/lisp.lisp#spell -->
+```lisp
+(sel.sql:define-entry "postgresql" :funcs "SLUG"
+                      (list :tpl "slug({0})" :ret "TEXT" :args '("TEXT")))
+(sel.sql:define-entry "postgresql" :funcs "MARGIN_PCT"
+                      (list :tpl "margin_pct({0}, {1})" :ret "NUM" :args '("NUM" "NUM")))
+(sel.sql:define-entry "postgresql" :funcs "VAT_RATE"
+                      (list :tpl "vat_rate({0}, {1})" :ret "NUM" :args '("TEXT" "TEXT")))
+(sel.sql:define-entry "postgresql" :funcs "SHIPPING_COST"
+                      (list :tpl "shipping_cost({0}, {1})" :ret "NUM" :args '("NUM" "TEXT")))
+(sel.sql:define-entry "postgresql" :funcs "HAS_TAG"
+                      (list :tpl "({1} = ANY(ARRAY[{0}]))" :ret "BOOL" :args '("LIST" "TEXT")))
+;; WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<!-- /tabs -->
+
+`args` declares what each argument must be (`ANY`, `TEXT`, `NUM`, `BOOL`, `BIN`,
+`LIST`), and so how it renders: a `NUM` goes through the numeric guard unless it is
+a declared number, and a `LIST` expands into its elements for the template to
+bracket. The spelling is your promise that the database computes what your code
+computes — SEL checks the shape, marks every such fragment with the caveat
+`host-function`, and refuses it under `strict`. A function that returns a list has
+no spelling. The rules in full are in the [SQL reference](sql.md#your-own-functions).
 
 ## Extending the SQL layer
 

@@ -170,6 +170,17 @@ def register_function(name: str, min: int, max: int,   # noqa: A002
     _host.add(key)
 
 
+def host_arity(name: str) -> tuple[int, int] | None:
+    """The [min, max] of a host function registered with register_function(),
+    or None when the name is not one. The SQL layer reads it: a host function's
+    SQL spelling is checked against, and recorded with, this arity."""
+    key = ascii_upper(name)
+    if key not in _host:
+        return None
+    spec = _table[key]
+    return spec.min, int(spec.max)
+
+
 def lookup(name: str) -> Spec | None:
     return _table.get(ascii_upper(name))
 

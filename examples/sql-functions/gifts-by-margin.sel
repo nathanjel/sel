@@ -1,0 +1,6 @@
+# Gifts with a margin of 40% or more: a list argument, two stored functions, one statement.
+PRODUCTS
+  .> FILTER(HAS_TAG((_["tag1"], _["tag2"], _["tag3"]), "gift")
+            AND MARGIN_PCT(_["price"], _["cost"]) >= 40)
+  .> MAP(RECORD("product", SLUG(_["title"]), "margin", MARGIN_PCT(_["price"], _["cost"])))
+  .> SORT_BY(_["margin"], "DESC")

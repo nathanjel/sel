@@ -9,8 +9,8 @@
 // variable, the physical source tables and the selected member. The probe NAMES
 // are the contract and the VALUES are compared; each host spells its accessors
 // its own way (SEL-0044).
-import { compile } from '../js/src/sel.mjs';
-import { Sql, Binding } from '../js/src/sql/index.mjs';
+import { compile, evaluate, registerFunction, Value } from '../js/src/sel.mjs';
+import { Sql, Binding, Fragment, SqlError, map as sqlmap } from '../js/src/sql/index.mjs';
 
 const out = [];
 let n = 0;
@@ -50,5 +50,51 @@ fragmentProbe('canon.postgresql', 'postgresql', 'CANON(1.50)');
 fragmentProbe('canon.mariadb', 'mariadb', 'CANON(1.50)');
 fragmentProbe('canon.sqlite', 'sqlite', 'CANON(1.50)');
 fragmentProbe('abs.postgresql', 'postgresql', 'ABS(1.50)');
+
+// --- host functions with a SQL spelling (spec §8.1, sql/MAP.md §4.7) ----------
+// The registration order, the caveat, strict mode, a LIST argument, a builder,
+// reset() and a re-registration, through this host's own spelling of the API.
+const HOST = { T: Binding.column('title', 't', 'TEXT') };
+const attempt = (fn) => {
+  try {
+    fn();
+    return 'accepted';
+  } catch (e) {
+    if (e instanceof SqlError) return `SqlError ${e.code}`;
+    if (e instanceof Error) return 'refused';
+    throw e;
+  }
+};
+
+say('host.spell.before-register', attempt(() => sqlmap.define(
+  'postgresql', 'funcs', 'HSLUG', { tpl: 'slug({0})', ret: 'TEXT' })));
+registerFunction('HSLUG', 1, 1, (a) => Value.text('local:' + a.text(0)));
+sqlmap.define('postgresql', 'funcs', 'HSLUG', { tpl: 'slug({0})', ret: 'TEXT', args: ['TEXT'] });
+const spelled = Sql.translate(compile('HSLUG(T) $== "x"'), 'postgresql', HOST);
+say('host.spell.condition', spelled.asCondition());
+say('host.spell.caveats', spelled.caveats.join(',') || '-');
+say('host.spell.strict', attempt(() => Sql.translate(
+  compile('HSLUG(T)'), 'postgresql', HOST, { strict: true })));
+say('host.spell.other-dialect', attempt(() => Sql.translate(compile('HSLUG(T)'), 'mariadb', HOST)));
+
+registerFunction('HHAS', 2, 2, () => Value.bool(false));
+sqlmap.define('postgresql', 'funcs', 'HHAS',
+  { tpl: '({1} = ANY(ARRAY[{0}]))', ret: 'BOOL', args: ['LIST', 'TEXT'] });
+const listed = Sql.translate(compile('HHAS(("a", "b"), "c")'), 'postgresql', HOST);
+say('host.spell.list.params', listed.asCondition('params'));
+say('host.spell.list.bound', listed.bindings().map((v) => v.dump()).join(','));
+
+registerFunction('HWRAP', 1, 1, (a) => a.val(0).clone());
+sqlmap.defineBuilder('postgresql', 'funcs', 'HWRAP',
+  (emit, args) => new Fragment(['wrap(', ...args[0].parts, ')'], 'TEXT', emit.dialect()));
+say('host.spell.builder', Sql.translate(compile('HWRAP(T)'), 'postgresql', HOST).asValue());
+
+registerFunction('HSLUG', 1, 2, (a) => Value.text('local:' + a.text(0)));
+say('host.spell.reregistered-arity', attempt(() => Sql.translate(compile('HSLUG(T)'), 'postgresql', HOST)));
+registerFunction('HSLUG', 1, 1, (a) => Value.text('local:' + a.text(0)));
+say('host.spell.arity-restored', attempt(() => Sql.translate(compile('HSLUG(T)'), 'postgresql', HOST)));
+sqlmap.reset();
+say('host.spell.after-reset', attempt(() => Sql.translate(compile('HSLUG(T)'), 'postgresql', HOST)));
+say('host.spell.after-reset.local', evaluate('HSLUG("A")').asText());
 
 process.stdout.write(out.join('\n') + '\n');

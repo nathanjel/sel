@@ -11,6 +11,7 @@ languages. The pages after it are complete programs, each written five times:
 | [Scripting with host functions](scripting.md) | the application registers functions; a script decides what happens |
 | [SQL conditions](sql-conditions.md) | a rule as a `WHERE` clause — naive, and with the schema described |
 | [SQL pipelines](sql-pipelines.md) | whole queries in SQL, split with memory, or in memory — star, EAV, 3NF, flat and complex data |
+| [Your own functions, in SQL](sql-functions.md) | host functions with a SQL spelling: PostgreSQL SQL and PL/pgSQL functions, list arguments, strict mode |
 
 Every snippet on these pages is quoted from a file under
 [`examples/`](../../examples/) that the test suite runs in all five languages

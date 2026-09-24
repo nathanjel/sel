@@ -612,7 +612,12 @@ function lispRegister(ops) {
       }
       return `      (define-dialect ${lispArg(op.dialect)} (list ${rest.join(' ')}))`;
     }
-    return `      (error "a register op needs a dialect or a define")`;
+    // A host function (spec §8.1) whose body no case runs.
+    if (op && typeof op === 'object' && 'function' in op) {
+      const [name, lo, hi] = op.function;
+      return `      (sel:register-function ${lispStr(name)} ${lo} ${hi} (lambda (a) (declare (ignore a)) (sel:make-text "")))`;
+    }
+    return `      (error "a register op needs a dialect, a define or a function")`;
   }).join('\n');
 }
 
@@ -787,7 +792,17 @@ function cppRegister(ops) {
       return `      Map::define_dialect(${cppName(op.dialect, 'a dialect name')}, `
            + `${cppDialectSpec(op)});`;
     }
-    throw new Unrepresentable('a register op with neither define nor dialect');
+    // A host function (spec §8.1) whose body no case runs.
+    if ('function' in op) {
+      const f = op.function;
+      if (!Array.isArray(f) || f.length !== 3 || typeof f[0] !== 'string'
+          || !Number.isInteger(f[1]) || !Number.isInteger(f[2])) {
+        throw new Unrepresentable(`a function op that is ${shapeOf(f)}`);
+      }
+      return `      sel::register_function(${cppStr(f[0])}, ${f[1]}, ${f[2]}, `
+           + '[](sel::HostArgs&) { return sel::Value::text(""); });';
+    }
+    throw new Unrepresentable('a register op with neither define, dialect nor function');
   }).join('\n');
 }
 

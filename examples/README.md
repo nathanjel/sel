@@ -19,6 +19,7 @@ so the code the documentation quotes is code that runs.
 | [`sql-eav/`](sql-eav/) | pipelines over entity–attribute–value rows, SQLite | [EAV](../docs/usage/sql-eav.md) |
 | [`sql-3nf/`](sql-3nf/) | pipelines over a normalised shop, PostgreSQL | [Third normal form](../docs/usage/sql-3nf.md) |
 | [`sql-flat/`](sql-flat/) | pipelines over one wide export table, MariaDB | [Unnormalised data](../docs/usage/sql-flat.md) |
+| [`sql-functions/`](sql-functions/) | the application's own functions spelled as PostgreSQL SQL and PL/pgSQL functions, checked against their local implementations | [Your own functions, in SQL](../docs/usage/sql-functions.md) |
 | [`sql-complex/`](sql-complex/) | a report no database can take a share of: SQL loads, SEL computes | [Complex data](../docs/usage/in-memory.md) |
 | [`memory-complex/`](memory-complex/) | the same report over data generated in memory | [Complex data](../docs/usage/in-memory.md) |
 | [`lib/`](lib/) | what those share: the database runner per host, the support-desk generator and report | [SQL pipelines](../docs/usage/sql-pipelines.md#running-a-plan) |

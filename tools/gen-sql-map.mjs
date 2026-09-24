@@ -64,9 +64,18 @@ const CAVEATS = new Set([
   'modulo-integer',
   'power-float', 'text-collation', 'regex-engine', 'concat-null',
   'trim-charset', 'length-units', 'input-laxity', 'text-order',
+  // Carried by every entry that spells an application's own function (§4.7),
+  // never declared: the application asserts the spelling, this layer cannot.
+  'host-function',
 ]);
 
 const RET_KINDS = new Set(['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN']);
+
+// sql/MAP.md §4.7: what a host function's entry may declare each argument to be.
+// Only runtime entries use it -- the shipped documents spell builtins, whose
+// argument rules are SEL's own -- but it is emitted with the rest of the
+// vocabulary so no host retypes it.
+const ARG_KINDS = ['ANY', 'BIN', 'BOOL', 'LIST', 'NUM', 'TEXT'];
 
 // An operator's argument count. `funcs` gets this from the SEL function table,
 // which is the whole reason this file imports the JS host; `ops` has no such
@@ -188,6 +197,7 @@ function buildRules(dialects) {
     sections: ['ops', 'funcs', 'skel'],
     caveats: [...CAVEATS].sort(),
     retKinds: [...RET_KINDS].sort(),
+    argKinds: ARG_KINDS,
     opArity: opArityOut,
     funcArity: funcs,
     variants: VARIANT_FAMILIES,
@@ -863,6 +873,7 @@ function emitCpp(dialects, rules) {
     rule.push(`constexpr std::string_view ${id}[] = {${xs.map(cppStr).join(', ')}};`);
   svArray('CAVEATS', rules.caveats);
   svArray('RET_KINDS', rules.retKinds);
+  svArray('ARG_KINDS', rules.argKinds);
   svArray('TEMPLATE_KEYS', rules.templateKeys);
   const arity = (id, obj) => {
     rule.push(`constexpr Arity ${id}[] = {`);
@@ -931,6 +942,7 @@ ${rule.join('\n')}
 constexpr Rules RULES = {
     .caveats = CAVEATS,
     .ret_kinds = RET_KINDS,
+    .arg_kinds = ARG_KINDS,
     .template_keys = TEMPLATE_KEYS,
     .op_arity = OP_ARITY,
     .func_arity = FUNC_ARITY,
@@ -1146,6 +1158,7 @@ ${body})
 (defparameter +rules+
  '(:caveats ${lispNames(rules.caveats)}
    :ret-kinds ${lispNames(rules.retKinds)}
+   :arg-kinds ${lispNames(rules.argKinds)}
    :template-keys ${lispNames(rules.templateKeys)}
    :op-arity ${arity(rules.opArity)}
    :func-arity ${arity(rules.funcArity)}

@@ -2,7 +2,7 @@
 // unknown names and wrong argument counts be caught at compile time.
 
 import { BUILTIN_MANIFEST, BINDING_FORMS } from './_builtin_manifest.mjs';
-import { RESERVED } from './lexer.mjs';
+import { RESERVED, asciiUpper } from './lexer.mjs';
 import { Value } from './value.mjs';
 
 // A host's own binding function (register(..., { binds: true }), examples/
@@ -132,6 +132,16 @@ export function registerFunction(name, min, max, fn) {
     },
   }));
   hostNames.add(key);
+}
+
+// The [min, max] of a host function registered with registerFunction(), or
+// null when the name is not one. The SQL layer reads it: a host function's SQL
+// spelling is checked against, and recorded with, this arity.
+export function hostArity(name) {
+  const key = asciiUpper(String(name));
+  if (!hostNames.has(key)) return null;
+  const spec = table.get(key);
+  return [spec.min, spec.max];
 }
 
 function makeSpec(spec) {

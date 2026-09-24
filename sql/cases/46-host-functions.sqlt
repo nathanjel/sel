@@ -1,0 +1,552 @@
+% Host functions given a SQL spelling (sql/MAP.md §4.7, spec §8.1).
+%
+% `{"function": [name, min, max]}` in --- register registers a host function
+% whose body no case runs: these cases are about translation, and a host
+% function's SQL spelling is the application's assertion about that body, which
+% no translation can check. Registrations of host functions persist for the
+% rest of a runner's process, like any host function's, so every case that
+% depends on a name being unregistered or registered differently uses a name no
+% other case registers.
+
+### name: host.call.text-mapping
+--- note
+A host function with a spelling renders as a call, and its TEXT result is compared like any TEXT operand.
+--- dialect
+postgresql
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- as
+condition
+--- source
+SLUG(T) $== "hello-world"
+--- expect
+(CAST(slug("t"."title") AS TEXT) COLLATE "C" = CAST('hello-world' AS TEXT) COLLATE "C")
+===
+### name: host.call.params-mode
+--- note
+In params mode the spelling's arguments keep their slots; the host function adds none of its own.
+--- dialect
+postgresql
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- as
+condition
+--- mode
+params
+--- source
+SLUG("Hello World") $== "hello-world"
+--- expect
+(CAST(slug(?) AS TEXT) COLLATE "C" = CAST(? AS TEXT) COLLATE "C")
+--- params
+t"Hello World", t"hello-world"
+===
+### name: host.call.key-is-case-insensitive
+--- note
+A funcs key names a function, and function names are case-insensitive: defining `slug` spells SLUG.
+--- dialect
+postgresql
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "slug", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- source
+SLUG(T)
+--- expect
+slug("t"."title")
+===
+### name: host.call.inherited-by-a-derived-dialect
+--- note
+A spelling defined on postgresql is inherited by a dialect that extends it, placeholders and all.
+--- dialect
+pg-numbered
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}, {"dialect": "pg-numbered", "extends": "postgresql", "version": "15", "target": true, "lexical": {"placeholder": "${n}"}}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- as
+condition
+--- mode
+params
+--- source
+SLUG(T) $== "x"
+--- expect
+(CAST(slug("t"."title") AS TEXT) COLLATE "C" = CAST($1 AS TEXT) COLLATE "C")
+--- params
+t"x"
+===
+### name: host.refuse.no-spelling
+--- note
+Registered, never spelled: refused at the call, before its argument is looked at -- the SPLIT inside would be E_SQL_SHAPE if the arguments rendered first.
+--- dialect
+postgresql
+--- register
+[{"function": ["UNSPELLED", 1, 1]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- source
+UNSPELLED(SPLIT(T, ","))
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: host.refuse.not-this-dialect
+--- note
+Spelled for postgresql only; MariaDB has no spelling for it.
+--- dialect
+mariadb
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- source
+SLUG(T)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: host.refuse.strict
+--- note
+Every host spelling carries the caveat host-function, so strict translation refuses it.
+--- dialect
+postgresql
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- options
+{"strict": true}
+--- source
+SLUG(T)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: host.arity.keyed-two
+--- note
+An arity-keyed template chooses by the call's count, within the registration's [2, 3]. A NUM-typed column passes as it is; an undeclared one goes through the numeric guard.
+--- dialect
+postgresql
+--- register
+[{"function": ["MARGIN_PCT", 2, 3]}, {"define": ["postgresql", "funcs", "MARGIN_PCT", {"tpl": {"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"}, "ret": "NUM", "args": ["NUM", "NUM", "NUM"]}]}]
+--- bindings
+{"PRICE": {"kind": "column", "table": "p", "column": "price", "type": "NUM"}, "COST": {"kind": "column", "table": "p", "column": "cost"}}
+--- source
+MARGIN_PCT(PRICE, COST)
+--- expect
+margin_pct("p"."price", CASE WHEN (CAST("p"."cost" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("p"."cost" AS NUMERIC) ELSE NULL END)
+===
+### name: host.arity.keyed-three
+--- note
+The three-argument template; a numeric constant is inlined.
+--- dialect
+postgresql
+--- register
+[{"function": ["MARGIN_PCT", 2, 3]}, {"define": ["postgresql", "funcs", "MARGIN_PCT", {"tpl": {"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"}, "ret": "NUM", "args": ["NUM", "NUM", "NUM"]}]}]
+--- bindings
+{"PRICE": {"kind": "column", "table": "p", "column": "price", "type": "NUM"}, "COST": {"kind": "column", "table": "p", "column": "cost"}}
+--- source
+MARGIN_PCT(PRICE, PRICE, 1)
+--- expect
+round(margin_pct("p"."price", "p"."price"), 1)
+===
+### name: host.arity.template-count-out-of-range
+--- note
+A template keyed by a count the function cannot be called with could never be chosen.
+--- dialect
+postgresql
+--- register
+[{"function": ["ARITY_ONE", 1, 1]}, {"define": ["postgresql", "funcs", "ARITY_ONE", {"tpl": {"2": "f({0}, {1})"}, "ret": "TEXT"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: host.arity.entry-may-not-widen
+--- note
+An entry's own arity narrows the function's; [1, 3] for a function of [1, 2] widens it.
+--- dialect
+postgresql
+--- register
+[{"function": ["ARITY_TWO", 1, 2]}, {"define": ["postgresql", "funcs", "ARITY_TWO", {"tpl": "f({*})", "ret": "TEXT", "arity": [1, 3]}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: host.arity.entry-narrows
+--- note
+Narrowing is allowed: the one-argument form is spelled, the two-argument form is refused on this dialect.
+--- dialect
+postgresql
+--- register
+[{"function": ["ARITY_TWO", 1, 2]}, {"define": ["postgresql", "funcs", "ARITY_TWO", {"tpl": "f({*})", "ret": "TEXT", "arity": [1, 1]}]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- source
+ARITY_TWO(T, T)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: host.arity.reregistered-differently
+--- note
+Registered again with another arity after it was spelled: the spelling no longer describes the function, and is refused until defined again.
+--- dialect
+postgresql
+--- register
+[{"function": ["REREG", 1, 1]}, {"define": ["postgresql", "funcs", "REREG", {"tpl": "rereg({0})", "ret": "TEXT"}]}, {"function": ["REREG", 1, 2]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- source
+REREG(T)
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+### name: host.arity.reregistered-same
+--- note
+Registered again with the same arity: the spelling stands.
+--- dialect
+postgresql
+--- register
+[{"function": ["REREG_SAME", 1, 1]}, {"define": ["postgresql", "funcs", "REREG_SAME", {"tpl": "rereg({0})", "ret": "TEXT"}]}, {"function": ["REREG_SAME", 1, 1]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- source
+REREG_SAME(T)
+--- expect
+rereg("t"."title")
+===
+### name: host.register.function-first
+--- note
+A spelling for a name that is neither a SEL function nor a registered host function is a start-up error where it is written.
+--- dialect
+postgresql
+--- register
+[{"define": ["postgresql", "funcs", "NEVER_REGISTERED_FN", {"tpl": "f({0})", "ret": "TEXT"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: host.register.args-on-a-builtin
+--- note
+A builtin's argument rules are SEL's; only a host function's entry may declare args.
+--- dialect
+postgresql
+--- register
+[{"define": ["postgresql", "funcs", "UPPER", {"tpl": "UPPER({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: host.register.args-unknown-kind
+--- note
+args uses the closed vocabulary ANY, TEXT, NUM, BOOL, BIN, LIST.
+--- dialect
+postgresql
+--- register
+[{"function": ["KIND_BAD", 1, 1]}, {"define": ["postgresql", "funcs", "KIND_BAD", {"tpl": "f({0})", "ret": "TEXT", "args": ["DATE"]}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: host.register.args-longer-than-max
+--- note
+args may not describe more positions than the function takes.
+--- dialect
+postgresql
+--- register
+[{"function": ["ARGS_LONG", 1, 1]}, {"define": ["postgresql", "funcs", "ARGS_LONG", {"tpl": "f({0})", "ret": "TEXT", "args": ["TEXT", "TEXT"]}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: host.register.ret-is-scalar
+--- note
+ret has no list kind; a function that returns a list has no spelling.
+--- dialect
+postgresql
+--- register
+[{"function": ["RET_LIST", 1, 1]}, {"define": ["postgresql", "funcs", "RET_LIST", {"tpl": "f({0})", "ret": "LIST"}]}]
+--- source
+1 + 1
+--- throws
+LogicException
+===
+### name: host.args.num-constant-checked
+--- note
+A NUM argument that is a constant must be a number now, as a builtin's must.
+--- dialect
+postgresql
+--- register
+[{"function": ["MARGIN_PCT", 2, 3]}, {"define": ["postgresql", "funcs", "MARGIN_PCT", {"tpl": {"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"}, "ret": "NUM", "args": ["NUM", "NUM", "NUM"]}]}]
+--- bindings
+{"PRICE": {"kind": "column", "table": "p", "column": "price", "type": "NUM"}, "COST": {"kind": "column", "table": "p", "column": "cost"}}
+--- source
+MARGIN_PCT(PRICE, "abc")
+--- error
+E_SQL_INVALID 1:19
+===
+### name: host.args.text-refuses-bool
+--- note
+A TEXT argument cannot be a BOOL.
+--- dialect
+postgresql
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- source
+SLUG(TRUE)
+--- error
+E_SQL_SHAPE 1:6
+===
+### name: host.args.any-takes-bool
+--- note
+Without args, any scalar passes as it is -- the builtins' rule that most functions refuse a BOOL does not apply.
+--- dialect
+postgresql
+--- register
+[{"function": ["FLAG_TEXT", 1, 1]}, {"define": ["postgresql", "funcs", "FLAG_TEXT", {"tpl": "flag_text({0})", "ret": "TEXT"}]}]
+--- source
+FLAG_TEXT(TRUE)
+--- expect
+flag_text(TRUE)
+===
+### name: host.args.bool-requires-bool
+--- note
+A BOOL argument must be proved one; an undeclared column is not.
+--- dialect
+postgresql
+--- register
+[{"function": ["IS_OPEN", 1, 1]}, {"define": ["postgresql", "funcs", "IS_OPEN", {"tpl": "is_open({0})", "ret": "BOOL", "args": ["BOOL"]}]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- source
+IS_OPEN(T)
+--- error
+E_SQL_SHAPE 1:9
+===
+### name: host.args.bool-result-is-a-condition
+--- note
+A BOOL result can stand as a condition.
+--- dialect
+postgresql
+--- register
+[{"function": ["IS_OPEN", 1, 1]}, {"define": ["postgresql", "funcs", "IS_OPEN", {"tpl": "is_open({0})", "ret": "BOOL", "args": ["BOOL"]}]}]
+--- bindings
+{"T": {"kind": "column", "table": "t", "column": "title", "type": "TEXT"}}
+--- as
+condition
+--- source
+IS_OPEN(TRUE) AND T $== "x"
+--- expect
+(is_open(TRUE) AND (CAST("t"."title" AS TEXT) COLLATE "C" = CAST('x' AS TEXT) COLLATE "C"))
+===
+### name: host.list.columns
+--- note
+A columns binding in a LIST position expands to its columns, joined with commas; the template supplies the brackets.
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- bindings
+{"TAGS": {"kind": "columns", "items": [{"kind": "column", "table": "o", "column": "tag1", "type": "TEXT"}, {"kind": "column", "table": "o", "column": "tag2", "type": "TEXT"}, {"kind": "column", "table": "o", "column": "tag3", "type": "TEXT"}]}}
+--- as
+condition
+--- source
+HAS_TAG(TAGS, "gift")
+--- expect
+('gift' = ANY(ARRAY["o"."tag1", "o"."tag2", "o"."tag3"]))
+===
+### name: host.list.literal
+--- note
+A literal list expands to its elements.
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- bindings
+{"TAG": {"kind": "column", "table": "t", "column": "tag", "type": "TEXT"}}
+--- as
+condition
+--- source
+HAS_TAG(("a", "b"), TAG)
+--- expect
+("t"."tag" = ANY(ARRAY['a', 'b']))
+===
+### name: host.list.literal-params
+--- note
+Each element keeps its own placeholder, in order.
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- as
+condition
+--- mode
+params
+--- source
+HAS_TAG(("a", "b"), "c")
+--- expect
+(? = ANY(ARRAY[?, ?]))
+--- params
+t"c", t"a", t"b"
+===
+### name: host.list.value-binding
+--- note
+A value binding holding a list expands like a literal list.
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- bindings
+{"ALLOWED": {"kind": "value", "value": ["x", "y"]}, "TAG": {"kind": "column", "table": "t", "column": "tag", "type": "TEXT"}}
+--- as
+condition
+--- source
+HAS_TAG(ALLOWED, TAG)
+--- expect
+("t"."tag" = ANY(ARRAY['x', 'y']))
+===
+### name: host.list.scalar-is-a-list-of-one
+--- note
+A scalar in a LIST position is a list of one, as it is for an aggregate (spec §7.3).
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- bindings
+{"TAG": {"kind": "column", "table": "t", "column": "tag", "type": "TEXT"}}
+--- as
+condition
+--- source
+HAS_TAG(TAG, "x")
+--- expect
+('x' = ANY(ARRAY["t"."tag"]))
+===
+### name: host.list.relation-refused
+--- note
+A relation is rows the query has not read yet; it has no list of elements to expand.
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"sku": {"kind": "column", "table": "i", "column": "sku", "type": "TEXT"}}, "scalar": "sku"}}
+--- as
+condition
+--- source
+HAS_TAG(ITEMS, "x")
+--- error
+E_SQL_SHAPE 1:9
+===
+### name: host.list.empty-refused
+--- note
+An empty list has nothing for the template to hold, and ARRAY[] has no type.
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- bindings
+{"NONE_ALLOWED": {"kind": "value", "value": []}}
+--- as
+condition
+--- source
+HAS_TAG(NONE_ALLOWED, "x")
+--- error
+E_SQL_SHAPE 1:9
+===
+### name: host.list.nested-refused
+--- note
+An element that is itself a list has no scalar rendering.
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- bindings
+{"NESTED": {"kind": "value", "value": [["a"], "b"]}}
+--- as
+condition
+--- source
+HAS_TAG(NESTED, "x")
+--- error
+E_SQL_SHAPE
+===
+### name: host.list.filtered-refused
+--- note
+A FILTER decides elements when the list is evaluated; the template cannot express that.
+--- dialect
+postgresql
+--- register
+[{"function": ["HAS_TAG", 2, 2]}, {"define": ["postgresql", "funcs", "HAS_TAG", {"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}]}]
+--- as
+condition
+--- source
+HAS_TAG(FILTER(("a", "b"), _ $!= "a"), "x")
+--- error
+E_SQL_SHAPE 1:9
+===
+### name: host.list.outside-a-list-position
+--- note
+A list where the entry did not declare LIST is refused, as it is for a builtin.
+--- dialect
+postgresql
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- source
+SLUG(("a", "b"))
+--- error
+E_SQL_SHAPE
+===
+### name: plan.host.spelled-map-is-sql
+--- note
+A MAP calling a spelled host function is SQL like any other projection.
+--- dialect
+postgresql
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- bindings
+{"ARTICLES": {"kind": "relation", "from": "articles", "alias": "a", "fields": {"id": {"kind": "column", "table": "a", "column": "id", "type": "NUM"}, "title": {"kind": "column", "table": "a", "column": "title", "type": "TEXT"}}}}
+--- source
+ARTICLES .> MAP(RECORD("id", _["id"], "slug", SLUG(_["title"])))
+--- plan
+pure_sql
+--- tables
+articles
+--- expect
+SELECT "a"."id" AS "id", slug("a"."title") AS "slug" FROM "articles" "a"
+===
+### name: plan.host.spelled-filter-is-sql
+--- note
+A FILTER calling a spelled host function becomes the WHERE.
+--- dialect
+postgresql
+--- register
+[{"function": ["SLUG", 1, 1]}, {"define": ["postgresql", "funcs", "SLUG", {"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}]}]
+--- bindings
+{"ARTICLES": {"kind": "relation", "from": "articles", "alias": "a", "fields": {"id": {"kind": "column", "table": "a", "column": "id", "type": "NUM"}, "title": {"kind": "column", "table": "a", "column": "title", "type": "TEXT"}}}}
+--- source
+ARTICLES .> FILTER(SLUG(_["title"]) $== "hello") .> MAP(RECORD("id", _["id"]))
+--- plan
+pure_sql
+--- tables
+articles
+--- expect
+SELECT "a"."id" AS "id" FROM "articles" "a" WHERE (CAST(slug("a"."title") AS TEXT) COLLATE "C" = CAST('hello' AS TEXT) COLLATE "C")
+===
+### name: plan.host.unspelled-stays-in-memory
+--- note
+An unspelled host function in a FILTER is where the split lands: the database returns the rows, memory filters them.
+--- dialect
+postgresql
+--- register
+[{"function": ["UNSPELLED", 1, 1]}]
+--- bindings
+{"ARTICLES": {"kind": "relation", "from": "articles", "alias": "a", "fields": {"id": {"kind": "column", "table": "a", "column": "id", "type": "NUM"}, "title": {"kind": "column", "table": "a", "column": "title", "type": "TEXT"}}}}
+--- source
+ARTICLES .> FILTER(UNSPELLED(_["title"]) $== "x")
+--- plan
+pure_memory
+--- tables
+articles
+===

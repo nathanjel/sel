@@ -410,9 +410,21 @@ line and column — `STOCK(_["sku"]) < _["qty"]`, where `"two"` met `<`.
 
 ## Host functions and SQL
 
-A host function has no SQL spelling — the dialect map spells SEL's own
-functions only — so the SQL translator refuses a rule that calls it
-(`E_SQL_UNSUPPORTED`), and the hybrid planner keeps the steps that call it in
-memory: the database does what it can, and the host function runs over the rows
-that come back. The [SQL pipelines](sql-pipelines.md#where-the-planner-splits-and-why)
-page shows where such a split lands.
+A host function runs in memory. By default the SQL translator refuses a rule
+that calls it (`E_SQL_UNSUPPORTED`), and the hybrid planner keeps the steps that
+call it in memory: the database does what it can, and the host function runs over
+the rows that come back.
+
+When the database can compute the same thing — a built-in, an extension, a stored
+function the application created — the application can give its function a **SQL
+spelling** for that dialect, and the function then translates like any builtin:
+
+```python
+map.define('postgresql', 'funcs', 'VAT_RATE',
+           {'tpl': 'vat_rate({0}, {1})', 'ret': 'NUM', 'args': ['TEXT', 'TEXT']})
+```
+
+The application promises that `vat_rate()` computes what its `VAT_RATE` computes;
+SEL checks the shape and marks every such fragment with the caveat
+`host-function`. [Your own functions, in SQL](sql-functions.md) is the worked
+example, with PostgreSQL stored functions and all five languages.

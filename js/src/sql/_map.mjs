@@ -2371,6 +2371,7 @@ export const RULES = {
     "concat-null",
     "decimal-float",
     "division-scale",
+    "host-function",
     "input-laxity",
     "length-units",
     "modulo-integer",
@@ -2390,6 +2391,14 @@ export const RULES = {
     "NUM",
     "TEXT",
     "UNKNOWN"
+  ],
+  "argKinds": [
+    "ANY",
+    "BIN",
+    "BOOL",
+    "LIST",
+    "NUM",
+    "TEXT"
   ],
   "opArity": {
     "!=": [

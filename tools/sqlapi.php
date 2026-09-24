@@ -13,9 +13,15 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../php/src/Sql/bootstrap.php';
 
+use Sel\Args;
 use Sel\Sel;
+use Sel\Value;
 use Sel\Sql\Binding;
+use Sel\Sql\Emit;
+use Sel\Sql\Fragment;
+use Sel\Sql\Map;
 use Sel\Sql\Sql;
+use Sel\Sql\SqlError;
 
 $out = [];
 $n = 0;
@@ -59,5 +65,53 @@ $fragmentProbe('canon.postgresql', 'postgresql', 'CANON(1.50)');
 $fragmentProbe('canon.mariadb', 'mariadb', 'CANON(1.50)');
 $fragmentProbe('canon.sqlite', 'sqlite', 'CANON(1.50)');
 $fragmentProbe('abs.postgresql', 'postgresql', 'ABS(1.50)');
+
+// --- host functions with a SQL spelling (spec §8.1, sql/MAP.md §4.7) ----------
+// The registration order, the caveat, strict mode, a LIST argument, a builder,
+// reset() and a re-registration, through this host's own spelling of the API.
+$host = ['T' => Binding::column('title', 't', 'TEXT')];
+$attempt = function (callable $fn): string {
+    try {
+        $fn();
+        return 'accepted';
+    } catch (SqlError $e) {
+        return "SqlError {$e->code}";
+    } catch (\LogicException $e) {
+        return 'refused';
+    }
+};
+$slug = static fn (Args $a): Value => Value::text('local:' . $a->text(0));
+
+say('host.spell.before-register', $attempt(fn () => Map::define(
+    'postgresql', 'funcs', 'HSLUG', ['tpl' => 'slug({0})', 'ret' => 'TEXT'])));
+Sel::registerFunction('HSLUG', 1, 1, $slug);
+Map::define('postgresql', 'funcs', 'HSLUG', ['tpl' => 'slug({0})', 'ret' => 'TEXT', 'args' => ['TEXT']]);
+$spelled = Sql::translate(Sel::compile('HSLUG(T) $== "x"'), 'postgresql', $host);
+say('host.spell.condition', $spelled->asCondition());
+say('host.spell.caveats', implode(',', $spelled->caveats) ?: '-');
+say('host.spell.strict', $attempt(fn () => Sql::translate(
+    Sel::compile('HSLUG(T)'), 'postgresql', $host, ['strict' => true])));
+say('host.spell.other-dialect', $attempt(fn () => Sql::translate(Sel::compile('HSLUG(T)'), 'mariadb', $host)));
+
+Sel::registerFunction('HHAS', 2, 2, static fn (Args $a): Value => Value::bool(false));
+Map::define('postgresql', 'funcs', 'HHAS',
+    ['tpl' => '({1} = ANY(ARRAY[{0}]))', 'ret' => 'BOOL', 'args' => ['LIST', 'TEXT']]);
+$listed = Sql::translate(Sel::compile('HHAS(("a", "b"), "c")'), 'postgresql', $host);
+say('host.spell.list.params', $listed->asCondition('params'));
+say('host.spell.list.bound', implode(',', array_map(fn (Value $v) => $v->dump(), $listed->bindings())));
+
+Sel::registerFunction('HWRAP', 1, 1, static fn (Args $a): Value => $a->val(0)->copy());
+Map::defineBuilder('postgresql', 'funcs', 'HWRAP',
+    static fn (Emit $emit, array $args, $at): Fragment
+        => new Fragment(['wrap(', ...$args[0]->parts, ')'], 'TEXT', $emit->dialect()));
+say('host.spell.builder', Sql::translate(Sel::compile('HWRAP(T)'), 'postgresql', $host)->asValue());
+
+Sel::registerFunction('HSLUG', 1, 2, $slug);
+say('host.spell.reregistered-arity', $attempt(fn () => Sql::translate(Sel::compile('HSLUG(T)'), 'postgresql', $host)));
+Sel::registerFunction('HSLUG', 1, 1, $slug);
+say('host.spell.arity-restored', $attempt(fn () => Sql::translate(Sel::compile('HSLUG(T)'), 'postgresql', $host)));
+Map::reset();
+say('host.spell.after-reset', $attempt(fn () => Sql::translate(Sel::compile('HSLUG(T)'), 'postgresql', $host)));
+say('host.spell.after-reset.local', Sel::evaluate('HSLUG("A")')->asText());
 
 echo implode("\n", $out), "\n";

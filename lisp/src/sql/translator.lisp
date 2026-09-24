@@ -1286,6 +1286,8 @@ requires for the same reason and refuses here too"
 value a SQL expression can be" (snode-pos n)))
     (when (member name '("IF" "COND") :test #'equal)
       (return-from translate-call (translate-conditional tr n)))
+    (when (sel::host-arity name)
+      (return-from translate-call (translate-host-call tr n)))
     ;; Before any argument is rendered, so the deleted flag node never becomes a
     ;; parameter slot.
     (let* ((rewritten (rewrite-regex n))
@@ -1310,6 +1312,115 @@ SQL expression is a scalar" name)
         (when (equal name "CANON")
           (setf (fragment-canonical out) t))
         out))))
+
+;;; --- host functions (sql/MAP.md §4.7) ----------------------------------------
+
+(defun translate-host-call (tr n)
+  "A call to an application's own function.
+
+The entry is looked up first, because its :ARGS say how each argument renders:
+so a function with no spelling in this dialect is refused at the call before any
+argument is examined. None of the builtins' own argument rules apply -- which of
+them take a BOOL, which read a number -- only what the entry declares. And the
+fragment says whose promise it is: every use carries the caveat host-function,
+which strict mode refuses."
+  (let ((name (sel::node-s n))
+        (d (translator-dialect tr)))
+    (multiple-value-bind (entry found) (dialect-entry d :funcs name)
+      (when (or (not found) (null entry))
+        (refuse "E_SQL_UNSUPPORTED"
+                (format nil "~a is a host function with no SQL spelling in dialect ~
+~a; register one with the map, or evaluate it here" name d)
+                (snode-pos n)))
+      (when (stringp entry)
+        (refuse "E_SQL_UNSUPPORTED"
+                (format nil "~a has no mapping in dialect ~a — ~a" name d entry)
+                (snode-pos n)))
+      (let ((recorded (host-spelling-arity d name))
+            (current (sel::host-arity name)))
+        (when (and recorded (not (equal recorded current)))
+          (refuse "E_SQL_UNSUPPORTED"
+                  (format nil "~a was registered again with the arity [~D, ~D] after ~
+its SQL spelling was defined for [~D, ~D]; define the spelling again"
+                          name (car current) (cdr current) (car recorded) (cdr recorded))
+                  (snode-pos n))))
+      (when (translator-strict tr)
+        (refuse "E_SQL_UNSUPPORTED"
+                (format nil "~a is spelled by the application, which SEL cannot check ~
+(host-function), and strict mode refuses that" name)
+                (snode-pos n)))
+      (add-caveat tr "host-function")
+      (let* ((declared (plist-get entry :args))
+             (kinds (if (presentp declared) declared '()))
+             (args (loop for arg in (sel::node-items n)
+                         for i from 0
+                         for kind = (or (nth i kinds) "ANY")
+                         collect (if (equal kind "LIST")
+                                     (host-list-argument tr name arg)
+                                     (host-argument tr name arg kind)))))
+        (apply-entry tr :funcs name args (snode-pos n))))))
+
+(defun host-argument (tr name arg kind)
+  "One argument rendered under the kind the entry declares for it."
+  (let* ((f (walk-node tr arg))
+         (fk (fragment-kind f))
+         (pos (snode-pos arg)))
+    (when (eq fk :list)
+      (refuse "E_SQL_SHAPE"
+              (format nil "argument to ~a is a list, and its spelling does not ~
+declare a LIST there" name)
+              pos))
+    (when (and (member kind '("NUM" "TEXT") :test #'equal) (member fk '(:bool :bin)))
+      (refuse "E_SQL_SHAPE"
+              (format nil "~a declares this argument ~a, and this is a ~a"
+                      name kind (symbol-name fk))
+              pos))
+    (when (and (member kind '("BOOL" "BIN") :test #'equal)
+               (not (equal (symbol-name fk) kind)))
+      (refuse "E_SQL_SHAPE"
+              (format nil "~a declares this argument ~a, and this is ~a" name kind
+                      (if (eq fk :unknown)
+                          "not one this layer can prove"
+                          (format nil "a ~a" (symbol-name fk))))
+              pos))
+    (when (equal kind "NUM")
+      (require-numeric-constant tr arg)
+      (unless (eq fk :num)
+        (setf f (guard-numeric tr f arg))))
+    f))
+
+(defun host-list-argument (tr name arg)
+  "A LIST argument: a list known when translating, its elements rendered and
+joined with ', ' -- the template supplies the brackets."
+  (let ((src (classify tr arg))
+        (pos (snode-pos arg))
+        (parts '()))
+    (when (eq (source-shape src) :relation)
+      (refuse "E_SQL_SHAPE"
+              (format nil "argument to ~a is a relation, rows the query has not read ~
+yet; a LIST argument is a list known when translating" name)
+              pos))
+    (when (source-filters src)
+      (refuse "E_SQL_SHAPE"
+              (format nil "argument to ~a is a filtered list, whose elements are ~
+decided when it is evaluated; a template cannot express that" name)
+              pos))
+    (unless (source-elements src)
+      (refuse "E_SQL_SHAPE"
+              (format nil "argument to ~a is an empty list, which has nothing for the ~
+template to hold" name)
+              pos))
+    (loop for (nil . elem) in (source-elements src)
+          for i from 0
+          do (let ((f (from-binder tr elem arg)))
+               (when (eq (fragment-kind f) :list)
+                 (refuse "E_SQL_SHAPE"
+                         (format nil "argument to ~a has a list as an element, which ~
+has no scalar rendering" name)
+                         pos))
+               (when (plusp i) (push ", " parts))
+               (dolist (p (fragment-parts f)) (push p parts))))
+    (%fragment (nreverse parts) :unknown (translator-dialect tr))))
 
 ;;; --- aggregates -----------------------------------------------------------
 

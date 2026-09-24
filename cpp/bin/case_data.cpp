@@ -6117,6 +6117,416 @@ static std::vector<std::pair<std::string, Binding>> c972_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c973_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c973_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c974_bind() {
+  return {
+
+  };
+}
+
+static void c974_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c975_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c975_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "slug", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c976_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c976_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+      Map::define_dialect("pg-numbered", DialectSpec::extending("postgresql").version("15").target(true).lexical("placeholder", "${n}"));
+}
+
+static std::vector<std::pair<std::string, Binding>> c977_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c977_reg() {
+      sel::register_function("UNSPELLED", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+}
+
+static std::vector<std::pair<std::string, Binding>> c978_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c978_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c979_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c979_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c980_bind() {
+  return {
+      {"PRICE", Binding::column("price", "p", SqlKind::Num)},
+      {"COST", Binding::column("cost", "p", SqlKind::Unknown)},
+  };
+}
+
+static void c980_reg() {
+      sel::register_function("MARGIN_PCT", 2, 3, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "MARGIN_PCT", EntrySpec::by_count({{"2", "margin_pct({0}, {1})"}, {"3", "round(margin_pct({0}, {1}), {2})"}}, "NUM").args({"NUM", "NUM", "NUM"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c981_bind() {
+  return {
+      {"PRICE", Binding::column("price", "p", SqlKind::Num)},
+      {"COST", Binding::column("cost", "p", SqlKind::Unknown)},
+  };
+}
+
+static void c981_reg() {
+      sel::register_function("MARGIN_PCT", 2, 3, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "MARGIN_PCT", EntrySpec::by_count({{"2", "margin_pct({0}, {1})"}, {"3", "round(margin_pct({0}, {1}), {2})"}}, "NUM").args({"NUM", "NUM", "NUM"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c982_bind() {
+  return {
+
+  };
+}
+
+static void c982_reg() {
+      sel::register_function("ARITY_ONE", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "ARITY_ONE", EntrySpec::by_count({{"2", "f({0}, {1})"}}, "TEXT"));
+}
+
+static std::vector<std::pair<std::string, Binding>> c983_bind() {
+  return {
+
+  };
+}
+
+static void c983_reg() {
+      sel::register_function("ARITY_TWO", 1, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "ARITY_TWO", EntrySpec::tpl("f({*})", "TEXT").arity(1, 3));
+}
+
+static std::vector<std::pair<std::string, Binding>> c984_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c984_reg() {
+      sel::register_function("ARITY_TWO", 1, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "ARITY_TWO", EntrySpec::tpl("f({*})", "TEXT").arity(1, 1));
+}
+
+static std::vector<std::pair<std::string, Binding>> c985_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c985_reg() {
+      sel::register_function("REREG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "REREG", EntrySpec::tpl("rereg({0})", "TEXT"));
+      sel::register_function("REREG", 1, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+}
+
+static std::vector<std::pair<std::string, Binding>> c986_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c986_reg() {
+      sel::register_function("REREG_SAME", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "REREG_SAME", EntrySpec::tpl("rereg({0})", "TEXT"));
+      sel::register_function("REREG_SAME", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+}
+
+static std::vector<std::pair<std::string, Binding>> c987_bind() {
+  return {
+
+  };
+}
+
+static void c987_reg() {
+      Map::define("postgresql", Section::Funcs, "NEVER_REGISTERED_FN", EntrySpec::tpl("f({0})", "TEXT"));
+}
+
+static std::vector<std::pair<std::string, Binding>> c988_bind() {
+  return {
+
+  };
+}
+
+static void c988_reg() {
+      Map::define("postgresql", Section::Funcs, "UPPER", EntrySpec::tpl("UPPER({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c989_bind() {
+  return {
+
+  };
+}
+
+static void c989_reg() {
+      sel::register_function("KIND_BAD", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "KIND_BAD", EntrySpec::tpl("f({0})", "TEXT").args({"DATE"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c990_bind() {
+  return {
+
+  };
+}
+
+static void c990_reg() {
+      sel::register_function("ARGS_LONG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "ARGS_LONG", EntrySpec::tpl("f({0})", "TEXT").args({"TEXT", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c991_bind() {
+  return {
+
+  };
+}
+
+static void c991_reg() {
+      sel::register_function("RET_LIST", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "RET_LIST", EntrySpec::tpl("f({0})", "LIST"));
+}
+
+static std::vector<std::pair<std::string, Binding>> c992_bind() {
+  return {
+      {"PRICE", Binding::column("price", "p", SqlKind::Num)},
+      {"COST", Binding::column("cost", "p", SqlKind::Unknown)},
+  };
+}
+
+static void c992_reg() {
+      sel::register_function("MARGIN_PCT", 2, 3, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "MARGIN_PCT", EntrySpec::by_count({{"2", "margin_pct({0}, {1})"}, {"3", "round(margin_pct({0}, {1}), {2})"}}, "NUM").args({"NUM", "NUM", "NUM"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c993_bind() {
+  return {
+
+  };
+}
+
+static void c993_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c994_bind() {
+  return {
+
+  };
+}
+
+static void c994_reg() {
+      sel::register_function("FLAG_TEXT", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "FLAG_TEXT", EntrySpec::tpl("flag_text({0})", "TEXT"));
+}
+
+static std::vector<std::pair<std::string, Binding>> c995_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c995_reg() {
+      sel::register_function("IS_OPEN", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "IS_OPEN", EntrySpec::tpl("is_open({0})", "BOOL").args({"BOOL"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c996_bind() {
+  return {
+      {"T", Binding::column("title", "t", SqlKind::Text)},
+  };
+}
+
+static void c996_reg() {
+      sel::register_function("IS_OPEN", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "IS_OPEN", EntrySpec::tpl("is_open({0})", "BOOL").args({"BOOL"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c997_bind() {
+  return {
+      {"TAGS", Binding::columns({Binding::column("tag1", "o", SqlKind::Text), Binding::column("tag2", "o", SqlKind::Text), Binding::column("tag3", "o", SqlKind::Text)})},
+  };
+}
+
+static void c997_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c998_bind() {
+  return {
+      {"TAG", Binding::column("tag", "t", SqlKind::Text)},
+  };
+}
+
+static void c998_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c999_bind() {
+  return {
+
+  };
+}
+
+static void c999_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1000_bind() {
+  return {
+      {"ALLOWED", Binding::value(value_tree({{std::nullopt, Value::text("x")}, {std::nullopt, Value::text("y")}}), std::nullopt)},
+      {"TAG", Binding::column("tag", "t", SqlKind::Text)},
+  };
+}
+
+static void c1000_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1001_bind() {
+  return {
+      {"TAG", Binding::column("tag", "t", SqlKind::Text)},
+  };
+}
+
+static void c1001_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1002_bind() {
+  return {
+      {"ITEMS", Binding::relation("items", "i", {{"sku", Binding::column("sku", "i", SqlKind::Text)}}, "sku", std::nullopt)},
+  };
+}
+
+static void c1002_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1003_bind() {
+  return {
+      {"NONE_ALLOWED", Binding::value(value_tree({}), std::nullopt)},
+  };
+}
+
+static void c1003_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1004_bind() {
+  return {
+      {"NESTED", Binding::value(value_tree({{std::nullopt, value_tree({{std::nullopt, Value::text("a")}})}, {std::nullopt, Value::text("b")}}), std::nullopt)},
+  };
+}
+
+static void c1004_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1005_bind() {
+  return {
+
+  };
+}
+
+static void c1005_reg() {
+      sel::register_function("HAS_TAG", 2, 2, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "HAS_TAG", EntrySpec::tpl("({1} = ANY(ARRAY[{0}]))", "BOOL").args({"LIST", "TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1006_bind() {
+  return {
+
+  };
+}
+
+static void c1006_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1007_bind() {
+  return {
+      {"ARTICLES", Binding::relation("articles", "a", {{"id", Binding::column("id", "a", SqlKind::Num)}, {"title", Binding::column("title", "a", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static void c1007_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1008_bind() {
+  return {
+      {"ARTICLES", Binding::relation("articles", "a", {{"id", Binding::column("id", "a", SqlKind::Num)}, {"title", Binding::column("title", "a", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static void c1008_reg() {
+      sel::register_function("SLUG", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+      Map::define("postgresql", Section::Funcs, "SLUG", EntrySpec::tpl("slug({0})", "TEXT").args({"TEXT"}));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1009_bind() {
+  return {
+      {"ARTICLES", Binding::relation("articles", "a", {{"id", Binding::column("id", "a", SqlKind::Num)}, {"title", Binding::column("title", "a", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static void c1009_reg() {
+      sel::register_function("UNSPELLED", 1, 1, [](sel::HostArgs&) { return sel::Value::text(""); });
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -22659,6 +23069,635 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c972_bind},
+    {.name = "host.call.text-mapping",
+     .at = "46-host-functions.sqlt:11",
+     .dialect = "postgresql",
+     .source = "SLUG(T) $== \"hello-world\"",
+     .expect = "(CAST(slug(\"t\".\"title\") AS TEXT) COLLATE \"C\" = CAST('hello-world' AS TEXT) COLLATE \"C\")",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c973_reg,
+     .bindings_fn = c973_bind},
+    {.name = "host.call.params-mode",
+     .at = "46-host-functions.sqlt:27",
+     .dialect = "postgresql",
+     .source = "SLUG(\"Hello World\") $== \"hello-world\"",
+     .expect = "(CAST(slug(?) AS TEXT) COLLATE \"C\" = CAST(? AS TEXT) COLLATE \"C\")",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = "t\"Hello World\", t\"hello-world\"",
+     .as_ = "condition",
+     .mode = "params",
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c974_reg,
+     .bindings_fn = c974_bind},
+    {.name = "host.call.key-is-case-insensitive",
+     .at = "46-host-functions.sqlt:45",
+     .dialect = "postgresql",
+     .source = "SLUG(T)",
+     .expect = "slug(\"t\".\"title\")",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c975_reg,
+     .bindings_fn = c975_bind},
+    {.name = "host.call.inherited-by-a-derived-dialect",
+     .at = "46-host-functions.sqlt:59",
+     .dialect = "pg-numbered",
+     .source = "SLUG(T) $== \"x\"",
+     .expect = "(CAST(slug(\"t\".\"title\") AS TEXT) COLLATE \"C\" = CAST($1 AS TEXT) COLLATE \"C\")",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = "t\"x\"",
+     .as_ = "condition",
+     .mode = "params",
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c976_reg,
+     .bindings_fn = c976_bind},
+    {.name = "host.refuse.no-spelling",
+     .at = "46-host-functions.sqlt:79",
+     .dialect = "postgresql",
+     .source = "UNSPELLED(SPLIT(T, \",\"))",
+     .expect = nullptr,
+     .error = "E_SQL_UNSUPPORTED 1:1",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c977_reg,
+     .bindings_fn = c977_bind},
+    {.name = "host.refuse.not-this-dialect",
+     .at = "46-host-functions.sqlt:93",
+     .dialect = "mariadb",
+     .source = "SLUG(T)",
+     .expect = nullptr,
+     .error = "E_SQL_UNSUPPORTED 1:1",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c978_reg,
+     .bindings_fn = c978_bind},
+    {.name = "host.refuse.strict",
+     .at = "46-host-functions.sqlt:107",
+     .dialect = "postgresql",
+     .source = "SLUG(T)",
+     .expect = nullptr,
+     .error = "E_SQL_UNSUPPORTED 1:1",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = true,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c979_reg,
+     .bindings_fn = c979_bind},
+    {.name = "host.arity.keyed-two",
+     .at = "46-host-functions.sqlt:123",
+     .dialect = "postgresql",
+     .source = "MARGIN_PCT(PRICE, COST)",
+     .expect = "margin_pct(\"p\".\"price\", CASE WHEN (CAST(\"p\".\"cost\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"p\".\"cost\" AS NUMERIC) ELSE NULL END)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c980_reg,
+     .bindings_fn = c980_bind},
+    {.name = "host.arity.keyed-three",
+     .at = "46-host-functions.sqlt:137",
+     .dialect = "postgresql",
+     .source = "MARGIN_PCT(PRICE, PRICE, 1)",
+     .expect = "round(margin_pct(\"p\".\"price\", \"p\".\"price\"), 1)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c981_reg,
+     .bindings_fn = c981_bind},
+    {.name = "host.arity.template-count-out-of-range",
+     .at = "46-host-functions.sqlt:151",
+     .dialect = "postgresql",
+     .source = "1 + 1",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = "LogicException",
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c982_reg,
+     .bindings_fn = c982_bind},
+    {.name = "host.arity.entry-may-not-widen",
+     .at = "46-host-functions.sqlt:163",
+     .dialect = "postgresql",
+     .source = "1 + 1",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = "LogicException",
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c983_reg,
+     .bindings_fn = c983_bind},
+    {.name = "host.arity.entry-narrows",
+     .at = "46-host-functions.sqlt:175",
+     .dialect = "postgresql",
+     .source = "ARITY_TWO(T, T)",
+     .expect = nullptr,
+     .error = "E_SQL_UNSUPPORTED 1:1",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c984_reg,
+     .bindings_fn = c984_bind},
+    {.name = "host.arity.reregistered-differently",
+     .at = "46-host-functions.sqlt:189",
+     .dialect = "postgresql",
+     .source = "REREG(T)",
+     .expect = nullptr,
+     .error = "E_SQL_UNSUPPORTED 1:1",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c985_reg,
+     .bindings_fn = c985_bind},
+    {.name = "host.arity.reregistered-same",
+     .at = "46-host-functions.sqlt:203",
+     .dialect = "postgresql",
+     .source = "REREG_SAME(T)",
+     .expect = "rereg(\"t\".\"title\")",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c986_reg,
+     .bindings_fn = c986_bind},
+    {.name = "host.register.function-first",
+     .at = "46-host-functions.sqlt:217",
+     .dialect = "postgresql",
+     .source = "1 + 1",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = "LogicException",
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c987_reg,
+     .bindings_fn = c987_bind},
+    {.name = "host.register.args-on-a-builtin",
+     .at = "46-host-functions.sqlt:229",
+     .dialect = "postgresql",
+     .source = "1 + 1",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = "LogicException",
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c988_reg,
+     .bindings_fn = c988_bind},
+    {.name = "host.register.args-unknown-kind",
+     .at = "46-host-functions.sqlt:241",
+     .dialect = "postgresql",
+     .source = "1 + 1",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = "LogicException",
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c989_reg,
+     .bindings_fn = c989_bind},
+    {.name = "host.register.args-longer-than-max",
+     .at = "46-host-functions.sqlt:253",
+     .dialect = "postgresql",
+     .source = "1 + 1",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = "LogicException",
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c990_reg,
+     .bindings_fn = c990_bind},
+    {.name = "host.register.ret-is-scalar",
+     .at = "46-host-functions.sqlt:265",
+     .dialect = "postgresql",
+     .source = "1 + 1",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = "LogicException",
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c991_reg,
+     .bindings_fn = c991_bind},
+    {.name = "host.args.num-constant-checked",
+     .at = "46-host-functions.sqlt:277",
+     .dialect = "postgresql",
+     .source = "MARGIN_PCT(PRICE, \"abc\")",
+     .expect = nullptr,
+     .error = "E_SQL_INVALID 1:19",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c992_reg,
+     .bindings_fn = c992_bind},
+    {.name = "host.args.text-refuses-bool",
+     .at = "46-host-functions.sqlt:291",
+     .dialect = "postgresql",
+     .source = "SLUG(TRUE)",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:6",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c993_reg,
+     .bindings_fn = c993_bind},
+    {.name = "host.args.any-takes-bool",
+     .at = "46-host-functions.sqlt:303",
+     .dialect = "postgresql",
+     .source = "FLAG_TEXT(TRUE)",
+     .expect = "flag_text(TRUE)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c994_reg,
+     .bindings_fn = c994_bind},
+    {.name = "host.args.bool-requires-bool",
+     .at = "46-host-functions.sqlt:315",
+     .dialect = "postgresql",
+     .source = "IS_OPEN(T)",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:9",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c995_reg,
+     .bindings_fn = c995_bind},
+    {.name = "host.args.bool-result-is-a-condition",
+     .at = "46-host-functions.sqlt:329",
+     .dialect = "postgresql",
+     .source = "IS_OPEN(TRUE) AND T $== \"x\"",
+     .expect = "(is_open(TRUE) AND (CAST(\"t\".\"title\" AS TEXT) COLLATE \"C\" = CAST('x' AS TEXT) COLLATE \"C\"))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c996_reg,
+     .bindings_fn = c996_bind},
+    {.name = "host.list.columns",
+     .at = "46-host-functions.sqlt:345",
+     .dialect = "postgresql",
+     .source = "HAS_TAG(TAGS, \"gift\")",
+     .expect = "('gift' = ANY(ARRAY[\"o\".\"tag1\", \"o\".\"tag2\", \"o\".\"tag3\"]))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c997_reg,
+     .bindings_fn = c997_bind},
+    {.name = "host.list.literal",
+     .at = "46-host-functions.sqlt:361",
+     .dialect = "postgresql",
+     .source = "HAS_TAG((\"a\", \"b\"), TAG)",
+     .expect = "(\"t\".\"tag\" = ANY(ARRAY['a', 'b']))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c998_reg,
+     .bindings_fn = c998_bind},
+    {.name = "host.list.literal-params",
+     .at = "46-host-functions.sqlt:377",
+     .dialect = "postgresql",
+     .source = "HAS_TAG((\"a\", \"b\"), \"c\")",
+     .expect = "(? = ANY(ARRAY[?, ?]))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = "t\"c\", t\"a\", t\"b\"",
+     .as_ = "condition",
+     .mode = "params",
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c999_reg,
+     .bindings_fn = c999_bind},
+    {.name = "host.list.value-binding",
+     .at = "46-host-functions.sqlt:395",
+     .dialect = "postgresql",
+     .source = "HAS_TAG(ALLOWED, TAG)",
+     .expect = "(\"t\".\"tag\" = ANY(ARRAY['x', 'y']))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c1000_reg,
+     .bindings_fn = c1000_bind},
+    {.name = "host.list.scalar-is-a-list-of-one",
+     .at = "46-host-functions.sqlt:411",
+     .dialect = "postgresql",
+     .source = "HAS_TAG(TAG, \"x\")",
+     .expect = "('x' = ANY(ARRAY[\"t\".\"tag\"]))",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c1001_reg,
+     .bindings_fn = c1001_bind},
+    {.name = "host.list.relation-refused",
+     .at = "46-host-functions.sqlt:427",
+     .dialect = "postgresql",
+     .source = "HAS_TAG(ITEMS, \"x\")",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:9",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c1002_reg,
+     .bindings_fn = c1002_bind},
+    {.name = "host.list.empty-refused",
+     .at = "46-host-functions.sqlt:443",
+     .dialect = "postgresql",
+     .source = "HAS_TAG(NONE_ALLOWED, \"x\")",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:9",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c1003_reg,
+     .bindings_fn = c1003_bind},
+    {.name = "host.list.nested-refused",
+     .at = "46-host-functions.sqlt:459",
+     .dialect = "postgresql",
+     .source = "HAS_TAG(NESTED, \"x\")",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c1004_reg,
+     .bindings_fn = c1004_bind},
+    {.name = "host.list.filtered-refused",
+     .at = "46-host-functions.sqlt:475",
+     .dialect = "postgresql",
+     .source = "HAS_TAG(FILTER((\"a\", \"b\"), _ $!= \"a\"), \"x\")",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:9",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "condition",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c1005_reg,
+     .bindings_fn = c1005_bind},
+    {.name = "host.list.outside-a-list-position",
+     .at = "46-host-functions.sqlt:489",
+     .dialect = "postgresql",
+     .source = "SLUG((\"a\", \"b\"))",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = c1006_reg,
+     .bindings_fn = c1006_bind},
+    {.name = "plan.host.spelled-map-is-sql",
+     .at = "46-host-functions.sqlt:501",
+     .dialect = "postgresql",
+     .source = "ARTICLES .> MAP(RECORD(\"id\", _[\"id\"], \"slug\", SLUG(_[\"title\"])))",
+     .expect = "SELECT \"a\".\"id\" AS \"id\", slug(\"a\".\"title\") AS \"slug\" FROM \"articles\" \"a\"",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_sql",
+     .has_tables = true,
+     .tables = {"articles"},
+     .unrepresentable = nullptr,
+     .register_fn = c1007_reg,
+     .bindings_fn = c1007_bind},
+    {.name = "plan.host.spelled-filter-is-sql",
+     .at = "46-host-functions.sqlt:519",
+     .dialect = "postgresql",
+     .source = "ARTICLES .> FILTER(SLUG(_[\"title\"]) $== \"hello\") .> MAP(RECORD(\"id\", _[\"id\"]))",
+     .expect = "SELECT \"a\".\"id\" AS \"id\" FROM \"articles\" \"a\" WHERE (CAST(slug(\"a\".\"title\") AS TEXT) COLLATE \"C\" = CAST('hello' AS TEXT) COLLATE \"C\")",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_sql",
+     .has_tables = true,
+     .tables = {"articles"},
+     .unrepresentable = nullptr,
+     .register_fn = c1008_reg,
+     .bindings_fn = c1008_bind},
+    {.name = "plan.host.unspelled-stays-in-memory",
+     .at = "46-host-functions.sqlt:537",
+     .dialect = "postgresql",
+     .source = "ARTICLES .> FILTER(UNSPELLED(_[\"title\"]) $== \"x\")",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"articles"},
+     .unrepresentable = nullptr,
+     .register_fn = c1009_reg,
+     .bindings_fn = c1009_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

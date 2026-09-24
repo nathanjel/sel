@@ -28,6 +28,7 @@ docs/usage/sql-star.md        -export-ignore
 docs/usage/sql-eav.md         -export-ignore
 docs/usage/sql-3nf.md         -export-ignore
 docs/usage/sql-flat.md        -export-ignore
+docs/usage/sql-functions.md   -export-ignore
 docs/usage/in-memory.md       -export-ignore
 docs/reference/builtins.md    -export-ignore
 docs/reference/limits.md      -export-ignore

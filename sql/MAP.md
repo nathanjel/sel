@@ -552,6 +552,85 @@ than a bag of prose. Each is described in full in `docs/internals/sql-translatio
 | `length-units` | a length or position is counted in something other than code points — **in the vocabulary, declared by no dialect**: every target's `LEN` counts what SEL counts. A mutation adds it to `ansi`'s `LEN` to prove the check would notice |
 | `input-laxity` | the server accepts input SEL rejects, though it agrees on everything SEL accepts |
 | `text-order` | a sort by a text key orders it by its bytes, where SEL sorts number-shaped text as numbers; carried by the sort, not declared by an entry |
+| `host-function` | the entry spells an application's own function (§4.7): the application asserts it computes what the function computes, and SEL cannot check it; carried by every such entry, not declared by one |
+
+### 4.7 Spelling a host function
+
+An application's own function (`spec/SPEC.md` §8.1) can be given a `funcs`
+entry, at run time, like a builtin can be respelled:
+
+```jsonc
+// after register_function("SLUG", 1, 1, …)
+define("postgresql", "funcs", "SLUG",
+       { "tpl": "trim(both '-' from regexp_replace(lower({0}), '[^a-z0-9]+', '-', 'g'))",
+         "ret": "TEXT", "args": ["TEXT"] })
+// after register_function("VAT_RATE", 2, 2, …) and CREATE FUNCTION vat_rate(text, text)
+define("postgresql", "funcs", "VAT_RATE", { "tpl": "vat_rate({0}, {1})", "ret": "NUM" })
+```
+
+Only at run time: the shipped documents in `sql/dialects/` spell SEL's own
+functions and nothing else, and the generator refuses any other name.
+
+**The function comes first.** `define` and `defineBuilder` accept a `funcs` key
+that is a SEL function this layer maps *or* a function registered with
+`register_function` when the entry is defined. Any other name is refused with
+the host's start-up error, naming both possibilities — so a spelling written
+before its function, or for a misspelt name, fails where it is written rather
+than lying unused.
+
+**Arity is the registration's.** The entry is checked against the function's
+`[min, max]` exactly as a builtin's is against SEL's (§4.1, §4.5½): an
+arity-keyed `tpl` naming a count the function cannot be called with is refused,
+and an entry's own `arity` may only narrow it. The arity is recorded with the
+entry. If the function is later registered again with a **different** arity, the
+spelling no longer describes it: translating a call refuses it
+(`E_SQL_UNSUPPORTED`) for as long as the two arities differ — define the
+spelling again for the new arity. Registering it again
+with the same arity keeps the spelling — the function's code is the
+application's business, and so is keeping the two in step.
+
+**`reset()` drops the spellings, not the functions.** A host function's SQL
+spelling is a map registration like any other, and `reset()` removes it; the
+function itself belongs to the evaluator and stays registered.
+
+**`ret` is a scalar kind.** The vocabulary is §4.4's; there is no list kind, so
+a function that returns a list has no spelling. Give its uses a scalar
+companion — `TAG_COUNT(x)` beside `TAGS(x)` — and spell that.
+
+**`args` declares what each argument must be.** A builtin's argument rules are
+SEL's own and live in the translator; a host function's are whatever the
+application says, so its entry may carry one more field, which a builtin's may
+not:
+
+| `args[i]` | The argument at position `i` | Rendered as |
+|---|---|---|
+| `ANY` (or absent) | any scalar | itself |
+| `TEXT` | any scalar but a BOOL or a BIN (`E_SQL_SHAPE`) | itself |
+| `NUM` | a number: a constant is checked now (`E_SQL_INVALID` when it is not one), a BOOL or BIN is refused (`E_SQL_SHAPE`) | an operand not declared `NUM` goes through the dialect's numeric guard, as a builtin's numeric argument does (§3) |
+| `BOOL` | an operand of kind BOOL (`E_SQL_SHAPE` otherwise, including an undeclared column) | itself |
+| `BIN` | an operand of kind BIN | itself |
+| `LIST` | a list known when translating: a literal list, a `columns` binding, or a `value` binding holding a list; a scalar is a list of one (spec §7.3). A relation, an empty list, a list with a list in it, or a filtered list is refused (`E_SQL_SHAPE`) | its elements, each rendered, joined with `, ` — so the template supplies the brackets: `ARRAY[{0}]`, `({0})`, `GREATEST({0})` |
+
+`args` is a list no longer than the function's `max`; a position past its end is
+`ANY`. A list argument in any position not declared `LIST` is refused, as it is
+for a builtin. None of the builtins' own argument rules — which of them take a
+BOOL or a BIN, which read a number — apply to a host function.
+
+**The entry decides before the arguments render.** For a host function the
+entry is looked up first, because its `args` say how each argument is rendered.
+So a call with no spelling in the dialect is refused at the call's own position,
+before any argument is examined.
+
+**Every use carries the caveat `host-function`** (§4.6), in addition to any the
+entry declares. An empty `caveats` list is this layer's promise that the SQL
+means what SEL means; a host spelling is the application's promise instead, and
+the fragment says so. Strict translation therefore refuses it.
+
+A spelling can call anything the server can evaluate in an expression — a
+built-in function, an extension's, or one the application created. On
+PostgreSQL that is a `FUNCTION` (SQL or PL/pgSQL); a `PROCEDURE` cannot appear
+in an expression. A function marked `STABLE` or `IMMUTABLE` lets the planner
+treat it like any other expression; that is the server's business, not SEL's.
 
 ---
 
