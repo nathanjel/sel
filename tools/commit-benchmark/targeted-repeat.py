@@ -2,7 +2,7 @@
 """Confirm PHP S4/S6 and count Python power-cache misses after the main runs."""
 import difflib,os,re,shutil,subprocess,sys
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2];BASE=Path('/tmp/sel-commit-benchmark');OUT=ROOT/'docs/interim/commit-benchmark'
+ROOT=Path(__file__).resolve().parents[2];BASE=Path('/tmp/sel-commit-benchmark');OUT=ROOT/'tools/commit-benchmark/results'
 variant=BASE/'php-direct-scalar'
 shutil.copytree(BASE/'c5a8991/php',variant/'php',dirs_exist_ok=True)
 (variant/'tools/scale-test').mkdir(parents=True,exist_ok=True)

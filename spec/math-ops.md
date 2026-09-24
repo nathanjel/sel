@@ -29,5 +29,5 @@ operation here has one.
 
 Renderings: `js/src/_math_ops.mjs`, `python/sel/_math_ops.py`,
 `php/src/MathOps.php`, `cpp/sel_math_ops.hpp`, `lisp/src/math-ops.lisp`, and
-`docs/MATH-OPS.md` for readers. `node tools/gen-math-ops.mjs` (and `--check`,
+`docs/internals/math-ops.md` for readers. `node tools/gen-math-ops.mjs` (and `--check`,
 run by `tools/check-generated.sh`).

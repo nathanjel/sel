@@ -2014,7 +2014,7 @@ Translator::Source Translator::classify(const SNodePtr& src) {
              "FILTER, which only decides whether an element takes part, MAP "
              "changes what the element is, so the two binders mean different "
              "things and binding both to one element is not enough. See "
-             "docs/SQL-TRANSLATION.md 7.5",
+             "docs/internals/sql-translation.md 7.5",
              src->pos());
     }
   }

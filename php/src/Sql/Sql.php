@@ -1,5 +1,5 @@
 <?php
-// The public interface of the SQL layer. See docs/SQL-TRANSLATION.md §10.
+// The public interface of the SQL layer. See docs/internals/sql-translation.md §10.
 
 declare(strict_types=1);
 

@@ -4,7 +4,7 @@ The planner follows the Lisp reference implementation: normalize and logically
 optimize a relational pipeline, try the complete pipeline first, then try a
 safe mixed MAP fall-through, and finally choose the longest translatable prefix.
 
-The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
+The contract every host's planner meets is in docs/internals/sql-translation.md §12.1
 and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at the
 PIPELINE, whichever helper assignments it is written through, and then at the
 logical optimiser's rewrite of that (unwinding the raw AST first classified

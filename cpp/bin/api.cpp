@@ -4,10 +4,13 @@
 
 #include "../sel.hpp"
 
+#include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -112,7 +115,7 @@ int main() {
   // evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
   // dependencies() answers as if IT were bound. Pinned because all seven hosts
   // agree on it and nothing else records it -- not endorsed. See the note in
-  // docs/EXTENDING.md.
+  // docs/contributing.md.
   say("program.deps.grouped.binder", join(compile("ALL(I, (IT), IT > 0)").dependencies(), " "));
   // The binding forms of spec/builtins.json (see tools/api.mjs).
   say("program.deps.forms.top.binder-and-limit", join(compile("TOP(L, X, X[\"a\"], N)").dependencies(), " "));
@@ -195,7 +198,7 @@ int main() {
                               std::to_string(e.col()));
   }
 
-  // --- the physical tree (docs/SQL-TRANSLATION.md §12.1; SEL-0044, SEL-0049).
+  // --- the physical tree (docs/internals/sql-translation.md §12.1; SEL-0044, SEL-0049).
   // One tree per AST (pointer equality here), the same whatever data ran, the
   // AST untouched, run() the same after an explicit build.
   {
@@ -211,6 +214,58 @@ int main() {
     compile("ORDERS = LIST(); CUSTOMERS = LIST(); 0").run(empty);
     joined.run(empty);
     say("program.physical.independent.of.data", b(joined.physical_ast() == first));
+  }
+
+  // --- host functions (spec/SPEC.md §8.1). Registered before compiling, called
+  // like a builtin, handed evaluated arguments and the typed readers, never
+  // allowed to replace a builtin; a compiled program keeps its function.
+  register_function("host_join", 1, 3, [](HostArgs& a) {
+    std::string joined;
+    for (int i = 0; i < a.count(); i++) joined += (i ? "|" : "") + a.text(i);
+    return Value::text(joined);
+  });
+  register_function("HOST_CHECK", 1, 1, [](HostArgs& a) {
+    if (a.text(0).empty()) throw SelError("E_BAD_ARG", "must not be empty", a.pos_of(0));
+    return Value::boolean(true);
+  });
+  say("host.fn.call", evaluate("HOST_JOIN(\"a\", 1, \"c\")").as_text());
+  say("host.fn.case", evaluate("host_join(\"x\")").as_text());
+  {
+    const auto names = function_names();
+    say("host.fn.listed", b(std::find(names.begin(), names.end(), "HOST_JOIN") != names.end()));
+  }
+  say("host.fn.deps", join(compile("HOST_JOIN(X, Y)").dependencies(), " "));
+  say("host.fn.order", evaluate("A = 1; HOST_JOIN((A = A + 1), (A = A * 10), A)").as_text());
+  for (const auto& [name, src] : std::vector<std::pair<std::string, std::string>>{
+           {"host.fn.arity", "HOST_JOIN()"}, {"host.fn.type", "HOST_JOIN(\"a\", TRUE)"},
+           {"host.fn.error", "HOST_CHECK(\"\")"}}) {
+    try {
+      evaluate(src);
+      say(name, "no error");
+    } catch (const SelError& e) {
+      say(name, e.code() + " " + std::to_string(e.line()) + ":" + std::to_string(e.col()));
+    }
+  }
+  for (const auto& [name, fname, lo, hi] : std::vector<std::tuple<std::string, std::string, int, int>>{
+           {"host.fn.refuse.builtin", "len", 1, 1}, {"host.fn.refuse.reserved", "and", 1, 1},
+           {"host.fn.refuse.underscore", "_x", 1, 1}, {"host.fn.refuse.digit", "1x", 1, 1},
+           {"host.fn.refuse.dash", "a-b", 1, 1}, {"host.fn.refuse.min-over-max", "bad", 2, 1},
+           {"host.fn.refuse.negative", "bad", -1, 0}}) {
+    std::string r = "accepted";
+    try {
+      register_function(fname, lo, hi, [](HostArgs&) { return Value::text(""); });
+    } catch (const SelError& e) {
+      r = "SelError " + e.code();
+    } catch (const std::invalid_argument&) {
+      r = "refused";
+    }
+    say(name, r);
+  }
+  register_function("HOST_V", 0, 0, [](HostArgs&) { return Value::text("old"); });
+  {
+    const Program early = compile("HOST_V()");
+    register_function("HOST_V", 0, 0, [](HostArgs&) { return Value::text("new"); });
+    say("host.fn.replace", early.run().as_text() + " " + evaluate("HOST_V()").as_text());
   }
 
   std::cout << join(out, "\n") << "\n";

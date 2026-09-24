@@ -5,7 +5,7 @@
 // into a database is a normal thing for this layer to say, and saying it is
 // more useful than emitting SQL that means something slightly different.
 //
-// docs/SQL-TRANSLATION.md is the guide; sql/MAP.md specifies the dialect map,
+// docs/internals/sql-translation.md is the guide; sql/MAP.md specifies the dialect map,
 // and sql/errors.md fixes the error codes. Where this implementation and those
 // documents disagree, this implementation is wrong.
 
@@ -224,7 +224,7 @@ class Builder {
 // translator. A typed constructor makes the whole class unrepresentable rather
 // than refusable.
 //
-// See docs/SQL-TRANSLATION.md §5.
+// See docs/internals/sql-translation.md §5.
 
 
 // One column. Either a name (optionally qualified by a table) or raw SQL this
@@ -379,7 +379,7 @@ struct Options {
   bool strict = false;
 };
 
-// See docs/SQL-TRANSLATION.md §10.
+// See docs/internals/sql-translation.md §10.
 class Sql {
  public:
   // Translate a compiled program into a SQL expression for one dialect.

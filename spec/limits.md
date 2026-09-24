@@ -17,7 +17,7 @@ Change the spec first; the check tells you when this file has fallen behind.
 
 Renderings, all committed: `js/src/_limits.mjs`, `python/sel/_limits.py`,
 `php/src/Limits.php`, `cpp/sel_limits.hpp`, `lisp/src/limits.lisp` and
-`docs/LIMITS.md`. Each host's own constants (`MAX_DEPTH`, `MAX_INT_DIGITS`,
+`docs/reference/limits.md`. Each host's own constants (`MAX_DEPTH`, `MAX_INT_DIGITS`,
 `MAX_FRAC_DIGITS`, `DIV_SCALE`) are defined from its rendering rather than as
 literals, so the five cannot drift. `tools/check-error-codes.sh` then reads
 every host's sources and requires that the codes a host raises are exactly the

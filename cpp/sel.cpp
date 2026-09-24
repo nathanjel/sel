@@ -1,6 +1,6 @@
 // SEL — Simple Expression Language, C++23 implementation.
 //
-// One translation unit, laid out in the order docs/EXTENDING.md prescribes and
+// One translation unit, laid out in the order docs/contributing.md prescribes and
 // the other implementations follow, so a divergence found by the fuzzer lands in
 // the same place in every host:
 //
@@ -10,7 +10,7 @@
 // spec/SPEC.md is normative. Nothing here may consult the host's own idea of
 // string length, case, ordering or regex flags — those are precisely what differ
 // between hosts, and every one of them has already caused a real divergence in
-// this project. See the traps list in docs/EXTENDING.md.
+// this project. See the traps list in docs/contributing.md.
 
 #include "sel.hpp"
 #include "sel_ast.hpp"
@@ -2093,9 +2093,24 @@ void assert_manifest_covered() {
   }
 }
 
+// An application's own functions (spec §8.1), apart from the builtins so that
+// replacing one never touches a Spec an already-compiled program points at: the
+// replaced Spec moves to `retired` and lives as long as the process.
+std::map<std::string, std::shared_ptr<const Spec>>& host_table() {
+  static std::map<std::string, std::shared_ptr<const Spec>> t;
+  return t;
+}
+
+std::vector<std::shared_ptr<const Spec>>& retired_host_specs() {
+  static std::vector<std::shared_ptr<const Spec>> v;
+  return v;
+}
+
 const Spec* registry_lookup(const std::string& name) {
   auto it = table().find(name);
-  return it == table().end() ? nullptr : &it->second;
+  if (it != table().end()) return &it->second;
+  auto h = host_table().find(name);
+  return h == host_table().end() ? nullptr : h->second.get();
 }
 
 void register_builtins();   // defined after the built-ins themselves
@@ -2460,7 +2475,7 @@ std::vector<Token> tokenize(const std::string& source) { return Lexer(source).to
 // Precedence climbing. The sixteen levels of spec/SPEC.md §5 are the table
 // below rather than sixteen functions, so adding an operator is adding a row.
 // python/sel/parser.py is the reference implementation of this shape and its
-// module docstring is the rationale; docs/EXTENDING.md, "Adding an operator",
+// module docstring is the rationale; docs/contributing.md, "Adding an operator",
 // step 5, records what every host had to get right, each item of which
 // produces a valid parse of the WRONG TREE when it is wrong.
 //
@@ -3553,6 +3568,10 @@ Value eval_dispatch(const Node& node, Context& ctx) {
         // Strict: every argument evaluated once, left to right, before the body.
         for (int i = 0; i < args.count(); i++) args.val(i);
       }
+      if (node.spec->host) {
+        HostArgs host_args(args);
+        return (*node.spec->host)(host_args);
+      }
       return node.spec->fn(args, ctx);
     }
   }
@@ -4388,7 +4407,7 @@ std::string single_relation_name(const Node& node) {
 // --- the join pre-filter (SEL-0049, SEL-0050, SEL-0052) ----------------------
 //
 // Decided here from the rows, at run time, so the physical tree stays a
-// function of the AST. See docs/EXTENDING.md for the rule in every host.
+// function of the AST. See docs/contributing.md for the rule in every host.
 
 bool shipped_builtin(const std::string& name) {
   static const std::unordered_set<std::string> names = [] {
@@ -7874,8 +7893,47 @@ std::vector<std::string> function_names() {
   ensure_registered();
   std::vector<std::string> out;
   for (const auto& [name, spec] : table()) out.push_back(name);
+  for (const auto& [name, spec] : host_table()) out.push_back(name);
   std::sort(out.begin(), out.end());
   return out;
+}
+
+int HostArgs::count() const { return args_.count(); }
+const Value& HostArgs::val(int i) { return args_.val(i); }
+const std::string& HostArgs::text(int i) { return args_.text(i); }
+bool HostArgs::boolean(int i) { return args_.boolean(i); }
+long long HostArgs::integer(int i) { return args_.integer(i); }
+long long HostArgs::non_neg_int(int i) { return args_.non_neg_int(i); }
+Pos HostArgs::pos_of(int i) const { return args_.pos_of(i); }
+
+void register_function(const std::string& name, int min, int max, HostFunction fn) {
+  ensure_registered();
+  bool ok = !name.empty() && ((name[0] >= 'A' && name[0] <= 'Z') || (name[0] >= 'a' && name[0] <= 'z'));
+  for (char c : name) {
+    ok = ok && ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_');
+  }
+  if (!ok) {
+    throw std::invalid_argument(
+        "SEL function name must be ASCII letters, digits and _, starting with a letter: " + name);
+  }
+  std::string key = name;
+  for (char& c : key) {
+    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+  }
+  if (is_reserved(key)) throw std::invalid_argument(key + " is a reserved word");
+  if (table().count(key)) throw std::invalid_argument(key + " is a builtin; a host function cannot replace it");
+  if (min < 0 || max < min) {
+    throw std::invalid_argument("SEL function " + key + ": arity must be whole numbers with 0 <= min <= max");
+  }
+  if (!fn) throw std::invalid_argument("SEL function " + key + ": fn is empty");
+  auto spec = std::make_shared<Spec>();
+  spec->name = key;
+  spec->min = min;
+  spec->max = max;
+  spec->host = std::make_shared<const HostFunction>(std::move(fn));
+  auto& slot = host_table()[key];
+  if (slot) retired_host_specs().push_back(slot);
+  slot = std::move(spec);
 }
 
 }  // namespace sel

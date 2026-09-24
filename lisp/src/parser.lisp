@@ -1,7 +1,7 @@
 ;;;; Precedence climbing. The sixteen levels of spec/SPEC.md §5 are the table
 ;;;; below rather than sixteen functions, so adding an operator is adding a row.
 ;;;; python/sel/parser.py is the reference implementation of this shape and its
-;;;; module docstring is the rationale; docs/EXTENDING.md, "Adding an operator",
+;;;; module docstring is the rationale; docs/contributing.md, "Adding an operator",
 ;;;; step 5, records what every host had to get right, each item of which
 ;;;; produces a valid parse of the WRONG TREE when it is wrong.
 ;;;;

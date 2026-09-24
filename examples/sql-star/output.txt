@@ -1,0 +1,17 @@
+1. revenue by category, first quarter
+   plan        pure_sql
+   reads       fact_sales, dim_date, dim_product
+   sql         SELECT CAST("p"."category" AS TEXT) COLLATE "C" AS "category", COALESCE(SUM("s"."qty"), 0) AS "units", COALESCE(SUM("s"."revenue"), 0) AS "revenue" FROM "fact_sales" "s" INNER JOIN "dim_date" "d" ON ("s"."date_key" = "d"."date_key") INNER JOIN "dim_product" "p" ON ("s"."product_key" = "p"."product_key") WHERE (("d"."year" = 2025) AND ("d"."quarter" = 1)) GROUP BY CAST("p"."category" AS TEXT) COLLATE "C" ORDER BY COALESCE(SUM("s"."revenue"), 0) DESC
+   | category=kitchen  units=12  revenue=2075.20
+   | category=games  units=16  revenue=1515.92
+   | category=garden  units=10  revenue=1430.00
+   | category=books  units=16  revenue=483.00
+   in memory   same rows
+2. best-selling product per region, stores only
+   plan        hybrid
+   reads       fact_sales, dim_store, dim_product
+   sql         SELECT "_sub1".* FROM (SELECT "s"."sale_id" AS "sale", "t"."region" AS "region", "p"."name" AS "product", "s"."revenue" AS "revenue" FROM "fact_sales" "s" INNER JOIN "dim_store" "t" ON ("s"."store_key" = "t"."store_key") INNER JOIN "dim_product" "p" ON ("s"."product_key" = "p"."product_key") WHERE (CAST("t"."format" AS TEXT) COLLATE "C" <> CAST('web' AS TEXT) COLLATE "C")) "_sub1" ORDER BY "_sub1"."sale" ASC
+   | region=Central  revenue=4904.75  best=Chef Knife
+   | region=North  revenue=2058.46  best=Cast Iron Pan
+   | region=South  revenue=2390.27  best=Cast Iron Pan
+   in memory   same rows

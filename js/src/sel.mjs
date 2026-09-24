@@ -5,7 +5,7 @@ import { parse } from './parser.mjs';
 import { Context, evalNode, MAX_DEPTH } from './eval.mjs';
 import { RecordShape, Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { SelError, fail } from './errors.mjs';
-import { names, register, registerBuiltin, bindingForm } from './registry.mjs';
+import { names, register, registerBuiltin, registerFunction, bindingForm } from './registry.mjs';
 import { optimizeAst, optimizeAstLogical, optimizeAstInMemory } from './optimizer.mjs';
 
 export class Program {
@@ -156,6 +156,6 @@ export function functionNames() { return names(); }
 // three hosts and not the other two was an accident of what was convenient to
 // import here.
 export {
-  RecordShape, Value, SelError, NONE, TEXT, BIN, BOOL, register, registerBuiltin,
+  RecordShape, Value, SelError, NONE, TEXT, BIN, BOOL, register, registerBuiltin, registerFunction,
   optimizeAst, optimizeAstLogical, optimizeAstInMemory,
 };

@@ -2,6 +2,8 @@
 // unknown names and wrong argument counts be caught at compile time.
 
 import { BUILTIN_MANIFEST, BINDING_FORMS } from './_builtin_manifest.mjs';
+import { RESERVED } from './lexer.mjs';
+import { Value } from './value.mjs';
 
 // A host's own binding function (register(..., { binds: true }), examples/
 // fn-complex) has no manifest forms; it gets the two classic shapes.
@@ -98,6 +100,39 @@ export function register(nameOrSpec, min, max, fn, options = {}) {
 }
 
 export const registerBuiltin = register;
+
+// Names registered through registerFunction(), which alone may be replaced.
+const hostNames = new Set();
+
+// An application's own strict function (spec/SPEC.md §8.1). It adds to the
+// language and never changes it: a builtin's name or a reserved word is
+// refused, and re-registering a host function replaces it. A bad registration
+// is a programming error, so it throws TypeError/RangeError, not SelError.
+export function registerFunction(name, min, max, fn) {
+  if (typeof name !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) {
+    throw new TypeError(`SEL function name must be ASCII letters, digits and _, starting with a letter: ${String(name)}`);
+  }
+  const key = name.toUpperCase();
+  if (RESERVED.has(key)) throw new RangeError(`${key} is a reserved word`);
+  if (table.has(key) && !hostNames.has(key)) {
+    throw new RangeError(`${key} is a builtin; a host function cannot replace it`);
+  }
+  if (!Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max < min) {
+    throw new RangeError(`SEL function ${key}: arity must be whole numbers with 0 <= min <= max`);
+  }
+  if (typeof fn !== 'function') throw new TypeError(`SEL function ${key}: fn is not callable`);
+  table.set(key, makeSpec({
+    name: key, min, max,
+    fn: (args) => {
+      const result = fn(args);
+      if (!(result instanceof Value)) {
+        throw new TypeError(`SEL function ${key} returned ${typeof result}, not a Value`);
+      }
+      return result;
+    },
+  }));
+  hostNames.add(key);
+}
 
 function makeSpec(spec) {
   const name = spec.name.toUpperCase();

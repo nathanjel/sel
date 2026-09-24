@@ -19,7 +19,7 @@
 //
 // What it cannot do is check a value it does not have. `LEFT(col, -1)` is exactly
 // as wrong and passes, because `col` is a column and its value is not knowable at
-// translation time. See docs/SQL-TRANSLATION.md §11.4.
+// translation time. See docs/internals/sql-translation.md §11.4.
 
 import { SelError } from '../errors.mjs';
 import { Context, evalNode } from '../eval.mjs';

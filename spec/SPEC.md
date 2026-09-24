@@ -621,7 +621,7 @@ before the body runs, so no function body counts its own arguments (`E_ARITY`).
 A function is declared **strict** or **lazy**. A strict function's arguments are
 all evaluated, left to right, before the body runs. A lazy function receives the
 argument nodes and evaluates what it chooses. Only `IF` and the aggregates are
-lazy.
+lazy. An application's own functions (§8.1) are always strict.
 
 ### 7.2 Control
 
@@ -1034,6 +1034,47 @@ numbered probes through every binding to keep the *answers* identical.
 without evaluating it. This is possible only because SEL has no dynamic symbol
 operator, and it is how a frontend knows which inputs should re-trigger which
 rule.
+
+### 8.1 Host functions
+
+An application may add functions of its own to the table:
+
+```
+Sel.registerFunction(name, min, max, fn)       # before compiling a caller
+```
+
+The spelling follows each host's convention: `registerFunction` in JS and
+PHP (`Sel::registerFunction`), `register_function` in Python and C++
+(`sel.register_function`, `sel::register_function`), `register-function` in
+Lisp.
+
+- **Registration precedes compilation.** An unknown name is `E_UNKNOWN_FUNC`
+  at parse time (§7.1), so a function must be registered before any program
+  that calls it is compiled. A compiled program keeps the function it was
+  compiled against.
+- **A host function adds to the language; it never changes it.** `name` is an
+  identifier (§2.3) that starts with a letter, matched case-insensitively like
+  every function name. The name of a builtin (`spec/builtins.json`) and a
+  reserved word are refused. Registering a host function's name again replaces
+  it.
+- **Arity is declared, not counted.** `min` and `max` are whole numbers with
+  `0 <= min <= max`, checked at compile time (`E_ARITY`) like any builtin's.
+- **A host function is strict.** Every argument is evaluated once, left to
+  right, before `fn` runs (§7.1). `fn` receives the argument accessor — the
+  count, each argument's value, and the typed readers (text, boolean, whole
+  number, non-negative whole number) that raise the usual error at *that
+  argument's* position — and returns a new `Value`. It must not modify an
+  argument. A `SelError` it raises propagates as raised; any other exception
+  is the host's own and propagates unchanged.
+- **It is invisible to the analyses.** `dependencies()` treats a call to it
+  like a call to any strict builtin. The SQL layer has no spelling for it — the
+  dialect map spells SEL's own functions only — so translation refuses a program
+  that calls it (`E_SQL_UNSUPPORTED`) and the hybrid planner keeps those steps
+  in memory.
+- **A bad registration is a programming error**, raised as the host's own
+  argument error rather than as a `SelError`: a malformed or reserved name, a
+  builtin's name, an arity outside the bounds above, or an `fn` that is not
+  callable.
 
 ---
 

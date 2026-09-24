@@ -20,7 +20,7 @@ the six hosts do not make. Written in the body it is the same refusal, with the
 same code, everywhere -- and ``SqlError`` is the class an application catches,
 where a ``TypeError`` is not.
 
-See docs/SQL-TRANSLATION.md §5.
+See docs/internals/sql-translation.md §5.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ class Binding:
         it is wrapped in the dialect's numeric guard, so a value SEL would refuse
         becomes NULL instead of a number the server invented; a declared NUM is
         what skips that wrapper and keeps the index. It still passes bare in the
-        two places docs/SQL-KINDS.md §4 marks broken: a function argument read as
+        two places docs/internals/sql-kinds.md §4 marks broken: a function argument read as
         a number, and a bare aggregate body.
 
         ``exact`` declares that the column already guarantees exact byte comparison

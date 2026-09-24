@@ -39,7 +39,7 @@ status=0
 
 # --- host against host, no database -----------------------------------------
 #
-# docs/SQL-TRANSLATION.md §14 M7 asked for this and nothing built it, so until
+# docs/internals/sql-translation.md §14 M7 asked for this and nothing built it, so until
 # now the whole lane was a no-op wherever no DSN was set. The oracle below asks
 # whether the emitted SQL MEANS what SEL means; this asks whether the hosts emit
 # the SAME thing, which is the question three independent transcriptions of one

@@ -1,0 +1,10 @@
+# Units and revenue per product, from paid orders placed since March.
+LINES
+  .> LINK(ORDERS, L, O, L["order_id"] == O["order_id"])
+  .> FILTER(_["status"] $== "paid" AND _["ordered_on"] $>= "2025-03-01")
+  .> LINK(PRODUCTS, X, P, X["product_id"] == P["product_id"])
+  .> BUCKET(_["title"], RECORD(
+       "product", _K,
+       "units", SUM(_, _["qty"]),
+       "revenue", SUM(_, _["qty"] * _["unit_price"])))
+  .> SORT_BY(_["revenue"], "DESC")

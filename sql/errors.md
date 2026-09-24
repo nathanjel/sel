@@ -96,7 +96,7 @@ the host wrote down, and an assignment is knowable when its right-hand side is �
 including an assignment nothing reads, which stage 1 would otherwise drop before
 anyone looked at it. A column is not, and will not be until the query runs. The
 same mistake written with a column in it is not detected, and
-`docs/SQL-TRANSLATION.md` §11.4 says so rather than leaving it to be discovered.
+`docs/internals/sql-translation.md` §11.4 says so rather than leaving it to be discovered.
 
 ---
 

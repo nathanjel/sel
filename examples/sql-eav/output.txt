@@ -1,0 +1,30 @@
+1. red or blue, and steel
+   plan        pure_sql
+   reads       entities, attributes
+   sql         SELECT "_sub1".* FROM (SELECT "e"."id" AS "id", "e"."sku" AS "sku" FROM "entities" "e" WHERE (EXISTS (SELECT 1 FROM "attributes" "a" WHERE 1 AND ((((CAST("a"."entity_id" AS NUMERIC) = CAST("e"."id" AS NUMERIC)) AND (CAST("a"."name" AS TEXT) COLLATE BINARY = CAST('color' AS TEXT) COLLATE BINARY)) AND ((CAST("a"."value" AS TEXT) COLLATE BINARY = CAST('red' AS TEXT) COLLATE BINARY) OR (CAST("a"."value" AS TEXT) COLLATE BINARY = CAST('blue' AS TEXT) COLLATE BINARY)))) IS TRUE) AND EXISTS (SELECT 1 FROM "attributes" "a" WHERE 1 AND ((((CAST("a"."entity_id" AS NUMERIC) = CAST("e"."id" AS NUMERIC)) AND (CAST("a"."name" AS TEXT) COLLATE BINARY = CAST('material' AS TEXT) COLLATE BINARY)) AND (CAST("a"."value" AS TEXT) COLLATE BINARY = CAST('steel' AS TEXT) COLLATE BINARY))) IS TRUE))) "_sub1" ORDER BY "_sub1"."id" ASC
+   | id=1  sku=LMP-01
+   | id=4  sku=CHR-02
+   | id=6  sku=TBL-02
+   | id=7  sku=LMP-03
+   | id=9  sku=SHF-02
+   in memory   same rows
+2. products per colour
+   plan        pure_sql
+   reads       attributes
+   sql         SELECT CAST("a"."value" AS TEXT) COLLATE BINARY AS "color", COUNT(*) AS "products" FROM "attributes" "a" WHERE (CAST("a"."name" AS TEXT) COLLATE BINARY = CAST('color' AS TEXT) COLLATE BINARY) GROUP BY CAST("a"."value" AS TEXT) COLLATE BINARY ORDER BY MIN(CAST("a"."value" AS TEXT) COLLATE BINARY) ASC
+   | color=Red  products=1
+   | color=blue  products=3
+   | color=natural  products=1
+   | color=red  products=3
+   | color=white  products=2
+   in memory   same rows
+3. priced under 60.00, pivoted
+   plan        hybrid
+   reads       attributes
+   sql         SELECT "a".* FROM "attributes" "a" WHERE ((CAST("a"."name" AS TEXT) COLLATE BINARY = CAST('color' AS TEXT) COLLATE BINARY) OR (CAST("a"."name" AS TEXT) COLLATE BINARY = CAST('price' AS TEXT) COLLATE BINARY)) ORDER BY "a"."entity_id" ASC, CAST("a"."name" AS TEXT) COLLATE BINARY ASC
+   | id=10  color=Red  price=19.99
+   | id=7  color=blue  price=35.00
+   | id=8  color=white  price=45.00
+   | id=1  color=red  price=49.90
+   | id=9  color=red  price=59.99
+   in memory   same rows

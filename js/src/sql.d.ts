@@ -1,5 +1,5 @@
 // TypeScript definitions for SEL -> SQL translation layer
-// Public host interface. See docs/SQL-TRANSLATION.md §10.
+// Public host interface. See docs/internals/sql-translation.md §10.
 
 import { Program, Value, Pos } from './sel.js';
 

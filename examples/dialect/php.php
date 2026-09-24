@@ -45,6 +45,7 @@ echo '   postgresql   => ', implode(' -> ', Map::chain('postgresql')), "\n";
 // chain, then the whole shipped chain -- so an override never half-applies.
 
 echo "2. a flavour of your own\n";
+// EXAMPLE-BEGIN flavour
 Map::defineDialect('pg-libpq', [
     'extends' => 'postgresql',
     'version' => '15',
@@ -55,6 +56,7 @@ echo '   targets      => ', implode(' ', Sql::dialects()), "\n";
 echo '   chain        => ', implode(' -> ', Map::chain('pg-libpq')), "\n";
 echo '   base         => ', $sqlIn('postgresql'), "\n";
 echo '   pg-libpq     => ', $sqlIn('pg-libpq'), "\n";
+// EXAMPLE-END flavour
 
 // 3 — spelling one function differently ---------------------------------------------
 // {*} is every argument; {0}, {1} pick them out. Note the slots are ZERO-based
@@ -63,9 +65,11 @@ echo '   pg-libpq     => ', $sqlIn('pg-libpq'), "\n";
 // infers kinds and will not guess.
 
 echo "3. one function, respelled\n";
+// EXAMPLE-BEGIN respell
 Map::define('pg-libpq', 'funcs', 'UPPER', ['tpl' => 'UPPER({0} COLLATE "C")', 'ret' => 'TEXT']);
 echo '   upper        => ',
     Sql::translate(Sel::compile('UPPER(NAME)'), 'pg-libpq', $bindings)->asValue(), "\n";
+// EXAMPLE-END respell
 
 // 4 — withdrawing what a deployment does not have ------------------------------------
 // A null entry withdraws it. This is not the same as leaving it unmapped: it is
@@ -73,12 +77,14 @@ echo '   upper        => ',
 // a function the server does not have.
 
 echo "4. withdrawing an entry\n";
+// EXAMPLE-BEGIN withdraw
 Map::define('pg-libpq', 'funcs', 'RMATCH', null);
 $re = Sel::compile("RMATCH('^a', NAME)");
 echo '   postgresql   => ', Sql::tryTranslate($re, 'postgresql', $bindings) === null
     ? 'refused' : 'translated', "\n";
 echo '   pg-libpq     => ', Sql::tryTranslate($re, 'pg-libpq', $bindings) === null
     ? 'refused' : 'translated', "\n";
+// EXAMPLE-END withdraw
 
 // 5 — a builder, for what a template cannot say -----------------------------------------
 // The escape hatch. It receives the emitter and the already-rendered arguments,
@@ -90,10 +96,12 @@ echo '   pg-libpq     => ', Sql::tryTranslate($re, 'pg-libpq', $bindings) === nu
 // carried and quietly turn a prepared statement back into concatenation.
 
 echo "5. a builder\n";
+// EXAMPLE-BEGIN builder
 Map::defineBuilder('pg-libpq', 'funcs', 'LEN', fn (Emit $emit, array $args) =>
     new Fragment(['length(', ...$args[0]->parts, ')'], 'NUM', $emit->dialect()));
 echo '   len          => ',
     Sql::translate(Sel::compile('LEN(NAME)'), 'pg-libpq', $bindings)->asValue(), "\n";
+// EXAMPLE-END builder
 
 // 6 — putting it back ---------------------------------------------------------------------
 // reset() drops every registration and leaves the shipped map. Worth knowing in

@@ -1,7 +1,7 @@
 <?php
 // SQL-prefix planning with an in-memory SEL continuation.
 //
-// The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
+// The contract every host's planner meets is in docs/internals/sql-translation.md §12.1
 // and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at the
 // PIPELINE, whichever helper assignments it is written through (see "helper
 // assignments" below -- inlining every helper the way stage 1 does for

@@ -1,0 +1,15 @@
+# Per region: revenue, and the product that earned the most of it -- physical stores only.
+SALES
+  .> LINK(STORES, S, T, S["store_key"] == T["store_key"])
+  .> LINK(PRODUCTS, X, P, X["product_key"] == P["product_key"])
+  .> FILTER(_["format"] $!= "web")
+  .> MAP(RECORD("sale", _["sale_id"], "region", _["region"],
+                "product", _["name"], "revenue", _["revenue"]))
+  .> SORT_BY(_["sale"])
+  .> BUCKET(_["region"], RECORD(
+       "region", _K,
+       "revenue", SUM(_, _["revenue"]),
+       "best", BUCKET(_, _["product"], RECORD("product", _K, "revenue", SUM(_, _["revenue"])))
+                 .> TOP_BY(_["revenue"], "DESC", 1)
+                 .> MAP(_["product"]) .> JOIN("")))
+  .> SORT_BY(_["region"])

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs every worked example in the documentation through every implementation.
 #
-# Any `EXPRESSION  =>  RESULT` line inside a ```sel block is executed and
-# compared. Documentation that cannot be checked is documentation that drifts.
+# Any `EXPRESSION  =>  RESULT` line inside a ```sel block, or in a table cell's
+# code span, is executed and compared. Documentation that cannot be checked is documentation that drifts.
 #
 # The comparison is a plain line-by-line walk on purpose. An earlier version used
 # `diff --old-line-format='%dn\n'` to list mismatching line numbers; GNU diff
@@ -15,7 +15,10 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 . tools/impls.sh
 
-DOCS=(README.md docs/LANGUAGE.md docs/EXTENDING.md)
+# README and every page under docs/ a reader is sent to; the design documents in
+# docs/internals/ quote SQL, not SEL results, and the reference pages are
+# generated tables.
+DOCS=(README.md docs/*.md docs/usage/*.md)
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

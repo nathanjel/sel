@@ -1,7 +1,7 @@
 ;;;; hybrid.lisp - Hybrid execution planner for relational pipelines.
 ;;;; Slices a pipeline into a maximal SQL pushdown prefix and an in-memory continuation.
 ;;;;
-;;;; The contract every host's planner meets is in docs/SQL-TRANSLATION.md
+;;;; The contract every host's planner meets is in docs/internals/sql-translation.md
 ;;;; §12.1 and is pinned by sql/cases/25-hybrid-plans.sqlt: the planner looks at
 ;;;; the PIPELINE, whichever helper assignments it is written through, and then
 ;;;; at the logical optimiser's rewrite of that (unwinding the raw AST first

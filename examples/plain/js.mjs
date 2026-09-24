@@ -19,19 +19,20 @@ console.log('   2.50 + 2.50 =>', evaluate('2.50 + 2.50').asText());
 // form you compile each rule once and keep it.
 
 console.log('2. compile once, run many');
-// EXAMPLE-BEGIN
+// EXAMPLE-BEGIN compile
 const rule = compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")');
 for (const row of [{ QTY: '3', PRICE: '19.99' }, { QTY: '1', PRICE: '5.00' }]) {
   const ctx = Value.fromNative({ ...row, LIMIT: '50.00' });
   console.log(`   QTY=${row.QTY} PRICE=${row.PRICE} =>`, rule.run(ctx).asText());
 }
-// EXAMPLE-END
+// EXAMPLE-END compile
 
 // 3 — building a context ------------------------------------------------------
 // Pass money as *strings*. A JS number is a double and has already lost the
 // exactness SEL exists to preserve.
 
 console.log('3. structured context');
+// EXAMPLE-BEGIN context
 const order = Value.fromNative({
   CUSTOMER: 'Zażółć',
   ITEMS: [                                        // an array is a 1-based list
@@ -42,6 +43,7 @@ const order = Value.fromNative({
 console.log('   first SKU =>', compile('ITEMS[1]["SKU"]').run(order).asText());
 console.log('   total     =>', compile('SUM(ITEMS, _["QTY"] * _["PRICE"])').run(order).asText());
 console.log('   0.10+0.20 =>', evaluate('0.10 + 0.20').asText());
+// EXAMPLE-END context
 
 // 4 — reading results back ----------------------------------------------------
 // A result is a Value: a scalar, children, both or neither.
@@ -65,17 +67,20 @@ console.log('   bool   =>', evaluate('1 < 2').asBool() ? 'TRUE' : 'FALSE');
 // 5 — the context is mutated, so rules hand values back -----------------------
 
 console.log('5. variables the rule set');
+// EXAMPLE-BEGIN variables
 const ctx = Value.fromNative({ QTY: '3', PRICE: '19.99' });
 compile('NET = QTY * PRICE; VAT = ROUND(NET * 0.23, 2); GROSS = NET + VAT').run(ctx);
 for (const name of ['NET', 'VAT', 'GROSS']) {
   console.log(`   ${name.padEnd(5)} =>`, ctx.get(name).asText());
 }
+// EXAMPLE-END variables
 
 // 6 — errors ------------------------------------------------------------------
 // Every failure carries a stable code and the position of the node that
 // actually failed. Assert on the code, never on the message.
 
 console.log('6. errors');
+// EXAMPLE-BEGIN errors
 for (const src of ['3 + "A"', 'NOSUCH(1)', 'IF(1, "a", "b")', 'ABORT("no stock")']) {
   try {
     evaluate(src);
@@ -85,11 +90,14 @@ for (const src of ['3 + "A"', 'NOSUCH(1)', 'IF(1, "a", "b")', 'ABORT("no stock")
     console.log(`   ${src.padEnd(17)} => ${e.code} at ${e.line}:${e.col}`);
   }
 }
+// EXAMPLE-END errors
 
 // 7 — which fields does this rule read? ---------------------------------------
 // Found statically, without running it. Wire these to your input listeners and
 // re-validation is free.
 
 console.log('7. dependencies');
+// EXAMPLE-BEGIN dependencies
 console.log('  ', compile('T = SUM(ITEMS, _["QTY"]); T > LIMIT AND CUSTOMER $!= ""')
   .dependencies().join(' '));
+// EXAMPLE-END dependencies

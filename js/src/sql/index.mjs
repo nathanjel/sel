@@ -1,6 +1,6 @@
 // SEL → SQL translation.
 //
-// The design is in `docs/SQL-TRANSLATION.md`; the dialect map format is normative
+// The design is in `docs/internals/sql-translation.md`; the dialect map format is normative
 // in `sql/MAP.md` and the error codes in `sql/errors.md`. `_map.mjs` is generated
 // from `sql/dialects/*.json` by `tools/gen-sql-map.mjs` and is the same data every
 // host consumes.
@@ -22,7 +22,7 @@ import { HybridPlan, executeHybrid, planHybrid } from './hybrid.mjs';
 export { DIALECTS, Binding, Bindings, Fragment, HybridPlan, JoinPlan, RelationalPlan, SqlError, map };
 export { executeHybrid, planHybrid };
 
-// The public interface of the SQL layer. See docs/SQL-TRANSLATION.md §10.
+// The public interface of the SQL layer. See docs/internals/sql-translation.md §10.
 export class Sql {
   // Translate a compiled program into a SQL expression for one dialect.
   //

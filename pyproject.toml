@@ -49,7 +49,7 @@ Homepage = "https://github.com/nathanjel/sel#readme"
 Repository = "https://github.com/nathanjel/sel"
 Issues = "https://github.com/nathanjel/sel/issues"
 Changelog = "https://github.com/nathanjel/sel/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/nathanjel/sel/blob/main/docs/LANGUAGE.md"
+Documentation = "https://github.com/nathanjel/sel/blob/main/docs/README.md"
 
 # Installs a `sel` command, the same name the npm package installs. `python -m sel`
 # always works and is the spelling to prefer if both are on one machine.
@@ -74,11 +74,27 @@ packages = ["python/sel"]
 # which is the only reason this was ever noticed.
 include = [
     "/python/",
-    "/docs/LANGUAGE.md",
-    "/docs/BUILTINS.md",
-    "/docs/LIMITS.md",
-    "/docs/SQL-TRANSLATION.md",
-    "/docs/SQL-KINDS.md",
+    "/docs/README.md",
+    "/docs/overview.md",
+    "/docs/parity.md",
+    "/docs/syntax.md",
+    "/docs/operators.md",
+    "/docs/functions.md",
+    "/docs/sql.md",
+    "/docs/extending.md",
+    "/docs/usage/README.md",
+    "/docs/usage/repl.md",
+    "/docs/usage/validation.md",
+    "/docs/usage/scripting.md",
+    "/docs/usage/sql-conditions.md",
+    "/docs/usage/sql-pipelines.md",
+    "/docs/usage/sql-star.md",
+    "/docs/usage/sql-eav.md",
+    "/docs/usage/sql-3nf.md",
+    "/docs/usage/sql-flat.md",
+    "/docs/usage/in-memory.md",
+    "/docs/reference/builtins.md",
+    "/docs/reference/limits.md",
     "/spec/",
     "/conformance/",
     "/examples/order-validation.sel",

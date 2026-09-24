@@ -20,7 +20,7 @@ postgresql
 ### name: pg.num.division-is-numeric
 --- note
 / between two integers TRUNCATES in PostgreSQL -- 10 / 4 is 2 -- which is a
-different operation rather than an imprecise one. docs/SQL-TRANSLATION.md §11
+different operation rather than an imprecise one. docs/internals/sql-translation.md §11
 predicted this from the manual at M1 and it is now measured. What is left after
 the cast is scale: 2.5000000000000000 against SEL's ten digits.
 --- dialect

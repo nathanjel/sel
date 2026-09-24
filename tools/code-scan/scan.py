@@ -42,6 +42,6 @@ for lane,files in lanes.items():
  report['lanes'][lane]=dict(files=len(files),lines=sum(len(t.splitlines()) for t in texts.values()),generated_excluded=generated,
        single_reference_declarations=candidates,unused_import_candidates=imports,duplicate_windows=clones,
        source_sha256={f:hashlib.sha256(t.encode()).hexdigest() for f,t in texts.items()})
-out=ROOT/'docs/interim/code-scan/scan.json';out.write_text(json.dumps(report,indent=2)+'\n')
+out=ROOT/'tools/code-scan/results/scan.json';out.write_text(json.dumps(report,indent=2)+'\n')
 for lane,d in report['lanes'].items():
  print(lane,d['files'],'files',len(d['single_reference_declarations']),'single-reference declarations',len(d['unused_import_candidates']),'import candidates',len(d['duplicate_windows']),'clone groups')

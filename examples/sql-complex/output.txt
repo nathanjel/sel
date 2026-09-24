@@ -1,0 +1,14 @@
+1. the report, planned for PostgreSQL
+   plan        pure_memory
+   reads       events, tickets, customers, sla, teams
+2. so SQL only loads the tables it reads
+   CUSTOMERS    12 rows  SELECT "c".* FROM "customers" "c" ORDER BY "c"."customer_id" ASC
+   EVENTS      168 rows  SELECT "e".* FROM "events" "e" ORDER BY "e"."event_id" ASC
+   SLA           9 rows  SELECT "s".* FROM "sla" "s" ORDER BY CAST("s"."plan" AS TEXT) COLLATE "C" ASC
+   TEAMS         3 rows  SELECT "g".* FROM "teams" "g" ORDER BY "g"."team_id" ASC
+   TICKETS      48 rows  SELECT "t".* FROM "tickets" "t" ORDER BY "t"."ticket_id" ASC
+3. and SEL computes the report over them
+   | team=Billing  tickets=16  late=4  open=2  slowest=#39 (1104 min)  incidents=INC-4036 INC-4072 INC-4108 INC-4144
+   | team=Onboarding  tickets=16  late=8  open=2  slowest=#19 (564 min)  incidents=INC-4012 INC-4048 INC-4084 INC-4120
+   | team=Platform  tickets=16  late=9  open=2  slowest=#29 (1254 min)  incidents=INC-4024 INC-4060 INC-4096 INC-4132
+   over the generated rows: same report

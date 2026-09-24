@@ -41,5 +41,5 @@ allocator rounding and caches. These are not RSS or portable allocator metrics.
 Construction/destruction times are secondary microbenchmarks.
 
 The recorded raw-block pool experiment is preserved as a patch and measurements
-under `docs/interim/cpp-collection`; it was rejected and is **not** part of the
+under `tools/cpp-collection/results`; it was rejected and is **not** part of the
 runtime. The combined-allocation implementation has no new cache.

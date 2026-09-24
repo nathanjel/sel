@@ -6,7 +6,7 @@ Run sequentially with no competing benchmarks/builds:
 mkdir -p /tmp/sel-php-runtime/before
 git archive 6815faa | tar -x -C /tmp/sel-php-runtime/before
 python3 tools/php-runtime/compare.py \
-  --before /tmp/sel-php-runtime/before --output docs/interim/php-runtime
+  --before /tmp/sel-php-runtime/before --output tools/php-runtime/results
 ```
 
 Only `php/src/Builtins/Structure.php` changes in the measured PHP runtime.

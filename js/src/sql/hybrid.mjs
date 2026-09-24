@@ -2,7 +2,7 @@
 // maximal translatable prefix, while the normal SEL Program remains the source
 // of truth for the in-memory continuation.
 //
-// The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
+// The contract every host's planner meets is in docs/internals/sql-translation.md §12.1
 // and is pinned by sql/cases/25-hybrid-plans.sqlt. Three parts of it are easy
 // to get wrong and were:
 //

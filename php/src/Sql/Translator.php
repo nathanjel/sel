@@ -234,7 +234,7 @@ final class Translator
     }
 
     /**
-     * Every literal becomes a parameter slot; §9 of docs/SQL-TRANSLATION.md.
+     * Every literal becomes a parameter slot; §9 of docs/internals/sql-translation.md.
      *
      * $kind is both the static kind the expression has and the form the literal
      * is written in, and the two are the same thing only because this is where
@@ -1109,7 +1109,7 @@ final class Translator
         return new Fragment($parts, self::unify($results, $n['pos']), $this->dialect);
     }
 
-    // --- aggregates: docs/SQL-TRANSLATION.md §7 -----------------------------
+    // --- aggregates: docs/internals/sql-translation.md §7 -----------------------------
     //
     // Lowering runs inside this walk rather than as an AST pass before it. Two
     // of the three shapes have to render — a relation becomes a subquery, which
@@ -1455,7 +1455,7 @@ final class Translator
                 . 'FILTER, which only decides whether an element takes part, MAP '
                 . 'changes what the element is, so the two binders mean different '
                 . 'things and binding both to one element is not enough. See '
-                . 'docs/SQL-TRANSLATION.md §7.5', $src['pos']);
+                . 'docs/internals/sql-translation.md §7.5', $src['pos']);
         }
 
         // Built by a helper rather than by `+`: PHP's array union keeps the
@@ -2452,7 +2452,7 @@ final class Translator
      * instead. Nor can it be wrapped, because no dialect can ask "is this a
      * boolean" -- in the MySQL family a boolean IS a TINYINT, so testing
      * IN (0, 1) would also admit a NUM column SEL refuses. Refusing is the only
-     * answer that keeps the warrant; see docs/SQL-KINDS.md.
+     * answer that keeps the warrant; see docs/internals/sql-kinds.md.
      *
      * @param array{line:int,col:int,offset:int} $pos
      */
@@ -2479,7 +2479,7 @@ final class Translator
      * `SUM(ITEMS, _["QTY"])` over an undeclared field emits SUM(`qty`) while
      * SEL raises E_NOT_NUM for a non-numeric element.
      *
-     * That is the "bare aggregate body" row of docs/SQL-KINDS.md §4, recorded
+     * That is the "bare aggregate body" row of docs/internals/sql-kinds.md §4, recorded
      * there with the function arguments it belongs with. `_["QTY"] * 1` is the
      * workaround: it is value-preserving in SEL and puts the operand through
      * binary(), where the guard does see it.

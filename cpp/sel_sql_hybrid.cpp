@@ -1,6 +1,6 @@
 // Maximal SQL-prefix planner for relational SEL pipelines.
 //
-// The contract every host's planner meets is in docs/SQL-TRANSLATION.md §12.1
+// The contract every host's planner meets is in docs/internals/sql-translation.md §12.1
 // and is pinned by sql/cases/25-hybrid-plans.sqlt. Three parts of it were wrong
 // here: the planner unwound the RAW tree, so `X = ORDERS; X .> TAKE(1)` -- a
 // seq, not a pipeline -- was classified as pure memory where the three hosts

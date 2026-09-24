@@ -239,4 +239,15 @@ final class Sel
     {
         return Registry::names();
     }
+
+    /**
+     * Adds an application's own strict function (spec/SPEC.md §8.1); register
+     * it before compiling a program that calls it.
+     *
+     * @param callable(Args): Value $fn
+     */
+    public static function registerFunction(string $name, int $min, int $max, callable $fn): void
+    {
+        Registry::registerFunction($name, $min, $max, $fn);
+    }
 }

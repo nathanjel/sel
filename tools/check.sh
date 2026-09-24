@@ -202,6 +202,14 @@ step "host SQL API parity" ./tools/check-sqlapi.sh
 step "documentation examples" ./tools/check-docs.sh
 step "worked examples, every host" ./tools/check-examples.sh
 step "documentation quotes" sel_slot ./tools/check-snippets.py
+# The site's build without its output: every page in docs/nav.json renders, and
+# every relative link and #anchor in the Markdown resolves -- on GitHub as much
+# as in the site.
+step "documentation links" sel_slot node tools/build-docs.mjs --check
+# The SQL examples the documentation quotes, in all five hosts against real
+# PostgreSQL, MariaDB and SQLite, in tools/usage.Dockerfile's image (built on
+# first use). Its own servers, so it needs no share of the db lock.
+step "usage examples, real databases" ./tools/check-usage.sh
 step "decimal vs python oracle" ./tools/check-decimal.sh "${DECIMAL_COUNT:-4000}"
 step "end to end, every host API" ./tools/e2e.sh
 step "differential fuzz" ./tools/fuzz.sh "${FUZZ_COUNT:-4000}" "${FUZZ_SEED:-20260813}"

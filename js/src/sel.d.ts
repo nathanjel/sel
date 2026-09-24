@@ -153,3 +153,22 @@ export function register(
 ): any;
 export function register(spec: BuiltinSpec): any;
 export const registerBuiltin: typeof register;
+
+/** The argument accessor a host function receives (spec/SPEC.md §8.1). */
+export interface HostArgs {
+  count(): number;
+  val(i: number): Value;
+  text(i: number): string;
+  bool(i: number): boolean;
+  int(i: number): number;
+  nonNegInt(i: number): number;
+  posOf(i: number): { line: number; col: number; offset: number };
+}
+
+/** Adds an application's own strict function; register before compiling a caller. */
+export function registerFunction(
+  name: string,
+  min: number,
+  max: number,
+  fn: (args: HostArgs) => Value
+): void;

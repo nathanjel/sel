@@ -568,7 +568,7 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
         // an outcome the corpus NAMED. Counting refusals silently made this
         // whole oracle unfailable: a translator that refused every rule scored
         // "0 agree, 0 differ, 13 refused" and returned green, which is
-        // docs/history/SQL-TESTING.md's Class G in the one lane meant to be
+        // the retired SQL-TESTING analysis (git history)'s Class G in the one lane meant to be
         // beyond it. `refuse` is per dialect because refusal is: the same rule
         // translates on mariadb and cannot on sqlite, and that difference is
         // the thing worth asserting.
@@ -606,7 +606,7 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
             continue;
         }
 
-        // A row SEL REFUSES is the whole subject of docs/SQL-KINDS.md, and until
+        // A row SEL REFUSES is the whole subject of docs/internals/sql-kinds.md, and until
         // this loop caught SelError there was no way to write one down: an
         // E_NOT_NUM here aborted the run with an uncaught exception, so every
         // rule in the corpus had to be one SEL could answer for every row. That
@@ -666,7 +666,7 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
             if (!isset($rule['excluded'])) {
                 $bad[] = [$rule['name'], $sql,
                     '"database" states an answer that differs from SEL, which only '
-                    . 'docs/SQL-KINDS.md §6 permits -- name the exclusion in "excluded"'];
+                    . 'docs/internals/sql-kinds.md §6 permits -- name the exclusion in "excluded"'];
                 continue;
             }
             $want = $rule['database'];

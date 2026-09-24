@@ -13,8 +13,7 @@
 # pure memory because they unwound the raw AST before normalising it, three
 # hosts reported the SEL binding NAME where the fourth reported the table, and
 # Lisp had no source-table field at all. All 801 language cases were green
-# throughout. docs/interim/sel_cross_language_code_review_remediation_plan.md
-# is the review; docs/SQL-TRANSLATION.md §12.1 is the contract these pin.
+# throughout. The review itself lives in the git history; docs/internals/sql-translation.md §12.1 is the contract these pin.
 
 ### name: plan.pure-sql.direct
 --- dialect
@@ -1714,7 +1713,7 @@ SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WH
 ===
 ### name: plan.bindings.correlated-relation-only-in-the-continuation
 --- note
-The decision (docs/SQL-TRANSLATION.md §12.1): a hybrid plan's tables are what
+The decision (docs/internals/sql-translation.md §12.1): a hybrid plan's tables are what
 its prefix reads. ITEMS is read only after the split, by the continuation,
 from the caller's context at run time -- as run() would -- so it is not a
 physical source of this plan.

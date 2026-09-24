@@ -1,0 +1,31 @@
+1. a rule set
+   accept: 81.16
+2. aggregates
+   lines        => 3
+   net          => 65.98
+   all in stock => TRUE
+   any > 10     => TRUE
+   dearest      => 19.99
+3. map and filter
+   skus         => AB-1234, CD-5678, EF-9012
+   bulk keys    => 1,3
+   keyed        => -{"1"=t"1:AB-1234", "2"=t"3:EF-9012"}
+4. named binders
+   all positive
+5. text and regex
+   upper        => ZAżółć GęśLą
+   initials     => Z.G
+   postcode     => ok
+   area         => 31
+   padded       => 003
+6. presence
+   HAS SKU      => TRUE
+   HAS NOTE     => FALSE
+   missing      => E_NO_KEY at 1:9
+7. business refusal
+   under limit => ok
+   over limit  => E_ABORT: over credit limit
+   blank name  => E_ABORT: customer required
+8. error positions
+   E_NOT_NUM at 1:15  1 + ROUND(2 + "x", 2)
+   E_NO_KEY at 1:24  SUM(ITEMS, _["QTY"] * _["NOPE"])

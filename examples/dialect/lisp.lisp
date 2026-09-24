@@ -52,6 +52,7 @@
       ;; never half-applies.
 
       (format t "2. a flavour of your own~%")
+      ;; EXAMPLE-BEGIN flavour
       (sel.sql:define-dialect "pg-libpq"
         ;; :TARGET T because a base is not a target; this is a server. The
         ;; lexical map is keyed by strings, which are the map document's own
@@ -64,6 +65,7 @@
       (format t "   chain        => ~{~a~^ -> ~}~%" (sel.sql:dialect-chain "pg-libpq"))
       (format t "   base         => ~a~%" (sql-in "postgresql"))
       (format t "   pg-libpq     => ~a~%" (sql-in "pg-libpq"))
+      ;; EXAMPLE-END flavour
 
       ;; 3 — spelling one function differently ---------------------------------
       ;; {*} is every argument; {0}, {1} pick them out. Note the slots are
@@ -78,11 +80,13 @@
       ;; here is keyed by.
 
       (format t "3. one function, respelled~%")
+      ;; EXAMPLE-BEGIN respell
       (sel.sql:define-entry "pg-libpq" :funcs "UPPER"
                             '(:tpl "UPPER({0} COLLATE \"C\")" :ret "TEXT"))
       (format t "   upper        => ~a~%"
               (sel.sql:as-value
                (sel.sql:translate (sel:compile-source "UPPER(NAME)") "pg-libpq" bindings)))
+      ;; EXAMPLE-END respell
 
       ;; 4 — withdrawing what a deployment does not have ------------------------
       ;; A NIL entry withdraws it. This is not the same as leaving it unmapped:
@@ -90,6 +94,7 @@
       ;; emitted against a function the server does not have.
 
       (format t "4. withdrawing an entry~%")
+      ;; EXAMPLE-BEGIN withdraw
       (sel.sql:define-entry "pg-libpq" :funcs "RMATCH" nil)
       (let ((re (sel:compile-source "RMATCH('^a', NAME)")))
         (format t "   postgresql   => ~a~%"
@@ -98,6 +103,7 @@
         (format t "   pg-libpq     => ~a~%"
                 (if (null (sel.sql:try-translate re "pg-libpq" bindings))
                     "refused" "translated")))
+      ;; EXAMPLE-END withdraw
 
       ;; 5 — a builder, for what a template cannot say --------------------------
       ;; The escape hatch. It receives the emitter and the already-rendered
@@ -118,6 +124,7 @@
       ;; returns one has to reach for the internal name.
 
       (format t "5. a builder~%")
+      ;; EXAMPLE-BEGIN builder
       (sel.sql:define-builder
        "pg-libpq" :funcs "LEN"
        (lambda (dialect args pos)
@@ -129,6 +136,7 @@
       (format t "   len          => ~a~%"
               (sel.sql:as-value
                (sel.sql:translate (sel:compile-source "LEN(NAME)") "pg-libpq" bindings)))
+      ;; EXAMPLE-END builder
 
       ;; 6 — putting it back ----------------------------------------------------
       ;; MAP-RESET drops every registration and leaves the shipped map. Worth

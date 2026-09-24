@@ -6,11 +6,31 @@
 # are let back in, so a new interim note cannot reach a release by default.
 # tools/check-package-docs.sh holds all three to the same list.
 docs/**                  export-ignore
-docs/LANGUAGE.md         -export-ignore
-docs/BUILTINS.md         -export-ignore
-docs/LIMITS.md           -export-ignore
-docs/SQL-TRANSLATION.md  -export-ignore
-docs/SQL-KINDS.md        -export-ignore
+docs/README.md                -export-ignore
+docs/overview.md              -export-ignore
+docs/parity.md                -export-ignore
+docs/syntax.md                -export-ignore
+docs/operators.md             -export-ignore
+docs/functions.md             -export-ignore
+docs/sql.md                   -export-ignore
+docs/extending.md             -export-ignore
+# A directory matched by docs/** is dropped whole, so the two that hold user
+# documents are let back in; their files are still allowlisted one by one.
+docs/usage                    -export-ignore
+docs/reference                -export-ignore
+docs/usage/README.md          -export-ignore
+docs/usage/repl.md            -export-ignore
+docs/usage/validation.md      -export-ignore
+docs/usage/scripting.md       -export-ignore
+docs/usage/sql-conditions.md  -export-ignore
+docs/usage/sql-pipelines.md   -export-ignore
+docs/usage/sql-star.md        -export-ignore
+docs/usage/sql-eav.md         -export-ignore
+docs/usage/sql-3nf.md         -export-ignore
+docs/usage/sql-flat.md        -export-ignore
+docs/usage/in-memory.md       -export-ignore
+docs/reference/builtins.md    -export-ignore
+docs/reference/limits.md      -export-ignore
 
 # Maintainer and agent instructions.
 PACKAGING.md             export-ignore

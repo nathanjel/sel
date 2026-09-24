@@ -16,7 +16,7 @@
 // question to answer differently in two languages. An application whose
 // bindings come from a schema file generates these calls; SEL parses nothing.
 //
-// See docs/SQL-TRANSLATION.md §5.
+// See docs/internals/sql-translation.md §5.
 
 declare(strict_types=1);
 
@@ -61,7 +61,7 @@ final class Binding
      * column's index. Declaring NUM is what buys the plain comparison back, and
      * it is the only thing that does.
      *
-     * Bare in exactly two places, both recorded in docs/SQL-KINDS.md §4: a
+     * Bare in exactly two places, both recorded in docs/internals/sql-kinds.md §4: a
      * numeric function argument, and a bare aggregate body.
      */
     public static function column($column, $table = null,

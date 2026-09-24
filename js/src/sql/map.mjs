@@ -191,7 +191,7 @@ function quotedRuns(tpl) {
 // about their own data; a wrong numericGuard is a claim about SEL's numeral
 // grammar, which the caller has no way to check and every other lexical key fails
 // loudly about. This one fails silently: it emits SQL that answers where SEL would
-// not, which is the one outcome docs/SQL-KINDS.md exists to rule out. The first
+// not, which is the one outcome docs/internals/sql-kinds.md exists to rule out. The first
 // external user of this layer registered a derived dialect on their first day,
 // overriding one lexical key. It was textCollate; it could have been this.
 //

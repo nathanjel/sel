@@ -139,3 +139,45 @@ re-trigger which rule."
 
 ;;; Every shipped builtin is loaded by now; the manifest must not name one more.
 (assert-builtin-manifest-covered)
+
+;;; --- host functions (spec/SPEC.md §8.1) --------------------------------------
+
+;;; Names registered through REGISTER-FUNCTION, which alone may be replaced.
+(defvar *host-functions* (make-hash-table :test #'equal))
+
+(defun host-function-name-p (name)
+  (and (stringp name)
+       (plusp (length name))
+       (let ((c (char name 0))) (or (char<= #\A c #\Z) (char<= #\a c #\z)))
+       (every (lambda (c) (or (char<= #\A c #\Z) (char<= #\a c #\z) (char<= #\0 c #\9) (char= c #\_)))
+              name)))
+
+(defun register-function (name min max fn)
+  "Add an application's own strict function, callable from programs compiled
+afterwards. FN receives the argument accessor (ARGS-COUNT, ARGS-VAL, ARGS-TEXT,
+ARGS-BOOL, ARGS-INT, ARGS-NON-NEG-INT, ARGS-POS-OF) and returns a new VALUE. A
+host function adds to the language and never changes it: a malformed or
+reserved name, a builtin's name or an arity outside 0 <= MIN <= MAX signals a
+plain ERROR, not a SEL-ERROR. Registering a host function's name again replaces
+it."
+  (unless (host-function-name-p name)
+    (error "SEL function name must be ASCII letters, digits and _, starting with a letter: ~s" name))
+  (let ((upper (string-upcase name)))
+    (when (reservedp upper)
+      (error "~a is a reserved word" upper))
+    (when (and (gethash upper *registry*) (not (gethash upper *host-functions*)))
+      (error "~a is a builtin; a host function cannot replace it" upper))
+    (unless (and (integerp min) (integerp max) (<= 0 min max))
+      (error "SEL function ~a: arity must be whole numbers with 0 <= min <= max" upper))
+    (unless (functionp fn)
+      (error "SEL function ~a: fn is not a function" upper))
+    (setf (gethash upper *registry*)
+          (make-spec upper min max nil nil nil
+                     (lambda (a ctx)
+                       (declare (ignore ctx))
+                       (let ((result (funcall fn a)))
+                         (unless (value-p result)
+                           (error "SEL function ~a returned ~s, not a VALUE" upper result))
+                         result))))
+    (setf (gethash upper *host-functions*) t)
+    upper))

@@ -634,7 +634,7 @@ E_SQL_SHAPE 1:39
 ===
 ### name: stmt.bucket.refuse-max-over-the-group
 --- note
-MIN and MAX are variadic scalars in SEL (docs/LANGUAGE.md); `MAX(_, body)`
+MIN and MAX are variadic scalars in SEL (docs/functions.md); `MAX(_, body)`
 over a group is not a form SEL has -- it indexes the list and raises -- and
 the per-group MIN/MAX/AVG arm that rendered it as `MAX(amount)` is gone.
 The refusal is at the group binder, the first thing the scalar MAX cannot

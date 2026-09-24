@@ -4,6 +4,7 @@ unknown names and wrong argument counts be caught at compile time.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -11,6 +12,10 @@ from ._builtin_manifest import BUILTIN_MANIFEST, BINDING_FORMS
 from .lexer import ascii_upper
 
 INF = float('inf')
+
+# spec/SPEC.md §8.1: an identifier that starts with a letter. Checked with
+# fullmatch, because `$` also matches before a trailing newline.
+_HOST_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_]*', re.ASCII)
 
 
 @dataclass(slots=True)
@@ -124,6 +129,45 @@ def assert_manifest_covered() -> None:
     missing = [name for name in BUILTIN_MANIFEST if name not in _table]
     if missing:
         raise RuntimeError('spec/builtins.json names builtins this host never defined: ' + ', '.join(missing))
+
+
+# Names registered through register_function(), which alone may be replaced.
+_host: set[str] = set()
+
+
+def register_function(name: str, min: int, max: int,   # noqa: A002
+                      fn: Callable[[Any], Any]) -> None:
+    """An application's own strict function (spec/SPEC.md §8.1).
+
+    It adds to the language and never changes it: a builtin's name or a
+    reserved word is refused, and re-registering a host function replaces it.
+    A bad registration is a programming error, so it raises ValueError or
+    TypeError rather than SelError.
+    """
+    from .lexer import RESERVED
+    from .value import Value
+    if not isinstance(name, str) or not _HOST_NAME.fullmatch(name):
+        raise ValueError(f'SEL function name must be ASCII letters, digits and _, '
+                         f'starting with a letter: {name!r}')
+    key = ascii_upper(name)
+    if key in RESERVED:
+        raise ValueError(f'{key} is a reserved word')
+    if key in _table and key not in _host:
+        raise ValueError(f'{key} is a builtin; a host function cannot replace it')
+    if (type(min) is not int or type(max) is not int  # noqa: E721 - bool is not an arity
+            or min < 0 or max < min):
+        raise ValueError(f'SEL function {key}: arity must be whole numbers with 0 <= min <= max')
+    if not callable(fn):
+        raise TypeError(f'SEL function {key}: fn is not callable')
+
+    def call(args, ctx):   # noqa: ARG001 - a host function sees the arguments only
+        result = fn(args)
+        if not isinstance(result, Value):
+            raise TypeError(f'SEL function {key} returned {type(result).__name__}, not a Value')
+        return result
+
+    _table[key] = Spec(name=key, min=min, max=max, fn=call)
+    _host.add(key)
 
 
 def lookup(name: str) -> Spec | None:

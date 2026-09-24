@@ -37,10 +37,20 @@ if [ -z "$IMPLS" ]; then
 fi
 
 status=0
+# Not a category: examples/lib holds what the categories share (LIBRARY), and a
+# LIVE category needs database servers, which tools/check-usage.sh provides.
+skipped() {
+  [ -f "examples/$1/REFERENCE" ] || [ -f "examples/$1/LIVE" ] || [ -f "examples/$1/LIBRARY" ]
+}
+
 for cat in $CATEGORIES; do
-  [ -d "examples/$cat" ] && [ ! -f "examples/$cat/REFERENCE" ] || continue
+  [ -d "examples/$cat" ] && ! skipped "$cat" || continue
+  # An example that reads standard input is fed its session.txt; every other
+  # one gets an empty stdin, so none can hang waiting for a terminal.
+  input=/dev/null
+  [ -f "examples/$cat/session.txt" ] && input="examples/$cat/session.txt"
   for impl in $IMPLS; do
-    { sel_slot impl_example "$impl" "$cat" > "$WORK/$cat.$impl" 2> "$WORK/$cat.$impl.err"
+    { sel_slot impl_example "$impl" "$cat" < "$input" > "$WORK/$cat.$impl" 2> "$WORK/$cat.$impl.err"
       echo $? > "$WORK/$cat.$impl.rc"; } &
   done
 done
@@ -63,6 +73,11 @@ for cat in $CATEGORIES; do
            "$cat" "$(head -1 "examples/$cat/REFERENCE")"
     continue
   fi
+  if [ -f "examples/$cat/LIVE" ]; then
+    printf 'examples: %-10s needs databases, run by tools/check-usage.sh\n' "$cat"
+    continue
+  fi
+  [ -f "examples/$cat/LIBRARY" ] && continue
 
   # The reference is the first available host. Which one it is does not matter:
   # every other is diffed against it, so any disagreement is reported whichever
@@ -96,6 +111,14 @@ for cat in $CATEGORIES; do
   # it must never pass.
   if [ -n "$ref" ] && [ ! -s "$WORK/$cat.$ref" ]; then
     printf 'FAIL %s: %s printed nothing\n' "$cat" "$ref"
+    status=1
+  fi
+  # output.txt is the transcript the documentation quotes, so it is held to what
+  # the hosts print: agreeing with each other is not enough if all five changed.
+  if [ -n "$ref" ] && [ -f "examples/$cat/output.txt" ] \
+     && ! diff -u "examples/$cat/output.txt" "$WORK/$cat.$ref" > "$WORK/$cat.output.diff"; then
+    printf 'FAIL %s: the hosts no longer print examples/%s/output.txt (--- recorded, +++ %s)\n' "$cat" "$cat" "$ref"
+    sed 's/^/       /' "$WORK/$cat.output.diff" | head -20
     status=1
   fi
 

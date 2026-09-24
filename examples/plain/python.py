@@ -30,18 +30,19 @@ print('   2.50 + 2.50 =>', evaluate('2.50 + 2.50').as_text())
 # form you compile each rule once and keep it.
 
 print('2. compile once, run many')
-# EXAMPLE-BEGIN
+# EXAMPLE-BEGIN compile
 rule = compile('IF(QTY * PRICE > LIMIT, "over budget", "ok")')
 for row in [{'QTY': '3', 'PRICE': '19.99'}, {'QTY': '1', 'PRICE': '5.00'}]:
     ctx = Value.from_native({**row, 'LIMIT': '50.00'})
     print(f"   QTY={row['QTY']} PRICE={row['PRICE']} =>", rule.run(ctx).as_text())
-# EXAMPLE-END
+# EXAMPLE-END compile
 
 # 3 - building a context --------------------------------------------------------
 # Pass money as *strings*. A Python float has already lost the exactness SEL
 # exists to preserve, and from_native refuses one rather than pretend otherwise.
 
 print('3. structured context')
+# EXAMPLE-BEGIN context
 order = Value.from_native({
     'CUSTOMER': 'Zażółć',
     'ITEMS': [                                    # a list is a 1-based SEL list
@@ -52,6 +53,7 @@ order = Value.from_native({
 print('   first SKU =>', compile('ITEMS[1]["SKU"]').run(order).as_text())
 print('   total     =>', compile('SUM(ITEMS, _["QTY"] * _["PRICE"])').run(order).as_text())
 print('   0.10+0.20 =>', evaluate('0.10 + 0.20').as_text())
+# EXAMPLE-END context
 
 # 4 - reading results back -------------------------------------------------------
 # A result is a Value: a scalar, children, both or neither.
@@ -70,27 +72,33 @@ print('   bool   =>', 'TRUE' if evaluate('1 < 2').as_bool() else 'FALSE')
 # 5 - the context is mutated, so rules hand values back --------------------------
 
 print('5. variables the rule set')
+# EXAMPLE-BEGIN variables
 ctx = Value.from_native({'QTY': '3', 'PRICE': '19.99'})
 compile('NET = QTY * PRICE; VAT = ROUND(NET * 0.23, 2); GROSS = NET + VAT').run(ctx)
 for name in ['NET', 'VAT', 'GROSS']:
     print(f'   {name:<5} =>', ctx.get(name).as_text())
+# EXAMPLE-END variables
 
 # 6 - errors ----------------------------------------------------------------------
 # Every failure carries a stable code and the position of the node that actually
 # failed. Assert on .code, never on the message.
 
 print('6. errors')
+# EXAMPLE-BEGIN errors
 for src in ['3 + "A"', 'NOSUCH(1)', 'IF(1, "a", "b")', 'ABORT("no stock")']:
     try:
         evaluate(src)
         print(f'   {src:<17} => no error')
     except SelError as e:
         print(f'   {src:<17} => {e.code} at {e.line}:{e.col}')
+# EXAMPLE-END errors
 
 # 7 - which fields does this rule read? -------------------------------------------
 # Found statically, without running it. Wire these to your input listeners and
 # re-validation is free.
 
 print('7. dependencies')
+# EXAMPLE-BEGIN dependencies
 print('  ', ' '.join(
     compile('T = SUM(ITEMS, _["QTY"]); T > LIMIT AND CUSTOMER $!= ""').dependencies()))
+# EXAMPLE-END dependencies

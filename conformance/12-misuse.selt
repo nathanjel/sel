@@ -2,7 +2,7 @@
 %
 % Arity lives in 11-arity.selt; this file is everything else you can do wrong.
 % It is organised by the Args accessor that rejects the argument, because that is
-% the layer the error actually comes from — see docs/EXTENDING.md, "The Args API".
+% the layer the error actually comes from — see docs/contributing.md, "The Args API".
 %
 % Every case pins `at line:col`. The position is the promise: spec/errors.md says
 % an error is raised at the innermost point of failure, so a bad argument must

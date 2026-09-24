@@ -4,7 +4,7 @@ Writes experimental sources only under /tmp; never changes repository runtime.
 """
 import difflib,json,os,shutil,subprocess
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2];BASE=Path('/tmp/sel-commit-benchmark');OUT=ROOT/'docs/interim/commit-benchmark'
+ROOT=Path(__file__).resolve().parents[2];BASE=Path('/tmp/sel-commit-benchmark');OUT=ROOT/'tools/commit-benchmark/results'
 variants=['inline-collection','inline-decimal']
 for variant in variants:
  tree=BASE/variant

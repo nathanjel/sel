@@ -61,6 +61,16 @@
    #:function-names
    #:define-builtin
    #:register-builtin
+   ;; Host functions (spec/SPEC.md §8.1) and the accessor they are handed.
+   #:register-function
+   #:args-count
+   #:args-val
+   #:args-text
+   #:args-bool
+   #:args-int
+   #:args-non-neg-int
+   #:args-pos-of
+   #:fail
    #:optimize-ast
    #:optimize-ast-logical
    #:optimize-ast-in-memory))

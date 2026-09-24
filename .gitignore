@@ -3,6 +3,7 @@
 
 # --- C++
 cpp/build/
+cpp/build-usage/
 *.o
 *.a
 *.so
@@ -104,3 +105,15 @@ dist/python/
 
 # Scale-test generated large datasets (>50MB)
 tools/scale-test/*-100x*
+# Results of the measurement and audit tools; each tool regenerates its own
+# (their published runs are in the git history).
+tools/*/results/
+tools/adversarial/*.json
+tools/adversarial/replay-*.sel
+tools/adversarial/local.selc
+tools/scale-test/benchmark_results_corrected.json
+
+# The documentation site (node tools/build-docs.mjs) and the C++ build the
+# database-backed examples use inside tools/usage.Dockerfile's image.
+/site/
+cpp/build-usage/

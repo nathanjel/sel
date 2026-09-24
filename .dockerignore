@@ -1,0 +1,12 @@
+# For docs/Dockerfile, whose context is the repository root. Build output, caches
+# and dependencies stay out; the sources the documentation links to go in.
+.git
+node_modules
+site
+dist
+cpp/build
+cpp/build-usage
+**/__pycache__
+**/.venv*
+tools/scale-test/*.json
+tools/scale-test/*.sql

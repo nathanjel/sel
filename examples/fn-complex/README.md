@@ -36,4 +36,4 @@ strict lane is the default:
    is genuinely empty. The second is what `FILTER` returns when nothing matched.
 
 The smallest lazy function is `IF`, which is why `IF` needs no syntax — see
-[docs/EXTENDING.md](../../docs/EXTENDING.md#lane-b--a-lazy-ast-function).
+[docs/contributing.md](../../docs/contributing.md#lane-b--a-lazy-ast-function).

@@ -4,6 +4,9 @@
 #   make test     unit tests, then the conformance suite
 #   make asan     the same, plus the SQL suite and SQL unit, under the address,
 #                 leak and undefined-behaviour sanitizers
+#   make BUILD=build-usage build-usage/example-sql-star
+#                 one database-backed example, which also needs libpq,
+#                 libmariadb and libsqlite3 -- not part of `make` (DB_EXAMPLES)
 #
 # The drop-in is sel.hpp + sel.cpp + sel_ast.hpp + third_party/srell/. Everything
 # under bin/ and tests/ is this repository's harness, not part of what you copy.
@@ -45,7 +48,7 @@ SCALETOOLS := scale-bench
 # the C++ member of a set whose whole promise is that all five hosts print the
 # same thing, so they sit beside their four siblings rather than under bin/.
 # In the default target for the same reason `unit` is, below.
-EXAMPLES := plain complex
+EXAMPLES := plain complex repl validation scripting
 # The same, for an example that also uses the SEL->SQL layer and so needs
 # $(SQL_OBJS) on the link line. A second list rather than a longer $(EXAMPLES),
 # for the reason LINKED and INTERNAL are two lists: the plain example rule links
@@ -53,7 +56,20 @@ EXAMPLES := plain complex
 # sel.hpp and the evaluator" a checked claim instead of a comment. Folding sql
 # into that rule would link the SQL objects into plain and complex too and
 # quietly retire the check.
-SQL_EXAMPLES := sql dialect
+#
+# memory-complex is here too: it plans for MariaDB and renders rows through
+# ../examples/lib/db.hpp, but never connects, and render() is defined in that
+# header -- so it links no database client, and saying so is this list's job.
+SQL_EXAMPLES := sql dialect memory-complex
+# The examples that talk to a real database (the categories with a LIVE marker).
+# They link ../examples/lib/db.cpp and the three client libraries, which a
+# development box is not expected to carry -- so they are NOT in the default
+# target. tools/check-usage.sh builds them inside tools/usage.Dockerfile's image,
+# into a directory of their own:
+#
+#   make BUILD=build-usage build-usage/example-sql-star
+DB_EXAMPLES := sql-conditions sql-star sql-eav sql-3nf sql-flat sql-complex
+DB_LIBS     := -lpq -lmariadb -lsqlite3
 EXAMPLE_BINS := $(addprefix $(BUILD)/example-,$(EXAMPLES)) \
                 $(addprefix $(BUILD)/example-,$(SQL_EXAMPLES))
 
@@ -89,6 +105,18 @@ $(addprefix $(BUILD)/example-,$(EXAMPLES)): $(BUILD)/example-%: ../examples/%/cp
 # because $(SQL_OBJS) depend on all of them and this rule depends on those.
 $(addprefix $(BUILD)/example-,$(SQL_EXAMPLES)): $(BUILD)/example-%: ../examples/%/cpp.cpp sel.hpp sel_sql.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS) $(BUILD)/sel.o
+
+# The one that also includes the database helper's header, for render().
+$(BUILD)/example-memory-complex: ../examples/lib/db.hpp
+
+# db.o is compiled on its own rather than on each example's line, so the six
+# share one compile of the driver code -- and it lives in $(BUILD), so the
+# image's build-usage/ never picks up an object from the host's compiler.
+$(BUILD)/db.o: ../examples/lib/db.cpp ../examples/lib/db.hpp sel.hpp sel_sql.hpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(addprefix $(BUILD)/example-,$(DB_EXAMPLES)): $(BUILD)/example-%: ../examples/%/cpp.cpp ../examples/lib/db.hpp sel.hpp sel_sql.hpp $(BUILD)/db.o $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(BUILD)/db.o $(SQL_OBJS) $(BUILD)/sel.o $(DB_LIBS)
 
 $(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

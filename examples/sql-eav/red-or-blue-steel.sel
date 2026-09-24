@@ -1,0 +1,8 @@
+# Products whose colour is red or blue and whose material is steel.
+PRODUCTS
+  .> FILTER(P, ANY(ATTRS, A, A["entity_id"] == P["id"]
+                   AND A["name"] $== "color" AND A["value"] IN ("red", "blue")))
+  .> FILTER(P, ANY(ATTRS, A, A["entity_id"] == P["id"]
+                   AND A["name"] $== "material" AND A["value"] $== "steel"))
+  .> MAP(RECORD("id", _["id"], "sku", _["sku"]))
+  .> SORT_BY(_["id"])

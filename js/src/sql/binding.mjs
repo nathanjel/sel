@@ -20,7 +20,7 @@
 // with the same code, everywhere — and `SqlError` is the class an application
 // catches, where a `TypeError` is not.
 //
-// See docs/SQL-TRANSLATION.md §5.
+// See docs/internals/sql-translation.md §5.
 
 import * as D from '../decimal.mjs';
 import { asciiUpper } from '../lexer.mjs';

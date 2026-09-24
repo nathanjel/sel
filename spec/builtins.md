@@ -23,9 +23,9 @@ each host's `builtins/`; custom host registration (`register`, `register_builtin
 | `arity.allowed` | the exact counts accepted inside the range (`[3, 5]`), when not every count in it is |
 | `arity.parity` | `"odd"` or `"even"`: every count in the range with that parity |
 | `arity.message` | the E_ARITY message for a count the extra rule refuses; `{count}` is the count. Required with `allowed`/`parity`, forbidden without |
-| `lazy` | receives argument nodes, not values (§7.1, Lane B in `docs/EXTENDING.md`) |
+| `lazy` | receives argument nodes, not values (§7.1, Lane B in `docs/contributing.md`) |
 | `binds` | introduces an element binder (implies `lazy`) |
-| `signatures` | the forms as `spec/SPEC.md` writes them, for the generated `docs/BUILTINS.md` |
+| `signatures` | the forms as `spec/SPEC.md` writes them, for the generated `docs/reference/builtins.md` |
 | `spec` | the section of `spec/SPEC.md` that defines it |
 
 What each host does with it, at startup and natively — no JSON is read at run
@@ -39,7 +39,7 @@ start with a manifest name it never defined. A host therefore cannot drift
 from this file; it can only fail to load.
 
 Adding a builtin: add its entry here, run `node tools/gen-builtins.mjs`, commit
-the five renderings and `docs/BUILTINS.md` with it, then define it in every
+the five renderings and `docs/reference/builtins.md` with it, then define it in every
 host. `tools/check-generated.sh` fails while a rendering is stale.
 
 ## Binding forms

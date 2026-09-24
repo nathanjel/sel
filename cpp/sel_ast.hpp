@@ -50,6 +50,8 @@ struct Spec {
   // count is wrong and an empty string when it is fine.
   std::string (*arity_error)(int) = nullptr;
   Value (*fn)(Args&, Context&) = nullptr;
+  // Set instead of `fn` for an application's own function (spec §8.1).
+  std::shared_ptr<const HostFunction> host = nullptr;
 };
 
 enum class NT { Num, Text, Bool, Null, Var, Index, Seq, List, Un, Bin, Assign, Call };

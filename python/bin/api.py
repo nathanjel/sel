@@ -101,7 +101,7 @@ say('program.deps.excludes.binder', ' '.join(sel_compile('ALL(I, IT, IT > 0)').d
 # evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
 # dependencies() answers as if IT were bound. Pinned because all seven hosts
 # agree on it and nothing else records it -- not endorsed. See the note in
-# docs/EXTENDING.md.
+# docs/contributing.md.
 say('program.deps.grouped.binder', ' '.join(sel_compile('ALL(I, (IT), IT > 0)').dependencies()))
 # The binding forms of spec/builtins.json (see tools/api.mjs).
 say('program.deps.forms.top.binder-and-limit', ' '.join(sel_compile('TOP(L, X, X["a"], N)').dependencies()))
@@ -174,7 +174,7 @@ try:
 except SelError as e:
     say('deps.depth.over', f'{e.code} {e.line}:{e.col}')
 
-# --- the physical tree (docs/SQL-TRANSLATION.md §12.1; SEL-0044, SEL-0049).
+# --- the physical tree (docs/internals/sql-translation.md §12.1; SEL-0044, SEL-0049).
 # One tree per AST, the same whatever data ran (this host keyed it on the
 # context until SEL-0049), the AST untouched, run() the same after an explicit
 # build.
@@ -190,6 +190,56 @@ empty = Value.none()
 sel_compile('ORDERS = LIST(); CUSTOMERS = LIST(); 0').run(empty)
 join.run(empty)
 say('program.physical.independent.of.data', b(join.physical_ast() is first))
+
+# --- host functions (spec/SPEC.md §8.1). Registered before compiling, called
+# like a builtin, handed evaluated arguments and the typed readers, never
+# allowed to replace a builtin; a compiled program keeps its function.
+from sel import register_function   # noqa: E402
+
+
+def _host_join(a):
+    return Value.text('|'.join(a.text(i) for i in range(a.count())))
+
+
+def _host_check(a):
+    if a.text(0) == '':
+        raise SelError('E_BAD_ARG', 'must not be empty', a.pos_of(0))
+    return Value.bool(True)
+
+
+register_function('host_join', 1, 3, _host_join)
+register_function('HOST_CHECK', 1, 1, _host_check)
+say('host.fn.call', evaluate('HOST_JOIN("a", 1, "c")').as_text())
+say('host.fn.case', evaluate('host_join("x")').as_text())
+say('host.fn.listed', b('HOST_JOIN' in function_names()))
+say('host.fn.deps', ' '.join(sel_compile('HOST_JOIN(X, Y)').dependencies()))
+say('host.fn.order', evaluate('A = 1; HOST_JOIN((A = A + 1), (A = A * 10), A)').as_text())
+for name, src in [('host.fn.arity', 'HOST_JOIN()'), ('host.fn.type', 'HOST_JOIN("a", TRUE)'),
+                  ('host.fn.error', 'HOST_CHECK("")')]:
+    try:
+        evaluate(src)
+        say(name, 'no error')
+    except SelError as e:
+        say(name, f'{e.code} {e.line}:{e.col}')
+for name, fname, lo, hi in [('host.fn.refuse.builtin', 'len', 1, 1),
+                            ('host.fn.refuse.reserved', 'and', 1, 1),
+                            ('host.fn.refuse.underscore', '_x', 1, 1),
+                            ('host.fn.refuse.digit', '1x', 1, 1),
+                            ('host.fn.refuse.dash', 'a-b', 1, 1),
+                            ('host.fn.refuse.min-over-max', 'bad', 2, 1),
+                            ('host.fn.refuse.negative', 'bad', -1, 0)]:
+    try:
+        register_function(fname, lo, hi, lambda a: Value.text(''))
+        r = 'accepted'
+    except SelError as e:
+        r = f'SelError {e.code}'
+    except (ValueError, TypeError):
+        r = 'refused'
+    say(name, r)
+register_function('HOST_V', 0, 0, lambda a: Value.text('old'))
+early = sel_compile('HOST_V()')
+register_function('HOST_V', 0, 0, lambda a: Value.text('new'))
+say('host.fn.replace', f"{early.run().as_text()} {evaluate('HOST_V()').as_text()}")
 
 sys.stdout.reconfigure(encoding='utf-8', newline='\n')
 sys.stdout.write('\n'.join(out) + '\n')

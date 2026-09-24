@@ -7,7 +7,7 @@ import io,json,os,shutil,subprocess,sys,tarfile,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 BASE=Path('/tmp/sel-commit-benchmark')
-OUT=ROOT/'docs/interim/commit-benchmark'
+OUT=ROOT/'tools/commit-benchmark/results'
 REVS=['ef836bf','1614eed','619bc31','c5a8991']
 if '--reverse' in sys.argv: REVS.reverse()
 if '--latest-first' in sys.argv: REVS=['1614eed','619bc31','c5a8991','ef836bf']

@@ -139,6 +139,53 @@ final class Registry
     }
 
     /** @return array<string,mixed>|null */
+    /** @var array<string, true> names registered through registerFunction(), which alone may be replaced */
+    private static array $host = [];
+
+    /**
+     * An application's own strict function (spec/SPEC.md §8.1). It adds to
+     * the language and never changes it: a builtin's name or a reserved word
+     * is refused, and re-registering a host function replaces it. A bad
+     * registration is a programming error, so it throws
+     * InvalidArgumentException rather than SelError.
+     *
+     * @param callable(Args): Value $fn
+     */
+    public static function registerFunction(string $name, int $min, int $max, callable $fn): void
+    {
+        if (preg_match('/\A[A-Za-z][A-Za-z0-9_]*\z/', $name) !== 1) {
+            throw new \InvalidArgumentException(
+                "SEL function name must be ASCII letters, digits and _, starting with a letter: {$name}");
+        }
+        $key = strtoupper($name);
+        if (in_array($key, Lexer::RESERVED, true)) {
+            throw new \InvalidArgumentException("{$key} is a reserved word");
+        }
+        if (isset(self::$table[$key]) && !isset(self::$host[$key])) {
+            throw new \InvalidArgumentException("{$key} is a builtin; a host function cannot replace it");
+        }
+        if ($min < 0 || $max < $min) {
+            throw new \InvalidArgumentException("SEL function {$key}: arity must be whole numbers with 0 <= min <= max");
+        }
+        self::$table[$key] = [
+            'name' => $key,
+            'min' => $min,
+            'max' => $max,
+            'lazy' => false,
+            'binds' => false,
+            'arityError' => null,
+            'fn' => static function (Args $args) use ($fn, $key): Value {
+                $result = $fn($args);
+                if (!$result instanceof Value) {
+                    throw new \UnexpectedValueException(
+                        "SEL function {$key} returned " . get_debug_type($result) . ', not a Value');
+                }
+                return $result;
+            },
+        ];
+        self::$host[$key] = true;
+    }
+
     public static function lookup(string $name): ?array
     {
         return self::$table[strtoupper($name)] ?? null;

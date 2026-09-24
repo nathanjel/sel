@@ -1,4 +1,4 @@
-;;;; SEL -> SQL. The design is in docs/SQL-TRANSLATION.md; the dialect map
+;;;; SEL -> SQL. The design is in docs/internals/sql-translation.md; the dialect map
 ;;;; format is normative in sql/MAP.md and the error codes in sql/errors.md.
 ;;;;
 ;;;; A sibling package rather than part of #:SEL, for the reason the JS host
@@ -90,7 +90,7 @@
    #:dialects
 
    ;; Hybrid execution planner
-   ;; The plan's slots are the cross-host contract of docs/SQL-TRANSLATION.md
+   ;; The plan's slots are the cross-host contract of docs/internals/sql-translation.md
    ;; §12.1: every host exposes the same nine, under its own spelling.
    #:hybrid-plan
    #:make-hybrid-plan

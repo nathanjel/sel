@@ -33,13 +33,16 @@ tools/oracle-db.sh                                # the map, against real server
 tools/oracle-db.sh run python3 tools/mutate-sql.py # every mutation, none skipped
 tools/check-version.sh 0.8.0                      # every manifest agrees
 tools/check-package-docs.sh                       # user docs only, in every package
+tools/check-usage.sh                              # the SQL examples, every host, real servers
 ```
 
-**Only the user documentation ships.** `docs/LANGUAGE.md`, `BUILTINS.md`,
-`LIMITS.md`, `SQL-TRANSLATION.md` and `SQL-KINDS.md` go out with every package;
-the contributor guide (`EXTENDING.md`), the math-plan table (`MATH-OPS.md`),
-`docs/interim/`, `docs/worklists/`, `docs/history/`, this file and `CLAUDE.md` do
-not. Three configurations carry that list — `files` in `package.json`, the sdist
+**Only the user documentation ships.** The pages a reader of the docs is sent
+to — `docs/README.md`, the language pages (`overview`, `parity`, `syntax`,
+`operators`, `functions`), `sql.md`, `extending.md`, everything in
+`docs/usage/`, and the generated `docs/reference/` — go out with every package;
+the contributor guide (`docs/contributing.md`), the design documents in
+`docs/internals/`, the site's assets and build files, this file and `CLAUDE.md`
+do not. Three configurations carry that list — `files` in `package.json`, the sdist
 `include` in `pyproject.toml`, and `.gitattributes`' `export-ignore`, which is
 what `git archive` and so Packagist's dist and GitHub's tag tarballs honour — and
 each lists the user documents file by file, so a new note in `docs/` stays out

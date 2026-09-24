@@ -1,0 +1,67 @@
+# A support desk, generated: teams, agents, customers on three plans, SLA
+# targets per plan and priority, tickets and the replies and notes on them.
+#
+# Deterministic -- every "random" choice is arithmetic on an id -- so every
+# host builds the same data, and tools/gen-usage-seed.mjs renders exactly this
+# into examples/sql-complex/seed.postgresql.sql. examples/memory-complex runs
+# the report over this program's result; examples/sql-complex runs it over the
+# same rows loaded from PostgreSQL. Times are minutes from the start of the
+# quarter.
+#
+# The result is one record: TEAMS, AGENTS, CUSTOMERS, SLA, TICKETS, EVENTS.
+
+N_TICKETS = 48;
+IDS = SPLIT(REPEAT(",", N_TICKETS - 1), ",") .> MAP(_K);
+PLANS = LIST("free", "pro", "enterprise");
+PRIORITIES = LIST("low", "normal", "urgent");
+TOPICS = LIST("Invoice does not match the quote", "Login loops back to the start",
+              "API calls time out after deploy", "CSV export never finishes",
+              "Cannot add seats to the plan", "Webhook retries flood the endpoint");
+
+TEAMS = LIST(RECORD("team_id", 1, "team", "Billing"),
+             RECORD("team_id", 2, "team", "Platform"),
+             RECORD("team_id", 3, "team", "Onboarding"));
+
+AGENTS = LIST("Ada", "Borys", "Celia", "Dmitri", "Emre", "Fatima")
+  .> MAP(RECORD("agent_id", _K, "team_id", _K % 3 + 1, "agent", _));
+
+CUSTOMERS = LIST("Acme", "Borealis", "Cobalt", "Dunmore", "Eastlake", "Fjord",
+                 "Granite", "Halcyon", "Ivory", "Juniper", "Kestrel", "Lumen")
+  .> MAP(RECORD("customer_id", _K, "customer", _ & " Ltd", "plan", PLANS[_K * 5 % 3 + 1]));
+
+SLA = LIST();
+ALL(PLANS, P, ALL(PRIORITIES, Q, (
+  SLA[COUNT(SLA) + 1] = RECORD(
+    "plan", P, "priority", Q,
+    "respond_within", COND(Q $== "urgent", 30, Q $== "normal", 240, 1440)
+                      / COND(P $== "enterprise", 2, 1),
+    "resolve_within", COND(Q $== "urgent", 480, Q $== "normal", 2880, 7200)
+                      / COND(P $== "enterprise", 2, 1));
+  TRUE)));
+
+TICKETS = IDS .> MAP(I, RECORD(
+  "ticket_id", I,
+  "customer_id", I * 7 % 12 + 1,
+  "team_id", I * 5 % 3 + 1,
+  "priority", PRIORITIES[(I * I + 3 * I) % 3 + 1],
+  "subject", IF(I % 4 == 0, "[INC-" & (4000 + I * 3) & "] ", "") & TOPICS[I * 11 % 6 + 1],
+  "opened_at", I * 173 % 9000,
+  "closed_at", IF(I % 7 == 0, NULL, I * 173 % 9000 + (I * 89 % 40 + 1) * 60)));
+
+EVENTS = LIST();
+ALL(TICKETS, T, (
+  N = T["ticket_id"];
+  ALL(SPLIT(REPEAT(",", N % 4 + 1), ","), (
+    SEQ = _K;
+    EVENTS[COUNT(EVENTS) + 1] = RECORD(
+      "event_id", COUNT(EVENTS) + 1,
+      "ticket_id", N,
+      "seq", SEQ,
+      "at", T["opened_at"] + SEQ * (N * 37 % 300 + 5) + (N * 13 % 7) * 60 * (SEQ - 1),
+      "kind", IF((N + SEQ) % 5 == 0, "note", "reply"),
+      "actor", IF(SEQ % 2 == 1 AND N % 7 != 3, "agent:" & ((N + T["team_id"]) % 6 + 1), "customer"));
+    TRUE));
+  TRUE));
+
+RECORD("TEAMS", TEAMS, "AGENTS", AGENTS, "CUSTOMERS", CUSTOMERS, "SLA", SLA,
+       "TICKETS", TICKETS, "EVENTS", EVENTS)

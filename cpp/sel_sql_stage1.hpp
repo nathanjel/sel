@@ -38,7 +38,7 @@ namespace sel::sql {
 
 // The scalar `value` bindings, as a name set and an evaluation root.
 //
-// A value binding is a constant the translator HAS -- docs/SQL-TRANSLATION.md
+// A value binding is a constant the translator HAS -- docs/internals/sql-translation.md
 // §5.4 calls it "a constant supplied at translation time, inlined as a literal"
 // -- so `LEFT("abc", X)` with X bound to "-1" is exactly as knowable as
 // `LEFT("abc", -1)`, and before this it was exactly as wrong.

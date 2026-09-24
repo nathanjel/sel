@@ -1,0 +1,26 @@
+1. one-off
+   2.50 + 2.50 => 5.00
+2. compile once, run many
+   QTY=3 PRICE=19.99 => over budget
+   QTY=1 PRICE=5.00 => ok
+3. structured context
+   first SKU => AB-1234
+   total     => 64.98
+   0.10+0.20 => 0.30
+4. reading results
+   size   => 3
+   keys   => 1,2,3
+   [2]    => b
+   scalar => a
+   bool   => TRUE
+5. variables the rule set
+   NET   => 59.97
+   VAT   => 13.79
+   GROSS => 73.76
+6. errors
+   3 + "A"           => E_NOT_NUM at 1:5
+   NOSUCH(1)         => E_UNKNOWN_FUNC at 1:1
+   IF(1, "a", "b")   => E_NOT_BOOL at 1:4
+   ABORT("no stock") => E_ABORT at 1:7
+7. dependencies
+   CUSTOMER ITEMS LIMIT

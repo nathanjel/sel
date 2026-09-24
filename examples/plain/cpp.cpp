@@ -50,7 +50,7 @@ int main() {
   // Parsing is cheap but not free, and a Program is immutable and reusable.
 
   std::cout << "2. compile once, run many\n";
-  // EXAMPLE-BEGIN
+  // EXAMPLE-BEGIN compile
   const sel::Program rule = sel::compile("IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")");
   for (const auto& row : std::vector<std::pair<std::string, std::string>>{
            {"3", "19.99"}, {"1", "5.00"}}) {
@@ -61,13 +61,14 @@ int main() {
     std::cout << "   QTY=" << row.first << " PRICE=" << row.second
               << " => " << rule.run(ctx).as_text() << "\n";
   }
-  // EXAMPLE-END
+  // EXAMPLE-END compile
 
   // 3 — building a context ------------------------------------------------------
   // Money is TEXT, never a double. C++ has no exact decimal type and SEL has no
   // floating point, so the host boundary is where that is said out loud.
 
   std::cout << "3. structured context\n";
+  // EXAMPLE-BEGIN context
   sel::Value order = sel::Value::none();
   order.set("CUSTOMER", sel::Value::text("Zażółć"));
   std::vector<sel::Value> items;
@@ -85,6 +86,7 @@ int main() {
   std::cout << "   total     => "
             << sel::compile("SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"])").run(order).as_text() << "\n";
   std::cout << "   0.10+0.20 => " << sel::evaluate("0.10 + 0.20").as_text() << "\n";
+  // EXAMPLE-END context
 
   // 4 — reading results back -----------------------------------------------------
   // A result is a Value: a scalar, children, both or neither.
@@ -103,6 +105,7 @@ int main() {
   // 5 — the context is mutated, so rules hand values back -------------------------
 
   std::cout << "5. variables the rule set\n";
+  // EXAMPLE-BEGIN variables
   sel::Value ctx = sel::Value::none();
   ctx.set("QTY", sel::Value::text("3"));
   ctx.set("PRICE", sel::Value::text("19.99"));
@@ -110,12 +113,14 @@ int main() {
   for (const char* name : {"NET", "VAT", "GROSS"}) {
     std::cout << "   " << pad(name, 5) << " => " << ctx.get(name)->as_text() << "\n";
   }
+  // EXAMPLE-END variables
 
   // 6 — errors ---------------------------------------------------------------------
   // Every failure is a SelError carrying a stable code and the position of the
   // node that actually failed. Assert on code(), never on the message.
 
   std::cout << "6. errors\n";
+  // EXAMPLE-BEGIN errors
   for (const char* src : {"3 + \"A\"", "NOSUCH(1)", "IF(1, \"a\", \"b\")",
                           "ABORT(\"no stock\")"}) {
     try {
@@ -126,12 +131,15 @@ int main() {
                 << " at " << e.line() << ":" << e.col() << "\n";
     }
   }
+  // EXAMPLE-END errors
 
   // 7 — which fields does this rule read? -------------------------------------------
   // Found statically, without running it.
 
   std::cout << "7. dependencies\n";
+  // EXAMPLE-BEGIN dependencies
   std::cout << "   " << join(sel::compile(
       "T = SUM(ITEMS, _[\"QTY\"]); T > LIMIT AND CUSTOMER $!= \"\"").dependencies(), " ") << "\n";
+  // EXAMPLE-END dependencies
   return 0;
 }

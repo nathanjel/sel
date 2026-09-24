@@ -1,0 +1,7 @@
+# Distinct customers per city, a customer being a normalised e-mail address.
+EXPORT
+  .> FILTER(_["category"] $!= "books")
+  .> MAP(RECORD("city", _["customer_city"], "email", LOWER(TRIM(_["customer_email"]))))
+  .> DEDUPE()
+  .> BUCKET(_["city"], RECORD("city", _K, "customers", COUNT(_)))
+  .> SORT_BY(_["city"])

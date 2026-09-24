@@ -3,7 +3,7 @@
 // Checks that the design document's worked examples are quotations of cases that
 // actually run, rather than prose somebody wrote once.
 //
-// docs/SQL-TRANSLATION.md §7 drifted from the code for a whole milestone: §13.1
+// docs/internals/sql-translation.md §7 drifted from the code for a whole milestone: §13.1
 // claimed a flat four-way AND for a case §7.1 renders nested, and the example was
 // sitting in both sections. Neither could fail, because neither executed.
 //
@@ -124,8 +124,8 @@ if ($files === []) {
     // document about what is BROKEN is the most drift-prone kind there is,
     // because it goes stale the moment somebody fixes the thing.
     $files = [
-        __DIR__ . '/../../docs/SQL-TRANSLATION.md',
-        __DIR__ . '/../../docs/SQL-KINDS.md',
+        __DIR__ . '/../../docs/internals/sql-translation.md',
+        __DIR__ . '/../../docs/internals/sql-kinds.md',
     ];
 }
 

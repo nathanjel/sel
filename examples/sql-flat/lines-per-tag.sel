@@ -1,0 +1,8 @@
+# How many lines carry each tag of the ;-separated tags column.
+EXPORT
+  .> FILTER(_["tags"] $!= "")
+  .> MAP(_["tags"])
+  .> JOIN(";")
+  .> SPLIT(";")
+  .> BUCKET(_, RECORD("tag", _K, "lines", COUNT(_)))
+  .> SORT_BY(_["tag"])

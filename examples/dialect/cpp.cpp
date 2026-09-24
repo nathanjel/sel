@@ -91,6 +91,7 @@ int main() {
   // `extends` is, here, a spec the language cannot express.
 
   std::cout << "2. a flavour of your own\n";
+  // EXAMPLE-BEGIN flavour
   Map::define_dialect("pg-libpq",
                       DialectSpec::extending("postgresql")
                           .version("15")
@@ -102,6 +103,7 @@ int main() {
   std::cout << "   chain        => " << join(Map::chain("pg-libpq"), " -> ") << "\n";
   std::cout << "   base         => " << base << "\n";
   std::cout << "   pg-libpq     => " << libpq << "\n";
+  // EXAMPLE-END flavour
 
   // 3 — spelling one function differently ---------------------------------------------
   // {*} is every argument; {0}, {1} pick them out. Note the slots are ZERO-based
@@ -110,11 +112,13 @@ int main() {
   // infers kinds and will not guess.
 
   std::cout << "3. one function, respelled\n";
+  // EXAMPLE-BEGIN respell
   Map::define("pg-libpq", Section::Funcs, "UPPER",
               EntrySpec::tpl("UPPER({0} COLLATE \"C\")", "TEXT"));
   const std::string upper =
       Sql::translate(sel::compile("UPPER(NAME)"), "pg-libpq", bindings).as_value();
   std::cout << "   upper        => " << upper << "\n";
+  // EXAMPLE-END respell
 
   // 4 — withdrawing what a deployment does not have ------------------------------------
   // withdraw() takes the entry away. This is not the same as leaving it
@@ -125,6 +129,7 @@ int main() {
   // accident, which is why EntrySpec has no public default constructor.
 
   std::cout << "4. withdrawing an entry\n";
+  // EXAMPLE-BEGIN withdraw
   Map::define("pg-libpq", Section::Funcs, "RMATCH", EntrySpec::withdraw());
   const sel::Program re = sel::compile("RMATCH('^a', NAME)");
   std::cout << "   postgresql   => "
@@ -137,6 +142,7 @@ int main() {
                     ? "translated"
                     : "refused")
             << "\n";
+  // EXAMPLE-END withdraw
 
   // 5 — a builder, for what a template cannot say -----------------------------------------
   // The escape hatch. It receives the emitter and the already-rendered arguments,
@@ -154,6 +160,7 @@ int main() {
   // copied verbatim and never renumbered.
 
   std::cout << "5. a builder\n";
+  // EXAMPLE-BEGIN builder
   Map::define_builder(
       "pg-libpq", Section::Funcs, "LEN",
       std::make_shared<Builder>(
@@ -167,6 +174,7 @@ int main() {
   const std::string len =
       Sql::translate(sel::compile("LEN(NAME)"), "pg-libpq", bindings).as_value();
   std::cout << "   len          => " << len << "\n";
+  // EXAMPLE-END builder
 
   // 6 — putting it back ---------------------------------------------------------------------
   // reset() drops every registration and leaves the shipped map. Worth knowing in

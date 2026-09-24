@@ -24,6 +24,6 @@ Lisp through the existing Quicklisp boot script. PHP, Node, Python, g++, SBCL an
 the repository's Lisp dependencies are required. Temporary C++ binaries and
 Lisp compile caches are isolated under `/tmp/sel-registry-scan-*`.
 
-Results overwrite `docs/interim/code-scan/scan.json` and `registry.json`.
-The manually reviewed report is `docs/interim/structured-code-scan.md`.
+Results overwrite `tools/code-scan/results/scan.json` and `registry.json`.
+The manually reviewed report of the last scan is in the git history.
 These tools do not mutate runtime sources or prove whole-program reachability.

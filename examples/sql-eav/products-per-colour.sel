@@ -1,0 +1,5 @@
+# How many products have each colour.
+ATTRS
+  .> FILTER(_["name"] $== "color")
+  .> BUCKET(_["value"], RECORD("color", _K, "products", COUNT(_)))
+  .> SORT_BY(_["color"])

@@ -34,7 +34,7 @@ TOTAL > 100
 | `note` | — | prose, ignored |
 
 A case with `--- plan` asks `plan_hybrid` rather than `translate` (see
-docs/SQL-TRANSLATION.md §12.1). The runner asserts the classification, the
+docs/internals/sql-translation.md §12.1). The runner asserts the classification, the
 `tables`, and for `pure_sql` and `hybrid` that `expect` is the prefix
 statement; a `pure_memory` plan has no `expect`, and a `refused` plan has
 `error` and nothing else — the code alone, since planning refuses only on the

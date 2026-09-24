@@ -1,0 +1,41 @@
+# The support desk's SLA report, per team: how many tickets, how many were
+# answered late or not at all, how many are still open, the slowest first
+# answer, and which incidents the team handled.
+#
+# It reads TEAMS, CUSTOMERS, SLA, TICKETS and EVENTS. examples/sql-complex runs
+# it over rows loaded from PostgreSQL, examples/memory-complex over rows
+# generated in memory; both print the same report. No step of it has SQL:
+# the incident number is pulled out with RGROUPS, and every ticket's first
+# answer is a search of the event log -- so the planner leaves it in memory
+# whole, and the database's only job is to hand over the tables.
+
+FIRST_ANSWERS = EVENTS
+  .> FILTER(_["kind"] $== "reply" AND LEFT(_["actor"], 6) $== "agent:")
+  .> SORT_BY(_["at"])
+  .> BUCKET(_["ticket_id"], RECORD("of_ticket", _K, "at", _[1]["at"]));
+
+TICKETS
+  .> LINK(CUSTOMERS, T, C, T["customer_id"] == C["customer_id"])
+  .> LINK(SLA, X, S, X["plan"] $== S["plan"] AND X["priority"] $== S["priority"])
+  .> LINK_LEFT(FIRST_ANSWERS, Y, A, Y["ticket_id"] == A["of_ticket"])
+  .> MAP(R, RECORD(
+       "team_id", R["team_id"],
+       "ticket", R["ticket_id"],
+       "incident", IF(RMATCH('^\[INC-[0-9]+\]', R["subject"]),
+                      RGROUPS('^\[(INC-[0-9]+)\]', R["subject"])["2"], ""),
+       "answered_in", IF(IS_NULL(R["A"]["at"]), NULL, R["A"]["at"] - R["opened_at"]),
+       "late", IS_NULL(R["A"]["at"]) OR R["A"]["at"] - R["opened_at"] > R["respond_within"],
+       "open", IS_NULL(R["closed_at"])))
+  .> BUCKET(_["team_id"], RECORD(
+       "team_id", _K,
+       "tickets", COUNT(_),
+       "late", COUNT(FILTER(_, _["late"])),
+       "open", COUNT(FILTER(_, _["open"])),
+       "slowest", FILTER(_, IS_NOT_NULL(_["answered_in"]))
+                    .> TOP_BY(_["answered_in"], "DESC", 1)
+                    .> MAP("#" & _["ticket"] & " (" & _["answered_in"] & " min)") .> JOIN(""),
+       "incidents", FILTER(_, _["incident"] $!= "") .> MAP(_["incident"]) .> JOIN(" ")))
+  .> LINK(TEAMS, G, M, G["team_id"] == M["team_id"])
+  .> MAP(RECORD("team", _["team"], "tickets", _["tickets"], "late", _["late"],
+                "open", _["open"], "slowest", _["slowest"], "incidents", _["incidents"]))
+  .> SORT_BY(_["team"])

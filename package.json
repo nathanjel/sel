@@ -51,11 +51,27 @@
     "js/src/",
     "js/bin/",
     "conformance/",
-    "docs/LANGUAGE.md",
-    "docs/BUILTINS.md",
-    "docs/LIMITS.md",
-    "docs/SQL-TRANSLATION.md",
-    "docs/SQL-KINDS.md",
+    "docs/README.md",
+    "docs/overview.md",
+    "docs/parity.md",
+    "docs/syntax.md",
+    "docs/operators.md",
+    "docs/functions.md",
+    "docs/sql.md",
+    "docs/extending.md",
+    "docs/usage/README.md",
+    "docs/usage/repl.md",
+    "docs/usage/validation.md",
+    "docs/usage/scripting.md",
+    "docs/usage/sql-conditions.md",
+    "docs/usage/sql-pipelines.md",
+    "docs/usage/sql-star.md",
+    "docs/usage/sql-eav.md",
+    "docs/usage/sql-3nf.md",
+    "docs/usage/sql-flat.md",
+    "docs/usage/in-memory.md",
+    "docs/reference/builtins.md",
+    "docs/reference/limits.md",
     "spec/",
     "examples/order-validation.sel",
     "examples/host-js.mjs",
@@ -71,6 +87,9 @@
     "check": "tools/check.sh"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "github-slugger": "^2.0.0",
+    "highlight.js": "^11.12.0",
+    "marked": "^16.4.2"
   }
 }

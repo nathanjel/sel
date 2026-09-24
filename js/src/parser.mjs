@@ -1,4 +1,4 @@
-// Precedence climbing. See docs/EXTENDING.md, "Adding an operator", step 5,
+// Precedence climbing. See docs/contributing.md, "Adding an operator", step 5,
 // and python/sel/parser.py, whose module docstring is the rationale.
 //
 // This host used to transcribe spec/grammar.md one function per production —

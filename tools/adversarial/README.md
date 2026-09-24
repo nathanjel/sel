@@ -1,11 +1,10 @@
-# SEL adversarial audit, 2026-09-15
+# SEL adversarial harness
 
-The findings and their interpretation are in [REPORT.md](REPORT.md).
-The historical [recheck against 55f4aa6](RECHECK-55f4aa6.md) confirmed all findings
-then. Current JSON files contain that rerun; `baseline-ef44fa2.tar.gz` preserves
-the original evidence.
-See the [current work index](../../docs/interim/sel-gaps-2026-09-15-00-index.md)
-for fix status; the captured historical JSON is not overwritten by regressions.
+The scripts from the 2026-09-15 adversarial audit of the SQL layer, kept because
+they still run: `regressions.sh` re-asserts the behaviour the audit asked for.
+The audit's report, its recheck and the evidence it captured (the JSON results
+and the baseline tarball) are in the git history; every script here regenerates
+its own results, which are not committed.
 
 ## Current desired-behavior regressions
 

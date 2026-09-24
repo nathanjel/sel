@@ -1,0 +1,18 @@
+1. what ships
+   targets      => mariadb mysql postgresql sqlite
+   postgresql   => postgresql -> ansi
+2. a flavour of your own
+   targets      => mariadb mysql pg-libpq postgresql sqlite
+   chain        => pg-libpq -> postgresql -> ansi
+   base         => ((CAST("t"."name" AS TEXT) COLLATE "C" = CAST(? AS TEXT) COLLATE "C") AND ("t"."total" > 10.00))
+   pg-libpq     => ((CAST("t"."name" AS TEXT) COLLATE "C" = CAST($1 AS TEXT) COLLATE "C") AND ("t"."total" > 10.00))
+3. one function, respelled
+   upper        => UPPER("t"."name" COLLATE "C")
+4. withdrawing an entry
+   postgresql   => translated
+   pg-libpq     => refused
+5. a builder
+   len          => length("t"."name")
+6. reset
+   targets      => mariadb mysql postgresql sqlite
+   pg-libpq     => gone

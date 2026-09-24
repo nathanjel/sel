@@ -1,0 +1,28 @@
+1. revenue per city, February and March
+   plan        pure_sql
+   reads       order_export
+   sql         SELECT CAST(`x`.`customer_city` AS CHAR) COLLATE utf8mb4_nopad_bin AS `city`, COUNT(*) AS `lines`, COALESCE(SUM((`x`.`qty` * `x`.`unit_price`)), 0) AS `revenue` FROM `order_export` `x` WHERE ((CAST(`x`.`order_date` AS CHAR) COLLATE utf8mb4_nopad_bin >= CAST('2025-02-01' AS CHAR) COLLATE utf8mb4_nopad_bin) AND (CAST(`x`.`order_date` AS CHAR) COLLATE utf8mb4_nopad_bin < CAST('2025-04-01' AS CHAR) COLLATE utf8mb4_nopad_bin)) GROUP BY CAST(`x`.`customer_city` AS CHAR) COLLATE utf8mb4_nopad_bin ORDER BY COALESCE(SUM((`x`.`qty` * `x`.`unit_price`)), 0) DESC
+   | city=Kraków  lines=9  revenue=2066.45
+   | city=Berlin  lines=5  revenue=1358.37
+   | city=Warszawa  lines=2  revenue=559.78
+   | city=Malmö  lines=2  revenue=338.90
+   | city=Lyon  lines=2  revenue=213.90
+   in memory   same rows
+2. distinct customers per city, by normalised e-mail
+   plan        hybrid
+   reads       order_export
+   sql         SELECT `x`.* FROM `order_export` `x` WHERE (CAST(`x`.`category` AS CHAR) COLLATE utf8mb4_nopad_bin <> CAST('books' AS CHAR) COLLATE utf8mb4_nopad_bin)
+   | city=Berlin  customers=2
+   | city=Kraków  customers=2
+   | city=Lyon  customers=1
+   | city=Malmö  customers=1
+   | city=Warszawa  customers=1
+   in memory   same rows
+3. lines per tag
+   plan        pure_memory
+   reads       order_export
+   | tag=b2b  lines=5
+   | tag=clearance  lines=4
+   | tag=gift  lines=9
+   | tag=promo  lines=14
+   in memory   same rows

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SEL is a tiny expression language for validation rules, implemented **five times** — JS (`js/`), PHP (`php/`), Python (`python/`), C++23 (`cpp/`), Common Lisp (`lisp/`) — and held to one written spec by a shared conformance suite and a differential fuzzer. Cross-host byte-identical agreement *is* the product. Each host also carries a SEL→SQL translator (`*/sql/`, `cpp/sel_sql*`) and an in-memory relational pipeline (`.>` operator, `FILTER`/`MAP`/`LINK`/`BUCKET`/…).
 
-`README.md` is the tour; `docs/EXTENDING.md` is the contributor guide and **its "traps" section is required reading before touching any host** — every item there is a real divergence that was found here.
+`README.md` is the short pitch and `docs/README.md` the documentation map; `docs/contributing.md` is the contributor guide and **its "traps" section is required reading before touching any host** — every item there is a real divergence that was found here.
 
 ## The one rule
 
@@ -66,21 +66,27 @@ tools/e2e.sh / tools/check-api.sh    host API parity
 tools/mutate-sql.sh                  breaks the SQL layer ~160 ways; checks must notice
 tools/check-sql-oracle.sh            translated SQL vs a real DB (skips without a DSN; the gate provides one)
 tools/oracle-db.sh                   spins up throwaway MySQL/Postgres containers for the above
+tools/check-examples.sh [cat…]       examples/<cat>/ in every host: byte-identical output, equal to output.txt
+tools/check-usage.sh [cat…]          the LIVE (database) examples, 5 hosts, in tools/usage.Dockerfile's image
+                                     against its own throwaway PostgreSQL/MariaDB (+ SQLite files)
+node tools/build-docs.mjs [--check|--serve 8080]   the HTML site from the Markdown (site/); --check = links
+docker build -f docs/Dockerfile -t sel-docs .      the site as an nginx image
 ```
 
 REPLs: `node js/bin/sel.mjs`, `php php/bin/sel`, `cpp/build/sel`, `lisp/bin/sel`, `PYTHONPATH=$PWD/python python3 -m sel` (`-e 'expr'` for one-shot, `--deps` for static dependencies).
 
 ## Generated, committed artifacts — regenerate, don't hand-edit
 
-Five things are authored once and rendered into every host's source language by Node scripts. The renderings are **committed** (a PHP/Python/C++/Lisp consumer must never need Node), and `tools/check.sh` fails if they are stale.
+Six things are authored once and rendered by Node scripts (five into every host's source language, one into an example seed). The renderings are **committed** (a PHP/Python/C++/Lisp consumer must never need Node), and `tools/check.sh` fails if they are stale.
 
 | Authored source | Generator | Outputs |
 |---|---|---|
 | `sql/dialects/*.json` (format: `sql/MAP.md`) | `node tools/gen-sql-map.mjs` | `php/src/Sql/MapData.php`, `python/sel/sql/_map.py`, `js/src/sql/_map.mjs`, `cpp/sel_sql_map_data.cpp`, `lisp/src/sql/map-data.lisp`, plus each host's `*map_replay*` |
+| `examples/lib/tickets-generate.sel` | `node tools/gen-usage-seed.mjs` | `examples/sql-complex/seed.postgresql.sql` — the same rows `examples/memory-complex` generates in memory |
 | `sql/cases/*.sqlt` | `node tools/gen-sql-cases.mjs` | `php/bin/CaseData.php`, `python/bin/case_data.py`, `js/bin/case-data.mjs`, `cpp/bin/case_data.cpp`, `lisp/bin/case-data.lisp` |
-| `spec/limits.json` (format: `spec/limits.md`) | `node tools/gen-limits.mjs` | `js/src/_limits.mjs`, `python/sel/_limits.py`, `php/src/Limits.php`, `cpp/sel_limits.hpp`, `lisp/src/limits.lisp`, `docs/LIMITS.md` — the generator refuses to render unless the spec text states every value and code; each host's `MAX_DEPTH`/decimal caps are defined from its rendering; `tools/check-error-codes.sh` requires every host to raise exactly the catalogued codes |
-| `spec/math-ops.json` (format: `spec/math-ops.md`) | `node tools/gen-math-ops.mjs` | `js/src/_math_ops.mjs`, `python/sel/_math_ops.py`, `php/src/MathOps.php`, `cpp/sel_math_ops.hpp`, `lisp/src/math-ops.lisp`, `docs/MATH-OPS.md` — each host's math-plan compiler classifies through its rendering; opcode numbers stay native |
-| `spec/builtins.json` (format: `spec/builtins.md`; also the SQL-map generator's arity authority, and `tools/check-manifest.sh` probes every host's accepted counts and binding forms against it) | `node tools/gen-builtins.mjs` | `js/src/_builtin_manifest.mjs`, `python/sel/_builtin_manifest.py`, `php/src/BuiltinManifest.php`, `cpp/sel_builtin_manifest.hpp`, `lisp/src/builtin-manifest.lisp`, `docs/BUILTINS.md` — each host's `define` checks itself against its rendering at startup |
+| `spec/limits.json` (format: `spec/limits.md`) | `node tools/gen-limits.mjs` | `js/src/_limits.mjs`, `python/sel/_limits.py`, `php/src/Limits.php`, `cpp/sel_limits.hpp`, `lisp/src/limits.lisp`, `docs/reference/limits.md` — the generator refuses to render unless the spec text states every value and code; each host's `MAX_DEPTH`/decimal caps are defined from its rendering; `tools/check-error-codes.sh` requires every host to raise exactly the catalogued codes |
+| `spec/math-ops.json` (format: `spec/math-ops.md`) | `node tools/gen-math-ops.mjs` | `js/src/_math_ops.mjs`, `python/sel/_math_ops.py`, `php/src/MathOps.php`, `cpp/sel_math_ops.hpp`, `lisp/src/math-ops.lisp`, `docs/internals/math-ops.md` — each host's math-plan compiler classifies through its rendering; opcode numbers stay native |
+| `spec/builtins.json` (format: `spec/builtins.md`; also the SQL-map generator's arity authority, and `tools/check-manifest.sh` probes every host's accepted counts and binding forms against it) | `node tools/gen-builtins.mjs` | `js/src/_builtin_manifest.mjs`, `python/sel/_builtin_manifest.py`, `php/src/BuiltinManifest.php`, `cpp/sel_builtin_manifest.hpp`, `lisp/src/builtin-manifest.lisp`, `docs/reference/builtins.md` — each host's `define` checks itself against its rendering at startup |
 
 Editing a dialect or a `.sqlt` case means running the generator afterwards. `tools/check-generated.sh` verifies both (`--check` diffs content).
 
@@ -88,7 +94,7 @@ Editing a dialect or a `.sqlt` case means running the generator afterwards. `too
 
 ### Same shape in every host
 
-The five hosts are structured file-for-file alike so they can be read side by side (C++ is one TU, `cpp/sel.cpp`, with `// --- section` comments instead of files): errors → utf8 → decimal → value → registry → lexer → parser → evaluator (+ `Args`) → builtins → host API (`js/src/sel.mjs`, `php/src/Sel.php`, `cpp/sel.hpp`, `lisp/src/sel.lisp`, `python/sel/__init__.py`). Port work goes in that dependency order. The table in `docs/EXTENDING.md` §"Where everything lives" maps each concern to its file per host.
+The five hosts are structured file-for-file alike so they can be read side by side (C++ is one TU, `cpp/sel.cpp`, with `// --- section` comments instead of files): errors → utf8 → decimal → value → registry → lexer → parser → evaluator (+ `Args`) → builtins → host API (`js/src/sel.mjs`, `php/src/Sel.php`, `cpp/sel.hpp`, `lisp/src/sel.lisp`, `python/sel/__init__.py`). Port work goes in that dependency order. The table in `docs/contributing.md` §"Where everything lives" maps each concern to its file per host.
 
 All five parsers are precedence climbing with the same function names (`parse_program → parse_sequence → parse_list → parse_term → parse_prefix → parse_postfix → parse_primary`); `python/sel/parser.py`'s docstring is the rationale. Parse and eval nesting are both capped at 200 (`E_DEPTH`) — any new recursion must be counted.
 
@@ -104,7 +110,7 @@ All five parsers are precedence climbing with the same function names (`parse_pr
 
 ### SEL→SQL layer
 
-Opt-in per host (PHP: separate `Sql/bootstrap.php` require; JS: `sel-lang/sql` entry point, not in the bundle). Pipeline: `compile` → stage 1 normalise (inline assignments, refuse non-expression shapes) → stage 2 lower aggregates to unrolls / `EXISTS` / subqueries → stage 3 kind inference (`NUM|TEXT|BOOL|BIN|UNKNOWN`, folded into the render walk) → stage 4 render via the dialect map. Whole-expression refusal: nothing becomes characters until a `Fragment` is asked. Dialects inherit key-by-key along `ansi → mysql-family → {mariadb, mysql}`, `ansi → postgresql`, `ansi → sqlite`; `ansi` must say what *standard* SQL says (it is strongly typed — MySQL's silent coercions must not leak into it). `hybrid` splits a pipeline into a maximal SQL-pushdown prefix plus an in-memory suffix; `relational-plan` is the statement IR. Design: `docs/SQL-TRANSLATION.md`; kinds: `docs/SQL-KINDS.md`; errors: `sql/errors.md`. The *data* (map, cases) is shared; the *walk* is transcribed per host.
+Opt-in per host (PHP: separate `Sql/bootstrap.php` require; JS: `sel-lang/sql` entry point, not in the bundle). Pipeline: `compile` → stage 1 normalise (inline assignments, refuse non-expression shapes) → stage 2 lower aggregates to unrolls / `EXISTS` / subqueries → stage 3 kind inference (`NUM|TEXT|BOOL|BIN|UNKNOWN`, folded into the render walk) → stage 4 render via the dialect map. Whole-expression refusal: nothing becomes characters until a `Fragment` is asked. Dialects inherit key-by-key along `ansi → mysql-family → {mariadb, mysql}`, `ansi → postgresql`, `ansi → sqlite`; `ansi` must say what *standard* SQL says (it is strongly typed — MySQL's silent coercions must not leak into it). `hybrid` splits a pipeline into a maximal SQL-pushdown prefix plus an in-memory suffix; `relational-plan` is the statement IR. Design: `docs/internals/sql-translation.md`; kinds: `docs/internals/sql-kinds.md`; errors: `sql/errors.md`. The *data* (map, cases) is shared; the *walk* is transcribed per host.
 
 ### Test-file formats
 
@@ -112,8 +118,9 @@ Opt-in per host (PHP: separate `Sql/bootstrap.php` require; JS: `sel-lang/sql` e
 
 ## Docs layout and status
 
-- `spec/` (SPEC.md, grammar.md, errors.md) and `conformance/` are normative. `docs/LANGUAGE.md` is for rule authors; `docs/EXTENDING.md` for contributors.
-- Every `=>` example in `README.md`/`docs/*.md` is executed by every host (`tools/check-docs.sh`); `<!-- from: path -->` blocks must be byte-identical to that file's `EXAMPLE-BEGIN`/`EXAMPLE-END` region (`tools/check-snippets.py`) — edit the example, not the doc. Editing a documented example means keeping it runnable.
-- Packages ship only the user docs (`LANGUAGE`, `BUILTINS`, `LIMITS`, `SQL-TRANSLATION`, `SQL-KINDS`): `package.json` `files`, the `pyproject.toml` sdist `include` and `.gitattributes` `export-ignore` each allowlist them, and `tools/check-package-docs.sh` holds the three to one list. A new user-facing doc goes in all four; anything else in `docs/` stays out of releases.
-- `docs/history/` — retired design docs, kept for the *why*; not maintained. `docs/interim/` — in-flight plans and roadmaps (porting worklist, optimizer plans, review remediation); treat as intent, not as a description of the tree.
+- `spec/` (SPEC.md, grammar.md, errors.md) and `conformance/` are normative. User docs: `docs/overview.md`, `parity.md`, `syntax.md`, `operators.md`, `functions.md`, `sql.md`, `extending.md`, `docs/usage/*.md` (host API, REPL, validation, scripting, SQL conditions/pipelines per schema), `docs/reference/` (generated). `docs/contributing.md` is for contributors; `docs/internals/` holds the SQL design docs (§-numbers are cited from code comments — do not renumber).
+- Every `expr  => result` example in `README.md`, `docs/*.md` and `docs/usage/*.md` (in ```` ```sel ```` blocks and in table-cell code spans) is executed by every host (`tools/check-docs.sh`); `<!-- from: path#region -->` blocks must be byte-identical to that file's `EXAMPLE-BEGIN region`/`EXAMPLE-END region` (dedented; a file with no markers — `.sel`, `output.txt` — is quoted whole) (`tools/check-snippets.py`) — edit the example, not the doc. Five-language snippets are `<!-- tabs -->` groups of `<details>` (GitHub: collapsible; site: tabs). Every page is in `docs/nav.json`; `node tools/build-docs.mjs --check` fails on any broken link/anchor.
+- `examples/<cat>/` holds one file per host plus `output.txt` (the transcript the docs quote, enforced by the lanes); a `LIVE` marker means it needs databases (`tools/check-usage.sh`, per-category databases `sel_<cat>` seeded from `seed.<dialect>.sql`); `examples/lib/` (`LIBRARY`) holds the per-host DB runner `db.*` and the support-desk SEL programs. Host functions (`register_function` & co., SPEC §8.1) are the public extension API; they have no SQL spelling.
+- Packages ship only the user docs: `package.json` `files`, the `pyproject.toml` sdist `include` and `.gitattributes` `export-ignore` each allowlist them file by file, and `tools/check-package-docs.sh` holds the three to one list. A new user-facing doc goes in all four; anything else in `docs/` stays out of releases.
+- Issue tracking, review findings, worklists and measurement logs are not kept in the tree (they were removed in the documentation overhaul and live in git history); tools that produce results write them to their own ignored `tools/<tool>/results/`.
 - `CHANGELOG.md`'s top heading is one of eight version sources checked by `tools/check-version.sh`; `composer.json` deliberately has no `version` field. Release steps are in `PACKAGING.md` §"Before any release". Never re-tag a pushed tag — bump instead.

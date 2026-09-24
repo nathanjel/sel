@@ -38,7 +38,7 @@ INSERT INTO o (id, credit_limit, code) VALUES
 -- first external user of this layer ran into: an EAV table whose values are all
 -- VARCHAR, compared as numbers by a rule. Until they existed every column in
 -- this fixture was declared NUM or TEXT and every numeric comparison was over a
--- NUM one, so the question docs/SQL-KINDS.md exists to answer -- does SQL report
+-- NUM one, so the question docs/internals/sql-kinds.md exists to answer -- does SQL report
 -- a match for a row SEL refuses? -- could not be asked here at all.
 --
 -- '25/298' is theirs, near enough: MariaDB reads the numeric prefix and answers

@@ -4,7 +4,7 @@ Experimental runtime changes are confined to /tmp.
 """
 import difflib,os,shutil,subprocess
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2];BASE=Path('/tmp/sel-commit-benchmark');OUT=ROOT/'docs/interim/commit-benchmark'
+ROOT=Path(__file__).resolve().parents[2];BASE=Path('/tmp/sel-commit-benchmark');OUT=ROOT/'tools/commit-benchmark/results'
 tree=BASE/'lisp-eq-cache'
 shutil.copytree(BASE/'c5a8991/lisp',tree/'lisp',dirs_exist_ok=True)
 (tree/'tools/scale-test').mkdir(parents=True,exist_ok=True)

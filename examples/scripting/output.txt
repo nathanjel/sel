@@ -1,0 +1,14 @@
+1. the script reads COUNTRY, ITEMS, ORDER
+2. orders
+   A-1  ship by inpost
+   A-2  ship by freight
+   A-3  backorder
+   A-4  E_NOT_NUM at 8:46
+3. outbox
+   customer: order A-1 ships by inpost, 10.7 kg
+   customer: order A-2 ships by freight, 43.0 kg
+   purchasing: order A-3 waits for LAMP-01
+4. stock left
+   CHAIR-03  3
+   DESK-02   0
+   LAMP-01   2

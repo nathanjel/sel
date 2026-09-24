@@ -32,6 +32,7 @@ console.log('   postgresql   =>', map.chain('postgresql').join(' -> '));
 // chain, then the whole shipped chain -- so an override never half-applies.
 
 console.log('2. a flavour of your own');
+// EXAMPLE-BEGIN flavour
 map.defineDialect('pg-libpq', {
   extends: 'postgresql',
   version: '15',
@@ -42,6 +43,7 @@ console.log('   targets      =>', Sql.dialects().join(' '));
 console.log('   chain        =>', map.chain('pg-libpq').join(' -> '));
 console.log('   base         =>', sqlIn('postgresql'));
 console.log('   pg-libpq     =>', sqlIn('pg-libpq'));
+// EXAMPLE-END flavour
 
 // 3 — spelling one function differently ---------------------------------------------
 // {*} is every argument; {0}, {1} pick them out. Note the slots are ZERO-based
@@ -50,9 +52,11 @@ console.log('   pg-libpq     =>', sqlIn('pg-libpq'));
 // infers kinds and will not guess.
 
 console.log('3. one function, respelled');
+// EXAMPLE-BEGIN respell
 map.define('pg-libpq', 'funcs', 'UPPER', { tpl: 'UPPER({0} COLLATE "C")', ret: 'TEXT' });
 console.log('   upper        =>',
   Sql.translate(compile('UPPER(NAME)'), 'pg-libpq', bindings).asValue());
+// EXAMPLE-END respell
 
 // 4 — withdrawing what a deployment does not have ------------------------------------
 // A null entry withdraws it. This is not the same as leaving it unmapped: it is
@@ -60,12 +64,14 @@ console.log('   upper        =>',
 // a function the server does not have.
 
 console.log('4. withdrawing an entry');
+// EXAMPLE-BEGIN withdraw
 map.define('pg-libpq', 'funcs', 'RMATCH', null);
 const re = compile('RMATCH(\'^a\', NAME)');
 console.log('   postgresql   =>', Sql.tryTranslate(re, 'postgresql', bindings) === null
   ? 'refused' : 'translated');
 console.log('   pg-libpq     =>', Sql.tryTranslate(re, 'pg-libpq', bindings) === null
   ? 'refused' : 'translated');
+// EXAMPLE-END withdraw
 
 // 5 — a builder, for what a template cannot say -----------------------------------------
 // The escape hatch. It receives the emitter and the already-rendered arguments,
@@ -77,10 +83,12 @@ console.log('   pg-libpq     =>', Sql.tryTranslate(re, 'pg-libpq', bindings) ===
 // carried and quietly turn a prepared statement back into concatenation.
 
 console.log('5. a builder');
+// EXAMPLE-BEGIN builder
 map.defineBuilder('pg-libpq', 'funcs', 'LEN', (emit, args) =>
   new Fragment(['length(', ...args[0].parts, ')'], 'NUM', emit.dialect()));
 console.log('   len          =>',
   Sql.translate(compile('LEN(NAME)'), 'pg-libpq', bindings).asValue());
+// EXAMPLE-END builder
 
 // 6 — putting it back ---------------------------------------------------------------------
 // reset() drops every registration and leaves the shipped map. Worth knowing in

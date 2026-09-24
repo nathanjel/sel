@@ -21,6 +21,7 @@ from .errors import Pos, SelError, fail
 from .eval import MAX_DEPTH, Context as _Context, eval_node
 from .parser import Node, parse
 from .registry import names as _names, binding_form as _binding_form
+from .registry import register_function
 from ._gc import bulk_allocation as _bulk_allocation
 from .value import BIN, BOOL, NONE, TEXT, Value
 
@@ -29,7 +30,7 @@ __all__ = [
     # recursion depth, spec/SPEC.md §8 does not list it, nothing outside the
     # evaluator constructs one, and C++ and Lisp never exposed it.
     'compile', 'evaluate', 'Program', 'Value', 'SelError', 'Pos',
-    'function_names', 'NONE', 'TEXT', 'BIN', 'BOOL', '__version__',
+    'function_names', 'register_function', 'NONE', 'TEXT', 'BIN', 'BOOL', '__version__',
 ]
 
 __version__ = '0.8.0'

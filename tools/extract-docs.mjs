@@ -6,7 +6,7 @@
 //
 //     EXPRESSION  =>  RESULT
 //
-// is a doc-test. RESULT is written the way bin/sel prints it: bare text, TRUE or
+// is a doc-test, and so is a code span of that form in a table row. RESULT is written the way bin/sel prints it: bare text, TRUE or
 // FALSE, bin:<hex>, a tree dump, or !E_CODE for an error — which is exactly what
 // `batch --show` emits. So the check is: run the corpus, diff against the
 // expectations. Documentation that cannot be checked is documentation that
@@ -16,7 +16,7 @@
 // re-implemented it; now every implementation reuses the batch runner it already
 // needs for the fuzzer, and gets doc-checking for free.
 //
-//   node tools/extract-docs.mjs out-prefix README.md docs/LANGUAGE.md ...
+//   node tools/extract-docs.mjs out-prefix README.md docs/syntax.md ...
 //
 // writes four index-aligned files, one line per example in the last three:
 //   <out-prefix>.selc   the corpus
@@ -42,7 +42,17 @@ export function extract(text, file) {
       inBlock = !inBlock && info === 'sel';
       return;
     }
-    if (!inBlock) return;
+    if (!inBlock) {
+      // A table cell may carry an example too, as a code span:
+      //   | `LEN(x)` | code points | `LEN("👍a")  => 2` |
+      // Only table rows, and only spans holding the separator, so prose that
+      // mentions `=>` is left alone.
+      if (!line.trimStart().startsWith('|')) return;
+      for (const m of line.matchAll(/`([^`]*?)  => ([^`]*)`/g)) {
+        if (m[1].trim()) tests.push({ file, line: i + 1, source: m[1].trim(), want: m[2].trim() });
+      }
+      return;
+    }
     if (line.trimStart().startsWith('#')) return;      // a SEL comment, not a test
     const at = line.lastIndexOf(SEP);
     if (at < 0) return;

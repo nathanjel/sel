@@ -10,6 +10,44 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## Unreleased
+
+The documentation, rebuilt — and the one API addition it needed.
+
+  - **Host functions** (spec §8.1): `register_function` / `registerFunction` /
+    `Sel::registerFunction` / `sel::register_function` / `sel:register-function`
+    add an application's own strict function, called like a builtin and held to
+    its rules. A builtin's name or a reserved word is refused; re-registering
+    replaces the function for programs compiled afterwards. C++ gains the public
+    `HostArgs` accessor; Lisp exports the argument readers and `fail`. Sixteen
+    new probes in `tools/check-api.sh`, identical in all five hosts. A host
+    function has no SQL spelling.
+  - **Documentation, reorganised.** A lean `README.md`; `docs/overview.md`,
+    `parity.md`, `syntax.md`, `operators.md` (now covering `.>`), `functions.md`
+    (now covering sorting, grouping, slicing and joins), `sql.md` and
+    `extending.md`; `docs/usage/` with a REPL, validation, scripting with host
+    functions, SQL conditions (naive and described bindings on SQLite, MariaDB and
+    PostgreSQL) and SQL pipelines over star, EAV, 3NF, unnormalised and complex
+    data — every snippet in five languages, quoted from programs the suite runs.
+    `LANGUAGE.md` and `EXTENDING.md` are split into those pages and
+    `docs/contributing.md`; the SQL design documents move to `docs/internals/`,
+    the generated tables to `docs/reference/`.
+  - **An HTML site** from the same Markdown: `node tools/build-docs.mjs`
+    (language tabs, GitHub-compatible anchors, dark mode, a link checker), and
+    `docs/Dockerfile` to serve it with nginx. A logo, drawn from `.>`.
+  - **Checked documentation, wider.** `tools/check-docs.sh` also runs the
+    examples in table cells; `tools/check-snippets.py` quotes named regions and
+    whole files; every example's `output.txt` is enforced; `node
+    tools/build-docs.mjs --check` fails on a broken link or anchor; and
+    `tools/check-usage.sh` runs the database examples in all five hosts against
+    real PostgreSQL, MariaDB and SQLite, in a Docker image with every driver
+    (`tools/usage.Dockerfile`). `tools/check-package-docs.sh` no longer loses a
+    failure in a pipeline subshell.
+  - **Issue tracking and processing logs leave the tree**: `docs/interim/`,
+    `docs/worklists/`, `docs/history/`, the adversarial audit's reports and
+    captured results, and superseded benchmark results. They remain in the git
+    history; the measurement tools now write to ignored `tools/<tool>/results/`.
+
 ## 0.8.0 — 2026-09-24
 
 Everything since 0.7.4: the hybrid SQL/in-memory planner and the relational
@@ -80,7 +118,7 @@ The scale harness's database lanes run all six scenarios again, and a scenario t
   - **The planner was right; the harness was stale.** Since the F2/F3 identity work, scenario 6 has had no SQL plan. Its `DEDUPE` compares a `status` computed with `IF`, and SQL can compute such a value differently: on MariaDB, `IF(c, 1, 1.0)` comes back as `1.0` for both branches, and a `DEDUPE` over it loses a row (checked against Docker MariaDB 11.8 and PostgreSQL 17). The reference recorded that, but `run_benchmarks.py` demanded a statement for every scenario, and `benchmark_all.py` turned the error into a skip, so both database lanes had been dropping out of full runs.
   - **A pure-memory scenario runs as `execute_hybrid` runs it.** Its relations are fetched from the database, and the program runs over them, timed as fetch, build and run. It needs a reason in `PURE_MEMORY_REASONS` that cites the planner cases pinning it, here `plan.identity-barrier.computed-dedupe-after-a-join-stays-local.*` and a control where a column in place of the `IF` splits the plan at the `MAP`. A missing or stale reason fails the lane, as does a plan kind the reference does not record.
   - **New gate step, `scale plans vs reference`.** `run_benchmarks.py --plans-only` makes those checks with no database, so the planner and the reference cannot drift apart unseen again. `benchmark_all.py` skips database lanes only when no server answers, and labels each database row with its plan.
-  - **The price of the conservative rule is on record as SEL-0057.** An `IF` whose branches are all text literals is exact in SQL, but the identity proof does not know that. Admitting it would make scenario 6 a hybrid plan at 8–23 ms, where pure memory takes about 2,180 ms. `docs/SQL-TRANSLATION.md` now documents the identity barrier.
+  - **The price of the conservative rule is on record as SEL-0057.** An `IF` whose branches are all text literals is exact in SQL, but the identity proof does not know that. Admitting it would make scenario 6 a hybrid plan at 8–23 ms, where pure memory takes about 2,180 ms. `docs/internals/sql-translation.md` now documents the identity barrier.
 
 Validation: 893 SQL cases per host (four new planner cases); the database lane S1–S6 on both servers, 10 runs, parity passing; `benchmark_all.py` all seven lanes passing; `tools/check.sh` ALL GREEN on seven roster entries (591 s) with the gate's Docker servers, the new plans step among its layers, 197 mutations caught.
 
@@ -145,7 +183,7 @@ Validation: 634 Python tests, 935 conformance cases per host, differential fuzz 
 
 Python's physical tree is a function of the AST alone, and the API lanes probe the physical tree and the planner (2026-09-22; WL-001 SEL-0049, SEL-0044).
 
-  - **`Program.physical_ast()` takes no context in Python**, and the tree is built once per AST as in the other four hosts. It used to be keyed on the context too, because Python's join-filter pushdown read the context's first row to decide which side of a LINK an unqualified field belonged to: a fresh context per run rebuilt the tree (the optimiser garbage SEL-0030 saw), the tree a program ran could differ by data, and the decision was unsound, since rows may differ. An unqualified field now names no side, as in JS, PHP, C++ and Lisp; docs/SQL-TRANSLATION.md §12.1 states the rule and a unit test pins it.
+  - **`Program.physical_ast()` takes no context in Python**, and the tree is built once per AST as in the other four hosts. It used to be keyed on the context too, because Python's join-filter pushdown read the context's first row to decide which side of a LINK an unqualified field belonged to: a fresh context per run rebuilt the tree (the optimiser garbage SEL-0030 saw), the tree a program ran could differ by data, and the decision was unsound, since rows may differ. An unqualified field now names no side, as in JS, PHP, C++ and Lisp; docs/internals/sql-translation.md §12.1 states the rule and a unit test pins it.
   - **The sound form of that optimisation runs in the evaluator.** A FILTER over a LINK hands the join its leading field conjuncts; the join pre-applies them to left rows only where the joined row's field is provably the left row's — the field is a key of no right row, checked over every row — keeps a row on any error so the full predicate raises where it would have, numbers the kept rows as the unfiltered join would, and carries the conjuncts down a chain of joins when both sources are pure. Scale scenarios S1–S4 and S6 are flat; **S5 is 630 → 1,382 ms**, because its conjuncts cannot pass the FILTER every host's logical optimiser pushes between its joins without changing which error surfaces; the 630 ms was the unsound rewrite's, and JS runs the same scenario in 529 ms. Recovering it soundly is SEL-0050.
   - **`tools/check-api.sh` probes the physical tree** (built once, the AST untouched, run agreeing after an explicit build, the same tree after runs over different data): 64 probes, seven roster entries agree. **`tools/check-sqlapi.sh` is new:** the planner's contract through each host's SQL binding — kind, dialect, statement, prefix and continuation presence, the continuation's dependencies, source variable, tables, selected member — over a pure-SQL, a hybrid and a pure-memory program: 27 probes, the five hosts with a SQL layer agree; a "host SQL API parity" step in the gate.
 
@@ -307,7 +345,7 @@ Within run-to-run spread on every host; no regression to reject.
 
 Limits and error codes are stated once and held to the spec (2026-09-21; WL-001 SEL-0023).
 
-  - **`spec/limits.json` restates the four normative numbers and the 25 error codes**, and its generator refuses to render unless `spec/SPEC.md` and `spec/errors.md` still say the same — the prose stays the authority. Each host's `MAX_DEPTH`, decimal digit caps and division scale are now defined from its rendering rather than as literals; `docs/LIMITS.md` lists them.
+  - **`spec/limits.json` restates the four normative numbers and the 25 error codes**, and its generator refuses to render unless `spec/SPEC.md` and `spec/errors.md` still say the same — the prose stays the authority. Each host's `MAX_DEPTH`, decimal digit caps and division scale are now defined from its rendering rather than as literals; `docs/reference/limits.md` lists them.
   - **A new gate holds every host to the catalogue.** `tools/check-error-codes.sh` reads each host's sources and requires the codes it raises to be exactly the language catalogue plus the SQL layer's own: all five raise exactly the 33. Host budgets stay out of the manifest, and the limit fixtures keep their literal numbers as independent oracles.
 
 Validation, for this entry and the two below it: `tools/check.sh` ALL GREEN on
@@ -339,7 +377,7 @@ is flat. No regression to reject.
 
 The math plans share one vocabulary (2026-09-21; WL-001 SEL-0022).
 
-  - **`spec/math-ops.json` names the 15 operations the native math plans compile** — five binary operators, the `NEG` prefix and nine builtins — with each one's source token, operand count (or left fold for `MIN`/`MAX`) and the argument that carries its auxiliary error position (`ROUND`'s scale, `POWER`'s exponent). The generator cross-checks every builtin's arity against `spec/builtins.json` and renders a table per host and `docs/MATH-OPS.md`; `tools/check-generated.sh` keeps them current.
+  - **`spec/math-ops.json` names the 15 operations the native math plans compile** — five binary operators, the `NEG` prefix and nine builtins — with each one's source token, operand count (or left fold for `MIN`/`MAX`) and the argument that carries its auxiliary error position (`ROUND`'s scale, `POWER`'s exponent). The generator cross-checks every builtin's arity against `spec/builtins.json` and renders a table per host and `docs/internals/math-ops.md`; `tools/check-generated.sh` keeps them current.
   - **Each host's compiler classifies through its table and keeps its own opcodes.** The hand-written operator switches and the three builtin arms per host are one table-driven arm; Python and JS keep their numbered opcodes, PHP its constants, C++ its enum, Lisp its keywords, and a host refuses to load if the manifest names an operation its executor lacks. Executors, scratchpads and the copy-propagation rules are untouched.
 
 Validation: 934 conformance cases on all five hosts, decimal oracle 199,942
@@ -351,7 +389,7 @@ under SEL-0023 below, which ran on the tree carrying both.
 
 Binding forms are declared once, and `dependencies()` agrees everywhere (2026-09-21; WL-001 SEL-0021).
 
-  - **`spec/builtins.json` now carries the binding forms** of the 14 binding builtins: for each accepted argument count, in the evaluator's order, which argument is the source, a binder name, a body run per element, or an outer expression (TOP's limit, SORT_BY's direction), the guard that picks between two forms of one count, and the names bound inside. Rendered into every host's table and into a "Binding forms" table in `docs/BUILTINS.md`; each host exposes one classifier over it.
+  - **`spec/builtins.json` now carries the binding forms** of the 14 binding builtins: for each accepted argument count, in the evaluator's order, which argument is the source, a binder name, a body run per element, or an outer expression (TOP's limit, SORT_BY's direction), the guard that picks between two forms of one count, and the names bound inside. Rendered into every host's table and into a "Binding forms" table in `docs/reference/builtins.md`; each host exposes one classifier over it.
   - **The dependency walkers and the SQL layer's stage 1 classify through it**, replacing five hand-typed copies of the SORT/TOP/BUCKET/LINK arms. This fixes a live divergence: `dependencies()` disagreed across hosts on TOP's binder and limit, LINK's named binders and TOP_BY's direction (nine of thirteen probed forms), and every host hid `K` in `SORT_BY(L, K, "DESC")`, which the evaluator reads as the key. Stage 1 had also inlined a same-named helper into LINK's binder slots and substituted TOP's limit inside the binder. Six new `program.deps.forms.*` API probes and nine `agg.forms.*` conformance cases pin the evaluator's scoping and both guard orders.
 
 Validation: `tools/check.sh` ALL GREEN on js, js-bundle, js-bundle-min, php,
@@ -362,7 +400,7 @@ caught, 0 survived, 0 skipped.
 
 The builtin table is authored once (2026-09-21; WL-001 SEL-0020).
 
-  - **`spec/builtins.json` is the manifest of the 77 builtins** — name, min/max, the extra arity rules (`COND` odd, `RECORD` even, `LINK`/`LINK_LEFT` three or five) with their messages, lazy/binds, spec forms and section; `spec/builtins.md` is the format. `tools/gen-builtins.mjs` validates and renders it into a native table per host and into `docs/BUILTINS.md`, all committed and held current by `tools/check-generated.sh`.
+  - **`spec/builtins.json` is the manifest of the 77 builtins** — name, min/max, the extra arity rules (`COND` odd, `RECORD` even, `LINK`/`LINK_LEFT` three or five) with their messages, lazy/binds, spec forms and section; `spec/builtins.md` is the format. `tools/gen-builtins.mjs` validates and renders it into a native table per host and into `docs/reference/builtins.md`, all committed and held current by `tools/check-generated.sh`.
   - **Every host holds its own table to the manifest at startup**, natively and without reading JSON: `define` refuses a shipped builtin whose min/max/lazy/binds disagree, takes the extra arity rule from the manifest (the four hand-written copies per host are gone), and registration refuses to finish with a manifest name no module defined. A function outside the manifest — `register`, the worked examples, an application's own — passes through as before.
   - **`DEDUPE` is in the spec.** Seeding the manifest found it defined and tested in every host but missing from §7.4; it is now listed as the relational spelling of `DISTINCT`.
 
@@ -428,7 +466,7 @@ the full repository gate was not rerun.
 PHP explicit scalar reads and matched-extension measurements (2026-09-20).
 
   - **Use the existing getter in four internal reads.** Numeric/literal join keys and boolean sorting call `getScalar()` directly, avoiding `__get` dispatch while preserving private storage, lazy decimal formatting, the compatible public property API and decimal-cache invalidation on writes. Native integer, GMP and packed-limb arithmetic paths remain unchanged.
-  - **Measure the local gain without claiming a regression fix.** Repeated GMP probes improve numeric-text joins 4–14%, literal joins 5–6% and boolean sorting about 2%. Full application shifts are small and mixed; S6 changes from 0.3% faster to 0.8% slower across full batches, and is nearly flat in the separate repeat. Matched ctype/OPcache/JIT configurations with and without GMP pass all six scenarios and Mandelbrot. Mandelbrot remains about 0.39 s with GMP and 1.36 s without it. [Results, limitations and reproduction](docs/interim/php-runtime-improvements.md).
+  - **Measure the local gain without claiming a regression fix.** Repeated GMP probes improve numeric-text joins 4–14%, literal joins 5–6% and boolean sorting about 2%. Full application shifts are small and mixed; S6 changes from 0.3% faster to 0.8% slower across full batches, and is nearly flat in the separate repeat. Matched ctype/OPcache/JIT configurations with and without GMP pass all six scenarios and Mandelbrot. Mandelbrot remains about 0.39 s with GMP and 1.36 s without it. Results, limitations and reproduction (`docs/interim/php-runtime-improvements.md`, in the git history).
   - **Record a pre-existing cold-key defect.** Mixed cached-decimal/text numeric join keys can miss before normalization caches warm. Baseline and candidate reproduce it identically; the report preserves the reproducer and recommends shared decimal-key normalization as a separate correctness fix.
 
 Validation: 43 layout/API, 21 runtime and 135 optimizer checks, 911 conformance
@@ -441,7 +479,7 @@ pass. The full five-language repository gate was not rerun.
 Python native arithmetic and heterogeneous metadata measurements (2026-09-20).
 
   - **Remove redundant decimal work.** Subtraction handles aligned magnitudes/signs directly, avoiding a temporary negated decimal. Division cancels common scales before constructing powers/products; exact integer arithmetic, rounding, zero normalization and range checks are preserved. Native UTF-8 and bounded metadata ownership remain unchanged.
-  - **Measure gains and small tradeoffs.** Subtraction probes improve 38–44%, small equal-scale division 14–16%, and shared-scale-10,000 division about 86%. Repeated S1/Mandelbrot medians improve 1.7–4.1%/1.9–2.4%. Full-batch S4/S6 medians worsen 3–4%/about 1%; a separate repeat reverses S4 but retains a roughly 1.4% S6 cost. Neither prepared query calls the changed functions; the small S6 cost remains unresolved. [Results and reproduction](docs/interim/python-runtime-improvements.md).
+  - **Measure gains and small tradeoffs.** Subtraction probes improve 38–44%, small equal-scale division 14–16%, and shared-scale-10,000 division about 86%. Repeated S1/Mandelbrot medians improve 1.7–4.1%/1.9–2.4%. Full-batch S4/S6 medians worsen 3–4%/about 1%; a separate repeat reverses S4 but retains a roughly 1.4% S6 cost. Neither prepared query calls the changed functions; the small S6 cost remains unresolved. Results and reproduction (`docs/interim/python-runtime-improvements.md`, in the git history).
   - **Expose churn without removing bounds.** Cycles exceeding 64 powers, the weighted power budget, or 256 shapes miss on every lookup. New probes retain raw latency, activity and memory results alongside the six scenarios and Mandelbrot. Cache activity/retention is identical before and after; Mandelbrot makes 14.5% fewer power calls with unchanged misses.
 
 Validation: 624 Python unit tests, 911 conformance cases, 852 SQL cases,
@@ -455,7 +493,7 @@ full five-language repository gate was not rerun.
 Common Lisp alias lookups, prepared arguments and GC-aware measurements (2026-09-20).
 
   - **Remove recurring lookup and argument allocations.** Alias plans use a global EQ shape index and EQUAL name tables, preserving alternating aliases and the 256-total-plan/key-size bounds. Hits avoid composite keys and lowercase strings. Executed call nodes share a prepared argument vector, with list identity and vector published together; evaluated-value caches remain private to each invocation, and rewritten argument lists rebuild the metadata.
-  - **Measure application gains and tradeoffs.** Repeated S3/S5 medians improve 3–6%/10–11%. S6 allocates about 14% less, but its standard full-batch mean regresses about 17%; a separate normal-GC probe with context validation around the batch improves mean latency about 10%. Mandelbrot is about 1% slower. The measurements expose GC interference from untimed input serialization rather than claiming a universal speedup or a confirmed historical 27% regression. [Results, diagnostics and reproduction](docs/interim/lisp-runtime-improvements.md).
+  - **Measure application gains and tradeoffs.** Repeated S3/S5 medians improve 3–6%/10–11%. S6 allocates about 14% less, but its standard full-batch mean regresses about 17%; a separate normal-GC probe with context validation around the batch improves mean latency about 10%. Mandelbrot is about 1% slower. The measurements expose GC interference from untimed input serialization rather than claiming a universal speedup or a confirmed historical 27% regression. Results, diagnostics and reproduction (`docs/interim/lisp-runtime-improvements.md`, in the git history).
   - **Keep retention bounded and account for cold costs.** Alias/schema churn retains about 47 KB more; 5,000 executed ten-argument programs retain about 0.56 MB more for shared vectors. AST node allocation size stays unchanged on SBCL. Changing schemas is about 14% slower in the focused probe, and compile-and-run about 2% slower. Cache eviction, oversized layouts and live-value ownership remain covered by tests.
 
 Validation: 532 Lisp unit checks, 911 conformance cases, 852 SQL cases,
@@ -467,7 +505,7 @@ frames match. The full five-language repository gate was not rerun.
 C++ container allocation and regression measurements (2026-09-20).
 
   - **Allocate container headers and payloads together.** Lists, records and container clones share one allocation, while scalar headers remain 72 bytes and decimals remain optional. Alias mutation, independent cloning and iterative deep destruction are preserved. No additional cache is introduced.
-  - **Recover part of the join-throughput loss.** Against `c5a8991`, repeated measurements improve S1 by 3–5%, S5 by 3–5% and S6 by 6%, with S2/S3 also improving. S4 regresses 2–7% and Mandelbrot about 1%; these remain explicit tradeoffs. Live allocator memory is unchanged in the 200,000-value probes; row construction/destruction improve about 4%/11%. A bounded collection-block pool failed to recover the join losses and was rejected. [Benchmarks, raw samples and ownership details](docs/interim/cpp-collection-improvements.md).
+  - **Recover part of the join-throughput loss.** Against `c5a8991`, repeated measurements improve S1 by 3–5%, S5 by 3–5% and S6 by 6%, with S2/S3 also improving. S4 regresses 2–7% and Mandelbrot about 1%; these remain explicit tradeoffs. Live allocator memory is unchanged in the 200,000-value probes; row construction/destruction improve about 4%/11%. A bounded collection-block pool failed to recover the join losses and was rejected. Benchmarks, raw samples and ownership details (`docs/interim/cpp-collection-improvements.md`, in the git history).
 
 Validation: 171 C++ unit checks, 85 SQL unit checks, 911 conformance cases,
 852 SQL cases, metadata checks and 39,990 decimal-oracle cases pass. Address,
@@ -478,7 +516,7 @@ and Mandelbrot outputs agree; the full five-language gate was not rerun.
 JavaScript import isolation and prepared record allocation (2026-09-20).
 
   - **Preserve the host environment.** Importing SEL no longer installs `BigInt.prototype.toJSON`, so frozen prototypes work and host JSON behavior remains intact. AST test snapshots serialize BigInts with local replacers. Source, SQL imports and both bundles have regression checks in the repository gate.
-  - **Reduce prepared projection allocations.** Literal-key `RECORD` calls use packed key/value arrays instead of temporary field pairs. Evaluation order, cloning, stale-layout fallback, dynamic/duplicate keys and error positions are preserved. Focused measurements show 5–10% lower prepared-record latency and 7–9% lower latency for a complete 10,000-row projection. Dynamic records and Mandelbrot remain near baseline; the six larger scenarios vary by roughly −1% to +3%, without a general query-speedup claim. [Results and reproduction](docs/interim/js-runtime-improvements.md).
+  - **Reduce prepared projection allocations.** Literal-key `RECORD` calls use packed key/value arrays instead of temporary field pairs. Evaluation order, cloning, stale-layout fallback, dynamic/duplicate keys and error positions are preserved. Focused measurements show 5–10% lower prepared-record latency and 7–9% lower latency for a complete 10,000-row projection. Dynamic records and Mandelbrot remain near baseline; the six larger scenarios vary by roughly −1% to +3%, without a general query-speedup claim. Results and reproduction (`docs/interim/js-runtime-improvements.md`, in the git history).
   - **Retain arithmetic gains.** Native BigInts, the shift-based magnitude guard and bounded metadata caches are unchanged.
 
 Validation: 911 conformance cases pass for source and both rebuilt bundles;
@@ -491,7 +529,7 @@ Bounded metadata caches and prepared record layouts across all five lanes (2026-
   - **Bound shape and alias retention.** Shape interners and flat alias-plan caches retain at most 256 entries each, excluding layouts above 256 keys or 16,384 total key bytes/characters. Cache eviction preserves layouts owned by live values and compiled programs. Flat alias ownership prevents per-shape caches from retaining chains of other layouts.
   - **Prepare stable projections once.** Literal-key `RECORD` calls retain a prepared layout on the call node. Builtins verify the key sequence before reuse, preserving dynamic/duplicate-key fallbacks and evaluation order. JS aliases reuse resolved shapes directly. The two-field record benchmark improves in every lane, from about 4% less time in Python/C++ to 32% in JS.
   - **Bound large-power caches by size.** Python, JS and Lisp retain at most 64 dynamic powers, with exponent at most 1,000,000 and summed exponents at most 1,048,576. Larger powers remain exact but uncached. This bounds numeric cache payload while retaining useful large powers; fixed small-power tables remain unchanged.
-  - **Measured retention.** After 20,000 changing schemas and 5,000 changing-schema joins, measured retained heap deltas fall from roughly 24–48 MB to 0.3–0.7 MB across the lanes. The large-power workload falls from roughly 9–11 MB to 0.03–0.10 MB. [The benchmark report](docs/interim/metadata-cache-optimizations.md) records raw samples, runtime-specific accounting, limits and reproduction commands.
+  - **Measured retention.** After 20,000 changing schemas and 5,000 changing-schema joins, measured retained heap deltas fall from roughly 24–48 MB to 0.3–0.7 MB across the lanes. The large-power workload falls from roughly 9–11 MB to 0.03–0.10 MB. The benchmark report (`docs/interim/metadata-cache-optimizations.md`, in the git history) records raw samples, runtime-specific accounting, limits and reproduction commands.
   - **Constructor and build checks.** Fixed JS `Value.shaped()` passing a layout to a keys-based helper, retaining its array-copy behavior. C++ SQL targets now depend on the shared AST header, preventing stale objects after layout changes. Metadata checks run under the repository gate.
 
 Validation: 911 conformance cases per lane and both JS bundles, 852 SQL cases per
@@ -504,7 +542,7 @@ Common Lisp indexed arguments and sequential assignment paths (2026-09-20).
 
   - **Vector-backed argument access.** Call wrappers convert argument nodes to a simple vector, making indexed lookup and argument counts constant-time while retaining per-invocation value caching and lazy evaluation. A local 1,000-argument COALESCE improves from 838 to 104 µs. The extra vector increases call allocation; small calls can regress.
   - **Sequential path traversal.** `walk-create` walks list keys in order. `resolve-target` maintains a tail and length instead of repeatedly copying growing prefixes. It still re-resolves after index side effects, and assignment still re-resolves after the RHS. The path-traversal component falls from cubic to quadratic across repeated prefixes. At 199 keys, the local assignment benchmark improves from 3.01 to 0.91 ms and allocated bytes fall about 93%.
-  - **Reproducible scaling measurements.** `tools/benchmark-lisp-traversal.lisp` covers argument access/construction, variadic execution, individual path walks, target resolution and full assignments. [Method, raw samples and allocation tradeoffs](docs/interim/lisp-traversal-optimizations.md) accompany the change.
+  - **Reproducible scaling measurements.** `tools/benchmark-lisp-traversal.lisp` covers argument access/construction, variadic execution, individual path walks, target resolution and full assignments. Method, raw samples and allocation tradeoffs (`docs/interim/lisp-traversal-optimizations.md`, in the git history) accompany the change.
 
 Validation: 483 Lisp unit checks pass against both current and pre-change sources,
 including new assignment side-effect and depth-boundary checks. All 911 conformance
@@ -516,7 +554,7 @@ C++ optional value payloads and aggregate visitor specialization (2026-09-20).
 
   - **Smaller shared value implementation.** Decimal and collection state allocate only when needed. On the measured x86-64 build, `Value::Impl` shrinks from 272 to 72 bytes; the aliasing handle stays 8 bytes. Ordinary copies still share subsequent mutations, explicit clones own independent state, and deep destruction remains iterative.
   - **Measured footprint and construction gains.** For 200,000 short-text values, retained allocator memory falls from 57.6 to 16.0 MB and construction from 48.2 to 23.1 ms. Two-field rows fall from 179.2 to 102.4 MB and 158.6 to 122.8 ms. Separate decimal allocation has a cost: integer destruction is about 32% slower, and the measured SUM/arithmetic-MAP workloads regress about 6%/9% overall.
-  - **Templated aggregate visitor.** `walk()` exposes its callback to compiler specialization. Against the smaller-payload build with its original `std::function`, measured SUM, FILTER and ALL improve about 1.6%, 2.3% and 3.9%; MAP is essentially unchanged. Benchmark executable text grows about 4.4 KB. [Method, samples and tradeoffs](docs/interim/cpp-value-payload.md) accompany the reproducible C++ benchmark.
+  - **Templated aggregate visitor.** `walk()` exposes its callback to compiler specialization. Against the smaller-payload build with its original `std::function`, measured SUM, FILTER and ALL improve about 1.6%, 2.3% and 3.9%; MAP is essentially unchanged. Benchmark executable text grows about 4.4 KB. Method, samples and tradeoffs (`docs/interim/cpp-value-payload.md`, in the git history) accompany the reproducible C++ benchmark.
 
 Validation: 167 C++ unit checks, 911 conformance cases, 85 SQL unit checks,
 852 SQL cases and 39,990 decimal-oracle cases pass. All 4,000 differential
@@ -529,7 +567,7 @@ PHP scalar access, checked decimal mantissas and JavaScript range guards (2026-0
   - **Direct PHP scalar reads.** Scalar context reads the first packed slot or ordinary child without materializing all children. A local 100,000-field record benchmark drops from about 1.41 ms to 0.40 µs per read; packed lists were already constant-time.
   - **Cached PHP native mantissas.** Decimal descriptors retain checked native integers between operations, validate cached source fields and bypass scale alignment for equal scales. Legacy descriptors, integer-overflow fallback and execution without GMP remain supported. Canonical digit strings remain available. Local addition, multiplication and comparison improve; division regresses and the measured full expression is essentially unchanged.
   - **Cheaper JavaScript range checks.** A conservative BigInt magnitude shift bypasses hexadecimal conversion below the million-digit boundary. Exact digit counting remains at the boundary. The local 100,000-digit addition sample improves from 195 to 10.7 µs without changing arithmetic precision.
-  - **Representation measurements.** A declared-property PHP object uses less memory than a three-field array but takes longer to construct in the local probe. Arrays remain the production representation. Reproducible benchmarks, tradeoffs and validation are recorded in [the PHP/JS measurement report](docs/interim/php-js-runtime-optimizations.md).
+  - **Representation measurements.** A declared-property PHP object uses less memory than a three-field array but takes longer to construct in the local probe. Arrays remain the production representation. Reproducible benchmarks, tradeoffs and validation are recorded in the PHP/JS measurement report (`docs/interim/php-js-runtime-optimizations.md`, in the git history).
 
 Validation: 21 focused PHP checks and 14 JavaScript guard checks; 39,990 decimal
 oracle cases per lane, also passing in PHP with optional extensions disabled;
@@ -542,7 +580,7 @@ Python UTF-8 and arithmetic runtime optimizations (2026-09-20).
   - **Native decoding with SEL diagnostics.** Valid UTF-8 uses Python's strict native decoder. Invalid input falls back to the original validator, preserving `E_UTF8`, the first invalid-byte diagnostic and SEL source positions without chaining a host Unicode exception. A 75,792-input comparison with the original decoder produced identical results and diagnostics.
   - **One Python integer representation for decimals.** Removed the redundant signed small-mantissa cache and its 60-bit/18-scale eligibility checks. Arithmetic uses native arbitrary-precision magnitudes directly; scale alignment changes only the operand that needs it. Same-scale comparisons retain a direct integer path. Decimal objects shrink from 64 to 56 bytes on the measured CPython build, while scale, rounding and range limits remain unchanged.
   - **Cheaper math-plan dispatch.** Opcode constants are resolved once instead of looking up `IntEnum` attributes for every instruction. Plans remain faster than recursive AST evaluation on the measured arithmetic workloads, with separate scratch storage for each invocation. A fixed-expression fusion probe measures remaining dispatch overhead; no new instruction or production fusion compiler is introduced.
-  - **Reproducible measurements.** `tools/benchmark-python-runtime.py` compares individual decimal operations, recursive AST evaluation, math plans and compiled-program execution. Local CPython 3.14.7 measurements show about 176× faster decoding on the repeated Polish-text sample and 1.2–1.3× faster arithmetic-expression execution. Tiny positive same-scale decimal comparisons regress by about 19 ns, while the full comparison-expression benchmark remains essentially unchanged. Inputs, timings and the fusion assessment are recorded in [the runtime measurement report](docs/interim/python-runtime-optimizations.md).
+  - **Reproducible measurements.** `tools/benchmark-python-runtime.py` compares individual decimal operations, recursive AST evaluation, math plans and compiled-program execution. Local CPython 3.14.7 measurements show about 176× faster decoding on the repeated Polish-text sample and 1.2–1.3× faster arithmetic-expression execution. Tiny positive same-scale decimal comparisons regress by about 19 ns, while the full comparison-expression benchmark remains essentially unchanged. Inputs, timings and the fusion assessment are recorded in the runtime measurement report (`docs/interim/python-runtime-optimizations.md`, in the git history).
 
 Validation: **585 Python unit tests**, including 25 plan-versus-AST cases over
 multiple contexts; **911 Python conformance cases**; **39,990 decimal-oracle
@@ -618,7 +656,7 @@ Adversarial SQL/local-processing gaps F1–F4 and F6, verified across all five i
   - **Latest-revision selection can transfer only winners** (F6). An explicit single-column, non-null unique-key binding declaration enables a narrow `BUCKET`/`TOP_BY(..., "DESC", 1)` hybrid strategy: SQL selects complete winning rows and the local continuation rebuilds the groups. Unsupported shapes retain the existing fallback. The 100,000-revision regression transfers 100 winner rows; this is a transfer-volume result, not a timing claim.
   - **Reproducible database regressions.** Disposable Docker tooling covers PostgreSQL, MariaDB, MySQL and SQLite, including inline/prepared execution and the installed Python wheel. The verification report records 2,568 live SQL executions and 1,188 hybrid replays. The separate C1 depth/error-policy boundary remains open; optional database-backed SQL fuzzing is not claimed green.
 
-Verification: 898 conformance cases across seven runtime variants; 852 SQL cases across all five hosts (including declared type-system refusals); all 192 mutations caught across the default and supplementary live runs. Scope, reproductions and remaining limits: [fix verification](docs/interim/sel-gaps-2026-09-15-08-fix-verification.md).
+Verification: 898 conformance cases across seven runtime variants; 852 SQL cases across all five hosts (including declared type-system refusals); all 192 mutations caught across the default and supplementary live runs. Scope, reproductions and remaining limits: fix verification (`docs/interim/sel-gaps-2026-09-15-08-fix-verification.md`, in the git history).
 
 The last of the 2026-09-15 review (W2, the lane facet of Y, #31), and what the widened fuzzer found.
 
@@ -637,18 +675,18 @@ Three more findings of the 2026-09-15 review (AF, Y, AK) and one found during it
 Two more findings of the 2026-09-15 review (AJ and R).
 
   - **The hybrid continuation reports errors where `run()` does, helpers included** (AJ). The planner planned stage 1's tree, in which a helper assignment is inlined with its definition-site position, so `Y = "x"; ORDERS .> TAKE(2) .> MAP(_["id"] + Y)` ran in memory as `_["id"] + "x"` and reported E_NOT_NUM at 1:5 where `run()` reports the read at 1:45 — in all five hosts — and a helper was evaluated once per row rather than once. The planner now plans the program as written: a helper that is a literal (after folding, so `N = 1 + 1` too) is inlined at its reads stamped with the read's position, a helper read as the pipeline's source is unwound through, and every tree handed to the translator or kept as the continuation carries the assignments it still reads in front of it, as written — the translator's own stage 1 inlines them, the continuation evaluates them once. The SQL side is byte for byte what it was on every existing case. Along the way: C++ read a stage-1 result it could only express as a keyed list (`R[1] = 5; …`) as a refusal of the whole program and planned pure memory where the other four pushed the prefix down; it no longer does (`plan.helper.indexed-helper-is-carried-as-written`). `plan.helper.*` (six cases); nine more executed-plan position probes and three value probes per host.
-  - **`LAZY_RECORD` is gone** (R). Every host rewrote `MAP(RECORD(…))` with two or more pairs into a `LAZY_RECORD` whose non-literal fields were evaluated on first read, and RECORD is strict: `COUNT(LIST(1) .> MAP(RECORD("a", 1/0, "b", "k", "c", 3)))` was 1 in four hosts and E_DIV_ZERO in C++ (whose MAP clones what it collects, forcing the thunks), and a FILTER after the MAP split the hosts three ways. The rewrite, the builtin (which no spec named) and the thunk plumbing in every value layer are removed; `rel.map.record-field-*`, `mis.compile.lazy-record-is-not-a-function`. docs/EXTENDING.md's "five copy sites" now says what the hosts do: `,` and `=` copy everywhere, C++ also clones what MAP and FILTER collect and PHP what FILTER collects, which no program can observe because a binder cannot be assigned.
+  - **`LAZY_RECORD` is gone** (R). Every host rewrote `MAP(RECORD(…))` with two or more pairs into a `LAZY_RECORD` whose non-literal fields were evaluated on first read, and RECORD is strict: `COUNT(LIST(1) .> MAP(RECORD("a", 1/0, "b", "k", "c", 3)))` was 1 in four hosts and E_DIV_ZERO in C++ (whose MAP clones what it collects, forcing the thunks), and a FILTER after the MAP split the hosts three ways. The rewrite, the builtin (which no spec named) and the thunk plumbing in every value layer are removed; `rel.map.record-field-*`, `mis.compile.lazy-record-is-not-a-function`. docs/contributing.md's "five copy sites" now says what the hosts do: `,` and `=` copy everywhere, C++ also clones what MAP and FILTER collect and PHP what FILTER collects, which no program can observe because a binder cannot be assigned.
 
 Cross-language code review remediation for the hybrid planner and the optimisers (`docs/interim/sel_cross_language_code_review_remediation_plan.md`, all six parts).
 
-  - **Planner contract, pinned.** `sql/cases/*.sqlt` gains `--- plan` and `--- tables` sections; `sql/cases/25-hybrid-plans.sqlt` holds 25 planner cases every host runs without a database, asserting classification, physical source tables, the SQL prefix, continuation presence and that the caller's AST survives planning and physical optimisation. The contract is written down in docs/SQL-TRANSLATION.md §12.1.
+  - **Planner contract, pinned.** `sql/cases/*.sqlt` gains `--- plan` and `--- tables` sections; `sql/cases/25-hybrid-plans.sqlt` holds 25 planner cases every host runs without a database, asserting classification, physical source tables, the SQL prefix, continuation presence and that the caller's AST survives planning and physical optimisation. The contract is written down in docs/internals/sql-translation.md §12.1.
   - **JS and C++ plan the normalised tree.** Both unwound the raw AST, so `X = ORDERS; X .> TAKE(1)` was pure memory there and pure SQL in the other three. JS also dropped the planner's options on the way to the optimiser.
   - **`source_tables` means physical sources** in JS, Python and PHP (they reported SEL binding names; C++ already reported tables); deduplicated by physical name, a relation query reported as its text. Lisp's plan gains `dialect`, `continuation-ast`, `source-tables` and `hybrid-plan-hybrid-p`, filled on every path.
   - **A program stage 1 refuses is a pure-memory plan** in every host; Python, PHP and Lisp let `E_SQL_ASSIGN` escape `plan_hybrid`.
   - **The Lisp optimiser no longer writes into its input.** `optimize-ast-logical` and `optimize-ast-in-memory` are one copy-on-write walk, and tolerate a stage-1 clist in a child slot.
   - **`Program.run()` builds its physical tree once** (`physicalAst()` / `physical_ast()` / `physical-ast` / `physical_ast()`), keyed by the identity of the public AST, shared by copies in C++ under `call_once`. Measured against re-optimising every run: ×1.5 JS and ×3.5 Python on a small validation rule, ×1.15–1.36 on a 20-row pipeline; Lisp ×1.04. The public AST is documented immutable in every host.
   - **Dead code.** `walkNode`/`nodeHasVar` (JS), `walk_node`/`node_has_var` (Python), `opt_node_has_var` (C++), an unused import and a doubled doc block (PHP). One pipeline vocabulary per host: the C++ planner and the Lisp and dynamic-host translators read the optimiser's list.
-  - **Guardrails.** A contributor checklist in docs/EXTENDING.md; host-local checks for what the shared fixtures cannot express.
+  - **Guardrails.** A contributor checklist in docs/contributing.md; host-local checks for what the shared fixtures cannot express.
 
 Bucket pipelines, and the grouping verb.
 
@@ -923,7 +961,7 @@ standard could not drag it along.
   - **The guard evaluates a raw binding twice, and now says so.**
     `numericGuard` names its operand in both the test and the value, so a
     binding whose SQL is a raw expression — a subquery, a function call — is
-    evaluated twice per row. It has always done this. `docs/SQL-KINDS.md` §6
+    evaluated twice per row. It has always done this. `docs/internals/sql-kinds.md` §6
     now states it as an exclusion and gives the fix: name the expression once
     in a derived table or CTE and bind the column, `SELECT a.b AS c FROM x`,
     then let SEL use `c`.

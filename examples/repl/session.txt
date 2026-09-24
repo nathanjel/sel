@@ -1,0 +1,13 @@
+2.50 + 2.50
+A = (1, 2, 3)
+SUM(A, _ * 10)
+"total: {SUM(A, _)}"
+A .> MAP(_ * _) .> JOIN(", ")
+1 / 3
+A[2] == 2
+IF(1, "a", "b")
+MISSING + 1
+:deps QTY * PRICE > LIMIT
+:reset
+A
+RMATCH('^\d{2}-\d{3}$', "31-874")

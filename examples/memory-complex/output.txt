@@ -1,0 +1,14 @@
+1. generated in memory
+   TEAMS         3 rows
+   AGENTS        6 rows
+   CUSTOMERS    12 rows
+   SLA           9 rows
+   TICKETS      48 rows
+   EVENTS      168 rows
+2. the report
+   | team=Billing  tickets=16  late=4  open=2  slowest=#39 (1104 min)  incidents=INC-4036 INC-4072 INC-4108 INC-4144
+   | team=Onboarding  tickets=16  late=8  open=2  slowest=#19 (564 min)  incidents=INC-4012 INC-4048 INC-4084 INC-4120
+   | team=Platform  tickets=16  late=9  open=2  slowest=#29 (1254 min)  incidents=INC-4024 INC-4060 INC-4096 INC-4132
+3. planned for MariaDB, without connecting
+   plan        pure_memory
+   reads       events, tickets, customers, sla, teams

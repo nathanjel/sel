@@ -10,7 +10,7 @@
 // translations.
 //
 // An application whose bindings come from a schema file does exactly the same
-// thing: it generates the calls. See docs/SQL-TRANSLATION.md §5.
+// thing: it generates the calls. See docs/internals/sql-translation.md §5.
 //
 // Used by php/bin/sqlo alone. The case files no longer come through here:
 // tools/gen-sql-cases.mjs reads them and emits php/bin/CaseData.php and
@@ -41,7 +41,7 @@ use Sel\Value;
  * whose mistakes are suite errors rather than translations.
  *
  * An application whose bindings come from a schema file does the same thing:
- * generates the calls. See docs/SQL-TRANSLATION.md §5.
+ * generates the calls. See docs/internals/sql-translation.md §5.
  *
  * @param array<string,mixed> $json
  * @return array<string, Binding>

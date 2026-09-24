@@ -1,0 +1,19 @@
+# What happens to one order. The warehouse team edits this file; the
+# application never changes when it does.
+#
+# STOCK, RESERVE, WEIGHT and NOTIFY are not SEL builtins: the application
+# registers them (examples/scripting/*), and they are how the script reaches
+# the inventory and the outbox. ORDER, COUNTRY and ITEMS are the order itself.
+
+MISSING = ITEMS .> FILTER(STOCK(_["sku"]) < _["qty"]);
+
+IF(COUNT(MISSING) > 0,
+   (NOTIFY("purchasing", "order {ORDER} waits for " & JOIN(MAP(MISSING, _["sku"]), ", "));
+    "backorder"),
+   (ALL(ITEMS, RESERVE(_["sku"], _["qty"]));
+    KG = SUM(ITEMS, WEIGHT(_["sku"]) * _["qty"]);
+    CARRIER = COND(COUNTRY $== "PL" AND KG <= 25, "inpost",
+                   KG > 30, "freight",
+                   "courier");
+    NOTIFY("customer", "order {ORDER} ships by {CARRIER}, {KG} kg");
+    "ship by " & CARRIER))

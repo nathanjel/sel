@@ -47,6 +47,7 @@ print('   postgresql   =>', ' -> '.join(map.chain('postgresql')))
 # chain, then the whole shipped chain -- so an override never half-applies.
 
 print('2. a flavour of your own')
+# EXAMPLE-BEGIN flavour
 map.define_dialect('pg-libpq', {
     'extends': 'postgresql',
     'version': '15',
@@ -57,6 +58,7 @@ print('   targets      =>', ' '.join(Sql.dialects()))
 print('   chain        =>', ' -> '.join(map.chain('pg-libpq')))
 print('   base         =>', sql_in('postgresql'))
 print('   pg-libpq     =>', sql_in('pg-libpq'))
+# EXAMPLE-END flavour
 
 # 3 - spelling one function differently ---------------------------------------------
 # {*} is every argument; {0}, {1} pick them out. Note the slots are ZERO-based
@@ -65,9 +67,11 @@ print('   pg-libpq     =>', sql_in('pg-libpq'))
 # infers kinds and will not guess.
 
 print('3. one function, respelled')
+# EXAMPLE-BEGIN respell
 map.define('pg-libpq', 'funcs', 'UPPER', {'tpl': 'UPPER({0} COLLATE "C")', 'ret': 'TEXT'})
 print('   upper        =>',
       Sql.translate(compile('UPPER(NAME)'), 'pg-libpq', bindings).as_value())
+# EXAMPLE-END respell
 
 # 4 - withdrawing what a deployment does not have ------------------------------------
 # A None entry withdraws it. This is not the same as leaving it unmapped: it is
@@ -75,12 +79,14 @@ print('   upper        =>',
 # a function the server does not have.
 
 print('4. withdrawing an entry')
+# EXAMPLE-BEGIN withdraw
 map.define('pg-libpq', 'funcs', 'RMATCH', None)
 re = compile('RMATCH(\'^a\', NAME)')
 print('   postgresql   =>', 'refused' if Sql.try_translate(re, 'postgresql', bindings)
       is None else 'translated')
 print('   pg-libpq     =>', 'refused' if Sql.try_translate(re, 'pg-libpq', bindings)
       is None else 'translated')
+# EXAMPLE-END withdraw
 
 # 5 - a builder, for what a template cannot say -----------------------------------------
 # The escape hatch. It receives the emitter and the already-rendered arguments,
@@ -94,10 +100,12 @@ print('   pg-libpq     =>', 'refused' if Sql.try_translate(re, 'pg-libpq', bindi
 # carried and quietly turn a prepared statement back into concatenation.
 
 print('5. a builder')
+# EXAMPLE-BEGIN builder
 map.define_builder('pg-libpq', 'funcs', 'LEN', lambda emit, args, _at:
                    Fragment(['length(', *args[0].parts, ')'], 'NUM', emit.dialect()))
 print('   len          =>',
       Sql.translate(compile('LEN(NAME)'), 'pg-libpq', bindings).as_value())
+# EXAMPLE-END builder
 
 # 6 - putting it back ---------------------------------------------------------------------
 # reset() drops every registration and leaves the shipped map. Worth knowing in

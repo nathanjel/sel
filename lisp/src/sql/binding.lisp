@@ -7,7 +7,7 @@
 ;;;; a malformed one meant. A typed constructor makes the whole class
 ;;;; unrepresentable rather than refusable.
 ;;;;
-;;;; See docs/SQL-TRANSLATION.md §5.
+;;;; See docs/internals/sql-translation.md §5.
 
 (in-package #:sel.sql)
 
@@ -304,7 +304,7 @@ each one its own" (cdr prev) name alias)
 
 (defstruct (binder (:constructor %binder (shape payload &optional reason)))
   "What an aggregate binder names for the duration of one element. Three shapes
-matching the three iteration shapes of docs/SQL-TRANSLATION.md §7, plus one that
+matching the three iteration shapes of docs/internals/sql-translation.md §7, plus one that
 exists only to carry a refusal -- so that `_K` inside a relation body fails
 saying rows have no key, rather than falling through to the bindings map and
 being reported as an unbound variable."

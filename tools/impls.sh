@@ -303,7 +303,7 @@ impl_sql() {
 # case file cannot answer about itself. Skips itself when no DSN is set.
 # Translate a corpus and print one canonical line per program, so that the hosts
 # WITH a translator can be diffed against each other. This is the lane
-# docs/SQL-TRANSLATION.md §14 M7 asked for: impl_oracle answers "does the emitted
+# docs/internals/sql-translation.md §14 M7 asked for: impl_oracle answers "does the emitted
 # SQL mean what SEL means?" and needs a database, this one answers "do the hosts
 # emit the same thing?" and needs nothing -- which matters, because without it
 # the SQL fuzz step did nothing at all on a machine with no DSN, and that is

@@ -2,7 +2,7 @@
 """Render the primary timing table from summary.json (no hand-entered numbers)."""
 import csv,json
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'docs/interim/commit-benchmark'
+ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'tools/commit-benchmark/results'
 rows=json.loads((OUT/'summary.json').read_text())['rows']
 revs=['ef836bf','1614eed','619bc31','c5a8991']
 lines=['## Primary results','', 'Milliseconds; medians of five samples except the marked old Mandelbrot single executions. Lower is faster. `Δ latest/base` is a latency change, not a speedup ratio.','', '| Lane | Workload | ef836bf | 1614eed | 619bc31 | c5a8991 | Δ latest/base |','| --- | --- | ---: | ---: | ---: | ---: | ---: |']

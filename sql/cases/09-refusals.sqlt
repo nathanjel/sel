@@ -32,7 +32,7 @@ E_SQL_SHAPE 1:1
 --- note
 FILTER only decides whether an element takes part, so binding both names to one
 element absorbs it. MAP changes what the element is, so the two binders mean
-different things. See docs/SQL-TRANSLATION.md §7.5 for the shape a solution
+different things. See docs/internals/sql-translation.md §7.5 for the shape a solution
 would take.
 --- dialect
 mariadb
@@ -76,7 +76,7 @@ holding 1 matched a row SEL refuses.
 
 Wrapping cannot fix it, because no dialect can ask "is this a boolean" -- in the
 MySQL family a boolean IS a TINYINT, so testing IN (0, 1) would also admit a NUM
-column SEL refuses. Declare the binding BOOL. See docs/SQL-KINDS.md.
+column SEL refuses. Declare the binding BOOL. See docs/internals/sql-kinds.md.
 
 0:0 rather than a real position, and pinned so: asCondition is called on a
 finished Fragment, which carries a kind and no node, so this refusal has no

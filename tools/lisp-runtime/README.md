@@ -35,7 +35,7 @@ both comparison orders and identical-output checks.
 
 The recorded exploratory ablations used an earlier two-slot argument memo;
 their exact source changes are preserved in the `*experiment.patch.txt` files
-under `docs/interim/lisp-runtime/`. Apply those changes to the baseline to
+under `tools/lisp-runtime/results/`. Apply those changes to the baseline to
 reproduce the exploratory variants. Final measurements under `final/` use the
 current single-slot pair representation and fresh controls.
 

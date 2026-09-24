@@ -616,7 +616,7 @@ holds for every flat row of its shape."
 ;;; rows those whose fields no right side carries, so the joined rows they
 ;;; would have produced -- all dropped by the same conjunct -- are never built.
 ;;; Decided from the rows, at run time, so the physical tree stays a function
-;;; of the AST. docs/EXTENDING.md states the rule for every host.
+;;; of the AST. docs/contributing.md states the rule for every host.
 
 (defstruct jconj
   node            ; a conjunct of the FILTER body, in the tree

@@ -36,7 +36,7 @@ No argument-count check, no type check, no `eval` call, no try/catch.
 `nonNegInt(0)` evaluates argument 0 once, requires a whole number ≥ 0, and
 raises `E_NOT_INT` or `E_RANGE` against **that argument's** source position.
 The Args API is what makes a builtin four lines instead of twenty; see
-[docs/EXTENDING.md](../../docs/EXTENDING.md#the-args-api).
+[docs/contributing.md](../../docs/contributing.md#the-args-api).
 
 ## Registering the file
 

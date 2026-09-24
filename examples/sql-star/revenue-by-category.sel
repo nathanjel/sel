@@ -1,0 +1,10 @@
+# Revenue and units per product category in the first quarter of 2025.
+SALES
+  .> LINK(DATES, S, D, S["date_key"] == D["date_key"])
+  .> FILTER(_["year"] == 2025 AND _["quarter"] == 1)
+  .> LINK(PRODUCTS, X, P, X["product_key"] == P["product_key"])
+  .> BUCKET(_["category"], RECORD(
+       "category", _K,
+       "units", SUM(_, _["qty"]),
+       "revenue", SUM(_, _["revenue"])))
+  .> SORT_BY(_["revenue"], "DESC")

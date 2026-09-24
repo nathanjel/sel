@@ -1,0 +1,10 @@
+# Paid revenue per A/B cohort, the cohort being the application's hash of the customer's e-mail.
+ORDERS
+  .> FILTER(_["status"] $== "paid")
+  .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["customer_id"])
+  .> LINK(LINES, X, L, X["order_id"] == L["order_id"])
+  .> MAP(RECORD("email", _["email"], "amount", _["qty"] * _["unit_price"]))
+  .> MAP(RECORD("cohort", IF(RMATCH('[0-7]$', CRC32(_["email"])), "A", "B"),
+                "amount", _["amount"]))
+  .> BUCKET(_["cohort"], RECORD("cohort", _K, "lines", COUNT(_), "revenue", SUM(_, _["amount"])))
+  .> SORT_BY(_["cohort"])

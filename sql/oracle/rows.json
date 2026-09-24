@@ -18,7 +18,7 @@
     "",
     "A rule may also state that a dialect REFUSES it (`refuse`, per dialect),",
     "which rows over a text column SEL itself refuses (`raises`), and -- only for",
-    "docs/SQL-KINDS.md section 6's exclusion 4 -- an answer the database is",
+    "docs/internals/sql-kinds.md section 6's exclusion 4 -- an answer the database is",
     "allowed to give that SEL does not (`database`, with `excluded` saying why).",
     "Refused rows are absent from what SEL selects, so the ordinary comparison is",
     "the warrant: SQL must not report a match for a row SEL would not answer for.",
@@ -266,7 +266,7 @@
     },
     {
       "name": "a text column compared as a number",
-      "why": "The report this came from, reduced: a VARCHAR column of EAV values compared numerically. MariaDB reads '25/298' as 25 and 'x' and '' as 0, so before the guard this selected orders 1, 2, 3 and 4 -- three of them rows SEL refuses. sqlite cannot ask whether a value is a number -- no REGEXP, and CAST answers 0 for 'abc' rather than saying so -- so it has no numericGuard and the rule is refused rather than emitted unguarded. docs/SQL-KINDS.md section 5.",
+      "why": "The report this came from, reduced: a VARCHAR column of EAV values compared numerically. MariaDB reads '25/298' as 25 and 'x' and '' as 0, so before the guard this selected orders 1, 2, 3 and 4 -- three of them rows SEL refuses. sqlite cannot ask whether a value is a number -- no REGEXP, and CAST answers 0 for 'abc' rather than saying so -- so it has no numericGuard and the rule is refused rather than emitted unguarded. docs/internals/sql-kinds.md section 5.",
       "sel": "CODE == 25",
       "expect": [
         1
@@ -298,7 +298,7 @@
     },
     {
       "name": "arithmetic over a text column",
-      "why": "Comparison is not the only numeric context. `* 1` is also the workaround docs/SQL-KINDS.md section 4.1a offers for the function-argument family, so this is the rule that says the workaround actually works on a server.",
+      "why": "Comparison is not the only numeric context. `* 1` is also the workaround docs/internals/sql-kinds.md section 4.1a offers for the function-argument family, so this is the rule that says the workaround actually works on a server.",
       "sel": "CODE * 1 == 25",
       "expect": [
         1
@@ -330,7 +330,7 @@
     },
     {
       "name": "ANY over a relation with one bad element",
-      "why": "docs/SQL-KINDS.md section 6, exclusion 4, made runnable. SEL's ANY short-circuits, so it reaches AB-1000's 'x' first and refuses order 1; SQL's EXISTS has no order and answers TRUE on CD-2000's 9. SEL has no single answer to be faithful to -- the other ordering answers TRUE -- so the warrant holds only in its weakened form. The guard changes nothing here either way, and order 2, whose only element is bad, is excluded by both sides.",
+      "why": "docs/internals/sql-kinds.md section 6, exclusion 4, made runnable. SEL's ANY short-circuits, so it reaches AB-1000's 'x' first and refuses order 1; SQL's EXISTS has no order and answers TRUE on CD-2000's 9. SEL has no single answer to be faithful to -- the other ordering answers TRUE -- so the warrant holds only in its weakened form. The guard changes nothing here either way, and order 2, whose only element is bad, is excluded by both sides.",
       "sel": "ANY(ITEMS, _[\"VALUE\"] > 3)",
       "expect": [
         4

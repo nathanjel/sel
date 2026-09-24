@@ -409,8 +409,40 @@ Program compile(const std::string& source);
 Value evaluate(const std::string& source, Value& context);
 Value evaluate(const std::string& source);
 
-// Every built-in name, sorted. The table is fixed at startup — SEL has no DEFUN.
+// Every function name — the builtins and any registered below — sorted.
 std::vector<std::string> function_names();
+
+// --- host functions (spec/SPEC.md §8.1) --------------------------------------
+
+class Args;   // the evaluator's argument vector; internal
+
+// What a host function is handed: its arguments, already evaluated once, left to
+// right, with the typed readers every builtin uses. Each reader raises the usual
+// SelError (E_NOT_TEXT, E_NOT_BOOL, E_NOT_NUM, E_NOT_INT, E_RANGE, E_NULL) at
+// that argument's own position.
+class HostArgs {
+ public:
+  explicit HostArgs(Args& args) : args_(args) {}
+  int count() const;
+  const Value& val(int i);
+  const std::string& text(int i);
+  bool boolean(int i);
+  long long integer(int i);
+  long long non_neg_int(int i);
+  Pos pos_of(int i) const;
+
+ private:
+  Args& args_;
+};
+
+using HostFunction = std::function<Value(HostArgs&)>;
+
+// Adds an application's own strict function; register it before compiling a
+// program that calls it. A host function adds to the language and never changes
+// it: std::invalid_argument for a malformed or reserved name, a builtin's name,
+// an arity outside 0 <= min <= max, or an empty `fn`. Registering a host
+// function's name again replaces it for programs compiled afterwards.
+void register_function(const std::string& name, int min, int max, HostFunction fn);
 
 }  // namespace sel
 

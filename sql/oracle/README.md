@@ -15,7 +15,7 @@ is a claim about semantics. A case asserting that `CHAR(233)` translates to
 the answer is `NULL` where SEL says `é`. Above 128 it disagrees, below 128 it
 agrees, and nothing in a case file can tell.
 
-See `docs/history/SQL-TESTING.md` for the analysis this came out of.
+See The retired SQL-TESTING analysis (in the git history) for the analysis this came out of.
 
 ## Running it
 
@@ -181,7 +181,7 @@ it.** Three things are checked: that SEL does raise, that it raises that code,
 and — the one that matters — that `Sql::translate` refuses. Nothing is sent to
 the server, because the point is that nothing should be.
 
-These lines could not have been written before `docs/SQL-TRANSLATION.md` §11.4.
+These lines could not have been written before `docs/internals/sql-translation.md` §11.4.
 `LEFT("abc", -1)` translated cleanly into all four dialects and they answered
 `''`, `''`, `'ab'` and `'abc'` — a translation reporting success for an
 expression SEL has no answer for. The corpus now carries thirty-seven of them, and
@@ -317,7 +317,7 @@ Two guards, both of which have already caught something:
 
 `fixture.sql` exists because the original did not. The M3 row-parity check ran
 against a database made by hand at a shell, three commit messages cite its
-result, and the database is gone. See `docs/history/SQL-TESTING.md` §10.
+result, and the database is gone. See The retired SQL-TESTING analysis (in the git history) §10.
 
 ## `statements.json` and `fixture-statements-*.sql`
 
@@ -354,7 +354,7 @@ Against code that had been reviewed three times and had a green 180-case suite:
 | the fixture loader loaded nothing | and reported nine disagreements over zero rows |
 
 The fourth is the one worth reading twice, because it was not an implementation
-slip: `docs/SQL-TRANSLATION.md` §7.6 used a multi-field relation in its own
+slip: `docs/internals/sql-translation.md` §7.6 used a multi-field relation in its own
 worked example. A relation with more than one field is a list of **rows**, and
 SEL compares a scalar against a row structurally — FALSE for every row, always.
 No SEL context makes the documented translation true. It is refused now, and

@@ -78,7 +78,7 @@ say('program.deps.excludes.binder', implode(' ', Sel::compile('ALL(I, IT, IT > 0
 // evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
 // dependencies() answers as if IT were bound. Pinned because all seven hosts
 // agree on it and nothing else records it -- not endorsed. See the note in
-// docs/EXTENDING.md.
+// docs/contributing.md.
 say('program.deps.grouped.binder', implode(' ', Sel::compile('ALL(I, (IT), IT > 0)')->dependencies()));
 // The binding forms of spec/builtins.json (see tools/api.mjs).
 say('program.deps.forms.top.binder-and-limit', implode(' ', Sel::compile('TOP(L, X, X["a"], N)')->dependencies()));
@@ -158,7 +158,7 @@ try {
     say('deps.depth.over', $e->code . ' ' . $e->line . ':' . $e->col);
 }
 
-// --- the physical tree (docs/SQL-TRANSLATION.md §12.1; SEL-0044, SEL-0049).
+// --- the physical tree (docs/internals/sql-translation.md §12.1; SEL-0044, SEL-0049).
 // PHP arrays are values, so "the same tree" is value equality here; the other
 // hosts compare identity. One tree per AST, the same whatever data ran, the
 // AST untouched, run() the same after an explicit build.
@@ -174,5 +174,54 @@ $empty = Value::none();
 Sel::compile('ORDERS = LIST(); CUSTOMERS = LIST(); 0')->run($empty);
 $join->run($empty);
 say('program.physical.independent.of.data', $b($join->physicalAst() === $first));
+
+// --- host functions (spec/SPEC.md §8.1). Registered before compiling, called
+// like a builtin, handed evaluated arguments and the typed readers, never
+// allowed to replace a builtin; a compiled program keeps its function.
+Sel::registerFunction('host_join', 1, 3, static function (\Sel\Args $a): Value {
+    $parts = [];
+    for ($i = 0; $i < $a->count(); $i++) {
+        $parts[] = $a->text($i);
+    }
+    return Value::text(implode('|', $parts));
+});
+Sel::registerFunction('HOST_CHECK', 1, 1, static function (\Sel\Args $a): Value {
+    if ($a->text(0) === '') {
+        throw new SelError('E_BAD_ARG', 'must not be empty', $a->posOf(0));
+    }
+    return Value::bool(true);
+});
+say('host.fn.call', Sel::evaluate('HOST_JOIN("a", 1, "c")')->asText());
+say('host.fn.case', Sel::evaluate('host_join("x")')->asText());
+say('host.fn.listed', $b(in_array('HOST_JOIN', Sel::functionNames(), true)));
+say('host.fn.deps', implode(' ', Sel::compile('HOST_JOIN(X, Y)')->dependencies()));
+say('host.fn.order', Sel::evaluate('A = 1; HOST_JOIN((A = A + 1), (A = A * 10), A)')->asText());
+foreach ([['host.fn.arity', 'HOST_JOIN()'], ['host.fn.type', 'HOST_JOIN("a", TRUE)'],
+          ['host.fn.error', 'HOST_CHECK("")']] as [$name, $src]) {
+    try {
+        Sel::evaluate($src);
+        say($name, 'no error');
+    } catch (SelError $e) {
+        say($name, "{$e->code} {$e->line}:{$e->col}");
+    }
+}
+foreach ([['host.fn.refuse.builtin', 'len', 1, 1], ['host.fn.refuse.reserved', 'and', 1, 1],
+          ['host.fn.refuse.underscore', '_x', 1, 1], ['host.fn.refuse.digit', '1x', 1, 1],
+          ['host.fn.refuse.dash', 'a-b', 1, 1], ['host.fn.refuse.min-over-max', 'bad', 2, 1],
+          ['host.fn.refuse.negative', 'bad', -1, 0]] as [$name, $fname, $lo, $hi]) {
+    try {
+        Sel::registerFunction($fname, $lo, $hi, static fn ($a) => Value::text(''));
+        $r = 'accepted';
+    } catch (SelError $e) {
+        $r = "SelError {$e->code}";
+    } catch (\InvalidArgumentException $e) {
+        $r = 'refused';
+    }
+    say($name, $r);
+}
+Sel::registerFunction('HOST_V', 0, 0, static fn ($a) => Value::text('old'));
+$early = Sel::compile('HOST_V()');
+Sel::registerFunction('HOST_V', 0, 0, static fn ($a) => Value::text('new'));
+say('host.fn.replace', $early->run()->asText() . ' ' . Sel::evaluate('HOST_V()')->asText());
 
 echo implode("\n", $out), "\n";

@@ -276,7 +276,7 @@ export class Translator {
     refuse('E_SQL_SHAPE', `cannot translate a ${t} node`, n.pos);
   }
 
-  // Every literal becomes a parameter slot; §9 of docs/SQL-TRANSLATION.md.
+  // Every literal becomes a parameter slot; §9 of docs/internals/sql-translation.md.
   //
   // `kind` is both the static kind the expression has and the form the literal is
   // written in, and the two are the same thing only because this is where the AST
@@ -997,7 +997,7 @@ export class Translator {
     return new Fragment(parts, unify(results, n.pos), this.dialect);
   }
 
-  // --- aggregates: docs/SQL-TRANSLATION.md §7 ------------------------------
+  // --- aggregates: docs/internals/sql-translation.md §7 ------------------------------
   //
   // Lowering runs inside this walk rather than as an AST pass before it. Two of
   // the three shapes have to render — a relation becomes a subquery, which is
@@ -1177,7 +1177,7 @@ export class Translator {
         'MAP as the thing an aggregate iterates is not translated: unlike FILTER, '
         + 'which only decides whether an element takes part, MAP changes what the '
         + 'element is, so the two binders mean different things and binding both to '
-        + 'one element is not enough. See docs/SQL-TRANSLATION.md §7.5', src.pos);
+        + 'one element is not enough. See docs/internals/sql-translation.md §7.5', src.pos);
     }
 
     // Built by a helper rather than by a merge: PHP's array union keeps the LEFT

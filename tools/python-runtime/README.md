@@ -7,7 +7,7 @@ mkdir -p /tmp/sel-python-runtime/before
 git archive 6815faa | tar -x -C /tmp/sel-python-runtime/before
 python3 tools/python-runtime/compare.py \
   --before /tmp/sel-python-runtime/before \
-  --output docs/interim/python-runtime
+  --output tools/python-runtime/results
 ```
 
 The baseline is the complete `6815faa` tree. The driver runs baseline, candidate,
@@ -39,8 +39,8 @@ samples and three warmups, without the other scenarios' preceding heap history:
 
 ```sh
 python3 tools/python-runtime/targeted.py \
-  --before /tmp/sel-python-runtime/before --output docs/interim/python-runtime
-python3 tools/python-runtime/activity.py > docs/interim/python-runtime/activity.json
+  --before /tmp/sel-python-runtime/before --output tools/python-runtime/results
+python3 tools/python-runtime/activity.py > tools/python-runtime/results/activity.json
 ```
 
 The activity probe is untimed: it counts calls to the two changed arithmetic

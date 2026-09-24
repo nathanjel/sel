@@ -50,7 +50,7 @@ rather than a comparison of the standard library with itself.
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
 | `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure; **0 and silent** for a host with no SQL layer |
 | `oracle [mode]` | `sql/oracle/*` | a per-mode agreement report | non-zero on any disagreement; **0 with a skip line** when no DSN is set |
-| `sqldoc [file.md…]` | `docs/SQL-TRANSLATION.md`, `sql/cases/*.sqlt` | `N quote a case, M wrong` | non-zero on any mismatch, and on finding no blocks |
+| `sqldoc [file.md…]` | `docs/internals/sql-translation.md`, `sql/cases/*.sqlt` | `N quote a case, M wrong` | non-zero on any mismatch, and on finding no blocks |
 
 The first five are required. `sql` and `oracle` are optional in the same way
 `unit` is: a host with no SQL layer succeeds silently and the harness moves on.
@@ -101,7 +101,7 @@ recreates its tables on every run. See `sql/oracle/README.md`.
 `oracle` and `sqldoc` are PHP-only by design rather than unfinished: both ask
 about `sql/dialects/*.json` and `sql/cases/*.sqlt`, which are shared data every
 host consumes unchanged, so a second copy would ask one server the same question
-twice. See docs/SQL-TRANSLATION.md §14, M7.
+twice. See docs/internals/sql-translation.md §14, M7.
 
 Three implementations in `tools/impls.sh` are the same code reached a second way:
 `js-bundle` runs `dist/sel.mjs`, `js-bundle-min` runs `dist/sel.min.mjs`, and

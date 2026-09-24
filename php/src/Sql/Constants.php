@@ -22,7 +22,7 @@
 // exactly as wrong and passes, because `col` is a column and its value is not
 // knowable at translation time. Argument validation happens where SEL's does —
 // at the value — and this reaches the subset of values that are written down.
-// See docs/SQL-TRANSLATION.md §11.4.
+// See docs/internals/sql-translation.md §11.4.
 
 declare(strict_types=1);
 

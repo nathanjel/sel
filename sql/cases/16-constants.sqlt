@@ -286,7 +286,7 @@ LEFT('abc', 0)
 The residual risk, pinned so it is a decision rather than an oversight. N is a
 column: its value is not known here, so nothing validates it and the database
 answers whatever it answers. Argument validation happens where SEL's does, at
-the value. See docs/SQL-TRANSLATION.md §11.4.
+the value. See docs/internals/sql-translation.md §11.4.
 --- dialect
 mariadb
 --- bindings

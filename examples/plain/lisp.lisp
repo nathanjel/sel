@@ -36,14 +36,14 @@
   ;; Parsing is cheap but not free, and a program is immutable and reusable.
 
   (format t "2. compile once, run many~%")
-  ;; EXAMPLE-BEGIN
+  ;; EXAMPLE-BEGIN compile
   (let ((rule (sel:compile-source "IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")")))
     (loop for (qty price) in '(("3" "19.99") ("1" "5.00"))
           do (format t "   QTY=~a PRICE=~a => ~a~%" qty price
                      (sel:as-text
                       (sel:run rule (ctx-of `(("QTY" . ,qty) ("PRICE" . ,price)
                                               ("LIMIT" . "50.00"))))))))
-  ;; EXAMPLE-END
+  ;; EXAMPLE-END compile
 
   ;; 3 — building a context ------------------------------------------------------
   ;; Money is TEXT, never a CL number. A ratio loses the scale (2.50 and 5/2 are
@@ -51,6 +51,7 @@
   ;; form at all, so the host boundary is where that is said out loud.
 
   (format t "3. structured context~%")
+  ;; EXAMPLE-BEGIN context
   (let ((order (sel:make-none)))
     (sel:value-set order "CUSTOMER" (sel:make-text "Zażółć"))
     (sel:value-set order "ITEMS"
@@ -67,6 +68,7 @@
             (sel:as-text (sel:run (sel:compile-source
                                    "SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"])") order))))
   (format t "   0.10+0.20 => ~a~%" (sel:as-text (sel:evaluate "0.10 + 0.20")))
+  ;; EXAMPLE-END context
 
   ;; 4 — reading results back -----------------------------------------------------
   ;; A result is a value: a scalar, children, both or neither.
@@ -85,18 +87,21 @@
   ;; 5 — the context is mutated, so rules hand values back -------------------------
 
   (format t "5. variables the rule set~%")
+  ;; EXAMPLE-BEGIN variables
   (let ((ctx (ctx-of '(("QTY" . "3") ("PRICE" . "19.99")))))
     (sel:run (sel:compile-source
               "NET = QTY * PRICE; VAT = ROUND(NET * 0.23, 2); GROSS = NET + VAT")
              ctx)
     (dolist (name '("NET" "VAT" "GROSS"))
       (format t "   ~5a => ~a~%" name (sel:as-text (sel:value-get ctx name)))))
+  ;; EXAMPLE-END variables
 
   ;; 6 — errors ---------------------------------------------------------------------
   ;; Every failure is a SEL-ERROR carrying a stable code and the position of the
   ;; node that actually failed. Assert on the code, never on the message.
 
   (format t "6. errors~%")
+  ;; EXAMPLE-BEGIN errors
   (dolist (src '("3 + \"A\"" "NOSUCH(1)" "IF(1, \"a\", \"b\")" "ABORT(\"no stock\")"))
     (handler-case
         (progn (sel:evaluate src)
@@ -104,12 +109,15 @@
       (sel:sel-error (e)
         (format t "   ~17a => ~a at ~D:~D~%" src
                 (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e)))))
+  ;; EXAMPLE-END errors
 
   ;; 7 — which fields does this rule read? ---------------------------------------------
   ;; Found statically, without running it.
 
   (format t "7. dependencies~%")
+  ;; EXAMPLE-BEGIN dependencies
   (format t "   ~{~a~^ ~}~%"
           (sel:dependencies
            (sel:compile-source "T = SUM(ITEMS, _[\"QTY\"]); T > LIMIT AND CUSTOMER $!= \"\"")))
+  ;; EXAMPLE-END dependencies
   0)

@@ -1,6 +1,6 @@
 <?php
 // Precedence climbing, mirroring the other four hosts so all five can be read
-// side by side. See docs/EXTENDING.md, "Adding an operator", step 5, and
+// side by side. See docs/contributing.md, "Adding an operator", step 5, and
 // python/sel/parser.py, whose module docstring is the rationale.
 //
 // This file used to transcribe spec/grammar.md one function per production,

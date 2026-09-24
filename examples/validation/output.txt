@@ -1,0 +1,25 @@
+1. the rule set
+   name      reads NAME
+   email     reads EMAIL
+   postcode  reads COUNTRY POSTCODE
+   quantity  reads QTY STOCK
+   total     reads CREDIT_LIMIT DISCOUNT PRICE QTY
+2. re-check on change
+   COUNTRY       postcode
+   CREDIT_LIMIT  total
+   DISCOUNT      total
+   EMAIL         email
+   NAME          name
+   POSTCODE      postcode
+   PRICE         total
+   QTY           quantity, total
+   STOCK         quantity
+3. submissions
+   #1 accepted
+   #2 name      Please tell us your name
+   #2 email     bruno(at)example.de does not look like an e-mail address
+   #2 postcode  German postcodes have five digits
+   #2 quantity  Choose between 1 and 5
+   #2 total     179.91 is over your limit of 100.00
+   #3 total     113.96 is over your limit of 100.00
+   #4 total     could not be checked (E_NOT_NUM)

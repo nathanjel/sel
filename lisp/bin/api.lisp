@@ -80,7 +80,7 @@
   ;; evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
   ;; dependencies() answers as if IT were bound. Pinned because all seven hosts
   ;; agree on it and nothing else records it -- not endorsed. See the note in
-  ;; docs/EXTENDING.md.
+  ;; docs/contributing.md.
   (say "program.deps.grouped.binder"
        (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "ALL(I, (IT), IT > 0)"))))
   ;; The binding forms of spec/builtins.json (see tools/api.mjs).
@@ -156,7 +156,7 @@
              (format nil "~a ~d:~d" (sel:sel-error-code e)
                      (sel:sel-error-line e) (sel:sel-error-col e))))))
 
-  ;; --- the physical tree (docs/SQL-TRANSLATION.md 12.1; SEL-0044, SEL-0049).
+  ;; --- the physical tree (docs/internals/sql-translation.md 12.1; SEL-0044, SEL-0049).
   ;; One tree per AST (EQ here), the same whatever data ran, the AST
   ;; untouched, RUN the same after an explicit build.
   (let* ((joined (sel:compile-source "ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> FILTER(_[\"orders\"][\"amount\"] > 1)"))
@@ -172,6 +172,45 @@
       (sel:run (sel:compile-source "ORDERS = LIST(); CUSTOMERS = LIST(); 0") empty)
       (sel:run joined empty))
     (say "program.physical.independent.of.data" (yn (eq (sel:program-physical-ast joined) first))))
+
+  ;; --- host functions (spec/SPEC.md 8.1). Registered before compiling, called
+  ;; like a builtin, handed evaluated arguments and the typed readers, never
+  ;; allowed to replace a builtin; a compiled program keeps its function.
+  (sel:register-function "host_join" 1 3
+    (lambda (a)
+      (sel:make-text (format nil "~{~a~^|~}"
+                             (loop for i below (sel:args-count a) collect (sel:args-text a i))))))
+  (sel:register-function "HOST_CHECK" 1 1
+    (lambda (a)
+      (when (string= (sel:args-text a 0) "")
+        (sel:fail "E_BAD_ARG" "must not be empty" (sel:args-pos-of a 0)))
+      (sel:make-bool t)))
+  (say "host.fn.call" (sel:as-text (sel:evaluate "HOST_JOIN(\"a\", 1, \"c\")")))
+  (say "host.fn.case" (sel:as-text (sel:evaluate "host_join(\"x\")")))
+  (say "host.fn.listed" (yn (member "HOST_JOIN" (sel:function-names) :test #'string=)))
+  (say "host.fn.deps" (format nil "~{~a~^ ~}" (sel:dependencies (sel:compile-source "HOST_JOIN(X, Y)"))))
+  (say "host.fn.order" (sel:as-text (sel:evaluate "A = 1; HOST_JOIN((A = A + 1), (A = A * 10), A)")))
+  (loop for (name src) in '(("host.fn.arity" "HOST_JOIN()") ("host.fn.type" "HOST_JOIN(\"a\", TRUE)")
+                            ("host.fn.error" "HOST_CHECK(\"\")"))
+        do (handler-case (progn (sel:evaluate src) (say name "no error"))
+             (sel:sel-error (e)
+               (say name (format nil "~a ~d:~d" (sel:sel-error-code e)
+                                 (sel:sel-error-line e) (sel:sel-error-col e))))))
+  (loop for (name fname lo hi) in '(("host.fn.refuse.builtin" "len" 1 1) ("host.fn.refuse.reserved" "and" 1 1)
+                                    ("host.fn.refuse.underscore" "_x" 1 1) ("host.fn.refuse.digit" "1x" 1 1)
+                                    ("host.fn.refuse.dash" "a-b" 1 1) ("host.fn.refuse.min-over-max" "bad" 2 1)
+                                    ("host.fn.refuse.negative" "bad" -1 0))
+        do (say name (handler-case
+                         (progn (sel:register-function fname lo hi
+                                                       (lambda (a) (declare (ignore a)) (sel:make-text "")))
+                                "accepted")
+                       (sel:sel-error (e) (format nil "SelError ~a" (sel:sel-error-code e)))
+                       (error () "refused"))))
+  (sel:register-function "HOST_V" 0 0 (lambda (a) (declare (ignore a)) (sel:make-text "old")))
+  (let ((early (sel:compile-source "HOST_V()")))
+    (sel:register-function "HOST_V" 0 0 (lambda (a) (declare (ignore a)) (sel:make-text "new")))
+    (say "host.fn.replace" (format nil "~a ~a" (sel:as-text (sel:run early))
+                                   (sel:as-text (sel:evaluate "HOST_V()")))))
 
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

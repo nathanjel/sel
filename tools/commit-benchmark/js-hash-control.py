@@ -5,7 +5,7 @@ its last measured execution. Runtime sources are unchanged.
 """
 import subprocess
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2];BASE=Path('/tmp/sel-commit-benchmark');OUT=ROOT/'docs/interim/commit-benchmark'
+ROOT=Path(__file__).resolve().parents[2];BASE=Path('/tmp/sel-commit-benchmark');OUT=ROOT/'tools/commit-benchmark/results'
 source=(ROOT/'tools/scale-test/sel_benchmarks.mjs').read_text()
 source=source.replace('if (structuralHash(context) !== contextSignature) {','if (run === runs - 1 && structuralHash(context) !== contextSignature) {')
 for rev in ['c5a8991','619bc31','1614eed','ef836bf']:

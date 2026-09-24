@@ -18,7 +18,7 @@
 // Keep every driver in the same order with the same names; the diff is the
 // whole mechanism.
 
-const { compile, evaluate, Value, SelError, functionNames, NONE, TEXT, BIN, BOOL } =
+const { compile, evaluate, Value, SelError, functionNames, registerFunction, NONE, TEXT, BIN, BOOL } =
   await import(process.env.SEL_JS_ENTRY ?? '../js/src/sel.mjs');
 
 const out = [];
@@ -86,7 +86,7 @@ say('program.deps.excludes.binder', compile('ALL(I, IT, IT > 0)').dependencies()
 // evaluator rejects it: ALL(I, (IT), IT > 0) is E_EXPECT_SYMBOL when run, yet
 // dependencies() answers as if IT were bound. Pinned because all seven hosts
 // agree on it and nothing else records it -- not endorsed. See the note in
-// docs/EXTENDING.md.
+// docs/contributing.md.
 say('program.deps.grouped.binder', compile('ALL(I, (IT), IT > 0)').dependencies().join(' '));
 // The binding forms of spec/builtins.json, one probe per shape the old walkers
 // retyped differently: a binder is not a read, TOP's limit and SORT_BY's
@@ -165,7 +165,7 @@ try {
   say('deps.depth.over', e.code + ' ' + e.line + ':' + e.col);
 }
 
-// --- the physical tree (docs/SQL-TRANSLATION.md §12.1; SEL-0044, SEL-0049)
+// --- the physical tree (docs/internals/sql-translation.md §12.1; SEL-0044, SEL-0049)
 // What run() evaluates is a physical rewrite of the AST -- join predicate
 // pushdown among others -- built once per program from the AST alone and
 // kept. Identity is the host's own (a reference here, pointer equality in
@@ -186,6 +186,53 @@ try {
   compile('ORDERS = LIST(); CUSTOMERS = LIST(); 0').run(empty);
   join.run(empty);
   say('program.physical.independent.of.data', bool(join.physicalAst() === first));
+}
+
+// --- host functions (spec/SPEC.md §8.1)
+// An application's own strict function: registered before compiling, called
+// like a builtin, handed evaluated arguments and the typed readers, and never
+// allowed to replace a builtin. A compiled program keeps the function it was
+// compiled against.
+registerFunction('host_join', 1, 3, (a) => {
+  const parts = [];
+  for (let i = 0; i < a.count(); i += 1) parts.push(a.text(i));
+  return Value.text(parts.join('|'));
+});
+registerFunction('HOST_CHECK', 1, 1, (a) => {
+  if (a.text(0) === '') throw new SelError('E_BAD_ARG', 'must not be empty', a.posOf(0));
+  return Value.bool(true);
+});
+say('host.fn.call', evaluate('HOST_JOIN("a", 1, "c")').asText());
+say('host.fn.case', evaluate('host_join("x")').asText());
+say('host.fn.listed', bool(functionNames().includes('HOST_JOIN')));
+say('host.fn.deps', compile('HOST_JOIN(X, Y)').dependencies().join(' '));
+say('host.fn.order', evaluate('A = 1; HOST_JOIN((A = A + 1), (A = A * 10), A)').asText());
+for (const [name, src] of [['host.fn.arity', 'HOST_JOIN()'], ['host.fn.type', 'HOST_JOIN("a", TRUE)'],
+  ['host.fn.error', 'HOST_CHECK("")']]) {
+  try {
+    evaluate(src);
+    say(name, 'no error');
+  } catch (e) {
+    say(name, `${e.code} ${e.line}:${e.col}`);
+  }
+}
+for (const [name, fname, min, max] of [['host.fn.refuse.builtin', 'len', 1, 1],
+  ['host.fn.refuse.reserved', 'and', 1, 1], ['host.fn.refuse.underscore', '_x', 1, 1],
+  ['host.fn.refuse.digit', '1x', 1, 1], ['host.fn.refuse.dash', 'a-b', 1, 1],
+  ['host.fn.refuse.min-over-max', 'bad', 2, 1], ['host.fn.refuse.negative', 'bad', -1, 0]]) {
+  let r = 'accepted';
+  try {
+    registerFunction(fname, min, max, () => Value.text(''));
+  } catch (e) {
+    r = e instanceof SelError ? `SelError ${e.code}` : 'refused';
+  }
+  say(name, r);
+}
+registerFunction('HOST_V', 0, 0, () => Value.text('old'));
+{
+  const early = compile('HOST_V()');
+  registerFunction('HOST_V', 0, 0, () => Value.text('new'));
+  say('host.fn.replace', `${early.run().asText()} ${evaluate('HOST_V()').asText()}`);
 }
 
 process.stdout.write(out.join('\n') + '\n');

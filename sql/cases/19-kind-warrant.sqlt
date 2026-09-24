@@ -1,4 +1,4 @@
-% The kind warrant, pinned. docs/SQL-KINDS.md is the statement of it.
+% The kind warrant, pinned. docs/internals/sql-kinds.md is the statement of it.
 %
 %   SQL never reports a match for a row SEL would have refused.
 %
@@ -16,7 +16,7 @@
 % What this file does NOT cover is the same defect in a function argument:
 % ABS(T), ROUND(T, 2) and MAX(T, 1) all still emit bare over a text column.
 % Closing that needs a table of which argument of which function is read as a
-% number, and nothing records it today. See docs/SQL-KINDS.md 4.1a.
+% number, and nothing records it today. See docs/internals/sql-kinds.md 4.1a.
 
 ### name: warrant.numeric.a-text-column-is-guarded
 --- note
@@ -195,7 +195,7 @@ ANY(ITEMS, _["QTY"] == 25)
 EXISTS (SELECT 1 FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id` AND ((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END = 25)) IS TRUE)
 ### name: warrant.numeric.abs-over-a-text-column
 --- note
-docs/SQL-KINDS.md §4.1a. Every function that reads an argument as a number
+docs/internals/sql-kinds.md §4.1a. Every function that reads an argument as a number
 guards an argument that is not known to be NUM.
 --- dialect
 mariadb
@@ -327,7 +327,7 @@ different values, and the guard then tests one value and casts another. Its
 whole promise is "if this value is not a number, yield NULL", and that holds
 only while the two are the same value.
 
-docs/SQL-KINDS.md §6 exclusion 2 already puts raw outside the warrant. This
+docs/internals/sql-kinds.md §6 exclusion 2 already puts raw outside the warrant. This
 case is here because the exclusion excuses the CONTENT of the raw SQL and says
 nothing about the layer duplicating it, and because until now nothing anywhere
 recorded that it does.

@@ -15,7 +15,7 @@ C++ lane, then runs each lane sequentially. It needs the repository's existing
 dependencies. PHP runs with CLI OPcache and tracing JIT; GMP availability affects
 Mandelbrot substantially. It does not start database servers.
 
-Results go to `docs/interim/commit-benchmark`; build and process logs stay under
+Results go to `tools/commit-benchmark/results`; build and process logs stay under
 `/tmp/sel-commit-benchmark`. The archived runtime code is never copied back into
 the working tree. Existing result filenames are overwritten unless `--resume`
 is used. `--prepared` skips archive extraction and compilation; use it only with
@@ -46,7 +46,7 @@ not production fixes. Their source changes exist only in temporary snapshots.
 The power-cache profiler runs from a snapshot root and accepts an output path;
 it counts calls/misses over three Mandelbrot frames and is not a timing test.
 
-Read `docs/interim/commit-benchmark-review.md` for interpretation and limitations.
+The interpretation of the last published run (`docs/interim/commit-benchmark-review.md`) is in the git history.
 
 `targeted-repeat.py` repeats PHP S4/S6 and JS S2, tests explicit PHP scalar
 getters, records Python power-cache calls, reproduces the JS frozen-prototype

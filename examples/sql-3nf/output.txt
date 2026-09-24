@@ -1,0 +1,17 @@
+1. paid revenue per product since March
+   plan        pure_sql
+   reads       order_lines, orders, products
+   sql         SELECT CAST("p"."title" AS TEXT) COLLATE "C" AS "product", COALESCE(SUM("l"."qty"), 0) AS "units", COALESCE(SUM((CAST("l"."qty" AS NUMERIC) * CAST("l"."unit_price" AS NUMERIC))), 0) AS "revenue" FROM "order_lines" "l" INNER JOIN "orders" "o" ON ("l"."order_id" = "o"."order_id") INNER JOIN "products" "p" ON ("l"."product_id" = "p"."product_id") WHERE ((CAST("o"."status" AS TEXT) COLLATE "C" = CAST('paid' AS TEXT) COLLATE "C") AND (CAST("o"."ordered_on" AS TEXT) COLLATE "C" >= CAST('2025-03-01' AS TEXT) COLLATE "C")) GROUP BY CAST("p"."title" AS TEXT) COLLATE "C" ORDER BY COALESCE(SUM((CAST("l"."qty" AS NUMERIC) * CAST("l"."unit_price" AS NUMERIC))), 0) DESC
+   | product=Harbour Lights  units=15  revenue=1949.85
+   | product=Cardinal Rules  units=15  revenue=892.50
+   | product=Oak Planter  units=10  revenue=740.00
+   | product=The Pragmatic Garden  units=25  revenue=622.50
+   | product=Decimal Tales  units=15  revenue=585.00
+   in memory   same rows
+2. paid revenue per experiment cohort
+   plan        hybrid
+   reads       orders, customers, order_lines
+   sql         SELECT "c"."email" AS "email", (CAST("l"."qty" AS NUMERIC) * CAST("l"."unit_price" AS NUMERIC)) AS "amount" FROM "orders" "o" INNER JOIN "customers" "c" ON ("o"."customer_id" = "c"."customer_id") INNER JOIN "order_lines" "l" ON ("o"."order_id" = "l"."order_id") WHERE (CAST("o"."status" AS TEXT) COLLATE "C" = CAST('paid' AS TEXT) COLLATE "C")
+   | cohort=A  lines=13  revenue=1614.34
+   | cohort=B  lines=27  revenue=3300.01
+   in memory   same rows

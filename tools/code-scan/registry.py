@@ -49,5 +49,5 @@ diffs={name:{lane:r.get(name) for lane,r in rows.items()} for name in sorted(nam
 report=dict(columns=['min','max (-1=variadic)','lazy','binds','has_extra_arity_rule'],lanes=rows,differences=diffs,
  four_argument_compile={lane:{line.split('\t')[1]:line.split('\t')[2] for line in text.splitlines() if line.startswith('PROBE\t')} for lane,text in outputs.items()},
  limitation='Compares metadata and extra-rule presence, not rule bodies, binding-position semantics, registry mutation or behavior.')
-(ROOT/'docs/interim/code-scan/registry.json').write_text(json.dumps(report,indent=2)+'\n')
+(ROOT/'tools/code-scan/results/registry.json').write_text(json.dumps(report,indent=2)+'\n')
 print({lane:len(r) for lane,r in rows.items()},'differences:',diffs)

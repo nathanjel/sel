@@ -621,7 +621,7 @@ truthiness, so neither does its translation" where (kind-name (fragment-kind f))
   ;; UNARY, never to an aggregate body, so `(SUM ITEMS _["QTY"])` over an
   ;; undeclared field emits SUM(`qty`) and MariaDB sums the numeric prefixes of
   ;; values SEL answers E_NOT_NUM for. That is the "bare aggregate body" row of
-  ;; docs/SQL-KINDS.md section 4, recorded there with the function arguments it
+  ;; docs/internals/sql-kinds.md section 4, recorded there with the function arguments it
   ;; belongs with; section 4.1a gives `_["QTY"] * 1` as the workaround, which is
   ;; value-preserving in SEL and does reach BINARY.
   (unless (member (fragment-kind f) '(:num :unknown))
@@ -1391,7 +1391,7 @@ bind it as a column, or convert it before translating" pos))
                 "MAP as the thing an aggregate iterates is not translated: unlike ~
 FILTER, which only decides whether an element takes part, MAP changes what the ~
 element is, so the two binders mean different things and binding both to one ~
-element is not enough. See docs/SQL-TRANSLATION.md 7.5"
+element is not enough. See docs/internals/sql-translation.md 7.5"
                 (snode-pos src)))))
   (case (snode-kind src)
     ;; RETURN-FROM, not a CASE value: the branches below fall through to the

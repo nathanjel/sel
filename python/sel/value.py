@@ -540,7 +540,7 @@ as as_text().
         return out
 
     # PHP spells the deep copy `->copy()`; the alias means a reader coming from
-    # docs/EXTENDING.md's Value API table finds whichever name they looked up.
+    # docs/contributing.md's Value API table finds whichever name they looked up.
     copy = clone
 
     # --- structural equality (§5.4) -------------------------------------------

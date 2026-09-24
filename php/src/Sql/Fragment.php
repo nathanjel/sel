@@ -111,7 +111,7 @@ final class Fragment
      *
      * UNKNOWN was wrapped in the dialect's IS TRUE test until the kind warrant:
      * that folds NULL to false but not a number, and `1 IS TRUE` is TRUE on
-     * MariaDB where SEL raises E_NOT_BOOL. See docs/SQL-KINDS.md.
+     * MariaDB where SEL raises E_NOT_BOOL. See docs/internals/sql-kinds.md.
      *
      * A NUM or TEXT fragment is refused rather than accepted. Silently allowing
      * `WHERE o.total` is how a database turns a validation rule into the

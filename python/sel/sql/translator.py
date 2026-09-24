@@ -293,7 +293,7 @@ class Translator:
         refuse('E_SQL_SHAPE', f'cannot translate a {t} node', n.pos)
 
     def _literal(self, v: Value, kind: str) -> Fragment:
-        """Every literal becomes a parameter slot; §9 of docs/SQL-TRANSLATION.md.
+        """Every literal becomes a parameter slot; §9 of docs/internals/sql-translation.md.
 
         ``kind`` is both the static kind the expression has and the form the
         literal is written in, and the two are the same thing only because this
@@ -907,7 +907,7 @@ class Translator:
         parts = self._fill_named(case_tpl, {'branches': joined, 'else': [else_]}, n.pos)
         return Fragment(parts, _unify(results, n.pos), self.dialect)
 
-    # --- aggregates: docs/SQL-TRANSLATION.md §7 ------------------------------
+    # --- aggregates: docs/internals/sql-translation.md §7 ------------------------------
     #
     # Lowering runs inside this walk rather than as an AST pass before it. Two of
     # the three shapes have to render -- a relation becomes a subquery, which is
@@ -1144,7 +1144,7 @@ class Translator:
                    'FILTER, which only decides whether an element takes part, MAP '
                    'changes what the element is, so the two binders mean different '
                    'things and binding both to one element is not enough. See '
-                   'docs/SQL-TRANSLATION.md §7.5', src.pos)
+                   'docs/internals/sql-translation.md §7.5', src.pos)
 
         # Built by a helper rather than by a merge: PHP's array union keeps the
         # LEFT operand for a duplicated key, so `$base + [… 'scalarRule' => true]`
@@ -1796,7 +1796,7 @@ class Translator:
         bare. It reaches neither _binary nor _unary, which is where the numeric
         guards go, so _guard_numeric never sees it and MariaDB sums numeric
         prefixes of values SEL answers E_NOT_NUM for. That is the "bare aggregate
-        body" cell docs/SQL-KINDS.md §4 still marks broken -- §4.1a records why
+        body" cell docs/internals/sql-kinds.md §4 still marks broken -- §4.1a records why
         (nothing yet says which argument of which function is read as a number)
         and gives `_["QTY"] * 1` as the workaround that does get the guard.
         """

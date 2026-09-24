@@ -6,7 +6,7 @@ arbiter — it validates every rule stated here at generation time, so a malform
 map never reaches a host.
 
 The design rationale, the translation pipeline these files feed, and the list of
-places SEL and SQL genuinely differ are in `docs/SQL-TRANSLATION.md`. This file
+places SEL and SQL genuinely differ are in `docs/internals/sql-translation.md`. This file
 is only the format.
 
 ---
@@ -533,7 +533,7 @@ caveated entry into `E_SQL_UNSUPPORTED`.
 
 The vocabulary is **closed** — the generator rejects a name not on this list —
 so that `Fragment::$caveats` is something an application can branch on rather
-than a bag of prose. Each is described in full in `docs/SQL-TRANSLATION.md` §11.
+than a bag of prose. Each is described in full in `docs/internals/sql-translation.md` §11.
 
 | Caveat | Short form |
 |---|---|
@@ -669,7 +669,7 @@ This one key is checked and the others are not, and the asymmetry is the point.
 Every other lexical value fails loudly when it is wrong — a template that cannot
 expand raises at expansion. A wrong `numericGuard` fails silently: it emits SQL
 that answers where SEL would not, which is the single outcome
-[docs/SQL-KINDS.md](../docs/SQL-KINDS.md) exists to rule out. It is not the same
+[docs/internals/sql-kinds.md](../docs/internals/sql-kinds.md) exists to rule out. It is not the same
 standing as a binding declared `NUM` over a column that is not. That is a claim
 the caller makes about their own data; this is a claim about SEL's numeral
 grammar, which the caller has no way to check.

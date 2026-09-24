@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Only the user documentation ships.
 #
-# docs/ also holds the contributor guide, the internal math-plan table, interim
-# plans and reviews, worklists and retired designs; none of it is for someone
-# who installed the package, and a whole-directory entry once put 4.5 MB of it
-# into the npm tarball. Three configurations decide what a release carries —
+# docs/ also holds the contributor guide, the internal design documents, the
+# site's assets and its build files; none of it is for someone who installed
+# the package, and a whole-directory entry once put 4.5 MB of it into the npm
+# tarball. Three configurations decide what a release carries —
 # package.json's `files` (npm), pyproject.toml's sdist `include` (PyPI) and
 # .gitattributes' export-ignore (git archive: Packagist's dist and GitHub's tag
 # tarballs) — and nothing but this script relates them. Each must ship exactly
@@ -19,7 +19,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-USER_DOCS="docs/BUILTINS.md docs/LANGUAGE.md docs/LIMITS.md docs/SQL-KINDS.md docs/SQL-TRANSLATION.md"
+USER_DOCS="docs/README.md docs/extending.md docs/functions.md docs/operators.md docs/overview.md docs/parity.md docs/reference/builtins.md docs/reference/limits.md docs/sql.md docs/syntax.md docs/usage/README.md docs/usage/in-memory.md docs/usage/repl.md docs/usage/scripting.md docs/usage/sql-3nf.md docs/usage/sql-conditions.md docs/usage/sql-eav.md docs/usage/sql-flat.md docs/usage/sql-pipelines.md docs/usage/sql-star.md docs/usage/validation.md"
 NEVER="PACKAGING.md CLAUDE.md"
 
 want="$(printf '%s\n' $USER_DOCS | sort)"
@@ -48,9 +48,10 @@ if ! command -v npm >/dev/null; then
   echo "npm: not found — the npm package list cannot be checked" >&2
   status=1
 else
-  npm pack --dry-run --json --ignore-scripts 2>/dev/null \
-    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const f of JSON.parse(s)[0].files)console.log(f.path)})' \
-    | check npm
+  # Process substitution, not a pipe: the last command of a pipeline runs in a
+  # subshell, and a `status=1` set there never reached the verdict below.
+  check npm < <(npm pack --dry-run --json --ignore-scripts 2>/dev/null \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const f of JSON.parse(s)[0].files)console.log(f.path)})')
 fi
 
 # The sdist is read from its include list rather than built, because a build
@@ -68,7 +69,7 @@ rm -f "${TMPDIR:-/tmp}/sel-sdist-include.$$"
 
 # --worktree-attributes, so an edit to .gitattributes is checked before it is
 # committed; the tree archived is HEAD's, which is what a tag would carry.
-git archive --worktree-attributes HEAD | tar -t | check archive
+check archive < <(git archive --worktree-attributes HEAD | tar -t)
 
 [ "$status" -eq 0 ] && echo "packages ship the user documents only"
 exit "$status"

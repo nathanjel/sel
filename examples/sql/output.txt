@@ -1,0 +1,20 @@
+1. a rule pushed down
+   needs        => STATUS TOTAL
+   sql          => ((`o`.`total` > 100.00) AND (CAST(`o`.`status` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin))
+2. as parameters
+   sql          => ((`o`.`total` > 100.00) AND (CAST(`o`.`status` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin))
+   values       => t"open"
+3. every dialect
+   mariadb      => ((`o`.`total` > 100.00) AND (CAST(`o`.`status` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin))
+   mysql        => ((`o`.`total` > 100.00) AND (CAST(`o`.`status` AS CHAR) COLLATE utf8mb4_0900_bin = CAST('open' AS CHAR) COLLATE utf8mb4_0900_bin))
+   postgresql   => (("o"."total" > 100.00) AND (CAST("o"."status" AS TEXT) COLLATE "C" = CAST('open' AS TEXT) COLLATE "C"))
+   sqlite       => ((CAST("o"."total" AS NUMERIC) > CAST('100.00' AS NUMERIC)) AND (CAST("o"."status" AS TEXT) COLLATE BINARY = CAST('open' AS TEXT) COLLATE BINARY))
+4. over a relation
+   sql          => NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`qty` > 0)) IS NOT TRUE)
+5. refusal
+   tryTranslate => null — evaluate it in the host instead
+   translate    => E_SQL_UNBOUND
+6. the fragment
+   kind         => BOOL
+   dialect      => mariadb
+   exact        => TRUE

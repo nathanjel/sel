@@ -1,7 +1,7 @@
 % CANON(x) in SQL (spec §7.6). A number's canonical form is one spelling per
 % value, so it is the one computed value whose SQL identity can be proved:
 % DISTINCT and GROUP BY over it are exact, and the planner's identity barrier
-% lets it through (docs/SQL-TRANSLATION.md, "A value a grouping or a whole-row
+% lets it through (docs/internals/sql-translation.md, "A value a grouping or a whole-row
 % comparison reads keeps SEL's identity").
 %
 % Where each spelling comes from, and what verified it (SEL-0058): every valid

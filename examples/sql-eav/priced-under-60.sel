@@ -1,0 +1,10 @@
+# Products under 60.00, as one record per product: attributes pivoted into fields.
+ATTRS
+  .> FILTER(_["name"] IN ("color", "price"))
+  .> SORT_BY(_["name"]) .> SORT_BY(_["entity_id"])
+  .> BUCKET(_["entity_id"], RECORD(
+       "id", _K,
+       "color", FILTER(_, A, A["name"] $== "color") .> MAP(_["value"]) .> JOIN(""),
+       "price", FILTER(_, A, A["name"] $== "price") .> MAP(_["value"]) .> JOIN("")))
+  .> FILTER(ISNUM(_["price"]) AND _["price"] < 60)
+  .> SORT_BY(_["price"])

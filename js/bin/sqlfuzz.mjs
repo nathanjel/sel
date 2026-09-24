@@ -4,7 +4,7 @@
 //
 //   node js/bin/sqlfuzz.mjs corpus.selc [dialect]
 //
-// This is the check docs/SQL-TRANSLATION.md §14 M7 asked for and nothing built.
+// This is the check docs/internals/sql-translation.md §14 M7 asked for and nothing built.
 // The oracle lane answers "does the emitted SQL MEAN what SEL means?" and needs
 // a database; this one answers "do the hosts emit the SAME thing?" and needs
 // nothing. Without it, `tools/check.sh`'s SQL fuzz step was a no-op on any

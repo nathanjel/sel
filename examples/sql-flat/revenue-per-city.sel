@@ -1,0 +1,8 @@
+# Lines and revenue per customer city, February and March.
+EXPORT
+  .> FILTER(_["order_date"] $>= "2025-02-01" AND _["order_date"] $< "2025-04-01")
+  .> BUCKET(_["customer_city"], RECORD(
+       "city", _K,
+       "lines", COUNT(_),
+       "revenue", SUM(_, _["qty"] * _["unit_price"])))
+  .> SORT_BY(_["revenue"], "DESC")

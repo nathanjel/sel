@@ -3,7 +3,7 @@
 import hashlib,json,statistics
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
-OUT=ROOT/'docs/interim/commit-benchmark'
+OUT=ROOT/'tools/commit-benchmark/results'
 REVS=['ef836bf','1614eed','619bc31','c5a8991']
 LANES=['cpp','js','lisp','php','python']
 rows=[];failures=[];hashes=set()

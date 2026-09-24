@@ -1,4 +1,4 @@
-% Stage 2. The three iteration shapes of docs/SQL-TRANSLATION.md §7, decided by
+% Stage 2. The three iteration shapes of docs/internals/sql-translation.md §7, decided by
 % what the first argument is after stage 1 — never by what it might evaluate to.
 
 ### name: agg.static.all

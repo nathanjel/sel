@@ -1,0 +1,135 @@
+{
+  "site": {
+    "title": "SEL",
+    "tagline": "Simple Expression Language",
+    "repo": "https://github.com/nathanjel/sel",
+    "branch": "main"
+  },
+  "sections": [
+    {
+      "title": "Start here",
+      "pages": [
+        {
+          "page": "README.md",
+          "title": "Home"
+        },
+        {
+          "page": "docs/README.md",
+          "title": "Documentation"
+        },
+        "docs/overview.md",
+        {
+          "page": "docs/parity.md",
+          "title": "Parity"
+        }
+      ]
+    },
+    {
+      "title": "The language",
+      "pages": [
+        "docs/syntax.md",
+        "docs/operators.md",
+        "docs/functions.md"
+      ]
+    },
+    {
+      "title": "Using SEL",
+      "pages": [
+        {
+          "page": "docs/usage/README.md",
+          "title": "Using SEL"
+        },
+        "docs/usage/repl.md",
+        "docs/usage/validation.md",
+        "docs/usage/scripting.md"
+      ]
+    },
+    {
+      "title": "SEL and SQL",
+      "pages": [
+        "docs/usage/sql-conditions.md",
+        "docs/usage/sql-pipelines.md",
+        "docs/usage/sql-star.md",
+        "docs/usage/sql-eav.md",
+        "docs/usage/sql-3nf.md",
+        "docs/usage/sql-flat.md",
+        "docs/usage/in-memory.md",
+        {
+          "page": "docs/sql.md",
+          "title": "SQL reference"
+        }
+      ]
+    },
+    {
+      "title": "Extending",
+      "pages": [
+        "docs/extending.md",
+        "docs/contributing.md"
+      ]
+    },
+    {
+      "title": "Reference",
+      "pages": [
+        {
+          "page": "docs/reference/builtins.md",
+          "title": "Builtin index"
+        },
+        "docs/reference/limits.md",
+        {
+          "page": "spec/SPEC.md",
+          "title": "Specification"
+        },
+        {
+          "page": "spec/grammar.md",
+          "title": "Grammar"
+        },
+        {
+          "page": "spec/errors.md",
+          "title": "Error codes"
+        },
+        {
+          "page": "sql/MAP.md",
+          "title": "Dialect map format"
+        },
+        {
+          "page": "sql/errors.md",
+          "title": "SQL error codes"
+        },
+        {
+          "page": "conformance/README.md",
+          "title": "Conformance suite"
+        },
+        {
+          "page": "sql/cases/README.md",
+          "title": "SQL case format"
+        }
+      ]
+    },
+    {
+      "title": "Internals",
+      "pages": [
+        {
+          "page": "docs/internals/sql-translation.md",
+          "title": "SQL translation design"
+        },
+        {
+          "page": "docs/internals/sql-kinds.md",
+          "title": "The kind warrant"
+        },
+        "docs/internals/math-ops.md",
+        {
+          "page": "tools/README.md",
+          "title": "Test harness"
+        },
+        {
+          "page": "PACKAGING.md",
+          "title": "Packaging"
+        },
+        {
+          "page": "CHANGELOG.md",
+          "title": "Changelog"
+        }
+      ]
+    }
+  ]
+}
