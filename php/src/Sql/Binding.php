@@ -74,20 +74,8 @@ final class Binding
             self::checkName('table', $table);
         }
         self::checkType($type);
-        if ($collation !== null) {
-            [$cExact, $cSargable] = self::checkCollation($collation);
-            $exact = $exact || $cExact;
-            $sargable = $sargable || $cSargable;
-        }
-        $pref = self::checkPrefilter($prefilter);
-        $spec = ['kind' => 'column', 'column' => $column,
-                 'table' => $table, 'type' => $type,
-                 'exact' => $exact, 'sargable' => $sargable,
-                 'guard' => $guard];
-        if ($pref !== null) {
-            $spec['prefilter'] = $pref;
-        }
-        return new self($spec);
+        return new self(['kind' => 'column', 'column' => $column, 'table' => $table, 'type' => $type]
+            + self::columnFlags($exact, $sargable, $guard, $collation, $prefilter));
     }
 
     /**
@@ -107,19 +95,30 @@ final class Binding
             throw new SqlError('E_SQL_BINDING', 'a raw column binding cannot be empty');
         }
         self::checkType($type);
+        return new self(['kind' => 'column', 'raw' => $sql, 'type' => $type]
+            + self::columnFlags($exact, $sargable, $guard, $collation, $prefilter));
+    }
+
+    /**
+     * The flags column() and raw() share: a collation spelling folded into
+     * exact/sargable, then the prefilter.
+     *
+     * @return array<string,mixed>
+     */
+    private static function columnFlags(bool $exact, bool $sargable, bool $guard,
+                                        ?string $collation, $prefilter): array
+    {
         if ($collation !== null) {
             [$cExact, $cSargable] = self::checkCollation($collation);
             $exact = $exact || $cExact;
             $sargable = $sargable || $cSargable;
         }
         $pref = self::checkPrefilter($prefilter);
-        $spec = ['kind' => 'column', 'raw' => $sql, 'type' => $type,
-                 'exact' => $exact, 'sargable' => $sargable,
-                 'guard' => $guard];
+        $flags = ['exact' => $exact, 'sargable' => $sargable, 'guard' => $guard];
         if ($pref !== null) {
-            $spec['prefilter'] = $pref;
+            $flags['prefilter'] = $pref;
         }
-        return new self($spec);
+        return $flags;
     }
 
     /**

@@ -331,22 +331,6 @@ final class Core
     }
 
     /**
-     * A scalar with no children behaves as a one-element list containing itself,
-     * consistent with scalar context (§3.2). A NONE with no children is genuinely
-     * empty — that is what FILTER returns when nothing matched, and ALL over it
-     * must be TRUE rather than a scalar-context failure.
-     *
-     * @return list<array{0:string,1:Value}>
-     */
-    private static function elements(Value $value): array
-    {
-        if ($value->size() > 0) {
-            return $value->entries();
-        }
-        return $value->kind === Value::NONE ? [] : [['1', $value]];
-    }
-
-    /**
      * Runs $visit per element with the binder and _K in scope. Returning a Value
      * from $visit stops the walk and becomes the result.
      */
@@ -522,8 +506,10 @@ final class Core
                 ): ?Value {
                     if ($r->asBool($body['pos'])) {
                         $storage[] = $item;
-                        $keyInt = is_int($key) ? $key : (int) $key;
-                        if (!$needsCustomKeys && $keyInt !== $expectedIndex) {
+                        // The key as written, not (int) of it: "1x", "01" and
+                        // " 1" all cast to 1 (review 2026-09-25 SEM-09).
+                        $inPlace = is_int($key) ? $key === $expectedIndex : $key === (string) $expectedIndex;
+                        if (!$needsCustomKeys && !$inPlace) {
                             $needsCustomKeys = true;
                             for ($j = 0, $n = count($storage) - 1; $j < $n; $j++) {
                                 $keys[] = (string) ($j + 1);

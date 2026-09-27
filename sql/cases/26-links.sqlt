@@ -336,3 +336,183 @@ ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(r, RECORD("n", r
 --- expect
 SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
 ===
+
+### name: link.binder.left-name-reads-the-left-relation
+--- note
+Review 2026-09-25 SQL-01. R and S share every field name, with different values
+(in memory _["SS"]["VAL"] is R's). The left binder names the LEFT relation;
+JS, PHP, Python and C++ resolved both explicit binders to the joined source and
+selected s.val. Only same-named fields reveal it.
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["SS"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "picked" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: link.binder.right-name-reads-the-right-relation
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["X"]["VAL"]))
+--- expect
+SELECT "s"."val" AS "picked" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: link.binder.both-names-in-one-projection
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, A, B, A["ID"] == B["ID"]) .> MAP(RECORD("l", _["A"]["VAL"], "r", _["B"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "l", "s"."val" AS "r" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: link.binder.left-name-in-a-left-join
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK_LEFT(S, A, B, A["ID"] == B["ID"]) .> MAP(RECORD("picked", _["A"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "picked" FROM "r" "r" LEFT JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: link.binder.left-name-sides-swapped
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+S .> LINK(R, A, B, A["ID"] == B["ID"]) .> MAP(RECORD("picked", _["A"]["VAL"]))
+--- expect
+SELECT "s"."val" AS "picked" FROM "s" "s" INNER JOIN "r" "r" ON (CAST("s"."id" AS NUMERIC) = CAST("r"."id" AS NUMERIC))
+===
+### name: link.binder.left-name-in-a-filter
+--- note
+The WHERE reads the left relation too; it filtered on s.val.
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, A, B, A["ID"] == B["ID"]) .> FILTER(_["A"]["VAL"] > 5) .> MAP(RECORD("picked", _["B"]["VAL"]))
+--- expect
+SELECT "s"."val" AS "picked" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) WHERE (CAST("r"."val" AS NUMERIC) > CAST('5' AS NUMERIC))
+===
+### name: link.binder.relation-names-read-their-relations
+--- note
+Control: reads through the relations' own names were always right.
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["ID"] == _2["ID"]) .> MAP(RECORD("picked", _["R"]["VAL"], "other", _["S"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "picked", "s"."val" AS "other" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: link.binder.left-name-mariadb
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, A, B, A["ID"] == B["ID"]) .> MAP(RECORD("l", _["A"]["VAL"], "r", _["B"]["VAL"]))
+--- expect
+SELECT `r`.`val` AS `l`, `s`.`val` AS `r` FROM `r` `r` INNER JOIN `s` `s` ON (`r`.`id` = `s`.`id`)
+===
+### name: link.binder.eszett-is-not-the-ss-binder
+--- note
+Review 2026-09-25 SQL-02. In memory _["ß"] is E_NO_KEY: no binder is named ß.
+JS and Python upper-cased with Unicode rules (ß → SS) and translated it as the
+SS binder. A qualifier is compared ASCII-case-insensitively, like every name.
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["ß"]["VAL"]))
+--- error
+E_SQL_SHAPE 1:72
+===
+### name: link.binder.long-s-is-not-an-s
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["ſS"]["VAL"]))
+--- error
+E_SQL_SHAPE 1:73
+===
+
+### name: link.binder.a-field-the-relation-lacks-is-refused
+--- note
+A qualified read of a field the named relation does not have is E_SQL_BINDING.
+Lisp rendered it as a column the table lacks; the SQL fuzzer's link-binder
+family found it (review 2026-09-25 TEST-05/TEST-11).
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("p", _["X"]["NOPE"]))
+--- error
+E_SQL_BINDING 1:67
+===
+
+### name: link.refusal.an-earlier-step-refuses-first
+--- note
+The sort reads a field SELECT_COLS dropped, and the LINK's key reads another:
+the earlier step's refusal is the one reported. Lisp checked the sort's key only
+when rendering, after the LINK's predicate (review 2026-09-25 SQL-03).
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> SELECT_COLS("VAL") .> SORT_BY(_["ID"]) .> LINK(S, _1["ID"] == _2["ID"])
+--- error
+E_SQL_BINDING 1:37
+===

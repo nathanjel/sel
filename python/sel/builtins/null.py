@@ -22,9 +22,7 @@ def _get(args, ctx):
     target = args.val(0)
     key = args.text(1)
     if not target.is_null() and target.has(key):
-        val = target.get(key)
-        if val is not None:
-            return val
+        return target.get(key)
     if args.count() > 2:
         return args.val(2)
     return Value.null()
@@ -43,10 +41,6 @@ def _path(args, ctx):
                 return args.val(2)
             return Value.null()
         cur = cur.get(seg)
-        if cur is None:
-            if args.count() > 2:
-                return args.val(2)
-            return Value.null()
     return cur
 
 

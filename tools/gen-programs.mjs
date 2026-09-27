@@ -291,6 +291,83 @@ function sizedCall(d) {
   }
 }
 
+// Targeted families (review 2026-09-25 TEST-05/TEST-10). Random combinations of
+// ASCII fields and short pipelines were too unlikely ever to produce these
+// shapes, and each one hid a defect in one host or more: a computed index read
+// again by one node (SEM-01), _K over the keys a FILTER kept (SEM-02), field
+// names that differ only outside ASCII (SEM-04/05), equijoin keys that are not
+// TEXT or not numbers (SEM-06), an erroring step before a FILTER the optimiser
+// moves (SEM-07/08), kept keys that only look numeric (SEM-09), a copied scalar
+// leaf given a child (SEM-12) -- and, over the SQL relations, explicit binders
+// reading a field both sides carry (SQL-01) and non-ASCII qualifiers (SQL-02).
+// The first programs of a corpus cycle through every family, so each appears at
+// least once whatever the count; the counts go to stderr.
+const CASE_PAIRS = [['"ß"', '"SS"'], ['"ſ"', '"s"'], ['"é"', '"É"'], ['"x"', '"X"'], ['"ı"', '"I"'], ['"K"', '"k"']];
+const JOIN_KEYS = ['TO_UTF8("a")', '"a"', 'TRUE', '"bad"', '1', '"1.0"', 'LIST(1)', 'NULL', '"A"'];
+const LOOKS_NUMERIC = ['"1x"', '"01"', '" 1"', '"+1"', '"1e0"', '"1.0"', '"1"', '"2"', '"١"'];
+const FAMILIES = SQL_MODE ? {
+  'sql.link-binders': () => {
+    const [l, r] = pick([['L', 'R'], ['A', 'B'], ['SS', 'X'], ['LEFTS', 'RIGHTS']]);
+    const side = () => pick([l, r]);
+    const field = () => pick(['name', 'id', 'customer_id', 'amount']);
+    const join = `${pick(['LINK', 'LINK_LEFT'])}(CUSTOMERS, ${l}, ${r}, ${l}["customer_id"] == ${r}["id"])`;
+    const tail = chance(0.4) ? ` .> FILTER(_["${side()}"]["${field()}"] ${pick(['> 4', '$== "Ann"', '!= 1'])})` : '';
+    return `ORDERS .> ${join}${tail} .> MAP(RECORD("p", _["${side()}"]["${field()}"], "q", _["${side()}"]["${field()}"]))`;
+  },
+  'sql.non-ascii-qualifier': () => {
+    const [l, r] = pick([['SS', 'X'], ['S', 'X'], ['K', 'R']]);
+    const q = pick(['ß', 'ſ', 'ſS', 'K', 'ss', 'k']);
+    return `ORDERS .> LINK(CUSTOMERS, ${l}, ${r}, ${l}["customer_id"] == ${r}["id"]) .> MAP(_["${q}"]["name"])`;
+  },
+  'sql.error-before-filter': () => `ORDERS .> ${pick(['SORT_BY(IF(_["id"] == 2, ABORT("s"), _["id"]))', 'MAP(RECORD("id", _["id"], "v", 1/(_["id"]-2)))'])} .> FILTER(_["id"] == 1) .> ${pick(['MAP(_["id"])', 'TAKE(1)'])}`,
+} : {
+  'computed-index': () => {
+    const keys = pick([['"x"', '"y"'], ['"z"', '"y"', '"x"'], ['"a"', '"a"', '"b"']]);
+    const rec = `RECORD("x", ${int(0, 9)}, "y", ${int(0, 9)}, "z", ${int(0, 9)}, "a", 1, "b", 2)`;
+    return chance(0.7) ? `R = ${rec}; MAP(LIST(${keys.join(', ')}), R[_])`
+      : `R = ${rec}; MAP(LIST(1, 2, 3), R[IF(_ == ${int(1, 3)}, ABORT("i"), "x")])`;
+  },
+  'sparse-k': () => {
+    const fn = pick(['TOP_BY', 'TOP', 'TOP_DESC', 'SORT_BY', 'SORT', 'SORT_DESC', 'MAP', 'SUM', 'BUCKET']);
+    const src = `FILTER(LIST(10, 20, 30, 40), _ > ${pick(['10', '20', '5'])})`;
+    const key = `IF(_K $== "${int(1, 4)}", 0, 1)`;
+    if (fn === 'MAP') return `MAP(${src}, _K)`;
+    if (fn === 'SUM') return `SUM(${src}, IF(_K $== "3", 100, 1))`;
+    if (fn === 'BUCKET') return `BUCKET(${src}, ${key}, JOIN(_, "+"))`;
+    if (fn.startsWith('TOP')) return `${fn}(${src}, ${key}${fn === 'TOP_BY' && chance(0.3) ? ', "DESC"' : ''}, ${int(1, 2)})`;
+    return `${fn}(${src}, ${key})`;
+  },
+  'non-ascii-case-pair': () => {
+    const [a, b] = pick(CASE_PAIRS);
+    const pred = chance(0.5) ? 'TRUE' : '_1["k"] == _2["k"]';
+    return `A = LIST(RECORD("k", 1, ${a}, 1)); B = LIST(RECORD("k", 1, ${b}, 2)); `
+      + `${pick(['A', 'B'])} .> ${pick(['LINK', 'LINK_LEFT'])}(${pick(['A', 'B'])}, ${pred}) .> MAP(INDEXES(_))`;
+  },
+  'equijoin-key-kinds': () => {
+    const op = pick(['==', '$==']);
+    const body = chance(0.5) ? `_1["k"] ${op} _2["k"]` : `IF(_1["k"] ${op} _2["k"], TRUE, FALSE)`;
+    return `A = LIST(RECORD("k", ${pick(JOIN_KEYS)})); B = LIST(RECORD("k", ${pick(JOIN_KEYS)})); COUNT(${pick(['LINK', 'LINK_LEFT'])}(A, B, ${body}))`;
+  },
+  'error-before-filter': () => {
+    const k = int(1, 3);
+    const first = pick([`SORT(_, IF(_ == ${k}, ABORT("s"), _))`, `SORT_BY(IF(_ == ${k}, ABORT("s"), _))`,
+      `MAP(RECORD("v", _, "w", 1/(_ - ${k})))`, `FILTER(IF(_ == ${k}, ABORT("f"), TRUE))`]);
+    const then = pick([`FILTER(${first.startsWith('MAP') ? '_["v"]' : '_'} == 1)`, `FILTER(IF(_ == 1, ABORT("g"), TRUE))`]);
+    const last = pick(['MAP(_)', 'TAKE(1)', `TOP_BY(${first.startsWith('MAP') ? '_["v"]' : '_'}, 1)`, '']);
+    return `LIST(3, 2, 1) .> ${first} .> ${then}${last ? ` .> ${last}` : ''}`;
+  },
+  'kept-key-spelling': () => `FILTER(RECORD(${pick(LOOKS_NUMERIC)}, 10, ${pick(LOOKS_NUMERIC)}, 11), _ > ${pick(['0', '10'])})`,
+  'copied-scalar-leaf': () => pick(['A = LIST("s"); B = A; B[1]["k"] = "v"; LIST(A, B)',
+    'A = RECORD("x", "s"); B = A; B["x"]["k"] = "v"; A', 'A = LIST(LIST(1)); B = A; B[1][1]["k"] = 2; LIST(A, B)']),
+};
+const FAMILY_NAMES = Object.keys(FAMILIES);
+const familyCounts = Object.fromEntries(FAMILY_NAMES.map((n) => [n, 0]));
+function reviewFamily(i) {
+  const name = i < FAMILY_NAMES.length ? FAMILY_NAMES[i] : pick(FAMILY_NAMES);
+  familyCounts[name]++;
+  return FAMILIES[name]();
+}
+
 // A setup prelude so variable references usually resolve, and sometimes do not.
 function setup() {
   const parts = [];
@@ -317,10 +394,12 @@ for (let i = 0; i < count; i++) {
   let pre = setup();
   let body;
   const roll = rnd();
-  if (roll < 0.15) body = pipeline(int(1, 3));
-  else if (roll < 0.17) body = depthProbe();
+  if (i < FAMILY_NAMES.length || roll < 0.06) { body = reviewFamily(i); pre = ''; }
+  else if (roll < 0.21) body = pipeline(int(1, 3));
+  else if (roll < 0.23) body = depthProbe();
   else body = expr(int(1, 4));
   if (!SQL_MODE && /\b(ROWS|CUSTS)\b/.test(body)) pre = pre ? `${ROWS_PRELUDE}; ${pre}` : ROWS_PRELUDE;
   out.push(`### ${i + 1}\n${pre ? `${pre}; ${body}` : body}\n`);
 }
 process.stdout.write(out.join(''));
+process.stderr.write(`gen-programs: review families ${FAMILY_NAMES.map((n) => `${n}=${familyCounts[n]}`).join(' ')}\n`);

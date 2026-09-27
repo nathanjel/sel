@@ -375,7 +375,6 @@ class Translator {
   int depth_ = 0;
   const RelationalPlan* statement_plan_ = nullptr;
   bool in_where_ = false;
-  bool in_having_ = false;
   int subquery_counter_ = 0;
 };
 

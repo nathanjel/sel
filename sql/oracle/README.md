@@ -341,6 +341,24 @@ grouping *expression* — both are why the fixture holds `'A'`, `'a'`, `'B'`,
 `'b'` and no trailing spaces (`utf8mb4_bin` is PAD SPACE; that is the
 `text-collation` caveat, not this fixture's question).
 
+## `cross.selc` and `fixture-cross-*.sql`
+
+The statement oracle runs PHP's translator only, so a defect every translator
+shared — or four of five — passed it. Review 2026-09-25 found one: a `LINK`'s
+left binder resolved to the joined relation in JS, PHP, Python and C++ (SQL-01),
+visible only when both relations carry a field of the same name with different
+values. `cross.selc` holds such programs over `ORDERS` and `CUSTOMERS`, the two
+relations every host's `sqlfuzz` binds, and `fixture-cross-*.sql` holds their
+rows (`id` and `name` on both sides).
+
+`tools/check-sql-oracle.sh` asks every translator for its statements —
+`sqlfuzz CORPUS DIALECT statement` prints one inline statement or `!CODE` per
+program — and hands the directory to `sqlo` as `SEL_ORACLE_CROSS_DIR`;
+`sqlo cross` (also part of `statements` and `all`) executes each against the
+fixture and compares the rows with SEL's answer over the same rows loaded as
+the two relations. PHP's own translation is always asked in-process. A refusal
+is an answer, not a disagreement.
+
 ## What it found on its first two runs
 
 Against code that had been reviewed three times and had a green 180-case suite:

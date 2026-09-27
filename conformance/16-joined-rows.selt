@@ -211,3 +211,62 @@ LIST(RECORD("k", 1, "a", 2)) .> LINK_LEFT(LIST(), _1["k"] == _2["id"]) .> MAP(LI
 --- expect
 tree -{"1"=-{"1"=-{"1"=t"_1", "2"=t"_2", "3"=t"k", "4"=t"a"}, "2"=-}}
 ===
+
+% --- review 2026-09-25 SEM-04: promotion compares names ASCII-case-insensitively
+% (spec §7.4), so names that differ outside ASCII are different names. JS and
+% Python used full Unicode upper-casing ("ß" → "SS", "ſ" → "S") and Lisp SBCL's
+% (é ↔ É): both fields were then dropped as a collision.
+
+### name: rel.link.promotion.eszett-and-ss-are-two-names
+--- source
+A=LIST(RECORD("ß",1)); B=LIST(RECORD("SS",2)); A .> LINK(B, TRUE) .> MAP(LIST(_["ß"], _["SS"]))
+--- expect
+tree -{"1"=-{"1"=t"1", "2"=t"2"}}
+===
+
+### name: rel.link.promotion.eszett-and-ss-sides-swapped
+--- source
+A=LIST(RECORD("ß",1)); B=LIST(RECORD("SS",2)); B .> LINK(A, TRUE) .> MAP(LIST(_["ß"], _["SS"]))
+--- expect
+tree -{"1"=-{"1"=t"1", "2"=t"2"}}
+===
+
+### name: rel.link-left.promotion.eszett-and-ss-into-a-record
+--- source
+A=LIST(RECORD("ß",1)); B=LIST(RECORD("SS",2)); A .> LINK_LEFT(B, TRUE) .> MAP(RECORD("a", _["ß"], "b", _["SS"]))
+--- expect
+tree -{"1"=-{"a"=t"1", "b"=t"2"}}
+===
+
+### name: rel.link.promotion.long-s-and-s-are-two-names
+--- source
+A=LIST(RECORD("ſ",1)); B=LIST(RECORD("s",2)); A .> LINK(B, TRUE) .> MAP(LIST(_["ſ"], _["s"]))
+--- expect
+tree -{"1"=-{"1"=t"1", "2"=t"2"}}
+===
+
+### name: rel.link.promotion.accented-case-pair-is-two-names
+--- source
+A=LIST(RECORD("é",1)); B=LIST(RECORD("É",2)); A .> LINK(B, TRUE) .> MAP(INDEXES(_))
+--- expect
+tree -{"1"=-{"1"=t"A", "2"=t"a", "3"=t"_1", "4"=t"B", "5"=t"b", "6"=t"_2", "7"=t"é", "8"=t"É"}}
+===
+
+### name: rel.link.promotion.accented-case-pair-through-an-equijoin
+--- note
+The same pair through an equijoin, whose rows are built by a compiled plan
+rather than one pair at a time.
+--- source
+A=LIST(RECORD("k",1,"é",1)); B=LIST(RECORD("k",1,"É",2)); A .> LINK(B, _1["k"] == _2["k"]) .> MAP(LIST(_["é"], _["É"]))
+--- expect
+tree -{"1"=-{"1"=t"1", "2"=t"2"}}
+===
+
+### name: rel.link.promotion.ascii-case-pair-still-collides
+--- note
+Control: an ASCII case pair is one name, so neither side's x is promoted.
+--- source
+A=LIST(RECORD("x",1,"y",3)); B=LIST(RECORD("X",2)); A .> LINK(B, TRUE) .> MAP(INDEXES(_))
+--- expect
+tree -{"1"=-{"1"=t"A", "2"=t"a", "3"=t"_1", "4"=t"B", "5"=t"b", "6"=t"_2", "7"=t"y"}}
+===

@@ -25,9 +25,9 @@ function check(bool $condition, string $message): void
 }
 
 /** @return list<array<string,mixed>> */
-function optimized_steps(string $source): array
+function optimized_steps(string $source, bool $physical = true): array
 {
-    $ast = Optimizer::optimize(Sel::compile($source)->ast, true);
+    $ast = Optimizer::optimize(Sel::compile($source)->ast, $physical);
     return Optimizer::unwindPipeline($ast)['steps'];
 }
 
@@ -153,12 +153,19 @@ check($unfoldedVar['t'] === 'call' && $unfoldedVar['name'] === 'IF',
 // A FILTER moves in front of a MAP, a sort or a SELECT_COLS only when a
 // later step renumbers the rows again without reading `_K`: FILTER keeps its
 // input's keys and the three renumber (spec §7.3), so at the end of a
-// pipeline the swap would change the answer's keys.
+// pipeline the swap would change the answer's keys. And only past a step that
+// cannot raise on the rows it drops (review 2026-09-25 SEM-07/SEM-08): on the
+// logical path a relation's field reads cannot, in memory they can (E_NO_KEY),
+// so these pushdowns are the logical path's.
 $mapFilterPush = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
-    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0) .> MAP(_["x"])',
+    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0) .> MAP(_["x"])', false,
 );
 check(step_names($mapFilterPush) === ['FILTER', 'MAP', 'MAP'], 'MAP filter pushdown');
+check(step_names(optimized_steps(
+    '((RECORD("x", 1), RECORD("x", 2)))'
+    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0) .> MAP(_["x"])',
+)) === ['MAP', 'FILTER', 'MAP'], 'in memory a MAP whose field read can raise keeps its FILTER behind it');
 $mapFilterEnd = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
     . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0)',
@@ -171,24 +178,28 @@ $mapFilterKeyRead = optimized_steps(
 check(step_names($mapFilterKeyRead) === ['MAP', 'FILTER', 'MAP'], 'MAP filter pushdown keeps the keys a later step reads');
 $mapFilterFused = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
-    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0) .> FILTER(_["x"] > 1) .> TAKE(1)',
+    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["x"] > 0) .> FILTER(_["x"] > 1) .> TAKE(1)', false,
 );
 check(step_names($mapFilterFused) === ['FILTER', 'MAP', 'TAKE'], 'MAP filter pushdown after the FILTERs fuse');
 $caseSensitiveMapFilter = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
-    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["X"] > 0) .> MAP(_["x"])',
+    . ' .> MAP(RECORD("x", _["x"])) .> FILTER(_["X"] > 0) .> MAP(_["x"])', false,
 );
 check(step_names($caseSensitiveMapFilter) === ['MAP', 'FILTER', 'MAP'],
     'MAP filter pushdown preserves case-sensitive field names');
 
-$sortFilterPush = optimized_steps('(1, 2) .> SORT() .> FILTER(_ > 0) .> TAKE(1)');
+$sortFilterPush = optimized_steps('(1, 2) .> SORT() .> FILTER(_ > 0) .> TAKE(1)', false);
 check(step_names($sortFilterPush) === ['FILTER', 'TOP'], 'SORT filter pushdown');
+check(step_names(optimized_steps('(1, 2) .> SORT() .> FILTER(_ > 0) .> TAKE(1)')) === ['SORT', 'FILTER', 'TAKE'],
+    'in memory a FILTER whose predicate can raise is not moved in front of a sort');
+check(step_names(optimized_steps('(1, 2) .> SORT_BY(IF(_ == 2, ABORT("s"), _)) .> FILTER(_ == 1) .> TAKE(1)', false))
+    === ['SORT_BY', 'FILTER', 'TAKE'], 'a sort key that can raise keeps its FILTER behind it');
 $sortFilterEnd = optimized_steps('(1, 2) .> SORT() .> FILTER(_ > 0)');
 check(step_names($sortFilterEnd) === ['SORT', 'FILTER'], 'SORT filter pushdown keeps the keys at the end of a pipeline');
 
 $selectFilterPush = optimized_steps(
     '((RECORD("x", 1), RECORD("x", 2)))'
-    . ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0) .> MAP(_["x"])',
+    . ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0) .> MAP(_["x"])', false,
 );
 check(step_names($selectFilterPush) === ['FILTER', 'SELECT_COLS', 'MAP'], 'SELECT_COLS filter pushdown');
 $selectFilterEnd = optimized_steps(
@@ -200,13 +211,20 @@ check(step_names($selectFilterEnd) === ['SELECT_COLS', 'FILTER'], 'SELECT_COLS f
 $lateMaterialization = optimized_steps(
     '((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
     . ' .> MAP(RECORD("x", _["x"], "y", _["x"] + 1))'
-    . ' .> SORT_BY(_["x"], "DESC")',
+    . ' .> SORT_BY(_["x"], "DESC")', false,
 );
 check(step_names($lateMaterialization) === ['SORT_BY', 'MAP'], 'SORT_BY late materialization');
+check(step_names(optimized_steps(
+    '((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
+    . ' .> MAP(RECORD("x", _["x"], "y", _["x"] + 1))'
+    . ' .> SORT_BY(_["x"], "DESC")',
+)) === ['MAP', 'SORT_BY'], 'in memory a MAP that can raise stays in front of a sort');
 check(($lateMaterialization[1]['args'][1]['name'] ?? null) === 'RECORD',
     'MAP projection body stays RECORD after physical optimisation');
 
-$filterFusion = optimized_steps('(1, 2) .> FILTER(_ > 0) .> FILTER(_ < 3)');
+$filterFusion = optimized_steps('(1, 2) .> FILTER(_ > 0) .> FILTER(_ < 3)', false);
+check(step_names(optimized_steps('(1, 2) .> FILTER(_ > 0) .> FILTER(_ < 3)')) === ['FILTER', 'FILTER'],
+    'in memory a second FILTER that can raise is not fused into the first');
 check(step_names($filterFusion) === ['FILTER']
     && ($filterFusion[0]['args'][1]['op'] ?? null) === 'AND', 'FILTER fusion');
 
@@ -384,7 +402,10 @@ foreach ([
   // guard, so nothing pushes down. A later step that renumbers again lets the
   // swap through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
-  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'hybrid'],
+  // REPEAT can raise, so the FILTER stays behind the MAP (review 2026-09-25
+  // SEM-07) and nothing pushes down; a MAP that cannot raise lets it through.
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_memory'],
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_sql'],
   ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],
   ['ORDERS .> MAP(RECORD("x", _["id"], "X", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'],
   ['ORDERS .> MAP(RECORD("id", _["id"], "shout", (REPEAT(_["name"], 2), 1))) .> TAKE(2)', 'hybrid'],

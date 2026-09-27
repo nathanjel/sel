@@ -82,23 +82,9 @@ class Binding:
         if table is not None:
             _check_name('table', table)
         _check_type(type)
-        if collation is not None:
-            c_exact, c_sargable = _check_collation(collation)
-            exact = exact or c_exact
-            sargable = sargable or c_sargable
-        _check_bool("a column binding's exact flag", exact)
-        _check_bool("a column binding's sargable flag", sargable)
-        _check_bool("a column binding's guard flag", guard)
-        split = split_sargable or splitSargable
-        if split and prefilter is None:
-            prefilter = 'separate'
-        pref = _check_prefilter(prefilter)
-        spec = {'kind': 'column', 'column': column,
-                'table': table, 'type': type,
-                'exact': exact, 'sargable': sargable, 'guard': guard}
-        if pref is not None:
-            spec['prefilter'] = pref
-        return Binding(spec)
+        flags = _column_flags('a column binding', exact, sargable, guard, collation,
+                              prefilter, split_sargable or splitSargable)
+        return Binding({'kind': 'column', 'column': column, 'table': table, 'type': type, **flags})
 
     @staticmethod
     def raw(sql: Any, type: Any = 'UNKNOWN',  # noqa: A002
@@ -116,22 +102,9 @@ class Binding:
         if sql == '':
             raise SqlError('E_SQL_BINDING', 'a raw column binding cannot be empty')
         _check_type(type)
-        if collation is not None:
-            c_exact, c_sargable = _check_collation(collation)
-            exact = exact or c_exact
-            sargable = sargable or c_sargable
-        _check_bool("a raw column binding's exact flag", exact)
-        _check_bool("a raw column binding's sargable flag", sargable)
-        _check_bool("a raw column binding's guard flag", guard)
-        split = split_sargable or splitSargable
-        if split and prefilter is None:
-            prefilter = 'separate'
-        pref = _check_prefilter(prefilter)
-        spec = {'kind': 'column', 'raw': sql, 'type': type,
-                'exact': exact, 'sargable': sargable, 'guard': guard}
-        if pref is not None:
-            spec['prefilter'] = pref
-        return Binding(spec)
+        flags = _column_flags('a raw column binding', exact, sargable, guard, collation,
+                              prefilter, split_sargable or splitSargable)
+        return Binding({'kind': 'column', 'raw': sql, 'type': type, **flags})
 
     @staticmethod
     def columns(*items: 'Binding') -> 'Binding':
@@ -360,3 +333,24 @@ def _check_prefilter(p: Any) -> str | None:
         return 'inline'
     raise SqlError('E_SQL_BINDING',
                    f"unknown prefilter '{p}'; use 'separate' or 'inline'")
+
+
+def _column_flags(label: str, exact: Any, sargable: Any, guard: Any, collation: Any,
+                  prefilter: Any, split: bool) -> dict:
+    """The flags ``column`` and ``raw`` share: a collation spelling folded
+    into exact/sargable, the three flags checked, then the prefilter. ``label``
+    names the binding in error messages."""
+    if collation is not None:
+        c_exact, c_sargable = _check_collation(collation)
+        exact = exact or c_exact
+        sargable = sargable or c_sargable
+    _check_bool(f"{label}'s exact flag", exact)
+    _check_bool(f"{label}'s sargable flag", sargable)
+    _check_bool(f"{label}'s guard flag", guard)
+    if split and prefilter is None:
+        prefilter = 'separate'
+    pref = _check_prefilter(prefilter)
+    flags = {'exact': exact, 'sargable': sargable, 'guard': guard}
+    if pref is not None:
+        flags['prefilter'] = pref
+    return flags

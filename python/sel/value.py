@@ -205,8 +205,6 @@ class Value:
         return self.kind == NONE and self.size() == 0 and not self.is_list
 
     def is_vacuous(self) -> bool:
-        if self.is_null():
-            return True
         if self.kind == NONE and self.size() == 0:
             return True
         if self.kind == TEXT and self.size() == 0:
@@ -320,6 +318,11 @@ class Value:
 
     @staticmethod
     def int(n: int) -> Value:  # noqa: A003
+        # A native integer obeys the digit cap like the same digits in source
+        # (spec §8, §6.4; review 2026-09-25 HOST-06). A bit-length test first,
+        # so an ordinary int never meets the million-digit comparison.
+        if n.bit_length() > _INT_CAP_BITS and abs(n) >= _int_cap():
+            fail('E_RANGE', f'number has more than {D.MAX_INT_DIGITS} integer digits', None)
         v = Value(TEXT, None)
         v._dec_val = D.from_int(n)
         return v
@@ -388,6 +391,8 @@ class Value:
     def set(self, key: str, value: Value) -> Value:
         # Re-assigning an existing key keeps its original position — dict does
         # this, as long as the key is not deleted first.
+        if not key.isascii():
+            validate_text(key, None)   # a key is text too (spec §8; review 2026-09-25 HOST-05)
         if self.shape is not None:
             index = self.shape.key_map.get(key)
             if index is not None:
@@ -523,8 +528,9 @@ as as_text().
     def _clone_at(self, depth: int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
-        if depth > 1 and self.shape is None and self.storage is None and not self.children:
-            return self
+        # A leaf is copied too: it can gain children later (`B[1]["k"] = v`),
+        # and a shared one would give them to the original as well (§5.7;
+        # review 2026-09-25 SEM-12).
         out = Value(self.kind, self._scalar, self.is_list)
         out._dec_val = self._dec_val
         if self.shape is not None:
@@ -638,10 +644,13 @@ as as_text().
         if isinstance(x, (list, tuple)):
             return Value.list([Value._from_native_at(i, depth + 1) for i in x])
         if isinstance(x, dict):
-            return Value.from_entries([
-                (str(k), Value._from_native_at(item, depth + 1))
-                for k, item in x.items()
-            ])
+            entries = []
+            for k, item in x.items():
+                key = str(k)
+                if not key.isascii():
+                    validate_text(key, None)   # a key is text too (spec §8)
+                entries.append((key, Value._from_native_at(item, depth + 1)))
+            return Value.from_entries(entries)
         raise TypeError(f'cannot convert {type(x).__name__} to SEL')
 
     def to_native(self) -> Any:
@@ -659,6 +668,10 @@ as as_text().
         obj = {k: v._to_native_at(depth + 1) for k, v in self.entries()}
         if scalar is None:
             return obj
+        # A value's own scalar travels under "_"; with a child of that name too,
+        # one of them would be lost (spec §8; review 2026-09-25 HOST-01).
+        if '_' in obj:
+            fail('E_BAD_ARG', 'a value with both a scalar and a child named "_" has no native form', None)
         return {'_': scalar, **obj}
 
     # --- Python niceties, outside the cross-host contract ---------------------
@@ -737,3 +750,17 @@ def quote_dump(s: str) -> str:
             out.append(ch)
     out.append('"')
     return ''.join(out)
+
+
+# The digit cap as an integer bound, built once on first use: 10**1000000 is
+# cheap to hold and costly to rebuild. MAX_INT_DIGITS digits need at least
+# (digits-1)*log2(10) bits, so anything shorter than that cannot reach it.
+_INT_CAP = None
+_INT_CAP_BITS = int((D.MAX_INT_DIGITS - 1) * 3.3219280948873626) - 1
+
+
+def _int_cap() -> int:
+    global _INT_CAP
+    if _INT_CAP is None:
+        _INT_CAP = 10 ** D.MAX_INT_DIGITS
+    return _INT_CAP

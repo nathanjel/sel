@@ -9,7 +9,6 @@ use Sel\Args;
 use Sel\BuiltinManifest;
 use Sel\SelError;
 use Sel\Context;
-use Sel\Dec;
 use Sel\RecordShape;
 use Sel\Registry;
 use Sel\Value;
@@ -65,7 +64,7 @@ final class Structure
 
     private static function firstCollectionItem(Value $value): ?Value
     {
-        if ($value->isNull() || ($value->kind === Value::NONE && $value->size() === 0)) {
+        if ($value->kind === Value::NONE && $value->size() === 0) {
             return null;
         }
         if ($value->isList && $value->storage !== null && $value->storage !== []) {
@@ -118,11 +117,11 @@ final class Structure
         $rightNames = array_fill_keys(array_map('strtoupper', [$b2, strtolower($b2), '_2']), true);
         if (self::exprDependsOnlyOn($node['l'], $leftNames)
             && self::exprDependsOnlyOn($node['r'], $rightNames)) {
-            return ['left' => $node['l'], 'right' => $node['r'], 'numeric' => $node['op'] === '=='];
+            return ['left' => $node['l'], 'right' => $node['r'], 'numeric' => $node['op'] === '==', 'swapped' => false];
         }
         if (self::exprDependsOnlyOn($node['r'], $leftNames)
             && self::exprDependsOnlyOn($node['l'], $rightNames)) {
-            return ['left' => $node['r'], 'right' => $node['l'], 'numeric' => $node['op'] === '=='];
+            return ['left' => $node['r'], 'right' => $node['l'], 'numeric' => $node['op'] === '==', 'swapped' => true];
         }
         return null;
     }
@@ -176,7 +175,7 @@ final class Structure
         return $sign . substr($digits, 0, $cut) . '.' . substr($digits, $cut);
     }
 
-    private static function canonicalJoinKey(Value $value, bool $numeric): int|string|null
+    private static function canonicalJoinKey(Value $value, bool $numeric): int|string|array|null
     {
         if ($value->isNull()) return null;
         if ($numeric) {
@@ -184,12 +183,12 @@ final class Structure
             if ($v === null) {
                 try {
                     $v = $value->scalarSource();
-                } catch (\Throwable) {
-                    return null;
+                } catch (SelError) {
+                    return ['bad' => $value];
                 }
             }
             if ($v->kind !== Value::TEXT) {
-                return null;
+                return ['bad' => $value];
             }
             if ($v->decVal !== null) {
                 return self::canonicalDecimalKey($v->decVal);
@@ -219,18 +218,69 @@ final class Structure
             // differently before and after the text is parsed elsewhere.
             try {
                 return self::canonicalDecimalKey($v->asDecimal());
-            } catch (\Throwable) {
-                return null;
+            } catch (SelError) {
+                return ['bad' => $value];
             }
         }
-        if ($value->kind === Value::TEXT) {
-            // getScalar() formats a cached decimal on its first call, so one
-            // read is the whole contract; a null here means no scalar at all.
-            $s = $value->getScalar();
-            return is_string($s) ? $s : null;
+        // `$==` compares bytes (asBytes, as the evaluator does): a BIN meets the
+        // TEXT of its bytes and a list its scalar; the prefix keeps a byte key
+        // from being read as an integer array key.
+        try {
+            return 'b' . $value->asBytes();
+        } catch (SelError) {
+            return ['bad' => $value];
         }
-        return null;
     }
+
+    /**
+     * Record a right key: bucket a good one, and remember what the left keys
+     * must be checked against -- whether any key is live (not NULL), the first
+     * live key if it was rejected, and the first rejected one (spec §7.4:
+     * pairs match "as the comparison would compare them"; review 2026-09-25
+     * SEM-06).
+     *
+     * @param array<int|string, list<Value>> $buckets
+     * @param array{live:bool, liveBad:?Value, bad:?Value} $facts
+     */
+    private static function bucketJoinKey(array &$buckets, array &$facts, int|string|array|null $key, Value $row): void
+    {
+        if ($key === null) return;
+        if (is_array($key)) {
+            if (!$facts['live']) $facts['liveBad'] = $key['bad'];
+            $facts['bad'] ??= $key['bad'];
+        } else {
+            $buckets[$key][] = $row;
+        }
+        $facts['live'] = true;
+    }
+
+    /**
+     * A left key meets the right keys pair by pair, in order, as the
+     * comparison would: a rejected left key raises against the first live
+     * right key, a good one against the first rejected right key -- the
+     * operator's left operand coerced first. NULLs are never compared.
+     *
+     * @param array<string,mixed> $equi
+     * @param array{live:bool, liveBad:?Value, bad:?Value} $facts
+     */
+    private static function checkJoinPair(array $equi, int|string|array|null $key, array $facts): void
+    {
+        if ($key === null || !$facts['live']) return;
+        if (is_array($key)) {
+            if ($equi['swapped'] && $facts['liveBad'] !== null) self::coerceJoinOperand($equi, $facts['liveBad'], $equi['right']);
+            self::coerceJoinOperand($equi, $key['bad'], $equi['left']);
+        }
+        if ($facts['bad'] !== null) self::coerceJoinOperand($equi, $facts['bad'], $equi['right']);
+    }
+
+    /** @param array<string,mixed> $equi @param array<string,mixed> $node */
+    private static function coerceJoinOperand(array $equi, Value $value, array $node): void
+    {
+        if ($equi['numeric']) $value->asDecimal($node['pos']);
+        else $value->asBytes($node['pos']);
+        throw new \LogicException('a rejected join key did not raise');
+    }
+
 
     /**
      * @param array<string,mixed> $expr
@@ -250,7 +300,7 @@ final class Structure
             if ($sample !== null && $sample->shape !== null && isset($sample->shape->keyMap[$keyName])) {
                 $slot = $sample->shape->keyMap[$keyName];
                 $shape = $sample->shape;
-                return static function (Value $row) use ($slot, $shape, $keyName, $numeric, $pos): int|string|null {
+                return static function (Value $row) use ($slot, $shape, $keyName, $numeric, $pos): int|string|array|null {
                     $val = ($row->shape === $shape && $row->storage !== null)
                         ? ($row->storage[$slot] ?? null)
                         : $row->get($keyName);
@@ -258,7 +308,7 @@ final class Structure
                     return self::canonicalJoinKey($val, $numeric);
                 };
             }
-            return static function (Value $row) use ($keyName, $numeric, $pos): int|string|null {
+            return static function (Value $row) use ($keyName, $numeric, $pos): int|string|array|null {
                 $val = $row->get($keyName);
                 if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($keyName), $pos);
                 return self::canonicalJoinKey($val, $numeric);
@@ -283,7 +333,7 @@ final class Structure
                 if ($subSample instanceof Value && $subSample->shape !== null && isset($subSample->shape->keyMap[$fieldName])) {
                     $fieldSlot = $subSample->shape->keyMap[$fieldName];
                     $subShape = $subSample->shape;
-                    return static function (Value $row) use ($tableSlot, $tableShape, $fieldSlot, $subShape, $tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|null {
+                    return static function (Value $row) use ($tableSlot, $tableShape, $fieldSlot, $subShape, $tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|array|null {
                         if ($row->shape === $tableShape && $row->storage !== null) {
                             $sub = $row->storage[$tableSlot] ?? null;
                             if ($sub !== null && $sub->shape === $subShape && $sub->storage !== null) {
@@ -299,7 +349,7 @@ final class Structure
                         return self::canonicalJoinKey($val, $numeric);
                     };
                 }
-                return static function (Value $row) use ($tableSlot, $tableShape, $tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|null {
+                return static function (Value $row) use ($tableSlot, $tableShape, $tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|array|null {
                     $sub = ($row->shape === $tableShape && $row->storage !== null)
                         ? ($row->storage[$tableSlot] ?? null)
                         : $row->get($tableName);
@@ -309,7 +359,7 @@ final class Structure
                     return self::canonicalJoinKey($val, $numeric);
                 };
             }
-            return static function (Value $row) use ($tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|null {
+            return static function (Value $row) use ($tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|array|null {
                 $sub = $row->get($tableName);
                 if ($sub === null) fail('E_NO_KEY', 'no key ' . json_encode($tableName), $tablePos);
                 $val = $sub->get($fieldName);
@@ -320,7 +370,7 @@ final class Structure
 
         // Case 3: Var reference, e.g. _
         if (($expr['t'] ?? null) === 'var' && isset($allowed[strtoupper((string) $expr['name'])])) {
-            return static fn (Value $row): int|string|null => self::canonicalJoinKey($row, $numeric);
+            return static fn (Value $row): int|string|array|null => self::canonicalJoinKey($row, $numeric);
         }
 
         return null;
@@ -1115,20 +1165,19 @@ final class Structure
 
         if ($equi !== null && $sampleRight !== null) {
             $buckets = [];
+            $facts = ['live' => false, 'liveBad' => null, 'bad' => null];
             $rightAllowed = [$b2, strtolower($b2), '_2'];
             $rightExtractor = self::compileEquiKeyExtractor($equi['right'], $rightAllowed, $equi['numeric'], $sampleRight);
             if ($rightExtractor !== null) {
                 if ($rightValue->isList && $rightValue->storage !== null) {
                     foreach ($rightValue->storage as $item) {
                         $row = $aliasRight($item);
-                        $key = $rightExtractor($row);
-                        if ($key !== null) $buckets[$key][] = $row;
+                        self::bucketJoinKey($buckets, $facts, $rightExtractor($row), $row);
                     }
                 } else {
-                    $each($rightValue, static function (Value $item) use (&$buckets, $aliasRight, $rightExtractor): void {
+                    $each($rightValue, static function (Value $item) use (&$buckets, &$facts, $aliasRight, $rightExtractor): void {
                         $row = $aliasRight($item);
-                        $key = $rightExtractor($row);
-                        if ($key !== null) $buckets[$key][] = $row;
+                        self::bucketJoinKey($buckets, $facts, $rightExtractor($row), $row);
                     });
                 }
             } else {
@@ -1138,13 +1187,12 @@ final class Structure
                 if ($hasLower2) $frameRight[$b2Lower] = Value::none();
                 $ctx->pushFrame($frameRight);
                 try {
-                    $each($rightValue, function (Value $item) use (&$buckets, $b2, $b2Lower, $hasLower2, $aliasRight, $equi, $a, $ctx): void {
+                    $each($rightValue, function (Value $item) use (&$buckets, &$facts, $b2, $b2Lower, $hasLower2, $aliasRight, $equi, $a, $ctx): void {
                         $row = $aliasRight($item);
                         $ctx->setFrameValue($b2, $row);
                         if ($hasLower2) $ctx->setFrameValue($b2Lower, $row);
                         $ctx->setFrameValue('_2', $row);
-                        $key = self::canonicalJoinKey($a->evalNode($equi['right']), $equi['numeric']);
-                        if ($key !== null) $buckets[$key][] = $row;
+                        self::bucketJoinKey($buckets, $facts, self::canonicalJoinKey($a->evalNode($equi['right']), $equi['numeric']), $row);
                     });
                 } finally {
                     $ctx->popFrame();
@@ -1320,12 +1368,22 @@ final class Structure
                             }
                             // A dropped row whose key is a field it has
                             // cannot raise in the key.
-                            if ($asked === 1 && $fastField !== null && $item->get($fastField) !== null) { $dropped = true; continue; }
+                            if ($asked === 1 && $fastField !== null && $item->get($fastField) !== null) {
+                                // Dropped before its key was computed -- but the key is
+                                // this very field, and a rejected one still raises.
+                                self::checkJoinPair($equi, self::canonicalJoinKey($item->get($fastField), $equi['numeric']), $facts);
+                                $dropped = true;
+                                continue;
+                            }
                         }
                         $row = $aliasLeft($item);
                         if ($asked < 0 && $fastField !== null && $row->get($fastField) !== null) {
                             $asked = $verdict($prefix, $row);
-                            if ($asked === 1) { $dropped = true; continue; }
+                            if ($asked === 1) {
+                                self::checkJoinPair($equi, self::canonicalJoinKey($row->get($fastField), $equi['numeric']), $facts);
+                                $dropped = true;
+                                continue;
+                            }
                         }
                         if ($leftExtractor !== null) {
                             $key = $leftExtractor($row);
@@ -1336,7 +1394,8 @@ final class Structure
                             $top['_'] = $row;
                             $key = self::canonicalJoinKey($a->evalNode($equi['left']), $equi['numeric']);
                         }
-                        $matches = $key === null ? null : ($buckets[$key] ?? null);
+                        self::checkJoinPair($equi, $key, $facts);
+                        $matches = $key === null || is_array($key) ? null : ($buckets[$key] ?? null);
                         if ($asked < 0) $asked = $prefix !== [] ? $verdict($prefix, $row) : 0;
                         if ($asked === 1) {
                             $dropped = true;
@@ -1378,7 +1437,8 @@ final class Structure
                     foreach ($leftValue->storage as $item) {
                         $row = $aliasLeft($item);
                         $key = $leftExtractor($row);
-                        $matches = $key === null ? null : ($buckets[$key] ?? null);
+                        self::checkJoinPair($equi, $key, $facts);
+                        $matches = $key === null || is_array($key) ? null : ($buckets[$key] ?? null);
                         if ($matches !== null) {
                             foreach ($matches as $right) $output[] = $project($row, $right);
                         } elseif ($leftJoin) {
@@ -1386,10 +1446,11 @@ final class Structure
                         }
                     }
                 } else {
-                    $each($leftValue, static function (Value $item) use (&$buckets, &$output, $aliasLeft, $leftExtractor, $leftJoin, $project): void {
+                    $each($leftValue, static function (Value $item) use (&$buckets, &$output, $aliasLeft, $leftExtractor, $leftJoin, $project, $equi, $facts): void {
                         $row = $aliasLeft($item);
                         $key = $leftExtractor($row);
-                        $matches = $key === null ? null : ($buckets[$key] ?? null);
+                        self::checkJoinPair($equi, $key, $facts);
+                        $matches = $key === null || is_array($key) ? null : ($buckets[$key] ?? null);
                         if ($matches !== null) {
                             foreach ($matches as $right) $output[] = $project($row, $right);
                         } elseif ($leftJoin) {
@@ -1404,14 +1465,15 @@ final class Structure
                 if ($hasLower1) $frameLeft[$b1Lower] = Value::none();
                 $ctx->pushFrame($frameLeft);
                 try {
-                    $each($leftValue, function (Value $item) use (&$buckets, &$output, $b1, $b1Lower, $hasLower1, $aliasLeft, $equi, $a, $leftJoin, $project, $ctx): void {
+                    $each($leftValue, function (Value $item) use (&$buckets, &$output, $b1, $b1Lower, $hasLower1, $aliasLeft, $equi, $a, $leftJoin, $project, $ctx, $facts): void {
                         $row = $aliasLeft($item);
                         $ctx->setFrameValue($b1, $row);
                         if ($hasLower1) $ctx->setFrameValue($b1Lower, $row);
                         $ctx->setFrameValue('_1', $row);
                         $ctx->setFrameValue('_', $row);
                         $key = self::canonicalJoinKey($a->evalNode($equi['left']), $equi['numeric']);
-                        $matches = $key === null ? null : ($buckets[$key] ?? null);
+                        self::checkJoinPair($equi, $key, $facts);
+                        $matches = $key === null || is_array($key) ? null : ($buckets[$key] ?? null);
                         if ($matches !== null) {
                             foreach ($matches as $right) $output[] = $project($row, $right);
                         } elseif ($leftJoin) {

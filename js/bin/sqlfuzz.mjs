@@ -43,7 +43,12 @@ const attempt = (fn) => {
   }
 };
 
-const [path, dialect = 'mariadb'] = process.argv.slice(2);
+// A third argument `statement` prints only translateStatement's inline SQL (or
+// `!CODE@line:col`), one line per program: what php/bin/sqlo's cross-host
+// statement oracle executes against a real server (review 2026-09-25 TEST-04),
+// so every host's translator -- not only PHP's -- is asked whether its SQL
+// means what SEL means.
+const [path, dialect = 'mariadb', mode = 'all'] = process.argv.slice(2);
 
 function readCorpus(text) {
   const records = [];
@@ -64,6 +69,10 @@ for (const src of readCorpus(readFileSync(path, 'utf8'))) {
     // Does not compile. tools/fuzz.sh already holds every host to the same
     // answer here, so this lane says only that it got that far.
     lines.push(e instanceof SelError ? '-' : `!HOST ${e.constructor.name}`);
+    continue;
+  }
+  if (mode === 'statement') {
+    lines.push(attempt(() => Sql.translateStatement(program, dialect, bindings).asStatement()));
     continue;
   }
   try {

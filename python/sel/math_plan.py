@@ -89,7 +89,6 @@ def compile_math_plan(root: Node) -> MathPlan | None:
         return s
 
     def emit(node: Node, depth: int) -> tuple[int, D.Dec | None] | None:
-        nonlocal steps
         if depth > MAX_DEPTH:
             return None
 

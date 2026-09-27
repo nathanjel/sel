@@ -117,13 +117,13 @@
 
    (list :id "scenario2"
          :name "Scenario 2: Fall-Through Custom SEL Function"
-         :desc "Early MAP uses custom SEL function CUSTOM_VIP_SCORE. SQL passes through tier & created_year, filters country='DE', sorts, limits; SEL evaluates score."
-         :query "CUSTOMERS .> MAP(RECORD('id', _['id'],
-                                         'country', _['country'],
-                                         'vip_score', CUSTOM_VIP_SCORE(_['tier'], _['created_year'])))
-                           .> FILTER(_['country'] $== 'DE')
+         :desc "Filters country='DE', sorts and limits in SQL, passing through tier & created_year; a final MAP calls the custom function CUSTOM_VIP_SCORE in memory. (It used to come first, and the planner moved the FILTER in front of it -- which skips its errors on the rows dropped: review 2026-09-25 SEM-07.)"
+         :query "CUSTOMERS .> FILTER(_['country'] $== 'DE')
                            .> SORT_BY(_['id'], 'ASC')
-                           .> TAKE(5)"
+                           .> TAKE(5)
+                           .> MAP(RECORD('id', _['id'],
+                                         'country', _['country'],
+                                         'vip_score', CUSTOM_VIP_SCORE(_['tier'], _['created_year'])))"
          :hybrid-expected t)
 
    (list :id "scenario3"

@@ -6,6 +6,9 @@ import { Value, NONE, structuralHash } from '../value.mjs';
 import { define } from '../registry.mjs';
 import { bytesCompare } from '../utf8.mjs';
 import { fail } from '../errors.mjs';
+// The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
+// toUpperCase took "deſc" for DESC.
+import { asciiUpper } from '../lexer.mjs';
 
 // Two-argument form binds `_`; three-argument form takes a bare identifier as
 // the binder, checked by inspecting the AST node the caller handed us.
@@ -154,7 +157,7 @@ export function leadingFieldConjuncts(body, binder) {
     const readsOnlyFields = (n) => {
       if (!n) return true;
       if (n.t === 'index') {
-        if (bareRead(n)) { fields.add(n.idx.v.toUpperCase()); return true; }
+        if (bareRead(n)) { fields.add(asciiUpper(n.idx.v)); return true; }
         if (n.obj && n.obj.t === 'index') return readsOnlyFields(n.obj) && readsOnlyFields(n.idx);
         return false;
       }
@@ -325,7 +328,7 @@ function doSort(args, ctx, forcedDir) {
       } else if (args.node(2).t === 'text') {
         binder = '_';
         body = args.node(1);
-        dir = args.text(2).toUpperCase();
+        dir = asciiUpper(args.text(2));
       } else if (args.isSymbol(1)) {
         binder = args.symbol(1);
         body = args.node(2);
@@ -333,12 +336,12 @@ function doSort(args, ctx, forcedDir) {
       } else {
         binder = '_';
         body = args.node(1);
-        dir = args.text(2).toUpperCase();
+        dir = asciiUpper(args.text(2));
       }
     } else {
       binder = args.symbol(1);
       body = args.node(2);
-      dir = args.text(3).toUpperCase();
+      dir = asciiUpper(args.text(3));
     }
 
     if (dir !== 'ASC' && dir !== 'DESC') {
@@ -371,8 +374,7 @@ function doSort(args, ctx, forcedDir) {
 function doTop(args, ctx, forcedDir) {
   const value = args.val(0);
   const limit = args.nonNegInt(args.count() - 1);
-  if (limit === 0 || value.isNull()) return Value.list([]);
-  if (value.kind === NONE && value.size() === 0) return Value.list([]);
+  if (limit === 0 || (value.kind === NONE && value.size() === 0)) return Value.list([]);
 
   const sortCount = args.count() - 1;
   let binder = '_';
@@ -388,18 +390,18 @@ function doTop(args, ctx, forcedDir) {
       body = args.node(2);
     } else if (args.node(2).t === 'text') {
       body = args.node(1);
-      dir = args.text(2).toUpperCase();
+      dir = asciiUpper(args.text(2));
     } else if (args.isSymbol(1)) {
       binder = args.symbol(1);
       body = args.node(2);
     } else {
       body = args.node(1);
-      dir = args.text(2).toUpperCase();
+      dir = asciiUpper(args.text(2));
     }
   } else if (sortCount === 4) {
     binder = args.symbol(1);
     body = args.node(2);
-    dir = args.text(3).toUpperCase();
+    dir = asciiUpper(args.text(3));
   } else {
     fail('E_ARITY', `${args.name} has an invalid sort form`, args.pos);
   }

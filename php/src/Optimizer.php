@@ -53,8 +53,6 @@ final class Optimizer
         foreach (['l', 'r', 'x', 'obj', 'idx'] as $key) {
             if (isset($node[$key]) && is_array($node[$key]) && self::exceedsDepth($node[$key], $next)) return true;
         }
-        if (($node['t'] ?? null) !== 'assign' && isset($node['target']) && is_array($node['target'])
-            && self::exceedsDepth($node['target'], $next)) return true;
         if (isset($node['value']) && is_array($node['value']) && self::exceedsDepth($node['value'], $next)) return true;
         return false;
     }
@@ -108,7 +106,7 @@ final class Optimizer
                 }
                 $steps[] = $copy;
             }
-            $steps = self::logicalSteps($source, $steps, $options);
+            $steps = self::logicalSteps($source, $steps, $options + ['logical' => !$physical]);
             if ($physical) {
                 // A tree fact the evaluator's join pre-filter needs (SEL-0050):
                 // whether anything can see the keys a FILTER's result carries.
@@ -151,16 +149,10 @@ final class Optimizer
                 $copy[$key] = self::optimizeTree($copy[$key], $physical, $depth + 1, $options, false);
             }
         }
-        if (($copy['t'] ?? null) === 'assign') {
-            if (isset($copy['value']) && is_array($copy['value'])) {
-                $copy['value'] = self::optimizeTree($copy['value'], $physical, $depth + 1, $options, false);
-            }
-        } else {
-            foreach (['target', 'value'] as $key) {
-                if (isset($copy[$key]) && is_array($copy[$key])) {
-                    $copy[$key] = self::optimizeTree($copy[$key], $physical, $depth + 1, $options, false);
-                }
-            }
+        // An assignment's target (only assign nodes have one) is walked
+        // iteratively by the evaluator, so it is not charged here.
+        if (isset($copy['value']) && is_array($copy['value'])) {
+            $copy['value'] = self::optimizeTree($copy['value'], $physical, $depth + 1, $options, false);
         }
         // Only an explicit false disables folding, as in JS and Python.
         $folded = (($options['foldConstants'] ?? true) === false) ? $copy : self::foldNode($copy);
@@ -215,13 +207,6 @@ final class Optimizer
     {
         $child['pos'] = $pos;
         return $child;
-    }
-
-    /** @return array<string,mixed> */
-    private static function callNode(string $name, array $args, array $pos): array
-    {
-        return ['t' => 'call', 'name' => $name, 'spec' => Registry::lookup($name),
-                'args' => $args, 'pos' => $pos];
     }
 
     /** @param array<string,mixed> $node @return array<string,mixed> */
@@ -365,6 +350,7 @@ final class Optimizer
      */
     private static function logicalSteps(array $source, array $steps, array $options): array
     {
+        $logical = (bool) ($options['logical'] ?? false);
         $changed = true;
         while ($changed) {
             $changed = false;
@@ -422,7 +408,8 @@ final class Optimizer
                     $refs = self::fieldRefs($details['predicate'], $details['binder']);
                     if ($details['valid'] && $refs !== [] && self::allIn($refs, $passes)
                         && !self::readsRowOrKey($details['predicate'], $details['binder'])
-                        && self::keysRenumberedBy($steps[$i + 2] ?? null)) {
+                        && self::keysRenumberedBy($steps[$i + 2] ?? null)
+                        && self::mapCannotRaise($first, $logical)) {
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -432,7 +419,9 @@ final class Optimizer
                 }
                 if ($second !== null && in_array($firstName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
                     && $secondName === 'FILTER' && !self::stepReadsKey($second)
-                    && self::keysRenumberedBy($steps[$i + 2] ?? null)) {
+                    && self::keysRenumberedBy($steps[$i + 2] ?? null)
+                    && self::cannotRaise(self::sortDetails($first)['key'], self::sortDetails($first)['binder'] ?? '_', $logical)
+                    && ($logical || self::cannotRaise(self::filterDetails($second)['predicate'], self::filterDetails($second)['binder'], false))) {
                     $next[] = $second;
                     $next[] = $first;
                     $i++;
@@ -461,7 +450,9 @@ final class Optimizer
                     $details = self::sortDetails($second);
                     $refs = $details['key'] === null ? [] : self::fieldRefs($details['key'], $details['binder'] ?? '_');
                     if ($details['key'] !== null && $refs !== [] && self::allIn($refs, self::mapPassthroughs($first))
-                        && !self::readsRowOrKey($details['key'], $details['binder'] ?? '_')) {
+                        && !self::readsRowOrKey($details['key'], $details['binder'] ?? '_')
+                        && self::mapCannotRaise($first, $logical)
+                        && self::cannotRaise($details['key'], $details['binder'] ?? '_', $logical)) {
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -473,7 +464,9 @@ final class Optimizer
                     && $firstName === 'FILTER' && $secondName === 'FILTER') {
                     $left = self::filterDetails($first);
                     $right = self::filterDetails($second);
-                    if ($left['valid'] && $right['valid']) {
+                    // Fused, the second predicate runs on a row before the first
+                    // has seen the rows after it: only one that cannot raise.
+                    if ($left['valid'] && $right['valid'] && self::cannotRaise($right['predicate'], $right['binder'], $logical)) {
                         $predicate = strcasecmp($right['binder'], $left['binder']) === 0
                             ? $right['predicate']
                             : self::renameVar($right['predicate'], $right['binder'], $left['binder']);
@@ -523,6 +516,60 @@ final class Optimizer
     }
 
     /** @return array{binder:string,predicate:array<string,mixed>,explicit:bool,valid:bool} */
+    /**
+     * Whether evaluating NODE for one row can raise -- conservatively: a rewrite
+     * that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
+     * two FILTERs changes which rows reach what, so it may only pass over
+     * expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
+     * SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+     * logical path the rows are a bound relation's, which always carry their
+     * typed columns, so a field read through the binder cannot raise either, nor
+     * a comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
+     * anything else may. The in-memory path has no schema.
+     *
+     * @param array<string,mixed>|null $node
+     */
+    private static function cannotRaise(?array $node, string $binder, bool $logical): bool
+    {
+        if ($node === null) return true;
+        switch ($node['t'] ?? null) {
+            case 'num': case 'text': case 'bool': case 'null':
+                return true;
+            case 'var':
+                $name = strtoupper((string) $node['name']);
+                return $name === '_K' || $name === strtoupper($binder);
+            case 'index':
+                return $logical && ($node['obj']['t'] ?? null) === 'var'
+                    && strcasecmp((string) $node['obj']['name'], $binder) === 0
+                    && ($node['idx']['t'] ?? null) === 'text';
+            case 'bin':
+                return $logical && in_array($node['op'], self::SAFE_LOGICAL_OPS, true)
+                    && self::cannotRaise($node['l'] ?? null, $binder, $logical)
+                    && self::cannotRaise($node['r'] ?? null, $binder, $logical);
+            case 'un':
+                return $logical && $node['op'] === 'NOT' && self::cannotRaise($node['x'] ?? null, $binder, $logical);
+            default:
+                return false;
+        }
+    }
+
+    private const SAFE_LOGICAL_OPS = ['==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
+        'AND', 'OR', '+', '-', '*'];
+
+    /** Every field a MAP computes (or its whole body) cannot raise. */
+    private static function mapCannotRaise(array $step, bool $logical): bool
+    {
+        $details = self::mapDetails($step);
+        $body = $details['body'] ?? null;
+        if (($body['t'] ?? null) === 'call' && $body['name'] === 'RECORD') {
+            foreach ($body['args'] as $i => $arg) {
+                if ($i % 2 === 0 ? ($arg['t'] ?? null) !== 'text' : !self::cannotRaise($arg, $details['binder'], $logical)) return false;
+            }
+            return true;
+        }
+        return self::cannotRaise($body, $details['binder'], $logical);
+    }
+
     private static function filterDetails(array $step): array
     {
         $args = $step['args'];
@@ -739,7 +786,10 @@ final class Optimizer
             $sortCount = $name === 'TOP_BY' ? $count - 1 : $count;
             if ($sortCount === 2 || ($sortCount === 3 && ($args[2]['t'] ?? null) === 'text')) {
                 $key = $args[1];
-            } elseif ($sortCount === 3 && ($args[1]['t'] ?? null) === 'var') {
+            } elseif (($args[1]['t'] ?? null) === 'var' && !($args[1]['grouped'] ?? false)) {
+                // The binder form, three slots or four (with a direction): the
+                // other hosts read both, and PHP's missing four-slot branch made
+                // its rewrites differ (review 2026-09-25 HYG-05).
                 $binder = $args[1]['name'];
                 $key = $args[2];
             }

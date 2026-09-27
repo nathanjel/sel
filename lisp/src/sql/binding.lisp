@@ -97,6 +97,21 @@ _check_collation is in the Python host."
       ((or (string= c "default") (string= c "none")) (values nil nil))
       (t (refuse "E_SQL_BINDING" (format nil "unknown collation ~s; use 'binary', 'exact', 'sargable', or 'default'" collation))))))
 
+(defun column-flags (head exact sargable guard collation prefilter split-sargable)
+  "HEAD (the column or raw part of a column binding's spec) followed by the
+flags BINDING-COLUMN and BINDING-RAW share: a COLLATION spelling folded into
+EXACT/SARGABLE, then the prefilter."
+  (when collation
+    (multiple-value-bind (c-exact c-sargable) (check-collation collation)
+      (when c-exact (setf exact t))
+      (when c-sargable (setf sargable t))))
+  (let ((pref (check-prefilter (or prefilter (when split-sargable "separate"))))
+        (spec (append head (list :exact (not (null exact))
+                                 :sargable (not (null sargable))
+                                 :guard (not (null guard))))))
+    (when pref (setf (getf spec :prefilter) pref))
+    spec))
+
 (defun binding-column (column &optional table (type :unknown) &key exact sargable guard collation prefilter split-sargable)
   "One column, optionally qualified by a table, optionally typed.
 
@@ -110,17 +125,8 @@ condition has to say so here."
   (check-name "column" column)
   (when table (check-name "table" table))
   (check-binding-type type)
-  (when collation
-    (multiple-value-bind (c-exact c-sargable) (check-collation collation)
-      (when c-exact (setf exact t))
-      (when c-sargable (setf sargable t))))
-  (let ((pref (check-prefilter (or prefilter (when split-sargable "separate"))))
-        (spec (list :column column :table table :type type
-                    :exact (not (null exact))
-                    :sargable (not (null sargable))
-                    :guard (not (null guard)))))
-    (when pref (setf (getf spec :prefilter) pref))
-    (%binding :column spec)))
+  (%binding :column (column-flags (list :column column :table table :type type)
+                                  exact sargable guard collation prefilter split-sargable)))
 
 (defun binding-raw (sql &optional (type :unknown) &key exact sargable guard collation prefilter split-sargable)
   "A column expressed as SQL this layer will not read.
@@ -133,17 +139,8 @@ in a map by accident."
   (when (zerop (length sql))
     (refuse "E_SQL_BINDING" "a raw column binding cannot be empty"))
   (check-binding-type type)
-  (when collation
-    (multiple-value-bind (c-exact c-sargable) (check-collation collation)
-      (when c-exact (setf exact t))
-      (when c-sargable (setf sargable t))))
-  (let ((pref (check-prefilter (or prefilter (when split-sargable "separate"))))
-        (spec (list :raw sql :type type
-                    :exact (not (null exact))
-                    :sargable (not (null sargable))
-                    :guard (not (null guard)))))
-    (when pref (setf (getf spec :prefilter) pref))
-    (%binding :column spec)))
+  (%binding :column (column-flags (list :raw sql :type type)
+                                  exact sargable guard collation prefilter split-sargable)))
 
 (defun binding-columns (&rest items)
   "An ordered set of columns, iterated by an aggregate and indexed by position:

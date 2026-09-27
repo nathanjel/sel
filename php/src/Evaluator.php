@@ -260,7 +260,9 @@ final class Evaluator
             return Value::bool(self::evalNode($node['r'], $ctx)->asBool($node['r']['pos']));
         }
 
-        if ($op === '??') {
+        // ?? falls back on NULL, ??? on any vacuous value; both on a missing
+        // key or name.
+        if ($op === '??' || $op === '???') {
             try {
                 $l = self::evalNode($node['l'], $ctx);
             } catch (SelError $e) {
@@ -269,22 +271,7 @@ final class Evaluator
                 }
                 throw $e;
             }
-            if ($l->isNull()) {
-                return self::evalNode($node['r'], $ctx);
-            }
-            return $l;
-        }
-
-        if ($op === '???') {
-            try {
-                $l = self::evalNode($node['l'], $ctx);
-            } catch (SelError $e) {
-                if ($e->code === 'E_NO_KEY' || $e->code === 'E_UNDEF_VAR') {
-                    return self::evalNode($node['r'], $ctx);
-                }
-                throw $e;
-            }
-            if ($l->isVacuous()) {
+            if ($op === '??' ? $l->isNull() : $l->isVacuous()) {
                 return self::evalNode($node['r'], $ctx);
             }
             return $l;

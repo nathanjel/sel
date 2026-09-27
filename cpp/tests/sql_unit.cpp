@@ -241,7 +241,10 @@ int main() {
       // guard, so nothing pushes down. A later step that renumbers again lets the
       // swap through.
       {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)", "pure_memory"},
-      {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)", "hybrid"},
+      {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)", "pure_memory"},
+      // REPEAT can raise, so the FILTER stays behind the MAP (review 2026-09-25
+      // SEM-07); a MAP that cannot raise lets it through.
+      {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"plus\", r[\"amount\"] + 1)) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)", "pure_sql"},
       {"ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "pure_memory"},
       {"ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "hybrid"},
       {"ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", (REPEAT(_[\"name\"], 2), 1))) .> TAKE(2)", "hybrid"},

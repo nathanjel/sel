@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
-use Sel\Value;
 
 final class Bindings
 {

@@ -6,6 +6,7 @@ answer (SEL-0053). Values:
     ('t', text)          TEXT (a number is text)
     ('null',)            NULL
     ('bool', b)          BOOL
+    ('bin', bytes)       BIN
     ('rec', [(k, v)])    a record with at least one field
     ('list', [v])        a list with at least one element
 """
@@ -20,6 +21,8 @@ def dump(v):
         return '-'
     if kind == 'bool':
         return 'TRUE' if v[1] else 'FALSE'
+    if kind == 'bin':
+        return 'b' + v[1].hex()
     if kind == 'rec':
         return '-{' + ', '.join(f'"{k}"={dump(x)}' for k, x in v[1]) + '}'
     if kind == 'list':
@@ -35,11 +38,20 @@ def source(v):
         return 'NULL'
     if kind == 'bool':
         return 'TRUE' if v[1] else 'FALSE'
+    if kind == 'bin':
+        return f'FROM_HEX("{v[1].hex()}")'
     if kind == 'rec':
         return 'RECORD(' + ', '.join(f'"{k}", {source(x)}' for k, x in v[1]) + ')'
     if kind == 'list':
         return 'LIST(' + ', '.join(source(x) for x in v[1]) + ')'
     raise ValueError(v)
+
+
+def ascii_upper(s):
+    """Names compare ASCII-case-insensitively (spec §7.4): only a-z move.
+    Python's str.upper() would fold "ß" to "SS" -- the defect this model once
+    shared with two hosts (review 2026-09-25 SEM-04)."""
+    return ''.join(chr(ord(c) - 32) if 'a' <= c <= 'z' else c for c in s)
 
 
 def nested(v):
@@ -105,14 +117,14 @@ def joined_row(left, right, lnames, rnames, null_right):
     rside = right if right is not None else null_right
     for n in rnames + ['_2']:
         bind(n, rside)
-    right_names = {k.upper() for k, _ in rside[1]} if rside[0] == 'rec' else set()
-    left_names = {k.upper() for k, _ in left[1]}
+    right_names = {ascii_upper(k) for k, _ in rside[1]} if rside[0] == 'rec' else set()
+    left_names = {ascii_upper(k) for k, _ in left[1]}
     for k, v in left[1]:
-        if not nested(v) and k.upper() not in right_names:
+        if not nested(v) and ascii_upper(k) not in right_names:
             put(k, v)
     if right is not None:
         for k, v in right[1]:
-            if not nested(v) and v != NULL and k.upper() not in left_names:
+            if not nested(v) and v != NULL and ascii_upper(k) not in left_names:
                 put(k, v)
     return ('rec', row)
 
@@ -122,18 +134,41 @@ class MissingKey(Exception):
     written. The generator discards such programs -- its subject is rows."""
 
 
-def key_of(v):
-    """An equi-join key on `==`: a number matches the same number; NULL
-    matches nothing. The generator only makes integer keys and NULLs."""
+class PredictedError(Exception):
+    """The program raises: CODE at the operand POS (a 1-based column) says."""
+    def __init__(self, code, pos):
+        super().__init__(code)
+        self.code, self.pos = code, pos
+
+
+def key_of(v, op='=='):
+    """An equi-join key, compared "as the comparison would compare them"
+    (spec §7.4): under `==` a number matches the same number (1 and 1.0 are one
+    key) and anything that is not a number raises E_NOT_NUM; under `$==` text
+    and BIN compare as their bytes and a BOOL raises E_NOT_BIN. NULL matches
+    nothing and is never compared. Returns None for NULL, ('bad', code) for a
+    value the comparison rejects, else a hashable key."""
+    import re
+    from decimal import Decimal
     if v is None:
         raise MissingKey()
     if v == NULL:
         return None
-    return int(v[1])
+    if op == '==':
+        if v[0] == 't' and re.fullmatch(r'-?[0-9]+(\.[0-9]+)?', v[1]):
+            d = Decimal(v[1])
+            return ('n', d.normalize() if d != 0 else Decimal(0))
+        return ('bad', 'E_NOT_NUM')
+    if v[0] == 't':
+        return ('b', v[1].encode('utf-8'))
+    if v[0] == 'bin':
+        return ('b', v[1])
+    return ('bad', 'E_NOT_BIN')
 
 
-def link(left_elems, right_elems, lnames, rnames, lkey, rkey, left_join):
-    """LKEY/RKEY read the key from a bound element."""
+def link(left_elems, right_elems, lnames, rnames, lkey, rkey, left_join, op='==', lpos=None, rpos=None):
+    """LKEY/RKEY read the key from a bound element; LPOS/RPOS are the columns
+    an error in either operand is reported at."""
     lb = [extend(e, lnames) for e in left_elems]
     rb = [extend(e, rnames) for e in right_elems]
     if left_join:
@@ -144,14 +179,26 @@ def link(left_elems, right_elems, lnames, rnames, lkey, rkey, left_join):
         null_right = ('rec', [(k, NULL) for k in shape]) if shape else NULL
     else:
         null_right = None
+    rkeys = [key_of(rkey(r), op) for r in rb]
+    lkeys = [key_of(lkey(l), op) for l in lb]
+    # The first pair the comparison would raise on, left element outer, right
+    # inner, the left operand coerced first. A NULL on either side is never
+    # compared, so a rejected key facing only NULLs raises nothing.
+    live_right = [k for k in rkeys if k is not None]
+    for lk in lkeys:
+        if lk is None or not live_right:
+            continue
+        if lk[0] == 'bad':
+            raise PredictedError(lk[1], lpos)
+        bad_right = next((k for k in live_right if k[0] == 'bad'), None)
+        if bad_right is not None:
+            raise PredictedError(bad_right[1], rpos)
     buckets = {}
-    for r in rb:
-        k = key_of(rkey(r))
+    for r, k in zip(rb, rkeys):
         if k is not None:
             buckets.setdefault(k, []).append(r)
     out = []
-    for l in lb:
-        k = key_of(lkey(l))
+    for l, k in zip(lb, lkeys):
         matches = buckets.get(k, []) if k is not None else []
         if matches:
             out.extend(joined_row(l, r, lnames, rnames, None) for r in matches)

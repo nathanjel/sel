@@ -10,6 +10,8 @@ segment starts so an error compares as (segment, offset).
 import random, sys
 count, seed, out_corpus, out_src = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4]
 UNIFORM = len(sys.argv) > 5 and sys.argv[5] == 'uniform'
+# `pipeline`: no joins -- sorts, maps, filters and slices (review 2026-09-25 TEST-09).
+PIPELINE = len(sys.argv) > 5 and sys.argv[5] == 'pipeline'
 R = random.Random(seed)
 
 def val():
@@ -73,8 +75,45 @@ def predicate(two):
     body = ' AND '.join(conjunct(binder, two) for _ in range(R.randint(1, 4)))
     return f'{binder}, {body}' if binder != '_' else body
 
+def pipeline_pair():
+    """Rows, then two to four steps, some of which fail on one row. The oracle
+    binds every step's result to a helper variable, so no rewrite can move,
+    fuse or skip a step: the as-written form must raise what it raises, keep
+    the keys it keeps and answer what it answers (SEM-07/SEM-08)."""
+    n = R.randint(2, 5)
+    rows = 'LIST(' + ', '.join(f'RECORD("id", {i}, "v", {R.randint(0, 3)}, "s", "{R.choice("PQy")}")'
+                               for i in range(1, n + 1)) + ')'
+    d = f'ROWS = {rows}; '
+    bad = lambda: R.randint(1, n)
+    def failing(expr):
+        return f'IF(_["id"] == {bad()}, ABORT("x"), {expr})' if R.random() < 0.35 else expr
+    def step():
+        k = R.randint(0, 10)
+        if k == 0: return f'SORT(_, {failing(chr(95) + "[" + chr(34) + "v" + chr(34) + "]")})'
+        if k == 1: return f'SORT_BY({failing("_[" + chr(34) + "v" + chr(34) + "]")}{R.choice(["", ", " + chr(34) + "DESC" + chr(34)])})'
+        if k == 2: return f'TOP_BY({failing("_[" + chr(34) + "id" + chr(34) + "]")}, {R.randint(1, 3)})'
+        if k == 3: return f'MAP(RECORD("id", _["id"], "v", _["v"], "s", _["s"], "w", {R.choice(["1/(_[" + chr(34) + "id" + chr(34) + "] - " + str(bad()) + ")", "_[" + chr(34) + "v" + chr(34) + "] + 1", "_K"])}))'
+        if k in (4, 5): return f'FILTER({failing(R.choice(["_[" + chr(34) + "v" + chr(34) + "] > 1", "_[" + chr(34) + "s" + chr(34) + "] $== " + chr(34) + "P" + chr(34), "_K $!= " + chr(34) + "2" + chr(34)]))})'
+        if k == 6: return f'TAKE({R.randint(1, 3)})'
+        if k == 7: return 'DEDUPE()'
+        if k == 8: return f'MAP(_["id"])'
+        if k == 9: return f'MAP(_K)'
+        return f'FILTER({failing("TRUE")})'
+    steps = [step() for _ in range(R.randint(2, 4))]
+    segs = [('data', d)] + [(f'step{i}', st) for i, st in enumerate(steps)]
+    written = d + 'ROWS' + ''.join(f' .> {st}' for st in steps)
+    oracle = d
+    last = 'ROWS'
+    for i, st in enumerate(steps[:-1]):
+        oracle += f'S{i} = {last} .> {st}; '
+        last = f'S{i}'
+    oracle += f'{last} .> {steps[-1]}'
+    return written, oracle, segs
+
 pairs = []
-for _ in range(count):
+for _ in range(count if PIPELINE else 0):
+    pairs.append(pipeline_pair())
+for _ in range(0 if PIPELINE else count):
     d = data()
     two = R.random() < 0.6
     link1 = R.choice(['LINK', 'LINK', 'LINK_LEFT'])

@@ -45,6 +45,8 @@ function readCorpus(string $text): array
 
 $path = $argv[1] ?? null;
 $dialect = $argv[2] ?? 'mariadb';
+// `statement`: only translateStatement's inline SQL; see js/bin/sqlfuzz.mjs.
+$mode = $argv[3] ?? 'all';
 if ($path === null) {
     fwrite(STDERR, "usage: sqlfuzz corpus.selc [dialect]\n");
     exit(2);
@@ -86,6 +88,10 @@ foreach (readCorpus((string) file_get_contents($path)) as $src) {
         continue;
     } catch (\Throwable $e) {
         $lines[] = '!HOST ' . get_class($e);
+        continue;
+    }
+    if ($mode === 'statement') {
+        $lines[] = $attempt(static fn () => Sql::translateStatement($program, $dialect, $bindings)->asStatement());
         continue;
     }
     try {

@@ -35,6 +35,7 @@ require_once __DIR__ . '/json-bindings.php';
 use Sel\Dec;
 use Sel\Sel;
 use Sel\SelError;
+use Sel\Sql\Binding;
 use Sel\Sql\Fragment;
 use Sel\Sql\Map;
 use Sel\Sql\Sql;
@@ -853,6 +854,136 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
 }
 
 /**
+ * Every host's translator against the same server (review 2026-09-25 TEST-03/04).
+ *
+ * The statement oracle above runs PHP's translator only, so a defect every
+ * translator shares — or one four of five share — passed it: a LINK's left
+ * binder resolved to the joined relation in four hosts (SQL-01) and only a
+ * two-relation program over same-named fields could tell. Here the corpus
+ * `cross.selc` reads ORDERS and CUSTOMERS, the relations every host's sqlfuzz
+ * binds; each host's `sqlfuzz CORPUS DIALECT statement` output (one inline
+ * statement or `!CODE` per program) is read from SEL_ORACLE_CROSS_DIR as
+ * `<impl>.<dialect>.txt` and executed against the fixture, and the rows are
+ * compared with SEL's answer over the same rows loaded as the two relations.
+ * PHP's own translation is always asked, in-process, so the lane never asks
+ * nobody. A refusal is an answer, not a disagreement.
+ */
+function run_cross(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
+{
+    $family = in_array($dialect, ['mariadb', 'mysql'], true) ? 'mysql-family' : $dialect;
+    $fixture = ORACLE . "/fixture-cross-{$family}.sql";
+    if (!is_file($fixture)) {
+        echo "{$label}cross: no fixture for {$dialect}, skipped\n";
+        return ['failed' => 0];
+    }
+    $sql = preg_replace('/^\s*--.*$/m', '', (string) file_get_contents($fixture)) ?? '';
+    foreach (explode(';', $sql) as $stmt) {
+        if (trim($stmt) !== '') {
+            $pdo->exec($stmt);
+        }
+    }
+    $load = static function (string $query) use ($pdo): array {
+        $rows = [];
+        foreach ($pdo->query($query)->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $rows[] = array_map(static fn ($v) => $v === null ? null : (string) $v, $r);
+        }
+        return $rows;
+    };
+    $context = [
+        'ORDERS' => $load('SELECT id, customer_id, amount, name FROM orders ORDER BY id'),
+        'CUSTOMERS' => $load('SELECT id, name FROM customers ORDER BY id'),
+    ];
+    $programs = [];
+    $names = [];
+    $cur = null;
+    foreach (explode("\n", (string) file_get_contents(ORACLE . '/cross.selc')) as $line) {
+        if (str_starts_with($line, '### ')) {
+            $names[] = trim(substr($line, 4));
+            $programs[] = '';
+            $cur = count($programs) - 1;
+            continue;
+        }
+        if ($cur !== null) {
+            $programs[$cur] .= ($programs[$cur] === '' ? '' : "\n") . $line;
+        }
+    }
+    $programs = array_map(static fn ($p) => rtrim($p, "\n"), $programs);
+
+    // The answers to check: PHP's in-process translation, then every host file.
+    $bindings = [
+        'ORDERS' => Binding::relation('orders', 'o', [
+            'ID' => Binding::column('id', 'o', 'NUM'), 'CUSTOMER_ID' => Binding::column('customer_id', 'o', 'NUM'),
+            'AMOUNT' => Binding::column('amount', null, 'NUM'), 'NAME' => Binding::column('name', 'o', 'TEXT')]),
+        'CUSTOMERS' => Binding::relation('customers', 'c', [
+            'ID' => Binding::column('id', 'c', 'NUM'), 'NAME' => Binding::column('name', 'c', 'TEXT')]),
+    ];
+    $answers = ['php (in-process)' => array_map(static function (string $src) use ($dialect, $bindings): string {
+        try {
+            return Sql::translateStatement(Sel::compile($src), $dialect, $bindings)->asStatement();
+        } catch (SqlError $e) {
+            return "!{$e->code}";
+        } catch (SelError $e) {
+            return "!SEL {$e->code}";
+        }
+    }, $programs)];
+    $dir = getenv('SEL_ORACLE_CROSS_DIR');
+    if (is_string($dir) && $dir !== '' && is_dir($dir)) {
+        foreach (glob("{$dir}/*.{$dialect}.txt") ?: [] as $file) {
+            $impl = basename($file, ".{$dialect}.txt");
+            $lines = explode("\n", rtrim((string) file_get_contents($file), "\n"));
+            if (count($lines) !== count($programs)) {
+                echo "DIFFER  {$impl}: printed " . count($lines) . ' lines for ' . count($programs) . " programs\n";
+                return ['failed' => 1];
+            }
+            $answers[$impl] = array_map(static fn ($l) => str_replace('\\n', "\n", $l), $lines);
+        }
+    }
+
+    $ok = 0;
+    $refused = 0;
+    $bad = [];
+    foreach ($programs as $i => $src) {
+        try {
+            $sel = Sel::compile($src)->run($context)->toNative();
+        } catch (SelError $e) {
+            $bad[] = [$names[$i], "SEL itself raises {$e->code} over the fixture; fix the corpus"];
+            continue;
+        }
+        $want = statement_rows(is_array($sel) ? array_values($sel) : []);
+        sort($want);
+        foreach ($answers as $impl => $lines) {
+            $statement = $lines[$i];
+            if ($statement === '' || $statement[0] === '!' || $statement === '-') {
+                $refused++;
+                continue;
+            }
+            try {
+                $got = statement_rows($pdo->query($statement)->fetchAll(PDO::FETCH_ASSOC));
+            } catch (Throwable $e) {
+                $bad[] = [$names[$i], "{$impl}: the server rejects {$statement}: " . $e->getMessage()];
+                continue;
+            }
+            sort($got);
+            if ($got !== $want) {
+                $bad[] = [$names[$i], "{$impl}: {$statement}\n        SEL=" . json_encode($want)
+                    . "\n        DB=" . json_encode($got)];
+                continue;
+            }
+            $ok++;
+            if ($verbose) {
+                printf("  ok       %-40s %s\n", $names[$i], $impl);
+            }
+        }
+    }
+    foreach ($bad as [$name, $why]) {
+        printf("DIFFER  %s\n        %s\n", $name, $why);
+    }
+    printf("{$label}cross-host statements: %d agree, %d differ, %d refused, over %d translators\n",
+        $ok, count($bad), $refused, count($answers));
+    return ['failed' => count($bad)];
+}
+
+/**
  * Rows in a comparable form: every value a string, numbers in SEL's canonical
  * decimal (a server's COUNT is an int, its SUM a DECIMAL string, and SEL's are
  * texts), bools as TRUE/FALSE the way SEL dumps them.
@@ -1285,10 +1416,10 @@ foreach (array_slice($argv, 1) as $arg) {
     } elseif (str_starts_with($arg, '--corpus=')) {
         $corpus = substr($arg, 9);
         $mode = 'fuzz';
-    } elseif (in_array($arg, ['expressions', 'rows', 'statements', 'coverage', 'fuzz', 'all'], true)) {
+    } elseif (in_array($arg, ['expressions', 'rows', 'statements', 'cross', 'coverage', 'fuzz', 'all'], true)) {
         $mode = $arg;
     } else {
-        fwrite(STDERR, "usage: sqlo [expressions|rows|statements|coverage|fuzz|all] "
+        fwrite(STDERR, "usage: sqlo [expressions|rows|statements|cross|coverage|fuzz|all] "
             . "[--corpus=FILE] [--dialect=NAME] [--verbose]\n");
         exit(2);
     }
@@ -1391,6 +1522,9 @@ foreach ($targets as $dialect) {
         }
         if ($mode === 'statements' || $mode === 'all') {
             $failed += run_statements($pdo, $dialect, $verbose, $label)['failed'];
+        }
+        if ($mode === 'cross' || $mode === 'statements' || $mode === 'all') {
+            $failed += run_cross($pdo, $dialect, $verbose, $label)['failed'];
         }
         if ($mode === 'fuzz') {
             if ($corpus === null || !is_file($corpus)) {

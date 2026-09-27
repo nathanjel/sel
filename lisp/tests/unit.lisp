@@ -630,10 +630,13 @@ b\"c\\d")))
                        (cons "COUNTRY" (sel.sql:binding-column "country" "customers" :text))
                        (cons "CREATED_YEAR" (sel.sql:binding-column "created_year" "customers" :num)))))
          (bindings (list (cons "CUSTOMERS" cust)))
-         (q "CUSTOMERS .> MAP(RECORD('id', _['id'], 'country', _['country'], 'score', TEST_VIP_SCORE(_['tier'], _['created_year'])))
-                       .> FILTER(_['country'] $== 'DE')
+         ;; The FILTER, the sort and the slice come first as written: a host
+         ;; function can raise, so none of them may move in front of the MAP
+         ;; that calls it (review 2026-09-25 SEM-07).
+         (q "CUSTOMERS .> FILTER(_['country'] $== 'DE')
                        .> SORT_BY(_['id'], 'ASC')
-                       .> TAKE(3)")
+                       .> TAKE(3)
+                       .> MAP(RECORD('id', _['id'], 'country', _['country'], 'score', TEST_VIP_SCORE(_['tier'], _['created_year'])))")
          (prog (sel:compile-source q))
          (plan (sel.sql:plan-hybrid prog "postgresql" bindings)))
     (is-false (sel.sql:hybrid-plan-pure-sql-p plan))
@@ -816,8 +819,16 @@ b\"c\\d")))
   ;; when a later step renumbers the rows again without reading `_K`: FILTER
   ;; keeps its input's keys and the three renumber (spec §7.3), so at the end
   ;; of a pipeline the swap would change the answer's keys.
+  ;; And only past a step that cannot raise on the rows it drops (review
+  ;; 2026-09-25 SEM-07/SEM-08): a relation's field reads cannot on the logical
+  ;; path, and can in memory (E_NO_KEY), so these pushdowns are the logical
+  ;; path's.
   (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10) .> MAP(_['heavy'])"))
          (opt-ast (sel:optimize-ast (sel:program-ast prog))))
+    (is (string= "FILTER" (sel::node-s (first (sel::node-items opt-ast))))
+        "in memory a MAP whose field reads can raise keeps its FILTER behind it"))
+  (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10) .> MAP(_['heavy'])"))
+         (opt-ast (sel:optimize-ast-logical (sel:program-ast prog))))
     ;; Top-level is the second MAP; under it the first MAP, then the FILTER
     (is (string= "MAP" (sel::node-s opt-ast)))
     (let ((child (first (sel::node-items opt-ast))))
@@ -838,7 +849,7 @@ b\"c\\d")))
       (is (string= "MAP" (sel::node-s (first (sel::node-items child)))))))
   ;; 2d. After the FILTERs fuse, the fused FILTER moves in front of the MAP
   (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10) .> FILTER(_['id'] > 20) .> TAKE(1)"))
-         (opt-ast (sel:optimize-ast (sel:program-ast prog))))
+         (opt-ast (sel:optimize-ast-logical (sel:program-ast prog))))
     (is (string= "TAKE" (sel::node-s opt-ast)))
     (let ((child (first (sel::node-items opt-ast))))
       (is (string= "MAP" (sel::node-s child)))
@@ -846,7 +857,7 @@ b\"c\\d")))
 
   ;; 3. Late Materialization: MAP .> TOP_BY
   (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> TOP_BY(_['id'], 3)"))
-         (opt-ast (sel:optimize-ast (sel:program-ast prog))))
+         (opt-ast (sel:optimize-ast-logical (sel:program-ast prog))))
     ;; Top-level should now be MAP, with child TOP_BY
     (is (string= "MAP" (sel::node-s opt-ast)))
     (let ((child (first (sel::node-items opt-ast))))
@@ -894,9 +905,10 @@ b\"c\\d")))
           (is (string= "3" (sel:as-text (sel:value-get r2 "id"))))
           (is (string= "80" (sel:as-text (sel:value-get r2 "score"))))
           (is (string= "8000" (sel:as-text (sel:value-get r2 "bonus"))))
-          ;; Because of filter pushdown, late materialization, and lazy records,
-          ;; EXPENSIVE_FUNC was only executed for the 2 rows that were actually accessed!
-          (is (= 2 calc-count)))))
+          ;; A host function can raise, so the MAP runs on every row as
+          ;; written: moving the FILTER or the sort in front of it would skip
+          ;; its errors on the rows they drop (review 2026-09-25 SEM-07/08).
+          (is (= 5 calc-count)))))
 
   ;; 5. Slicing Fusion: TAKE(10) .> TAKE(5) -> TAKE(5), DROP(10) .> DROP(5) -> DROP(15)
   (let* ((prog1 (sel:compile-source "DATA .> TAKE(10) .> TAKE(5)"))
@@ -1264,7 +1276,10 @@ X .> MAP(COUNT(X) + _[\"id\"]
               ;; sqlite cannot render its NUM guard, so nothing pushes down.
               ;; A later step that renumbers again lets the swap through.
               ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)" :pure-memory)
-              ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)" :hybrid)
+              ;; REPEAT can raise, so the FILTER stays behind the MAP (review
+              ;; 2026-09-25 SEM-07); a MAP that cannot raise lets it through.
+              ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)" :pure-memory)
+              ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"plus\", r[\"amount\"] + 1)) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)" :pure-sql)
               ("ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)" :pure-memory)
               ("ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", REPEAT(_[\"name\"], 2))) .> TAKE(2)" :hybrid)
               ("ORDERS .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", (REPEAT(_[\"name\"], 2), 1))) .> TAKE(2)" :hybrid)
@@ -1470,3 +1485,77 @@ X .> MAP(COUNT(X) + _[\"id\"]
       (let ((aliased (sel::ensure-row-table-alias row "ORDERS")))
         (is (eq row (sel:value-get aliased "orders")))
         (is (string= "1" (sel:as-text (sel:value-get aliased "id"))))))))
+
+;;; --- the host boundary (spec/SPEC.md §8, review 2026-09-25 HOST-01..10) ----
+
+(defun deep-host-value (levels)
+  (let ((v (sel:make-text "x")))
+    (dotimes (i levels) (setf v (sel:make-list-value (list v))))
+    (sel:make-list-value (list v))))
+
+(test host-boundary-native-underscore-collision
+  "A scalar with a child named _ has no native form: E_BAD_ARG, not a lost value."
+  (raises "E_BAD_ARG" (sel:to-native (sel:evaluate "A = \"s\"; A[\"_\"] = \"c\"; A"))))
+
+(test host-boundary-copies-what-it-is-given
+  (let* ((k (copy-seq "a"))
+         (v (sel:from-native (list (cons k "x")))))
+    (setf (char k 0) #\b)
+    (is (string= "-{\"a\"=t\"x\"}" (sel:value-dump v)))
+    (is (sel:value-get v "a")))
+  (let* ((s (copy-seq "ok"))
+         (v (sel:make-text s)))
+    (setf (char s 0) (code-char #xD800))
+    (is (string= "b6f6b"
+                 (sel:value-dump (sel:evaluate "TO_UTF8(T)" (list (cons "T" v)))))))
+  (let* ((b (make-array 1 :element-type '(unsigned-byte 8) :initial-element 1))
+         (v (sel:make-bin b)))
+    (setf (aref b 0) 2)
+    (is (string= "b01" (sel:value-dump v)))))
+
+(test host-boundary-to-native-returns-host-owned-data
+  (let* ((v (sel:from-native
+             (list (cons "b" (make-array 1 :element-type '(unsigned-byte 8) :initial-element 1))
+                   (cons "t" (copy-seq "abc")))))
+         (n (sel:to-native v)))
+    (setf (aref (cdr (assoc "b" n :test #'string=)) 0) 9)
+    (setf (char (cdr (assoc "t" n :test #'string=)) 0) #\Z)
+    (is (string= "-{\"b\"=b01, \"t\"=t\"abc\"}" (sel:value-dump v)))))
+
+(test host-boundary-bytes-are-bytes
+  (is (string= "b00ff" (sel:value-dump (sel:make-bin (list 0 255)))))
+  (raises "E_RANGE" (sel:make-bin (list 256)))
+  (raises "E_RANGE" (sel:make-bin (list -1)))
+  (raises "E_RANGE" (sel:make-bin (list 3/2))))
+
+(test host-boundary-keys-are-text
+  (raises "E_UTF8" (sel:from-native (list (cons (string (code-char #xD800)) "x"))))
+  (raises "E_UTF8" (sel:value-set (sel:make-none) (string (code-char #xDC00)) (sel:make-text "x"))))
+
+(test host-boundary-digit-caps-hold-for-native-integers
+  (is (string= "TRUE" (sel:value-dump
+                       (sel:evaluate "LEN(A) == 1000000"
+                                     (list (cons "A" (sel:make-int (expt 10 999999))))))))
+  (raises "E_RANGE" (sel:make-int (expt 10 1000000)))
+  (raises "E_RANGE" (sel:make-int (- (expt 10 1000000))))
+  (raises "E_RANGE" (sel:from-native (expt 10 1000000))))
+
+(test host-boundary-hash-walks-respect-the-depth-cap
+  (dolist (src '("COUNT(DEDUPE(A))" "COUNT(DISTINCT(A))" "COUNT(BUCKET(A, _, COUNT(_)))"))
+    (raises "E_DEPTH" (sel:evaluate src (list (cons "A" (deep-host-value 250)))))
+    (is (string= "t\"1\"" (sel:value-dump (sel:evaluate src (list (cons "A" (deep-host-value 198)))))))))
+
+(test host-boundary-native-round-trips
+  (dolist (src '("FILTER(LIST(1,2,3), _ > 1)" "RECORD(\"0\",\"a\",\"1\",\"b\")" "FALSE"
+                 "RECORD(\"a\", FALSE)" "LIST(TRUE, NULL)"))
+    (let ((v (sel:evaluate src)))
+      (is (string= (sel:value-dump v) (sel:value-dump (sel:from-native (sel:to-native v))))
+          "round trip of ~a" src)))
+  (is (eq :false (sel:to-native (sel:evaluate "FALSE"))))
+  (is (string= "FALSE" (sel:value-dump (sel:from-native :false)))))
+
+(test host-boundary-compiled-program-keeps-nothing-between-runs
+  (let ((p (sel:compile-source "A[K]"))
+        (a (sel:from-native (list (cons "x" "1") (cons "y" "2")))))
+    (is (string= "t\"1\"" (sel:value-dump (sel:run p (list (cons "A" a) (cons "K" "x"))))))
+    (is (string= "t\"2\"" (sel:value-dump (sel:run p (list (cons "A" a) (cons "K" "y"))))))))

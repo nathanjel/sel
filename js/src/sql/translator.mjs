@@ -12,7 +12,6 @@ import { toCodePoints } from '../utf8.mjs';
 import { validate as regexValidate } from '../builtins/regex.mjs';
 import { SelError } from '../errors.mjs';
 import { evalNode, MAX_DEPTH, Context } from '../eval.mjs';
-import * as dec from '../decimal.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { hostArity } from '../registry.mjs';
 import { Value, quoteDump } from '../value.mjs';
@@ -134,7 +133,6 @@ export class Translator {
     this.depth = 0;
     this.statementPlan = null;
     this.inWhere = false;
-    this.inHaving = false;
     this.subqueryCounter = 0;
   }
 
@@ -475,20 +473,25 @@ export class Translator {
 
   indexQualified(qualifier, key, n) {
     const plan = this.statementPlan;
+    // A LINK's left binder names the LEFT side -- the pipeline's source
+    // relation -- and its right binder the joined one. Both used to be listed
+    // under the join, so a read through the left binder selected the joined
+    // table's column (review 2026-09-25 SQL-01).
     const sources = [{
-      names: [plan.sourceName, plan.sourceAlias, relationAlias(plan.sourceRelation)],
+      names: [plan.sourceName, plan.sourceAlias, relationAlias(plan.sourceRelation),
+        ...(plan.joins ?? []).map((join) => join.leftBinder)],
       relation: plan.sourceRelation,
       table: plan.sourceAlias ?? relationAlias(plan.sourceRelation),
     }];
     for (const join of plan.joins ?? []) {
       sources.push({
-        names: [join.sourceName, join.sourceAlias, relationAlias(join.sourceRelation), join.leftBinder, join.rightBinder],
+        names: [join.sourceName, join.sourceAlias, relationAlias(join.sourceRelation), join.rightBinder],
         relation: join.sourceRelation,
         table: join.sourceAlias ?? relationAlias(join.sourceRelation),
       });
     }
     const source = sources.find((item) => item.names.some((name) => name !== null
-      && name !== undefined && String(name).toUpperCase() === qualifier.toUpperCase()));
+      && name !== undefined && asciiUpper(String(name)) === asciiUpper(qualifier)));
     if (!source) {
       // A qualifier names a relation by its binding name, its table, its alias
       // or a binder the join predicate declared, and nothing else: a position
@@ -517,18 +520,17 @@ export class Translator {
     const plan = this.statementPlan;
     if (plan !== null) {
       if (relation === plan.sourceRelation
-          && (name === null || [plan.sourceName, plan.sourceAlias]
+          && (name === null || [plan.sourceName, plan.sourceAlias, ...(plan.joins ?? []).map((join) => join.leftBinder)]
             .some((item) => item !== null && item !== undefined
-              && String(item).toUpperCase() === String(name).toUpperCase()))) {
+              && asciiUpper(String(item)) === asciiUpper(String(name))))) {
         return plan.sourceAlias ?? relationAlias(relation);
       }
       for (let index = 0; index < (plan.joins ?? []).length; index += 1) {
         const join = plan.joins[index];
-        const names = [join.sourceName, join.sourceAlias, join.leftBinder, join.rightBinder,
-          `_${index + 2}`];
+        const names = [join.sourceName, join.sourceAlias, join.rightBinder, `_${index + 2}`];
         if (relation === join.sourceRelation
             && (name === null || names.some((item) => item !== null && item !== undefined
-              && String(item).toUpperCase() === String(name).toUpperCase()))) {
+              && asciiUpper(String(item)) === asciiUpper(String(name))))) {
           return join.sourceAlias ?? relationAlias(relation);
         }
       }
@@ -2850,15 +2852,10 @@ export class Translator {
       if (plan.having && plan.having.length > 0) {
         parts.push(' HAVING ');
         const hCondParts = [];
-        this.inHaving = true;
-        try {
-          for (const hav of plan.having) {
-            const hFrag = (hav.overGroups ? this.withGroup : this.withProjected).call(this, src, hav.binder,
-              () => this.requireBool(this.node(hav.node), hav.pos, 'FILTER'));
-            hCondParts.push(hFrag.parts);
-          }
-        } finally {
-          this.inHaving = false;
+        for (const hav of plan.having) {
+          const hFrag = (hav.overGroups ? this.withGroup : this.withProjected).call(this, src, hav.binder,
+            () => this.requireBool(this.node(hav.node), hav.pos, 'FILTER'));
+          hCondParts.push(hFrag.parts);
         }
         hCondParts.forEach((hp, idx) => {
           if (idx > 0) parts.push(' AND ');

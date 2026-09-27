@@ -68,6 +68,8 @@ deliberately."
   (let* ((args (sel-cli:script-args))
          (path (first args))
          (dialect (or (second args) "mariadb"))
+         ;; `statement`: only translate-statement's inline SQL; see js/bin/sqlfuzz.mjs.
+         (mode (or (third args) "all"))
          (corpus (read-corpus (sel-cli:read-text-file path))))
     (dolist (src corpus)
       (write-string
@@ -78,6 +80,8 @@ deliberately."
               ;; let a mutation that bound a numeric literal as a parameter
               ;; walk straight through this lane.
               (let ((bindings (fuzz-bindings)))
+                (if (string= mode "statement")
+                    (attempt (lambda () (as-statement (translate-statement program dialect bindings))))
                 (format nil "~a || ~a || ~a"
                         (attempt (lambda () (render (translate program dialect bindings))))
                         (attempt (lambda () (render (translate-statement program dialect bindings))))
@@ -87,7 +91,7 @@ deliberately."
                                                       ((hybrid-plan-pure-memory-p plan) "pure_memory")
                                                       (t "hybrid")))
                                           (frag (hybrid-plan-sql-statement plan)))
-                                     (if frag (format nil "~a ~a" kind (as-statement frag :params)) kind)))))))
+                                     (if frag (format nil "~a ~a" kind (as-statement frag :params)) kind))))))))
           (sel:sel-error () "-")
           (error (e) (format nil "!HOST ~a" (type-of e))))))
       (terpri))

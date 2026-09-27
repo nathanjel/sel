@@ -27,28 +27,6 @@ import { Value } from '../value.mjs';
 import { refuse } from './errors.mjs';
 import { asciiUpper } from '../lexer.mjs';
 
-// The value bindings, as a name set and an evaluation context.
-//
-// A `value` binding is a constant the translator *has* — §5.4 calls it "a
-// constant supplied at translation time, inlined as a literal", and
-// `Translator.#variable` hands it straight to literal(). So `LEFT("abc", X)` with
-// X bound to "-1" is exactly as knowable as `LEFT("abc", -1)`, and before this it
-// was exactly as wrong: SEL raised E_RANGE and the four servers answered '', '',
-// 'ab' and ''. §11.4's headline defect, still open through the documented way a
-// host passes a parameter.
-//
-// Only scalars are lifted. A list-valued binding is what an aggregate iterates
-// and its shape is the translator's business, not the evaluator's.
-// Is this node an aggregate's binder NAME, rather than a read of one?
-//
-// The evaluator's rule, in Args.symbol: a bare `var` node that did NOT come from
-// parentheses. Both halves matter and the second was missing here, in all three
-// hosts. `(C)` parses as a `var` node carrying the parser's `grouped` flag --
-// which is exactly what makes `(A) = 1` an E_BAD_ASSIGN -- so testing only the
-// kind accepted a binder the evaluator refuses with E_EXPECT_SYMBOL, and
-// `ALL(V, (C), C > 0)` translated to working SQL for a rule that can never run.
-// A translation that is accepted where the language refuses is the one direction
-// this layer must never fail in.
 // Whether the node is an IF or COND whose every result is a text literal -- or,
 // in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
 // chose byte for byte, so its identity is SEL's; a number it can re-spell
@@ -141,10 +119,32 @@ export function identityLossBeforeGrouping(node, needed = false) {
   return false;
 }
 
+// Is this node an aggregate's binder NAME, rather than a read of one?
+//
+// The evaluator's rule, in Args.symbol: a bare `var` node that did NOT come from
+// parentheses. Both halves matter and the second was missing here, in all three
+// hosts. `(C)` parses as a `var` node carrying the parser's `grouped` flag --
+// which is exactly what makes `(A) = 1` an E_BAD_ASSIGN -- so testing only the
+// kind accepted a binder the evaluator refuses with E_EXPECT_SYMBOL, and
+// `ALL(V, (C), C > 0)` translated to working SQL for a rule that can never run.
+// A translation that is accepted where the language refuses is the one direction
+// this layer must never fail in.
 export function isBinderName(node) {
   return node.t === 'var' && !node.grouped;
 }
 
+// The value bindings, as a name set and an evaluation context.
+//
+// A `value` binding is a constant the translator *has* — §5.4 calls it "a
+// constant supplied at translation time, inlined as a literal", and
+// `Translator.#variable` hands it straight to literal(). So `LEFT("abc", X)` with
+// X bound to "-1" is exactly as knowable as `LEFT("abc", -1)`, and before this it
+// was exactly as wrong: SEL raised E_RANGE and the four servers answered '', '',
+// 'ab' and ''. §11.4's headline defect, still open through the documented way a
+// host passes a parameter.
+//
+// Only scalars are lifted. A list-valued binding is what an aggregate iterates
+// and its shape is the translator's business, not the evaluator's.
 export function scope(bindings) {
   const names = new Map();
   const root = Value.none();

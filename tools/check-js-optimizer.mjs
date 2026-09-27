@@ -86,12 +86,33 @@ same(names(optimizedSteps(
   + ' .> SELECT_COLS("x") .> FILTER(_["x"] > 0)', false)), ['SELECT_COLS', 'FILTER'],
   'SELECT_COLS filter pushdown keeps the keys at the end of a pipeline');
 
+// Late materialization runs the MAP on the sorted rows; on the logical path a
+// relation's rows carry their fields, so `_["x"] + 1` cannot raise there. In
+// memory it can (E_NO_KEY, E_NOT_NUM), and moving the MAP behind the sort
+// changed which row raised first -- or, behind a TOP, whether any did (review
+// 2026-09-25 SEM-08).
 const late = optimizedSteps(
   '((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
   + ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
-  + ' .> SORT_BY(_["x"], "DESC")', true);
+  + ' .> SORT_BY(_["x"], "DESC")', false);
 same(names(late), ['SORT_BY', 'MAP'], 'SORT_BY late materialization');
 check(late[1].args[1].name === 'RECORD', 'MAP projection stays a strict RECORD');
+same(names(optimizedSteps(
+  '((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
+  + ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
+  + ' .> SORT_BY(_["x"], "DESC")', true)), ['MAP', 'SORT_BY'],
+  'in memory a MAP that can raise stays in front of a sort');
+same(names(optimizedSteps(
+  '((RECORD("x", 3), RECORD("x", 1)))'
+  + ' .> MAP(RECORD("x", _["x"], "q", 1/(_["x"] - 1)))'
+  + ' .> SORT_BY(_["x"], "DESC")', false)), ['MAP', 'SORT_BY'],
+  'a MAP that can divide by zero stays in front of a sort on the logical path too');
+same(names(optimizedSteps('(1, 2) .> SORT() .> FILTER(_ > 0) .> TAKE(1)', true)), ['SORT', 'FILTER', 'TAKE'],
+  'in memory a FILTER whose predicate can raise is not moved in front of a sort');
+same(names(optimizedSteps('(1, 2) .> SORT_BY(IF(_ == 2, ABORT("s"), _)) .> FILTER(_ == 1) .> TAKE(1)', false)),
+  ['SORT_BY', 'FILTER', 'TAKE'], 'a sort key that can raise keeps its FILTER behind it');
+same(names(optimizedSteps('(1, 2) .> FILTER(_ > 0) .> FILTER(1/_ > 0)', false)), ['FILTER', 'FILTER'],
+  'a second FILTER that can raise is not fused into the first');
 
 const topPrefix = '((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
   + ' .> MAP(RECORD("x", _["x"], "y", _["x"] + 1)) .> ';
@@ -295,10 +316,13 @@ for (const [source, kind] of [
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> SORT_BY(s, s["name"])', 'pure_memory'],
   // The FILTER no longer moves in front of the MAP (it would renumber the
   // answer's keys); over the MAP's derived table sqlite cannot render its NUM
-  // guard, so nothing pushes down. A later step that renumbers again lets the
-  // swap through.
+  // guard, so nothing pushes down. A later step that renumbers again used to
+  // let the swap through -- but the MAP calls REPEAT, which can raise, and a
+  // FILTER in front of it would skip that on the rows it drops (review
+  // 2026-09-25 SEM-07), so it stays behind and nothing pushes down.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
-  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'hybrid'],
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_memory'],
+  ['ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_sql'],
   ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],
   ['ORDERS .> MAP(RECORD("x", _["id"], "X", REPEAT(_["name"], 2))) .> TAKE(2)', 'hybrid'],
   ['ORDERS .> MAP(RECORD("id", _["id"], "shout", (REPEAT(_["name"], 2), 1))) .> TAKE(2)', 'hybrid'],

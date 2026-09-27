@@ -10,6 +10,9 @@ from ..eval import bytes_compare
 from ..parser import Node
 from ..registry import define
 from ..value import NONE, Value, iter_elements, structural_hash
+# The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
+# str.upper() took "deſc" for DESC.
+from ..lexer import ascii_upper
 
 
 def shape(args):
@@ -152,7 +155,7 @@ def _leading_field_conjuncts(body, binder):
             if n.t == 'index':
                 if (n.obj is not None and n.obj.t == 'var' and n.obj.name in names
                         and n.idx is not None and n.idx.t == 'text'):
-                    fields.add(n.idx.v.upper())
+                    fields.add(ascii_upper(n.idx.v))
                     return True
                 if n.obj is not None and n.obj.t == 'index':
                     return reads_only_fields(n.obj) and reads_only_fields(n.idx)
@@ -393,7 +396,7 @@ def do_sort(args, ctx, forced_dir):
             elif args.node(2).t == 'text':
                 binder = '_'
                 body = args.node(1)
-                direction = args.text(2).upper()
+                direction = ascii_upper(args.text(2))
             elif args.is_symbol(1):
                 binder = args.symbol(1)
                 body = args.node(2)
@@ -401,11 +404,11 @@ def do_sort(args, ctx, forced_dir):
             else:
                 binder = '_'
                 body = args.node(1)
-                direction = args.text(2).upper()
+                direction = ascii_upper(args.text(2))
         else:  # 4
             binder = args.symbol(1)
             body = args.node(2)
-            direction = args.text(3).upper()
+            direction = ascii_upper(args.text(3))
 
         if direction not in ('ASC', 'DESC'):
             pos_idx = 3 if count == 4 else 2
@@ -438,9 +441,7 @@ define('SORT_BY', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args
 def do_top(args, ctx, forced_dir):
     value = args.val(0)
     limit = args.non_neg_int(args.count() - 1)
-    if limit == 0 or value.is_null():
-        return Value.list([])
-    if value.kind == NONE and value.size() == 0:
+    if limit == 0 or (value.kind == NONE and value.size() == 0):
         return Value.list([])
 
     sort_count = args.count() - 1
@@ -457,17 +458,17 @@ def do_top(args, ctx, forced_dir):
             body = args.node(2)
         elif args.node(2).t == 'text':
             body = args.node(1)
-            direction = args.text(2).upper()
+            direction = ascii_upper(args.text(2))
         elif args.is_symbol(1):
             binder = args.symbol(1)
             body = args.node(2)
         else:
             body = args.node(1)
-            direction = args.text(2).upper()
+            direction = ascii_upper(args.text(2))
     elif sort_count == 4:
         binder = args.symbol(1)
         body = args.node(2)
-        direction = args.text(3).upper()
+        direction = ascii_upper(args.text(3))
     else:
         fail('E_ARITY', f'{args.name} has an invalid sort form', args.pos)
 
@@ -535,8 +536,11 @@ def do_top(args, ctx, forced_dir):
             sift_down(0)
 
     if value.is_list and value.storage is not None:
+        # A packed list may carry the keys a FILTER kept (list_keys); _K is
+        # those, not the positions (review 2026-09-25 SEM-02).
+        keys = value.list_keys
         for i, item in enumerate(value.storage):
-            consume(str(i + 1), item)
+            consume(keys[i] if keys is not None else str(i + 1), item)
     elif value.shape is not None:
         for i, item in enumerate(value.storage):
             consume(value.shape.keys[i], item)

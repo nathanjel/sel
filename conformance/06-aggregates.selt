@@ -289,3 +289,96 @@ Q = 1; COUNT(LINK(LIST(RECORD("a", 1)), LIST(RECORD("b", 1)), X, Y, X["a"] == Q)
 --- expect
 num 1
 ===
+
+% --- review 2026-09-25: _K over the keys FILTER kept, keys that only look
+% numeric, the direction text, and TOP_BY's three-slot form.
+
+### name: agg.top-by.k-sees-the-keys-filter-kept
+--- note
+Review 2026-09-25 SEM-02. FILTER keeps its input's keys (spec §7.3), and a
+_K read in the next step sees them: the kept elements are "2" and "3". Python
+renumbered the list it was handed before binding _K and answered 2.
+--- source
+TOP_BY(FILTER(LIST(1,2,3), _ > 1), _K $== "2", 1)
+--- expect
+tree -{"1"=t"3"}
+===
+
+### name: agg.top-by.k-sees-the-keys-filter-kept-descending
+--- source
+TOP_BY(FILTER(LIST(1,2,3), _ > 1), _K $== "2", "DESC", 1)
+--- expect
+tree -{"1"=t"2"}
+===
+
+### name: agg.top-by.k-sees-the-keys-filter-kept-explicit-binder
+--- source
+TOP_BY(FILTER(LIST(10,20,30), _ > 10), X, IF(_K $== "2", 0, 1), 1)
+--- expect
+tree -{"1"=t"20"}
+===
+
+### name: agg.top.k-sees-the-keys-filter-kept
+--- source
+L = FILTER(LIST(10,20,30), _ > 10); LIST(TOP(L, IF(_K $== "2", 0, 1), 1), TOP_DESC(L, IF(_K $== "2", 1, 0), 1))
+--- expect
+tree -{"1"=-{"1"=t"20"}, "2"=-{"1"=t"20"}}
+===
+
+### name: agg.top.k-sees-the-keys-of-a-record-source
+--- source
+TOP(RECORD("5", 10, "9", 20), IF(_K $== "9", 0, 1), 1)
+--- expect
+tree -{"1"=t"20"}
+===
+
+### name: agg.k.every-binding-form-sees-the-kept-keys
+--- note
+Review 2026-09-25 SEM-03: the same _K reads through every step that binds it,
+so a renumbering anywhere shows up here.
+--- source
+L=FILTER(LIST(10,20,30), _ > 10); LIST(ALL(L, _K $!= "1"), ANY(L, _K $== "3"), SUM(L, IF(_K $== "2", 100, 1)), JOIN(SORT(L, IF(_K $== "2", 0, 1)),","), JOIN(SORT_DESC(L, IF(_K $== "2", 1, 0)),","), JOIN(SORT_BY(L, IF(_K $== "2", 0, 1)),","), JOIN(SORT_BY(L, X, IF(_K $== "2", 0, 1)),","), JOIN(BUCKET(L, IF(_K $== "2", "a", "b"), JOIN(_,"+")),","), JOIN(MAP(L, X, _K),","))
+--- expect
+tree -{"1"=TRUE, "2"=TRUE, "3"=t"101", "4"=t"20,30", "5"=t"20,30", "6"=t"20,30", "7"=t"20,30", "8"=t"20,30", "9"=t"2,3"}
+===
+
+### name: agg.filter.keeps-a-first-key-that-only-looks-numeric
+--- note
+Review 2026-09-25 SEM-09. A kept key is kept as written. PHP cast each key to
+an integer to decide whether the kept keys were still 1, 2, 3 … and so wrote
+"1" for a first key of "1x", "01", " 1", "+1", "1e0" or "1.0".
+--- source
+LIST(FILTER(RECORD("1x", 10), _ > 0), FILTER(RECORD("01", 10, "2", 11), _ > 0), FILTER(RECORD(" 1", 10), _ > 0), FILTER(RECORD("+1", 10), _ > 0), FILTER(RECORD("1e0", 10), _ > 0), FILTER(RECORD("1.0", 10), _ > 0))
+--- expect
+tree -{"1"=-{"1x"=t"10"}, "2"=-{"01"=t"10", "2"=t"11"}, "3"=-{" 1"=t"10"}, "4"=-{"+1"=t"10"}, "5"=-{"1e0"=t"10"}, "6"=-{"1.0"=t"10"}}
+===
+
+### name: agg.sort-by.direction-is-ascii-case-folded-only
+--- note
+Review 2026-09-25 SEM-05. The direction is compared after ASCII upper-casing
+only; "ſ" (U+017F) upper-cases to "S" under Unicode rules, which let JS and
+Python take "deſc" for DESC.
+--- source
+SORT_BY(LIST(1,2,3), _, "deſc")
+--- expect
+error E_BAD_ARG at 1:25
+===
+
+### name: agg.top-by.direction-is-ascii-case-folded-only
+--- source
+TOP_BY(LIST(1,2,3), _, "deſc", 2)
+--- expect
+error E_BAD_ARG at 1:24
+===
+
+### name: agg.forms.top-by.text-direction-wins-over-bare-name
+--- note
+Review 2026-09-25 HYG-04: TOP_BY's twin of
+agg.forms.sort-by.text-direction-wins-over-bare-name. A text literal before n
+is the direction whatever the second argument looks like, so K is the key and
+undefined. The branch that decides this looked redundant to a reviewer.
+--- source
+TOP_BY((3, 1, 2), K, "DESC", 1)
+--- expect
+error E_UNDEF_VAR at 1:19
+===

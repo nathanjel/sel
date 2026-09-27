@@ -25,6 +25,19 @@ status=0
 ran=0
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+# Every translator's statements for the cross-host oracle (sql/oracle/cross.selc,
+# review 2026-09-25 TEST-04): the PHP runner executes them all against the same
+# server, so a defect every host shares -- or four of five -- is caught too.
+export SEL_ORACLE_CROSS_DIR="$WORK/cross"
+mkdir -p "$SEL_ORACLE_CROSS_DIR"
+for impl in $(available_impls); do
+  case "$impl" in php|js|cpp|lisp|python) ;; *) continue ;; esac
+  for dialect in mariadb mysql postgresql sqlite; do
+    sel_slot impl_sqlfuzz "$impl" sql/oracle/cross.selc "$dialect" statement \
+      > "$SEL_ORACLE_CROSS_DIR/$impl.$dialect.txt" 2>&1 &
+  done
+done
+wait
 for impl in $(available_impls); do
   { sel_slot impl_oracle "$impl" "${1:-all}" > "$WORK/$impl.out" 2>&1; echo $? > "$WORK/$impl.rc"; } &
 done

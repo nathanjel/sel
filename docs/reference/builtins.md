@@ -80,7 +80,7 @@ defines the semantics; this table only says what the function table knows.
 | `SUM` | `SUM(list, [binder,] body)` | 2–3 | lazy, binds | §7.3 |
 | `TAKE` | `TAKE(list, n)` | 2 | strict | §7.4 |
 | `TOP` | `TOP(list, [binder,] [body,] n)` | 2–4 | lazy, binds | §7.4 |
-| `TOP_BY` | `TOP_BY(list, [binder,] key, n [, dir])` | 3–5 | lazy, binds | §7.4 |
+| `TOP_BY` | `TOP_BY(list, [binder,] key, [dir,] n)` | 3–5 | lazy, binds | §7.4 |
 | `TOP_DESC` | `TOP_DESC(list, [binder,] [body,] n)` | 2–4 | lazy, binds | §7.4 |
 | `TO_HEX` | `TO_HEX(x)` | 1 | strict | §7.7 |
 | `TO_UTF8` | `TO_UTF8(x)` | 1 | strict | §7.7 |

@@ -27,16 +27,10 @@
     (declare (ignore ctx))
     (let ((target (args-val a 0))
           (key (args-text a 1)))
-      (if (and (not (value-null-p target)) (value-has target key))
-          (let ((val (value-get target key)))
-            (if val
-                val
-                (if (> (args-count a) 2)
-                    (args-val a 2)
-                    (make-null))))
-          (if (> (args-count a) 2)
-              (args-val a 2)
-              (make-null)))))
+      (cond ((and (not (value-null-p target)) (value-has target key))
+             (value-get target key))
+            ((> (args-count a) 2) (args-val a 2))
+            (t (make-null)))))
   :lazy t)
 
 (define-builtin "PATH" 2 3
@@ -53,12 +47,7 @@
                 (cur target))
             (dolist (seg segments cur)
               (if (and (not (value-null-p cur)) (value-has cur seg))
-                  (let ((val (value-get cur seg)))
-                    (if val
-                        (setf cur val)
-                        (return (if (> (args-count a) 2)
-                                    (args-val a 2)
-                                    (make-null)))))
+                  (setf cur (value-get cur seg))
                   (return (if (> (args-count a) 2)
                               (args-val a 2)
                               (make-null)))))))))

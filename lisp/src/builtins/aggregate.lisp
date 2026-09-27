@@ -340,7 +340,7 @@ given, is evaluated in place of the written body."
                      ((eq (node-kind (args-node a 2)) :text)
                       (setf binder "_"
                             body (args-node a 1)
-                            direction (string-upcase (args-text a 2))))
+                            direction (ascii-upcase (args-text a 2))))
                      ((args-symbol-p a 1)
                       (setf binder (args-symbol a 1)
                             body (args-node a 2)
@@ -348,11 +348,11 @@ given, is evaluated in place of the written body."
                      (t
                       (setf binder "_"
                             body (args-node a 1)
-                            direction (string-upcase (args-text a 2))))))
+                            direction (ascii-upcase (args-text a 2))))))
                   (t ; 4
                    (setf binder (args-symbol a 1)
                          body (args-node a 2)
-                         direction (string-upcase (args-text a 3)))))
+                         direction (ascii-upcase (args-text a 3)))))
                 (unless (or (string= direction "ASC") (string= direction "DESC"))
                   (let ((pos-idx (if (= count 4) 3 2)))
                     (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
@@ -428,7 +428,7 @@ given, is evaluated in place of the written body."
   (let* ((count (args-count a))
          (val (args-val a 0))
          (limit (args-non-neg-int a (1- count))))
-    (if (or (zerop limit) (value-null-p val) (zerop (value-size val)))
+    (if (or (zerop limit) (zerop (value-size val)))
         (make-list-value nil)
         (let* ((sort-count (1- count))
                direction
@@ -451,7 +451,7 @@ given, is evaluated in place of the written body."
                      ((eq (node-kind (args-node a 2)) :text)
                       (setf binder "_"
                             body (args-node a 1)
-                            direction (string-upcase (args-text a 2))))
+                            direction (ascii-upcase (args-text a 2))))
                      ((args-symbol-p a 1)
                       (setf binder (args-symbol a 1)
                             body (args-node a 2)
@@ -459,11 +459,11 @@ given, is evaluated in place of the written body."
                      (t
                       (setf binder "_"
                             body (args-node a 1)
-                            direction (string-upcase (args-text a 2))))))
+                            direction (ascii-upcase (args-text a 2))))))
                   (t ; 4
                    (setf binder (args-symbol a 1)
                          body (args-node a 2)
-                         direction (string-upcase (args-text a 3)))))
+                         direction (ascii-upcase (args-text a 3)))))
                 (unless (or (string= direction "ASC") (string= direction "DESC"))
                   (let ((pos-idx (if (= sort-count 4) 3 2)))
                     (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
@@ -585,6 +585,12 @@ given, is evaluated in place of the written body."
       (:none 0)
       (t (sxhash k)))))
 
+;; A scalar key is hashed by its scalar alone, but a list or record key -- whose
+;; kind is NONE, hashed 0 above -- is walked, and the walk must meet the depth
+;; cap as every other one does (spec §6.4; review 2026-09-25 HOST-07).
+(defun bucket-key-hash (v)
+  (if (zerop (value-size v)) (eval-key-hash v) (value-hash v)))
+
 (defun bucket-key-text (key pos)
   (let ((v key))
     (when (eq (value-kind v) :none)
@@ -626,7 +632,7 @@ given, is evaluated in place of the written body."
                                (key-str (if (null agg-node)
                                             (bucket-key-text eval-key (node-pos key-node))
                                             ""))
-                               (h (eval-key-hash eval-key))
+                               (h (bucket-key-hash eval-key))
                                (bucket (gethash h groups-table))
                                (found (find-if (lambda (g) (value-eql (group-entry-key g) eval-key)) bucket)))
                           (if found

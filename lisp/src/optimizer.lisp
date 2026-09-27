@@ -370,8 +370,6 @@ key. The forms are the evaluator's (spec §7.3)."
            ((or (= sort-count 2)
                 (and (= sort-count 3) (eq (node-kind (third args)) :text)))
             (setf key (second args)))
-           ((and (= sort-count 3) (bare-name-p (second args)))
-            (setf binder (node-s (second args)) key (third args)))
            ((and (> count 2) (bare-name-p (second args)))
             (setf binder (node-s (second args)) key (third args)))))))
     (values binder key)))
@@ -412,11 +410,6 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
 (defun sort-step-p (step)
   (member (node-s step) '("SORT" "SORT_DESC" "SORT_BY") :test #'string=))
 
-(defun filter-predicate-of (step)
-  "The body of a FILTER step: the third item with an explicit binder, else the second."
-  (let ((args (node-items step)))
-    (if (= (length args) 3) (third args) (second args))))
-
 (defun valid-filter-p (step)
   "A FILTER whose binder slot, if it has one, is a bare name."
   (let ((args (node-items step)))
@@ -426,7 +419,47 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
 (defun fields-all-in-p (fields allowed)
   (every (lambda (f) (member f allowed :test #'string=)) fields))
 
-(defun logical-step-pair (source i s1 s2 s3)
+;; Whether evaluating NODE for one row can raise -- conservatively: a rewrite
+;; that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
+;; two FILTERs changes which rows reach what, so it may only pass over
+;; expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
+;; SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+;; logical path the rows are a bound relation's, which always carry their typed
+;; columns, so a field read through the binder cannot raise either, nor a
+;; comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
+;; anything else may. The in-memory path has no schema.
+(defparameter +safe-logical-ops+
+  '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>=" "AND" "OR" "+" "-" "*"))
+
+(defun cannot-raise-p (node binder logical)
+  (cond
+    ((null node) t)
+    ((not (node-p node)) nil)
+    (t (case (node-kind node)
+         ((:num :text :bool :null) t)
+         (:var (let ((name (ascii-upcase (node-s node))))
+                 (or (string= name "_K") (string= name (ascii-upcase binder)))))
+         (:index (and logical (node-l node) (eq (node-kind (node-l node)) :var)
+                      (string= (ascii-upcase (node-s (node-l node))) (ascii-upcase binder))
+                      (node-r node) (eq (node-kind (node-r node)) :text)))
+         (:bin (and logical (member (node-s node) +safe-logical-ops+ :test #'string=)
+                    (cannot-raise-p (node-l node) binder logical)
+                    (cannot-raise-p (node-r node) binder logical)))
+         (:un (and logical (string= (node-s node) "NOT") (cannot-raise-p (node-l node) binder logical)))
+         (t nil)))))
+
+(defun map-cannot-raise-p (map-step logical)
+  "Every field a MAP computes (or its whole body) cannot raise."
+  (let* ((args (node-items map-step))
+         (count (length args))
+         (binder (if (= count 3) (node-s (second args)) "_"))
+         (body (if (= count 3) (third args) (second args))))
+    (if (and (eq (node-kind body) :call) (string= (node-s body) "RECORD"))
+        (loop for (k-node v-node) on (node-items body) by #'cddr
+              always (and (eq (node-kind k-node) :text) (cannot-raise-p v-node binder logical)))
+        (cannot-raise-p body binder logical))))
+
+(defun logical-step-pair (source i s1 s2 s3 &optional logical)
   "The rewrite for the pair (S1 S2) at position I, as two values: the steps
 that replace the pair and how many of the two were consumed -- or NIL when no
 rule fires. S3 is the step after the pair (NIL at the end of the pipeline),
@@ -481,12 +514,16 @@ everywhere else)."
               (and f-fields (fields-all-in-p f-fields (map-passthrough-fields s1))))
             (not (multiple-value-bind (binder pred) (filter-body s2)
                    (reads-row-or-key-p pred binder)))
-            (keys-renumbered-by-p s3))
+            (keys-renumbered-by-p s3)
+            (map-cannot-raise-p s1 logical))
        (values (list s2 s1) 2))
       ;; FILTER pushdown through a sort: not a predicate that reads _K, and
-      ;; only when a later step renumbers again.
+      ;; only when a later step renumbers again -- and a sort key that cannot
+      ;; raise (in memory, a predicate that cannot either).
       ((and s2 (sort-step-p s1) (string= n2 "FILTER") (not (step-reads-key-p s2))
-            (keys-renumbered-by-p s3))
+            (keys-renumbered-by-p s3)
+            (multiple-value-bind (binder key) (sort-key s1) (cannot-raise-p key binder logical))
+            (or logical (multiple-value-bind (binder pred) (filter-body s2) (cannot-raise-p pred binder nil))))
        (values (list s2 s1) 2))
       ;; FILTER pushdown through SELECT_COLS, under the same key guard.
       ((and s2 (string= n1 "SELECT_COLS") (string= n2 "FILTER") (valid-filter-p s2)
@@ -506,11 +543,16 @@ everywhere else)."
             (let ((s-fields (sort-fields s2)))
               (and s-fields (fields-all-in-p s-fields (map-passthrough-fields s1))))
             (not (multiple-value-bind (binder key) (sort-key s2)
-                   (reads-row-or-key-p key binder))))
+                   (reads-row-or-key-p key binder)))
+            (map-cannot-raise-p s1 logical)
+            (multiple-value-bind (binder key) (sort-key s2) (cannot-raise-p key binder logical)))
        (values (list s2 s1) 2))
-      ;; FILTER + FILTER -> FILTER(p1 AND p2)
+      ;; FILTER + FILTER -> FILTER(p1 AND p2) -- only when the second predicate
+      ;; cannot raise: fused, it runs on a row before the first has seen the rows
+      ;; after it.
       ((and s2 (string= n1 "FILTER") (string= n2 "FILTER")
-            (valid-filter-p s1) (valid-filter-p s2))
+            (valid-filter-p s1) (valid-filter-p s2)
+            (multiple-value-bind (binder pred) (filter-body s2) (cannot-raise-p pred binder logical)))
        (let* ((args1 (node-items s1))
               (args2 (node-items s2))
               (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
@@ -544,7 +586,7 @@ everywhere else)."
        (values '() 1))
       (t nil))))
 
-(defun optimize-logical-pipeline-steps (source curr-steps)
+(defun optimize-logical-pipeline-steps (source curr-steps &optional (logical t))
   "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps,
 as one left-to-right sweep over the pairs of adjacent steps, repeated to a
 fixed point -- the same sweep, in the same rule order, as the other four
@@ -560,7 +602,7 @@ needs."
           (let ((s1 (nth i curr-steps))
                 (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps)))
                 (s3 (when (< (+ i 2) len) (nth (+ i 2) curr-steps))))
-            (multiple-value-bind (replacement consumed) (logical-step-pair source i s1 s2 s3)
+            (multiple-value-bind (replacement consumed) (logical-step-pair source i s1 s2 s3 logical)
               (if consumed
                   (progn
                     (dolist (r replacement) (push r new-steps))
@@ -574,7 +616,7 @@ needs."
 
 (defun optimize-inmemory-pipeline-steps (source curr-steps)
   "Tier 2: In-memory physical rewrites, extending Tier 1."
-  (setf curr-steps (optimize-logical-pipeline-steps source curr-steps))
+  (setf curr-steps (optimize-logical-pipeline-steps source curr-steps nil))
   ;; A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
   ;; anything can see the keys a FILTER's result carries. A following step
   ;; that renumbers without reading `_K` hides them (KEYS-RENUMBERED-BY-P, the

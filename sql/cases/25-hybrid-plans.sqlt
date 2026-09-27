@@ -748,6 +748,29 @@ pure_memory
 orders
 ===
 
+### name: plan.fallthrough.filter-at-the-end-stays-over-a-map-that-cannot-raise
+--- note
+The key guard on its own. This MAP cannot raise (a field read and an
+addition over a relation's typed columns), so the only thing keeping the FILTER
+after it is that a FILTER at the end of a pipeline keeps the MAP's keys: the
+WHERE goes over the MAP's derived table. The ABORT case above no longer tests
+that guard -- since review 2026-09-25 SEM-07 a MAP that can raise keeps its
+FILTER behind it whatever the keys -- and a guard that always said yes then
+survived every check (the *-filter-swap-ignores-keys mutations).
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `_sub1`.* FROM (SELECT `o`.`id` AS `id`, (`o`.`amount` + 1) AS `plus` FROM `orders` `o`) `_sub1` WHERE (`_sub1`.`id` > 1)
+===
+
 ### name: plan.fallthrough.dependency-differing-from-a-key-only-by-case-stays-in-memory
 --- note
 SEL's record keys are case-sensitive: after `MAP(RECORD("Name", _["name"],

@@ -5,7 +5,7 @@
 
 import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
-import { Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
+import { Value, NONE, TEXT, BOOL } from './value.mjs';
 import { bytesCompare } from './utf8.mjs';
 import { OpCode } from './math_plan.mjs';
 
@@ -305,7 +305,9 @@ function evalBinary(node, ctx) {
     return Value.bool(evalNode(node.r, ctx).asBool(node.r.pos));
   }
 
-  if (op === '??') {
+  // ?? falls back on NULL, ??? on any vacuous value; both on a missing key
+  // or name.
+  if (op === '??' || op === '???') {
     let l;
     try {
       l = evalNode(node.l, ctx);
@@ -315,21 +317,7 @@ function evalBinary(node, ctx) {
       }
       throw e;
     }
-    if (l.isNull()) return evalNode(node.r, ctx);
-    return l;
-  }
-
-  if (op === '???') {
-    let l;
-    try {
-      l = evalNode(node.l, ctx);
-    } catch (e) {
-      if (e.code === 'E_NO_KEY' || e.code === 'E_UNDEF_VAR') {
-        return evalNode(node.r, ctx);
-      }
-      throw e;
-    }
-    if (l.isVacuous()) return evalNode(node.r, ctx);
+    if (op === '??' ? l.isNull() : l.isVacuous()) return evalNode(node.r, ctx);
     return l;
   }
 
@@ -396,7 +384,7 @@ function concat(l, r, lp, rp) {
   const out = new Uint8Array(a.length + b.length);
   out.set(a, 0);
   out.set(b, a.length);
-  return Value.bin(out);
+  return Value.binOwned(out);
 }
 
 function isIn(needle, hay) {
@@ -413,7 +401,7 @@ function bitwise(op, a, b, pos) {
   for (let i = 0; i < a.length; i++) {
     out[i] = op === 'BAND' ? (a[i] & b[i]) : op === 'BOR' ? (a[i] | b[i]) : (a[i] ^ b[i]);
   }
-  return Value.bin(out);
+  return Value.binOwned(out);
 }
 
 // --- assignment -------------------------------------------------------------

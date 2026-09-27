@@ -288,6 +288,50 @@ def map_passthroughs(step: Node) -> list[str]:
     return fields
 
 
+# Whether evaluating NODE for one row can raise -- conservatively: a rewrite that
+# moves a FILTER in front of a step, runs a step on fewer rows, or fuses two
+# FILTERs changes which rows reach what, so it may only pass over expressions
+# that cannot raise on any of them (spec §7.3; review 2026-09-25 SEM-07/SEM-08).
+# Literals, _K and the binder itself never raise. On the logical path the rows
+# are a bound relation's, which always carry their typed columns, so a field
+# read through the binder cannot raise either, nor a comparison, AND/OR/NOT or
+# + - * over such reads; `/` and `%`, calls and anything else may. The
+# in-memory path has no schema.
+_SAFE_LOGICAL_OPS = frozenset(('==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
+                               'AND', 'OR', '+', '-', '*'))
+
+
+def cannot_raise(node, binder: str, logical: bool) -> bool:
+    if node is None:
+        return True
+    t = node.t
+    if t in ('num', 'text', 'bool', 'null'):
+        return True
+    if t == 'var':
+        name = node.name.upper()
+        return name == '_K' or name == binder.upper()
+    if t == 'index':
+        return (logical and node.obj is not None and node.obj.t == 'var'
+                and node.obj.name.upper() == binder.upper()
+                and node.idx is not None and node.idx.t == 'text')
+    if t == 'bin':
+        return (logical and node.op in _SAFE_LOGICAL_OPS
+                and cannot_raise(node.l, binder, logical) and cannot_raise(node.r, binder, logical))
+    if t == 'un':
+        return logical and node.op == 'NOT' and cannot_raise(node.x, binder, logical)
+    return False
+
+
+def map_cannot_raise(step: Node, logical: bool) -> bool:
+    """Every field a MAP computes (or its whole body) cannot raise."""
+    details = map_details(step)
+    body = details['body']
+    if body is not None and body.t == 'call' and body.name == 'RECORD':
+        return all((arg.t == 'text') if i % 2 == 0 else cannot_raise(arg, details['binder'], logical)
+                   for i, arg in enumerate(body.args))
+    return cannot_raise(body, details['binder'], logical)
+
+
 def map_has_computed_fields(step: Node) -> bool:
     body = map_details(step)['body']
     if body is None or body.t != 'call' or body.name != 'RECORD':
@@ -325,8 +369,6 @@ def sort_details(step: Node) -> dict[str, Any]:
         sort_count = count - 1 if step.name == 'TOP_BY' else count
         if sort_count == 2 or (sort_count == 3 and args[2].t == 'text'):
             key = args[1]
-        elif sort_count == 3 and args[1].t == 'var' and not args[1].grouped:
-            binder, key = args[1].name, args[2]
         elif args[1].t == 'var' and not args[1].grouped:
             binder, key = args[1].name, args[2]
     return {'binder': binder, 'key': key}
@@ -397,6 +439,7 @@ def step_arg_options(step: Node, index: int, options: dict[str, Any]) -> dict[st
 def logical_steps(source: Node | None, steps: list[Node],
                   options: dict[str, Any] | None = None) -> list[Node]:
     options = options or {}
+    logical = bool(options.get('logical', False))
     current = steps
     changed = True
     while changed:
@@ -444,14 +487,18 @@ def logical_steps(source: Node | None, steps: list[Node],
                 refs = field_refs(details['predicate'], details['binder'])
                 if (details['valid'] and refs and all(field in passes for field in refs)
                         and not reads_row_or_key(details['predicate'], details['binder'])
-                        and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)):
+                        and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)
+                        and map_cannot_raise(first, logical)):
                     next_steps.extend((second, first))
                     i += 2
                     changed = True
                     continue
             if (second is not None and first.name in ('SORT', 'SORT_DESC', 'SORT_BY')
                     and second.name == 'FILTER' and not step_reads_key(second)
-                    and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)):
+                    and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)
+                    and cannot_raise(sort_details(first)['key'], sort_details(first)['binder'] or '_', logical)
+                    and (logical or cannot_raise(filter_details(second)['predicate'],
+                                                 filter_details(second)['binder'], False))):
                 next_steps.extend((second, first))
                 i += 2
                 changed = True
@@ -475,7 +522,9 @@ def logical_steps(source: Node | None, steps: list[Node],
                 details = sort_details(second)
                 refs = field_refs(details['key'], details['binder'] or '_') if details['key'] else []
                 if (details['key'] and refs and all(field in map_passthroughs(first) for field in refs)
-                        and not reads_row_or_key(details['key'], details['binder'] or '_')):
+                        and not reads_row_or_key(details['key'], details['binder'] or '_')
+                        and map_cannot_raise(first, logical)
+                        and cannot_raise(details['key'], details['binder'] or '_', logical)):
                     next_steps.extend((second, first))
                     i += 2
                     changed = True
@@ -483,7 +532,9 @@ def logical_steps(source: Node | None, steps: list[Node],
             if (options.get('fuseFilters', True) is not False
                     and second is not None and first.name == 'FILTER' and second.name == 'FILTER'):
                 left, right = filter_details(first), filter_details(second)
-                if not left['valid'] or not right['valid']:
+                # Fused, the second predicate runs on a row before the first has
+                # seen the rows after it: only one that cannot raise.
+                if not left['valid'] or not right['valid'] or not cannot_raise(right['predicate'], right['binder'], logical):
                     next_steps.append(first)
                     i += 1
                     continue
@@ -543,7 +594,7 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
                 for index, item in enumerate(copy.args[1:], 1)
             ]]
             optimized_steps.append(copy)
-        final_steps = logical_steps(optimized_source, optimized_steps, options)
+        final_steps = logical_steps(optimized_source, optimized_steps, {**options, 'logical': not physical})
         if physical:
             # A tree fact the evaluator's join pre-filter needs (SEL-0050):
             # whether anything can see the keys a FILTER's result carries. A
@@ -573,14 +624,9 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
         copy.obj = optimize_tree(copy.obj, physical, depth + 1, options, False)
     if copy.idx is not None:
         copy.idx = optimize_tree(copy.idx, physical, depth + 1, options, False)
-    if copy.t == 'assign':
-        if copy.value is not None:
-            copy.value = optimize_tree(copy.value, physical, depth + 1, options, False)
-    elif copy.target is not None:
-        copy.target = optimize_tree(copy.target, physical, depth + 1, options, False)
-        if copy.value is not None:
-            copy.value = optimize_tree(copy.value, physical, depth + 1, options, False)
-    elif copy.value is not None:
+    # An assignment's target (only assign nodes have one) is walked
+    # iteratively by the evaluator, so it is not charged here.
+    if copy.value is not None:
         copy.value = optimize_tree(copy.value, physical, depth + 1, options, False)
 
     folded = copy if options.get('foldConstants', True) is False else fold(copy)
@@ -611,8 +657,6 @@ def exceeds_depth(node: Node | None, depth: int) -> bool:
     for child in (node.l, node.r, node.x, node.obj, node.idx):
         if child is not None and exceeds_depth(child, nxt):
             return True
-    if node.t != 'assign' and node.target is not None and exceeds_depth(node.target, nxt):
-        return True
     if node.value is not None and exceeds_depth(node.value, nxt):
         return True
     return False

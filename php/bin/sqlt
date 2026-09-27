@@ -17,8 +17,6 @@ require_once __DIR__ . '/../src/Sql/bootstrap.php';
 use Sel\Sel;
 use Sel\SelError;
 use Sel\Value;
-use Sel\Sql\Binding;
-use Sel\Sql\Fragment;
 use Sel\Sql\Map;
 use Sel\Sql\Sql;
 use Sel\Sql\SqlError;

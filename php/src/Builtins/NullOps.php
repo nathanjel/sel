@@ -43,10 +43,7 @@ final class NullOps
                 $target = $a->val(0);
                 $key = $a->text(1);
                 if (!$target->isNull() && $target->has($key)) {
-                    $val = $target->get($key);
-                    if ($val !== null) {
-                        return $val;
-                    }
+                    return $target->get($key);
                 }
                 if ($a->count() > 2) {
                     return $a->val(2);
@@ -73,12 +70,6 @@ final class NullOps
                         return Value::null();
                     }
                     $cur = $cur->get($seg);
-                    if ($cur === null) {
-                        if ($a->count() > 2) {
-                            return $a->val(2);
-                        }
-                        return Value::null();
-                    }
                 }
                 return $cur;
             },

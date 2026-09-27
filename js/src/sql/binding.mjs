@@ -52,24 +52,8 @@ export class Binding {
     checkName('column', column);
     if (table !== null && table !== undefined) checkName('table', table);
     checkType(type);
-    if (collation !== null && collation !== undefined) {
-      const [cExact, cSargable] = checkCollation(collation);
-      exact = exact || cExact;
-      sargable = sargable || cSargable;
-    }
-    checkBool("a column binding's exact flag", exact);
-    checkBool("a column binding's sargable flag", sargable);
-    checkBool("a column binding's guard flag", guard);
-    if (splitSargable && (prefilter === null || prefilter === undefined)) {
-      prefilter = 'separate';
-    }
-    const pref = checkPrefilter(prefilter);
-    const spec = {
-      kind: 'column', column, table: table ?? null, type,
-      exact: Boolean(exact), sargable: Boolean(sargable), guard: Boolean(guard)
-    };
-    if (pref !== null) spec.prefilter = pref;
-    return new Binding(spec);
+    const flags = columnFlags('a column binding', exact, sargable, guard, collation, prefilter, splitSargable);
+    return new Binding({ kind: 'column', column, table: table ?? null, type, ...flags });
   }
 
   // A column expressed as SQL this layer will not read.
@@ -82,24 +66,8 @@ export class Binding {
     checkString('a raw column binding', sql);
     if (sql === '') throw new SqlError('E_SQL_BINDING', 'a raw column binding cannot be empty');
     checkType(type);
-    if (collation !== null && collation !== undefined) {
-      const [cExact, cSargable] = checkCollation(collation);
-      exact = exact || cExact;
-      sargable = sargable || cSargable;
-    }
-    checkBool("a raw column binding's exact flag", exact);
-    checkBool("a raw column binding's sargable flag", sargable);
-    checkBool("a raw column binding's guard flag", guard);
-    if (splitSargable && (prefilter === null || prefilter === undefined)) {
-      prefilter = 'separate';
-    }
-    const pref = checkPrefilter(prefilter);
-    const spec = {
-      kind: 'column', raw: sql, type,
-      exact: Boolean(exact), sargable: Boolean(sargable), guard: Boolean(guard)
-    };
-    if (pref !== null) spec.prefilter = pref;
-    return new Binding(spec);
+    const flags = columnFlags('a raw column binding', exact, sargable, guard, collation, prefilter, splitSargable);
+    return new Binding({ kind: 'column', raw: sql, type, ...flags });
   }
 
   // An ordered set of columns, iterated by an aggregate and indexed by position:
@@ -320,4 +288,25 @@ function checkPrefilter(p) {
   if (lower === 'inline') return 'inline';
   throw new SqlError('E_SQL_BINDING',
     `unknown prefilter '${p}'; use 'separate' or 'inline'`);
+}
+
+// The flags column() and raw() share: a collation spelling folded into
+// exact/sargable, the three flags checked, then the prefilter. `label` names
+// the binding in error messages.
+function columnFlags(label, exact, sargable, guard, collation, prefilter, splitSargable) {
+  if (collation !== null && collation !== undefined) {
+    const [cExact, cSargable] = checkCollation(collation);
+    exact = exact || cExact;
+    sargable = sargable || cSargable;
+  }
+  checkBool(`${label}'s exact flag`, exact);
+  checkBool(`${label}'s sargable flag`, sargable);
+  checkBool(`${label}'s guard flag`, guard);
+  if (splitSargable && (prefilter === null || prefilter === undefined)) {
+    prefilter = 'separate';
+  }
+  const pref = checkPrefilter(prefilter);
+  const flags = { exact: Boolean(exact), sargable: Boolean(sargable), guard: Boolean(guard) };
+  if (pref !== null) flags.prefilter = pref;
+  return flags;
 }

@@ -80,4 +80,89 @@ first.get('x').set('v', Value.int(9));
 assert.equal(second.get('x').get('v').asText(), '1');
 assert.equal(root.get('X').get('v').asText(), '1');
 checks++;
+
+// --- the host boundary (spec/SPEC.md §8, review 2026-09-25 HOST-01..10) ------
+// Collected rather than asserted one by one, so a run reports every broken
+// contract at once.
+const boundary = [];
+const expectOk = (name, fn) => {
+  checks++;
+  try { fn(); } catch (e) { boundary.push(`${name}: ${String(e && e.message).split("\n")[0]}`); }
+};
+const expectCode = (name, code, fn) => expectOk(name, () => {
+  let got = null;
+  try { fn(); } catch (e) { got = e.code || String(e); }
+  assert.equal(got, code, `expected ${code}, got ${got === null ? 'no error' : got}`);
+});
+const deep = (levels) => {
+  let v = Value.text('x');
+  for (let i = 0; i < levels; i++) v = Value.list([v]);
+  return Value.list([v]);
+};
+// HOST-01: every key survives toNative as an own property, __proto__ included.
+expectOk('toNative keeps an own __proto__ key', () => {
+  const n = Value.fromNative(JSON.parse('{"__proto__": {"x": "1"}, "a": "2"}')).toNative();
+  assert.equal(Object.hasOwn(n, '__proto__'), true);
+  assert.equal(Object.getPrototypeOf(n), Object.prototype);
+  assert.equal(n.x, undefined);
+  assert.deepEqual(Object.keys(n), ['__proto__', 'a']);
+  assert.equal(Value.fromNative(n).dump(), '-{"__proto__"=-{"x"=t"1"}, "a"=t"2"}');
+});
+expectOk('toNative keeps a scalar __proto__ nested in a list', () => {
+  const n = Value.fromNative([JSON.parse('{"__proto__": "5"}')]).toNative();
+  assert.equal(Object.hasOwn(n['1'], '__proto__'), true);
+  assert.equal(n['1'].__proto__ === '5' || Object.getOwnPropertyDescriptor(n['1'], '__proto__').value === '5', true);
+});
+expectCode('toNative refuses a scalar with a child named _', 'E_BAD_ARG',
+  () => compile('A = "s"; A["_"] = "c"; A').run().toNative());
+// HOST-02 / HOST-03: the boundary copies, both ways.
+expectOk('Value.bin copies the caller\'s bytes', () => {
+  const b = new Uint8Array([1]); const v = Value.bin(b); b[0] = 2;
+  assert.equal(v.dump(), 'b01');
+});
+expectOk('fromNative copies the caller\'s bytes', () => {
+  const b = new Uint8Array([1]); const v = Value.fromNative({ k: b }); b[0] = 2;
+  assert.equal(v.dump(), '-{"k"=b01}');
+});
+expectOk('toNative returns bytes the host owns', () => {
+  const v = Value.fromNative({ k: new Uint8Array([1]) }); v.toNative().k[0] = 9;
+  assert.equal(v.dump(), '-{"k"=b01}');
+});
+// HOST-04: bytes are whole numbers 0..255.
+expectOk('Value.bin accepts 0 and 255', () => assert.equal(Value.bin([0, 255]).dump(), 'b00ff'));
+for (const bad of [256, -1, 1.5, NaN, '1']) {
+  expectCode(`Value.bin rejects ${JSON.stringify(bad)}`, 'E_RANGE', () => Value.bin([bad]));
+}
+// HOST-05: every text entering is checked, keys included.
+expectCode('Value.text rejects a lone surrogate', 'E_UTF8', () => Value.text('\uD800'));
+expectCode('fromNative rejects a lone surrogate', 'E_UTF8', () => Value.fromNative('\uD800'));
+expectCode('fromNative rejects a lone-surrogate key', 'E_UTF8', () => Value.fromNative({ ['\uD800']: 'x' }));
+expectCode('Value.set rejects a lone-surrogate key', 'E_UTF8', () => Value.none().set('\uDC00', Value.text('x')));
+expectOk('a supplementary character is text', () => assert.equal(Value.text('\u{1F600}').dump(), 't"\u{1F600}"'));
+// HOST-06: the digit caps hold for native integers (the boundary itself, both sides).
+expectOk('Value.int of 1,000,000 digits is a number', () => {
+  assert.equal(compile('LEN(A) == 1000000').run({ A: Value.int(10n ** 999999n) }).dump(), 'TRUE');
+});
+expectCode('Value.int of 1,000,001 digits is E_RANGE', 'E_RANGE', () => Value.int(10n ** 1000000n));
+// HOST-07: an over-deep host value cannot be hashed any more than dumped.
+for (const src of ['COUNT(DEDUPE(A))', 'COUNT(DISTINCT(A))', 'COUNT(BUCKET(A, _, COUNT(_)))']) {
+  expectCode(`${src} over a value nested past the cap`, 'E_DEPTH', () => compile(src).run({ A: deep(250) }));
+  expectOk(`${src} just below the cap`, () => assert.equal(compile(src).run({ A: deep(198) }).dump(), 't"1"'));
+}
+// HOST-08 / HOST-09: toNative and fromNative are inverses.
+for (const src of ['FILTER(LIST(1,2,3), _ > 1)', 'RECORD("0","a","1","b")', 'FALSE', 'RECORD("a", FALSE)', 'LIST(TRUE, NULL)']) {
+  expectOk(`round trip of ${src}`, () => {
+    const v = compile(src).run();
+    assert.equal(Value.fromNative(v.toNative()).dump(), v.dump());
+  });
+}
+// HOST-10: a compiled program keeps nothing from one run to the next.
+expectOk('a compiled program reads the key of each run', () => {
+  const p = compile('A[K]'); const A = Value.fromNative({ x: '1', y: '2' });
+  assert.equal(p.run({ A, K: 'x' }).dump() + p.run({ A, K: 'y' }).dump(), 't"1"t"2"');
+});
+if (boundary.length) {
+  console.error(`JS runtime: ${boundary.length} host-boundary contract(s) broken:\n  ` + boundary.join('\n  '));
+  process.exit(1);
+}
 console.log(`JS runtime: ${checks} checks passed`);

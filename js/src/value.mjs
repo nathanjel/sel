@@ -3,9 +3,23 @@
 
 import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
-import { encodeUtf8, decodeUtf8, bytesToHex, bytesEqual, toCodePoints } from './utf8.mjs';
+import { encodeUtf8, bytesToHex, bytesEqual } from './utf8.mjs';
 
 export const NONE = 'NONE';
+
+// An unpaired surrogate is not text (spec §8): JS strings are UTF-16, so the
+// check a UTF-8 host makes on bytes is made here on code units.
+const ANY_SURROGATE = /[\uD800-\uDFFF]/;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+function checkText(s) {
+  if (typeof s === 'string' && ANY_SURROGATE.test(s) && LONE_SURROGATE.test(s)) {
+    fail('E_UTF8', 'text carries an unpaired surrogate', null);
+  }
+}
+
+let INT_CAP = null;
+function intCap() { return INT_CAP ??= 10n ** BigInt(D.MAX_INT_DIGITS); }
+
 export const TEXT = 'TEXT';
 export const BIN = 'BIN';
 export const BOOL = 'BOOL';
@@ -125,24 +139,43 @@ export class Value {
   // *values* are a string here, a class constant in PHP, an enum in C++ and a
   // keyword in Lisp, so only a predicate can be documented uniformly.
   // These test the value's own kind and do not apply scalar context.
-  isNone() { this; return this.kind === NONE; }
+  isNone() { return this.kind === NONE; }
   isNull() { return this.kind === NONE && this.size() === 0 && !this.isList; }
   isVacuous() {
-    if (this.isNull()) return true;
     if (this.kind === NONE && this.size() === 0) return true;
     if (this.kind === TEXT && this.size() === 0) {
       return /^[ \t\r\n]*$/.test(this.scalar);
     }
     return false;
   }
-  isText() { this; return this.kind === TEXT; }
-  isBin() { this; return this.kind === BIN; }
-  isBool() { this; return this.kind === BOOL; }
+  isText() { return this.kind === TEXT; }
+  isBin() { return this.kind === BIN; }
+  isBool() { return this.kind === BOOL; }
 
   static none() { return new Value(NONE, null); }
   static null() { return new Value(NONE, null, false); }
-  static text(s) { return new Value(TEXT, s); }
-  static bin(b) { return new Value(BIN, b instanceof Uint8Array ? b : Uint8Array.from(b)); }
+  // Host code is the one place bad data can enter (spec §8): every text is
+  // checked for unpaired surrogates, and bytes are whole numbers 0..255, copied
+  // so the caller's array can change afterwards (review 2026-09-25 HOST-02,
+  // HOST-04, HOST-05). binOwned is the builtins' constructor for an array they
+  // just made.
+  static text(s) { checkText(s); return new Value(TEXT, s); }
+  static bin(b) {
+    const out = new Uint8Array(b.length);
+    if (b instanceof Uint8Array) {
+      out.set(b);
+    } else {
+      for (let i = 0; i < b.length; i++) {
+        const x = b[i];
+        if (typeof x !== 'number' || !Number.isInteger(x) || x < 0 || x > 255) {
+          fail('E_RANGE', `byte ${String(x)} is not a whole number from 0 to 255`, null);
+        }
+        out[i] = x;
+      }
+    }
+    return new Value(BIN, out);
+  }
+  static binOwned(b) { return new Value(BIN, b); }
   static bool(b) { return new Value(BOOL, !!b); }
 
   static shaped(keys, values) {
@@ -204,6 +237,11 @@ export class Value {
     return v;
   }
   static int(n) {
+    // A native integer obeys the digit cap like the same digits in source
+    // (spec §8, §6.4; review 2026-09-25 HOST-06).
+    if (typeof n === 'bigint' && (n < 0n ? -n : n) >= intCap()) {
+      fail('E_RANGE', `number has more than ${D.MAX_INT_DIGITS} integer digits`, null);
+    }
     const d = D.fromInt(n);
     const v = new Value(TEXT, null);
     v._decimal = d;
@@ -292,6 +330,7 @@ export class Value {
 
   // Re-assigning an existing key keeps its original position — Map does this.
   set(key, value) {
+    checkText(key);
     if (this.shape) {
       const index = this.shape.keyMap.get(key);
       if (index !== undefined) {
@@ -431,11 +470,6 @@ export class Value {
     if (this.isList && this.storage !== null) {
       return Value.listOwned(this.storage.map((value) => value.cloneAt(depth + 1, pos)));
     }
-    if (!this.children && this._entries === null) {
-      const out = new Value(this.kind, this.kind === BIN ? (this._scalar ? this._scalar.slice() : null) : this._scalar, this.isList);
-      out._decimal = this._decimal;
-      return out;
-    }
     const out = new Value(this.kind, this.kind === BIN ? (this._scalar ? this._scalar.slice() : null) : this._scalar, this.isList);
     out._decimal = this._decimal;
     if (this._entries !== null) {
@@ -530,7 +564,7 @@ export class Value {
     if (Array.isArray(x)) return Value.listOwned(x.map((e) => Value.fromNativeAt(e, depth + 1)));
     if (x instanceof Value) return x;
     if (typeof x === 'object') {
-      const entries = Object.keys(x).map((key) => [String(key), Value.fromNativeAt(x[key], depth + 1)]);
+      const entries = Object.keys(x).map((key) => { checkText(key); return [String(key), Value.fromNativeAt(x[key], depth + 1)]; });
       return Value.fromEntries(entries);
     }
     throw new TypeError(`cannot convert ${typeof x} to SEL`);
@@ -544,10 +578,20 @@ export class Value {
       this.kind === TEXT ? this.scalar :
       this.kind === BIN ? this.scalar :
       this.kind === BOOL ? this.scalar : null;
-    if (this.size() === 0) return scalar;
+    if (this.size() === 0) return scalar === null || this.kind !== BIN ? scalar : scalar.slice();
+    // Every key an own property, "__proto__" included: `obj[k] = v` would set
+    // the prototype instead (review 2026-09-25 HOST-01).
     const obj = {};
-    for (const [k, v] of this.entries()) obj[k] = v.toNativeAt(depth + 1);
-    return scalar === null ? obj : { _: scalar, ...obj };
+    for (const [k, v] of this.entries()) {
+      const child = v.toNativeAt(depth + 1);
+      if (k === '__proto__') Object.defineProperty(obj, k, { value: child, enumerable: true, writable: true, configurable: true });
+      else obj[k] = child;
+    }
+    if (scalar === null) return obj;
+    // A value's own scalar travels under "_"; with a child of that name too,
+    // one of them would be lost (spec §8).
+    if (Object.hasOwn(obj, '_')) fail('E_BAD_ARG', 'a value with both a scalar and a child named "_" has no native form', null);
+    return { _: this.kind === BIN ? scalar.slice() : scalar, ...obj };
   }
 }
 
@@ -555,7 +599,10 @@ export class Value {
 // the bucket because collisions are allowed.  It deliberately walks the flat
 // storage directly so DEDUPE does not serialize every row just to find a bucket.
 export function structuralHash(value, depth = 1) {
-  if (depth > MAX_DEPTH) return 0;
+  // A value nested past the cap cannot be hashed any more than dumped (spec
+  // §6.4): answering 0 let DEDUPE pass one it could not compare (review
+  // 2026-09-25 HOST-07).
+  if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
   let h = value.kind === TEXT ? 17 : value.kind === BIN ? 31 : value.kind === BOOL ? 47 : 61;
   if (value.kind === TEXT) h = mixHash(h, stringHash(value.scalar));
   else if (value.kind === BOOL) h = mixHash(h, value.scalar ? 12345 : 67890);
@@ -618,4 +665,4 @@ function quoteDump(s) {
   return out + '"';
 }
 
-export { quoteDump, toCodePoints, decodeUtf8 };
+export { quoteDump };

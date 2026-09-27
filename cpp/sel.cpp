@@ -48,6 +48,12 @@
 #include <unordered_set>
 
 namespace sel {
+
+// SEL folds case ASCII-only (spec §2; UPPER/LOWER are ASCII by decision), and
+// std::toupper/tolower follow the C locale -- an embedding application that
+// calls setlocale() would change which bytes move (review 2026-09-25 SEM-05).
+inline char ascii_up(char c) { return (c >= 'a' && c <= 'z') ? static_cast<char>(c - 32) : c; }
+inline char ascii_down(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c; }
 namespace {
 
 // ============================================================================
@@ -1713,6 +1719,14 @@ std::vector<std::string> Value::keys() const {
 
 // Re-assigning an existing key keeps its original position — order is normative.
 Value& Value::set(std::string key, Value value) {
+  // A key is text too (spec §8; review 2026-09-25 HOST-05): ASCII keys, nearly
+  // all of them, pass without the full check.
+  for (const unsigned char c : key) {
+    if (c >= 0x80) {
+      if (!sel::is_valid_utf8(key)) throw SelError("E_UTF8", "key is not valid UTF-8", Pos{});
+      break;
+    }
+  }
   if (p_->mutable_coll().shape) {
     const auto shape_it = p_->mutable_coll().shape->key_map.find(key);
     if (shape_it != p_->mutable_coll().shape->key_map.end()) {
@@ -1762,7 +1776,6 @@ bool Value::is_null() const {
 }
 
 bool Value::is_vacuous() const {
-  if (is_null()) return true;
   if (p_->kind == Kind::None && size() == 0) return true;
   if (p_->kind == Kind::Text && size() == 0) {
     const std::string& sc = scalar();
@@ -3286,20 +3299,12 @@ Value eval_binary(const Node& node, Context& ctx) {
     return Value::boolean(eval_node(*node.r, ctx).as_bool(node.r->pos));
   }
 
-  if (op == "??") {
+  // ?? falls back on NULL, ??? on any vacuous value; both on a missing key or
+  // name.
+  if (op == "??" || op == "???") {
     try {
       const Value l = eval_node(*node.l, ctx);
-      if (!l.is_null()) return l;
-    } catch (const SelError& e) {
-      if (e.code() != "E_NO_KEY" && e.code() != "E_UNDEF_VAR") throw;
-    }
-    return eval_node(*node.r, ctx);
-  }
-
-  if (op == "???") {
-    try {
-      const Value l = eval_node(*node.l, ctx);
-      if (!l.is_vacuous()) return l;
+      if (!(op == "??" ? l.is_null() : l.is_vacuous())) return l;
     } catch (const SelError& e) {
       if (e.code() != "E_NO_KEY" && e.code() != "E_UNDEF_VAR") throw;
     }
@@ -3794,7 +3799,7 @@ void for_each_collection_value(const Value& value, Fn&& fn) {
 }
 
 std::string upper_name(std::string name) {
-  for (char& ch : name) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+  for (char& ch : name) ch = ascii_up(ch);
   return name;
 }
 
@@ -3803,7 +3808,7 @@ bool is_nested_record(const Value& value) { return value.size() > 0 && !value.is
 // nullptr means "there is no first element"; a NULL or field-less first
 // element is an element like any other (spec §7.4) and comes back as one.
 const Value* first_collection_item(const Value& value) {
-  if (value.is_null() || (value.kind() == Kind::None && value.size() == 0)) return nullptr;
+  if (value.kind() == Kind::None && value.size() == 0) return nullptr;
   return collection_size(value) == 0 ? nullptr : &collection_item(value, 0);
 }
 
@@ -3850,7 +3855,7 @@ std::shared_ptr<const AliasPlan> alias_plan_for(
   std::vector<std::string> keys = source->keys;
   keys.push_back(table);
   std::string lower = table;
-  for (char& ch : lower) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  for (char& ch : lower) ch = ascii_down(ch);
   const bool append_lower = lower != table &&
                             source->key_map.find(lower) == source->key_map.end();
   if (append_lower) keys.push_back(lower);
@@ -3888,7 +3893,7 @@ Value ensure_row_table_alias(const Value& row, const std::string& table) {
   out.set(table, row);
   const std::string lower = [&] {
     std::string v = table;
-    for (char& ch : v) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    for (char& ch : v) ch = ascii_down(ch);
     return v;
   }();
   if (lower != table && !row.has(lower)) out.set(lower, row);
@@ -3909,7 +3914,7 @@ Value make_null_record(const Value& sample, const std::string& table) {
     out.set(table, Value::none());
     const std::string lower = [&] {
       std::string v = table;
-      for (char& ch : v) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+      for (char& ch : v) ch = ascii_down(ch);
       return v;
     }();
     if (lower != table) out.set(lower, Value::none());
@@ -3930,7 +3935,7 @@ char join_category(const Value& value) {
 std::vector<std::string> join_binder_keys(const std::string& name, const char* positional) {
   std::vector<std::string> keys{name};
   std::string lower = name;
-  for (char& ch : lower) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  for (char& ch : lower) ch = ascii_down(ch);
   if (lower != name) keys.push_back(lower);
   if (name != positional) keys.push_back(positional);
   return keys;
@@ -4267,6 +4272,7 @@ struct JoinEqui {
   NodePtr left;
   NodePtr right;
   bool numeric = false;
+  bool swapped = false;  // the predicate reads the right side on the operator's left
 };
 
 std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b1,
@@ -4275,16 +4281,18 @@ std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b
   const std::set<std::string> left{upper_name(b1), "_1", "_"};
   const std::set<std::string> right{upper_name(b2), "_2"};
   if (expr_depends_only(*node.l, left) && expr_depends_only(*node.r, right)) {
-    return JoinEqui{node.l, node.r, node.s == "=="};
+    return JoinEqui{node.l, node.r, node.s == "==", false};
   }
   if (expr_depends_only(*node.r, left) && expr_depends_only(*node.l, right)) {
-    return JoinEqui{node.r, node.l, node.s == "=="};
+    return JoinEqui{node.r, node.l, node.s == "==", true};
   }
   return std::nullopt;
 }
 
 struct FastJoinKey {
-  enum class Type : uint8_t { Empty, Int64, SmallDec, BigDec, Text };
+  // Bad: a value the comparison rejects -- never bucketed; the pair it meets
+  // raises (review 2026-09-25 SEM-06).
+  enum class Type : uint8_t { Empty, Int64, SmallDec, BigDec, Text, Bad };
   Type type = Type::Empty;
   bool neg = false;
   int32_t scale = 0;
@@ -4299,6 +4307,7 @@ struct FastJoinKey {
       case Type::SmallDec: return int_val == o.int_val && scale == o.scale && neg == o.neg;
       case Type::BigDec: return scale == o.scale && neg == o.neg && text == o.text;
       case Type::Text: return text == o.text;
+      case Type::Bad: return false;
     }
     return false;
   }
@@ -4337,7 +4346,8 @@ std::optional<FastJoinKey> make_fast_join_key(const Value& value, bool numeric) 
     try {
       d = as_dec(value, {});
     } catch (const SelError&) {
-      return std::nullopt;
+      key.type = FastJoinKey::Type::Bad;
+      return key;
     }
     if (d.small) {
       __int128_t m = d.mantissa;
@@ -4389,10 +4399,52 @@ std::optional<FastJoinKey> make_fast_join_key(const Value& value, bool numeric) 
       return key;
     }
   }
-  if (value.kind() != Kind::Text) return std::nullopt;
-  key.type = FastJoinKey::Type::Text;
-  key.text = value.scalar();
+  // `$==` compares bytes, as the evaluator does (as_bytes): a BIN meets the
+  // TEXT of its bytes and a list its scalar.
+  try {
+    key.text = value.as_bytes({});
+    key.type = FastJoinKey::Type::Text;
+  } catch (const SelError&) {
+    key.type = FastJoinKey::Type::Bad;
+  }
   return key;
+}
+
+// What the left keys are checked against: whether any right key is live (not
+// NULL), the first live one if it was rejected, and the first rejected one.
+struct JoinRightFacts {
+  bool live = false;
+  std::optional<Value> live_bad;
+  std::optional<Value> bad;
+};
+
+void note_right_join_key(JoinRightFacts& facts, const std::optional<FastJoinKey>& key, const Value& value) {
+  if (!key) return;
+  if (key->type == FastJoinKey::Type::Bad) {
+    if (!facts.live) facts.live_bad = value;
+    if (!facts.bad) facts.bad = value;
+  }
+  facts.live = true;
+}
+
+[[noreturn]] void coerce_join_operand(const JoinEqui& equi, const Value& value, const Node& node) {
+  if (equi.numeric) (void)as_dec(value, node.pos);
+  else (void)value.as_bytes(node.pos);
+  throw std::logic_error("a rejected join key did not raise");
+}
+
+// A left key meets the right keys pair by pair, in order, as the comparison
+// would (spec §7.4): a rejected left key raises against the first live right
+// key, a good one against the first rejected right key -- the operator's left
+// operand coerced first. NULLs are never compared.
+void check_join_pair(const JoinEqui& equi, const std::optional<FastJoinKey>& key, const Value& value,
+                     const JoinRightFacts& facts) {
+  if (!key || !facts.live) return;
+  if (key->type == FastJoinKey::Type::Bad) {
+    if (equi.swapped && facts.live_bad) coerce_join_operand(equi, *facts.live_bad, *equi.right);
+    coerce_join_operand(equi, value, *equi.left);
+  }
+  if (facts.bad) coerce_join_operand(equi, *facts.bad, *equi.right);
 }
 
 std::string single_relation_name(const Node& node) {
@@ -4537,7 +4589,7 @@ std::shared_ptr<JoinSideFacts> join_side_facts(const Value& value, std::unordere
     if (is_positional_binder(b) || b == "_") continue;
     side->names.insert(b);
     std::string lower = b;
-    for (char& ch : lower) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    for (char& ch : lower) ch = ascii_down(ch);
     side->names.insert(lower);
   }
   if (const Value* first = first_collection_item(value)) {
@@ -4756,7 +4808,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
       // for the join that drops to prove (join_keys_safe).
       std::vector<JoinObligation> obs;
       std::string lower_b1 = jb1;
-      for (char& ch : lower_b1) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+      for (char& ch : lower_b1) ch = ascii_down(ch);
       obs.push_back(JoinObligation{jequi->left.get(), {jb1, lower_b1, "_1", "_"}, above.size() + 1});
       obs.insert(obs.end(), obligations.begin(), obligations.end());
       ctx.join_prefilter = JoinPrefilter{std::move(handed), true, std::move(sides), std::move(obs)};
@@ -4832,7 +4884,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     frame.emplace_back(name, value);
     const std::string lower = [&] {
       std::string v = name;
-      for (char& ch : v) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+      for (char& ch : v) ch = ascii_down(ch);
       return v;
     }();
     if (lower != name) frame.emplace_back(lower, value);
@@ -4841,6 +4893,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   if (equi && have_right) {
     std::unordered_map<FastJoinKey, std::vector<Value>, FastJoinKeyHash> buckets;
     buckets.reserve(collection_size(right_value));
+    JoinRightFacts right_facts;
     std::vector<std::pair<std::string, Value>> frame;
     add_frame_names(frame, b2, Value::none());
     frame.emplace_back("_2", Value::none());
@@ -4854,8 +4907,10 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
         const Value row = ensure_row_table_alias(item, b2);
         set_frame(ctx.frames.back(), b2, row);
         set_frame(ctx.frames.back(), "_2", row);
-        const auto join_key = make_fast_join_key(a.eval(*equi->right), equi->numeric);
-        if (join_key) buckets[*join_key].push_back(row);
+        const Value key_value = a.eval(*equi->right);
+        const auto join_key = make_fast_join_key(key_value, equi->numeric);
+        note_right_join_key(right_facts, join_key, key_value);
+        if (join_key && join_key->type != FastJoinKey::Type::Bad) buckets[*join_key].push_back(row);
         if (right_flat && !flat_test(row)) right_flat = false;
       });
     } catch (...) {
@@ -5025,6 +5080,10 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
         if (!fast_field.empty() && row.get(fast_field) != nullptr) {
           asked = verdict(prefix, row);
           if (asked == 1) {
+            // Dropped before its key was computed -- but the key is this very
+            // field, and a rejected one still raises in the join as written.
+            const Value field_value = *row.get(fast_field);
+            check_join_pair(*equi, make_fast_join_key(field_value, equi->numeric), field_value, right_facts);
             dropped = true;
             return;
           }
@@ -5032,7 +5091,9 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
         set_frame(ctx.frames.back(), b1, row);
         set_frame(ctx.frames.back(), "_1", row);
         set_frame(ctx.frames.back(), "_", row);
-        const auto join_key = make_fast_join_key(a.eval(*equi->left), equi->numeric);
+        const Value key_value = a.eval(*equi->left);
+        const auto join_key = make_fast_join_key(key_value, equi->numeric);
+        check_join_pair(*equi, join_key, key_value, right_facts);
         auto it = join_key ? buckets.find(*join_key) : buckets.end();
         if (asked < 0) asked = prefix.empty() ? 0 : verdict(prefix, row);
         if (asked == 1) {
@@ -5212,26 +5273,11 @@ void register_structure() {
                 return Value::list(std::move(out));
               }});
 
-  define(Spec{"DISTINCT", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                const Value& val = a.val(0);
-                if (val.is_null()) return Value::list({});
-                std::vector<Value> out;
-                for_each_collection_value(val, [&](const Value& item) {
-                  bool found = false;
-                  for (const auto& existing : out) {
-                    if (item.eql(existing)) {
-                      found = true;
-                      break;
-                    }
-                  }
-                  if (!found) {
-                    out.push_back(item);
-                  }
-                });
-                return Value::list(std::move(out));
-              }});
-
-  define(Spec{"DEDUPE", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+  // DISTINCT and DEDUPE are one operation (spec §7.3), so one body: DISTINCT
+  // compared every pair, which was O(n^2) and never walked a lone value --
+  // one nested past the cap answered where DEDUPE raised E_DEPTH (review
+  // 2026-09-25 HOST-07).
+  const auto dedupe = [](Args& a, Context&) -> Value {
                 const Value& val = a.val(0);
                 if (val.is_null()) return Value::list({});
                 std::unordered_map<std::uint64_t, std::vector<Value>> buckets;
@@ -5252,7 +5298,9 @@ void register_structure() {
                   }
                 });
                 return Value::list(std::move(out));
-              }});
+              };
+  define(Spec{"DISTINCT", 1, 1, false, false, nullptr, dedupe});
+  define(Spec{"DEDUPE", 1, 1, false, false, nullptr, dedupe});
 
   // Three or five arguments, refused at compile time like every E_ARITY (spec
   // §7.4); the rule is spec/builtins.json's and define() installs it.
@@ -5455,7 +5503,7 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
         binder = "_";
         body = &a.node(1);
         std::string d = a.text(2);
-        for (char& c : d) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        for (char& c : d) c = ascii_up(c);
         direction = d;
       } else if (a.is_symbol(1)) {
         binder = a.symbol(1);
@@ -5465,14 +5513,14 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
         binder = "_";
         body = &a.node(1);
         std::string d = a.text(2);
-        for (char& c : d) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        for (char& c : d) c = ascii_up(c);
         direction = d;
       }
     } else {  // 4
       binder = a.symbol(1);
       body = &a.node(2);
       std::string d = a.text(3);
-      for (char& c : d) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      for (char& c : d) c = ascii_up(c);
       direction = d;
     }
 
@@ -5529,9 +5577,8 @@ struct TopEntry {
 Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   const Value& value = a.val(0);
   const long long limit = a.non_neg_int(a.count() - 1);
-  if (limit == 0 || value.is_null()) return Value::list({});
   const std::size_t source_size = collection_size(value);
-  if (source_size == 0) return Value::list({});
+  if (limit == 0 || source_size == 0) return Value::list({});
 
   const int sort_count = a.count() - 1;
   std::string binder = "_";
@@ -6796,10 +6843,7 @@ void register_null() {
   define(Spec{"GET", 2, 3, true, false, nullptr, [](Args& a, Context&) -> Value {
                 const Value target = a.val(0);
                 const std::string key = a.text(1);
-                if (!target.is_null() && target.has(key)) {
-                  const Value* v = target.get(key);
-                  if (v != nullptr) return *v;
-                }
+                if (!target.is_null() && target.has(key)) return *target.get(key);
                 if (a.count() > 2) return a.val(2);
                 return Value::null();
               }});
@@ -6827,12 +6871,7 @@ void register_null() {
                     if (a.count() > 2) return a.val(2);
                     return Value::null();
                   }
-                  const Value* next = cur.get(seg);
-                  if (next == nullptr) {
-                    if (a.count() > 2) return a.val(2);
-                    return Value::null();
-                  }
-                  cur = *next;
+                  cur = *cur.get(seg);
                 }
                 return cur;
               }});
@@ -7276,9 +7315,6 @@ OptSortInfo opt_sort_info(const Node& step) {
     const std::size_t sort_count = step.s == "TOP_BY" ? count - 1 : count;
     if (sort_count == 2 || (sort_count == 3 && args[2]->t == NT::Text)) {
       info.key = args[1];
-    } else if (sort_count == 3 && args[1]->t == NT::Var && !args[1]->grouped) {
-      info.binder = args[1]->s;
-      info.key = args[2];
     } else if (count > 2 && args[1]->t == NT::Var && !args[1]->grouped) {
       info.binder = args[1]->s;
       info.key = args[2];
@@ -7353,7 +7389,52 @@ NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const s
   return copy;
 }
 
-std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current) {
+// Whether evaluating NODE for one row can raise -- conservatively: a rewrite
+// that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
+// two FILTERs changes which rows reach what, so it may only pass over
+// expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
+// SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+// logical path the rows are a bound relation's, which always carry their typed
+// columns, so a field read through the binder cannot raise either, nor a
+// comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
+// anything else may. The in-memory path has no schema.
+bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logical) {
+  static const std::set<std::string> safe_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
+                                              "$>", "$>=", "AND", "OR", "+", "-", "*"};
+  if (!node) return true;
+  switch (node->t) {
+    case NT::Num: case NT::Text: case NT::Bool: case NT::Null: return true;
+    case NT::Var: {
+      const std::string name = upper_name(node->s);
+      return name == "_K" || name == upper_name(binder);
+    }
+    case NT::Index:
+      return logical && node->l && node->l->t == NT::Var && upper_name(node->l->s) == upper_name(binder) &&
+             node->r && node->r->t == NT::Text;
+    case NT::Bin:
+      return logical && safe_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical) &&
+             opt_cannot_raise(node->r, binder, logical);
+    case NT::Un:
+      return logical && node->s == "NOT" && opt_cannot_raise(node->l, binder, logical);
+    default:
+      return false;
+  }
+}
+
+// Every field a MAP computes (or its whole body) cannot raise.
+bool opt_map_cannot_raise(const Node& step, bool logical) {
+  const OptMapInfo info = opt_map_info(step);
+  if (info.body && info.body->t == NT::Call && info.body->s == "RECORD") {
+    for (std::size_t i = 0; i < info.body->items.size(); i++) {
+      const NodePtr& arg = info.body->items[i];
+      if (i % 2 == 0 ? arg->t != NT::Text : !opt_cannot_raise(arg, info.binder, logical)) return false;
+    }
+    return true;
+  }
+  return opt_cannot_raise(info.body, info.binder, logical);
+}
+
+std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current, bool logical) {
   bool changed = true;
   while (changed) {
     changed = false;
@@ -7407,7 +7488,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
             }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
-            opt_keys_renumbered_by(third)) {
+            opt_keys_renumbered_by(third) && opt_map_cannot_raise(*first, logical)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -7417,7 +7498,9 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       }
       if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
           (*second)->s == "FILTER" && !opt_step_reads_key(**second) &&
-          opt_keys_renumbered_by(third)) {
+          opt_keys_renumbered_by(third) &&
+          opt_cannot_raise(opt_sort_info(*first).key, opt_sort_info(*first).binder, logical) &&
+          (logical || opt_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false))) {
         next.push_back(*second);
         next.push_back(first);
         i += 2;
@@ -7451,7 +7534,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto passes = opt_map_passthroughs(*first);
         if (sort.key && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
-            }) && !opt_reads_row_or_key(*sort.key, sort.binder)) {
+            }) && !opt_reads_row_or_key(*sort.key, sort.binder) && opt_map_cannot_raise(*first, logical) &&
+            opt_cannot_raise(sort.key, sort.binder, logical)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -7462,7 +7546,9 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       if (second && first->s == "FILTER" && (*second)->s == "FILTER") {
         const OptFilterInfo left = opt_filter_info(*first);
         const OptFilterInfo right = opt_filter_info(**second);
-        if (left.valid && right.valid) {
+        // Fused, the second predicate runs on a row before the first has seen
+        // the rows after it: only one that cannot raise may be fused.
+        if (left.valid && right.valid && opt_cannot_raise(right.predicate, right.binder, logical)) {
           const NodePtr right_pred = upper_name(left.binder) == upper_name(right.binder)
               ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
           const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
@@ -7502,7 +7588,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
 }
 
 std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodePtr> steps) {
-  steps = opt_logical_steps(source, std::move(steps));
+  steps = opt_logical_steps(source, std::move(steps), false);
   // A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
   // anything can see the keys a FILTER's result carries. A following step
   // that renumbers without reading `_K` hides them (opt_keys_renumbered_by,
@@ -7774,7 +7860,7 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
       }
       optimized_steps.push_back(std::move(copy));
     }
-    std::vector<NodePtr> final_steps = opt_logical_steps(optimized_source, std::move(optimized_steps));
+    std::vector<NodePtr> final_steps = opt_logical_steps(optimized_source, std::move(optimized_steps), !physical);
     if (physical) final_steps = opt_inmemory_steps(optimized_source, std::move(final_steps));
     return opt_build_pipeline(std::move(optimized_source), final_steps);
   }

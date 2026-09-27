@@ -56,7 +56,6 @@ final class Translator
     private int $depth = 0;
     private ?RelationalPlan $statementPlan = null;
     private bool $inWhere = false;
-    private bool $inHaving = false;
     private int $subqueryCounter = 0;
 
     /** @param array<string,mixed> $options */
@@ -947,13 +946,13 @@ final class Translator
             if ($relation === $plan->sourceRelation
                 && ($name === null || in_array(strtoupper($name), array_map(
                     static fn ($item): string => strtoupper((string) $item),
-                    array_filter([$plan->sourceName, $plan->sourceAlias], static fn ($item): bool => $item !== null)
+                    array_filter([$plan->sourceName, $plan->sourceAlias, ...array_map(
+                        static fn ($join) => $join->leftBinder, $plan->joins)], static fn ($item): bool => $item !== null)
                 ), true))) {
                 return $plan->sourceAlias ?? self::relationAlias($relation);
             }
             foreach ($plan->joins as $index => $join) {
-                $names = [$join->sourceName, $join->sourceAlias, $join->leftBinder,
-                          $join->rightBinder, '_' . ($index + 2)];
+                $names = [$join->sourceName, $join->sourceAlias, $join->rightBinder, '_' . ($index + 2)];
                 $names = array_filter($names, static fn ($item): bool => $item !== null);
                 if ($relation === $join->sourceRelation
                     && ($name === null || in_array(strtoupper($name), array_map(
@@ -975,15 +974,20 @@ final class Translator
         if ($plan === null) {
             refuse('E_SQL_SHAPE', 'qualified relation indexing is only valid in a statement', $n['pos']);
         }
+        // A LINK's left binder names the LEFT side -- the pipeline's source
+        // relation -- and its right binder the joined one. Both used to be
+        // listed under the join, so a read through the left binder selected
+        // the joined table's column (review 2026-09-25 SQL-01).
         $sources = [[
-            'names' => [$plan->sourceName, $plan->sourceAlias, self::relationAlias($plan->sourceRelation)],
+            'names' => [$plan->sourceName, $plan->sourceAlias, self::relationAlias($plan->sourceRelation),
+                        ...array_map(static fn ($join) => $join->leftBinder, $plan->joins)],
             'relation' => $plan->sourceRelation,
             'table' => $plan->sourceAlias ?? self::relationAlias($plan->sourceRelation),
         ]];
         foreach ($plan->joins as $join) {
             $sources[] = [
                 'names' => [$join->sourceName, $join->sourceAlias, self::relationAlias($join->sourceRelation),
-                            $join->leftBinder, $join->rightBinder],
+                            $join->rightBinder],
                 'relation' => $join->sourceRelation,
                 'table' => $join->sourceAlias ?? self::relationAlias($join->sourceRelation),
             ];
@@ -3371,7 +3375,7 @@ final class Translator
                         refuse('E_SQL_SHAPE', "{$rightNode['name']} is not bound as a relation", $rightNode['pos']);
                     }
                     $join = new JoinPlan();
-                    $join->setKind($name === 'LINK_LEFT' ? 'LEFT' : 'INNER');
+                    $join->type = $name === 'LINK_LEFT' ? 'LEFT' : 'INNER';
                     $join->sourceName = $rightNode['name'];
                     $join->sourceRelation = $right;
                     $join->sourceTable = $right['from'];
@@ -3735,17 +3739,12 @@ final class Translator
             if (!empty($plan->having)) {
                 $parts[] = ' HAVING ';
                 $hCondParts = [];
-                $this->inHaving = true;
-                try {
-                    foreach ($plan->having as $hav) {
-                        $render = fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER');
-                        $hFrag = ($hav['overGroups'] ?? false)
-                            ? $this->withGroup($src, $hav['binder'], $render)
-                            : $this->withProjected($src, $hav['binder'], $render);
-                        $hCondParts[] = $hFrag->parts;
-                    }
-                } finally {
-                    $this->inHaving = false;
+                foreach ($plan->having as $hav) {
+                    $render = fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER');
+                    $hFrag = ($hav['overGroups'] ?? false)
+                        ? $this->withGroup($src, $hav['binder'], $render)
+                        : $this->withProjected($src, $hav['binder'], $render);
+                    $hCondParts[] = $hFrag->parts;
                 }
                 foreach ($hCondParts as $idx => $hp) {
                     if ($idx > 0) {

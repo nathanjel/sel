@@ -1,5 +1,14 @@
 
 from ..errors import SelError, fail
+from ..lexer import ascii_upper
+
+
+def _upper_name(s):
+    """Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move.
+    str.upper() folds "ß" to "SS" and "ſ" to "S", which made distinct field
+    names collide in joined rows (review 2026-09-25 SEM-04). The builtin is
+    kept for the all-ASCII names that are nearly every name."""
+    return s.upper() if s.isascii() else ascii_upper(s)
 from ..registry import INF, define
 from ..parser import Node
 from ..value import NONE, TEXT, Value, iter_elements, iter_values, structural_hash, _record_shape
@@ -22,7 +31,7 @@ def iter_collection_items(value):
 
 
 def first_collection_item(value):
-    if value.is_null() or (value.kind == NONE and value.size() == 0):
+    if value.kind == NONE and value.size() == 0:
         return None
     if value.is_list and value.storage is not None and value.storage:
         return value.storage[0]
@@ -145,7 +154,7 @@ def expr_depends_only_on(node, allowed):
     if node is None:
         return True
     if node.t == 'var':
-        return node.name.upper() in allowed
+        return _upper_name(node.name) in allowed
     if node.t == 'index':
         return expr_depends_only_on(node.obj, allowed) and expr_depends_only_on(node.idx, allowed)
     if node.t == 'call':
@@ -164,12 +173,12 @@ def expr_depends_only_on(node, allowed):
 def try_extract_equi_keys(node, b1, b2):
     if node is None or node.t != 'bin' or node.op not in ('==', '$=='):
         return None
-    left_names = {b1.upper(), b1.lower().upper(), '_1', '_'}
-    right_names = {b2.upper(), b2.lower().upper(), '_2'}
+    left_names = {_upper_name(b1), _upper_name(b1.lower()), '_1', '_'}
+    right_names = {_upper_name(b2), _upper_name(b2.lower()), '_2'}
     if expr_depends_only_on(node.l, left_names) and expr_depends_only_on(node.r, right_names):
-        return node.l, node.r, node.op == '=='
+        return node.l, node.r, node.op == '==', False
     if expr_depends_only_on(node.r, left_names) and expr_depends_only_on(node.l, right_names):
-        return node.r, node.l, node.op == '=='
+        return node.r, node.l, node.op == '==', True
     return None
 
 
@@ -183,7 +192,21 @@ def single_relation_name(node):
     return None
 
 
+class _JoinBad:
+    """A key the comparison rejects: the pair it meets must raise, as the
+    comparison would (review 2026-09-25 SEM-06)."""
+    __slots__ = ('value',)
+
+    def __init__(self, value):
+        self.value = value
+
+
 def canonical_join_key(value, numeric):
+    """An equi-join key: the value as the comparison would compare it (spec
+    §7.4) -- `==` through as_decimal, `$==` through as_bytes, the coercions the
+    evaluator uses -- so a BIN meets the TEXT of its bytes and a list its
+    scalar. NULL is never compared (None); a value the coercion rejects is a
+    _JoinBad rather than "no match"."""
     if value is None or value.is_null():
         return None
     if numeric:
@@ -198,8 +221,8 @@ def canonical_join_key(value, numeric):
                         pass
             try:
                 d = value.as_decimal()
-            except Exception:
-                return None
+            except SelError:
+                return _JoinBad(value)
 
         if d.scale == 0:
             return -d.digits if d.neg else d.digits
@@ -213,8 +236,49 @@ def canonical_join_key(value, numeric):
         if scale == 0:
             return -digits if d.neg else digits
         return (-digits if d.neg else digits, scale)
+    try:
+        return value.as_bytes()
+    except SelError:
+        return _JoinBad(value)
 
-    return value._scalar if value._scalar is not None else (value.scalar if value.kind == 'TEXT' else None)
+
+def _bucket_join_key(buckets, facts, key, row):
+    """Bucket a good right key; remember whether any key is live (not NULL),
+    the first live key if it was rejected, and the first rejected one."""
+    if key is None:
+        return
+    if isinstance(key, _JoinBad):
+        if not facts['live']:
+            facts['live_bad'] = key.value
+        if facts['bad'] is None:
+            facts['bad'] = key.value
+    else:
+        buckets.setdefault(key, []).append(row)
+    facts['live'] = True
+
+
+def _check_join_pair(equi, key, facts):
+    """A left key meets the right keys pair by pair, in order, as the
+    comparison would: a rejected left key raises against the first live right
+    key, a good one against the first rejected right key -- the operator's
+    left operand coerced first. NULLs are never compared."""
+    if key is None or not facts['live']:
+        return
+    left_expr, right_expr, numeric, swapped = equi
+    if isinstance(key, _JoinBad):
+        if swapped and facts['live_bad'] is not None:
+            _coerce_join_operand(numeric, facts['live_bad'], right_expr)
+        _coerce_join_operand(numeric, key.value, left_expr)
+    if facts['bad'] is not None:
+        _coerce_join_operand(numeric, facts['bad'], right_expr)
+
+
+def _coerce_join_operand(numeric, value, node):
+    if numeric:
+        value.as_decimal(node.pos)
+    else:
+        value.as_bytes(node.pos)
+    raise AssertionError('a rejected join key did not raise')
 
 
 # Flat bounded ownership prevents alias layouts retaining chains of other caches.
@@ -323,14 +387,14 @@ def make_joined_row(left, right, b1, b2, null_right):
     for name in _binder_keys(b2, '_2'):
         bind(name, rside)
     right_entries = rside.entries() if rside.size() > 0 and not rside.is_list else []
-    right_names = {key.upper() for key, _ in right_entries}
+    right_names = {_upper_name(key) for key, _ in right_entries}
     for key, value in left_entries:
-        if _category(value) != _NESTED and key.upper() not in right_names:
+        if _category(value) != _NESTED and _upper_name(key) not in right_names:
             put(key, value)
     if right is not None:
-        left_names = {key.upper() for key, _ in left_entries}
+        left_names = {_upper_name(key) for key, _ in left_entries}
         for key, value in right_entries:
-            if _category(value) == _SCALAR and key.upper() not in left_names:
+            if _category(value) == _SCALAR and _upper_name(key) not in left_names:
                 put(key, value)
     return Value.from_entries(entries)
 
@@ -378,15 +442,15 @@ def _row_plan(left, rside, matched, b1, b2):
     for name in _binder_keys(b2, '_2'):
         bind(name, ('RS',))
     rkeys = rside.shape.keys if rside.shape is not None else ()
-    right_names = {k.upper() for k in rkeys}
+    right_names = {_upper_name(k) for k in rkeys}
     for i, key in enumerate(lkeys):
-        if lcat[i] != _NESTED and key.upper() not in right_names:
+        if lcat[i] != _NESTED and _upper_name(key) not in right_names:
             put(key, ('L', i))
     if matched:
         rcat = [_category(v) for v in rside.storage]
-        left_names = {k.upper() for k in lkeys}
+        left_names = {_upper_name(k) for k in lkeys}
         for i, key in enumerate(rkeys):
-            if rcat[i] == _SCALAR and key.upper() not in left_names:
+            if rcat[i] == _SCALAR and _upper_name(key) not in left_names:
                 put(key, ('R', i))
     return _record_shape(tuple(keys)), ops
 
@@ -430,11 +494,11 @@ def _compile_plan(plan, left, rside, matched, b1, b2):
     rscalar = [(f'r_s[{i}].kind', f'(r_s[{i}].kind != "NONE" or r_s[{i}].is_list)') for i in sorted(promoted)]
     rnull = []
     if matched:
-        left_names = {k.upper() for k in left.shape.keys}
+        left_names = {_upper_name(k) for k in left.shape.keys}
         binder_names = set(_binder_keys(b1, '_1')) | set(_binder_keys(b2, '_2'))
         for i, k in enumerate(rside.shape.keys):
             v = rside.storage[i]
-            if (i not in promoted and k.upper() not in left_names and k not in binder_names
+            if (i not in promoted and _upper_name(k) not in left_names and k not in binder_names
                     and v.kind == NONE and not v.is_list):
                 rnull.append(f'(r_s[{i}].kind == "NONE" and not r_s[{i}].is_list)')
     lguard = ' and '.join(_scalars(lscalar) + lrecord) or 'True'
@@ -631,7 +695,7 @@ def _read_self(node, names, binder):
     if node is None:
         return None
     if (node.t == 'index' and node.obj is not None and node.obj.t == 'var' and node.obj.name == binder
-            and node.idx is not None and node.idx.t == 'text' and node.idx.v.upper() in names):
+            and node.idx is not None and node.idx.t == 'text' and _upper_name(node.idx.v) in names):
         return Node('var', node.pos, name=binder)
     copy = Node(node.t, node.pos)
     for slot in Node.__slots__:
@@ -652,7 +716,7 @@ def _read_self(node, names, binder):
 
 def _first_keys(value):
     first = first_collection_item(value)
-    return {k.upper() for k in first.keys()} if first is not None else set()
+    return {_upper_name(k) for k in first.keys()} if first is not None else set()
 
 
 def _row_fact(value, name, kind):
@@ -716,7 +780,7 @@ class _SideFacts:
         # The field is on this side's first row (a cheap refusal: a field on
         # every row is on the first), on every row, with the kind the operator
         # takes.
-        if name.upper() not in self.first or self.nullable:
+        if _upper_name(name) not in self.first or self.nullable:
             return False
         fact = self._facts.get((name, kind))
         if fact is None:
@@ -782,7 +846,7 @@ def _totality(reqs, left, right, above):
     row with the kind. A field two sides carry is promoted from neither (spec
     §7.4) and the read would raise; a field of no side would too."""
     for name, kind in reqs:
-        key = name.upper()
+        key = _upper_name(name)
         owners = [side for side in [left, right, *above] if side is not None and key in side.keys]
         if len(owners) != 1 or not owners[0].total(name, kind):
             return False
@@ -807,9 +871,9 @@ class _KeySet:
             if id(shape) in self.shapes:
                 return
             self.shapes.add(id(shape))
-            self.keys.update(k.upper() for k in shape.keys)
+            self.keys.update(_upper_name(k) for k in shape.keys)
         else:
-            self.keys.update(k.upper() for k in row.keys())
+            self.keys.update(_upper_name(k) for k in row.keys())
 
 
 def _row_keys(value, bound=()):
@@ -822,11 +886,11 @@ def _row_keys(value, bound=()):
     if storage:
         first = storage[0].shape
         if first is not None and all(row.shape is first for row in storage):
-            return {k.upper() for k in first.keys} | {b.upper() for b in bound}
+            return {_upper_name(k) for k in first.keys} | {_upper_name(b) for b in bound}
     keys = _KeySet()
     for row in iter_collection_items(value):
         keys.add(row)
-    return keys.keys | {b.upper() for b in bound}
+    return keys.keys | {_upper_name(b) for b in bound}
 
 
 def _link(args, ctx, left_join):
@@ -972,14 +1036,14 @@ def _link(args, ctx, left_join):
         binders = [stage[0] for stage in stages]
         applied_ids = set()
         errored = [False]
-        self_names = {b1.upper(), '_1'}
+        self_names = {_upper_name(b1), '_1'}
         # A read through this join's right binder is the right element in
         # every joined row -- the binder is bound last (spec §7.4) -- unless
         # the left binder has the same name, or a join above rebinds it.
         def right_names(stage):
-            return {b2.upper(), '_2'} if stage[2] == 0 else {b2.upper()}
+            return {_upper_name(b2), '_2'} if stage[2] == 0 else {_upper_name(b2)}
         right_here = None
-        if not left_join and b1.upper() != b2.upper():
+        if not left_join and _upper_name(b1) != _upper_name(b2):
             def right_here(fields, stage):
                 return fields <= right_names(stage) and not (fields & above_keys(stage))
         def settle_prefix():
@@ -1030,8 +1094,9 @@ def _link(args, ctx, left_join):
             return 0
 
     if equi is not None and sample_right is not None:
-        left_expr, right_expr, numeric = equi
+        left_expr, right_expr, numeric, _swapped = equi
         buckets = {}
+        facts = {'live': False, 'live_bad': None, 'bad': None}
         frame_right = {b2: None, b2.lower(): None, '_2': None}
         ctx.push_frame(frame_right)
         try:
@@ -1040,16 +1105,14 @@ def _link(args, ctx, left_join):
                 frame_right[b2] = row
                 frame_right[b2.lower()] = row
                 frame_right['_2'] = row
-                key = canonical_join_key(args.eval_node(right_expr), numeric)
-                if key is not None:
-                    buckets.setdefault(key, []).append(row)
+                _bucket_join_key(buckets, facts, canonical_join_key(args.eval_node(right_expr), numeric), row)
                 if gather is not None:
                     gather.add(row)
         finally:
             ctx.pop_frame()
         if prefilter is not None:
             if gather is not None:
-                right_side = _SideFacts(right_value, gather.keys | {b.upper() for b in b2_names}, left_join,
+                right_side = _SideFacts(right_value, gather.keys | {_upper_name(b) for b in b2_names}, left_join,
                                         b2_names)
             settle_prefix()
         # The right rows the right conjuncts reject, once each, after every
@@ -1093,7 +1156,7 @@ def _link(args, ctx, left_join):
         if (prefix and deep and left_expr.t == 'index' and left_expr.obj is not None
                 and left_expr.obj.t == 'var' and left_expr.idx is not None
                 and left_expr.idx.t == 'text'
-                and left_expr.obj.name.upper() in (b1.upper(), '_1', '_')):
+                and _upper_name(left_expr.obj.name) in (_upper_name(b1), '_1', '_')):
             fast_field = left_expr.idx.v
         frame_left = {b1: None, b1.lower(): None, '_1': None, '_': None}
         if prefilter is not None:
@@ -1107,6 +1170,9 @@ def _link(args, ctx, left_join):
                 if fast_field is not None and row.get(fast_field) is not None:
                     asked = verdict(prefix, row, frame_left)
                     if asked == 1:
+                        # Dropped before its key was computed -- but the key is
+                        # this very field, and a rejected one still raises.
+                        _check_join_pair(equi, canonical_join_key(row.get(fast_field), numeric), facts)
                         dropped[0] = True
                         continue
                 frame_left[b1] = row
@@ -1114,7 +1180,8 @@ def _link(args, ctx, left_join):
                 frame_left['_1'] = row
                 frame_left['_'] = row
                 key = canonical_join_key(args.eval_node(left_expr), numeric)
-                matches = buckets.get(key) if key is not None else None
+                _check_join_pair(equi, key, facts)
+                matches = buckets.get(key) if key is not None and not isinstance(key, _JoinBad) else None
                 if asked < 0:
                     asked = verdict(prefix, row, frame_left) if prefix else 0
                 if asked == 1:

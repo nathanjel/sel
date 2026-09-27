@@ -216,7 +216,20 @@ final class Value
 
     public static function text(string $s): self
     {
+        self::checkText($s);
         return new self(self::TEXT, $s);
+    }
+
+    /**
+     * Every text entering is valid UTF-8, keys included (spec §8; review
+     * 2026-09-25 HOST-05). PCRE's strict UTF-8 check is the fast path; only a
+     * string it rejects meets the hand-written codec, which raises E_UTF8.
+     */
+    private static function checkText(string $s): void
+    {
+        if (preg_match('//u', $s) !== 1) {
+            Utf8::validate($s);
+        }
     }
 
     public static function bin(string $b): self
@@ -350,7 +363,7 @@ final class Value
                 $key = (string) $entry[0];
                 $values[] = $entry[1];
                 $keys[] = $key;
-                if (!$needsCustomKeys && (int) $key !== $expectedIndex) {
+                if (!$needsCustomKeys && $key !== (string) $expectedIndex) {
                     $needsCustomKeys = true;
                 }
                 $expectedIndex++;
@@ -437,9 +450,6 @@ final class Value
 
     public function isVacuous(): bool
     {
-        if ($this->isNull()) {
-            return true;
-        }
         if ($this->kind === self::NONE && $this->size() === 0) {
             return true;
         }
@@ -603,6 +613,7 @@ final class Value
     /** Re-assigning an existing key keeps its original position. */
     public function set(string $key, Value $value): self
     {
+        self::checkText($key);
         if ($this->shape !== null) {
             $index = $this->shape->keyMap[$key] ?? null;
             if ($index !== null) {
@@ -789,11 +800,6 @@ final class Value
     {
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $pos);
-        }
-        if ($this->shape === null && $this->storage === null && $this->children === []) {
-            $out = new self($this->kind, $this->scalar, $this->isList);
-            $out->decVal = $this->decVal;
-            return $out;
         }
         if ($this->shape !== null) {
             $values = [];
@@ -1019,7 +1025,6 @@ final class Value
             );
         }
         if (is_string($x)) {
-            Utf8::validate($x);
             return self::text($x);
         }
         if (is_array($x)) {
@@ -1036,7 +1041,9 @@ final class Value
             $keys = [];
             $values = [];
             foreach ($x as $k => $item) {
-                $keys[] = (string) $k;
+                $key = (string) $k;
+                self::checkText($key);
+                $keys[] = $key;
                 $values[] = self::fromNativeAt($item, $depth + 1);
             }
             return self::record($keys, $values);
@@ -1094,16 +1101,38 @@ final class Value
         if ($this->size() === 0) {
             return $scalar;
         }
-        if ($this->isList) {
+        if ($this->isList && $this->storage !== null && $this->listKeys === null) {
+            // Keyed 1..n: a packed PHP list, which fromNative reads back as one.
             $out = [];
-            $children = $this->storage ?? array_values($this->children);
-            foreach ($children as $value) {
+            foreach ($this->storage as $value) {
                 $out[] = $value->toNativeAt($depth + 1);
             }
             return $out;
         }
+        if ($this->isList && $this->storage === null && array_keys($this->children) === range(1, count($this->children))) {
+            $out = [];
+            foreach ($this->children as $value) {
+                $out[] = $value->toNativeAt($depth + 1);
+            }
+            return $out;
+        }
+        // Any other keys -- the ones a FILTER kept, say -- travel as written, so
+        // the round trip keeps them (spec §8; review 2026-09-25 HOST-08). The one
+        // shape PHP cannot keep is a record keyed "0" .. "n-1", which is a list
+        // to PHP (the named exception).
         $out = [];
+        if ($this->isList && $this->storage !== null) {
+            foreach ($this->listKeys as $i => $key) {
+                $out[$key] = $this->storage[$i]->toNativeAt($depth + 1);
+            }
+            return $out;
+        }
         if ($scalar !== null) {
+            // A value's own scalar travels under "_"; with a child of that name
+            // too, one of them would be lost (review 2026-09-25 HOST-01).
+            if ($this->has('_')) {
+                fail('E_BAD_ARG', 'a value with both a scalar and a child named "_" has no native form', null);
+            }
             $out['_'] = $scalar;
         }
         if ($this->shape !== null && $this->storage !== null) {

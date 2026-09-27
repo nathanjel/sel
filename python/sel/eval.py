@@ -270,15 +270,22 @@ def _dispatch(node: Node, ctx: Context) -> Value:
         else:
             obj = eval_node(obj_node, ctx)
 
-        cached = node._cached_slot
-        if cached is not None and obj.shape is cached[0]:
-            return obj.storage[cached[1]]
-
-        key = node.idx.v if node.idx.t == 'text' else eval_node(node.idx, ctx).as_text(node.idx.pos)
+        # The slot cache is keyed on the record's shape alone, so it may only
+        # answer for a literal key: a computed key can differ at every read
+        # (and must be evaluated, errors included). Review 2026-09-25 SEM-01.
+        literal = node.idx.t == 'text'
+        if literal:
+            cached = node._cached_slot
+            if cached is not None and obj.shape is cached[0]:
+                return obj.storage[cached[1]]
+            key = node.idx.v
+        else:
+            key = eval_node(node.idx, ctx).as_text(node.idx.pos)
         if obj.shape is not None:
             index = obj.shape.key_map.get(key)
             if index is not None:
-                node._cached_slot = (obj.shape, index)
+                if literal:
+                    node._cached_slot = (obj.shape, index)
                 return obj.storage[index]
             fail('E_NO_KEY', f'no key "{key}"', node.pos)
 
@@ -357,25 +364,16 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
             return Value.bool(True)
         return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
 
-    if op == '??':
+    # ?? falls back on NULL, ??? on any vacuous value; both on a missing key
+    # or name.
+    if op == '??' or op == '???':
         try:
             l = eval_node(node.l, ctx)
         except SelError as e:
             if e.code in ('E_NO_KEY', 'E_UNDEF_VAR'):
                 return eval_node(node.r, ctx)
             raise
-        if l.is_null():
-            return eval_node(node.r, ctx)
-        return l
-
-    if op == '???':
-        try:
-            l = eval_node(node.l, ctx)
-        except SelError as e:
-            if e.code in ('E_NO_KEY', 'E_UNDEF_VAR'):
-                return eval_node(node.r, ctx)
-            raise
-        if l.is_vacuous():
+        if l.is_null() if op == '??' else l.is_vacuous():
             return eval_node(node.r, ctx)
         return l
 

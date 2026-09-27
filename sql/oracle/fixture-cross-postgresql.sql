@@ -1,0 +1,31 @@
+-- The cross-host statement fixture (php/bin/sqlo `cross`, review 2026-09-25
+-- TEST-03/04): the two relations every host's sqlfuzz binds, ORDERS and
+-- CUSTOMERS. They share the field names `id` and `name` with different
+-- values, so a read that resolves to the wrong relation answers different rows;
+-- order 4 has no customer, and customer 40 no order, for LINK_LEFT.
+
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS customers;
+
+CREATE TABLE orders (
+  id          INTEGER PRIMARY KEY,
+  customer_id INTEGER NOT NULL,
+  amount      INTEGER NOT NULL,
+  name        TEXT NOT NULL
+);
+
+CREATE TABLE customers (
+  id   INTEGER PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+INSERT INTO orders (id, customer_id, amount, name) VALUES
+  (1, 10, 5, 'pen'),
+  (2, 10, 7, 'ink'),
+  (3, 20, 2, 'cap'),
+  (4, 30, 9, 'box');
+
+INSERT INTO customers (id, name) VALUES
+  (10, 'Ann'),
+  (20, 'Bob'),
+  (40, 'Cid');

@@ -28,10 +28,7 @@ define({
   fn: (args) => {
     const target = args.val(0);
     const key = args.text(1);
-    if (!target.isNull() && target.has(key)) {
-      const v = target.get(key);
-      if (v !== undefined) return v;
-    }
+    if (!target.isNull() && target.has(key)) return target.get(key);
     if (args.count() > 2) return args.val(2);
     return Value.null();
   },
@@ -51,10 +48,6 @@ define({
         return Value.null();
       }
       cur = cur.get(seg);
-      if (cur === undefined) {
-        if (args.count() > 2) return args.val(2);
-        return Value.null();
-      }
     }
     return cur;
   },

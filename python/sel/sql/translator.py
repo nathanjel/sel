@@ -153,7 +153,6 @@ class Translator:
         self.depth = 0
         self.statement_plan: RelationalPlan | None = None
         self.in_where: bool = False
-        self.in_having: bool = False
         self.subquery_counter = 0
 
     def _begin(self, ast: Node):
@@ -412,21 +411,26 @@ class Translator:
 
     def _index_qualified(self, qualifier: str, key: str, n: Node) -> Fragment:
         plan = self.statement_plan
+        # A LINK's left binder names the LEFT side -- the pipeline's source
+        # relation -- and its right binder the joined one. Both used to be
+        # listed under the join, so a read through the left binder selected
+        # the joined table's column (review 2026-09-25 SQL-01).
         sources = [{
-            'names': [plan.source_name, plan.source_alias, _relation_alias(plan.source_relation)],
+            'names': [plan.source_name, plan.source_alias, _relation_alias(plan.source_relation)]
+                     + [join.left_binder for join in plan.joins],
             'relation': plan.source_relation,
             'table': plan.source_alias or _relation_alias(plan.source_relation),
         }]
         for join in plan.joins:
             sources.append({
                 'names': [join.source_name, join.source_alias,
-                          _relation_alias(join.source_relation), join.left_binder,
+                          _relation_alias(join.source_relation),
                           join.right_binder],
                 'relation': join.source_relation,
                 'table': join.source_alias or _relation_alias(join.source_relation),
             })
         source = next((item for item in sources
-                       if any(name is not None and str(name).upper() == qualifier.upper()
+                       if any(name is not None and ascii_upper(str(name)) == ascii_upper(qualifier)
                               for name in item['names'])), None)
         if source is None:
             # A qualifier names a relation by its binding name, its table, its
@@ -453,16 +457,16 @@ class Translator:
     def _relation_table_alias(self, relation: dict[str, Any], name: str | None = None) -> str:
         plan = self.statement_plan
         if plan is not None:
-            source_names = [plan.source_name, plan.source_alias]
+            source_names = [plan.source_name, plan.source_alias] + [join.left_binder for join in plan.joins]
             if relation is plan.source_relation and (name is None or any(
-                    item is not None and str(item).upper() == str(name).upper()
+                    item is not None and ascii_upper(str(item)) == ascii_upper(str(name))
                     for item in source_names)):
                 return plan.source_alias or _relation_alias(relation)
             for index, join in enumerate(plan.joins):
-                names = [join.source_name, join.source_alias, join.left_binder,
+                names = [join.source_name, join.source_alias,
                          join.right_binder, f'_{index + 2}']
                 if relation is join.source_relation and (name is None or any(
-                        item is not None and str(item).upper() == str(name).upper()
+                        item is not None and ascii_upper(str(item)) == ascii_upper(str(name))
                         for item in names)):
                     return join.source_alias or _relation_alias(relation)
             if relation is plan.source_relation:
@@ -2610,19 +2614,15 @@ class Translator:
 
             if plan.having:
                 parts.append(' HAVING ')
-                self.in_having = True
-                try:
-                    for index, having in enumerate(plan.having):
-                        if index:
-                            parts.append(' AND ')
-                        with_frame = self._with_group if having.get('over_groups') else self._with_projected
-                        fragment = with_frame(
-                            src, having['binder'],
-                            lambda h=having: self._require_bool(
-                                self._node(h['node']), h['pos'], 'FILTER'))
-                        parts.extend(fragment.parts)
-                finally:
-                    self.in_having = False
+                for index, having in enumerate(plan.having):
+                    if index:
+                        parts.append(' AND ')
+                    with_frame = self._with_group if having.get('over_groups') else self._with_projected
+                    fragment = with_frame(
+                        src, having['binder'],
+                        lambda h=having: self._require_bool(
+                            self._node(h['node']), h['pos'], 'FILTER'))
+                    parts.extend(fragment.parts)
 
             if plan.order_by:
                 parts.append(' ORDER BY ')

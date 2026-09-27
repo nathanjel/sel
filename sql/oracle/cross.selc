@@ -1,0 +1,20 @@
+### left binder reads the left relation (review 2026-09-25 SQL-01)
+ORDERS .> LINK(CUSTOMERS, L, R, L["customer_id"] == R["id"]) .> MAP(RECORD("n", _["L"]["name"], "m", _["R"]["name"]))
+### both binders, the shared id
+ORDERS .> LINK(CUSTOMERS, L, R, L["customer_id"] == R["id"]) .> MAP(RECORD("o", _["L"]["id"], "c", _["R"]["id"]))
+### left binder in a LINK_LEFT
+ORDERS .> LINK_LEFT(CUSTOMERS, L, R, L["customer_id"] == R["id"]) .> MAP(RECORD("n", _["L"]["name"], "a", _["L"]["amount"]))
+### sides swapped
+CUSTOMERS .> LINK(ORDERS, L, R, L["id"] == R["customer_id"]) .> MAP(RECORD("n", _["L"]["name"], "i", _["R"]["id"]))
+### a filter through the left binder
+ORDERS .> LINK(CUSTOMERS, L, R, L["customer_id"] == R["id"]) .> FILTER(_["L"]["amount"] > 4) .> MAP(RECORD("n", _["R"]["name"]))
+### a filter through the right binder
+ORDERS .> LINK(CUSTOMERS, L, R, L["customer_id"] == R["id"]) .> FILTER(_["R"]["name"] $== "Ann") .> MAP(RECORD("n", _["L"]["name"]))
+### relation names read their relations
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("n", _["ORDERS"]["name"], "m", _["CUSTOMERS"]["name"]))
+### promoted fields: the shared names are neither side's
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["amount"], "k", _["customer_id"]))
+### one relation, a filter and a projection
+ORDERS .> FILTER(_["amount"] > 4) .> MAP(RECORD("n", _["name"]))
+### bucket over a join
+ORDERS .> LINK(CUSTOMERS, L, R, L["customer_id"] == R["id"]) .> BUCKET(_["R"]["name"], RECORD("k", _K, "n", COUNT(_)))

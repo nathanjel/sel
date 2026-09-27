@@ -26,7 +26,7 @@ define({
       }
       out[i] = parseInt(pair, 16);
     }
-    return Value.bin(out);
+    return Value.binOwned(out);
   },
 });
 
@@ -81,7 +81,7 @@ define({
       if (padding < 2) out.push((n >> 8) & 255);
       if (padding < 1) out.push(n & 255);
     }
-    return Value.bin(Uint8Array.from(out));
+    return Value.binOwned(Uint8Array.from(out));
   },
 });
 
@@ -128,6 +128,6 @@ define({
       }
       out[i] = n;
     });
-    return Value.bin(out);
+    return Value.binOwned(out);
   },
 });

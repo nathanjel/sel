@@ -151,18 +151,26 @@ tail, count and index that keep lookup and append O(1)."
 (defun make-none () (%make-value :none nil nil nil))
 (defun make-null () (%make-value :none nil nil nil))
 
+;;; The host boundary (spec §8; review 2026-09-25 HOST-02..06): a constructor
+;;; checks what it is given and keeps a COPY -- SBCL strings and octet vectors
+;;; are mutable, and a caller that changed one afterwards changed the value (a
+;;; mutated key left the record unable to find it under either spelling).
 (defun make-text (s)
   (unless (valid-utf8-string-p s)
     (fail "E_UTF8" "text carries an unpaired surrogate"))
-  (%make-value :text s nil))
+  (%make-value :text (copy-seq s) nil))
 
 ;;; Internal: the text is already known to be well formed, so skip the check.
 (defun %text (s) (%make-value :text s nil))
 
 (defun make-bin (bytes)
   (%make-value :bin (if (typep bytes '(vector (unsigned-byte 8)))
-                        bytes
-                        (octets-from-list (coerce bytes 'list)))
+                        (coerce (copy-seq bytes) '(simple-array (unsigned-byte 8) (*)))
+                        (let ((items (coerce bytes 'list)))
+                          (dolist (x items)
+                            (unless (and (integerp x) (<= 0 x 255))
+                              (fail "E_RANGE" (format nil "byte ~a is not a whole number from 0 to 255" x))))
+                          (octets-from-list items)))
                nil))
 
 (defun make-bool (b) (%make-value :bool (and b t) nil))
@@ -175,7 +183,14 @@ tail, count and index that keep lookup and append O(1)."
               (unless p (fail "E_NOT_NUM" (format nil "not a number: ~a" d)))
               (%make-value-raw :text nil nil nil 0 nil nil nil nil p)))))
 
+(defvar *int-cap* nil "10^MAX_INT_DIGITS, built on first use.")
+
 (defun make-int (n)
+  ;; A native integer obeys the digit cap like the same digits in source (spec
+  ;; §6.4); the bit-length test keeps an ordinary integer off the bignum compare.
+  (when (and (> (integer-length n) (floor (* (1- +max-int-digits+) 3.3219280948873626d0)))
+             (>= (abs n) (or *int-cap* (setf *int-cap* (expt 10 +max-int-digits+)))))
+    (fail "E_RANGE" (format nil "number has more than ~D integer digits" +max-int-digits+)))
   (let ((d (dec-from-int n)))
     (%make-value-raw :text nil nil nil 0 nil nil nil nil d)))
 
@@ -211,7 +226,6 @@ tail, count and index that keep lookup and append O(1)."
 
 (defun value-vacuous-p (v)
   (cond
-    ((value-null-p v) t)
     ((and (eq (value-kind v) :none) (zerop (value-size v))) t)
     ((and (eq (value-kind v) :text) (zerop (value-size v)))
      (let ((s (value-scalar v)))
@@ -286,6 +300,9 @@ tail, count and index that keep lookup and append O(1)."
 
 (defun value-set (v key child)
   "Re-assigning an existing key keeps its original position."
+  ;; A key is text too (spec §8; review 2026-09-25 HOST-05).
+  (when (and (find-if (lambda (c) (> (char-code c) 127)) key) (not (valid-utf8-string-p key)))
+    (fail "E_UTF8" "key carries an unpaired surrogate"))
   (cond
     ((value-shape v)
      (let ((idx (gethash key (record-shape-key-map (value-shape v)))))
@@ -497,8 +514,10 @@ same keys in the same order, pairwise EQL."
 
 (defun value-hash (v &optional (depth 1))
   "Computes a fast structural hash for a SEL value."
+  ;; A value nested past the cap cannot be hashed any more than dumped: answering
+  ;; 0 let DEDUPE pass one it could not compare (review 2026-09-25 HOST-07).
   (when (> depth +max-depth+)
-    (return-from value-hash 0))
+    (fail "E_DEPTH" "value nested too deeply"))
   (let ((h (sxhash (value-kind v))))
     (case (value-kind v)
       (:text
@@ -608,6 +627,9 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
     (null (make-none))
     (value x)
     ((member t) (make-bool t))
+    ;; NIL is NULL (and the empty list), so FALSE needs a spelling of its own
+    ;; (spec §8; review 2026-09-25 HOST-09).
+    ((member :false) (make-bool nil))
     (string (make-text x))
     (integer (make-int x))
     (ratio (error "~a has no exact decimal form; pass a decimal string instead" x))
@@ -616,7 +638,12 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
     ;; A plain list is a SEL list, keyed from 1 — so ITEMS[1] means the first
     ;; line on every host. An alist is a keyed value.
     (cons (if (and (consp (first x)) (stringp (car (first x))))
-              (let* ((keys (mapcar #'car x))
+              (let* ((keys (mapcar (lambda (pair)
+                                     (let ((k (car pair)))
+                                       (unless (valid-utf8-string-p k)
+                                         (fail "E_UTF8" "key carries an unpaired surrogate"))
+                                       (copy-seq k)))
+                                   x))
                      (n (length keys)))
                 (if (= (length (remove-duplicates keys :test #'string=)) n)
                     (let* ((shape (get-record-shape keys))
@@ -626,7 +653,8 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
                             do (setf (svref storage idx) (from-native-at val (1+ depth))))
                       (%make-shaped-value shape storage))
                     (let ((v (make-none)))
-                      (loop for (k . val) in x
+                      (loop for k in keys
+                            for (nil . val) in x
                             do (value-set v k (from-native-at val (1+ depth))))
                       v)))
               (make-list-value (mapcar (lambda (e) (from-native-at e (1+ depth))) x))))))
@@ -639,8 +667,11 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
 (defun to-native-at (v depth)
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" nil))
+  ;; What it returns is the host's own: strings and octet vectors are copies
+  ;; (review 2026-09-25 HOST-03), and FALSE is :false, not the NIL that is NULL.
   (let ((scalar (case (value-kind v)
-                  ((:text :bin :bool) (value-scalar v))
+                  ((:text :bin) (copy-seq (value-scalar v)))
+                  (:bool (if (value-scalar v) t :false))
                   (t nil))))
     (if (zerop (value-size v))
         scalar
@@ -660,6 +691,10 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
                          (t
                           (loop for (k . child) in (value-children v)
                                 collect (cons k (to-native-at child (1+ depth))))))))
-          (if (and (null scalar) (not (eq (value-kind v) :bool)))
-              entries
-              (cons (cons "_" scalar) entries))))))
+          (cond
+            ((and (null scalar) (not (eq (value-kind v) :bool))) entries)
+            ;; A value's own scalar travels under "_"; with a child of that name
+            ;; too, one of them would be lost (review 2026-09-25 HOST-01).
+            ((assoc "_" entries :test #'string=)
+             (fail "E_BAD_ARG" "a value with both a scalar and a child named \"_\" has no native form"))
+            (t (cons (cons "_" scalar) entries)))))))

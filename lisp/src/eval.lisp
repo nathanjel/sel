@@ -372,25 +372,16 @@
         (return-from eval-binary
           (make-bool (as-bool (eval-node (node-r node) ctx) (node-pos (node-r node)))))))
 
-    (when (string= op "??")
+    ;; ?? falls back on NULL, ??? on any vacuous value; both on a missing key
+    ;; or name.
+    (when (or (string= op "??") (string= op "???"))
       (let ((l (handler-case (eval-node (node-l node) ctx)
                  (sel-error (e)
                    (if (or (string= (sel-error-code e) "E_NO_KEY")
                            (string= (sel-error-code e) "E_UNDEF_VAR"))
                        (return-from eval-binary (eval-node (node-r node) ctx))
                        (error e))))))
-        (if (value-null-p l)
-            (return-from eval-binary (eval-node (node-r node) ctx))
-            (return-from eval-binary l))))
-
-    (when (string= op "???")
-      (let ((l (handler-case (eval-node (node-l node) ctx)
-                 (sel-error (e)
-                   (if (or (string= (sel-error-code e) "E_NO_KEY")
-                           (string= (sel-error-code e) "E_UNDEF_VAR"))
-                       (return-from eval-binary (eval-node (node-r node) ctx))
-                       (error e))))))
-        (if (value-vacuous-p l)
+        (if (if (string= op "??") (value-null-p l) (value-vacuous-p l))
             (return-from eval-binary (eval-node (node-r node) ctx))
             (return-from eval-binary l))))
 

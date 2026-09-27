@@ -82,4 +82,3 @@ def main(argv: list[str] | None = None) -> int:
             print(show(sel_compile(line).run(root)))
         except SelError as e:
             _report(e)
-    return 0

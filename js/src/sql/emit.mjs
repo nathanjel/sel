@@ -2,7 +2,7 @@
 // quoting happens, so there is one place to get it right.
 
 import * as D from '../decimal.mjs';
-import { Value, quoteDump } from '../value.mjs';
+import { quoteDump } from '../value.mjs';
 import { bytesToHex } from '../utf8.mjs';
 import * as map from './map.mjs';
 import { refuse } from './errors.mjs';

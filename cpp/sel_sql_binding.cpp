@@ -87,7 +87,7 @@ std::optional<std::string> check_prefilter(const std::optional<std::string>& p) 
   if (!p) return std::nullopt;
   std::string lower;
   lower.reserve(p->size());
-  for (char c : *p) lower.push_back(static_cast<char>(std::tolower(c)));
+  for (char c : *p) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
   if (lower == "separate" || lower == "splitsargable" || lower == "split_sargable" || lower == "true") {
     return "separate";
   }

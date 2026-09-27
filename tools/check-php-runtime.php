@@ -76,4 +76,55 @@ foreach ([['1.00','1.00'],['1.50','1.5'],['-0.0','0'],['0','-0'],['7','007'],['0
         verify($cold === 1 && $eq && $warm === 1, "join key $num/$text cold=$cold warm=$warm");
     }
 }
+
+// --- the host boundary (spec/SPEC.md §8, review 2026-09-25) ------------------
+// Collected, so one run reports every broken contract.
+$boundary = [];
+$expect = function (string $name, callable $fn) use (&$boundary): void {
+    global $checks; $checks++;
+    try { $r = $fn(); if ($r !== true) $boundary[] = "$name: got " . var_export($r, true); }
+    catch (\Throwable $e) { $boundary[] = "$name: threw " . ($e instanceof SelError ? $e->code : get_class($e)) . ' ' . $e->getMessage(); }
+};
+$code = function (callable $fn): string {
+    try { $fn(); return 'no error'; } catch (SelError $e) { return $e->code; }
+};
+$run = fn(string $src, array $ctx = []) => \Sel\Sel::compile($src)->run($ctx);
+// HOST-01: a scalar with a child named "_" has no native form.
+$expect('toNative refuses a scalar with a child named _', fn() =>
+    $code(fn() => $run('A = "s"; A["_"] = "c"; A')->toNative()) === 'E_BAD_ARG');
+// HOST-05: every text entering is checked, keys included.
+$expect('Value::text rejects malformed UTF-8', fn() => $code(fn() => Value::text("\xFF")) === 'E_UTF8');
+$expect('fromNative rejects malformed UTF-8', fn() => $code(fn() => Value::fromNative("\xFF")) === 'E_UTF8');
+$expect('fromNative rejects a malformed key', fn() => $code(fn() => Value::fromNative(["\xFF" => 'x'])) === 'E_UTF8');
+$expect('Value::set rejects a malformed key', fn() => $code(fn() => Value::none()->set("\xC3", Value::text('x'))) === 'E_UTF8');
+$expect('a supplementary character is text', fn() => Value::text("\u{1F600}")->dump() === "t\"\u{1F600}\"");
+// HOST-08 / HOST-09: toNative and fromNative are inverses, except the one
+// spec/SPEC.md §8 names: a record keyed "0" … "n-1" is a PHP list.
+foreach (['FILTER(LIST(1,2,3), _ > 1)', 'RECORD("5","a","9","b")', 'FALSE', 'RECORD("a", FALSE)', 'LIST(TRUE, NULL)',
+          'RECORD("1x","a","1y","b")'] as $src) {
+    $expect("round trip of $src", function () use ($run, $src) {
+        $v = $run($src); return Value::fromNative($v->toNative())->dump() === $v->dump();
+    });
+}
+$expect('a record keyed 0, 1 comes back as a list keyed 1, 2 (the named exception)', fn() =>
+    Value::fromNative($run('RECORD("0","a","1","b")')->toNative())->dump() === '-{"1"=t"a", "2"=t"b"}');
+// SEM-09: fromEntries keeps keys that only look numeric.
+$expect('fromEntries keeps "1x", "2" as keys of a list', fn() =>
+    Value::fromEntries([['1x', Value::text('a')], ['2', Value::text('b')]], true)->dump() === '-{"1x"=t"a", "2"=t"b"}');
+$expect('fromEntries keeps "01" as the first key', fn() =>
+    Value::fromEntries([['01', Value::text('a')]], true)->dump() === '-{"01"=t"a"}');
+// HOST-07 control: an over-deep host value cannot be hashed any more than dumped.
+$deepValue = function (int $levels): Value { $v = Value::text('x'); for ($i = 0; $i < $levels; $i++) $v = Value::list([$v]); return Value::list([$v]); };
+foreach (['COUNT(DEDUPE(A))', 'COUNT(DISTINCT(A))', 'COUNT(BUCKET(A, _, COUNT(_)))'] as $src) {
+    $expect("$src over a value nested past the cap", fn() => $code(fn() => $run($src, ['A' => $deepValue(250)])) === 'E_DEPTH');
+}
+// HOST-10 control: a compiled program keeps nothing from one run to the next.
+$expect('a compiled program reads the key of each run', function () {
+    $p = \Sel\Sel::compile('A[K]'); $A = Value::fromNative(['x' => '1', 'y' => '2']);
+    return $p->run(['A' => $A, 'K' => 'x'])->dump() . $p->run(['A' => $A, 'K' => 'y'])->dump() === 't"1"t"2"';
+});
+if ($boundary) {
+    fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");
+    exit(1);
+}
 echo "PHP runtime: $checks checks passed\n";

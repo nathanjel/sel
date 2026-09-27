@@ -103,14 +103,14 @@ export function compileMathPlan(root) {
         return resL;
       }
       // Rule 4: x * 1 (scale == 0) -> resL
-      if (op === '*' && resR.constVal && !resR.constVal.neg && (resR.constVal.digits === 1n || resR.constVal.digits === '1') && resR.constVal.scale === 0) {
+      if (op === '*' && resR.constVal && !resR.constVal.neg && resR.constVal.digits === 1n && resR.constVal.scale === 0) {
         if (node.r.t === 'num' && steps.length && steps[steps.length - 1].dst === resR.slot) {
           steps.pop();
         }
         return resL;
       }
       // Rule 5: 1 * x (scale == 0) -> resR
-      if (op === '*' && resL.constVal && !resL.constVal.neg && (resL.constVal.digits === 1n || resL.constVal.digits === '1') && resL.constVal.scale === 0) {
+      if (op === '*' && resL.constVal && !resL.constVal.neg && resL.constVal.digits === 1n && resL.constVal.scale === 0) {
         return resR;
       }
 

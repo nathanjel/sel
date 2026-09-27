@@ -735,7 +735,7 @@ failure.
 | `LINK(left, right, pred)`, `LINK(left, right, L, R, pred)` | inner join: one joined row (below) per pair of a `left` element and a `right` element for which `pred` is `TRUE`, in `left` order then `right` order; within `pred`, `_1` (or `L`) is the left element and `_2` (or `R`) the right; any other argument count is a compile-time `E_ARITY` |
 | `LINK_LEFT(…)` | the same, plus one row per `left` element that matched nothing, whose right side is empty |
 | `TOP(list, [binder,] [body,] n)`, `TOP_DESC(…)` | the first `n` of `SORT(list, [binder,] [body])` / `SORT_DESC(…)`, as one step |
-| `TOP_BY(list, [binder,] key, n [, dir])` | the first `n` of `SORT_BY(list, [binder,] key [, dir])`, as one step |
+| `TOP_BY(list, [binder,] key, [dir,] n)` | the first `n` of `SORT_BY(list, [binder,] key [, dir])`, as one step |
 
 **Slices compose in pipeline order.** A `DROP` after a `TAKE` removes elements
 from that bounded result; it cannot restore elements excluded by the `TAKE`.
@@ -1020,7 +1020,38 @@ that is not valid UTF-8, and `Value.num` canonicalises its argument (§4.1) and
 raises `E_NOT_NUM` when it is not a number. Host code is the one place bad data
 can enter, so it is the place to reject it: a `Value.num("x")` that quietly
 produced a non-numeric TEXT would fail later, somewhere else, with a position
-pointing at an innocent expression.
+pointing at an innocent expression. The rule covers every way data enters, not
+one constructor:
+
+- **Every text is checked, keys included.** A string given to `Value.text`,
+  a string inside native data given to `fromNative`, and every key — a key of
+  a native map, or one passed to `Value.set` — is valid UTF-8, or, in a host
+  whose strings are UTF-16 or code points, free of unpaired surrogates.
+  Anything else is `E_UTF8`.
+- **Bytes are bytes.** `Value.bin` of a sequence of numbers takes whole numbers
+  from 0 to 255; any other element is `E_RANGE`, never a wrapped or truncated
+  byte.
+- **A number obeys the digit caps however it is built.** An integer or decimal
+  from native data (`Value.int`, `fromNative`) that exceeds `MAX_INT_DIGITS` or
+  `MAX_FRAC_DIGITS` (§6.4) is `E_RANGE`, exactly as the same digits in source
+  would be.
+- **The boundary copies.** A constructor and `fromNative` copy what they are
+  given, and `toNative` returns data the host owns: changing the host's string,
+  byte array or map afterwards never changes a `Value`, and changing what
+  `toNative` returned never changes the `Value` it came from.
+
+**`toNative` and `fromNative` are inverses.** `fromNative(toNative(v))` dumps
+exactly as `v` does, for every `v` `toNative` accepts: every key survives as
+written — the keys a `FILTER` kept (`"2"`, `"3"`), keys that look like
+positions (`"0"`), and a key named `__proto__` — and `FALSE`, `NULL` and an
+empty list each come back as themselves (`NULL` and an empty list are one
+value, §3). A value's own scalar, when it also has children, travels under the
+key `"_"`; a value that has both a scalar and a child named `"_"` therefore has
+no native form, and `toNative` raises `E_BAD_ARG` rather than drop one of them.
+The one exception is a host whose native map cannot tell a record from a list:
+a PHP array keyed `0 … n-1` is a list, so a record keyed `"0" … "n-1"` comes
+back from PHP as a list keyed `"1" … "n"`. Lisp, whose `NIL` is both false and
+the empty list, spells `FALSE` as `:false`.
 
 **Branching on kind uses the predicates.** The kind *values* are a string in JS
 and Python, a class constant in PHP, an enum in C++ and a keyword in Lisp, so

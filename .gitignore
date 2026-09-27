@@ -55,6 +55,8 @@ vcpkg_installed/
 # tools/*.sh work in mktemp directories, so nothing should land here — these are
 # for the times you run a tool by hand.
 *.selc
+# ...except the cross-host SQL oracle's corpus, which tools/check-sql-oracle.sh reads.
+!sql/oracle/cross.selc
 oracle.txt
 programs.json
 /tmp-*

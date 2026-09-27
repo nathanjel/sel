@@ -3,6 +3,14 @@ import * as D from '../decimal.mjs';
 import { define } from '../registry.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
 import { SelError, fail } from '../errors.mjs';
+import { asciiUpper } from '../lexer.mjs';
+
+// Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move.
+// toUpperCase folds "ß" to "SS" and "ſ" to "S", which made distinct field names
+// collide in joined rows (review 2026-09-25 SEM-04). The native call is kept for
+// the all-ASCII names that are nearly every name.
+const NON_ASCII = /[^\x00-\x7f]/;
+function upperName(s) { return NON_ASCII.test(s) ? asciiUpper(s) : s.toUpperCase(); }
 
 function elements(value) {
   if (value.size() > 0) return value.entries();
@@ -10,7 +18,7 @@ function elements(value) {
 }
 
 function firstCollectionItem(value) {
-  if (value.isNull() || (value.kind === NONE && value.size() === 0)) return null;
+  if (value.kind === NONE && value.size() === 0) return null;
   if (value.storage !== null) return value.storage.length > 0 ? value.storage[0] : null;
   if (value.children) return value.children.values().next().value || null;
   if (value._entries !== null) return value._entries.length > 0 ? value._entries[0][1] : null;
@@ -151,7 +159,7 @@ define({ name: 'DEDUPE', min: 1, max: 1, fn: doDedupe });
 function exprDependsOnlyOn(node, allowed) {
   if (!node) return true;
   switch (node.t) {
-    case 'var': return allowed.has(node.name.toUpperCase());
+    case 'var': return allowed.has(upperName(node.name));
     case 'index': return exprDependsOnlyOn(node.obj, allowed) && exprDependsOnlyOn(node.idx, allowed);
     case 'call': return node.args.every((item) => exprDependsOnlyOn(item, allowed));
     case 'bin': return exprDependsOnlyOn(node.l, allowed) && exprDependsOnlyOn(node.r, allowed);
@@ -165,13 +173,13 @@ function exprDependsOnlyOn(node, allowed) {
 
 function tryExtractEquiKeys(node, b1, b2) {
   if (!node || node.t !== 'bin' || (node.op !== '==' && node.op !== '$==')) return null;
-  const leftNames = new Set([b1, b1.toLowerCase(), '_1', '_'].map((x) => x.toUpperCase()));
-  const rightNames = new Set([b2, b2.toLowerCase(), '_2'].map((x) => x.toUpperCase()));
+  const leftNames = new Set([b1, b1.toLowerCase(), '_1', '_'].map((x) => upperName(x)));
+  const rightNames = new Set([b2, b2.toLowerCase(), '_2'].map((x) => upperName(x)));
   if (exprDependsOnlyOn(node.l, leftNames) && exprDependsOnlyOn(node.r, rightNames)) {
-    return { left: node.l, right: node.r, numeric: node.op === '==' };
+    return { left: node.l, right: node.r, numeric: node.op === '==', swapped: false };
   }
   if (exprDependsOnlyOn(node.r, leftNames) && exprDependsOnlyOn(node.l, rightNames)) {
-    return { left: node.r, right: node.l, numeric: node.op === '==' };
+    return { left: node.r, right: node.l, numeric: node.op === '==', swapped: true };
   }
   return null;
 }
@@ -186,11 +194,18 @@ function singleRelationName(node) {
   return null;
 }
 
+// An equi-join key: the value as the comparison would compare it (spec §7.4) --
+// `==` through asDecimal, `$==` through asBytes, the two coercions evalBinary
+// uses -- so a BIN matches the TEXT of its bytes and a list its scalar. NULL is
+// never compared (null). A value the coercion rejects is JOIN_BAD rather than
+// "no match": the pair it meets must raise, as the comparison would
+// (raiseJoinComparison). Review 2026-09-25 SEM-06.
+const JOIN_BAD = Symbol('join-bad');
 function canonicalJoinKey(value, numeric) {
   if (!value || value.isNull()) return null;
   if (numeric) {
     let d;
-    try { d = value.asDecimal(); } catch (_) { return null; }
+    try { d = value.asDecimal(null); } catch (e) { if (e instanceof SelError) return JOIN_BAD; throw e; }
     // One key per number, as `==` compares it (spec §7.4): trailing fraction
     // zeros and a negative zero are representation, not value.
     let digits = d.digits;
@@ -199,7 +214,31 @@ function canonicalJoinKey(value, numeric) {
     while (scale > 0 && digits % 10n === 0n) { digits /= 10n; scale--; }
     return D.format({ neg: d.neg, digits, scale });
   }
-  return value.kind === 'TEXT' ? value.scalar : null;
+  let bytes;
+  try { bytes = value.asBytes(null); } catch (e) { if (e instanceof SelError) return JOIN_BAD; throw e; }
+  let key = 'b';
+  for (let i = 0; i < bytes.length; i++) key += String.fromCharCode(bytes[i]);
+  return key;
+}
+
+// The pair (left, right) holds a key the comparison rejects: raise as the
+// comparison would, coercing the operator's left operand first.
+function raiseJoinComparison(equi, left, right) {
+  const [first, firstNode, second, secondNode] = equi.swapped
+    ? [right, equi.right, left, equi.left] : [left, equi.left, right, equi.right];
+  if (equi.numeric) { first.asDecimal(firstNode.pos); second.asDecimal(secondNode.pos); }
+  else { first.asBytes(firstNode.pos); second.asBytes(secondNode.pos); }
+  throw new Error('internal: a join key was rejected and its comparison did not raise');
+}
+
+// Before any left row is matched: its key against the right keys, pair by pair
+// in order, as the comparison would meet them -- a rejected left key raises
+// against the first right key that is not NULL, and a good one against the
+// first rejected right key.
+function checkJoinPair(equi, key, value, rightFacts) {
+  if (key === null || rightFacts.firstLive === null) return;
+  if (key === JOIN_BAD) raiseJoinComparison(equi, value, rightFacts.firstLive);
+  if (rightFacts.firstBad !== null) raiseJoinComparison(equi, value, rightFacts.firstBad);
 }
 
 // `_1` and `_2` name a position, not a relation: an argument with no name is
@@ -302,14 +341,14 @@ function makeJoinedRow(left, right, b1, b2, nullRight) {
   const rside = right || nullRight || Value.none();
   for (const name of binderKeys(b2, '_2')) bind(name, rside);
   const rightEntries = rside.size() > 0 && !rside.isList ? rside.entries() : [];
-  const rightNames = new Set(rightEntries.map(([key]) => key.toUpperCase()));
+  const rightNames = new Set(rightEntries.map(([key]) => upperName(key)));
   for (const [key, value] of leftEntries) {
-    if (category(value) !== NESTED && !rightNames.has(key.toUpperCase())) put(key, value);
+    if (category(value) !== NESTED && !rightNames.has(upperName(key))) put(key, value);
   }
   if (right) {
-    const leftNames = new Set(leftEntries.map(([key]) => key.toUpperCase()));
+    const leftNames = new Set(leftEntries.map(([key]) => upperName(key)));
     for (const [key, value] of rightEntries) {
-      if (category(value) === SCALAR && !leftNames.has(key.toUpperCase())) put(key, value);
+      if (category(value) === SCALAR && !leftNames.has(upperName(key))) put(key, value);
     }
   }
   return Value.fromEntries(entries);
@@ -344,15 +383,15 @@ function rowPlan(left, rside, matched, b1, b2) {
   for (const name of binderKeys(b1, '_1')) bind(name, OP_LEFT);
   for (const name of binderKeys(b2, '_2')) bind(name, OP_RIGHT);
   const rkeys = rside.shape ? rside.shape.keys : [];
-  const rightNames = new Set(rkeys.map((key) => key.toUpperCase()));
+  const rightNames = new Set(rkeys.map((key) => upperName(key)));
   lkeys.forEach((key, i) => {
-    if (lcat[i] !== NESTED && !rightNames.has(key.toUpperCase())) put(key, OP_LEFT_SLOT, i);
+    if (lcat[i] !== NESTED && !rightNames.has(upperName(key))) put(key, OP_LEFT_SLOT, i);
   });
   if (matched) {
     const rcat = rside.storage.map(category);
-    const leftNames = new Set(lkeys.map((key) => key.toUpperCase()));
+    const leftNames = new Set(lkeys.map((key) => upperName(key)));
     rkeys.forEach((key, i) => {
-      if (rcat[i] === SCALAR && !leftNames.has(key.toUpperCase())) put(key, OP_RIGHT_SLOT, i);
+      if (rcat[i] === SCALAR && !leftNames.has(upperName(key))) put(key, OP_RIGHT_SLOT, i);
     });
   }
   return { shape: internRecordShape(keys), ops: Uint8Array.from(ops), slots: Int32Array.from(slots) };
@@ -450,13 +489,13 @@ function makeJoinProjector(b1, b2, nullRight) {
   // binder key, which the binder holds.)
   const newBuilder = (left, rside, matched) => {
     const plan = rowPlan(left, rside, matched, b1, b2);
-    const leftNames = new Set(left.shape.keys.map((k) => k.toUpperCase()));
+    const leftNames = new Set(left.shape.keys.map((k) => upperName(k)));
     const binderNames = new Set([...binderKeys(b1, '_1'), ...binderKeys(b2, '_2')]);
     const kept = [];
     if (matched) {
       rside.shape.keys.forEach((k, i) => {
         const v = rside.storage[i];
-        if (!leftNames.has(k.toUpperCase()) && !binderNames.has(k) && v.kind === NONE && !v.isList) kept.push(i);
+        if (!leftNames.has(upperName(k)) && !binderNames.has(k) && v.kind === NONE && !v.isList) kept.push(i);
       });
     }
     return makeJoinBuilder(plan, left.storage.map(leftNested), Int32Array.from(kept));
@@ -584,7 +623,7 @@ function truncateStages(stages, stop) {
 function readSelf(node, names, binder) {
   if (!node) return null;
   if (node.t === 'index' && node.obj && node.obj.t === 'var' && node.obj.name === binder
-      && node.idx && node.idx.t === 'text' && names.has(node.idx.v.toUpperCase())) {
+      && node.idx && node.idx.t === 'text' && names.has(upperName(node.idx.v))) {
     return { t: 'var', name: binder, pos: node.pos };
   }
   const copy = { ...node };
@@ -600,21 +639,21 @@ function readSelf(node, names, binder) {
 
 function firstKeys(value) {
   const first = firstCollectionItem(value);
-  return new Set(first ? first.keys().map((k) => k.toUpperCase()) : []);
+  return new Set(first ? first.keys().map((k) => upperName(k)) : []);
 }
 
 // The upper-cased keys of every row of a side. Rows of a dense list mostly
 // share one record shape, and a shape's keys are read once.
 function rowKeys(value, bound = []) {
-  const keys = new Set(bound.map((k) => k.toUpperCase()));
+  const keys = new Set(bound.map((k) => upperName(k)));
   const shapes = new Set();
   forEachCollectionItem(value, (row) => {
     if (row.shape) {
       if (shapes.has(row.shape)) return;
       shapes.add(row.shape);
-      for (const k of row.shape.keys) keys.add(k.toUpperCase());
+      for (const k of row.shape.keys) keys.add(upperName(k));
     } else {
-      for (const k of row.keys()) keys.add(k.toUpperCase());
+      for (const k of row.keys()) keys.add(upperName(k));
     }
   });
   return keys;
@@ -673,7 +712,7 @@ class SideFacts {
   }
 
   total(name, kind) {
-    if (!this.first.has(name.toUpperCase()) || this.nullable) return false;
+    if (!this.first.has(upperName(name)) || this.nullable) return false;
     const id = `${kind}:${name}`;
     let fact = this.facts.get(id);
     if (fact === undefined) {
@@ -729,7 +768,7 @@ function keysSafe(obligations, left, right, above, leftNames) {
 // §7.4) and the read would raise; a field of no side would too.
 function totality(reqs, left, right, above) {
   for (const [name, kind] of reqs) {
-    const key = name.toUpperCase();
+    const key = upperName(name);
     const owners = [left, right, ...above].filter((side) => side !== null && side.keys.has(key));
     if (owners.length !== 1 || !owners[0].total(name, kind)) return false;
   }
@@ -877,12 +916,12 @@ function doLink(args, ctx, leftJoin) {
   let binders = [];
   const appliedIds = new Set();
   let errored = false;
-  const selfNames = new Set([b1.toUpperCase(), '_1']);
+  const selfNames = new Set([upperName(b1), '_1']);
   // A read through this join's right binder is the right element in every
   // joined row -- the binder is bound last (spec §7.4) -- unless the left
   // binder has the same name, or a join above rebinds it.
-  const rightNames = (stage) => new Set(stage.above === 0 ? [b2.toUpperCase(), '_2'] : [b2.toUpperCase()]);
-  const rightHere = (!leftJoin && b1.toUpperCase() !== b2.toUpperCase())
+  const rightNames = (stage) => new Set(stage.above === 0 ? [upperName(b2), '_2'] : [upperName(b2)]);
+  const rightHere = (!leftJoin && upperName(b1) !== upperName(b2))
     ? (fields, stage) => {
       const names = rightNames(stage);
       const upper = aboveKeys(stage);
@@ -941,6 +980,7 @@ function doLink(args, ctx, leftJoin) {
 
   if (equi && sampleRight) {
     const buckets = new Map();
+    const rightFacts = { firstLive: null, firstBad: null };
     const gather = prefilter && rightSide === null ? { keys: new Set(), shapes: new Set() } : null;
     const frameRight = new Map([[b2, null], [b2.toLowerCase(), null], ['_2', null]]);
     // Read in order here, where they are close together, rather than
@@ -955,8 +995,11 @@ function doLink(args, ctx, leftJoin) {
         frameRight.set(b2, row);
         frameRight.set(b2.toLowerCase(), row);
         frameRight.set('_2', row);
-        const key = canonicalJoinKey(args.evalNode(equi.right), equi.numeric);
-        if (key !== null) {
+        const keyValue = args.evalNode(equi.right);
+        const key = canonicalJoinKey(keyValue, equi.numeric);
+        if (key !== null && rightFacts.firstLive === null) rightFacts.firstLive = keyValue;
+        if (key === JOIN_BAD && rightFacts.firstBad === null) rightFacts.firstBad = keyValue;
+        if (key !== null && key !== JOIN_BAD) {
           const bucket = buckets.get(key) || [];
           bucket.push(row);
           buckets.set(key, bucket);
@@ -965,10 +1008,10 @@ function doLink(args, ctx, leftJoin) {
           if (row.shape) {
             if (!gather.shapes.has(row.shape)) {
               gather.shapes.add(row.shape);
-              for (const k of row.shape.keys) gather.keys.add(k.toUpperCase());
+              for (const k of row.shape.keys) gather.keys.add(upperName(k));
             }
           } else {
-            for (const k of row.keys()) gather.keys.add(k.toUpperCase());
+            for (const k of row.keys()) gather.keys.add(upperName(k));
           }
         }
       });
@@ -978,7 +1021,7 @@ function doLink(args, ctx, leftJoin) {
     project.rightFlat = rightFlat;
     if (prefilter) {
       if (gather !== null) {
-        for (const k of b2Names) gather.keys.add(k.toUpperCase());
+        for (const k of b2Names) gather.keys.add(upperName(k));
         rightSide = new SideFacts(rightValue, gather.keys, leftJoin, b2Names);
       }
       binders = stages.map((stage) => stage.binder);
@@ -1021,7 +1064,7 @@ function doLink(args, ctx, leftJoin) {
     let fastField = null;
     if (prefix.length && deep && equi.left.t === 'index' && equi.left.obj && equi.left.obj.t === 'var'
         && equi.left.idx && equi.left.idx.t === 'text'
-        && [b1.toUpperCase(), '_1', '_'].includes(equi.left.obj.name.toUpperCase())) {
+        && [upperName(b1), '_1', '_'].includes(upperName(equi.left.obj.name))) {
       fastField = equi.left.idx.v;
     }
     const frameLeft = new Map([[b1, null], [b1.toLowerCase(), null], ['_1', null], ['_', null]]);
@@ -1033,13 +1076,22 @@ function doLink(args, ctx, leftJoin) {
         let asked = -1;
         if (fastField !== null && row.get(fastField)) {
           asked = verdict(prefix, row, frameLeft);
-          if (asked === 1) { dropped = true; return; }
+          if (asked === 1) {
+            // Dropped before its key was computed -- but the key is this very
+            // field, and a rejected one still raises in the join as written.
+            const fieldValue = row.get(fastField);
+            checkJoinPair(equi, canonicalJoinKey(fieldValue, equi.numeric), fieldValue, rightFacts);
+            dropped = true;
+            return;
+          }
         }
         frameLeft.set(b1, row);
         frameLeft.set(b1.toLowerCase(), row);
         frameLeft.set('_1', row);
         frameLeft.set('_', row);
-        const key = canonicalJoinKey(args.evalNode(equi.left), equi.numeric);
+        const keyValue = args.evalNode(equi.left);
+        const key = canonicalJoinKey(keyValue, equi.numeric);
+        checkJoinPair(equi, key, keyValue, rightFacts);
         const matches = key === null ? null : buckets.get(key);
         if (asked < 0) asked = prefix.length ? verdict(prefix, row, frameLeft) : 0;
         if (asked === 1) {

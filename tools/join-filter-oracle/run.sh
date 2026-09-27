@@ -15,12 +15,23 @@ cd "$(dirname "$0")/../.."
 . tools/impls.sh
 COUNT="${1:-3000}"; SEED="${2:-52001}"; MODE="${3:-mixed}"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
-python3 tools/join-filter-oracle/gen.py "$COUNT" "$SEED" "$WORK/corpus.selc" "$WORK/sidecar" "$MODE"
-outs=()
-for impl in $(available_impls); do
-  case "$impl" in js-bundle|js-bundle-min|python-wheel) continue ;; esac
-  sel_slot impl_batch "$impl" "$WORK/corpus.selc" > "$WORK/$impl" &
-  outs+=("$WORK/$impl")
+# Two passes: joins then filters (the lane's first question), and -- since
+# review 2026-09-25 TEST-09 -- pipelines without joins, where the optimiser moved
+# FILTERs, MAPs and sorts past steps that raise. Each pass compares every host
+# with itself (as written vs every step bound to a variable) before the hosts
+# with each other.
+status=0
+for pass in "$MODE" pipeline; do
+  mkdir -p "$WORK/$pass"
+  python3 tools/join-filter-oracle/gen.py "$COUNT" "$SEED" "$WORK/$pass/corpus.selc" "$WORK/$pass/sidecar" "$pass"
+  outs=()
+  for impl in $(available_impls); do
+    case "$impl" in js-bundle|js-bundle-min|python-wheel) continue ;; esac
+    sel_slot impl_batch "$impl" "$WORK/$pass/corpus.selc" > "$WORK/$pass/$impl" &
+    outs+=("$WORK/$pass/$impl")
+  done
+  wait
+  echo "--- $pass"
+  python3 tools/join-filter-oracle/check.py "$WORK/$pass/sidecar" "${outs[@]}" || status=1
 done
-wait
-python3 tools/join-filter-oracle/check.py "$WORK/sidecar" "${outs[@]}"
+exit "$status"

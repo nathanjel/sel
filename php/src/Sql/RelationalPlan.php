@@ -10,8 +10,7 @@ namespace Sel\Sql;
 
 final class JoinPlan
 {
-    /** Public name used by the portable plan contract. */
-    public string $kind = 'INNER';
+    /** INNER or LEFT, as `type` in the other hosts' join plans. */
     public string $type = 'INNER';
     public string $sourceName = '';
     /** @var array<string,mixed> */
@@ -25,17 +24,6 @@ final class JoinPlan
     public ?array $onPred = null;
     /** @var array{line:int,col:int,offset:int}|null */
     public ?array $pos = null;
-
-    public function getKind(): string
-    {
-        return $this->kind;
-    }
-
-    public function setKind(string $value): void
-    {
-        $this->kind = $value;
-        $this->type = $value;
-    }
 }
 
 final class RelationalPlan

@@ -35,36 +35,7 @@ use Sel\Value;
 
 final class Constants
 {
-    /**
-     * The value bindings, as a name set and an evaluation context.
-     *
-     * A `value` binding is a constant the translator *has* — §5.4 calls it "a
-     * constant supplied at translation time, inlined as a literal", and
-     * Translator::variable hands it straight to literal(). So `LEFT("abc", X)`
-     * with X bound to "-1" is exactly as knowable as `LEFT("abc", -1)`, and
-     * before this it was exactly as wrong: SEL raised E_RANGE and the four
-     * servers answered '', '', 'ab' and ''. §11.4's headline defect, still open
-     * through the documented way a host passes a parameter.
-     *
-     * Only scalars are lifted. A list-valued binding is what an aggregate
-     * iterates and its shape is the translator's business, not the evaluator's.
-     *
-     * @return array{0: array<string,bool>, 1: Context}
-     */
-    /**
-     * Is this node an aggregate's binder NAME, rather than a read of one?
-     *
-     * The evaluator's rule, in Args::symbol: a bare `var` node that did NOT come
-     * from parentheses. Both halves matter and the second was missing here, in
-     * all three hosts. `(C)` parses as a `var` node carrying the parser's
-     * `grouped` flag — which is exactly what makes `(A) = 1` an E_BAD_ASSIGN — so
-     * testing only the kind accepted a binder the evaluator refuses with
-     * E_EXPECT_SYMBOL, and `ALL(V, (C), C > 0)` translated to working SQL for a
-     * rule that can never run. A translation accepted where the language refuses
-     * is the one direction this layer must never fail in.
-     *
-     * @param array<string,mixed> $node
-     */
+    /** @param array<string,mixed>|null $node */
     private static function identityProjection(?array $node, int $depth = 0): bool
     {
         if ($node === null || $depth >= 180) return false;
@@ -183,11 +154,41 @@ final class Constants
         return false;
     }
 
+    /**
+     * Is this node an aggregate's binder NAME, rather than a read of one?
+     *
+     * The evaluator's rule, in Args::symbol: a bare `var` node that did NOT come
+     * from parentheses. Both halves matter and the second was missing here, in
+     * all three hosts. `(C)` parses as a `var` node carrying the parser's
+     * `grouped` flag — which is exactly what makes `(A) = 1` an E_BAD_ASSIGN — so
+     * testing only the kind accepted a binder the evaluator refuses with
+     * E_EXPECT_SYMBOL, and `ALL(V, (C), C > 0)` translated to working SQL for a
+     * rule that can never run. A translation accepted where the language refuses
+     * is the one direction this layer must never fail in.
+     *
+     * @param array<string,mixed> $node
+     */
     public static function isBinderName(array $node): bool
     {
         return ($node['t'] ?? null) === 'var' && empty($node['grouped']);
     }
 
+    /**
+     * The value bindings, as a name set and an evaluation context.
+     *
+     * A `value` binding is a constant the translator *has* — §5.4 calls it "a
+     * constant supplied at translation time, inlined as a literal", and
+     * Translator::variable hands it straight to literal(). So `LEFT("abc", X)`
+     * with X bound to "-1" is exactly as knowable as `LEFT("abc", -1)`, and
+     * before this it was exactly as wrong: SEL raised E_RANGE and the four
+     * servers answered '', '', 'ab' and ''. §11.4's headline defect, still open
+     * through the documented way a host passes a parameter.
+     *
+     * Only scalars are lifted. A list-valued binding is what an aggregate
+     * iterates and its shape is the translator's business, not the evaluator's.
+     *
+     * @return array{0: array<string,bool>, 1: Context}
+     */
     public static function scope(?Bindings $bindings): array
     {
         $names = [];

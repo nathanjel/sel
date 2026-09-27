@@ -107,6 +107,8 @@ int main(int argc, char** argv) {
     return 2;
   }
   const std::string dialect = argc > 2 ? argv[2] : "mariadb";
+  // `statement`: only translate_statement's inline SQL; see js/bin/sqlfuzz.mjs.
+  const std::string mode = argc > 3 ? argv[3] : "all";
   std::ifstream in(argv[1], std::ios::binary);
   std::ostringstream buf;
   buf << in.rdbuf();
@@ -122,6 +124,12 @@ int main(int argc, char** argv) {
         // mutation that bound a numeric literal as a parameter walk straight
         // through this lane.
         const sel::sql::Bindings bindings = fuzz_bindings();
+        if (mode == "statement") {
+          line = attempt([&] { return sel::sql::Sql::translate_statement(program, dialect, bindings).as_statement(); });
+          out += escape_newlines(line);
+          out += "\n";
+          continue;
+        }
         line = attempt([&] { return render(sel::sql::Sql::translate(program, dialect, bindings)); })
              + " || " + attempt([&] { return render(sel::sql::Sql::translate_statement(program, dialect, bindings)); })
              + " || " + attempt([&] {

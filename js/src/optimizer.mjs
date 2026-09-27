@@ -21,11 +21,6 @@ function copyNode(node) {
   return copy;
 }
 
-function call(name, args, pos) {
-  const spec = lookup(name);
-  return { t: 'call', name, spec, args, pos };
-}
-
 function unwindPipeline(node) {
   const steps = [];
   let current = node;
@@ -229,6 +224,49 @@ function mapPassthroughs(step) {
   return fields;
 }
 
+// Whether evaluating NODE for one row can raise -- conservatively: a rewrite
+// that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
+// two FILTERs changes which rows reach what, so it may only pass over
+// expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
+// SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+// logical path the rows are a bound relation's, which always carry their
+// typed columns, so a field read through the binder cannot raise either, nor
+// a comparison, AND/OR/NOT or + - * over such reads; `/` and `%` (E_DIV_ZERO),
+// calls and anything else may. The in-memory path has no schema, and a field
+// read there can raise E_NO_KEY.
+const SAFE_LOGICAL_OPS = new Set(['==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
+  'AND', 'OR', '+', '-', '*']);
+function cannotRaise(node, binder, logical) {
+  if (!node) return true;
+  switch (node.t) {
+    case 'num': case 'text': case 'bool': case 'null': return true;
+    case 'var': {
+      const name = node.name.toUpperCase();
+      return name === '_K' || name === binder.toUpperCase();
+    }
+    case 'index':
+      return logical && node.obj && node.obj.t === 'var' && node.obj.name.toUpperCase() === binder.toUpperCase()
+        && node.idx && node.idx.t === 'text';
+    case 'bin':
+      return logical && SAFE_LOGICAL_OPS.has(node.op)
+        && cannotRaise(node.l, binder, logical) && cannotRaise(node.r, binder, logical);
+    case 'un':
+      return logical && node.op === 'NOT' && cannotRaise(node.x, binder, logical);
+    default:
+      return false;
+  }
+}
+
+// Every field a MAP computes (or its whole body) cannot raise.
+function mapCannotRaise(step, logical) {
+  const { binder, body } = mapDetails(step);
+  if (body && body.t === 'call' && body.name === 'RECORD') {
+    for (let i = 1; i < body.args.length; i += 2) if (!cannotRaise(body.args[i], binder, logical)) return false;
+    return body.args.every((arg, i) => i % 2 === 1 || arg.t === 'text');
+  }
+  return cannotRaise(body, binder, logical);
+}
+
 function mapHasComputedFields(step) {
   const { body } = mapDetails(step);
   if (!body || body.t !== 'call' || body.name !== 'RECORD') return true;
@@ -267,9 +305,6 @@ function sortDetails(step) {
     const sortCount = step.name === 'TOP_BY' ? count - 1 : count;
     if (sortCount === 2 || sortCount === 3 && args[2]?.t === 'text') {
       key = args[1];
-    } else if (sortCount === 3 && args[1].t === 'var' && !args[1].grouped) {
-      binder = args[1].name;
-      key = args[2];
     } else if (args[1]?.t === 'var' && !args[1].grouped) {
       binder = args[1].name;
       key = args[2];
@@ -361,7 +396,7 @@ function logicalSteps(source, steps, options = {}) {
         const refs = fieldRefs(details.predicate, details.binder);
         if (details.valid && refs.length > 0 && refs.every((field) => passes.includes(field))
             && !readsRowOrKey(details.predicate, details.binder)
-            && keysRenumberedBy(current[i + 2])) {
+            && keysRenumberedBy(current[i + 2]) && mapCannotRaise(first, options.logical)) {
           next.push(second, first);
           i++;
           changed = true;
@@ -369,7 +404,9 @@ function logicalSteps(source, steps, options = {}) {
         }
       }
       if (second && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name) && second.name === 'FILTER'
-          && !stepReadsKey(second) && keysRenumberedBy(current[i + 2])) {
+          && !stepReadsKey(second) && keysRenumberedBy(current[i + 2])
+          && cannotRaise(sortDetails(first).key, sortDetails(first).binder || '_', options.logical)
+          && (options.logical || cannotRaise(filterDetails(second).predicate, filterDetails(second).binder, false))) {
         next.push(second, first);
         i++;
         changed = true;
@@ -396,7 +433,8 @@ function logicalSteps(source, steps, options = {}) {
         const details = sortDetails(second);
         const refs = details.key ? fieldRefs(details.key, details.binder || '_') : [];
         if (details.key && refs.length > 0 && refs.every((field) => mapPassthroughs(first).includes(field))
-            && !readsRowOrKey(details.key, details.binder || '_')) {
+            && !readsRowOrKey(details.key, details.binder || '_')
+            && mapCannotRaise(first, options.logical) && cannotRaise(details.key, details.binder || '_', options.logical)) {
           next.push(second, first);
           i++;
           changed = true;
@@ -405,7 +443,9 @@ function logicalSteps(source, steps, options = {}) {
       }
       if (options.fuseFilters !== false && second && first.name === 'FILTER' && second.name === 'FILTER') {
         const left = filterDetails(first), right = filterDetails(second);
-        if (!left.valid || !right.valid) {
+        // Fused, the second predicate runs on a row before the first has seen
+        // the rows after it: only one that cannot raise may be fused.
+        if (!left.valid || !right.valid || !cannotRaise(right.predicate, right.binder, options.logical)) {
           next.push(first);
           continue;
         }
@@ -473,7 +513,7 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
         optimizeTree(item, physical, depth + 1, stepArgOptions(step, offset + 1, options), false))];
       return copy;
     });
-    let finalSteps = logicalSteps(optimizedSource, optimizedSteps, options);
+    let finalSteps = logicalSteps(optimizedSource, optimizedSteps, { ...options, logical: !physical });
     if (physical) {
       // A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
       // anything can see the keys a FILTER's result carries. A following step
@@ -503,18 +543,11 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
   if (copy.x) copy.x = optimizeTree(copy.x, physical, depth + 1, options, nextInMath);
   if (copy.obj) copy.obj = optimizeTree(copy.obj, physical, depth + 1, options, false);
   if (copy.idx) copy.idx = optimizeTree(copy.idx, physical, depth + 1, options, false);
-  // Assignment targets are walked iteratively by the evaluator and by the
-  // dependency scanner; recursively charging them here would reject a valid
-  // value-depth boundary before the evaluator can report it at the outermost
-  // index, as required by the host-neutrality cases.
-  if (copy.t === 'assign') {
-    if (copy.value) copy.value = optimizeTree(copy.value, physical, depth + 1, options, false);
-  } else if (copy.target) {
-    copy.target = optimizeTree(copy.target, physical, depth + 1, options, false);
-    if (copy.value) copy.value = optimizeTree(copy.value, physical, depth + 1, options, false);
-  } else if (copy.value) {
-    copy.value = optimizeTree(copy.value, physical, depth + 1, options, false);
-  }
+  // An assignment's target (only assign nodes have one) is walked iteratively
+  // by the evaluator and by the dependency scanner; recursively charging it
+  // here would reject a valid value-depth boundary before the evaluator can
+  // report it at the outermost index, as required by the host-neutrality cases.
+  if (copy.value) copy.value = optimizeTree(copy.value, physical, depth + 1, options, false);
   // Keep the evaluator's depth guard observable for deliberately deep source
   // expressions. Constant folding is useful for ordinary expressions, but it
   // must not collapse a 5,000-node depth-limit probe into one literal.
@@ -539,7 +572,6 @@ function exceedsDepth(node, depth) {
   for (const key of ['l', 'r', 'x', 'obj', 'idx']) {
     if (node[key] && exceedsDepth(node[key], next)) return true;
   }
-  if (node.t !== 'assign' && node.target && exceedsDepth(node.target, next)) return true;
   if (node.value && exceedsDepth(node.value, next)) return true;
   return false;
 }

@@ -255,3 +255,69 @@ A = 1; A["k"] = 1; A[(A["k"] += 1); "k"]
 --- expect
 num 2
 ===
+
+% --- review 2026-09-25: an index read of a computed key, evaluated again and
+% again by one node, and the copy an assignment makes of a scalar leaf.
+
+### name: val.index.computed-key-read-per-element
+--- note
+Review 2026-09-25 SEM-01. One index node evaluated once per element, over
+records that share a shape: each read is of the key the index expression
+yields THIS time. Python cached the record slot of the first read on the node
+and answered 1 twice.
+--- source
+MAP(LIST("x","y"), RECORD("x",1,"y",2)[_])
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: val.index.computed-key-read-per-element-three-keys-reversed
+--- source
+MAP(LIST("z","y","x"), RECORD("x",1,"y",2,"z",3)[_])
+--- expect
+tree -{"1"=t"3", "2"=t"2", "3"=t"1"}
+===
+
+### name: val.index.computed-key-over-differently-ordered-records
+--- note
+Control: two records with the same keys in different orders.
+--- source
+MAP(LIST(RECORD("x",1,"y",2), RECORD("y",5,"x",6)), _[IF(_K == 1, "x", "y")])
+--- expect
+tree -{"1"=t"1", "2"=t"5"}
+===
+
+### name: val.index.computed-key-expression-is-always-evaluated
+--- note
+The index expression is evaluated on every read, errors included: the cached
+slot of the first read let Python skip the ABORT of the second and answer.
+--- source
+R=RECORD("x",1); MAP(LIST(1,2), R[IF(_==2, ABORT("boom"), "x")])
+--- expect
+error E_ABORT at 1:50
+===
+
+### name: val.copy.scalar-leaf-that-gains-a-child
+--- note
+Review 2026-09-25 SEM-12. Assignment copies (spec §5.7), and the copy of a
+list reaches its scalar leaves: giving B's leaf a child must not give A's one.
+Python's clone returned a leaf below the top level as it was, shared.
+--- source
+A = LIST("s"); B = A; B[1]["k"] = "v"; LIST(A, B)
+--- expect
+tree -{"1"=-{"1"=t"s"}, "2"=-{"1"=t"s"{"k"=t"v"}}}
+===
+
+### name: val.copy.scalar-leaf-of-a-record
+--- source
+A = RECORD("x", "s"); B = A; B["x"]["k"] = "v"; A
+--- expect
+tree -{"x"=t"s"}
+===
+
+### name: val.copy.scalar-leaf-two-levels-down
+--- source
+A = LIST(LIST("s")); B = A; B[1][1]["k"] = "v"; A
+--- expect
+tree -{"1"=-{"1"=t"s"}}
+===

@@ -1210,7 +1210,7 @@
         }
       ],
       "signatures": [
-        "TOP_BY(list, [binder,] key, n [, dir])"
+        "TOP_BY(list, [binder,] key, [dir,] n)"
       ],
       "spec": "§7.4"
     },

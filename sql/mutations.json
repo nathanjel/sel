@@ -1256,35 +1256,35 @@
     },
     {
       "name": "js-filter-swap-ignores-keys",
-      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after a MAP that cannot raise (plan.fallthrough.filter-at-the-end-stays-over-a-map-that-cannot-raise; the ABORT case plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key is held by the review 2026-09-25 SEM-07 guard on its own).",
       "file": "js/src/optimizer.mjs",
       "from": "  return step !== undefined && step.name !== 'FILTER' && !stepReadsKey(step);",
       "to": "  return true;"
     },
     {
       "name": "php-filter-swap-ignores-keys",
-      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after a MAP that cannot raise (plan.fallthrough.filter-at-the-end-stays-over-a-map-that-cannot-raise; the ABORT case plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key is held by the review 2026-09-25 SEM-07 guard on its own).",
       "file": "php/src/Optimizer.php",
       "from": "        return $step !== null && ($step['name'] ?? '') !== 'FILTER' && !self::stepReadsKey($step);",
       "to": "        return true;"
     },
     {
       "name": "python-filter-swap-ignores-keys",
-      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after a MAP that cannot raise (plan.fallthrough.filter-at-the-end-stays-over-a-map-that-cannot-raise; the ABORT case plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key is held by the review 2026-09-25 SEM-07 guard on its own).",
       "file": "python/sel/optimizer.py",
       "from": "    return step is not None and step.name != 'FILTER' and not step_reads_key(step)",
       "to": "    return True"
     },
     {
       "name": "cpp-filter-swap-ignores-keys",
-      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after a MAP that cannot raise (plan.fallthrough.filter-at-the-end-stays-over-a-map-that-cannot-raise; the ABORT case plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key is held by the review 2026-09-25 SEM-07 guard on its own).",
       "file": "cpp/sel.cpp",
       "from": "  return step != nullptr && *step && (*step)->s != \"FILTER\" && !opt_step_reads_key(**step);",
       "to": "  return true;"
     },
     {
       "name": "lisp-filter-swap-ignores-keys",
-      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after the MAP (plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key).",
+      "was": "Finding #33 (2026-09-15): every host's optimiser moved a FILTER in front of a MAP, a sort or a SELECT_COLS at the end of a pipeline, renumbering the answer's keys. The guard is the last thing between that and the planner's cases; a guard that always says yes must be caught by the plan case that pins the FILTER after a MAP that cannot raise (plan.fallthrough.filter-at-the-end-stays-over-a-map-that-cannot-raise; the ABORT case plan.fallthrough.filter-under-its-own-binder-reads-a-pushable-key is held by the review 2026-09-25 SEM-07 guard on its own).",
       "file": "lisp/src/optimizer.lisp",
       "from": "  (and step\n       (string/= (node-s step) \"FILTER\")\n       (not (step-reads-key-p step))))",
       "to": "  (progn step t))"

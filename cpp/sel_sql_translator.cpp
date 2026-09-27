@@ -415,16 +415,24 @@ Fragment Translator::index(const SNode& n) {
     // or a binder the join predicate declared -- never by the positional
     // `_`, `_1`, `_2`, which this host alone accepted and the other four plan
     // in memory (SEL-0043).
+    // A LINK's left binder names the LEFT side -- the pipeline's source
+    // relation -- and its right binder the joined one. Both used to be matched
+    // against the join, so a read through the left binder selected the joined
+    // table's column (review 2026-09-25 SQL-01).
+    const bool names_a_left_binder = std::any_of(
+        statement_plan_->joins.begin(), statement_plan_->joins.end(),
+        [&](const RelationalJoin& join) { return same_name(join.left_binder); });
     if (same_name(statement_plan_->source_name) ||
         same_name(statement_plan_->source_relation.from) ||
-        (statement_plan_->source_alias && same_name(*statement_plan_->source_alias))) {
+        (statement_plan_->source_alias && same_name(*statement_plan_->source_alias)) ||
+        names_a_left_binder) {
       relation = &statement_plan_->source_relation;
     } else {
       for (std::size_t i = 0; i < statement_plan_->joins.size(); ++i) {
         const RelationalJoin& join = statement_plan_->joins[i];
         if (same_name(join.source_name) || same_name(join.source_relation.from) ||
             (join.source_alias && same_name(*join.source_alias)) ||
-            same_name(join.left_binder) || same_name(join.right_binder)) {
+            same_name(join.right_binder)) {
           relation = &join.source_relation;
           break;
         }
@@ -3486,11 +3494,6 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   if (!plan.having.empty()) {
     add_sql(" HAVING ");
     std::vector<std::vector<Fragment::Part>> h_cond_parts;
-    in_having_ = true;
-    struct ResetHaving {
-      bool* h;
-      ~ResetHaving() { *h = false; }
-    } reset_having{&in_having_};
     for (const auto& hav : plan.having) {
       const auto render = [&]() { return require_bool(node(hav.node), hav.pos, "FILTER"); };
       Fragment h_frag = hav.over_groups ? with_group(src, hav.binder, render)

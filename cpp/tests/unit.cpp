@@ -646,6 +646,39 @@ void test_math_plan() {
   selt::eq(p_min.run(root_min).as_text(), std::string("5"), "MIN result 5");
 }
 
+// The host boundary (spec/SPEC.md §8, review 2026-09-25). C++ has no native
+// conversion; what it shares with the other hosts is key validation and the
+// depth cap on every walk of a host-built value.
+void test_host_boundary() {
+  selt::section("host boundary");
+  selt::raises("E_UTF8", [] { sel::Value v = sel::Value::none(); v.set("\xff", sel::Value::text("x")); },
+               "Value::set rejects a malformed key");
+  selt::raises("E_UTF8", [] { sel::Value::text("\xc3"); }, "Value::text rejects a truncated sequence");
+  auto deep = [](int levels) {
+    sel::Value v = sel::Value::text("x");
+    for (int i = 0; i < levels; i++) v = sel::Value::list({v});
+    return sel::Value::list({v});
+  };
+  for (const char* src : {"COUNT(DEDUPE(A))", "COUNT(DISTINCT(A))", "COUNT(BUCKET(A, _, COUNT(_)))"}) {
+    selt::raises("E_DEPTH", [&] {
+      sel::Value ctx = sel::Value::none(); ctx.set("A", deep(250));
+      sel::compile(src).run(ctx);
+    }, std::string(src) + " over a value nested past the cap");
+    sel::Value ctx = sel::Value::none(); ctx.set("A", deep(198));
+    selt::eq(sel::compile(src).run(ctx).dump(), std::string("t\"1\""), std::string(src) + " just below the cap");
+  }
+  {
+    auto p = sel::compile("A[K]");
+    sel::Value a = sel::Value::none(); a.set("x", sel::Value::text("1")); a.set("y", sel::Value::text("2"));
+    std::string got;
+    for (const char* k : {"x", "y"}) {
+      sel::Value ctx = sel::Value::none(); ctx.set("A", a); ctx.set("K", sel::Value::text(k));
+      got += p.run(ctx).dump();
+    }
+    selt::eq(got, std::string("t\"1\"t\"2\""), "a compiled program reads the key of each run");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -657,5 +690,6 @@ int main() {
   test_relational_optimizations();
   test_structural_hash_identity();
   test_math_plan();
+  test_host_boundary();
   return selt::report("cpp unit");
 }

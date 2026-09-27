@@ -28,8 +28,7 @@
   (const-root nil)
   (depth 0 :type fixnum)
   (statement-plan nil)
-  (in-where nil :type boolean)
-  (in-having nil :type boolean))
+  (in-where nil :type boolean))
 
 (defun list-key (k)
   "The 1-based list position a key names, or NIL when it names none.
@@ -263,11 +262,15 @@ known before the query runs" (snode-pos idx))))
                          (when f (setf match-field (cdr f))))
                        (return)))))
                 (when match-table
-                  (if match-field
-                      (return-from translate-index (column-ref tr (qualified-by match-field match-table)))
-                      (return-from translate-index
-                        (%fragment (list (emit-column (translator-dialect tr) match-table col-name))
-                                   :param (translator-dialect tr)))))))))))
+                  ;; A qualified read of a field the relation does not have is
+                  ;; E_SQL_BINDING, as in the other four hosts -- it used to be
+                  ;; rendered as a column the table lacks (found by the SQL
+                  ;; fuzzer's link-binder family, review 2026-09-25 TEST-05).
+                  (unless match-field
+                    (refuse "E_SQL_BINDING"
+                            (format nil "~a[\"~a\"] is not a field of that relation" table-alias col-name)
+                            (snode-pos n)))
+                  (return-from translate-index (column-ref tr (qualified-by match-field match-table))))))))))
 
     ;; A PARENTHESISED variable still has kind :var -- the parser sets only a
     ;; GROUPED flag -- so (C)[1] reaches the same path as C[1].
@@ -2542,6 +2545,17 @@ can say about a bucket on its own."
                    (bucket-projection plan binder agg-node)))
 
                 ((or (equal sname "LINK") (equal sname "LINK_LEFT"))
+                 ;; The steps before the LINK refuse first, as written: their
+                 ;; keys (a sort's, say) are otherwise checked only when the
+                 ;; statement is rendered, after the LINK's predicate was --
+                 ;; which reported the LINK's refusal where the other four
+                 ;; hosts report the earlier step's (review 2026-09-25 SQL-03,
+                 ;; found by the SQL fuzzer).
+                 (when (or (relational-plan-order-by plan)
+                           (relational-plan-projections plan)
+                           (relational-plan-select-cols plan)
+                           (relational-plan-group-by plan))
+                   (compile-statement tr plan))
                  (when (or (relational-plan-group-by plan)
                            (relational-plan-projections plan)
                            (relational-plan-select-cols plan)
@@ -2919,18 +2933,15 @@ field is on both sides, and the binders are nested records")
           (when (relational-plan-having plan)
             (push " HAVING " parts)
             (let ((h-cond-parts '()))
-              (setf (translator-in-having tr) t)
-              (unwind-protect
-                   (dolist (hav (relational-plan-having plan))
-                     (let* ((binder (first hav))
-                            (node (second hav))
-                            (pos (third hav))
-                            (render (lambda () (require-bool (walk-node tr node) pos "FILTER")))
-                            (h-frag (if (fourth hav)
-                                        (with-group tr src binder render)
-                                        (with-projected tr src binder render))))
-                       (push (fragment-parts h-frag) h-cond-parts)))
-                (setf (translator-in-having tr) nil))
+              (dolist (hav (relational-plan-having plan))
+                (let* ((binder (first hav))
+                       (node (second hav))
+                       (pos (third hav))
+                       (render (lambda () (require-bool (walk-node tr node) pos "FILTER")))
+                       (h-frag (if (fourth hav)
+                                   (with-group tr src binder render)
+                                   (with-projected tr src binder render))))
+                  (push (fragment-parts h-frag) h-cond-parts)))
               (setf h-cond-parts (nreverse h-cond-parts))
               (loop for hp in h-cond-parts
                     for idx from 0

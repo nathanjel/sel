@@ -1090,3 +1090,195 @@ A = LIST(RECORD("id", 1, "b", 1, "x", 1)); B = LIST(RECORD("bid", 1)); C = LIST(
 --- expect
 error E_NO_KEY at 1:169
 ===
+
+% --- review 2026-09-25 SEM-06: an equijoin matches pairs "as the comparison
+% would compare them" (spec §7.4). Every host's hash path keyed only TEXT (and
+% numbers under ==), swallowed a failed numeric conversion, and so matched
+% nothing where the comparison matches or raises. Each case has an IF-wrapped
+% twin, which no host treats as an equijoin: the two must agree.
+
+### name: rel.link.equi.bin-matches-the-text-of-its-bytes
+--- source
+A=LIST(RECORD("k",TO_UTF8("a"))); B=LIST(RECORD("k","a")); COUNT(LINK(A, B, _1["k"] $== _2["k"]))
+--- expect
+num 1
+===
+
+### name: rel.link.equi.bin-matches-text-control
+--- source
+A=LIST(RECORD("k",TO_UTF8("a"))); B=LIST(RECORD("k","a")); COUNT(LINK(A, B, IF(_1["k"] $== _2["k"], TRUE, FALSE)))
+--- expect
+num 1
+===
+
+### name: rel.link.equi.text-matches-bin-sides-swapped
+--- source
+A=LIST(RECORD("k","a")); B=LIST(RECORD("k",TO_UTF8("a"))); COUNT(LINK(A, B, _1["k"] $== _2["k"]))
+--- expect
+num 1
+===
+
+### name: rel.link.equi.bin-matches-bin
+--- source
+A=LIST(RECORD("k",TO_UTF8("a"))); B=LIST(RECORD("k",TO_UTF8("a"))); COUNT(LINK(A, B, _1["k"] $== _2["k"]))
+--- expect
+num 1
+===
+
+### name: rel.link-left.equi.bin-matches-text
+--- source
+A=LIST(RECORD("k",TO_UTF8("a"))); B=LIST(RECORD("k","a")); A .> LINK_LEFT(B, _1["k"] $== _2["k"]) .> MAP(_["_2"]["k"])
+--- expect
+tree -{"1"=t"a"}
+===
+
+### name: rel.link.equi.list-key-compares-by-its-scalar
+--- note
+LIST(1) $== "1" is TRUE, so the pair matches.
+--- source
+A=LIST(RECORD("k",LIST(1))); B=LIST(RECORD("k","1")); COUNT(LINK(A, B, _1["k"] $== _2["k"]))
+--- expect
+num 1
+===
+
+### name: rel.link.equi.non-number-on-the-left-raises
+--- note
+"bad" == 1 is E_NOT_NUM, at the operand that is not a number; the hash path
+answered no rows.
+--- source
+A=LIST(RECORD("k","bad")); B=LIST(RECORD("k",1)); COUNT(LINK(A, B, _1["k"] == _2["k"]))
+--- expect
+error E_NOT_NUM at 1:70
+===
+
+### name: rel.link.equi.non-number-on-the-left-raises-control
+--- source
+A=LIST(RECORD("k","bad")); B=LIST(RECORD("k",1)); COUNT(LINK(A, B, IF(_1["k"] == _2["k"], TRUE, FALSE)))
+--- expect
+error E_NOT_NUM at 1:73
+===
+
+### name: rel.link.equi.non-number-on-the-right-raises
+--- source
+A=LIST(RECORD("k",1)); B=LIST(RECORD("k","bad")); COUNT(LINK(A, B, _1["k"] == _2["k"]))
+--- expect
+error E_NOT_NUM at 1:81
+===
+
+### name: rel.link-left.equi.non-number-raises
+--- note
+An unmatched LINK_LEFT row is kept, but a pair that raises still raises.
+--- source
+A=LIST(RECORD("k","bad")); B=LIST(RECORD("k",1)); COUNT(LINK_LEFT(A, B, _1["k"] == _2["k"]))
+--- expect
+error E_NOT_NUM at 1:75
+===
+
+### name: rel.link.equi.non-number-against-null-only-matches-nothing
+--- note
+Control: a NULL on either side matches nothing and is never compared, so a
+non-number facing only NULLs raises nothing.
+--- source
+A=LIST(RECORD("k","bad")); B=LIST(RECORD("k",NULL)); COUNT(LINK(A, B, _1["k"] == _2["k"]))
+--- expect
+num 0
+===
+
+### name: rel.link.equi.boolean-key-under-text-equality-raises
+--- source
+A=LIST(RECORD("k",TRUE)); B=LIST(RECORD("k",TRUE)); COUNT(LINK(A, B, _1["k"] $== _2["k"]))
+--- expect
+error E_NOT_BIN at 1:72
+===
+
+% --- review 2026-09-25 SEM-07 / SEM-08: a rewrite must not change which error a
+% program raises. The optimiser moved a FILTER in front of a SORT or a MAP when
+% a later step renumbered the rows, moved a computed MAP behind a TOP_BY, and
+% fused two FILTERs into one AND — in every host — so the rows the first step
+% would have failed on were never reached, or the second FILTER's error came
+% first. Written as a pipeline, each must raise what it raises with every step
+% bound to a variable first.
+
+### name: rel.optimiser.sort-error-before-a-filter-then-map
+--- source
+LIST(2,1) .> SORT(_, IF(_ == 2, ABORT("sort"), _)) .> FILTER(_ == 1) .> MAP(_)
+--- expect
+error E_ABORT at 1:39
+===
+
+### name: rel.optimiser.sort-error-before-a-filter-then-take
+--- source
+LIST(2,1) .> SORT(_, IF(_ == 2, ABORT("sort"), _)) .> FILTER(_ == 1) .> TAKE(1)
+--- expect
+error E_ABORT at 1:39
+===
+
+### name: rel.optimiser.sort-by-error-before-a-filter-then-map
+--- source
+LIST(2,1) .> SORT_BY(IF(_ == 2, ABORT("sort"), _)) .> FILTER(_ == 1) .> MAP(_)
+--- expect
+error E_ABORT at 1:39
+===
+
+### name: rel.optimiser.unread-map-field-error-before-a-filter-then-map
+--- note
+The strict-record cases above stop at MAP .> FILTER; the later MAP is what let
+the FILTER move in front, and 1/(2-2) was then never computed.
+--- source
+LIST(RECORD("id",2),RECORD("id",3)) .> MAP(RECORD("id", _["id"], "v", 1/(_["id"]-2))) .> FILTER(_["id"] == 3) .> MAP(_["id"])
+--- expect
+error E_DIV_ZERO at 1:72
+===
+
+### name: rel.optimiser.map-error-before-a-top-by
+--- note
+A MAP with a computed field moved behind TOP_BY ran only on the top row.
+--- source
+LIST(RECORD("a",1),RECORD("a",2)) .> MAP(RECORD("a",_["a"],"v",1/(_["a"]-1))) .> TOP_BY(_["a"], "DESC", 1) .> MAP(_["a"])
+--- expect
+error E_DIV_ZERO at 1:65
+===
+
+### name: rel.optimiser.map-error-before-a-top-by-explicit-binder
+--- note
+The same with TOP_BY's binder form, which PHP's optimiser did not recognise —
+so PHP raised here and the other four answered.
+--- source
+LIST(RECORD("a",1),RECORD("a",2)) .> MAP(RECORD("a",_["a"],"v",1/(_["a"]-1))) .> TOP_BY(X, X["a"], "DESC", 1) .> MAP(_["a"])
+--- expect
+error E_DIV_ZERO at 1:65
+===
+
+### name: rel.optimiser.two-filters-raise-in-written-order
+--- note
+Fused into one FILTER(a AND b), the second FILTER's error on row 1 came before
+the first FILTER's on row 2.
+--- source
+LIST(1,2) .> FILTER(IF(_==2, ABORT("a"), TRUE)) .> FILTER(IF(_==1, ABORT("b"), TRUE))
+--- expect
+error E_ABORT at 1:36
+===
+
+### name: rel.link.equi.record-sides-non-number-raises
+--- note
+The same checks when the sides are records of rows rather than lists: PHP
+walks those through a different loop, which the list cases never reached.
+--- source
+A=RECORD("x",RECORD("k","bad")); B=RECORD("y",RECORD("k",1)); COUNT(LINK(A, B, _1["k"] == _2["k"]))
+--- expect
+error E_NOT_NUM at 1:82
+===
+
+### name: rel.link.equi.record-sides-bin-matches-text
+--- source
+A=RECORD("x",RECORD("k",TO_UTF8("a"))); B=RECORD("y",RECORD("k","a")); COUNT(LINK(A, B, _1["k"] $== _2["k"]))
+--- expect
+num 1
+===
+
+### name: rel.link-left.equi.record-sides-non-number-on-the-right-raises
+--- source
+A=RECORD("x",RECORD("k",1)); B=RECORD("y",RECORD("k","bad")); COUNT(LINK_LEFT(A, B, _1["k"] == _2["k"]))
+--- expect
+error E_NOT_NUM at 1:98
+===

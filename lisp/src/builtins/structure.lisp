@@ -111,7 +111,7 @@
 
 (defun first-collection-item (v)
   (cond
-    ((or (value-null-p v) (and (eq (value-kind v) :none) (zerop (value-size v))))
+    ((and (eq (value-kind v) :none) (zerop (value-size v)))
      nil)
     ((and (value-is-list v) (value-storage v) (plusp (length (value-storage v))))
      (svref (value-storage v) 0))
@@ -196,7 +196,8 @@
 
 (defun try-extract-equi-keys (pred-node b1 b2)
   "Checks if PRED-NODE is an equality comparison between an expression on B1 and an expression on B2.
-Returns (values left-expr right-expr is-numeric) or NIL."
+Returns (values left-expr right-expr is-numeric swapped) or NIL; SWAPPED is true
+when the operator's left operand reads the right side."
   (when (and pred-node
              (node-p pred-node)
              (eq (node-kind pred-node) :bin)
@@ -209,10 +210,10 @@ Returns (values left-expr right-expr is-numeric) or NIL."
       (cond
         ((and (expr-depends-only-on l b1-names)
               (expr-depends-only-on r b2-names))
-         (values l r is-numeric))
+         (values l r is-numeric nil))
         ((and (expr-depends-only-on r b1-names)
               (expr-depends-only-on l b2-names))
-         (values r l is-numeric))
+         (values r l is-numeric t))
         (t nil)))))
 
 ;; One key per number, as `==` compares it (spec §7.4): trailing fraction
@@ -243,18 +244,64 @@ Returns (values left-expr right-expr is-numeric) or NIL."
 (defun positional-binder-p (name)
   (or (string= name "_1") (string= name "_2")))
 
+;; An equi-join key: the value as the comparison would compare it (spec §7.4)
+;; -- `==` through AS-DEC, `$==` through AS-BYTES, the coercions the evaluator
+;; uses -- so a BIN meets the TEXT of its bytes and a list its scalar. NIL for
+;; NULL (never compared); (:BAD . value) for a value the coercion rejects, whose
+;; pair must raise as the comparison would (review 2026-09-25 SEM-06).
 (defun extract-join-key (val is-numeric)
   (when (and val (not (value-null-p val)))
-    (if is-numeric
-        (let ((sc (if (eq (value-kind val) :none)
-                      (when (value-children val)
-                        (let ((fst (cdr (first (value-children val)))))
-                          (when fst (value-scalar fst))))
-                      (value-scalar val))))
-          (when (and sc (stringp sc))
-            (canonical-numeric-string sc)))
-        (when (eq (value-kind val) :text)
-          (value-scalar val)))))
+    (handler-case
+        (if is-numeric
+            (let ((sc (and (eq (value-kind val) :text) (value-scalar val))))
+              (if (and (stringp sc) (canonical-numeric-string sc))
+                  (canonical-numeric-string sc)
+                  (let* ((d (as-dec val nil))
+                         (digits (dec-digits d))
+                         (scale (dec-scale d)))
+                    (if (zerop digits)
+                        "0"
+                        (progn
+                          (loop while (and (> scale 0) (zerop (mod digits 10)))
+                                do (setf digits (floor digits 10))
+                                   (decf scale))
+                          (dec-format (%make-dec (dec-neg d) digits scale)))))))
+            (let ((bytes (as-bytes val nil)))
+              (map 'string #'code-char bytes)))
+      (sel-error () (cons :bad val)))))
+
+;; Names compare ASCII-case-insensitively (spec §2, §7.4): this file folds them
+;; with ASCII-UPCASE, never STRING-UPCASE, which SBCL applies to every 1:1 Unicode
+;; case pair -- "é" and "É" collided in joined rows (review 2026-09-25 SEM-04).
+(defun join-key-bad-p (key) (and (consp key) (eq (car key) :bad)))
+
+;; What the left keys are checked against: whether any right key is live (not
+;; NULL), the first live one if it was rejected, and the first rejected one.
+(defstruct (join-right-facts (:conc-name jrf-)) (live nil) (live-bad nil) (bad nil))
+
+(defun note-right-join-key (facts key)
+  (when key
+    (when (join-key-bad-p key)
+      (unless (jrf-live facts) (setf (jrf-live-bad facts) (cdr key)))
+      (unless (jrf-bad facts) (setf (jrf-bad facts) (cdr key))))
+    (setf (jrf-live facts) t)))
+
+(defun coerce-join-operand (is-numeric value node)
+  (if is-numeric (as-dec value (node-pos node)) (as-bytes value (node-pos node)))
+  (error "a rejected join key did not raise"))
+
+;; A left key meets the right keys pair by pair, in order, as the comparison
+;; would: a rejected left key raises against the first live right key, a good
+;; one against the first rejected right key -- the operator's left operand
+;; coerced first. NULLs are never compared.
+(defun check-join-pair (key facts left-expr right-expr is-numeric swapped)
+  (when (and key (jrf-live facts))
+    (when (join-key-bad-p key)
+      (when (and swapped (jrf-live-bad facts))
+        (coerce-join-operand is-numeric (jrf-live-bad facts) right-expr))
+      (coerce-join-operand is-numeric (cdr key) left-expr))
+    (when (jrf-bad facts)
+      (coerce-join-operand is-numeric (jrf-bad facts) right-expr))))
 
 (defun make-null-record (sample-row tbl-name)
   "An unmatched LINK_LEFT row's right side (spec §7.4): shaped like the first
@@ -378,16 +425,16 @@ LINK_LEFT row, whose right element is NULL-R2 and promotes nothing."
               when (= (join-category v) +join-nested+) do (put k v))
         (dolist (name (join-binder-keys b1 "_1")) (bind name r1))
         (dolist (name (join-binder-keys b2 "_2")) (bind name rside))
-        (let ((right-names (mapcar (lambda (e) (string-upcase (car e))) right-entries)))
+        (let ((right-names (mapcar (lambda (e) (ascii-upcase (car e))) right-entries)))
           (loop for (k . v) in left-entries
                 unless (or (= (join-category v) +join-nested+)
-                           (member (string-upcase k) right-names :test #'string=))
+                           (member (ascii-upcase k) right-names :test #'string=))
                   do (put k v)))
         (when r2
-          (let ((left-names (mapcar (lambda (e) (string-upcase (car e))) left-entries)))
+          (let ((left-names (mapcar (lambda (e) (ascii-upcase (car e))) left-entries)))
             (loop for (k . v) in right-entries
                   when (and (= (join-category v) +join-scalar+)
-                            (not (member (string-upcase k) left-names :test #'string=)))
+                            (not (member (ascii-upcase k) left-names :test #'string=)))
                     do (put k v))))))
     (let* ((entries (nreverse entries))
            (keys (mapcar #'car entries))
@@ -422,16 +469,16 @@ MAKE-JOINED-ROW is the rule; this is it, compiled."
               when (= (join-category (svref lstore i)) +join-nested+) do (put k (cons :l i)))
         (dolist (name (join-binder-keys b1 "_1")) (bind name (cons :left nil)))
         (dolist (name (join-binder-keys b2 "_2")) (bind name (cons :right nil)))
-        (let ((right-names (mapcar #'string-upcase rkeys)))
+        (let ((right-names (mapcar #'ascii-upcase rkeys)))
           (loop for k in lkeys for i from 0
                 unless (or (= (join-category (svref lstore i)) +join-nested+)
-                           (member (string-upcase k) right-names :test #'string=))
+                           (member (ascii-upcase k) right-names :test #'string=))
                   do (put k (cons :l i))))
         (when matched
-          (let ((left-names (mapcar #'string-upcase lkeys)))
+          (let ((left-names (mapcar #'ascii-upcase lkeys)))
             (loop for k in rkeys for i from 0
                   when (and (= (join-category (svref rstore i)) +join-scalar+)
-                            (not (member (string-upcase k) left-names :test #'string=)))
+                            (not (member (ascii-upcase k) left-names :test #'string=)))
                     do (put k (cons :r i)))))))
     (cons (get-record-shape (nreverse keys)) (coerce (nreverse ops) 'simple-vector))))
 
@@ -478,12 +525,12 @@ RKEPT, the right fields it leaves out for being NULL or a record."
     ;; because its name is already a key of the row stays out whatever it
     ;; holds; so does one named like a binder key, which the binder holds.)
     (when matched
-      (let ((left-names (mapcar #'string-upcase (record-shape-keys (value-shape r1))))
+      (let ((left-names (mapcar #'ascii-upcase (record-shape-keys (value-shape r1))))
             (binder-names (append (join-binder-keys b1 "_1") (join-binder-keys b2 "_2")))
             (rs (value-storage rside)))
         (loop for k in (record-shape-keys (value-shape rside)) for i from 0
               for v = (svref rs i)
-              when (and (not (member (string-upcase k) left-names :test #'string=))
+              when (and (not (member (ascii-upcase k) left-names :test #'string=))
                         (not (member k binder-names :test #'string=))
                         (eq (value-kind v) :none) (not (value-is-list v)))
                 do (push i rkept))))
@@ -662,7 +709,7 @@ holds for every flat row of its shape."
                          (cond ((null n) t)
                                ((eq (node-kind n) :index)
                                 (cond ((bare-read-p n)
-                                       (pushnew (string-upcase (node-s (node-r n))) fields :test #'string=)
+                                       (pushnew (ascii-upcase (node-s (node-r n))) fields :test #'string=)
                                        t)
                                       ((and (node-l n) (eq (node-kind (node-l n)) :index))
                                        (and (reads-only-fields (node-l n)) (reads-only-fields (node-r n))))
@@ -701,7 +748,7 @@ assignment, sequence, host function or ABORT -- so it may run out of order."
         ((:index :bin) (and (join-pure-source-p (node-l node)) (join-pure-source-p (node-r node))))
         (:un (join-pure-source-p (node-l node)))
         (:list (every #'join-pure-source-p (node-items node)))
-        (:call (and (manifest-entry (string-upcase (node-s node)))
+        (:call (and (manifest-entry (ascii-upcase (node-s node)))
                     (not (string-equal (node-s node) "ABORT"))
                     (every #'join-pure-source-p (node-items node))))
         (t nil))))
@@ -748,7 +795,7 @@ adds only that name), and may run before the extension is made."
         ((and (eq (node-kind node) :index) (node-l node) (eq (node-kind (node-l node)) :var)
               (member (node-s (node-l node)) binders :test #'string=))
          (and (node-r node) (eq (node-kind (node-r node)) :text)
-              (string/= (string-upcase (node-s (node-r node))) avoid)))
+              (string/= (ascii-upcase (node-s (node-r node))) avoid)))
         ((and (eq (node-kind node) :var) (member (node-s node) binders :test #'string=)) nil)
         (t (and (join-raw-safe-p (node-l node) binders avoid)
                 (join-raw-safe-p (node-r node) binders avoid)
@@ -762,7 +809,7 @@ on the left rows themselves the joined row's member of that name is the row."
         ((and (eq (node-kind node) :index) (node-l node) (eq (node-kind (node-l node)) :var)
               (string= (node-s (node-l node)) binder)
               (node-r node) (eq (node-kind (node-r node)) :text)
-              (member (string-upcase (node-s (node-r node))) names :test #'string=))
+              (member (ascii-upcase (node-s (node-r node))) names :test #'string=))
          (let ((var (make-node :var (node-pos node))))
            (setf (node-s var) binder)
            var))
@@ -781,21 +828,21 @@ on the left rows themselves the joined row's member of that name is the row."
 once), plus the names the row is bound under in the joined row."
   (let ((keys (make-hash-table :test #'equal))
         (shapes (make-hash-table :test #'eq)))
-    (dolist (b bound) (setf (gethash (string-upcase b) keys) t))
+    (dolist (b bound) (setf (gethash (ascii-upcase b) keys) t))
     (for-each-collection-item (row value)
       (let ((shape (value-shape row)))
         (if shape
             (unless (gethash shape shapes)
               (setf (gethash shape shapes) t)
-              (dolist (k (record-shape-keys shape)) (setf (gethash (string-upcase k) keys) t)))
-            (dolist (k (value-keys row)) (setf (gethash (string-upcase k) keys) t)))))
+              (dolist (k (record-shape-keys shape)) (setf (gethash (ascii-upcase k) keys) t)))
+            (dolist (k (value-keys row)) (setf (gethash (ascii-upcase k) keys) t)))))
     keys))
 
 (defun make-join-side-of (value keys nullable &optional bound)
   (let ((first-keys (make-hash-table :test #'equal))
         (first (first-collection-item value)))
     (when first
-      (dolist (k (value-keys first)) (setf (gethash (string-upcase k) first-keys) t)))
+      (dolist (k (value-keys first)) (setf (gethash (ascii-upcase k) first-keys) t)))
     (make-join-side :value value :keys keys :first first-keys :nullable nullable
                     :names (loop for b in bound
                                  unless (member b '("_1" "_2" "_") :test #'string=)
@@ -820,7 +867,7 @@ side's member cannot raise."
 (defun join-side-any-p (side name)
   "NAME on the first row and on every row as a non-null scalar: what a
 promoted join key needs to be read without raising."
-  (and (gethash (string-upcase name) (join-side-first side)) (not (join-side-nullable side))
+  (and (gethash (ascii-upcase name) (join-side-first side)) (not (join-side-nullable side))
        (join-side-fact side (cons :any name)
                        (lambda ()
                          (block scan
@@ -862,7 +909,7 @@ has it. Anything else is not proved."
                      (let ((inner (value-get row member)))
                        (unless (and inner (value-get inner field)) (return-from join-keys-safe-p nil))))))))
           ((and (eq (node-kind obj) :var) (member (node-s obj) row-names :test #'string=))
-           (let ((owners (remove-if-not (lambda (sd) (gethash (string-upcase field) (join-side-keys sd)))
+           (let ((owners (remove-if-not (lambda (sd) (gethash (ascii-upcase field) (join-side-keys sd)))
                                         (list* left right below))))
              (unless (and (= (length owners) 1) (join-side-any-p (first owners) field))
                (return nil))))
@@ -871,7 +918,7 @@ has it. Anything else is not proved."
 (defun join-side-total-p (side name numeric)
   "The field NAME (as written) is on SIDE's first row and on every row, as
 text (a number is text) or, when NUMERIC, as a number."
-  (when (and (gethash (string-upcase name) (join-side-first side)) (not (join-side-nullable side)))
+  (when (and (gethash (ascii-upcase name) (join-side-first side)) (not (join-side-nullable side)))
     (let ((id (cons name numeric)))
       (multiple-value-bind (fact found) (gethash id (join-side-facts side))
         (if found
@@ -892,7 +939,7 @@ side -- the left rows, this right side, or one above -- carries the field at
 all, and that side carries it on every row with the kind (a field two sides
 carry is promoted from neither, spec §7.4)."
   (loop for (name . numeric) in reqs
-        always (let* ((key (string-upcase name))
+        always (let* ((key (ascii-upcase name))
                       (owners (remove-if-not (lambda (side) (and side (gethash key (join-side-keys side))))
                                              (list* left right above))))
                  (and (= (length owners) 1) (join-side-total-p (first owners) name numeric)))))
@@ -1016,8 +1063,8 @@ carry is promoted from neither, spec §7.4)."
     ;; evaluated. A LINK over an empty side is the empty list; a LINK_LEFT
     ;; with left rows but no right rows emits each unmatched row below
     ;; without touching PRED (the nested loop has no pairs to run it on).
-    (let* ((first-r1 (unless (value-null-p val1) (first-collection-item val1)))
-           (first-r2 (unless (value-null-p val1) (first-collection-item val2))))
+    (let* ((first-r1 (first-collection-item val1))
+           (first-r2 (first-collection-item val2)))
       (if (or (value-null-p val1)
               (and (or (null first-r1) (null first-r2))
                    (or (not is-left) (null first-r1))))
@@ -1031,13 +1078,14 @@ carry is promoted from neither, spec §7.4)."
                (out '()))
           (let* ((facts (list nil))
                  (projector (make-join-projector b1 b2 null-r2 facts)))
-            (multiple-value-bind (left-expr right-expr is-numeric)
+            (multiple-value-bind (left-expr right-expr is-numeric swapped)
                 (try-extract-equi-keys pred-node b1 b2)
               (if (and left-expr right-expr sample-r2)
                   ;; --- HASH JOIN --- (only with right rows: the probe phase
                   ;; evaluates the left key per left row, and with no pairs
                   ;; PRED must not run at all)
                   (let ((ht (make-hash-table :test #'equal))
+                        (right-facts (make-join-right-facts))
                         (b2-cell (cons b2 nil))
                         (b2-low-cell (cons (string-downcase b2) nil))
                         (b2-2-cell (cons "_2" nil)))
@@ -1060,7 +1108,8 @@ carry is promoted from neither, spec §7.4)."
                                      (cdr b2-2-cell) r2)
                                (let* ((key-val (args-eval a right-expr))
                                       (key (extract-join-key key-val is-numeric)))
-                                 (when key
+                                 (note-right-join-key right-facts key)
+                                 (when (and key (not (join-key-bad-p key)))
                                    (push r2 (gethash key ht))))))
                         (ctx-pop-frame ctx))
                       (setf (car facts) flat))
@@ -1090,8 +1139,8 @@ carry is promoted from neither, spec §7.4)."
                            ;; rebinds it.
                            (right-names (lambda (stage)
                                           (if (zerop (third stage))
-                                              (list (string-upcase b2) "_2")
-                                              (list (string-upcase b2)))))
+                                              (list (ascii-upcase b2) "_2")
+                                              (list (ascii-upcase b2)))))
                            (right-here (unless (or is-left (string-equal b1 b2))
                                          (lambda (fields stage)
                                            (let ((names (funcall right-names stage))
@@ -1104,7 +1153,7 @@ carry is promoted from neither, spec §7.4)."
                           (setf right-side (make-join-side-of val2 (join-row-keys val2 b2-names) is-left b2-names)))
                         (setf binders (mapcar #'first stages))
                         (let* ((left-side (make-join-side-of val1 (join-row-keys val1 b1-names) nil b1-names))
-                               (self-names (list (string-upcase b1) "_1"))
+                               (self-names (list (ascii-upcase b1) "_1"))
                                ;; A joined row carries a left element's field
                                ;; exactly as the element does whenever no right
                                ;; element has the name (§7.4, pair by pair) --
@@ -1149,8 +1198,8 @@ carry is promoted from neither, spec §7.4)."
                              (fast-field (and prefix deep (eq (node-kind left-expr) :index)
                                               (node-l left-expr) (eq (node-kind (node-l left-expr)) :var)
                                               (node-r left-expr) (eq (node-kind (node-r left-expr)) :text)
-                                              (member (string-upcase (node-s (node-l left-expr)))
-                                                      (list (string-upcase b1) "_1" "_") :test #'string=)
+                                              (member (ascii-upcase (node-s (node-l left-expr)))
+                                                      (list (ascii-upcase b1) "_1" "_") :test #'string=)
                                               (node-s (node-r left-expr))))
                              (b1-cell (cons b1 nil))
                              (b1-low-cell (cons (string-downcase b1) nil))
@@ -1208,7 +1257,7 @@ carry is promoted from neither, spec §7.4)."
                           ;; asked of the element as it arrives, before it is
                           ;; extended: a row it drops is never extended.
                           (let ((raw (and prefix
-                                          (every (lambda (c) (join-raw-safe-p c binders (string-upcase b1))) prefix)
+                                          (every (lambda (c) (join-raw-safe-p c binders (ascii-upcase b1))) prefix)
                                           (or (null fast-field) (string-not-equal fast-field b1)))))
                           (ctx-push-frame ctx frame1)
                           (unwind-protect
@@ -1221,12 +1270,19 @@ carry is promoted from neither, spec §7.4)."
                                        ;; A dropped row whose key is a field it
                                        ;; has cannot raise in the key.
                                        (when (and (= asked 1) fast-field (value-get item1 fast-field))
+                                         ;; Dropped before its key was computed -- but the
+                                         ;; key is this very field, and a rejected one still
+                                         ;; raises in the join as written.
+                                         (check-join-pair (extract-join-key (value-get item1 fast-field) is-numeric)
+                                                          right-facts left-expr right-expr is-numeric swapped)
                                          (setf dropped t)
                                          (return-from row)))
                                      (setf r1 (ensure-row-table-alias item1 b1))
                                      (when (and (not asked) fast-field (value-get r1 fast-field))
                                        (setf asked (verdict prefix r1 binder-cells))
                                        (when (= asked 1)
+                                         (check-join-pair (extract-join-key (value-get r1 fast-field) is-numeric)
+                                                          right-facts left-expr right-expr is-numeric swapped)
                                          (setf dropped t)
                                          (return-from row)))
                                      (setf (cdr b1-cell) r1
@@ -1235,7 +1291,9 @@ carry is promoted from neither, spec §7.4)."
                                            (cdr b1-_-cell) r1)
                                      (let* ((key-val (args-eval a left-expr))
                                             (key (extract-join-key key-val is-numeric))
-                                            (matches (and key (gethash key ht))))
+                                            (matches (progn
+                                                       (check-join-pair key right-facts left-expr right-expr is-numeric swapped)
+                                                       (and key (not (join-key-bad-p key)) (gethash key ht)))))
                                        (unless asked
                                          (setf asked (if prefix (verdict prefix r1 binder-cells) 0)))
                                        (when (= asked 1)
