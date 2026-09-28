@@ -147,7 +147,7 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 // A Call is emitted as `Binding::name(a, b)` in PHP and `Binding.name(a, b)` in
 // Python. Arguments are either literal values or nested Calls.
 const call = (name, args) => ({ __call: name, args });
-const raw = (php, py, js, cpp, lisp) => ({ __raw: true, php, py, js, cpp, lisp });
+const raw = (php, py, js, cpp, lisp, go) => ({ __raw: true, php, py, js, cpp, lisp, go });
 
 function bindingCall(b, where) {
   if (!isObj(b) || b.kind === undefined) {
@@ -239,22 +239,24 @@ function valueCall(v, where) {
     fail(where, `write ${v} as a string and declare "type": "NUM"; a JSON number `
               + 'does not survive every host');
     return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()',
-               '(sel:make-none)');
+               '(sel:make-none)', 'sel.NewNone()');
   }
   if (v === null || v === undefined) {
     return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()',
-               '(sel:make-none)');
+               '(sel:make-none)', 'sel.NewNone()');
   }
   if (typeof v === 'boolean') {
     // C++ spells it `boolean`, because `bool` is a keyword there.
     return raw(`Value::bool(${v})`, `Value.bool(${v ? 'True' : 'False'})`,
                `Value.bool(${v})`, `Value::boolean(${v})`,
-               `(sel:make-bool ${v ? 't' : 'nil'})`);
+               `(sel:make-bool ${v ? 't' : 'nil'})`,
+               `sel.NewBool(${v})`);
   }
   if (typeof v === 'string') {
     return raw(`Value::text(${phpStr(v)})`, `Value.text(${pyStr(v)})`,
                `Value.text(${jsStr(v)})`, `Value::text(${cppStr(v)})`,
-               `(sel:make-text ${lispStr(v)})`);
+               `(sel:make-text ${lispStr(v)})`,
+               `sel.NewText(${goStr(v)})`);
   }
   if (isObj(v) && Object.keys(v).length === 1 && typeof v.bin === 'string') {
     // JSON has no byte string, so the corpus spells one as {"bin": "<hex>"}.
@@ -263,7 +265,8 @@ function valueCall(v, where) {
                `Value.bin(bytes.fromhex(${pyStr(v.bin)}))`,
                `Value.bin(binFromHex(${jsStr(v.bin)}))`,
                `Value::bin(bin_from_hex(${cppStr(v.bin)}))`,
-               `(sel:make-bin (bin-from-hex ${lispStr(v.bin)}))`);
+               `(sel:make-bin (bin-from-hex ${lispStr(v.bin)}))`,
+               `binFromHex(${goStr(v.bin)})`);
   }
   // A list or a map of further values.
   const parts = Array.isArray(v)
@@ -279,7 +282,9 @@ function valueCall(v, where) {
     'value_tree({' + parts.map(([k, x]) =>
       '{' + (k === null ? 'std::nullopt' : cppStr(k)) + ', ' + cppBinding(x) + '}').join(', ') + '})',
     '(value-tree (list ' + parts.map(([k, x]) =>
-      '(cons ' + (k === null ? 'nil' : lispStr(k)) + ' ' + lispArg(x) + ')').join(' ') + '))');
+      '(cons ' + (k === null ? 'nil' : lispStr(k)) + ' ' + lispArg(x) + ')').join(' ') + '))',
+    'valueTree([]treeItem{' + parts.map(([k, x]) =>
+      '{key: ' + (k === null ? 'nil' : `strPtr(${goStr(k)})`) + ', val: ' + (x.__raw ? x.go : goBinding(x)) + '}').join(', ') + '})');
 }
 
 // --- emitters ---------------------------------------------------------------
@@ -893,9 +898,393 @@ function emitCpp(cases) {
     + `}  // namespace sel::sqlt\n`;
 }
 
+// --- Go ---------------------------------------------------------------------
+
+const GO_ENTRY_FIELDS = ['args', 'tpl', 'variants', 'ret', 'caveat', 'since', 'arity', 'builder'];
+
+function goStr(s) {
+  if (s === null || s === undefined) return '""';
+  let out = '"';
+  for (const ch of String(s)) {
+    if (ch === '\\') out += '\\\\';
+    else if (ch === '"') out += '\\"';
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\r') out += '\\r';
+    else if (ch === '\t') out += '\\t';
+    else {
+      const code = ch.codePointAt(0);
+      if (code < 0x20 || code === 0x7f) {
+        out += '\\x' + code.toString(16).padStart(2, '0');
+      } else {
+        out += ch;
+      }
+    }
+  }
+  out += '"';
+  return out;
+}
+
+function goOptStr(v) {
+  if (v === null || v === undefined) return 'nil';
+  return `strPtr(${goStr(v)})`;
+}
+
+function goName(v, what) {
+  if (typeof v !== 'string') throw new Unrepresentable(`${what} that is ${shapeOf(v)}`);
+  return goStr(v);
+}
+function goOptName(v, what) {
+  if (v === null || v === undefined) return '""';
+  return goName(v, what);
+}
+
+function goKind(t) {
+  if (t === null || t === undefined) return 'sql.KindUnknown';
+  if (typeof t !== 'string') throw new Unrepresentable(`a binding type that is ${shapeOf(t)}`);
+  const k = { NUM: 'KindNum', TEXT: 'KindText', BOOL: 'KindBool', BIN: 'KindBin',
+              UNKNOWN: 'KindUnknown', LIST: 'KindList' }[t];
+  if (!k) throw new Unrepresentable(`the binding type ${JSON.stringify(t)}`);
+  return `sql.${k}`;
+}
+
+function goBinding(v) {
+  if (v?.__call === 'withUniqueKey') return `${goBinding(v.args[0])}.WithUniqueKey(${goName(v.args[1], 'a unique key')})`;
+  if (v === null || v === undefined || typeof v === 'string') {
+    throw new Unrepresentable(`a binding that is ${shapeOf(v)}`);
+  }
+  if (v.__raw) return v.go;
+  if (!v.__call) throw new Unrepresentable(`a binding shape that is ${shapeOf(v)}`);
+
+  switch (v.__call) {
+    case 'column': {
+      const [col, table, type, exact, sargable, guard, collation, prefilter] = v.args;
+      const c = goName(col, 'a column name');
+      const t = goOptName(table, 'a table name');
+      const k = goKind(type);
+      const e = exact ? 'true' : 'false';
+      const s = sargable ? 'true' : 'false';
+      const g = guard ? 'true' : 'false';
+      const pref = (prefilter !== undefined && prefilter !== null) ? goStr(prefilter) : '""';
+      return `bindCol(${c}, ${t}, ${k}, ${e}, ${s}, ${g}, ${pref})`;
+    }
+    case 'raw': {
+      const [sql, type, exact, sargable, guard, collation, prefilter] = v.args;
+      const s = goName(sql, 'a raw column');
+      const k = goKind(type);
+      const e = exact ? 'true' : 'false';
+      const sarg = sargable ? 'true' : 'false';
+      const g = guard ? 'true' : 'false';
+      const pref = (prefilter !== undefined && prefilter !== null) ? goStr(prefilter) : '""';
+      return `bindRaw(${s}, ${k}, ${e}, ${sarg}, ${g}, ${pref})`;
+    }
+    case 'columns':
+      return `bindColumns([]*sql.Binding{${v.args.map(goBinding).join(', ')}})`;
+    case 'relation':
+    case 'relationQuery': {
+      const [from, alias, fields, scalar, corr, prefilter] = v.args;
+      const fn = v.__call === 'relation' ? 'bindRelation' : 'bindRelationQuery';
+      if (fields === null || fields === undefined || Array.isArray(fields)
+          || typeof fields !== 'object' || fields.__call || fields.__raw) {
+        throw new Unrepresentable(`relation fields that are ${shapeOf(fields)}`);
+      }
+      const f = Object.entries(fields)
+        .map(([k, b]) => `sql.FieldEntry{Name: ${goStr(k)}, Binding: ${goBinding(b)}}`).join(', ');
+      const pref = (prefilter !== undefined && prefilter !== null) ? goStr(prefilter) : '""';
+      const sc = (scalar !== undefined && scalar !== null) ? goStr(scalar) : '""';
+      const cr = (corr !== undefined && corr !== null) ? goName(corr, 'a relation correlate') : '""';
+      const al = goOptName(alias, 'a relation alias');
+      const fr = goName(from, 'a relation source');
+      return `${fn}(${fr}, ${al}, []sql.FieldEntry{${f}}, ${sc}, ${cr}, ${pref})`;
+    }
+    case 'value': {
+      const [val, type] = v.args;
+      const t = (type === null || type === undefined) ? 'nil' : `sqlKindPtr(${goKind(type)})`;
+      return `bindValue(${goBinding(val)}, ${t})`;
+    }
+  }
+  throw new Unrepresentable(`the binding constructor ${v.__call}`);
+}
+
+function goEntrySpec(entry, section) {
+  if (entry === null) return 'nil';
+  if (typeof entry === 'string') return goStr(entry);
+  if (typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Unrepresentable(`a map entry that is ${shapeOf(entry)}`);
+  }
+  if (entry.builder !== undefined) {
+    throw new Unrepresentable('a builder entry, which no document declares');
+  }
+  const hasRet = entry.ret !== undefined && entry.ret !== null;
+  const parts = [];
+  if (entry.variants !== undefined) {
+    if (typeof entry.variants !== 'object' || Array.isArray(entry.variants)) {
+      throw new Unrepresentable(`variants that are ${shapeOf(entry.variants)}`);
+    }
+    if (!hasRet) throw new Unrepresentable('variants with no ret');
+    const arms = Object.entries(entry.variants).map(([k, t]) => {
+      if (t === null) return `${goStr(k)}: nil`;
+      if (typeof t !== 'string') throw new Unrepresentable(`a template arm that is ${shapeOf(t)}`);
+      return `${goStr(k)}: ${goStr(t)}`;
+    }).join(', ');
+    parts.push(`"variants": map[string]interface{}{${arms}}`);
+  } else if (typeof entry.tpl === 'string') {
+    parts.push(`"tpl": ${goStr(entry.tpl)}`);
+  } else if (entry.tpl !== null && typeof entry.tpl === 'object' && !Array.isArray(entry.tpl)) {
+    if (!hasRet) throw new Unrepresentable('an arity-keyed template with no ret');
+    const arms = Object.entries(entry.tpl).map(([k, t]) => {
+      if (t === null) return `${goStr(k)}: nil`;
+      if (typeof t !== 'string') throw new Unrepresentable(`a template arm that is ${shapeOf(t)}`);
+      return `${goStr(k)}: ${goStr(t)}`;
+    }).join(', ');
+    parts.push(`"tpl": map[string]interface{}{${arms}}`);
+  } else {
+    throw new Unrepresentable(`a tpl that is ${shapeOf(entry.tpl)}`);
+  }
+  if (hasRet) {
+    parts.push(`"ret": ${goStr(entry.ret)}`);
+  }
+  if (entry.caveat !== undefined && entry.caveat !== null) {
+    parts.push(`"caveat": ${goName(entry.caveat, 'a caveat')}`);
+  }
+  if (entry.since !== undefined && entry.since !== null) {
+    parts.push(`"since": ${goName(entry.since, 'a since')}`);
+  }
+  if (entry.arity !== undefined && entry.arity !== null) {
+    const a = entry.arity;
+    if (!Array.isArray(a) || a.length !== 2 || !a.every((x) => Number.isInteger(x))) {
+      throw new Unrepresentable(`an arity that is ${shapeOf(a)} of non-integers`);
+    }
+    parts.push(`"arity": [2]int{${a[0]}, ${a[1]}}`);
+  }
+  if (entry.args !== undefined && entry.args !== null) {
+    const a = entry.args;
+    if (!Array.isArray(a) || !a.every((x) => typeof x === 'string')) {
+      throw new Unrepresentable(`args that are ${shapeOf(a)}`);
+    }
+    parts.push(`"args": []string{${a.map(goStr).join(', ')}}`);
+  }
+  for (const k of Object.keys(entry)) {
+    if (!GO_ENTRY_FIELDS.includes(k)) throw new Unrepresentable(`the entry field ${JSON.stringify(k)}`);
+  }
+  return `map[string]interface{}{\n` + parts.map(p => `\t\t\t${p},`).join('\n') + `\n\t\t}`;
+}
+
+function goDialectSpec(doc, allow = []) {
+  const known = ['dialect', 'extends', 'version', 'target', 'lexical', ...allow];
+  for (const k of Object.keys(doc)) {
+    if (!known.includes(k)) throw new Unrepresentable(`a dialect declaration carrying ${JSON.stringify(k)}`);
+  }
+  if (!('extends' in doc)) throw new Unrepresentable('a dialect declaration with no extends');
+
+  const parts = [];
+  if (doc.extends === null) {
+    if (typeof doc.version !== 'string') {
+      throw new Unrepresentable('a root dialect with no version');
+    }
+    parts.push(`"extends": nil`);
+  } else {
+    parts.push(`"extends": ${goName(doc.extends, 'an extends')}`);
+  }
+  if (doc.version !== undefined && doc.version !== null) {
+    parts.push(`"version": ${goName(doc.version, 'a version')}`);
+  }
+  if (doc.target !== undefined && doc.target !== null) {
+    if (typeof doc.target !== 'boolean') throw new Unrepresentable(`a target that is ${shapeOf(doc.target)}`);
+    parts.push(`"target": ${doc.target ? 'true' : 'false'}`);
+  }
+  if (doc.lexical !== undefined && doc.lexical !== null) {
+    const lex = [];
+    for (const [k, v] of Object.entries(doc.lexical)) {
+      if (v === null) {
+        lex.push(`${goStr(k)}: nil`);
+      } else if (typeof v === 'string') {
+        lex.push(`${goStr(k)}: ${goStr(v)}`);
+      } else if (typeof v === 'object' && !Array.isArray(v)) {
+        const sub = [];
+        for (const [a, b] of Object.entries(v)) {
+          if (typeof b !== 'string') throw new Unrepresentable(`an escape that is ${shapeOf(b)}`);
+          sub.push(`${goStr(a)}: ${goStr(b)}`);
+        }
+        lex.push(`${goStr(k)}: map[string]interface{}{${sub.join(', ')}}`);
+      } else {
+        throw new Unrepresentable(`a lexical value that is ${shapeOf(v)}`);
+      }
+    }
+    parts.push(`"lexical": map[string]interface{}{${lex.join(', ')}}`);
+  }
+  return `map[string]interface{}{\n` + parts.map(p => `\t\t\t${p},`).join('\n') + `\n\t\t}`;
+}
+
+function goRegister(ops) {
+  return ops.map((op) => {
+    if (op === null || typeof op !== 'object') {
+      throw new Unrepresentable(`a register op that is ${shapeOf(op)}`);
+    }
+    if ('define' in op) {
+      const a = op.define;
+      if (!Array.isArray(a) || a.length !== 4) {
+        throw new Unrepresentable(`a define that is ${shapeOf(a)}`);
+      }
+      const [dialect, section, key, entry] = a;
+      if (!['ops', 'funcs', 'skel'].includes(section)) {
+        throw new Unrepresentable(`the map section ${JSON.stringify(section)}`);
+      }
+      return `\tsql.Define(${goName(dialect, 'a dialect')}, ${goStr(section)}, `
+           + `${goName(key, 'an entry key')}, ${goEntrySpec(entry, section)})`;
+    }
+    if ('dialect' in op) {
+      return `\tsql.DefineDialect(${goName(op.dialect, 'a dialect name')}, `
+           + `${goDialectSpec(op)})`;
+    }
+    if ('function' in op) {
+      const f = op.function;
+      if (!Array.isArray(f) || f.length !== 3 || typeof f[0] !== 'string'
+          || !Number.isInteger(f[1]) || !Number.isInteger(f[2])) {
+        throw new Unrepresentable(`a function op that is ${shapeOf(f)}`);
+      }
+      return `\tsel.RegisterFunction(${goStr(f[0])}, ${f[1]}, ${f[2]}, `
+           + 'func(args *sel.Args) *sel.Value { return sel.NewText("") })';
+    }
+    throw new Unrepresentable('a register op with neither define, dialect nor function');
+  }).join('\n');
+}
+
+function emitGo(cases) {
+  const bodies = [];
+  const rows = [];
+
+  cases.forEach((c, i) => {
+    let unrep = null;
+    let binds = '';
+    let reg = '';
+    try {
+      binds = Object.entries(c.bindingCalls)
+        .map(([n, x]) => `\t\t${goStr(n)}: ${goBinding(x)},`).join('\n');
+    } catch (e) {
+      if (!(e instanceof Unrepresentable)) throw e;
+      unrep = e.why;
+    }
+    if (unrep === null && c.registerData !== null && c.registerData !== undefined) {
+      try {
+        reg = goRegister(c.registerData);
+      } catch (e) {
+        if (!(e instanceof Unrepresentable)) throw e;
+        unrep = e.why;
+      }
+    }
+
+    if (unrep !== null && !c.error && !c.throws) {
+      throw new Error(
+        `${c.at}: case ${c.name} cannot be written with the Go constructors `
+        + `(${unrep}) and does not assert a refusal, so Go would lose the coverage `
+        + 'rather than move it to compile time.');
+    }
+
+    const fn = `c${i}`;
+    if (unrep === null) {
+      bodies.push(`func ${fn}Bind() map[string]*sql.Binding {\n`
+                + `\treturn map[string]*sql.Binding{\n${binds}\n\t}\n}`);
+      if (reg) bodies.push(`func ${fn}Reg() {\n${reg}\n}`);
+    }
+
+    const tablesStr = c.tableList === null ? 'nil' : `[]string{${(c.tableList ?? []).map(goStr).join(', ')}}`;
+
+    const f = [
+      `Name: ${goStr(c.name)}`,
+      `At: ${goStr(c.at)}`,
+      `Dialect: ${goStr(c.dialect ?? '')}`,
+      `Source: ${goStr(c.source ?? '')}`,
+      `Expect: ${goOptStr(c.expect)}`,
+      `Error: ${goOptStr(c.error)}`,
+      `Throws: ${goOptStr(c.throws)}`,
+      `Params: ${goOptStr(c.params)}`,
+      `As: ${goOptStr(c.as)}`,
+      `Mode: ${goOptStr(c.mode)}`,
+      `Strict: ${c.optionsData && c.optionsData.strict ? 'true' : 'false'}`,
+      `Plan: ${goOptStr(c.plan)}`,
+      `HasTables: ${c.tableList !== null ? 'true' : 'false'}`,
+      `Tables: ${tablesStr}`,
+      `Unrepresentable: ${unrep === null ? 'nil' : `strPtr(${goStr(unrep)})`}`,
+      `RegisterFn: ${unrep === null && reg ? `${fn}Reg` : 'nil'}`,
+      `BindingsFn: ${unrep === null ? `${fn}Bind` : 'nil'}`,
+    ];
+    rows.push(`\t{${f.join(',\n\t ')}},`);
+  });
+
+  return `package main\n\n// ${BANNER.join('\n// ')}\n\n`
+    + `import (\n`
+    + `\t"encoding/hex"\n`
+    + `\t"strconv"\n\n`
+    + `\t"github.com/nathanjel/sel/go/sel"\n`
+    + `\t"github.com/nathanjel/sel/go/sel/sql"\n`
+    + `)\n\n`
+    + `type treeItem struct {\n\tkey *string\n\tval *sel.Value\n}\n\n`
+    + `func strPtr(s string) *string { return &s }\n`
+    + `func sqlKindPtr(k sql.SqlKind) *sql.SqlKind { return &k }\n\n`
+    + `func binFromHex(hexStr string) *sel.Value {\n`
+    + `\tb, err := hex.DecodeString(hexStr)\n`
+    + `\tif err != nil {\n\t\tpanic(err)\n\t}\n`
+    + `\treturn sel.NewBin(b)\n`
+    + `}\n\n`
+    + `func valueTree(items []treeItem) *sel.Value {\n`
+    + `\tv := sel.NewList(nil)\n`
+    + `\ti := 0\n`
+    + `\tfor _, it := range items {\n`
+    + `\t\tk := ""\n`
+    + `\t\tif it.key != nil {\n`
+    + `\t\t\tk = *it.key\n`
+    + `\t\t} else {\n`
+    + `\t\t\ti++\n`
+    + `\t\t\tk = strconv.Itoa(i)\n`
+    + `\t\t}\n`
+    + `\t\tv.Set(k, it.val)\n`
+    + `\t}\n`
+    + `\treturn v\n`
+    + `}\n\n`
+    + `func bindCol(col, table string, typ sql.SqlKind, exact, sargable, guard bool, prefilter string) *sql.Binding {\n`
+    + `\treturn sql.ColumnBinding(col, table, typ, exact, sargable, guard, "", prefilter, false)\n`
+    + `}\n\n`
+    + `func bindRaw(raw string, typ sql.SqlKind, exact, sargable, guard bool, prefilter string) *sql.Binding {\n`
+    + `\treturn sql.RawBinding(raw, typ, exact, sargable, guard, "", prefilter, false)\n`
+    + `}\n\n`
+    + `func bindColumns(items []*sql.Binding) *sql.Binding {\n`
+    + `\treturn sql.ColumnsBinding(items)\n`
+    + `}\n\n`
+    + `func bindRelation(from, alias string, fields []sql.FieldEntry, scalar, correlate, prefilter string) *sql.Binding {\n`
+    + `\treturn sql.RelationBinding(from, alias, fields, scalar, correlate, prefilter, false)\n`
+    + `}\n\n`
+    + `func bindRelationQuery(query, alias string, fields []sql.FieldEntry, scalar, correlate, prefilter string) *sql.Binding {\n`
+    + `\treturn sql.RelationQueryBinding(query, alias, fields, scalar, correlate, prefilter, false)\n`
+    + `}\n\n`
+    + `func bindValue(val *sel.Value, typ *sql.SqlKind) *sql.Binding {\n`
+    + `\treturn sql.ValueBinding(val, typ)\n`
+    + `}\n\n`
+    + `${bodies.join('\n\n')}\n\n`
+    + `type SqlCase struct {\n`
+    + `\tName            string\n`
+    + `\tAt              string\n`
+    + `\tDialect         string\n`
+    + `\tSource          string\n`
+    + `\tExpect          *string\n`
+    + `\tError           *string\n`
+    + `\tThrows          *string\n`
+    + `\tParams          *string\n`
+    + `\tAs              *string\n`
+    + `\tMode            *string\n`
+    + `\tStrict          bool\n`
+    + `\tPlan            *string\n`
+    + `\tHasTables       bool\n`
+    + `\tTables          []string\n`
+    + `\tUnrepresentable *string\n`
+    + `\tRegisterFn      func()\n`
+    + `\tBindingsFn      func() map[string]*sql.Binding\n`
+    + `}\n\n`
+    + `var sqlCases = []SqlCase{\n${rows.join('\n')}\n}\n`;
+}
+
 const OUTPUTS = [['php/bin/CaseData.php', emitPhp], ['python/bin/case_data.py', emitPython],
   ['js/bin/case-data.mjs', emitJs], ['cpp/bin/case_data.cpp', emitCpp],
-  ['lisp/bin/case-data.lisp', emitLispCases]];
+  ['lisp/bin/case-data.lisp', emitLispCases], ['go/bin/sqlt/case_data_gen.go', emitGo]];
 const check = process.argv.includes('--check');
 let stale = 0;
 // Unchanged content is not rewritten, so a no-op run leaves every timestamp

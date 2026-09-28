@@ -22,7 +22,7 @@
 # a minifier that renamed something it should not have would have reached a user
 # before it reached the suite.
 
-SEL_IMPLS="${SEL_IMPLS:-js js-bundle js-bundle-min php cpp lisp python}"
+SEL_IMPLS="${SEL_IMPLS:-js js-bundle js-bundle-min php cpp lisp python go}"
 
 # Where python-wheel looks for its interpreter: a venv with the built wheel
 # installed, so the *package* is held to the same suite as the source tree.
@@ -126,6 +126,7 @@ impl_conformance() {
     lisp) lisp/bin/conformance "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/conformance.py "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/conformance.py "$@" ;;
+    go)   go/build/conformance "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -144,6 +145,7 @@ impl_batch() {
     lisp) lisp/bin/batch "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/batch.py "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/batch.py "$@" ;;
+    go)   go/build/batch "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -198,6 +200,7 @@ impl_e2e() {
     lisp) lisp/bin/e2e "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 examples/e2e.py "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" examples/e2e.py "$@" ;;
+    go)   go/build/e2e "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -219,6 +222,7 @@ impl_deps() {
     lisp) lisp/bin/sel --deps "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 -m sel --deps "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" -m sel --deps "$@" ;;
+    go)   go/build/sel --deps "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -236,6 +240,7 @@ impl_sqlapi() {
     lisp) lisp/bin/sqlapi "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlapi "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlapi "$@" ;;
+    go)   go/build/sqlapi "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -251,6 +256,7 @@ impl_api() {
     lisp) lisp/bin/api "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/api.py "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/api.py "$@" ;;
+    go)   go/build/api "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -269,6 +275,7 @@ impl_decimal() {
     # The oracle is a whitebox check on python/sel/decimal.py, which the wheel
     # ships verbatim. Running it twice would test the same code.
     python-wheel) echo "python-wheel: decimal core is python/sel/decimal.py, covered above" ;;
+    go)   go/build/check-decimal "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -293,6 +300,7 @@ impl_sql() {
     # The runner adds python/ to sys.path only when `sel` is not already
     # importable, so this grades the installed wheel and not the source tree.
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlt "$@" ;;
+    go)   go/build/sqlt "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -324,6 +332,7 @@ impl_sqlreplay() {
     lisp) lisp/bin/sqlreplay "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlreplay "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlreplay "$@" ;;
+    go)   go/build/sqlreplay "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -339,6 +348,7 @@ impl_sqlfuzz() {
     lisp) lisp/bin/sqlfuzz "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlfuzz "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlfuzz "$@" ;;
+    go)   go/build/sqlfuzz "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -351,7 +361,7 @@ impl_oracle() {
     # oracle measures whether the MAP means what SEL means, and the map is data
     # every host consumes unchanged, so a second harness would ask one server
     # the same question twice.
-    js|js-bundle|js-bundle-min|cpp|lisp) return 0 ;;
+    js|js-bundle|js-bundle-min|cpp|lisp|go) return 0 ;;
     python|python-wheel) return 0 ;;            # M6
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
@@ -363,7 +373,7 @@ impl_sqldoc() {
   local impl="$1"; shift
   case "$impl" in
     php)  sel_php php/bin/sqldoc "$@" ;;
-    js|js-bundle|js-bundle-min|cpp|lisp) return 0 ;;   # a property of the design doc
+    js|js-bundle|js-bundle-min|cpp|lisp|go) return 0 ;;   # a property of the design doc
     python|python-wheel) return 0 ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
@@ -401,6 +411,7 @@ impl_unit() {
     cpp)    { [ -x cpp/build/unit ] && cpp/build/unit; } &&
             { [ -x cpp/build/sqlunit ] && cpp/build/sqlunit; } ;;
     lisp)   lisp/bin/test ;;
+    go)     (cd go && go test ./...) ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -461,6 +472,13 @@ impl_available() {
       # could never both be available in one check.sh run.
       [ -n "${SEL_PY_WHEEL_BIN:-}" ] && [ -x "$SEL_PY_WHEEL_BIN" ] && [ -f "$installed" ] \
         && [ -z "$(find python/sel -name '*.py' -newer "$installed" -print -quit 2>/dev/null)" ] ;;
+    go)
+      command -v go >/dev/null 2>&1 || return 1
+      [ -x go/build/conformance ] || return 1
+      go_newest="$(find go/build -maxdepth 1 -type f -executable -printf '%T@ %p\n' \
+        2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+      [ -n "$go_newest" ] && [ -z "$(find go -path go/build -prune -o \
+        -name '*.go' -newer "$go_newest" -print -quit 2>/dev/null)" ] ;;
     *)    return 1 ;;
   esac
 }

@@ -26,6 +26,7 @@ const OUTPUTS = {
   php: 'php/src/MathOps.php',
   cpp: 'cpp/sel_math_ops.hpp',
   lisp: 'lisp/src/math-ops.lisp',
+  go: 'go/internal/mathops/math_ops.go',
   docs: 'docs/internals/math-ops.md',
 };
 
@@ -166,6 +167,40 @@ function renderLisp(ops) {
   return l.join('\n');
 }
 
+function renderGo(ops) {
+  const l = [
+    `// ${HEADER}`,
+    '//',
+    '// What the math plan compiles: Operators maps a binary operator token and',
+    '// Prefix a prefix operator name to a symbolic operation; Builtins',
+    '// maps a builtin name to {Op, Arity, Aux}. Ops lists every',
+    '// operation; the optimizer maps each to its own native OpCode.',
+    '',
+    'package mathops',
+    '',
+    'type BuiltinSpec struct {',
+    '\tOp    string',
+    '\tArity string // "1", "2" or "fold"',
+    '\tAux   int    // -1 if none',
+    '}',
+    '',
+    'var Operators = map[string]string{',
+  ];
+  for (const o of ops) if (o.kind === 'operator') l.push(`\t"${o.token}": "${o.name}",`);
+  l.push('}', '', 'var Prefix = map[string]string{');
+  for (const o of ops) if (o.kind === 'prefix') l.push(`\t"${o.token}": "${o.name}",`);
+  l.push('}', '', 'var Builtins = map[string]BuiltinSpec{');
+  for (const o of ops) if (o.kind === 'builtin') {
+    const arity = typeof o.arity === 'string' ? o.arity : String(o.arity);
+    const aux = o.aux === null ? -1 : o.aux;
+    l.push(`\t"${o.token}": {Op: "${o.name}", Arity: "${arity}", Aux: ${aux}},`);
+  }
+  l.push('}', '', 'var Ops = []string{');
+  for (const o of ops) l.push(`\t"${o.name}",`);
+  l.push('}', '');
+  return l.join('\n');
+}
+
 function renderDocs(ops) {
   const l = [`<!-- ${HEADER} -->`, '# Math-plan operations', '',
     'The operations every host\'s math plan compiles, from the authored manifest',
@@ -187,7 +222,7 @@ function renderDocs(ops) {
 const ops = load();
 const rendered = {
   js: renderJs(ops), python: renderPython(ops), php: renderPhp(ops),
-  cpp: renderCpp(ops), lisp: renderLisp(ops), docs: renderDocs(ops),
+  cpp: renderCpp(ops), lisp: renderLisp(ops), go: renderGo(ops), docs: renderDocs(ops),
 };
 if (process.argv.includes('--check')) {
   let stale = 0;

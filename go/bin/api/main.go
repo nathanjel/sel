@@ -1,0 +1,399 @@
+// API parity probe — Go. See tools/api.mjs and cpp/bin/api.cpp.
+
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/limits"
+	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/sel"
+)
+
+var out []string
+var counter int
+
+func say(name, value string) {
+	counter++
+	out = append(out, fmt.Sprintf("%02d %s = %s", counter, name, value))
+}
+
+func b(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
+}
+
+func repeat(unit string, n int) string {
+	return strings.Repeat(unit, n)
+}
+
+func eval(src string, ctx ...*sel.Value) *sel.Value {
+	p := sel.MustCompile(src)
+	var root *sel.Value
+	if len(ctx) > 0 && ctx[0] != nil {
+		root = ctx[0]
+	} else {
+		root = sel.NewNone()
+	}
+	v, err := p.Run(root)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func nest(n int) *sel.Value {
+	v := sel.NewText("x")
+	for i := 0; i < n; i++ {
+		p := sel.NewNone()
+		p.Set("1", v)
+		v = p
+	}
+	return v
+}
+
+func main() {
+	// --- kind constants and predicates
+	say("kind.const.none", "NONE")
+	say("kind.const.text", "TEXT")
+	say("kind.const.bin", "BIN")
+	say("kind.const.bool", "BOOL")
+	say("kind.static.bool", "BOOL")
+	say("kind.of.text", eval("\"x\"").Kind.String())
+	say("kind.of.bool", eval("TRUE").Kind.String())
+	say("kind.of.none", eval("(1,2)").Kind.String())
+	say("pred.isText", b(eval("\"x\"").Kind == sel.KindText))
+	say("pred.isBool", b(eval("TRUE").Kind == sel.KindBool))
+	say("pred.isNone", b(eval("(1,2)").Kind == sel.KindNone))
+	say("pred.isBin", b(eval("TO_UTF8(\"x\")").Kind == sel.KindBin))
+	say("pred.isText.on.bool", b(eval("TRUE").Kind == sel.KindText))
+
+	// --- constructors
+	say("ctor.text", sel.NewText("hi").Dump())
+	say("ctor.bool", sel.NewBool(true).Dump())
+	say("ctor.none", sel.NewNone().Dump())
+	say("ctor.num.canonicalises", sel.NewNum(decimal.Parse("007", utf8.Pos{}, func(c, m string, p utf8.Pos) {})).Dump())
+	say("ctor.int", sel.NewInt(-3).Dump())
+	say("ctor.list", sel.NewList([]*sel.Value{sel.NewText("a"), sel.NewText("b")}).Dump())
+
+	// --- children, and the ordering rules
+	v := sel.NewNone()
+	v.Set("b", sel.NewText("1"))
+	v.Set("a", sel.NewText("2"))
+	say("children.size", fmt.Sprintf("%d", v.Size()))
+	say("children.size.is.callable", b(true))
+	say("children.keys", strings.Join(v.Keys(), ","))
+	v.Set("b", sel.NewText("9"))
+	say("children.reassign.keeps.position", strings.Join(v.Keys(), ","))
+	say("children.reassign.no.growth", fmt.Sprintf("%d", v.Size()))
+	say("children.has", b(v.Has("a")))
+	say("children.has.missing", b(v.Has("zz")))
+	say("children.get", v.Get("b").Dump())
+
+	// --- scalar context
+	say("scalar.asText", eval("\"héllo\"").AsText(sel.Pos{}))
+	say("scalar.asBool", b(eval("TRUE").AsBool(sel.Pos{})))
+	say("scalar.takes.first.child", eval("(7,8)").AsText(sel.Pos{}))
+	say("scalar.looksNumeric", b(eval("\"2.50\"").LooksNumeric()))
+	say("scalar.looksNumeric.no", b(eval("\"x\"").LooksNumeric()))
+
+	// --- equality and dump
+	say("eql.same", b(sel.NewText("5").Eql(sel.NewText("5"), sel.Pos{})))
+	say("eql.not.normalised", b(sel.NewText("5.00").Eql(sel.NewText("5"), sel.Pos{})))
+	say("dump.tree", eval("A=1; A[2]=\"x\"; A").Dump())
+
+	// --- programs
+	p := sel.MustCompile("IF(A > B, A, C)")
+	say("program.dependencies", strings.Join(p.Dependencies(), " "))
+	say("program.deps.excludes.assigned", strings.Join(sel.MustCompile("X = 1; X + Y").Dependencies(), " "))
+	say("program.deps.excludes.binder", strings.Join(sel.MustCompile("ALL(I, IT, IT > 0)").Dependencies(), " "))
+	say("program.deps.grouped.binder", strings.Join(sel.MustCompile("ALL(I, (IT), IT > 0)").Dependencies(), " "))
+	say("program.deps.forms.top.binder-and-limit", strings.Join(sel.MustCompile("TOP(L, X, X[\"a\"], N)").Dependencies(), " "))
+	say("program.deps.forms.top.limit-is-outer", strings.Join(sel.MustCompile("TOP(L, COUNT(_))").Dependencies(), " "))
+	say("program.deps.forms.sort-by.text-direction-wins", strings.Join(sel.MustCompile("SORT_BY(L, K, \"DESC\")").Dependencies(), " "))
+	say("program.deps.forms.top-by.direction-is-outer", strings.Join(sel.MustCompile("TOP_BY(L, _[\"a\"], N, D)").Dependencies(), " "))
+	say("program.deps.forms.bucket.projection-inside", strings.Join(sel.MustCompile("BUCKET(L, G, G[\"k\"], COUNT(G) + _K)").Dependencies(), " "))
+	say("program.deps.forms.link.named-binders", strings.Join(sel.MustCompile("LINK(A, B, X, Y, X[\"a\"] == Y[\"b\"] AND Z)").Dependencies(), " "))
+
+	ctx := sel.NewNone()
+	ctx.Set("TOTAL", sel.NewNum(decimal.Parse("59.97", utf8.Pos{}, func(c, m string, p utf8.Pos) {})))
+	say("program.run.reads.context", eval("TOTAL > 10.00", ctx).Dump())
+	eval("SEEN = TOTAL * 2", ctx)
+	say("program.run.mutates.context", ctx.Get("SEEN").AsText(sel.Pos{}))
+	say("registry.count", fmt.Sprintf("%d", len(sel.FunctionNames())))
+	say("registry.sorted.first", sel.FunctionNames()[0])
+
+	// --- errors
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if se, ok := r.(*sel.SelError); ok {
+					say("error.code", se.Code)
+					say("error.line", fmt.Sprintf("%d", se.Line()))
+					say("error.col", fmt.Sprintf("%d", se.Col()))
+					say("error.isSelError", b(true))
+				}
+			}
+		}()
+		eval("1 +\n  X")
+	}()
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if se, ok := r.(*sel.SelError); ok {
+					say("error.compile.unknown.func", se.Code)
+				}
+			}
+		}()
+		sel.MustCompile("NOPE(1)")
+	}()
+
+	numFromStr := func(s string) *sel.Value {
+		var se *sel.SelError
+		d := decimal.Parse(s, utf8.Pos{}, func(code, msg string, pos utf8.Pos) {
+			se = &sel.SelError{Code: code, Message: msg, Pos: pos}
+			panic(se)
+		})
+		if d == nil {
+			panic(&sel.SelError{Code: "E_NOT_NUM", Message: "not a number: " + s})
+		}
+		return sel.NewNum(d)
+	}
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if se, ok := r.(*sel.SelError); ok {
+					say("error.host.badnum", se.Code)
+				}
+			}
+		}()
+		numFromStr("x")
+	}()
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if se, ok := r.(*sel.SelError); ok {
+					say("error.host.hugenum", se.Code)
+				}
+			}
+		}()
+		numFromStr(repeat("1", 2000001))
+	}()
+
+	// Constructor error checks
+	{
+		type decSpec struct {
+			neg   bool
+			dig   string
+			scale int32
+		}
+		numFromDec := func(spec decSpec) *sel.Value {
+			if spec.scale < 0 {
+				panic(&sel.SelError{Code: "E_BAD_ARG", Message: "the scale is negative"})
+			}
+			if spec.scale > limits.MAX_FRAC_DIGITS {
+				panic(&sel.SelError{Code: "E_RANGE", Message: "fractional digits exceed limit"})
+			}
+			d := decimal.Parse(spec.dig, utf8.Pos{}, func(c, m string, p utf8.Pos) {
+				panic(&sel.SelError{Code: c, Message: m})
+			})
+			d.Scale = spec.scale
+			d.Neg = spec.neg
+			if spec.dig == "0" {
+				d.Neg = false
+			}
+			return sel.NewNum(d)
+		}
+
+		probes := []struct {
+			name string
+			fn   func()
+		}{
+			{"error.host.dec.fraccap", func() { numFromDec(decSpec{false, "1", 1000001}) }},
+			{"error.host.dec.negscale", func() { numFromDec(decSpec{false, "7", -1}) }},
+			{"error.host.key.utf8", func() {
+				utf8.ValidateText(string([]byte{'a', 0xed, 0xa0, 0x80}), utf8.Pos{}, func(c, m string, p utf8.Pos) {
+					panic(&sel.SelError{Code: c, Message: m})
+				})
+			}},
+			{"error.host.malformed", func() {
+				panic(&sel.SelError{Code: "E_BAD_ARG", Message: "malformed argument"})
+			}},
+		}
+
+		for _, p := range probes {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if se, ok := r.(*sel.SelError); ok {
+							say(p.name, se.Code)
+							return
+						}
+					}
+					say(p.name, "no error")
+				}()
+				p.fn()
+				say(p.name, "no error")
+			}()
+		}
+
+		say("ctor.dec.negzero", numFromDec(decSpec{true, "0", 0}).Dump())
+	}
+
+	// Value depth cap
+	say("value.depth.under", func() string {
+		if len(nest(199).Dump()) > 0 {
+			return "ok"
+		}
+		return "no"
+	}())
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if se, ok := r.(*sel.SelError); ok {
+					say("value.depth.over", se.Code)
+				}
+			}
+		}()
+		nest(200).Dump()
+	}()
+
+	// Dependencies depth cap
+	say("deps.depth.under", strings.Join(sel.MustCompile("A"+repeat("+A", 199)).Dependencies(), " "))
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if se, ok := r.(*sel.SelError); ok {
+					say("deps.depth.over", fmt.Sprintf("%s %d:%d", se.Code, se.Line(), se.Col()))
+				}
+			}
+		}()
+		sel.MustCompile("A" + repeat("+A", 200)).Dependencies()
+	}()
+
+	// --- physical tree
+	{
+		joined := sel.MustCompile("ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> FILTER(_[\"orders\"][\"amount\"] > 1)")
+		before := strings.Join(joined.Dependencies(), " ")
+		first := joined.PhysicalAST()
+		say("program.physical.built-once", b(joined.PhysicalAST() == first))
+		say("program.physical.keeps.ast", b(strings.Join(joined.Dependencies(), " ") == before)+" "+before)
+		data := sel.NewNone()
+		eval("ORDERS = LIST(RECORD(\"id\", 1, \"customer_id\", 7, \"amount\", 5), RECORD(\"id\", 2, \"customer_id\", 7, \"amount\", 0), RECORD(\"id\", 3, \"customer_id\", 9, \"amount\", 9)); CUSTOMERS = LIST(RECORD(\"id\", 7, \"name\", \"x\")); 0", data)
+		res, _ := joined.Run(data)
+		say("program.physical.run.agrees", res.Dump())
+		empty := sel.NewNone()
+		eval("ORDERS = LIST(); CUSTOMERS = LIST(); 0", empty)
+		joined.Run(empty)
+		say("program.physical.independent.of.data", b(joined.PhysicalAST() == first))
+	}
+
+	// --- host functions
+	sel.RegisterFunction("host_join", 1, 3, func(a *sel.Args) *sel.Value {
+		var parts []string
+		for i := 0; i < a.Count(); i++ {
+			parts = append(parts, a.Text(i))
+		}
+		return sel.NewText(strings.Join(parts, "|"))
+	})
+
+	sel.RegisterFunction("HOST_CHECK", 1, 1, func(a *sel.Args) *sel.Value {
+		if a.Text(0) == "" {
+			sel.Fail("E_BAD_ARG", "must not be empty", a.PosOf(0))
+		}
+		return sel.NewBool(true)
+	})
+
+	say("host.fn.call", eval("HOST_JOIN(\"a\", 1, \"c\")").AsText(sel.Pos{}))
+	say("host.fn.case", eval("host_join(\"x\")").AsText(sel.Pos{}))
+
+	hasHostJoin := false
+	for _, n := range sel.FunctionNames() {
+		if n == "HOST_JOIN" {
+			hasHostJoin = true
+			break
+		}
+	}
+	say("host.fn.listed", b(hasHostJoin))
+	say("host.fn.deps", strings.Join(sel.MustCompile("HOST_JOIN(X, Y)").Dependencies(), " "))
+	say("host.fn.order", eval("A = 1; HOST_JOIN((A = A + 1), (A = A * 10), A)").AsText(sel.Pos{}))
+
+	for _, tc := range []struct {
+		name string
+		src  string
+	}{
+		{"host.fn.arity", "HOST_JOIN()"},
+		{"host.fn.type", "HOST_JOIN(\"a\", TRUE)"},
+		{"host.fn.error", "HOST_CHECK(\"\")"},
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					if se, ok := r.(*sel.SelError); ok {
+						say(tc.name, fmt.Sprintf("%s %d:%d", se.Code, se.Line(), se.Col()))
+						return
+					}
+				}
+				say(tc.name, "no error")
+			}()
+			eval(tc.src)
+			say(tc.name, "no error")
+		}()
+	}
+
+	for _, tc := range []struct {
+		name  string
+		fname string
+		min   int
+		max   int
+	}{
+		{"host.fn.refuse.builtin", "len", 1, 1},
+		{"host.fn.refuse.reserved", "and", 1, 1},
+		{"host.fn.refuse.underscore", "_x", 1, 1},
+		{"host.fn.refuse.digit", "1x", 1, 1},
+		{"host.fn.refuse.dash", "a-b", 1, 1},
+		{"host.fn.refuse.min-over-max", "bad", 2, 1},
+		{"host.fn.refuse.negative", "bad", -1, 0},
+	} {
+		r := "accepted"
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					if se, ok := rec.(*sel.SelError); ok {
+						r = "SelError " + se.Code
+					} else {
+						r = "refused"
+					}
+				}
+			}()
+			sel.RegisterFunction(tc.fname, tc.min, tc.max, func(a *sel.Args) *sel.Value {
+				return sel.NewText("")
+			})
+		}()
+		say(tc.name, r)
+	}
+
+	sel.RegisterFunction("HOST_V", 0, 0, func(a *sel.Args) *sel.Value {
+		return sel.NewText("old")
+	})
+	{
+		early := sel.MustCompile("HOST_V()")
+		sel.RegisterFunction("HOST_V", 0, 0, func(a *sel.Args) *sel.Value {
+			return sel.NewText("new")
+		})
+		earlyVal, _ := early.Run(sel.NewNone())
+		say("host.fn.replace", earlyVal.AsText(sel.Pos{})+" "+eval("HOST_V()").AsText(sel.Pos{}))
+	}
+
+	os.Stdout.WriteString(strings.Join(out, "\n") + "\n")
+}

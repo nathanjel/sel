@@ -30,6 +30,7 @@ const OUTPUTS = {
   php: 'php/src/BuiltinManifest.php',
   cpp: 'cpp/sel_builtin_manifest.hpp',
   lisp: 'lisp/src/builtin-manifest.lisp',
+  go: 'go/internal/manifest/builtins.go',
   docs: 'docs/reference/builtins.md',
 };
 
@@ -435,12 +436,98 @@ function renderDocs(entries) {
   return lines.join('\n');
 }
 
+function renderGo(entries) {
+  const lines = [
+    `// ${HEADER}`,
+    '//',
+    '// One entry per builtin: min, max (-1 when variadic), lazy, binds, and',
+    '// the extra arity rule as a validator function or nil.',
+    '',
+    'package manifest',
+    '',
+    'import "fmt"',
+    '',
+    'type Entry struct {',
+    '\tName       string',
+    '\tMin        int',
+    '\tMax        int // -1 when variadic',
+    '\tLazy       bool',
+    '\tBinds      bool',
+    '\tArityError func(n int) string',
+    '}',
+    '',
+    'type Scope uint8',
+    '',
+    'const (',
+    '\tScopeOuter Scope = iota',
+    '\tScopeBinder',
+    '\tScopeInner',
+    ')',
+    '',
+    'type WhenKind uint8',
+    '',
+    'const (',
+    '\tWhenNone WhenKind = iota',
+    '\tWhenName',
+    '\tWhenText',
+    ')',
+    '',
+    'type Form struct {',
+    '\tName     string',
+    '\tCount    int',
+    '\tScopes   []Scope',
+    '\tWhenArg  int',
+    '\tWhenKind WhenKind',
+    '\tBinds    []string',
+    '}',
+    '',
+  ];
+
+  for (const e of entries) {
+    if (!e.parity && !e.allowed) continue;
+    const [before, after] = e.message.split('{count}');
+    const test = e.parity
+      ? `n % 2 ${e.parity === 'odd' ? '== 0' : '!= 0'}`
+      : `!(${e.allowed.map((c) => `n == ${c}`).join(' || ')})`;
+    lines.push(
+      `func arity_${e.name}(n int) string {`,
+      `\tif ${test} {`,
+      `\t\treturn fmt.Sprintf("%s%d%s", ${JSON.stringify(before)}, n, ${JSON.stringify(after)})`,
+      '\t}',
+      '\treturn ""',
+      '}',
+      '',
+    );
+  }
+
+  lines.push('var Builtins = map[string]Entry{');
+  for (const e of entries) {
+    const rule = e.parity || e.allowed ? `arity_${e.name}` : 'nil';
+    lines.push(`\t"${e.name}": {Name: "${e.name}", Min: ${e.min}, Max: ${e.max === null ? -1 : e.max}, Lazy: ${e.lazy}, Binds: ${e.binds}, ArityError: ${rule}},`);
+  }
+  lines.push('}', '', 'var BindingForms = map[string][]Form{');
+  for (const e of entries) {
+    if (!e.forms) continue;
+    lines.push(`\t"${e.name}": {`);
+    for (const f of e.forms) {
+      const scopes = f.roles.map((r) => `Scope${{ outer: 'Outer', binder: 'Binder', inner: 'Inner' }[scopeOf(r)]}`);
+      const whenArg = f.when ? f.when.arg : -1;
+      const whenKind = f.when ? (f.when.is === 'name' ? 'WhenName' : 'WhenText') : 'WhenNone';
+      const binds = f.binds.map((b) => JSON.stringify(b)).join(', ');
+      lines.push(`\t\t{Name: "${e.name}", Count: ${f.roles.length}, Scopes: []Scope{${scopes.join(', ')}}, WhenArg: ${whenArg}, WhenKind: ${whenKind}, Binds: []string{${binds}}},`);
+    }
+    lines.push('\t},');
+  }
+  lines.push('}', '');
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 
 const entries = load();
 const rendered = {
   js: renderJs(entries), python: renderPython(entries), php: renderPhp(entries),
-  cpp: renderCpp(entries), lisp: renderLisp(entries), docs: renderDocs(entries),
+  cpp: renderCpp(entries), lisp: renderLisp(entries), go: renderGo(entries), docs: renderDocs(entries),
 };
 
 if (process.argv.includes('--check')) {

@@ -1275,6 +1275,35 @@ ${body.join('\n')}
 `;
 }
 
+function emitGo(dialects, rules, raw) {
+  const dJson = JSON.stringify(dialects, null, 2);
+  const rJson = JSON.stringify(rules, null, 2);
+  return `// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+//
+// Every dialect, with its chain already flattened, so a lookup is a map
+// access and nothing else. Runtime registration is what re-introduces the
+// chain, and it is the only thing that does.
+
+package sql
+
+const ShippedDialectsJSON = ${JSON.stringify(dJson)};
+
+const ShippedRulesJSON = ${JSON.stringify(rJson)};
+`;
+}
+
+function emitReplayGo(dialects, rules, raw) {
+  const rawJson = JSON.stringify(raw, null, 2);
+  return `// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+//
+// ${REPLAY_NOTE.join('\n// ')}
+
+package main
+
+const RawDialectsJSON = ${JSON.stringify(rawJson)};
+`;
+}
+
 const OUTPUTS = [
   ['php/src/Sql/MapData.php', emitPhp],
   ['python/sel/sql/_map.py', emitPython],
@@ -1286,6 +1315,8 @@ const OUTPUTS = [
   ['python/bin/map_replay.py', emitReplayPython],
   ['js/bin/map-replay.mjs', emitReplayJs],
   ['cpp/bin/map_replay.cpp', emitReplayCpp],
+  ['go/sel/sql/map_data_gen.go', emitGo],
+  ['go/bin/sqlreplay/replay_data_gen.go', emitReplayGo],
 ];
 
 const docs = load();

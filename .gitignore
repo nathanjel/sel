@@ -10,6 +10,9 @@ cpp/build-usage/
 *.dylib
 *.dll
 *.exe
+
+# --- Go
+go/build/
 # CMake, if you build that way instead of with the Makefile
 cpp/cmake-build*/
 CMakeCache.txt

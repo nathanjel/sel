@@ -1,0 +1,250 @@
+// Structure built-in functions: constructors, inspection, projection, and slicing.
+
+package sel
+
+import (
+	"reflect"
+)
+
+func init() {
+	Define(&Spec{
+		Name: "COUNT",
+		Min:  1,
+		Max:  1,
+		Fn: func(args *Args, ctx *Context) *Value {
+			return NewInt(int64(args.Val(0).Size()))
+		},
+	})
+
+	Define(&Spec{
+		Name: "INDEXES",
+		Min:  1,
+		Max:  1,
+		Fn: func(args *Args, ctx *Context) *Value {
+			keys := args.Val(0).Keys()
+			items := make([]*Value, len(keys))
+			for i, k := range keys {
+				items[i] = NewText(k)
+			}
+			return NewListOwned(items)
+		},
+	})
+
+	Define(&Spec{
+		Name: "HAS",
+		Min:  2,
+		Max:  2,
+		Fn: func(args *Args, ctx *Context) *Value {
+			return NewBool(args.Val(0).Has(args.Text(1)))
+		},
+	})
+
+	Define(&Spec{
+		Name: "LIST",
+		Min:  0,
+		Max:  -1,
+		Fn: func(args *Args, ctx *Context) *Value {
+			items := make([]*Value, args.Count())
+			for i := 0; i < args.Count(); i++ {
+				items[i] = args.Val(i)
+			}
+			return NewListOwned(items)
+		},
+	})
+
+	Define(&Spec{
+		Name: "RECORD",
+		Min:  0,
+		Max:  -1,
+		Fn: func(args *Args, ctx *Context) *Value {
+			count := args.Count()
+			if count == 0 {
+				return NewNone()
+			}
+			keys := make([]string, count/2)
+			values := make([]*Value, count/2)
+			for i := 0; i < count; i += 2 {
+				keys[i/2] = args.Text(i)
+				values[i/2] = args.Val(i + 1)
+			}
+			shape := args.RecordShape()
+			if shape != nil && reflect.DeepEqual(shape.Keys, keys) {
+				return NewShapedRecord(shape, values)
+			}
+			if uShape := UniqueRecordShape(keys); uShape != nil {
+				return NewShapedRecord(uShape, values)
+			}
+			entries := make([]Entry, len(keys))
+			for i := range keys {
+				entries[i] = Entry{Key: keys[i], Val: values[i]}
+			}
+			return NewRecordFromEntries(entries)
+		},
+	})
+
+	Define(&Spec{
+		Name: "TAKE",
+		Min:  2,
+		Max:  2,
+		Fn: func(args *Args, ctx *Context) *Value {
+			val := args.Val(0)
+			count := int(args.NonNegInt(1))
+			if count == 0 || val.IsNull() {
+				return NewListOwned(nil)
+			}
+			if val.isList && val.storage != nil {
+				if count > len(val.storage) {
+					count = len(val.storage)
+				}
+				return NewListOwned(val.storage[:count])
+			}
+			ents := val.Elements()
+			if count > len(ents) {
+				count = len(ents)
+			}
+			items := make([]*Value, count)
+			for i := 0; i < count; i++ {
+				items[i] = ents[i].Val
+			}
+			return NewListOwned(items)
+		},
+	})
+
+	Define(&Spec{
+		Name: "DROP",
+		Min:  2,
+		Max:  2,
+		Fn: func(args *Args, ctx *Context) *Value {
+			val := args.Val(0)
+			count := int(args.NonNegInt(1))
+			if val.IsNull() {
+				return NewListOwned(nil)
+			}
+			if val.isList && val.storage != nil {
+				if count > len(val.storage) {
+					count = len(val.storage)
+				}
+				return NewListOwned(val.storage[count:])
+			}
+			ents := val.Elements()
+			if count > len(ents) {
+				count = len(ents)
+			}
+			items := make([]*Value, len(ents)-count)
+			for i := count; i < len(ents); i++ {
+				items[i-count] = ents[i].Val
+			}
+			return NewListOwned(items)
+		},
+	})
+
+	Define(&Spec{
+		Name: "SELECT_COLS",
+		Min:  2,
+		Max:  -1,
+		Fn: func(args *Args, ctx *Context) *Value {
+			val := args.Val(0)
+			if val.IsNull() {
+				return NewListOwned(nil)
+			}
+			numCols := args.Count() - 1
+			columns := make([]string, numCols)
+			for i := 0; i < numCols; i++ {
+				columns[i] = args.Text(i + 1)
+			}
+
+			// Fast path for uniform shaped records in list
+			if val.isList && val.storage != nil && len(val.storage) > 0 && val.storage[0].shape != nil {
+				sampleShape := val.storage[0].shape
+				slots := make([]int, numCols)
+				allFound := true
+				for i, col := range columns {
+					slot, ok := sampleShape.KeyMap[col]
+					if !ok {
+						allFound = false
+						break
+					}
+					slots[i] = slot
+				}
+				if allFound {
+					allUniform := true
+					for _, r := range val.storage {
+						if r.shape != sampleShape {
+							allUniform = false
+							break
+						}
+					}
+					if allUniform {
+						outShape := UniqueRecordShape(columns)
+						if outShape != nil {
+							outRows := make([]*Value, len(val.storage))
+							for rIdx, r := range val.storage {
+								rowVals := make([]*Value, numCols)
+								for cIdx, s := range slots {
+									rowVals[cIdx] = r.storage[s]
+								}
+								outRows[rIdx] = NewShapedRecord(outShape, rowVals)
+							}
+							return NewListOwned(outRows)
+						}
+					}
+				}
+			}
+
+			ents := val.Elements()
+			rows := make([]*Value, len(ents))
+			for i, entry := range ents {
+				row := entry.Val
+				var rowEntries []Entry
+				for _, col := range columns {
+					if row.Has(col) {
+						rowEntries = append(rowEntries, Entry{Key: col, Val: row.Get(col)})
+					}
+				}
+				rows[i] = NewRecordFromEntries(rowEntries)
+			}
+			return NewListOwned(rows)
+		},
+	})
+
+	dedupeFn := func(args *Args, ctx *Context) *Value {
+		val := args.Val(0)
+		if val.IsNull() {
+			return NewListOwned(nil)
+		}
+		ents := val.Elements()
+		buckets := make(map[uint64][]*Value)
+		var out []*Value
+		for _, e := range ents {
+			item := e.Val
+			h := item.StructuralHash()
+			bucket := buckets[h]
+			found := false
+			for _, existing := range bucket {
+				if item.Eql(existing, Pos{}) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				buckets[h] = append(bucket, item)
+				out = append(out, item)
+			}
+		}
+		return NewListOwned(out)
+	}
+
+	Define(&Spec{
+		Name: "DEDUPE",
+		Min:  1,
+		Max:  1,
+		Fn:   dedupeFn,
+	})
+
+	Define(&Spec{
+		Name: "DISTINCT",
+		Min:  1,
+		Max:  1,
+		Fn:   dedupeFn,
+	})
+}
