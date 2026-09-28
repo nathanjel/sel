@@ -11,7 +11,6 @@ const cps = (s) => toCodePoints(s, null);
 
 function indexOfCp(hay, needle, from) {
   const n = needle.length;
-  if (n === 0) return -1;
   outer: for (let i = from; i + n <= hay.length; i++) {
     for (let j = 0; j < n; j++) if (hay[i + j] !== needle[j]) continue outer;
     return i;

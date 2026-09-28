@@ -47,10 +47,6 @@ def to_code_points(s: str, pos: Pos | None = None) -> list[int]:
         return out
 
 
-def from_code_points(cps: list[int]) -> str:
-    return ''.join(map(chr, cps))
-
-
 def encode_utf8(s: str, pos: Pos | None = None) -> bytes:
     try:
         return s.encode('utf-8')
@@ -73,13 +69,11 @@ def decode_utf8(data: bytes, pos: Pos | None = None) -> str:
 
 def _decode_utf8_diagnostic(data: bytes, pos: Pos | None) -> str:
     """Original decoder, retained for the precise first invalid byte diagnostic."""
-    cps: list[int] = []
     n = len(data)
     i = 0
     while i < n:
         b = data[i]
         if b < 0x80:
-            cps.append(b)
             i += 1
             continue
         if 0xC2 <= b <= 0xDF:
@@ -110,9 +104,8 @@ def _decode_utf8_diagnostic(data: bytes, pos: Pos | None) -> str:
             if c < lo_k or c > hi_k:
                 fail('E_UTF8', f'invalid continuation byte at byte {i + k}', pos)
             cp = (cp << 6) | (c & 0x3F)
-        cps.append(cp)
         i += need + 1
-    return from_code_points(cps)
+    fail('E_UTF8', 'invalid UTF-8 byte sequence', pos)
 
 
 def bytes_to_hex(data: bytes) -> str:

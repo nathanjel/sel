@@ -155,7 +155,14 @@ tail, count and index that keep lookup and append O(1)."
 ;;; checks what it is given and keeps a COPY -- SBCL strings and octet vectors
 ;;; are mutable, and a caller that changed one afterwards changed the value (a
 ;;; mutated key left the record unable to find it under either spelling).
+;;; A constructor called with something it does not take (spec §8): E_BAD_ARG,
+;;; a SEL-ERROR like every other boundary failure, never a CL TYPE-ERROR
+;;; (review 2026-09-28 HOST-20).
+(defun bad-arg (control &rest args)
+  (fail "E_BAD_ARG" (apply #'format nil control args)))
+
 (defun make-text (s)
+  (unless (stringp s) (bad-arg "text must be a string, not ~(~a~)" (type-of s)))
   (unless (valid-utf8-string-p s)
     (fail "E_UTF8" "text carries an unpaired surrogate"))
   (%make-value :text (copy-seq s) nil))
@@ -164,6 +171,7 @@ tail, count and index that keep lookup and append O(1)."
 (defun %text (s) (%make-value :text s nil))
 
 (defun make-bin (bytes)
+  (unless (typep bytes 'sequence) (bad-arg "bytes must be a sequence, not ~(~a~)" (type-of bytes)))
   (%make-value :bin (if (typep bytes '(vector (unsigned-byte 8)))
                         (coerce (copy-seq bytes) '(simple-array (unsigned-byte 8) (*)))
                         (let ((items (coerce bytes 'list)))
@@ -176,16 +184,24 @@ tail, count and index that keep lookup and append O(1)."
 (defun make-bool (b) (%make-value :bool (and b t) nil))
 
 (defun make-num (d)
-  "D is a DEC or a decimal string. A string is canonicalised: 007 becomes 7."
-  (etypecase d
-    (dec (%make-value-raw :text nil nil nil 0 nil nil nil nil d))
+  "D is a DEC or a decimal string. A string is canonicalised: 007 becomes 7.
+A DEC is checked like one: well formed, within the digit caps, and canonical --
+a negative zero loses its sign (spec §8; review 2026-09-28 HOST-13, HOST-14)."
+  (typecase d
+    (dec (unless (and (>= (dec-digits d) 0) (>= (dec-scale d) 0))
+           (bad-arg "not a decimal: the digits and the scale must be non-negative"))
+         (dec-guard d nil)
+         (%make-value-raw :text nil nil nil 0 nil nil nil nil
+                          (if (and (zerop (dec-digits d)) (dec-neg d)) (dec-make nil 0 (dec-scale d)) d)))
     (string (let ((p (dec-parse d)))
               (unless p (fail "E_NOT_NUM" (format nil "not a number: ~a" d)))
-              (%make-value-raw :text nil nil nil 0 nil nil nil nil p)))))
+              (%make-value-raw :text nil nil nil 0 nil nil nil nil p)))
+    (t (bad-arg "not a number: expected a decimal string or a DEC, not ~(~a~)" (type-of d)))))
 
 (defvar *int-cap* nil "10^MAX_INT_DIGITS, built on first use.")
 
 (defun make-int (n)
+  (unless (integerp n) (bad-arg "not a whole number: ~a" n))
   ;; A native integer obeys the digit cap like the same digits in source (spec
   ;; §6.4); the bit-length test keeps an ordinary integer off the bignum compare.
   (when (and (> (integer-length n) (floor (* (1- +max-int-digits+) 3.3219280948873626d0)))
@@ -203,10 +219,15 @@ tail, count and index that keep lookup and append O(1)."
       (parse-integer k))))
 
 ;;; Fast list value backed by simple-vector.
+;;; A list keeps no structure of the caller's: a vector is copied as a list is
+;;; by COERCE (spec §8; review 2026-09-28 HOST-16).
 (defun make-list-value (values)
+  (unless (typep values 'sequence) (bad-arg "a list is built from a sequence of values, not ~(~a~)" (type-of values)))
   (let ((vec (if (typep values 'simple-vector)
-                 values
+                 (copy-seq values)
                  (coerce values 'simple-vector))))
+    (loop for x across vec
+          unless (typep x 'value) do (bad-arg "a list is built from values, not ~(~a~)" (type-of x)))
     (%make-list-value-fast vec)))
 
 ;;; --- children --------------------------------------------------------------
@@ -301,6 +322,7 @@ tail, count and index that keep lookup and append O(1)."
 (defun value-set (v key child)
   "Re-assigning an existing key keeps its original position."
   ;; A key is text too (spec §8; review 2026-09-25 HOST-05).
+  (unless (stringp key) (bad-arg "a key must be a string, not ~(~a~)" (type-of key)))
   (when (and (find-if (lambda (c) (> (char-code c) 127)) key) (not (valid-utf8-string-p key)))
     (fail "E_UTF8" "key carries an unpaired surrogate"))
   (cond
@@ -325,7 +347,10 @@ tail, count and index that keep lookup and append O(1)."
      (let ((cell (%value-cell v key)))
        (if cell
            (setf (cdr cell) child)
-           (let ((new (list (cons key child))))
+           ;; A new key is copied: an SBCL string is mutable, and the caller's
+           ;; would rename the key under the value (review 2026-09-28 HOST-15).
+           (let* ((key (copy-seq key))
+                  (new (list (cons key child))))
              (if (value-tail v)
                  (setf (cdr (value-tail v)) new)
                  (setf (value-children-internal v) new))
@@ -623,7 +648,7 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
 (defun from-native-at (x depth)
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" nil))
-  (etypecase x
+  (typecase x
     (null (make-none))
     (value x)
     ((member t) (make-bool t))
@@ -632,8 +657,8 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
     ((member :false) (make-bool nil))
     (string (make-text x))
     (integer (make-int x))
-    (ratio (error "~a has no exact decimal form; pass a decimal string instead" x))
-    (float (error "floats have no exact decimal form; pass a decimal string instead"))
+    (ratio (bad-arg "~a has no exact decimal form; pass a decimal string instead" x))
+    (float (bad-arg "floats have no exact decimal form; pass a decimal string instead"))
     ((vector (unsigned-byte 8)) (make-bin x))
     ;; A plain list is a SEL list, keyed from 1 — so ITEMS[1] means the first
     ;; line on every host. An alist is a keyed value.
@@ -657,7 +682,8 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
                             for (nil . val) in x
                             do (value-set v k (from-native-at val (1+ depth))))
                       v)))
-              (make-list-value (mapcar (lambda (e) (from-native-at e (1+ depth))) x))))))
+              (make-list-value (mapcar (lambda (e) (from-native-at e (1+ depth))) x))))
+    (t (bad-arg "cannot convert ~(~a~) to SEL" (type-of x)))))
 
 (defun to-native (v)
   "The inverse of FROM-NATIVE, near enough for reporting: a bare scalar when the
@@ -680,9 +706,11 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
                           (let* ((shape (value-shape v))
                                  (keys (record-shape-keys shape))
                                  (storage (value-storage v)))
+                            ;; Copies: the shape's key strings are shared by every
+                            ;; value of that shape (review 2026-09-28 HOST-15).
                             (loop for k in keys
                                   for i from 0
-                                  collect (cons k (to-native-at (svref storage i) (1+ depth))))))
+                                  collect (cons (copy-seq k) (to-native-at (svref storage i) (1+ depth))))))
                          ((and (value-is-list v) (value-storage v))
                           (let ((storage (value-storage v))
                                 (n (length (value-storage v))))
@@ -690,7 +718,7 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
                                   collect (cons (format nil "~d" i) (to-native-at (svref storage (1- i)) (1+ depth))))))
                          (t
                           (loop for (k . child) in (value-children v)
-                                collect (cons k (to-native-at child (1+ depth))))))))
+                                collect (cons (copy-seq k) (to-native-at child (1+ depth))))))))
           (cond
             ((and (null scalar) (not (eq (value-kind v) :bool))) entries)
             ;; A value's own scalar travels under "_"; with a child of that name

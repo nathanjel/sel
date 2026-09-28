@@ -83,6 +83,65 @@ def _unique_record_shape(keys: list[str] | tuple[str, ...]) -> RecordShape | Non
     return shape
 
 
+def _bad_arg(message: str):
+    """A constructor called with something it does not take (spec §8):
+    E_BAD_ARG, a SelError like every other boundary failure, never Python's
+    own TypeError or IndexError (review 2026-09-28 HOST-20)."""
+    fail('E_BAD_ARG', message, None)
+
+
+def _check_key(key: Any) -> str:
+    if not isinstance(key, str):
+        _bad_arg(f'a key must be a str, not {type(key).__name__}')
+    if not key.isascii():
+        validate_text(key, None)
+    return key
+
+
+def _check_value(v: Any) -> Any:
+    if not isinstance(v, Value):
+        _bad_arg(f'expected a Value, not {type(v).__name__}')
+    return v
+
+
+def _pair_up(keys: Any, values: Any) -> tuple[list[str], list[Any]]:
+    """Keys and values side by side, checked and copied: the counts match,
+    every key is text and every value a Value (spec §8; review 2026-09-28
+    HOST-12, HOST-16, HOST-17)."""
+    if isinstance(keys, RecordShape):
+        keys = keys.keys
+    if not isinstance(keys, (list, tuple)) or not isinstance(values, (list, tuple)):
+        _bad_arg('keys and values must be lists')
+    if len(keys) != len(values):
+        _bad_arg(f'{len(keys)} key(s) and {len(values)} value(s) do not pair up')
+    return [_check_key(k) for k in keys], [_check_value(v) for v in values]
+
+
+def _check_list_keys(keys: Any, count: int) -> list[str]:
+    if not isinstance(keys, (list, tuple)):
+        _bad_arg('list keys must be a list')
+    if len(keys) != count:
+        _bad_arg(f'{len(keys)} key(s) and {count} value(s) do not pair up')
+    seen: set[str] = set()
+    for key in keys:
+        _check_key(key)
+        if key in seen:
+            _bad_arg(f'list key {key!r} is given twice')
+        seen.add(key)
+    return list(keys)
+
+
+def _check_decimal(d: Any) -> Any:
+    """The Dec Value.num takes besides a string: well formed, within the digit
+    caps, and canonical -- a negative zero loses its sign, as "-0" does through
+    parse (spec §8; review 2026-09-28 HOST-13, HOST-14)."""
+    if (not isinstance(d, D.Dec) or type(d.digits) is not int or d.digits < 0
+            or type(d.scale) is not int or d.scale < 0):
+        _bad_arg('not a decimal: expected a Dec with a non-negative int digits and scale')
+    D.guard(d, None)
+    return D.make(False, 0, d.scale) if d.digits == 0 and d.neg else d
+
+
 def _list_index(key: str, length: int) -> int:
     if not isinstance(key, str) or _LIST_KEY.fullmatch(key) is None:
         return -1
@@ -149,6 +208,15 @@ def iter_elements(value: Any):
         return
     if value.kind != NONE:
         yield '1', value
+
+
+def elements(value: Any) -> list[tuple[str, Any]]:
+    """A scalar with no children behaves as a one-element list containing itself,
+    consistent with scalar context (§3.2). A NONE with no children is genuinely
+    empty — that is what FILTER returns when nothing matched, and ALL over it
+    must be TRUE rather than a scalar-context failure.
+    """
+    return list(iter_elements(value))
 
 
 class Value:
@@ -234,6 +302,8 @@ class Value:
     def text(s: str) -> Value:
         # Validated at the boundary: a str carrying a lone surrogate has no UTF-8
         # encoding and cannot be a SEL TEXT value.
+        if not isinstance(s, str):
+            _bad_arg(f'text must be a str, not {type(s).__name__}')
         validate_text(s, None)
         return Value(TEXT, s)
 
@@ -243,18 +313,26 @@ class Value:
         # outside 0-255 is E_RANGE and not a bare Python ValueError. Host code is
         # the one place bad data can enter, so it is the place to reject it, and
         # spec/SPEC.md §8 says every failure a host sees is a SelError.
-        try:
+        if isinstance(b, (bytes, bytearray, memoryview)):
             return Value(BIN, bytes(b))
-        except (ValueError, TypeError) as e:
-            fail('E_RANGE', f'not a sequence of bytes: {e}', None)
+        if not isinstance(b, (list, tuple)):
+            # bytes(5) is five zero bytes and bytes('ab') a TypeError: neither
+            # is a sequence of bytes.
+            _bad_arg(f'bytes must be bytes or a list of ints, not {type(b).__name__}')
+        for x in b:
+            # bool is an int subclass, so bytes([True]) is b'\x01' (review
+            # 2026-09-28 HOST-19); JS and Lisp refuse a boolean byte.
+            if type(x) is not int or not 0 <= x <= 255:
+                fail('E_RANGE', f'byte {x!r} is not a whole number from 0 to 255', None)
+        return Value(BIN, bytes(b))
 
     @staticmethod
     def shaped(keys: list[str] | tuple[str, ...] | RecordShape,
                values: list[Value] | tuple[Value, ...]) -> Value:
-        if not keys:
-            return Value.none()
-        shape = keys if isinstance(keys, RecordShape) else _record_shape(keys)
-        return Value._from_shape(shape, values)
+        """A record from keys (or a shape) and values side by side, checked and
+        copied. A repeated key keeps its first position and takes its last
+        value, as RECORD does (spec §8)."""
+        return Value._record_owned(*_pair_up(keys, values))
 
     @staticmethod
     def _from_shape(shape: RecordShape,
@@ -269,6 +347,13 @@ class Value:
 
     @staticmethod
     def record(keys: list[str], values: list[Value]) -> Value:
+        """A record from keys and values side by side, checked and copied (spec
+        §8); a repeated key keeps its first position and takes its last value."""
+        return Value._record_owned(*_pair_up(keys, values))
+
+    @staticmethod
+    def _record_owned(keys: list[str], values: list[Value]) -> Value:
+        """The builtins' form: lists they just built from SEL values."""
         if not keys:
             return Value.none()
         shape = _unique_record_shape(keys)
@@ -281,11 +366,28 @@ class Value:
 
     @staticmethod
     def from_entries(entries: list[tuple[str, Value]], is_list: bool = False) -> Value:
+        """A record from (key, value) pairs, or with is_list a list keyed by them
+        ("1".."n" is a plain list; other keys, which must be distinct, are kept
+        as FILTER keeps them). Checked and copied (spec §8)."""
+        if not isinstance(entries, (list, tuple)):
+            _bad_arg('entries must be a list of (key, value) pairs')
+        for entry in entries:
+            if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+                _bad_arg('an entry must be a (key, value) pair')
+        keys, values = _pair_up([k for k, _ in entries], [v for _, v in entries])
+        if is_list:
+            dense = all(k == str(i + 1) for i, k in enumerate(keys))
+            return Value._list_owned(values, None if dense else _check_list_keys(keys, len(values)))
+        return Value._record_owned(keys, values)
+
+    @staticmethod
+    def _from_entries_owned(entries: list[tuple[str, Value]], is_list: bool = False) -> Value:
+        """The builtins' form: entries they just built from SEL values."""
         if is_list:
             keys = [key for key, _ in entries]
             values = [value for _, value in entries]
             is_dense = all(keys[i] == str(i + 1) for i in range(len(keys)))
-            return Value.list(values, None if is_dense else keys)
+            return Value._list_owned(values, None if is_dense else keys)
         keys = [key for key, _ in entries]
         shape = _unique_record_shape(keys)
         if shape is not None:
@@ -307,7 +409,7 @@ class Value:
         """
         if not isinstance(d, str):
             v = Value(TEXT, None)
-            v._dec_val = d
+            v._dec_val = _check_decimal(d)
             return v
         parsed = D.parse(d)
         if parsed is None:
@@ -318,6 +420,8 @@ class Value:
 
     @staticmethod
     def int(n: int) -> Value:  # noqa: A003
+        if type(n) is not int:
+            _bad_arg(f'not a whole number: {n!r}')
         # A native integer obeys the digit cap like the same digits in source
         # (spec §8, §6.4; review 2026-09-25 HOST-06). A bit-length test first,
         # so an ordinary int never meets the million-digit comparison.
@@ -329,9 +433,18 @@ class Value:
 
     @staticmethod
     def list(values: list[Value], keys: list[str] | None = None) -> Value:  # noqa: A003
-        """Builds a list keyed "1".."n" (or preserved keys). Used by `,` and by
-        list-returning built-ins.
+        """A list keyed "1".."n", or by `keys` (distinct, one per value), as
+        FILTER keeps them. Checked and copied (spec §8; review 2026-09-28
+        HOST-16): changing the caller's lists afterwards never changes it.
         """
+        if not isinstance(values, (list, tuple)):
+            _bad_arg('a list is built from a list of Values')
+        values = [_check_value(x) for x in values]
+        return Value._list_owned(values, None if keys is None else _check_list_keys(keys, len(values)))
+
+    @staticmethod
+    def _list_owned(values: list[Value], keys: list[str] | None = None) -> Value:
+        """The builtins' form: a list they just built, taken as it is."""
         v = Value(NONE, None, is_list=True)
         v.storage = values if isinstance(values, list) else list(values)
         v.list_keys = keys
@@ -634,15 +747,14 @@ as as_text().
             # is no floating point anywhere in SEL, and the host boundary is the
             # place to say so: 0.1 + 0.2 has no exact decimal form, and guessing
             # one here is how a backend and a frontend start disagreeing.
-            raise TypeError(
-                f'cannot convert float {x!r} to SEL — pass a string such as '
-                f'"{x!r}" so the decimal value is exactly what you wrote')
+            _bad_arg(f'cannot convert float {x!r} to SEL — pass a string such as '
+                     f'"{x!r}" so the decimal value is exactly what you wrote')
         if isinstance(x, str):
             return Value.text(x)
         if isinstance(x, (bytes, bytearray)):
             return Value.bin(x)
         if isinstance(x, (list, tuple)):
-            return Value.list([Value._from_native_at(i, depth + 1) for i in x])
+            return Value._list_owned([Value._from_native_at(i, depth + 1) for i in x])
         if isinstance(x, dict):
             entries = []
             for k, item in x.items():
@@ -650,8 +762,8 @@ as as_text().
                 if not key.isascii():
                     validate_text(key, None)   # a key is text too (spec §8)
                 entries.append((key, Value._from_native_at(item, depth + 1)))
-            return Value.from_entries(entries)
-        raise TypeError(f'cannot convert {type(x).__name__} to SEL')
+            return Value._from_entries_owned(entries)
+        _bad_arg(f'cannot convert {type(x).__name__} to SEL')
 
     def to_native(self) -> Any:
         return self._to_native_at(1)

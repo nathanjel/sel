@@ -19,12 +19,6 @@ from ..value import Value
 _SPACE = ' \t\r\n'
 
 
-def _index_of(hay: str, needle: str, frm: int) -> int:
-    if needle == '':
-        return -1
-    return hay.find(needle, frm)
-
-
 define('LEN', 1, 1, fn=lambda a, ctx: Value.int(len(a.text(0))))
 
 define('LEFT', 2, 2, fn=lambda a, ctx: Value.text(a.text(0)[:a.non_neg_int(1)]))
@@ -64,7 +58,7 @@ def _find(a, ctx):
         frm = f - 1
     if needle == '':
         fail('E_BAD_ARG', 'FIND needle must not be empty', a.pos_of(0))
-    return Value.int(_index_of(hay, needle, frm) + 1)
+    return Value.int(hay.find(needle, frm) + 1)
 
 
 define('FIND', 2, 3, fn=_find)
@@ -87,7 +81,7 @@ def _split(a, ctx):
     sep = a.text(1)
     if sep == '':
         fail('E_BAD_ARG', 'SPLIT separator must not be empty', a.pos_of(1))
-    return Value.list([Value.text(p) for p in hay.split(sep)])
+    return Value._list_owned([Value.text(p) for p in hay.split(sep)])
 
 
 define('SPLIT', 2, 2, fn=_split)

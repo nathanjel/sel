@@ -179,8 +179,10 @@ def test_regular_values_share_shape_and_use_flat_storage():
     assert first.shape.size == 2
     assert [item.as_text() for item in first.storage] == ['1', 'a']
     items = [Value.text('a'), Value.text('b')]
-    packed = Value.list(items)
-    assert packed.storage is items
+    # The builtins' constructor takes its fresh list as the storage; the
+    # public one copies (spec §8, review 2026-09-28 HOST-16).
+    assert Value._list_owned(items).storage is items
+    assert Value.list(items).storage is not items
 
 
 def test_join_output_is_shaped_and_irregular_rows_use_fallback():
@@ -277,11 +279,12 @@ def test_num_validates_at_the_boundary():
 
 
 def test_from_native_refuses_float():
-    """There is no floating point in SEL, and the boundary is where to say so."""
-    with pytest.raises(TypeError):
-        Value.from_native(0.1)
-    with pytest.raises(TypeError):
-        Value.from_native({'A': 1.5})
+    """There is no floating point in SEL, and the boundary is where to say so:
+    E_BAD_ARG, a SEL error like every other boundary failure (spec §8)."""
+    for x in (0.1, {'A': 1.5}):
+        with pytest.raises(SelError) as e:
+            Value.from_native(x)
+        assert e.value.code == 'E_BAD_ARG'
 
 
 def test_from_native_bool_is_not_int():

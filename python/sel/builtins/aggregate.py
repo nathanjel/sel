@@ -9,7 +9,7 @@ from ..errors import fail
 from ..eval import bytes_compare
 from ..parser import Node
 from ..registry import define
-from ..value import NONE, Value, iter_elements, structural_hash
+from ..value import NONE, Value, elements, iter_elements, structural_hash
 # The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
 # str.upper() took "deſc" for DESC.
 from ..lexer import ascii_upper
@@ -22,15 +22,6 @@ def shape(args):
     if args.count() == 3:
         return args.symbol(1), args.node(2)
     return '_', args.node(1)
-
-
-def elements(value):
-    """A scalar with no children behaves as a one-element list containing itself,
-    consistent with scalar context (§3.2). A NONE with no children is genuinely
-    empty — that is what FILTER returns when nothing matched, and ALL over it
-    must be TRUE rather than a scalar-context failure.
-    """
-    return list(iter_elements(value))
 
 
 def node_contains_var(node, name):
@@ -100,7 +91,7 @@ def _map(args, ctx):
         return None
 
     walk(args, ctx, visit)
-    return Value.list(out)
+    return Value._list_owned(out)
 
 
 _TEXT_COMPARE = ('$==', '$!=', '$<', '$<=', '$>', '$>=')
@@ -301,7 +292,7 @@ def _filter(args, ctx):
             return None
 
     walk(args, ctx, visit, body_override)
-    return Value.list(storage, keys if needs_custom_keys else None)
+    return Value._list_owned(storage, keys if needs_custom_keys else None)
 
 
 def _sum(args, ctx):
@@ -374,10 +365,10 @@ def compare_values(a: Value, b: Value) -> int:
 def do_sort(args, ctx, forced_dir):
     val = args.val(0)
     if val.is_null():
-        return Value.list([])
+        return Value._list_owned([])
     ents = elements(val)
     if not ents:
-        return Value.list([])
+        return Value._list_owned([])
 
     count = args.count()
     if count == 1:
@@ -430,7 +421,7 @@ def do_sort(args, ctx, forced_dir):
         return c if c != 0 else (x['idx'] - y['idx'])
 
     indexed.sort(key=cmp_to_key(cmp_func))
-    return Value.list([x['item'] for x in indexed])
+    return Value._list_owned([x['item'] for x in indexed])
 
 
 define('SORT', 1, 3, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, ctx, 'ASC'))
@@ -442,7 +433,7 @@ def do_top(args, ctx, forced_dir):
     value = args.val(0)
     limit = args.non_neg_int(args.count() - 1)
     if limit == 0 or (value.kind == NONE and value.size() == 0):
-        return Value.list([])
+        return Value._list_owned([])
 
     sort_count = args.count() - 1
     binder = '_'
@@ -549,7 +540,7 @@ def do_top(args, ctx, forced_dir):
             consume(key, item)
 
     heap.sort(key=cmp_to_key(compare))
-    return Value.list([entry['item'] for entry in heap])
+    return Value._list_owned([entry['item'] for entry in heap])
 
 
 define('TOP', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, 'ASC'))
@@ -568,10 +559,10 @@ def _bucket_key_text(key: Value, pos) -> str:
 def do_bucket(args, ctx):
     val = args.val(0)
     if val.is_null() or val.size() == 0:
-        return Value.list([])
+        return Value._list_owned([])
     entries = elements(val)
     if not entries:
-        return Value.list([])
+        return Value._list_owned([])
 
     count = args.count()
     binder = '_'
@@ -629,7 +620,7 @@ def do_bucket(args, ctx):
     if agg_node is None:
         out = Value.none()
         for g in groups:
-            out.set(g['key_str'], Value.list([row.clone() for row in g['rows']]))
+            out.set(g['key_str'], Value._list_owned([row.clone() for row in g['rows']]))
         return out
 
     out = []
@@ -637,12 +628,12 @@ def do_bucket(args, ctx):
     ctx.push_frame(aggregate_frame)
     try:
         for g in groups:
-            aggregate_frame[binder] = Value.list(g['rows'])
+            aggregate_frame[binder] = Value._list_owned(g['rows'])
             aggregate_frame['_K'] = g['key']
             out.append(args.eval_node(agg_node))
     finally:
         ctx.pop_frame()
-    return Value.list(out)
+    return Value._list_owned(out)
 
 
 define('BUCKET', 2, 4, lazy=True, binds=True, fn=do_bucket)

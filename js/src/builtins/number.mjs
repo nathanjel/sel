@@ -7,14 +7,14 @@ import { define } from '../registry.mjs';
 // down the host instead of failing as a rule error — and POWER quietly returned
 // a wrong answer here, because `e >>= 1` in the decimal core truncates the
 // exponent to 32 bits.
-const MAX_SCALE = 1000000;
-const MAX_POWER = 100000;
+export const MAX_SCALE = 1000000;
+export const MAX_POWER = 100000;
 
-function sized(args, i, limit, what) {
-  const n = args.nonNegInt(i);
-  if (n > limit) {
-    fail('E_RANGE', `${what} ${n} exceeds the maximum of ${limit}`, args.posOf(i));
-  }
+export function checkSizedInt(d, name, argNum, limit, what, pos) {
+  if (!D.isInteger(d)) fail('E_NOT_INT', `${name} argument ${argNum} must be a whole number`, pos);
+  const n = D.toSafeInt(d);
+  if (n < 0) fail('E_RANGE', `${name} argument ${argNum} must not be negative`, pos);
+  if (n > limit) fail('E_RANGE', `${what} ${n} exceeds the maximum of ${limit}`, pos);
   return n;
 }
 
@@ -27,12 +27,12 @@ define({ name: 'CANON', min: 1, max: 1, fn: (a) => Value.num(D.trimScale(a.dec(0
 
 define({
   name: 'ROUND', min: 2, max: 2,
-  fn: (a) => Value.num(D.round(a.dec(0), sized(a, 1, MAX_SCALE, 'ROUND scale'), a.pos)),
+  fn: (a) => Value.num(D.round(a.dec(0), checkSizedInt(a.dec(1), 'ROUND', 2, MAX_SCALE, 'ROUND scale', a.posOf(1)), a.pos)),
 });
 
 define({
   name: 'POWER', min: 2, max: 2,
-  fn: (a) => Value.num(D.power(a.dec(0), sized(a, 1, MAX_POWER, 'POWER exponent'), a.pos)),
+  fn: (a) => Value.num(D.power(a.dec(0), checkSizedInt(a.dec(1), 'POWER', 2, MAX_POWER, 'POWER exponent', a.posOf(1)), a.pos)),
 });
 
 define({

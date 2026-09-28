@@ -2089,7 +2089,7 @@
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"a\", _[1][\"AMOUNT\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:31"
+   :error "E_SQL_SHAPE 1:28"
    :throws nil
    :params nil
    :as "statement"
@@ -2101,11 +2101,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.row-by-position-zero"
-   :at "09-refusals.sqlt:212"
+   :at "09-refusals.sqlt:210"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"a\", _[0][\"AMOUNT\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:31"
+   :error "E_SQL_SHAPE 1:28"
    :throws nil
    :params nil
    :as "statement"
@@ -2117,11 +2117,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.row-by-text-position"
-   :at "09-refusals.sqlt:225"
+   :at "09-refusals.sqlt:223"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"a\", _[\"1\"][\"AMOUNT\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:33"
+   :error "E_SQL_SHAPE 1:28"
    :throws nil
    :params nil
    :as "statement"
@@ -2133,7 +2133,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.field-then-key"
-   :at "09-refusals.sqlt:240"
+   :at "09-refusals.sqlt:238"
    :dialect "mariadb"
    :source "ORDERS .> MAP(_[\"AMOUNT\"][\"Q\"])"
    :expect nil
@@ -2149,11 +2149,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.stray-qualifier"
-   :at "09-refusals.sqlt:255"
+   :at "09-refusals.sqlt:253"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"a\", _[\"NOPE\"][\"AMOUNT\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:36"
+   :error "E_SQL_SHAPE 1:28"
    :throws nil
    :params nil
    :as "statement"
@@ -2165,11 +2165,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.row-by-position-in-a-filter"
-   :at "09-refusals.sqlt:268"
+   :at "09-refusals.sqlt:266"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(_[1][\"AMOUNT\"] > 1)"
    :expect nil
-   :error "E_SQL_SHAPE 1:22"
+   :error "E_SQL_SHAPE 1:19"
    :throws nil
    :params nil
    :as "statement"
@@ -2181,11 +2181,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.row-by-position-through-a-named-binder"
-   :at "09-refusals.sqlt:281"
+   :at "09-refusals.sqlt:279"
    :dialect "mariadb"
    :source "ORDERS .> MAP(r, RECORD(\"a\", r[1][\"AMOUNT\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:34"
+   :error "E_SQL_SHAPE 1:31"
    :throws nil
    :params nil
    :as "statement"
@@ -2197,11 +2197,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.row-by-position-in-a-sort-key"
-   :at "09-refusals.sqlt:294"
+   :at "09-refusals.sqlt:292"
    :dialect "mariadb"
    :source "ORDERS .> SORT_BY(_[1][\"AMOUNT\"])"
    :expect nil
-   :error "E_SQL_SHAPE 1:23"
+   :error "E_SQL_SHAPE 1:20"
    :throws nil
    :params nil
    :as "statement"
@@ -2213,11 +2213,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.row-by-position-in-a-bucket-key"
-   :at "09-refusals.sqlt:307"
+   :at "09-refusals.sqlt:305"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[1][\"CUSTOMER_ID\"])"
    :expect nil
-   :error "E_SQL_SHAPE 1:22"
+   :error "E_SQL_SHAPE 1:19"
    :throws nil
    :params nil
    :as "statement"
@@ -2229,11 +2229,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.row-by-position-three-deep"
-   :at "09-refusals.sqlt:320"
+   :at "09-refusals.sqlt:318"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"a\", _[1][\"AMOUNT\"][\"X\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:41"
+   :error "E_SQL_SHAPE 1:28"
    :throws nil
    :params nil
    :as "statement"
@@ -2245,11 +2245,11 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.joined-row-by-position"
-   :at "09-refusals.sqlt:333"
+   :at "09-refusals.sqlt:331"
    :dialect "mariadb"
    :source "ORDERS .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"]) .> MAP(RECORD(\"n\", _[2][\"NAME\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:81"
+   :error "E_SQL_SHAPE 1:78"
    :throws nil
    :params nil
    :as "statement"
@@ -2261,7 +2261,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.projected-row-by-position"
-   :at "09-refusals.sqlt:348"
+   :at "09-refusals.sqlt:346"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"CUSTOMER_ID\"]) .> MAP(RECORD(\"a\", _[1][\"AMOUNT\"]))"
    :expect nil
@@ -2277,7 +2277,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "refuse.index.bucket-projection-row-by-position"
-   :at "09-refusals.sqlt:363"
+   :at "09-refusals.sqlt:361"
    :dialect "mariadb"
    :source "ORDERS .> BUCKET(_[\"CUSTOMER_ID\"], RECORD(\"a\", _[1][\"AMOUNT\"]))"
    :expect nil
@@ -11349,24 +11349,24 @@
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
-   :name "plan.index.qualified-by-alias-qualifies-without-a-join"
+   :name "plan.index.an-alias-is-not-a-qualifier"
    :at "25-hybrid-plans.sqlt:1627"
    :dialect "mariadb"
    :source "ORDERS .> MAP(RECORD(\"a\", _[\"o\"][\"AMOUNT\"]))"
-   :expect "SELECT `o`.`amount` AS `a` FROM `orders` `o`"
+   :expect nil
    :error nil
    :throws nil
    :params nil
    :as nil
    :mode nil
    :strict nil
-   :plan "pure_sql"
-   :tables (list "orders")
+   :plan "pure_memory"
+   :tables :none
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" nil :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "plan.index.qualified-by-a-declared-binder"
-   :at "25-hybrid-plans.sqlt:1645"
+   :at "25-hybrid-plans.sqlt:1641"
    :dialect "mariadb"
    :source "ORDERS .> LINK(CUSTOMERS, O, C, O[\"CUSTOMER_ID\"] == C[\"ID\"]) .> MAP(RECORD(\"n\", _[\"C\"][\"NAME\"]))"
    :expect "SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)"
@@ -11381,40 +11381,40 @@
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
-   :name "plan.index.positional-binder-names-are-not-qualifiers"
-   :at "25-hybrid-plans.sqlt:1662"
+   :name "plan.index.positional-binders-are-keys-of-the-row"
+   :at "25-hybrid-plans.sqlt:1658"
    :dialect "mariadb"
    :source "ORDERS .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"]) .> MAP(RECORD(\"n\", _[\"_2\"][\"NAME\"]))"
-   :expect nil
+   :expect "SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)"
    :error nil
    :throws nil
    :params nil
    :as nil
    :mode nil
    :strict nil
-   :plan "pure_memory"
-   :tables :none
+   :plan "pure_sql"
+   :tables (list "orders" "customers")
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
-   :name "plan.index.positional-left-binder-is-not-a-qualifier"
-   :at "25-hybrid-plans.sqlt:1676"
+   :name "plan.index.positional-left-binder-is-a-key-of-the-row"
+   :at "25-hybrid-plans.sqlt:1677"
    :dialect "mariadb"
    :source "ORDERS .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"]) .> MAP(RECORD(\"a\", _[\"_1\"][\"AMOUNT\"]))"
-   :expect nil
+   :expect "SELECT `o`.`amount` AS `a` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)"
    :error nil
    :throws nil
    :params nil
    :as nil
    :mode nil
    :strict nil
-   :plan "pure_memory"
-   :tables :none
+   :plan "pure_sql"
+   :tables (list "orders" "customers")
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "plan.index.the-row-itself-is-not-a-qualifier"
-   :at "25-hybrid-plans.sqlt:1688"
+   :at "25-hybrid-plans.sqlt:1694"
    :dialect "mariadb"
    :source "ORDERS .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"]) .> MAP(RECORD(\"a\", _[\"_\"][\"AMOUNT\"]))"
    :expect nil
@@ -11430,7 +11430,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
   (list
    :name "plan.bindings.correlated-relation-with-a-scalar"
-   :at "25-hybrid-plans.sqlt:1700"
+   :at "25-hybrid-plans.sqlt:1706"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(ANY(ITEMS, _ > 0)) .> TAKE(1)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS TRUE) LIMIT 1"
@@ -11446,7 +11446,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) "QTY" "`oi`.`order_id` = `o`.`id`")))))
   (list
    :name "plan.bindings.correlated-relation-in-the-prefix-of-a-hybrid"
-   :at "25-hybrid-plans.sqlt:1720"
+   :at "25-hybrid-plans.sqlt:1726"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(ANY(ITEMS, _ > 0)) .> SORT_BY(_[\"ID\"]) .> FILTER(_K > 1)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS TRUE) ORDER BY `o`.`id` ASC"
@@ -11462,7 +11462,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) "QTY" "`oi`.`order_id` = `o`.`id`")))))
   (list
    :name "plan.bindings.correlated-relation-only-in-the-continuation"
-   :at "25-hybrid-plans.sqlt:1737"
+   :at "25-hybrid-plans.sqlt:1743"
    :dialect "mariadb"
    :source "ORDERS .> SORT_BY(_[\"ID\"]) .> FILTER(_K > 1) .> FILTER(ANY(ITEMS, _ > 0))"
    :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC"
@@ -11478,7 +11478,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) "QTY" "`oi`.`order_id` = `o`.`id`")))))
   (list
    :name "plan.bindings.prefilter-separate-relation"
-   :at "25-hybrid-plans.sqlt:1756"
+   :at "25-hybrid-plans.sqlt:1762"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(ANY(FIELDS, _[\"FNAME\"] $== \"x\")) .> TAKE(1)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `o`.`id` AND (`g`.`fname` = 'x')) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `o`.`id` AND (((`g`.`fname` = 'x') AND (CAST(`g`.`fname` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin))) IS TRUE)) LIMIT 1"
@@ -11494,7 +11494,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "FIELDS" (binding-relation "cms_fields" "g" (list (cons "FNAME" (binding-column "fname" "g" :text :exact nil :sargable t :guard nil))) nil "`g`.`cmsid` = `o`.`id`" :prefilter "separate")))))
   (list
    :name "plan.bindings.columns-in-a-body"
-   :at "25-hybrid-plans.sqlt:1776"
+   :at "25-hybrid-plans.sqlt:1782"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(JOIN(V, \"-\") $== \"x\") .> TAKE(1)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (CAST(CONCAT(CONCAT(`o`.`a`, '-'), `o`.`b`) AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin) LIMIT 1"
@@ -11510,7 +11510,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "V" (binding-columns (binding-column "a" "o" :unknown) (binding-column "b" "o" :unknown))))))
   (list
    :name "plan.bindings.raw-in-a-body"
-   :at "25-hybrid-plans.sqlt:1793"
+   :at "25-hybrid-plans.sqlt:1799"
    :dialect "mariadb"
    :source "ORDERS .> FILTER(R > 1) .> TAKE(1)"
    :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`total` > 1) LIMIT 1"
@@ -11526,7 +11526,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)) (cons "R" (binding-raw "`o`.`total`" :num)))))
   (list
    :name "plan.multi-line.hybrid-splits-across-lines"
-   :at "25-hybrid-plans.sqlt:1809"
+   :at "25-hybrid-plans.sqlt:1815"
    :dialect "mariadb"
    :source "ORDERS
   .> SORT_BY(_[\"ID\"])
@@ -11544,7 +11544,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
    :name "plan.multi-line.statement-on-its-own-line-is-pure-memory"
-   :at "25-hybrid-plans.sqlt:1831"
+   :at "25-hybrid-plans.sqlt:1837"
    :dialect "mariadb"
    :source "A += 1;
 ORDERS .> TAKE(1)"
@@ -12029,7 +12029,7 @@ ORDERS .> TAKE(1)"
    :dialect "sqlite"
    :source "R .> LINK(S, SS, X, SS[\"ID\"] == X[\"ID\"]) .> MAP(RECORD(\"picked\", _[\"ß\"][\"VAL\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:72"
+   :error "E_SQL_SHAPE 1:67"
    :throws nil
    :params nil
    :as "statement"
@@ -12045,7 +12045,7 @@ ORDERS .> TAKE(1)"
    :dialect "sqlite"
    :source "R .> LINK(S, SS, X, SS[\"ID\"] == X[\"ID\"]) .> MAP(RECORD(\"picked\", _[\"ſS\"][\"VAL\"]))"
    :expect nil
-   :error "E_SQL_SHAPE 1:73"
+   :error "E_SQL_SHAPE 1:67"
    :throws nil
    :params nil
    :as "statement"
@@ -16546,4 +16546,676 @@ ORDERS .> TAKE(1)"
    :tables (list "articles")
    :register (lambda ()
       (sel:register-function "UNSPELLED" 1 1 (lambda (a) (declare (ignore a)) (sel:make-text ""))))
-   :bindings (lambda () (list (cons "ARTICLES" (binding-relation "articles" "a" (list (cons "id" (binding-column "id" "a" :num)) (cons "title" (binding-column "title" "a" :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ARTICLES" (binding-relation "articles" "a" (list (cons "id" (binding-column "id" "a" :num)) (cons "title" (binding-column "title" "a" :text))) nil nil)))))
+  (list
+   :name "link.chain.shared-name-through-a-later-left-binder"
+   :at "47-link-rows.sqlt:6"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:58"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.left-only-field-through-a-later-left-binder"
+   :at "47-link-rows.sqlt:27"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"rv\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect "SELECT \"t\".\"tv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC)) INNER JOIN \"t\" \"t\" ON (CAST(\"r\".\"rv\" AS NUMERIC) = CAST(\"t\".\"tid\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.right-only-field-through-a-later-left-binder"
+   :at "47-link-rows.sqlt:45"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"sv\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect "SELECT \"t\".\"tv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC)) INNER JOIN \"t\" \"t\" ON (CAST(\"s\".\"sv\" AS NUMERIC) = CAST(\"t\".\"tid\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.nested-left-side"
+   :at "47-link-rows.sqlt:64"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"X\"][\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect "SELECT \"t\".\"tv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC)) INNER JOIN \"t\" \"t\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"t\".\"tid\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.nested-right-side"
+   :at "47-link-rows.sqlt:80"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"Y\"][\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect "SELECT \"t\".\"tv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC)) INNER JOIN \"t\" \"t\" ON (CAST(\"s\".\"id\" AS NUMERIC) = CAST(\"t\".\"tid\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.source-name-is-not-a-later-binder"
+   :at "47-link-rows.sqlt:96"
+   :dialect "sqlite"
+   :source "R .> LINK(S, _1[\"id\"] == _2[\"id\"]) .> LINK(T, R[\"rv\"] == T[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:48"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.underscore-one-is-the-joined-row"
+   :at "47-link-rows.sqlt:116"
+   :dialect "sqlite"
+   :source "R .> LINK(S, _1[\"id\"] == _2[\"id\"]) .> LINK(T, _1[\"id\"] == _2[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:49"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.after-a-left-join"
+   :at "47-link-rows.sqlt:132"
+   :dialect "sqlite"
+   :source "R .> LINK_LEFT(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:63"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.second-join-left"
+   :at "47-link-rows.sqlt:148"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK_LEFT(T, A, B, A[\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"B\"][\"tv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:63"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.reused-right-binder-name"
+   :at "47-link-rows.sqlt:164"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, Y, B, Y[\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:58"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.reused-left-binder-name"
+   :at "47-link-rows.sqlt:183"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, X, B, X[\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:58"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.stale-binder"
+   :at "47-link-rows.sqlt:199"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, X[\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error "E_SQL_UNBOUND 1:57"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.map-reads-a-nested-joined-row"
+   :at "47-link-rows.sqlt:217"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"rv\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"A\"][\"rv\"]))"
+   :expect "SELECT \"r\".\"rv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC)) INNER JOIN \"t\" \"t\" ON (CAST(\"r\".\"rv\" AS NUMERIC) = CAST(\"t\".\"tid\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.map-nested-shared-name"
+   :at "47-link-rows.sqlt:233"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"rv\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"A\"][\"id\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:103"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.map-nested-right-only-field"
+   :at "47-link-rows.sqlt:249"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"rv\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"A\"][\"sv\"]))"
+   :expect "SELECT \"s\".\"sv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC)) INNER JOIN \"t\" \"t\" ON (CAST(\"r\".\"rv\" AS NUMERIC) = CAST(\"t\".\"tid\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.three-relations"
+   :at "47-link-rows.sqlt:265"
+   :dialect "sqlite"
+   :source "R .> LINK(T, X, Y, X[\"rv\"] == Y[\"tid\"]) .> LINK(S, A, B, A[\"id\"] == B[\"id\"]) .> MAP(RECORD(\"v\", _[\"sv\"]))"
+   :expect "SELECT \"s\".\"sv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"t\" \"t\" ON (CAST(\"r\".\"rv\" AS NUMERIC) = CAST(\"t\".\"tid\" AS NUMERIC)) INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.a-name-dropped-earlier-is-promoted-again"
+   :at "47-link-rows.sqlt:281"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(U, A, B, A[\"rv\"] == B[\"id\"]) .> MAP(RECORD(\"v\", _[\"id\"]))"
+   :expect "SELECT \"u\".\"id\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC)) INNER JOIN \"u\" \"u\" ON (CAST(\"r\".\"rv\" AS NUMERIC) = CAST(\"u\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.chain.right-only-field-after-a-left-join"
+   :at "47-link-rows.sqlt:300"
+   :dialect "sqlite"
+   :source "R .> LINK_LEFT(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"sv\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:63"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.relation-name-after-a-five-argument-link"
+   :at "47-link-rows.sqlt:319"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> MAP(RECORD(\"v\", _[\"R\"][\"rv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:60"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.right-name-after-a-five-argument-link"
+   :at "47-link-rows.sqlt:338"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> MAP(RECORD(\"v\", _[\"S\"][\"sv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:60"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.relation-name-in-a-five-argument-predicate"
+   :at "47-link-rows.sqlt:354"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, R[\"id\"] == Y[\"id\"]) .> MAP(RECORD(\"v\", _[\"sv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:21"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.right-name-in-a-five-argument-predicate"
+   :at "47-link-rows.sqlt:372"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == S[\"id\"]) .> MAP(RECORD(\"v\", _[\"sv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:32"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.three-argument-name"
+   :at "47-link-rows.sqlt:388"
+   :dialect "sqlite"
+   :source "R .> LINK(S, _1[\"id\"] == _2[\"id\"]) .> MAP(RECORD(\"v\", _[\"R\"][\"rv\"]))"
+   :expect "SELECT \"r\".\"rv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.three-argument-lowercase-name"
+   :at "47-link-rows.sqlt:404"
+   :dialect "sqlite"
+   :source "R .> LINK(S, _1[\"id\"] == _2[\"id\"]) .> MAP(RECORD(\"v\", _[\"s\"][\"sv\"]))"
+   :expect "SELECT \"s\".\"sv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.binder-names-its-own-element"
+   :at "47-link-rows.sqlt:420"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"X\"][\"id\"] == Y[\"y\"][\"id\"]) .> MAP(RECORD(\"v\", _[\"X\"][\"x\"][\"rv\"]))"
+   :expect "SELECT \"r\".\"rv\" AS \"v\" FROM \"r\" \"r\" INNER JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.no-join"
+   :at "47-link-rows.sqlt:439"
+   :dialect "sqlite"
+   :source "R .> MAP(RECORD(\"v\", _[\"R\"][\"rv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:23"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.alias"
+   :at "47-link-rows.sqlt:457"
+   :dialect "sqlite"
+   :source "R .> LINK(S, _1[\"id\"] == _2[\"id\"]) .> MAP(RECORD(\"v\", _[\"ra\"][\"rv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:56"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "rtab" "ra" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "stab" "sa" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.table"
+   :at "47-link-rows.sqlt:473"
+   :dialect "sqlite"
+   :source "R .> LINK(S, _1[\"id\"] == _2[\"id\"]) .> MAP(RECORD(\"v\", _[\"rtab\"][\"rv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:56"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "rtab" "ra" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "stab" "sa" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)))))
+  (list
+   :name "link.qualifier.alias-in-a-predicate"
+   :at "47-link-rows.sqlt:490"
+   :dialect "sqlite"
+   :source "R .> LINK(S, _1[\"id\"] == ra[\"id\"]) .> MAP(RECORD(\"v\", _[\"sv\"]))"
+   :expect nil
+   :error "E_SQL_UNBOUND 1:26"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "rtab" "ra" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "stab" "sa" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)))))
+  (list
+   :name "link.left.right-only-promoted-read"
+   :at "47-link-rows.sqlt:504"
+   :dialect "sqlite"
+   :source "R .> LINK_LEFT(S, X, Y, X[\"id\"] == Y[\"id\"]) .> MAP(RECORD(\"v\", _[\"sv\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:65"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.left.right-field-through-its-binder"
+   :at "47-link-rows.sqlt:524"
+   :dialect "sqlite"
+   :source "R .> LINK_LEFT(S, X, Y, X[\"id\"] == Y[\"id\"]) .> MAP(RECORD(\"v\", _[\"Y\"][\"sv\"]))"
+   :expect "SELECT \"s\".\"sv\" AS \"v\" FROM \"r\" \"r\" LEFT JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.left.left-only-promoted-read"
+   :at "47-link-rows.sqlt:542"
+   :dialect "sqlite"
+   :source "R .> LINK_LEFT(S, X, Y, X[\"id\"] == Y[\"id\"]) .> MAP(RECORD(\"v\", _[\"rv\"]))"
+   :expect "SELECT \"r\".\"rv\" AS \"v\" FROM \"r\" \"r\" LEFT JOIN \"s\" \"s\" ON (CAST(\"r\".\"id\" AS NUMERIC) = CAST(\"s\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.twice.a-relation-joined-again-under-its-alias"
+   :at "47-link-rows.sqlt:558"
+   :dialect "sqlite"
+   :source "ORDERS .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"]) .> LINK(CUSTOMERS, A, B, A[\"customer_id\"] == B[\"id\"]) .> MAP(RECORD(\"n\", _[\"B\"][\"name\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:70"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)) (cons "PLAIN" (binding-relation "plain" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "link.twice.a-self-join-under-the-alias"
+   :at "47-link-rows.sqlt:577"
+   :dialect "sqlite"
+   :source "ORDERS .> LINK(ORDERS, A, B, A[\"id\"] == B[\"id\"]) .> MAP(RECORD(\"n\", _[\"B\"][\"name\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:16"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)) (cons "PLAIN" (binding-relation "plain" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "link.twice.a-self-join-of-an-unaliased-relation"
+   :at "47-link-rows.sqlt:591"
+   :dialect "sqlite"
+   :source "PLAIN .> LINK(PLAIN, A, B, A[\"id\"] == B[\"id\"]) .> MAP(RECORD(\"n\", _[\"B\"][\"v\"]))"
+   :expect "SELECT \"B\".\"v\" AS \"n\" FROM \"plain\" INNER JOIN \"plain\" \"B\" ON (CAST(\"plain\".\"id\" AS NUMERIC) = CAST(\"B\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)) (cons "PLAIN" (binding-relation "plain" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "link.twice.a-three-argument-self-join-of-an-unaliased-relation"
+   :at "47-link-rows.sqlt:608"
+   :dialect "sqlite"
+   :source "PLAIN .> LINK(PLAIN, _1[\"id\"] == _2[\"id\"]) .> MAP(RECORD(\"n\", _[\"_2\"][\"v\"]))"
+   :expect "SELECT \"_2\".\"v\" AS \"n\" FROM \"plain\" INNER JOIN \"plain\" \"_2\" ON (CAST(\"plain\".\"id\" AS NUMERIC) = CAST(\"_2\".\"id\" AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)) (cons "PLAIN" (binding-relation "plain" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "link.order.an-earlier-sort-key-refuses-before-the-join"
+   :at "47-link-rows.sqlt:622"
+   :dialect "sqlite"
+   :source "CUSTOMERS .> TOP_BY(_[\"QTY\"], 1) .> LINK(CUSTOMERS, O, C, O[\"id\"] == C[\"id\"]) .> TOP_BY(_[\"name\"], 1)"
+   :expect nil
+   :error "E_SQL_BINDING 1:22"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)) (cons "PLAIN" (binding-relation "plain" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "link.order.an-earlier-bucket-key-refuses-before-the-join"
+   :at "47-link-rows.sqlt:641"
+   :dialect "sqlite"
+   :source "ORDERS .> BUCKET(_) .> LINK(CUSTOMERS, _1[\"id\"] == _2[\"id\"]) .> SELECT_COLS(\"name\") .> FILTER(_[\"ID\"] == 0)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:18"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)) (cons "PLAIN" (binding-relation "plain" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "link.twice.the-same-default-alias-twice"
+   :at "47-link-rows.sqlt:658"
+   :dialect "sqlite"
+   :source "PLAIN .> LINK(PLAIN, _1[\"id\"] == _2[\"id\"]) .> LINK(PLAIN, _1[\"id\"] == _2[\"id\"]) .> MAP(RECORD(\"n\", _[\"_2\"][\"v\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:52"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)) (cons "PLAIN" (binding-relation "plain" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "V" (binding-column "v" nil :num))) nil nil)))))
+  (list
+   :name "link.plan.chain-read-the-row-lacks-stays-in-memory"
+   :at "47-link-rows.sqlt:674"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> LINK(T, A, B, A[\"id\"] == B[\"tid\"]) .> MAP(RECORD(\"v\", _[\"tv\"]))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r" "s" "t")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.plan.relation-name-after-a-five-argument-link-stays-in-memory"
+   :at "47-link-rows.sqlt:695"
+   :dialect "sqlite"
+   :source "R .> LINK(S, X, Y, X[\"id\"] == Y[\"id\"]) .> MAP(RECORD(\"v\", _[\"R\"][\"rv\"]))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r" "s")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))
+  (list
+   :name "link.plan.left-join-right-only-read-stays-in-memory"
+   :at "47-link-rows.sqlt:712"
+   :dialect "sqlite"
+   :source "R .> LINK_LEFT(S, X, Y, X[\"id\"] == Y[\"id\"]) .> MAP(RECORD(\"v\", _[\"sv\"]))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r" "s")
+   :register nil
+   :bindings (lambda () (list (cons "R" (binding-relation "r" "r" (list (cons "ID" (binding-column "id" nil :num)) (cons "RV" (binding-column "rv" nil :num))) nil nil)) (cons "S" (binding-relation "s" "s" (list (cons "ID" (binding-column "id" nil :num)) (cons "SV" (binding-column "sv" nil :num))) nil nil)) (cons "T" (binding-relation "t" "t" (list (cons "TID" (binding-column "tid" nil :num)) (cons "TV" (binding-column "tv" nil :num))) nil nil)) (cons "U" (binding-relation "u" "u" (list (cons "ID" (binding-column "id" nil :num)) (cons "UV" (binding-column "uv" nil :num))) nil nil)))))))

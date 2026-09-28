@@ -60,6 +60,19 @@ final class RecordShape
             return self::$cache[$signature];
         }
         if (self::$instrumentation) self::$stats['new_shapes']++;
+        // A shape is built once per key sequence, so this is where its keys are
+        // checked: text, distinct (spec §8; review 2026-09-28 HOST-12, HOST-18).
+        $seen = [];
+        foreach ($keys as $key) {
+            if (!is_string($key)) {
+                fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
+            }
+            Value::checkKey($key);
+            if (isset($seen[$key])) {
+                fail('E_BAD_ARG', 'a record shape cannot hold the key ' . json_encode($key) . ' twice', null);
+            }
+            $seen[$key] = true;
+        }
         $shape = new self($keys);
         if (count($keys) <= self::CACHE_MAX_KEYS &&
             array_sum(array_map('strlen', $keys)) <= self::CACHE_MAX_BYTES) {
@@ -220,6 +233,12 @@ final class Value
         return new self(self::TEXT, $s);
     }
 
+    /** A key entering from host code (spec §8): valid UTF-8, like every text. */
+    public static function checkKey(string $key): void
+    {
+        self::checkText($key);
+    }
+
     /**
      * Every text entering is valid UTF-8, keys included (spec §8; review
      * 2026-09-25 HOST-05). PCRE's strict UTF-8 check is the fast path; only a
@@ -254,7 +273,7 @@ final class Value
     {
         if (!is_string($d)) {
             $v = new self(self::TEXT, null);
-            $v->decVal = $d;
+            $v->decVal = Dec::checked($d);
             return $v;
         }
         $parsed = Dec::parse($d);
@@ -277,6 +296,29 @@ final class Value
     /** @param list<Value> $values @param list<string>|null $keys */
     public static function list(array $values, ?array $keys = null): self
     {
+        foreach ($values as $item) {
+            if (!$item instanceof self) {
+                fail('E_BAD_ARG', 'a list is built from Values, not ' . get_debug_type($item), null);
+            }
+        }
+        if ($keys !== null) {
+            // A list's keys pair up with its values and are distinct text
+            // (spec §8; review 2026-09-28 HOST-12, HOST-17, HOST-18).
+            if (count($keys) !== count($values)) {
+                fail('E_BAD_ARG', count($keys) . ' key(s) and ' . count($values) . ' value(s) do not pair up', null);
+            }
+            $seen = [];
+            foreach ($keys as $key) {
+                if (!is_string($key)) {
+                    fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
+                }
+                self::checkText($key);
+                if (isset($seen[$key])) {
+                    fail('E_BAD_ARG', 'list key ' . json_encode($key) . ' is given twice', null);
+                }
+                $seen[$key] = true;
+            }
+        }
         $v = new self(self::NONE, null, true);
         // Keep PHP's packed representation when the caller already supplied a
         // list. array_values() would eagerly duplicate a large COW array.
@@ -286,16 +328,15 @@ final class Value
     }
 
     /** @param list<string> $keys @param list<Value> $values */
+    /**
+     * A record from keys and values side by side. A repeated key keeps its
+     * first position and takes its last value, as RECORD does (spec §8).
+     *
+     * @param list<string> $keys @param list<Value> $values
+     */
     public static function shaped(array $keys, array $values): self
     {
-        if ($keys === []) {
-            return self::none();
-        }
-        if (count($keys) !== count($values)) {
-            throw new \InvalidArgumentException('record shape and storage sizes differ');
-        }
-        $shape = RecordShape::intern($keys);
-        return self::fromShape($shape, $values);
+        return self::record($keys, $values);
     }
 
     /**
@@ -308,7 +349,7 @@ final class Value
     public static function fromShape(RecordShape $shape, array $values): self
     {
         if (count($values) !== $shape->size) {
-            throw new \InvalidArgumentException('record shape and storage sizes differ');
+            fail('E_BAD_ARG', $shape->size . ' key(s) and ' . count($values) . ' value(s) do not pair up', null);
         }
         $v = new self(self::NONE, null);
         $v->shape = $shape;
@@ -326,15 +367,23 @@ final class Value
      */
     public static function record(array $keys, array $values): self
     {
+        if (count($keys) !== count($values)) {
+            fail('E_BAD_ARG', count($keys) . ' key(s) and ' . count($values) . ' value(s) do not pair up', null);
+        }
+        foreach ($values as $item) {
+            if (!$item instanceof self) {
+                fail('E_BAD_ARG', 'a record is built from Values, not ' . get_debug_type($item), null);
+            }
+        }
         if ($keys === []) {
             return self::none();
-        }
-        if (count($keys) !== count($values)) {
-            throw new \InvalidArgumentException('record keys and values sizes differ');
         }
         $seen = [];
         $unique = true;
         foreach ($keys as $key) {
+            if (!is_string($key)) {
+                fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
+            }
             if (array_key_exists($key, $seen)) {
                 $unique = false;
                 break;
@@ -342,7 +391,7 @@ final class Value
             $seen[$key] = true;
         }
         if ($unique) {
-            return self::shaped($keys, $values);
+            return self::fromShape(RecordShape::intern($keys), $values);
         }
         $v = self::none();
         foreach ($keys as $i => $key) {
@@ -360,6 +409,9 @@ final class Value
             $needsCustomKeys = false;
             $expectedIndex = 1;
             foreach ($entries as $entry) {
+                if (!is_array($entry) || count($entry) !== 2) {
+                    fail('E_BAD_ARG', 'an entry must be a [key, value] pair', null);
+                }
                 $key = (string) $entry[0];
                 $values[] = $entry[1];
                 $keys[] = $key;
@@ -373,6 +425,9 @@ final class Value
         $keys = [];
         $values = [];
         foreach ($entries as $entry) {
+            if (!is_array($entry) || count($entry) !== 2) {
+                fail('E_BAD_ARG', 'an entry must be a [key, value] pair', null);
+            }
             $key = (string) $entry[0];
             $keys[] = $key;
             $values[] = $entry[1];
@@ -1020,9 +1075,7 @@ final class Value
             return self::int($x);
         }
         if (is_float($x)) {
-            throw new \InvalidArgumentException(
-                'floats have no exact decimal form; pass a numeric string instead',
-            );
+            fail('E_BAD_ARG', 'floats have no exact decimal form; pass a numeric string instead', null);
         }
         if (is_string($x)) {
             return self::text($x);
@@ -1048,7 +1101,7 @@ final class Value
             }
             return self::record($keys, $values);
         }
-        throw new \InvalidArgumentException('cannot convert ' . gettype($x) . ' to SEL');
+        fail('E_BAD_ARG', 'cannot convert ' . gettype($x) . ' to SEL', null);
     }
 
     /** @param mixed $row @return list<string>|null */

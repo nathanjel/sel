@@ -401,7 +401,7 @@ def _rgroups(a, ctx):
     for i in range(rx.groups + 1):
         g = _group_text(m, i, original)
         out.append(Value.text(g if g is not None else ''))
-    return Value.list(out)
+    return Value._list_owned(out)
 
 
 def _expand(repl, m, rx, original, pos):

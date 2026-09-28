@@ -77,7 +77,7 @@ function recordWithShape(args, shape) {
     while (i < keys.length && keys[i] === shape.keys[i]) i++;
     if (i === keys.length) return Value.shapedFromShape(shape, values);
   }
-  return Value.fromEntries(keys.map((key, i) => [key, values[i]]));
+  return Value.fromEntriesOwned(keys.map((key, i) => [key, values[i]]));
 }
 
 function recordFromArgs(args) {
@@ -86,7 +86,7 @@ function recordFromArgs(args) {
   for (let i = 0; i < args.count(); i += 2) {
     entries.push([args.text(i), args.val(i + 1).clone()]);
   }
-  return Value.fromEntries(entries);
+  return Value.fromEntriesOwned(entries);
 }
 
 define({
@@ -128,7 +128,7 @@ define({
       for (const column of columns) {
         if (row.has(column)) entries.push([column, row.get(column).clone()]);
       }
-      return Value.fromEntries(entries);
+      return Value.fromEntriesOwned(entries);
     });
     return Value.listOwned(rows);
   },
@@ -290,7 +290,7 @@ function makeNullRecord(sample, tableName) {
       if (!seen.has(name)) { entries.push([name, Value.none()]); seen.add(name); }
     }
   }
-  return Value.fromEntries(entries);
+  return Value.fromEntriesOwned(entries);
 }
 
 function isNestedRecord(value) {
@@ -351,7 +351,7 @@ function makeJoinedRow(left, right, b1, b2, nullRight) {
       if (category(value) === SCALAR && !leftNames.has(upperName(key))) put(key, value);
     }
   }
-  return Value.fromEntries(entries);
+  return Value.fromEntriesOwned(entries);
 }
 
 const OP_LEFT_SLOT = 0;

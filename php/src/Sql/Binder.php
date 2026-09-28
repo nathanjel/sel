@@ -31,8 +31,11 @@ final class Binder
     /** @var array<string,mixed>|null */
     public ?array $payload;
     public ?string $reason;
-    /** A ROW binder of a joined statement: fields resolve across the sides (see Translator::withRow). */
-    public bool $joined = false;
+    /**
+     * A ROW binder's row as SEL has it: the statement's row (a relation's, or
+     * after a LINK the joined row) or a LINK side (see Translator::joinRows).
+     */
+    public ?RowModel $model = null;
 
     /** @param array<string,mixed>|null $payload */
     private function __construct(string $shape, ?array $payload, ?string $reason = null)

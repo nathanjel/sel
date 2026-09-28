@@ -11,11 +11,7 @@ def _upper_name(s):
     return s.upper() if s.isascii() else ascii_upper(s)
 from ..registry import INF, define
 from ..parser import Node
-from ..value import NONE, TEXT, Value, iter_elements, iter_values, structural_hash, _record_shape
-
-
-def elements(value):
-    return list(iter_elements(value))
+from ..value import NONE, TEXT, Value, elements, iter_elements, iter_values, structural_hash, _record_shape
 
 
 def iter_collection_items(value):
@@ -42,12 +38,12 @@ def first_collection_item(value):
 define('COUNT', 1, 1, fn=lambda args, ctx: Value.int(args.val(0).size()))
 
 define('INDEXES', 1, 1,
-       fn=lambda args, ctx: Value.list([Value.text(k) for k in args.val(0).keys()]))
+       fn=lambda args, ctx: Value._list_owned([Value.text(k) for k in args.val(0).keys()]))
 
 define('HAS', 2, 2, fn=lambda args, ctx: Value.bool(args.val(0).has(args.text(1))))
 
 define('LIST', 0, INF,
-       fn=lambda args, ctx: Value.list([args.val(i) for i in range(args.count())]))
+       fn=lambda args, ctx: Value._list_owned([args.val(i) for i in range(args.count())]))
 
 
 def _record(args, ctx):
@@ -59,7 +55,7 @@ def _record(args, ctx):
     shape = args.record_shape
     if shape is not None and shape.keys == tuple(keys):
         return Value._from_shape(shape, values)
-    return Value.record(keys, values)
+    return Value._record_owned(keys, values)
 
 
 define('RECORD', 0, INF,
@@ -70,10 +66,10 @@ def _take(args, ctx):
     value = args.val(0)
     count = args.non_neg_int(1)
     if count == 0 or value.is_null():
-        return Value.list([])
+        return Value._list_owned([])
     if value.is_list and value.storage is not None:
-        return Value.list(value.storage[:count])
-    return Value.list([item for _, item in elements(value)[:count]])
+        return Value._list_owned(value.storage[:count])
+    return Value._list_owned([item for _, item in elements(value)[:count]])
 
 
 define('TAKE', 2, 2, fn=_take)
@@ -83,10 +79,10 @@ def _drop(args, ctx):
     value = args.val(0)
     count = args.non_neg_int(1)
     if value.is_null():
-        return Value.list([])
+        return Value._list_owned([])
     if value.is_list and value.storage is not None:
-        return Value.list(value.storage[count:])
-    return Value.list([item for _, item in elements(value)[count:]])
+        return Value._list_owned(value.storage[count:])
+    return Value._list_owned([item for _, item in elements(value)[count:]])
 
 
 define('DROP', 2, 2, fn=_drop)
@@ -95,7 +91,7 @@ define('DROP', 2, 2, fn=_drop)
 def _select_cols(args, ctx):
     value = args.val(0)
     if value.is_null():
-        return Value.list([])
+        return Value._list_owned([])
     columns = [args.text(i) for i in range(1, args.count())]
     if (value.is_list and value.storage is not None
             and value.storage and value.storage[0].shape is not None):
@@ -105,7 +101,7 @@ def _select_cols(args, ctx):
             all_uniform = all(r.shape is sample_shape for r in value.storage)
             if all_uniform:
                 out_shape = _record_shape(tuple(columns))
-                return Value.list([Value._from_shape(out_shape, [r.storage[s] for s in slots])
+                return Value._list_owned([Value._from_shape(out_shape, [r.storage[s] for s in slots])
                                    for r in value.storage])
     rows = []
     for _, row in elements(value):
@@ -113,8 +109,8 @@ def _select_cols(args, ctx):
         for column in columns:
             if row.has(column):
                 entries.append((column, row.get(column)))
-        rows.append(Value.from_entries(entries))
-    return Value.list(rows)
+        rows.append(Value._from_entries_owned(entries))
+    return Value._list_owned(rows)
 
 
 define('SELECT_COLS', 2, INF, fn=_select_cols)
@@ -123,7 +119,7 @@ define('SELECT_COLS', 2, INF, fn=_select_cols)
 def _dedupe(args, ctx):
     value = args.val(0)
     if value.is_null():
-        return Value.list([])
+        return Value._list_owned([])
     buckets = {}
     out = []
     for _, item in elements(value):
@@ -141,7 +137,7 @@ def _dedupe(args, ctx):
         if not found:
             bucket.append(item)
             out.append(item)
-    return Value.list(out)
+    return Value._list_owned(out)
 
 
 define('DISTINCT', 1, 1, fn=_dedupe)
@@ -303,19 +299,19 @@ def ensure_row_table_alias(row, table_name):
             add_lower = lower != table_name and lower not in old_shape.key_map
             keys = tuple(list(old_shape.keys) + [table_name] + ([lower] if add_lower else []))
             target_shape = _record_shape(keys)
-            cached = (target_shape, old_shape.size, add_lower)
+            cached = (target_shape, add_lower)
             if len(keys) <= 256 and sum(map(len, keys)) <= 16384:
                 if len(_ALIAS_PLANS) >= 256:
                     _ALIAS_PLANS.clear()
                 _ALIAS_PLANS[cache_key] = cached
-        target_shape, old_size, add_lower = cached
+        target_shape, add_lower = cached
         storage = [*row.storage, row, row] if add_lower else [*row.storage, row]
         return Value._from_shape(target_shape, storage)
     entries = row.entries()
     entries.append((table_name, row))
     if lower != table_name and not row.has(lower):
         entries.append((lower, row))
-    return Value.from_entries(entries)
+    return Value._from_entries_owned(entries)
 
 
 def make_null_record(sample, table_name):
@@ -334,7 +330,7 @@ def make_null_record(sample, table_name):
             if name not in seen:
                 entries.append((name, Value.none()))
                 seen.add(name)
-    return Value.from_entries(entries)
+    return Value._from_entries_owned(entries)
 
 
 def is_nested_record(value):
@@ -396,7 +392,7 @@ def make_joined_row(left, right, b1, b2, null_right):
         for key, value in right_entries:
             if _category(value) == _SCALAR and _upper_name(key) not in left_names:
                 put(key, value)
-    return Value.from_entries(entries)
+    return Value._from_entries_owned(entries)
 
 
 def _binder_keys(name, positional):
@@ -993,13 +989,13 @@ def _link(args, ctx, left_join):
         b2 = args.symbol(3)
         predicate = args.node(4)
     if left_value.is_null():
-        return Value.list([])
+        return Value._list_owned([])
 
     first_left = first_collection_item(left_value)
     first_right = first_collection_item(right_value)
     if first_left is None or first_right is None:
         if not left_join or first_left is None:
-            return Value.list([])
+            return Value._list_owned([])
     # Every element is extended with its side's name (ensure_row_table_alias
     # skips one that already has the key), and every row is built from its
     # own pair (spec §7.4): nothing is decided from a first element except
@@ -1219,7 +1215,7 @@ def _link(args, ctx, left_join):
         if prefilter is not None:
             ctx.join_prefilter_report = (applied_ids, errored[0], dropped[0])
         if keys is not None and len(keys) != position - 1:
-            return Value.list(output, keys)
+            return Value._list_owned(output, keys)
     else:
         # No pre-filter on the general join: the numbering of the kept rows
         # would need the count of matches of every dropped row, which is the
@@ -1249,7 +1245,7 @@ def _link(args, ctx, left_join):
                     output.append(project(left, None))
         finally:
             ctx.pop_frame()
-    return Value.list(output)
+    return Value._list_owned(output)
 
 
 define('LINK', 3, 5, lazy=True, binds=True,

@@ -359,6 +359,12 @@ fixture and compares the rows with SEL's answer over the same rows loaded as
 the two relations. PHP's own translation is always asked in-process. A refusal
 is an answer, not a disagreement.
 
+A program whose name starts `refused: ` is the other half: `run()` raises over
+the fixture, and every translator must refuse it, so a statement for it is a
+disagreement. Review 2026-09-28 found four translator defects of that shape
+(SQL for a read the joined row does not have), and an oracle that read only
+programs SEL answers could not have seen any of them.
+
 ## What it found on its first two runs
 
 Against code that had been reviewed three times and had a green 180-case suite:

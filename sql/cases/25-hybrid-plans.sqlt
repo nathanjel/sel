@@ -1624,9 +1624,9 @@ customers
 SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
 ===
 
-### name: plan.index.qualified-by-alias-qualifies-without-a-join
+### name: plan.index.an-alias-is-not-a-qualifier
 --- note
-A qualifier's whole point is to name the relation, so the column renders under the relation's alias even where the plain `_["AMOUNT"]` would render bare; C++ rendered it bare.
+A relation's row is a plain record: `_["o"]` is E_NO_KEY in memory, whatever the binding's SQL alias. Every host translated it as a qualified read until review 2026-09-28 SQL-07; the read stays in memory.
 --- dialect
 mariadb
 --- bindings
@@ -1635,11 +1635,7 @@ mariadb
 --- source
 ORDERS .> MAP(RECORD("a", _["o"]["AMOUNT"]))
 --- plan
-pure_sql
---- tables
-orders
---- expect
-SELECT `o`.`amount` AS `a` FROM `orders` `o`
+pure_memory
 ===
 
 ### name: plan.index.qualified-by-a-declared-binder
@@ -1659,9 +1655,9 @@ customers
 SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
 ===
 
-### name: plan.index.positional-binder-names-are-not-qualifiers
+### name: plan.index.positional-binders-are-keys-of-the-row
 --- note
-`_1`, `_2` and `_` are positions, not names of relations: after the join only `_` is in scope, and `_["_2"]` names nothing. C++ accepted all three and Lisp `_1`; the read stays in memory.
+`_1` and `_2` are keys of the joined row (spec §7.4), holding the left and the right element, so `_["_2"]["NAME"]` is the right side's `name`. This case said they named nothing, and so did every host until review 2026-09-28 SQL-07; in memory the read answers.
 --- dialect
 mariadb
 --- bindings
@@ -1670,10 +1666,15 @@ mariadb
 --- source
 ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("n", _["_2"]["NAME"]))
 --- plan
-pure_memory
+pure_sql
+--- tables
+orders
+customers
+--- expect
+SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
 ===
 
-### name: plan.index.positional-left-binder-is-not-a-qualifier
+### name: plan.index.positional-left-binder-is-a-key-of-the-row
 --- dialect
 mariadb
 --- bindings
@@ -1682,7 +1683,12 @@ mariadb
 --- source
 ORDERS .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"]) .> MAP(RECORD("a", _["_1"]["AMOUNT"]))
 --- plan
-pure_memory
+pure_sql
+--- tables
+orders
+customers
+--- expect
+SELECT `o`.`amount` AS `a` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`customer_id` = `c`.`id`)
 ===
 
 ### name: plan.index.the-row-itself-is-not-a-qualifier

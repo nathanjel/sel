@@ -2,8 +2,10 @@
 #
 # Three ways to consume this, in increasing order of ceremony:
 #
-#   1. Copy sel.hpp, sel_ast.hpp, sel.cpp and third_party/srell/ into your
-#      project and compile sel.cpp. Nothing here is needed, and you include only
+#   1. Copy sel.hpp, sel_ast.hpp, the three generated headers sel_limits.hpp,
+#      sel_math_ops.hpp and sel_builtin_manifest.hpp, sel.cpp, sel_optimizer.cpp
+#      (which sel.cpp includes) and third_party/srell/ into your project and
+#      compile sel.cpp. Nothing here is needed, and you include only
 #      sel.hpp. This remains the primary story.
 #      For SEL->SQL as well, add sel_sql.hpp, sel_sql_emit.hpp, sel_sql_map.hpp,
 #      sel_sql_node.hpp, sel_sql_stage1.hpp, sel_sql_translator.hpp and the six
@@ -16,7 +18,7 @@
 # so consumers need nothing on their include path but sel.hpp itself.
 
 cmake_minimum_required(VERSION 3.20)
-project(sel-lang VERSION 0.8.1 LANGUAGES CXX
+project(sel-lang VERSION 0.9.1 LANGUAGES CXX
         DESCRIPTION "A small expression language that evaluates identically on every host"
         HOMEPAGE_URL "https://github.com/nathanjel/sel")
 
@@ -62,7 +64,9 @@ endif()
 set_target_properties(sel-lang PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
-  PUBLIC_HEADER "sel.hpp;sel_sql.hpp;sel_sql_map.hpp;sel_sql_emit.hpp")
+  # sel.hpp includes sel_limits.hpp, so it is installed beside it; the 0.8.1
+  # and earlier packages left it out and did not compile for a consumer.
+  PUBLIC_HEADER "sel.hpp;sel_limits.hpp;sel_sql.hpp;sel_sql_map.hpp;sel_sql_emit.hpp")
 
 # The build tree needs this directory so sel.cpp can reach third_party/srell/.
 # Consumers get only the installed include directory.

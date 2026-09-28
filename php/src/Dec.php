@@ -433,6 +433,31 @@ final class Dec
         return $d;
     }
 
+    /**
+     * A decimal handed in by host code (Value::num with an array): well
+     * formed, canonical and within the digit caps (spec §8; review 2026-09-28
+     * HOST-13, HOST-14). Leading zeros go and a negative zero loses its sign,
+     * as they do through parse(); anything that is not a decimal is E_BAD_ARG.
+     *
+     * @param mixed $d
+     * @return array{neg:bool,digits:string,scale:int}
+     */
+    public static function checked($d): array
+    {
+        if (!is_array($d) || !is_bool($d['neg'] ?? null) || !is_string($d['digits'] ?? null)
+            || !is_int($d['scale'] ?? null) || $d['scale'] < 0 || $d['digits'] === ''
+            || strspn($d['digits'], '0123456789') !== strlen($d['digits'])) {
+            fail('E_BAD_ARG', 'not a decimal: expected [neg => bool, digits => a string of ASCII digits, '
+                . 'scale => a non-negative int]', null);
+        }
+        $digits = ltrim($d['digits'], '0');
+        if ($digits === '') $digits = '0';
+        if ($digits === $d['digits'] && ($digits !== '0' || !$d['neg']) && array_key_exists('native', $d)) {
+            return self::guard($d, null);
+        }
+        return self::guard(self::make($d['neg'], $digits, $d['scale']), null);
+    }
+
     /** @return array{neg:bool,digits:string,scale:int} */
     public static function zero(): array
     {

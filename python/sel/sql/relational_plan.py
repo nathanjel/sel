@@ -12,8 +12,9 @@ class JoinPlan:
         self.source_relation: dict[str, Any] | None = None
         self.source_table: Any = ''
         self.source_alias: str | None = None
-        self.left_binder: str = '_1'
-        self.right_binder: str = '_2'
+        # The names the LINK gives its sides, besides `_1` and `_2` (spec §7.4).
+        self.left_names: list[str] = []
+        self.right_names: list[str] = []
         self.on_pred: Any = None
         self.pos: Any = None
 
@@ -21,6 +22,9 @@ class JoinPlan:
 class RelationalPlan:
     def __init__(self) -> None:
         self.source_name: str = ''
+        # The variable the pipeline starts from, which names the first
+        # three-argument LINK's left side; None once a LINK has joined.
+        self.root_name: str | None = None
         self.source_relation: dict[str, Any] | None = None
         self.source_table: Any = ''
         self.source_alias: str | None = None
@@ -49,3 +53,6 @@ class RelationalPlan:
         self.order_by: list[dict[str, Any]] = []
         self.limit: int | None = None
         self.offset: int | None = None
+        # The translator's joined-row models (Translator._join_rows), cached
+        # per number of joins.
+        self.join_rows_cache: dict[str, Any] | None = None

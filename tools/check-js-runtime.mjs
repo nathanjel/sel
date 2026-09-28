@@ -161,6 +161,43 @@ expectOk('a compiled program reads the key of each run', () => {
   const p = compile('A[K]'); const A = Value.fromNative({ x: '1', y: '2' });
   assert.equal(p.run({ A, K: 'x' }).dump() + p.run({ A, K: 'y' }).dump(), 't"1"t"2"');
 });
+// --- every public constructor (spec/SPEC.md §8, review 2026-09-28 HOST-11..20) --
+const one = Value.text('1'); const two = Value.text('2');
+// HOST-11: fromNative and a run context hold the integer digit cap too.
+expectCode('fromNative of a 1,000,001-digit bigint is E_RANGE', 'E_RANGE', () => Value.fromNative(10n ** 1000000n));
+expectCode('a run context holding one is E_RANGE', 'E_RANGE', () => compile('LEN(X)').run({ X: 10n ** 1000000n }));
+// HOST-12: keys given side by side are checked like any other text.
+expectCode('shaped rejects a lone-surrogate key', 'E_UTF8', () => Value.shaped(['a\uD800'], [one]));
+expectCode('fromEntries rejects a lone-surrogate key', 'E_UTF8', () => Value.fromEntries([['a\uD800', one]]));
+expectCode('fromEntries rejects one in a list key', 'E_UTF8', () => Value.fromEntries([['\uDC00', one]], true));
+// HOST-13 / HOST-14: the decimal form is a number within the caps, canonical.
+expectCode('num of a decimal with 1,000,001 fractional digits is E_RANGE', 'E_RANGE', () => Value.num({ neg: false, digits: 1n, scale: 1000001 }));
+expectCode('num of a decimal with 1,000,001 integer digits is E_RANGE', 'E_RANGE', () => Value.num({ neg: false, digits: 10n ** 1000000n, scale: 0 }));
+expectOk('num of a negative-zero decimal is 0', () => assert.equal(Value.num({ neg: true, digits: 0n, scale: 0 }).dump(), 't"0"'));
+for (const bad of [{ neg: false, digits: 7n, scale: -1 }, { neg: false, digits: -5n, scale: 0 }, { neg: false, digits: 'x', scale: 0 }, 5]) {
+  expectCode(`num of the malformed decimal ${JSON.stringify(bad, (k, x) => typeof x === 'bigint' ? `${x}n` : x)} is E_BAD_ARG`, 'E_BAD_ARG', () => Value.num(bad));
+}
+// HOST-16: the constructors copy the arrays they are given.
+expectOk('shaped and fromEntries copy their arrays', () => {
+  const keys = ['a']; const values = [one]; const entries = [['a', one]];
+  const v = Value.shaped(keys, values); const w = Value.fromEntries(entries);
+  keys[0] = 'z'; values[0] = two; entries[0][1] = two; entries.push(['b', two]);
+  assert.equal(v.dump() + w.dump(), '-{"a"=t"1"}-{"a"=t"1"}');
+});
+// HOST-17: keys and values pair up; a list's keys are kept.
+expectCode('shaped with more values than keys is E_BAD_ARG', 'E_BAD_ARG', () => Value.shaped(['a'], [one, two]));
+expectCode('shaped with fewer values than keys is E_BAD_ARG', 'E_BAD_ARG', () => Value.shaped(['a', 'b'], [one]));
+expectOk('fromEntries keeps the keys of a list', () => assert.equal(Value.fromEntries([['5', one], ['7', two]], true).dump(), '-{"5"=t"1", "7"=t"2"}'));
+// HOST-18: a repeated key is RECORD's last write in its first position; a list's is refused.
+expectOk('shaped keeps a repeated key once', () => assert.equal(Value.shaped(['a', 'b', 'a'], [one, two, two]).dump(), '-{"a"=t"2", "b"=t"2"}'));
+expectCode('fromEntries rejects a repeated list key', 'E_BAD_ARG', () => Value.fromEntries([['5', one], ['5', two]], true));
+// HOST-20: a malformed call is E_BAD_ARG, never a TypeError or RangeError.
+for (const [what, f] of [['Value.int(1.5)', () => Value.int(1.5)], ['Value.int(NaN)', () => Value.int(NaN)],
+  ['Value.text(5)', () => Value.text(5)], ['Value.list("x")', () => Value.list('x')], ['Value.list([1])', () => Value.list([1])],
+  ['Value.shaped(["a"], ["1"])', () => Value.shaped(['a'], ['1'])], ['Value.fromNative(1e308)', () => Value.fromNative(1e308)],
+  ['Value.fromNative(Infinity)', () => Value.fromNative(Infinity)], ['Value.fromNative(Symbol())', () => Value.fromNative(Symbol('s'))]]) {
+  expectCode(`${what} is E_BAD_ARG`, 'E_BAD_ARG', f);
+}
 if (boundary.length) {
   console.error(`JS runtime: ${boundary.length} host-boundary contract(s) broken:\n  ` + boundary.join('\n  '));
   process.exit(1);

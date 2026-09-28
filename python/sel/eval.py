@@ -14,6 +14,7 @@ from .math_plan import MathPlan, OpCode
 from .parser import Node
 from .utf8 import bytes_compare
 from .value import BOOL, NONE, TEXT, Value
+from .builtins.number import MAX_SCALE, MAX_POWER, check_sized_int
 
 
 # Resolve enum attributes once; the hot interpreter loop compares cached opcodes.
@@ -210,24 +211,10 @@ def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
         elif op == _TRUNC:
             scratchpad[step.dst] = D.trunc(scratchpad[step.src1])
         elif op == _ROUND:
-            d2 = scratchpad[step.src2]
-            if not D.is_integer(d2):
-                fail('E_NOT_INT', 'ROUND argument 2 must be a whole number', step.aux_pos)
-            n = D.to_safe_int(d2)
-            if n < 0:
-                fail('E_RANGE', 'ROUND argument 2 must not be negative', step.aux_pos)
-            if n > 1000000:
-                fail('E_RANGE', f'ROUND scale {n} exceeds the maximum of 1000000', step.aux_pos)
+            n = check_sized_int(scratchpad[step.src2], 'ROUND', 2, MAX_SCALE, 'ROUND scale', step.aux_pos)
             scratchpad[step.dst] = D.round(scratchpad[step.src1], n, step.pos)
         elif op == _POWER:
-            d2 = scratchpad[step.src2]
-            if not D.is_integer(d2):
-                fail('E_NOT_INT', 'POWER argument 2 must be a whole number', step.aux_pos)
-            n = D.to_safe_int(d2)
-            if n < 0:
-                fail('E_RANGE', 'POWER argument 2 must not be negative', step.aux_pos)
-            if n > 100000:
-                fail('E_RANGE', f'POWER exponent {n} exceeds the maximum of 100000', step.aux_pos)
+            n = check_sized_int(scratchpad[step.src2], 'POWER', 2, MAX_POWER, 'POWER exponent', step.aux_pos)
             scratchpad[step.dst] = D.power(scratchpad[step.src1], n, step.pos)
         elif op == _MIN:
             a = scratchpad[step.src1]
@@ -342,7 +329,7 @@ def _eval_list(node: Node, ctx: Context) -> Value:
             values.extend(child.clone() for child in children)
         else:
             values.append(v.clone())
-    return Value.list(values)
+    return Value._list_owned(values)
 
 
 def _eval_unary(node: Node, ctx: Context) -> Value:

@@ -14,12 +14,6 @@ export interface Pos {
   offset: number;
 }
 
-export interface RecordShapeAlias {
-  readonly keys: readonly string[];
-  readonly oldSize: number;
-  readonly addLower: boolean;
-}
-
 export class SelError extends Error {
   readonly code: string;
   readonly line: number;
@@ -31,16 +25,17 @@ export class SelError extends Error {
   toString(): string;
 }
 
+/** SEL's decimal: `digits` × 10^-`scale`, negative when `neg`. */
+export interface Decimal {
+  neg: boolean;
+  digits: bigint;
+  scale: number;
+}
+
 export class RecordShape {
   readonly keys: readonly string[];
   readonly keyMap: Map<string, number>;
   readonly size: number;
-  /**
-   * @deprecated Always empty: alias plans live in a bounded module-level
-   * cache and nothing writes here. Kept as a lazily created Map for one
-   * minor release; removed in the next.
-   */
-  readonly aliasCache: Map<string, RecordShapeAlias>;
 }
 
 export class Value {
@@ -65,15 +60,25 @@ export class Value {
   isBin(): boolean;
   isBool(): boolean;
 
+  // Every constructor checks and copies what it is given (spec §8): a key or
+  // text with an unpaired surrogate is E_UTF8, a byte outside 0..255 or a
+  // number past the digit caps E_RANGE, anything else it does not take
+  // E_BAD_ARG. None of them throws a TypeError.
   static none(): Value;
   static null(): Value;
   static text(s: string): Value;
   static bin(b: Uint8Array | ArrayLike<number>): Value;
   static bool(b: boolean): Value;
-  static num(d: string): Value;
+  /** A decimal string ("007" becomes "7"), or a decimal in SEL's own form. */
+  static num(d: string | Decimal): Value;
   static int(n: number | bigint): Value;
   static list(values: Value[]): Value;
+  /** A record from keys and values side by side; a repeated key keeps its
+   *  first position and takes its last value, as RECORD does. */
   static shaped(keys: readonly string[], values: Value[]): Value;
+  /** A record from [key, value] pairs, or with `isList` a list keyed by them
+   *  ("1".."n" is a plain list; other keys, which must be distinct, are kept
+   *  as FILTER keeps them). */
   static fromEntries(entries: [string, Value][], isList?: boolean): Value;
 
   size(): number;
@@ -88,7 +93,7 @@ export class Value {
   asText(pos?: Pos | null): string;
   asBytes(pos?: Pos | null): Uint8Array;
   asBool(pos?: Pos | null): boolean;
-  asDecimal(pos?: Pos | null): any;
+  asDecimal(pos?: Pos | null): Decimal;
   looksNumeric(): boolean;
 
   clone(pos?: Pos | null): Value;

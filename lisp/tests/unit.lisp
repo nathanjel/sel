@@ -744,14 +744,14 @@ b\"c\\d")))
          (q "ORDERS .> FILTER(_['status'] $== 'COMPLETED')
                     .> FILTER(_['year'] >= 2025)
                     .> MAP(RECORD('order_id', _['id'], 'discount', _['discount']))
-                    .> LINK(ORDER_ITEMS, _['_sub1']['order_id'] == _2['order_id'])
+                    .> LINK(ORDER_ITEMS, _['order_id'] == _2['order_id'])
                     .> LINK(PRODUCTS, _['order_items']['prod_id'] == _2['id'])
                     .> FILTER(_['products']['is_active'] == 1)
                     .> MAP(RECORD('order_id', _['order_items']['order_id'],
                                   'cat_id', _['products']['cat_id'],
-                                  'line_net', (_['order_items']['price'] * _['order_items']['qty']) - _['_sub1']['discount']))
+                                  'line_net', (_['order_items']['price'] * _['order_items']['qty']) - _['orders']['discount']))
                     .> FILTER(_['line_net'] > 10)
-                    .> LINK(CATEGORIES, _['_sub2']['cat_id'] == _2['id'])
+                    .> LINK(CATEGORIES, _['cat_id'] == _2['id'])
                     .> BUCKET(_['categories']['name'],
                               RECORD('cat_name', _K,
                                      'lines', COUNT(_),
@@ -1553,6 +1553,47 @@ X .> MAP(COUNT(X) + _[\"id\"]
           "round trip of ~a" src)))
   (is (eq :false (sel:to-native (sel:evaluate "FALSE"))))
   (is (string= "FALSE" (sel:value-dump (sel:from-native :false)))))
+
+;;; --- every public constructor (review 2026-09-28 HOST-13..20) -------------
+
+(test host-boundary-to-native-keys-are-the-hosts
+  "Changing a key to-native returned renames nothing: not the value, not a later
+run of the program that built it, not a value set with the caller's string."
+  (let* ((p (sel:compile-source "RECORD(\"foo\", \"x\")"))
+         (v (sel:run p))
+         (n (sel:to-native v)))
+    (setf (char (car (first n)) 0) #\b)
+    (is (string= "-{\"foo\"=t\"x\"}" (sel:value-dump v)))
+    (is (string= "-{\"foo\"=t\"x\"}" (sel:value-dump (sel:run p)))))
+  (let* ((k (copy-seq "kk"))
+         (v (sel:make-none)))
+    (sel:value-set v k (sel:make-text "1"))
+    (setf (char k 0) #\z)
+    (setf (char (car (first (sel:to-native v))) 0) #\y)
+    (is (string= "-{\"kk\"=t\"1\"}" (sel:value-dump v)))))
+
+(test host-boundary-make-list-value-copies-a-vector
+  (let* ((vec (vector (sel:make-text "1")))
+         (v (sel:make-list-value vec)))
+    (setf (svref vec 0) (sel:make-text "X"))
+    (is (string= "-{\"1\"=t\"1\"}" (sel:value-dump v)))))
+
+(test host-boundary-a-dec-is-a-number
+  (raises "E_RANGE" (sel:make-num (sel::dec-make nil 1 1000001)))
+  (raises "E_RANGE" (sel:make-num (sel::dec-make nil (expt 10 1000001) 0)))
+  (raises "E_BAD_ARG" (sel:make-num (sel::dec-make nil 7 -1)))
+  (raises "E_BAD_ARG" (sel:make-num (sel::%make-dec nil -5 0)))
+  (is (string= "t\"0\"" (sel:value-dump (sel:make-num (sel::%make-dec t 0 0))))))
+
+(test host-boundary-a-malformed-call-is-bad-arg
+  (raises "E_BAD_ARG" (sel:make-int 3/2))
+  (raises "E_BAD_ARG" (sel:make-text 5))
+  (raises "E_BAD_ARG" (sel:make-num 5))
+  (raises "E_BAD_ARG" (sel:make-list-value (list "x")))
+  (raises "E_BAD_ARG" (sel:from-native 1.5))
+  (raises "E_BAD_ARG" (sel:from-native 3/2))
+  (raises "E_BAD_ARG" (sel:from-native #\a))
+  (raises "E_BAD_ARG" (sel:value-set (sel:make-none) 5 (sel:make-text "x"))))
 
 (test host-boundary-compiled-program-keeps-nothing-between-runs
   (let ((p (sel:compile-source "A[K]"))

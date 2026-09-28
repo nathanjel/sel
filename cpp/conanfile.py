@@ -17,7 +17,7 @@ import os
 
 class SelConan(ConanFile):
     name = "sel-lang"
-    version = "0.8.1"
+    version = "0.9.1"
     license = "MIT"
     author = "Marcin Gałczyński"
     url = "https://github.com/nathanjel/sel"
@@ -43,8 +43,13 @@ class SelConan(ConanFile):
         # parent directory ("copy() it is not possible to use relative patterns
         # starting with '..'"). It lands at the root of the source folder, which
         # is why CMakeLists.txt looks for it in both places.
-        for pattern in ("CMakeLists.txt", "sel.hpp", "sel_ast.hpp", "sel.cpp", 
-                        "sel_sql*.hpp", "sel_sql*.cpp", "third_party/*"):
+        # Every file the build includes: the generated headers and
+        # sel_optimizer.cpp, which sel.cpp includes, were missing until 0.9.1,
+        # and the package did not compile. tools/check-cpp-package.sh builds
+        # from exactly this list.
+        for pattern in ("CMakeLists.txt", "sel.hpp", "sel_ast.hpp", "sel_limits.hpp",
+                        "sel_math_ops.hpp", "sel_builtin_manifest.hpp", "sel.cpp",
+                        "sel_optimizer.cpp", "sel_sql*.hpp", "sel_sql*.cpp", "third_party/*"):
             copy(self, pattern, self.recipe_folder, self.export_sources_folder)
         copy(self, "LICENSE",
              os.path.join(self.recipe_folder, ".."), self.export_sources_folder)

@@ -11,13 +11,17 @@
   (source-relation nil)
   (source-table "")
   (source-alias nil)
-  (left-binder nil)
-  (right-binder nil)
+  ;; The names the LINK gives its sides, besides `_1` and `_2` (spec §7.4).
+  (left-names '() :type list)
+  (right-names '() :type list)
   (on-pred nil)
   (pos nil))
 
 (defstruct (relational-plan (:constructor make-relational-plan))
   (source-name "" :type string)
+  ;; The variable the pipeline starts from, which names the first
+  ;; three-argument LINK's left side; NIL once a LINK has joined.
+  (root-name nil)
   (source-relation nil)
   (source-table "")
   (source-alias nil)
@@ -43,5 +47,7 @@
   (having '() :type list)
   (order-by '() :type list)
   (limit nil)
-  (offset nil))
+  (offset nil)
+  ;; JOIN-ROWS' models of the joined rows, as (JOIN-COUNT . ROWS).
+  (join-rows-cache nil))
 

@@ -105,11 +105,7 @@ gap, however small, and the gap is where \"1 OR 1=1\" lived."
                          (if hit
                              (progn (write-string (cdr hit) out) (incf i (length (car hit))))
                              (progn (write-char (char text i) out) (incf i))))))
-            (write-string quote out))))))
-
-(defun bytes-to-hex (bytes)
-  (string-downcase (with-output-to-string (o)
-                     (loop for b across bytes do (format o "~2,'0X" b)))))
+             (write-string quote out))))))
 
 (defun emit-literal (dialect v &optional (form :text) pos)
   "A SEL value as a SQL literal, in the form the caller SAYS it has.
@@ -129,7 +125,7 @@ Getting this wrong is not cosmetic. Emitted bare, `\"5.00\" $== \"5\"` becomes
        (unless (stringp tpl)
          (refuse "E_SQL_UNSUPPORTED"
                  (format nil "dialect ~a has no binary literal syntax" dialect) pos))
-       (replace-all tpl "{hex}" (bytes-to-hex (sel:as-bytes v pos)))))
+       (replace-all tpl "{hex}" (sel::bytes-to-hex (sel:as-bytes v pos)))))
     ;; A NONE value has no characters, and asking for them raises a SEL-ERROR --
     ;; which TRY-TRANSLATE does not catch, so a host using the refusal-tolerant
     ;; API got a fatal out of AS-VALUE rather than a refusal.

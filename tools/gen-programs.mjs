@@ -135,7 +135,7 @@ const FIELDS = ['id', 'amount', 'name', 'customer_id', 'QTY', 'ID', 'Amount'];
 // stray name, or a real qualifier (the relation's alias) -- the shapes whose
 // refusal code and position the hosts once disagreed on (SEL-0043).
 const rowRef = (b) => (chance(0.12) ? '_K' : chance(0.08) ? b
-  : chance(0.06) ? `${b}[${pick(['1', '0', '"1"', '"nope"', '"o"', '"c"'])}]["${pick(FIELDS)}"]`
+  : chance(0.06) ? `${b}[${pick(['1', '0', '"1"', '"nope"', '"o"', '"c"', '"_1"', '"_2"', '"O"', '"C"', '"ORDERS"', '"orders"', '"CUSTOMERS"'])}]["${pick(FIELDS)}"]`
   : `${b}["${pick(FIELDS)}"]`);
 const pred = (b) => (chance(0.7)
   ? `${rowRef(b)} ${pick(NUMCMP)} ${pick(['1', '2', '5', '0', '"a"'])}`
@@ -155,7 +155,13 @@ function step(d) {
     case 9: return `SELECT_COLS(${pick(['"id"', '"id", "amount"', '"name"', '"nope"'])})`;
     case 10: return `BUCKET(${rowRef('_')})`;
     case 11: return `BUCKET(${rowRef('_')}, RECORD("k", _K, "n", COUNT(_)${chance(0.5) ? ', "s", SUM(_, _["amount"])' : ''}))`;
-    case 12: return `${pick(['LINK', 'LINK_LEFT'])}(${JOIN_RIGHT}, ${chance(0.5) ? 'O, C, O["customer_id"] == C["id"]' : '_1["customer_id"] == _2["id"]'})`;
+    case 12: {
+      // The left read varies over a field only the source has, the shared
+      // ones, and one only the right has, so a second LINK reads its joined
+      // row the way run() does (review 2026-09-28 SQL-05, TEST-13).
+      const l = pick(['customer_id', 'customer_id', 'id', 'name', 'amount']);
+      return `${pick(['LINK', 'LINK_LEFT'])}(${JOIN_RIGHT}, ${chance(0.5) ? `O, C, O["${l}"] == C["id"]` : `_1["${l}"] == _2["id"]`})`;
+    }
     case 13: return `TOP_BY(${rowRef('_')}, ${int(1, 3)})`;
     case 14: return `FILTER(${pred('_')} ${pick(['AND', 'OR'])} ${pred('_')})`;
     default: return `MAP(RECORD("n", ${rowRef('_')}, "k", _K))`;

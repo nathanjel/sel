@@ -308,10 +308,11 @@ being reported as an unbound variable."
   (shape :none)          ; :node :column :row :none :key :group :projected
   (payload nil)
   (reason nil)
-  ;; A :row binder of a joined statement's row frame (WITH-ROW sets it): a
-  ;; field read through it resolves across the sides. Nil for the LINK
-  ;; predicate's own binders (WITH-JOIN-BINDERS), which name one side each.
-  (joined nil))
+  ;; A :row binder's model of the row SEL has there (JOIN-ROWS): the
+  ;; statement's row (WITH-ROW) or a LINK predicate's side (WITH-JOIN-BINDERS).
+  ;; A read through it resolves against the keys that row really has. NIL for
+  ;; the row of any other relation.
+  (model nil))
 
 (defun binder-node (node) (%binder :node node))
 ;; The key of the group being rendered: the group-by entry and the row binder,

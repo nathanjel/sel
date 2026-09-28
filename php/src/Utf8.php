@@ -150,9 +150,4 @@ final class Utf8
         }
         return $count;
     }
-
-    public static function toHex(string $bytes): string
-    {
-        return bin2hex($bytes);
-    }
 }

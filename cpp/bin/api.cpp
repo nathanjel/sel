@@ -5,6 +5,7 @@
 #include "../sel.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -158,6 +159,25 @@ int main() {
     Value::num(std::string(2000001, '1'));
   } catch (const SelError& e) {
     say("error.host.hugenum", e.code());
+  }
+
+  // Every public constructor holds the same rules (spec §8, review 2026-09-28):
+  // the decimal form within the caps and canonical, keys checked, a malformed
+  // call E_BAD_ARG -- each host through its own spelling of the constructor.
+  {
+    const auto dec = [](bool neg, std::string digits, std::int32_t scale) {
+      sel::Dec d; d.neg = neg; d.digits = std::move(digits); d.scale = scale; return d;
+    };
+    const std::vector<std::pair<std::string, std::function<void()>>> probes = {
+      {"error.host.dec.fraccap", [&] { Value::num(dec(false, "1", 1000001)); }},
+      {"error.host.dec.negscale", [&] { Value::num(dec(false, "7", -1)); }},
+      {"error.host.key.utf8", [] { Value::record({"a\xff"}, {Value::text("1")}); }},
+      {"error.host.malformed", [] { Value::record({"a"}, {}); }},
+    };
+    for (const auto& [name, build] : probes) {
+      try { build(); say(name, "no error"); } catch (const SelError& e) { say(name, e.code()); }
+    }
+    say("ctor.dec.negzero", Value::num(dec(true, "0", 0)).dump());
   }
 
   // A value nested past the cap is refused by every walk of it. Reachable from the

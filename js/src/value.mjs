@@ -17,6 +17,42 @@ function checkText(s) {
   }
 }
 
+// A constructor called with something it does not take (spec §8): E_BAD_ARG,
+// a SelError like every other boundary failure, never the host's own
+// exception (review 2026-09-28 HOST-20).
+function badArg(message) { fail('E_BAD_ARG', message, null); }
+
+function checkKey(key) {
+  if (typeof key !== 'string') badArg(`a key must be a string, not ${typeof key}`);
+  checkText(key);
+}
+
+function checkValue(v) {
+  if (!(v instanceof Value)) badArg(`expected a Value, not ${v === null ? 'null' : typeof v}`);
+}
+
+// Keys and values side by side, as entries: the counts match, every key is
+// text and every value a Value (spec §8; review 2026-09-28 HOST-12, HOST-17).
+function pairUp(keys, values) {
+  if (!Array.isArray(keys) || !Array.isArray(values)) badArg('keys and values must be arrays');
+  if (keys.length !== values.length) {
+    badArg(`${keys.length} key(s) and ${values.length} value(s) do not pair up`);
+  }
+  return keys.map((key, i) => { checkKey(key); checkValue(values[i]); return [key, values[i]]; });
+}
+
+// The decimal form Value.num takes besides a string: well formed, within the
+// digit caps, and canonical -- a negative zero loses its sign, as "-0" does
+// through D.parse (spec §8; review 2026-09-28 HOST-13, HOST-14).
+function checkDecimal(d) {
+  if (d === null || typeof d !== 'object' || typeof d.digits !== 'bigint' || d.digits < 0n
+      || !Number.isSafeInteger(d.scale) || d.scale < 0) {
+    badArg('not a decimal: expected { neg, digits: a non-negative bigint, scale: a non-negative integer }');
+  }
+  D.guard(d, null);
+  return d.digits === 0n && d.neg ? { ...d, neg: false } : d;
+}
+
 let INT_CAP = null;
 function intCap() { return INT_CAP ??= 10n ** BigInt(D.MAX_INT_DIGITS); }
 
@@ -35,19 +71,7 @@ export class RecordShape {
     this.keyMap = new Map(this.keys.map((key, i) => [key, i]));
     this.size = this.keys.length;
   }
-
-  // Declared in sel.d.ts and kept for readers of it; alias plans moved to a
-  // bounded module-level cache (builtins/structure.mjs) and nothing writes
-  // here. Built on first read so a shape carries no per-instance Map.
-  /** @deprecated always empty; removed in the next minor release */
-  get aliasCache() {
-    let cache = LEGACY_ALIAS_CACHES.get(this);
-    if (!cache) LEGACY_ALIAS_CACHES.set(this, cache = new Map());
-    return cache;
-  }
 }
-
-const LEGACY_ALIAS_CACHES = new WeakMap();
 
 const SHAPES = new Map();
 const SHAPE_CACHE_ENTRIES = 256;
@@ -159,8 +183,13 @@ export class Value {
   // so the caller's array can change afterwards (review 2026-09-25 HOST-02,
   // HOST-04, HOST-05). binOwned is the builtins' constructor for an array they
   // just made.
-  static text(s) { checkText(s); return new Value(TEXT, s); }
+  static text(s) {
+    if (typeof s !== 'string') badArg(`text must be a string, not ${typeof s}`);
+    checkText(s);
+    return new Value(TEXT, s);
+  }
   static bin(b) {
+    if (!(b instanceof Uint8Array) && !Array.isArray(b)) badArg('bytes must be a Uint8Array or an array of numbers');
     const out = new Uint8Array(b.length);
     if (b instanceof Uint8Array) {
       out.set(b);
@@ -178,9 +207,10 @@ export class Value {
   static binOwned(b) { return new Value(BIN, b); }
   static bool(b) { return new Value(BOOL, !!b); }
 
+  // Keys and values side by side. A repeated key keeps its first position and
+  // takes its last value, as RECORD does (spec §8).
   static shaped(keys, values) {
-    if (keys.length === 0) return Value.none();
-    return Value.shapedFromShape(recordShape(keys), values.slice());
+    return Value.fromEntriesOwned(pairUp(keys, values));
   }
 
   // Internal constructors take ownership of freshly allocated packed arrays.
@@ -198,8 +228,30 @@ export class Value {
     return v;
   }
 
+  // A list's keys are kept: "1".."n" is a plain list, anything else the list
+  // with preserved keys FILTER makes. They must be distinct (spec §8; it used
+  // to renumber them, review 2026-09-28 HOST-17).
   static fromEntries(entries, isList = false) {
-    if (isList) return Value.listOwned(entries.map(([, value]) => value));
+    if (!Array.isArray(entries)) badArg('entries must be an array of [key, value] pairs');
+    const checked = entries.map((entry) => {
+      if (!Array.isArray(entry) || entry.length !== 2) badArg('an entry must be a [key, value] pair');
+      checkKey(entry[0]);
+      checkValue(entry[1]);
+      return [entry[0], entry[1]];
+    });
+    if (!isList) return Value.fromEntriesOwned(checked);
+    if (checked.every(([key], i) => key === String(i + 1))) return Value.listOwned(checked.map(([, value]) => value));
+    const v = new Value(NONE, null, true);
+    v.children = new Map();
+    for (const [key, value] of checked) {
+      if (v.children.has(key)) badArg(`list key "${key}" is given twice`);
+      v.children.set(key, value);
+    }
+    return v;
+  }
+
+  // The builtins' form: entries they built from SEL values, unchecked.
+  static fromEntriesOwned(entries) {
     if (entries.length > 0) {
       const shaped = shapedFromUniqueEntries(entries);
       if (shaped) return shaped;
@@ -231,12 +283,17 @@ export class Value {
     if (typeof d === 'string') {
       parsed = D.parse(d);
       if (parsed === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(d)}`, null);
+    } else {
+      parsed = checkDecimal(d);
     }
     const v = new Value(TEXT, null);
     v._decimal = parsed;
     return v;
   }
   static int(n) {
+    if (typeof n === 'number' ? !Number.isInteger(n) : typeof n !== 'bigint') {
+      badArg(`not a whole number: ${String(n)}`);
+    }
     // A native integer obeys the digit cap like the same digits in source
     // (spec §8, §6.4; review 2026-09-25 HOST-06).
     if (typeof n === 'bigint' && (n < 0n ? -n : n) >= intCap()) {
@@ -250,6 +307,8 @@ export class Value {
 
   // Builds a list keyed "1".."n". Used by `,` and by list-returning built-ins.
   static list(values) {
+    if (!Array.isArray(values)) badArg('a list is built from an array of Values');
+    values.forEach(checkValue);
     return Value.listOwned(values.slice());
   }
 
@@ -555,19 +614,21 @@ export class Value {
     if (x === null || x === undefined) return Value.null();
     if (typeof x === 'boolean') return Value.bool(x);
     if (typeof x === 'number') {
-      if (!Number.isFinite(x)) throw new TypeError('cannot convert non-finite number to SEL');
+      if (!Number.isFinite(x)) badArg('a non-finite number has no SEL value');
       return Value.text(nativeNumberToDecimal(x));
     }
-    if (typeof x === 'bigint') return Value.text(x.toString());
+    // Through Value.int, which holds the integer digit cap (review
+    // 2026-09-28 HOST-11): the text of the bigint skipped it.
+    if (typeof x === 'bigint') return Value.int(x);
     if (typeof x === 'string') return Value.text(x);
     if (x instanceof Uint8Array) return Value.bin(x);
     if (Array.isArray(x)) return Value.listOwned(x.map((e) => Value.fromNativeAt(e, depth + 1)));
     if (x instanceof Value) return x;
     if (typeof x === 'object') {
       const entries = Object.keys(x).map((key) => { checkText(key); return [String(key), Value.fromNativeAt(x[key], depth + 1)]; });
-      return Value.fromEntries(entries);
+      return Value.fromEntriesOwned(entries);
     }
-    throw new TypeError(`cannot convert ${typeof x} to SEL`);
+    badArg(`cannot convert ${typeof x} to SEL`);
   }
 
   toNative() { return this.toNativeAt(1); }
@@ -650,7 +711,7 @@ function nativeNumberToDecimal(x) {
   const s = String(x);
   if (/^-?\d+$/.test(s)) return s;
   if (/^-?\d+\.\d+$/.test(s)) return s;
-  throw new TypeError(`number ${s} has no exact decimal form; pass a string instead`);
+  badArg(`number ${s} has no exact decimal form; pass a string instead`);
 }
 
 const DUMP_ESCAPES = { '\\': '\\\\', '"': '\\"', '\n': '\\n', '\t': '\\t', '\r': '\\r' };

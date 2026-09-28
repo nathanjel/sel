@@ -1,0 +1,727 @@
+% LINK rows in the SQL lane, second part: chains of joins, the names a row is
+% qualified by, and what an unmatched LINK_LEFT row lacks. Every expectation is
+% what run() does on sample rows: a value means SQL, an E_NO_KEY a refusal at
+% its position (spec §7.4 "Joined rows"; review 2026-09-28 SQL-05..08).
+
+### name: link.chain.shared-name-through-a-later-left-binder
+--- note
+Review 2026-09-28 SQL-05, the reported probe. The second LINK's left element
+is the first joined row, and `id` is on both R and S, so that row has no
+`id`: `run()` raises E_NO_KEY at `A["id"]`. Every translator read `A` as R
+and joined on `r.id`.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["id"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- error
+E_SQL_SHAPE 1:58
+===
+
+### name: link.chain.left-only-field-through-a-later-left-binder
+--- note
+`rv` is only on R, so it is a promoted field of the first joined row.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["rv"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- expect
+SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+===
+
+### name: link.chain.right-only-field-through-a-later-left-binder
+--- note
+Review 2026-09-28 SQL-06: `sv` is only on S, a promoted field of the first
+joined row, which every translator refused as "not a field" of R.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["sv"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- expect
+SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("s"."sv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+===
+
+### name: link.chain.nested-left-side
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["X"]["id"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- expect
+SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+===
+
+### name: link.chain.nested-right-side
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["Y"]["id"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- expect
+SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("s"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+===
+
+### name: link.chain.source-name-is-not-a-later-binder
+--- note
+Only the first LINK of a pipeline is named after its source: the left
+argument of the second is a pipeline that already joined, so `R` there is
+the relation, a list, and `R["rv"]` is E_NO_KEY.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["id"] == _2["id"]) .> LINK(T, R["rv"] == T["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- error
+E_SQL_SHAPE 1:48
+===
+
+### name: link.chain.underscore-one-is-the-joined-row
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["id"] == _2["id"]) .> LINK(T, _1["id"] == _2["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- error
+E_SQL_SHAPE 1:49
+===
+
+### name: link.chain.after-a-left-join
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK_LEFT(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["id"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- error
+E_SQL_SHAPE 1:63
+===
+
+### name: link.chain.second-join-left
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK_LEFT(T, A, B, A["id"] == B["tid"]) .> MAP(RECORD("v", _["B"]["tv"]))
+--- error
+E_SQL_SHAPE 1:63
+===
+
+### name: link.chain.reused-right-binder-name
+--- note
+A binder name an earlier LINK used names this LINK's row: `Y` is the first
+joined row here, not S.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, Y, B, Y["id"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- error
+E_SQL_SHAPE 1:58
+===
+
+### name: link.chain.reused-left-binder-name
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, X, B, X["id"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- error
+E_SQL_SHAPE 1:58
+===
+
+### name: link.chain.stale-binder
+--- note
+Binders are scoped to their own predicate.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, X["id"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- error
+E_SQL_UNBOUND 1:57
+===
+
+### name: link.chain.map-reads-a-nested-joined-row
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["rv"] == B["tid"]) .> MAP(RECORD("v", _["A"]["rv"]))
+--- expect
+SELECT "r"."rv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+===
+
+### name: link.chain.map-nested-shared-name
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["rv"] == B["tid"]) .> MAP(RECORD("v", _["A"]["id"]))
+--- error
+E_SQL_SHAPE 1:103
+===
+
+### name: link.chain.map-nested-right-only-field
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["rv"] == B["tid"]) .> MAP(RECORD("v", _["A"]["sv"]))
+--- expect
+SELECT "s"."sv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+===
+
+### name: link.chain.three-relations
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(T, X, Y, X["rv"] == Y["tid"]) .> LINK(S, A, B, A["id"] == B["id"]) .> MAP(RECORD("v", _["sv"]))
+--- expect
+SELECT "s"."sv" AS "v" FROM "r" "r" INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC)) INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+
+### name: link.chain.a-name-dropped-earlier-is-promoted-again
+--- note
+Promotion is decided per pair from its two elements (spec §7.4): the first
+joined row has no `id`, so U's `id` is promoted into the second.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(U, A, B, A["rv"] == B["id"]) .> MAP(RECORD("v", _["id"]))
+--- expect
+SELECT "u"."id" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "u" "u" ON (CAST("r"."rv" AS NUMERIC) = CAST("u"."id" AS NUMERIC))
+===
+
+### name: link.chain.right-only-field-after-a-left-join
+--- note
+An unmatched LINK_LEFT row promotes nothing from the right (spec §7.4), so
+the first joined row of an unmatched R has no `sv`; SQL would compare NULL.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK_LEFT(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["sv"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- error
+E_SQL_SHAPE 1:63
+===
+
+### name: link.qualifier.relation-name-after-a-five-argument-link
+--- note
+Review 2026-09-28 SQL-07. The five-argument form binds `_1`, the name it
+gives and its lowercase: the joined row has no key `R`.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> MAP(RECORD("v", _["R"]["rv"]))
+--- error
+E_SQL_SHAPE 1:60
+===
+
+### name: link.qualifier.right-name-after-a-five-argument-link
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> MAP(RECORD("v", _["S"]["sv"]))
+--- error
+E_SQL_SHAPE 1:60
+===
+
+### name: link.qualifier.relation-name-in-a-five-argument-predicate
+--- note
+Inside a five-argument predicate `R` is the relation, a list of rows.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, R["id"] == Y["id"]) .> MAP(RECORD("v", _["sv"]))
+--- error
+E_SQL_SHAPE 1:21
+===
+
+### name: link.qualifier.right-name-in-a-five-argument-predicate
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["id"] == S["id"]) .> MAP(RECORD("v", _["sv"]))
+--- error
+E_SQL_SHAPE 1:32
+===
+
+### name: link.qualifier.three-argument-name
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["id"] == _2["id"]) .> MAP(RECORD("v", _["R"]["rv"]))
+--- expect
+SELECT "r"."rv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+
+### name: link.qualifier.three-argument-lowercase-name
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["id"] == _2["id"]) .> MAP(RECORD("v", _["s"]["sv"]))
+--- expect
+SELECT "s"."sv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+
+### name: link.qualifier.binder-names-its-own-element
+--- note
+A binder holds its element extended with its own name and lowercase (spec
+§7.4).
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, X, Y, X["X"]["id"] == Y["y"]["id"]) .> MAP(RECORD("v", _["X"]["x"]["rv"]))
+--- expect
+SELECT "r"."rv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+
+### name: link.qualifier.no-join
+--- note
+A relation's row is a plain record: it has no key named after the relation.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> MAP(RECORD("v", _["R"]["rv"]))
+--- error
+E_SQL_SHAPE 1:23
+===
+
+### name: link.qualifier.alias
+--- note
+A SQL alias is not a SEL name: the joined row has no key `ra`.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"rtab","alias":"ra","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"stab","alias":"sa","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["id"] == _2["id"]) .> MAP(RECORD("v", _["ra"]["rv"]))
+--- error
+E_SQL_SHAPE 1:56
+===
+
+### name: link.qualifier.table
+--- note
+Nor is a table name. C++ and Lisp accepted it, JS, PHP and Python refused
+it.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"rtab","alias":"ra","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"stab","alias":"sa","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["id"] == _2["id"]) .> MAP(RECORD("v", _["rtab"]["rv"]))
+--- error
+E_SQL_SHAPE 1:56
+===
+
+### name: link.qualifier.alias-in-a-predicate
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"rtab","alias":"ra","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"stab","alias":"sa","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["id"] == ra["id"]) .> MAP(RECORD("v", _["sv"]))
+--- error
+E_SQL_UNBOUND 1:26
+===
+
+### name: link.left.right-only-promoted-read
+--- note
+Review 2026-09-28 SQL-08. An unmatched LINK_LEFT row promotes nothing from
+the right, so it has no `sv` (E_NO_KEY), where the LEFT JOIN's column is
+NULL.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK_LEFT(S, X, Y, X["id"] == Y["id"]) .> MAP(RECORD("v", _["sv"]))
+--- error
+E_SQL_SHAPE 1:65
+===
+
+### name: link.left.right-field-through-its-binder
+--- note
+Through the binder the unmatched side is a record of NULLs, as SQL has it.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK_LEFT(S, X, Y, X["id"] == Y["id"]) .> MAP(RECORD("v", _["Y"]["sv"]))
+--- expect
+SELECT "s"."sv" AS "v" FROM "r" "r" LEFT JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+
+### name: link.left.left-only-promoted-read
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK_LEFT(S, X, Y, X["id"] == Y["id"]) .> MAP(RECORD("v", _["rv"]))
+--- expect
+SELECT "r"."rv" AS "v" FROM "r" "r" LEFT JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+
+### name: link.twice.a-relation-joined-again-under-its-alias
+--- note
+Review 2026-09-28 SQL-09. Joining CUSTOMERS a second time rendered its alias
+`c` twice, which the server rejects as ambiguous; SEL answers, so the
+translator refuses and the program runs in memory. The position is the
+relation joined again.
+--- dialect
+sqlite
+--- bindings
+{"ORDERS":{"kind":"relation","from":"orders","alias":"o","fields":{"ID":{"table":"o","column":"id","type":"NUM"},"CUSTOMER_ID":{"table":"o","column":"customer_id","type":"NUM"},"NAME":{"table":"o","column":"name","type":"TEXT"}}},"CUSTOMERS":{"kind":"relation","from":"customers","alias":"c","fields":{"ID":{"table":"c","column":"id","type":"NUM"},"NAME":{"table":"c","column":"name","type":"TEXT"}}},"PLAIN":{"kind":"relation","from":"plain","fields":{"ID":{"column":"id","type":"NUM"},
+ "V":{"column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> LINK(CUSTOMERS, A, B, A["customer_id"] == B["id"]) .> MAP(RECORD("n", _["B"]["name"]))
+--- error
+E_SQL_SHAPE 1:70
+===
+
+### name: link.twice.a-self-join-under-the-alias
+--- dialect
+sqlite
+--- bindings
+{"ORDERS":{"kind":"relation","from":"orders","alias":"o","fields":{"ID":{"table":"o","column":"id","type":"NUM"},"CUSTOMER_ID":{"table":"o","column":"customer_id","type":"NUM"},"NAME":{"table":"o","column":"name","type":"TEXT"}}},"CUSTOMERS":{"kind":"relation","from":"customers","alias":"c","fields":{"ID":{"table":"c","column":"id","type":"NUM"},"NAME":{"table":"c","column":"name","type":"TEXT"}}},"PLAIN":{"kind":"relation","from":"plain","fields":{"ID":{"column":"id","type":"NUM"},
+ "V":{"column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+ORDERS .> LINK(ORDERS, A, B, A["id"] == B["id"]) .> MAP(RECORD("n", _["B"]["name"]))
+--- error
+E_SQL_SHAPE 1:16
+===
+
+### name: link.twice.a-self-join-of-an-unaliased-relation
+--- note
+Unaliased, the joined side takes the right binder as its alias, so the two
+occurrences stay apart.
+--- dialect
+sqlite
+--- bindings
+{"ORDERS":{"kind":"relation","from":"orders","alias":"o","fields":{"ID":{"table":"o","column":"id","type":"NUM"},"CUSTOMER_ID":{"table":"o","column":"customer_id","type":"NUM"},"NAME":{"table":"o","column":"name","type":"TEXT"}}},"CUSTOMERS":{"kind":"relation","from":"customers","alias":"c","fields":{"ID":{"table":"c","column":"id","type":"NUM"},"NAME":{"table":"c","column":"name","type":"TEXT"}}},"PLAIN":{"kind":"relation","from":"plain","fields":{"ID":{"column":"id","type":"NUM"},
+ "V":{"column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+PLAIN .> LINK(PLAIN, A, B, A["id"] == B["id"]) .> MAP(RECORD("n", _["B"]["v"]))
+--- expect
+SELECT "B"."v" AS "n" FROM "plain" INNER JOIN "plain" "B" ON (CAST("plain"."id" AS NUMERIC) = CAST("B"."id" AS NUMERIC))
+===
+
+### name: link.twice.a-three-argument-self-join-of-an-unaliased-relation
+--- dialect
+sqlite
+--- bindings
+{"ORDERS":{"kind":"relation","from":"orders","alias":"o","fields":{"ID":{"table":"o","column":"id","type":"NUM"},"CUSTOMER_ID":{"table":"o","column":"customer_id","type":"NUM"},"NAME":{"table":"o","column":"name","type":"TEXT"}}},"CUSTOMERS":{"kind":"relation","from":"customers","alias":"c","fields":{"ID":{"table":"c","column":"id","type":"NUM"},"NAME":{"table":"c","column":"name","type":"TEXT"}}},"PLAIN":{"kind":"relation","from":"plain","fields":{"ID":{"column":"id","type":"NUM"},
+ "V":{"column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+PLAIN .> LINK(PLAIN, _1["id"] == _2["id"]) .> MAP(RECORD("n", _["_2"]["v"]))
+--- expect
+SELECT "_2"."v" AS "n" FROM "plain" INNER JOIN "plain" "_2" ON (CAST("plain"."id" AS NUMERIC) = CAST("_2"."id" AS NUMERIC))
+===
+
+### name: link.order.an-earlier-sort-key-refuses-before-the-join
+--- note
+Review 2026-09-28 SQL-10, from the widened SQL fuzzer. The first TOP_BY
+reads a field CUSTOMERS lacks, which run() reaches first; JS, PHP, Python
+and C++ reported the derived table over the join instead, which Lisp had
+stopped doing in review 2026-09-25 SQL-03.
+--- dialect
+sqlite
+--- bindings
+{"ORDERS":{"kind":"relation","from":"orders","alias":"o","fields":{"ID":{"table":"o","column":"id","type":"NUM"},"CUSTOMER_ID":{"table":"o","column":"customer_id","type":"NUM"},"NAME":{"table":"o","column":"name","type":"TEXT"}}},"CUSTOMERS":{"kind":"relation","from":"customers","alias":"c","fields":{"ID":{"table":"c","column":"id","type":"NUM"},"NAME":{"table":"c","column":"name","type":"TEXT"}}},"PLAIN":{"kind":"relation","from":"plain","fields":{"ID":{"column":"id","type":"NUM"},
+ "V":{"column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+CUSTOMERS .> TOP_BY(_["QTY"], 1) .> LINK(CUSTOMERS, O, C, O["id"] == C["id"]) .> TOP_BY(_["name"], 1)
+--- error
+E_SQL_BINDING 1:22
+===
+
+### name: link.order.an-earlier-bucket-key-refuses-before-the-join
+--- note
+The bucket key is the whole row, refused where it is written, not at the
+FILTER three steps on.
+--- dialect
+sqlite
+--- bindings
+{"ORDERS":{"kind":"relation","from":"orders","alias":"o","fields":{"ID":{"table":"o","column":"id","type":"NUM"},"CUSTOMER_ID":{"table":"o","column":"customer_id","type":"NUM"},"NAME":{"table":"o","column":"name","type":"TEXT"}}},"CUSTOMERS":{"kind":"relation","from":"customers","alias":"c","fields":{"ID":{"table":"c","column":"id","type":"NUM"},"NAME":{"table":"c","column":"name","type":"TEXT"}}},"PLAIN":{"kind":"relation","from":"plain","fields":{"ID":{"column":"id","type":"NUM"},
+ "V":{"column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+ORDERS .> BUCKET(_) .> LINK(CUSTOMERS, _1["id"] == _2["id"]) .> SELECT_COLS("name") .> FILTER(_["ID"] == 0)
+--- error
+E_SQL_SHAPE 1:18
+===
+
+### name: link.twice.the-same-default-alias-twice
+--- note
+Both joins would be `_2`.
+--- dialect
+sqlite
+--- bindings
+{"ORDERS":{"kind":"relation","from":"orders","alias":"o","fields":{"ID":{"table":"o","column":"id","type":"NUM"},"CUSTOMER_ID":{"table":"o","column":"customer_id","type":"NUM"},"NAME":{"table":"o","column":"name","type":"TEXT"}}},"CUSTOMERS":{"kind":"relation","from":"customers","alias":"c","fields":{"ID":{"table":"c","column":"id","type":"NUM"},"NAME":{"table":"c","column":"name","type":"TEXT"}}},"PLAIN":{"kind":"relation","from":"plain","fields":{"ID":{"column":"id","type":"NUM"},
+ "V":{"column":"v","type":"NUM"}}}}
+--- as
+statement
+--- source
+PLAIN .> LINK(PLAIN, _1["id"] == _2["id"]) .> LINK(PLAIN, _1["id"] == _2["id"]) .> MAP(RECORD("n", _["_2"]["v"]))
+--- error
+E_SQL_SHAPE 1:52
+===
+
+### name: link.plan.chain-read-the-row-lacks-stays-in-memory
+--- note
+The reported probe of SQL-05 was planned pure_sql in every host, so
+execute_hybrid ran a join run() refuses.
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> LINK(T, A, B, A["id"] == B["tid"]) .> MAP(RECORD("v", _["tv"]))
+--- plan
+pure_memory
+--- tables
+r
+s
+t
+===
+
+### name: link.plan.relation-name-after-a-five-argument-link-stays-in-memory
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- source
+R .> LINK(S, X, Y, X["id"] == Y["id"]) .> MAP(RECORD("v", _["R"]["rv"]))
+--- plan
+pure_memory
+--- tables
+r
+s
+===
+
+### name: link.plan.left-join-right-only-read-stays-in-memory
+--- dialect
+sqlite
+--- bindings
+{"R":{"kind":"relation","from":"r","alias":"r","fields":{"ID":{"column":"id","type":"NUM"},"RV":{"column":"rv","type":"NUM"}}},
+ "S":{"kind":"relation","from":"s","alias":"s","fields":{"ID":{"column":"id","type":"NUM"},"SV":{"column":"sv","type":"NUM"}}},
+ "T":{"kind":"relation","from":"t","alias":"t","fields":{"TID":{"column":"tid","type":"NUM"},"TV":{"column":"tv","type":"NUM"}}},
+ "U":{"kind":"relation","from":"u","alias":"u","fields":{"ID":{"column":"id","type":"NUM"},"UV":{"column":"uv","type":"NUM"}}}}
+--- source
+R .> LINK_LEFT(S, X, Y, X["id"] == Y["id"]) .> MAP(RECORD("v", _["sv"]))
+--- plan
+pure_memory
+--- tables
+r
+s
+===

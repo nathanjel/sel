@@ -76,8 +76,10 @@ use Sel\Sql\Sql;                     // the SQL layer: also require php/src/Sql/
 <summary>C++</summary>
 
 ```sh
-vcpkg install sel-lang               # or: conan install --requires sel-lang/0.8.1
-                                     # or add cpp/sel.hpp, sel_ast.hpp, sel.cpp and third_party/srell/
+vcpkg install sel-lang               # or: conan install --requires sel-lang/0.9.1
+                                     # or copy cpp/sel.hpp, sel_ast.hpp, sel_limits.hpp,
+                                     # sel_math_ops.hpp, sel_builtin_manifest.hpp, sel.cpp,
+                                     # sel_optimizer.cpp and third_party/srell/, and compile sel.cpp
 ```
 ```cpp
 #include "sel.hpp"                   // C++23; find_package(sel-lang) with CMake
@@ -293,6 +295,50 @@ std::cout << "   0.10+0.20 => " << sel::evaluate("0.10 + 0.20").as_text() << "\n
 
 </details>
 <!-- /tabs -->
+
+## Constructors
+
+`fromNative` is the short way to a value. Each host also builds one piece by
+piece, and every constructor holds the same rules
+([spec §8](../../spec/SPEC.md#8-host-interface)):
+
+- **Text and keys are checked.** Invalid UTF-8, or an unpaired surrogate in a
+  UTF-16 or code-point host, is `E_UTF8`: in a text, and in every key.
+- **Bytes are bytes.** A byte outside 0–255 is `E_RANGE`, and so is a boolean.
+- **Numbers obey the digit caps**, whether they come as a string, a native
+  integer or the host's decimal form (`E_RANGE`). A decimal is canonicalised
+  like a string, so `007` becomes `7` and a negative zero loses its sign.
+- **Keys and values pair up.** Counts that differ are `E_BAD_ARG`. A key given
+  twice for a record keeps its first position and takes its last value, as
+  `RECORD` does. A list's keys are distinct.
+- **What you pass is copied.** Changing your list, map, string or buffer
+  afterwards does not change the value, and changing what `toNative` returned
+  does not change the value it came from.
+- **A malformed call is `E_BAD_ARG`.** That covers a float, a non-integer where
+  an integer goes, a decimal that is not one, and a native value with no
+  conversion. It is a `SelError` in every host, never the host's own exception.
+  In PHP and C++, a call whose argument types do not match the declared
+  parameters is rejected by the language before SEL sees it.
+
+| | Python | JavaScript | PHP | C++ | Common Lisp |
+|---|---|---|---|---|---|
+| text, bytes, bool | `Value.text` `Value.bin` `Value.bool` | `Value.text` `Value.bin` `Value.bool` | `Value::text` `Value::bin` `Value::bool` | `Value::text` `Value::bin` `Value::boolean` | `make-text` `make-bin` `make-bool` |
+| number from a string | `Value.num("1.50")` | `Value.num('1.50')` | `Value::num('1.50')` | `Value::num("1.50")` | `(make-num "1.50")` |
+| number from the decimal form | `Value.num(Dec(neg, digits, scale))`, `Dec` from `sel.decimal` | `Value.num({ neg, digits, scale })`, `digits` a bigint | `Value::num(['neg' => …, 'digits' => '150', 'scale' => 2])` | `Value::num(const Dec&)` | `(make-num (dec-make neg digits scale))` |
+| native integer | `Value.int(n)` | `Value.int(n)`, a safe integer or a bigint | `Value::int($n)` | `Value::integer(n)` | `(make-int n)` |
+| list | `Value.list(values)` | `Value.list(values)` | `Value::list($values)` | `Value::list(values)` | `(make-list-value values)` |
+| list with its own keys | `Value.list(values, keys)` | `Value.fromEntries(entries, true)` | `Value::list($values, $keys)` | — | — |
+| record from keys and values | `Value.record(keys, values)`, `Value.shaped(keys, values)` | `Value.shaped(keys, values)` | `Value::record($keys, $values)`, `Value::shaped(…)` | `Value::record(keys, values)` | — |
+| record from pairs | `Value.from_entries(pairs)` | `Value.fromEntries(pairs)` | `Value::fromEntries($pairs)` | — | `(from-native alist)` |
+| record from a prepared shape | `Value.shaped(shape, values)` | — | `Value::fromShape(RecordShape::intern($keys), $values)` | `Value::shaped(shape, values)` | — |
+| many rows of one shape | — | — | `Value::fromNativeRows($rows)` | — | — |
+| one key | `v.set(k, x)` | `v.set(k, x)` | `$v->set($k, $x)` | `v.set(k, x)` | `(value-set v k x)` |
+
+The decimal form is `digits × 10^-scale`, negative when `neg`: `digits` is a
+non-negative whole number (a string of ASCII digits in PHP and C++) and
+`scale` a non-negative integer. Reading one back is `v.as_decimal()` in
+Python, `v.asDecimal()` in JS, `$v->asDecimal()` in PHP, `v.dec_val()` in C++
+(null when the value holds no parsed decimal) and `(as-dec v)` in Lisp.
 
 ## Variables flow back
 

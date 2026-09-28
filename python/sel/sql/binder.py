@@ -23,7 +23,7 @@ PROJECTED = 'projected'  # the record a bucket's projection built, after it:
 
 
 class Binder:
-    __slots__ = ('shape', 'payload', 'reason', 'joined')
+    __slots__ = ('shape', 'payload', 'reason', 'model')
 
     # Mirrored as class attributes so `Binder.ROW` works the way `Value.BOOL`
     # does, which is the spelling every host reads the same.
@@ -39,9 +39,11 @@ class Binder:
         self.shape = shape
         self.payload = payload
         self.reason = reason
-        # A ROW binder of a joined statement (set by the translator's row
-        # frame): a field read through it resolves across the sides.
-        self.joined = False
+        # A ROW binder's model of the row SEL has (set by the translator's
+        # row and join frames, spec §7.4 "Joined rows"): a relation's side,
+        # or a joined row whose promoted fields and nested records a read
+        # resolves against. None where the row is just its relation's.
+        self.model: Any = None
 
     @staticmethod
     def node(node: Any) -> 'Binder':

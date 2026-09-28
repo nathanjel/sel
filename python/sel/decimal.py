@@ -126,7 +126,7 @@ def _num_digits(n: int) -> int:
     return d
 
 
-def _guard(d: Dec, pos: Pos | None) -> Dec:
+def guard(d: Dec, pos: Pos | None) -> Dec:
     """Refuses a value SEL cannot hold, where it is built rather than where it
     is rendered. Every operation that can grow a number passes its result
     through here, so power() — repeated squaring over mul() — trips on an
@@ -254,7 +254,7 @@ def add(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     # Only true addition can grow: a difference is never wider than its
     # operands, and the aligned scale is the larger of two already legal ones.
     if a.neg == b.neg:
-        return _guard(make(a.neg, A + B, s), pos)
+        return guard(make(a.neg, A + B, s), pos)
     if A == B:
         return make(False, 0, s)
     return make(a.neg, A - B, s) if A > B else make(b.neg, B - A, s)
@@ -264,14 +264,14 @@ def sub(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     A, B, s = _aligned(a, b)
     # Subtraction needs no temporary Dec merely to reverse b's sign.
     if a.neg != b.neg:
-        return _guard(make(a.neg, A + B, s), pos)
+        return guard(make(a.neg, A + B, s), pos)
     if A == B:
         return make(False, 0, s)
     return make(a.neg, A - B, s) if A > B else make(not a.neg, B - A, s)
 
 
 def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
-    return _guard(make(a.neg != b.neg, a.digits * b.digits, a.scale + b.scale), pos)
+    return guard(make(a.neg != b.neg, a.digits * b.digits, a.scale + b.scale), pos)
 
 
 def cmp(a: Dec, b: Dec) -> int:
@@ -311,8 +311,8 @@ def div(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
             scale -= 1
         if digits == 0:
             scale = 0
-        return _guard(make(neg, digits, scale), pos)
-    return _guard(make(neg, q + 1 if 2 * r >= D else q, DIV_SCALE), pos)
+        return guard(make(neg, digits, scale), pos)
+    return guard(make(neg, q + 1 if 2 * r >= D else q, DIV_SCALE), pos)
 
 
 def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
@@ -331,11 +331,11 @@ def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 def round(d: Dec, n: int, pos: Pos | None = None) -> Dec:  # noqa: A001 - mirrors round() in the other hosts
     if n >= d.scale:
-        return _guard(make(d.neg, d.digits * _pow10(n - d.scale), n), pos)
+        return guard(make(d.neg, d.digits * _pow10(n - d.scale), n), pos)
     p = _pow10(d.scale - n)
     q, r = divmod(d.digits, p)
     # Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
-    return _guard(make(d.neg, q + 1 if 2 * r >= p else q, n), pos)
+    return guard(make(d.neg, q + 1 if 2 * r >= p else q, n), pos)
 
 
 def trunc(d: Dec) -> Dec:

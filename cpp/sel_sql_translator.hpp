@@ -29,6 +29,51 @@ namespace sel::sql {
 struct RelationalProjection;
 struct RelationalGroup;
 
+// A row as SEL has it inside a statement (spec §7.4 "Joined rows"), for
+// resolving what a read through a row binder names. A SIDE is one relation's
+// row, extended with the names its LINK gave it (keys holding the row
+// itself); a JOINED row carries the records its left element carried, the
+// binders `_1`/`_2` and the LINK's names, and the promoted fields -- each
+// side's scalar fields whose names, compared ASCII-case-insensitively, are not
+// keys of the other element. Built by Translator::join_rows.
+struct RowModel;
+using RowModelPtr = std::shared_ptr<const RowModel>;
+
+// A scalar field a row has: the column, the table alias it renders under, and
+// whether the statement qualifies columns at all. `optional` marks a field of
+// a LINK_LEFT's right side, which an unmatched row does not have.
+struct RowField {
+  ColumnSpec spec;
+  std::string table;
+  bool qualify = false;
+  bool optional = false;
+};
+
+struct RowModel {
+  bool side = false;
+  // --- a side
+  std::shared_ptr<const RelationSpec> relation;
+  std::string table;
+  bool qualify = false;
+  std::vector<std::string> names;
+  // --- a joined row. Insertion-ordered, as the evaluator's record is.
+  std::vector<std::pair<std::string, RowModelPtr>> nested;
+  // Keys that hold this joined row itself -- the names a later LINK gave it.
+  // Kept apart from `nested` so the model never owns a pointer to itself.
+  std::vector<std::string> self_names;
+  // Keyed by the ASCII-upper name, insertion-ordered.
+  std::vector<std::pair<std::string, RowField>> promoted;
+  std::set<std::string> dropped;
+};
+
+// The rows of a statement's joins: the row after the last one, and each
+// LINK's left and right element, in join order.
+struct JoinRows {
+  RowModelPtr row;
+  struct Step { RowModelPtr left, right; };
+  std::vector<Step> steps;
+};
+
 // What an aggregate binder names for the duration of one element. Three shapes
 // matching the three iteration shapes of docs/internals/sql-translation.md §7, plus one
 // that exists only to carry a refusal -- so that `_K` inside a relation body
@@ -67,16 +112,17 @@ class Binder {
   const std::shared_ptr<const RelationSpec>& as_row_ptr() const { return relation_; }
   const std::string& reason() const { return reason_; }
   const std::vector<RelationalProjection>& projections() const { return *projections_; }
-  // Row shape only: the row of a joined statement, bound by with_row -- a
-  // field read through it resolves across the sides. The LINK predicate's own
-  // binders (with_join_binders) are one side each and never carry it.
-  bool joined() const { return joined_; }
-  void set_joined(bool joined) { joined_ = joined; }
+  // Row shape only: the row as SEL has it, when the binder is a row of the
+  // statement (with_row) or a side of a LINK's predicate (with_join_binders):
+  // a read through it resolves against the keys that row has. Null for any
+  // other relation's row.
+  const RowModelPtr& model() const { return model_; }
+  void set_model(RowModelPtr model) { model_ = std::move(model); }
 
  private:
   Binder() = default;
   Shape shape_ = Shape::None;
-  bool joined_ = false;
+  RowModelPtr model_;
   SNodePtr node_;
   ColumnSpec column_;
   std::shared_ptr<const RelationSpec> relation_;
@@ -140,14 +186,18 @@ struct RelationalJoin {
   bool source_from_raw = false;
   std::string source_table;
   std::optional<std::string> source_alias;
-  std::string left_binder = "_1";
-  std::string right_binder = "_2";
+  // The names the LINK gives its sides, besides `_1` and `_2` (spec §7.4).
+  std::vector<std::string> left_names;
+  std::vector<std::string> right_names;
   SNodePtr on_pred;
   Pos pos;
 };
 
 struct RelationalPlan {
   std::string source_name;
+  // The variable the pipeline starts from, which names the first
+  // three-argument LINK's left side; nothing once a LINK has joined.
+  std::optional<std::string> root_name;
   RelationSpec source_relation;
   bool source_from_raw = false;
   std::string source_table;
@@ -258,6 +308,12 @@ class Translator {
   Fragment index_binder(const Binder& b, const std::string& name,
                         const std::string& key, const SNode& n);
   Fragment relation_column(const RelationSpec& rel, const ColumnSpec& c);
+  // The joined-row resolution of spec §7.4; see the definitions.
+  RowModelPtr row_path(const SNode& node, const SNode& outer);
+  RowModelPtr row_nested(const RowModelPtr& row, const std::string& key,
+                         const SNode& n, const SNode& outer);
+  Fragment row_field(const RowModelPtr& row, const std::string& label,
+                     const std::string& key, const SNode& n);
   std::string relation_table_alias(const RelationSpec& rel);
 
   // --- skeletons. A skeleton's placeholders are NAMED, not numbered, and the

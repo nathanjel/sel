@@ -253,7 +253,7 @@ def _field_references(node: Node | None, binder: str | None = '_') -> list[str]:
     ``name`` and ``Name`` are two fields. ``binder`` None means a read under
     ANY name counts -- a downstream step binds the row however it likes
     (``SORT_BY(s, s["name"])``)."""
-    wanted = None if binder is None else {binder.upper(), '_', '_1', '_2'}
+    wanted = None if binder is None else {ascii_upper(binder), '_', '_1', '_2'}
     out: list[str] = []
     seen: set[str] = set()
 
@@ -262,7 +262,7 @@ def _field_references(node: Node | None, binder: str | None = '_') -> list[str]:
             return
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
                 and item.idx is not None and item.idx.t == 'text'
-                and (wanted is None or item.obj.name.upper() in wanted)):
+                and (wanted is None or ascii_upper(item.obj.name) in wanted)):
             key = str(item.idx.v)
             if key not in seen:
                 seen.add(key)

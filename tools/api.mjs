@@ -134,6 +134,19 @@ try {
   say('error.host.hugenum', e.code);
 }
 
+// Every public constructor holds the same rules (spec §8, review 2026-09-28):
+// the decimal form within the caps and canonical, keys checked, a malformed
+// call E_BAD_ARG -- each host through its own spelling of the constructor.
+for (const [name, build] of [
+  ['error.host.dec.fraccap', () => Value.num({ neg: false, digits: 1n, scale: 1000001 })],
+  ['error.host.dec.negscale', () => Value.num({ neg: false, digits: 7n, scale: -1 })],
+  ['error.host.key.utf8', () => Value.shaped(['a\uD800'], [Value.text('1')])],
+  ['error.host.malformed', () => Value.int(1.5)],
+]) {
+  try { build(); say(name, 'no error'); } catch (e) { say(name, e.code); }
+}
+say('ctor.dec.negzero', Value.num({ neg: true, digits: 0n, scale: 0 }).dump());
+
 // A value nested past the cap is refused by every walk of it. Reachable from the
 // host API with no source involved at all -- set() does not refuse, because a
 // value is built from the leaf up and nothing knows how deep it will end up --

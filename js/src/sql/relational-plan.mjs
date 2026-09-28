@@ -7,8 +7,9 @@ export class JoinPlan {
     this.sourceRelation = null;
     this.sourceTable = '';
     this.sourceAlias = null;
-    this.leftBinder = '_1';
-    this.rightBinder = '_2';
+    // The names the LINK gives its sides, besides `_1` and `_2` (spec §7.4).
+    this.leftNames = [];
+    this.rightNames = [];
     this.onPred = null;
     this.pos = null;
   }
@@ -20,6 +21,9 @@ export class JoinPlan {
 export class RelationalPlan {
   constructor() {
     this.sourceName = '';
+    // The variable the pipeline starts from, which names the first
+    // three-argument LINK's left side; null once a LINK has joined.
+    this.rootName = null;
     this.sourceRelation = null;
     this.sourceTable = '';
     this.sourceAlias = null;

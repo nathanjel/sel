@@ -1,3 +1,5 @@
+from typing import Any
+
 from .. import decimal as D
 from ..errors import fail
 from ..registry import INF, define
@@ -9,10 +11,14 @@ MAX_SCALE = 1000000
 MAX_POWER = 100000
 
 
-def _sized(args, i, limit, what):
-    n = args.non_neg_int(i)
+def check_sized_int(d: D.Dec, name: str, arg_num: int, limit: int, what: str, pos: Any) -> int:
+    if not D.is_integer(d):
+        fail('E_NOT_INT', f'{name} argument {arg_num} must be a whole number', pos)
+    n = D.to_safe_int(d)
+    if n < 0:
+        fail('E_RANGE', f'{name} argument {arg_num} must not be negative', pos)
     if n > limit:
-        fail('E_RANGE', f'{what} {n} exceeds the maximum of {limit}', args.pos_of(i))
+        fail('E_RANGE', f'{what} {n} exceeds the maximum of {limit}', pos)
     return n
 
 
@@ -24,9 +30,9 @@ define('TRUNC', 1, 1, fn=lambda a, ctx: Value.num(D.trunc(a.dec(0))))
 define('CANON', 1, 1, fn=lambda a, ctx: Value.num(D.trim_scale(a.dec(0))))
 
 define('ROUND', 2, 2,
-       fn=lambda a, ctx: Value.num(D.round(a.dec(0), _sized(a, 1, MAX_SCALE, 'ROUND scale'), a.pos)))
+       fn=lambda a, ctx: Value.num(D.round(a.dec(0), check_sized_int(a.dec(1), 'ROUND', 2, MAX_SCALE, 'ROUND scale', a.pos_of(1)), a.pos)))
 define('POWER', 2, 2,
-       fn=lambda a, ctx: Value.num(D.power(a.dec(0), _sized(a, 1, MAX_POWER, 'POWER exponent'), a.pos)))
+       fn=lambda a, ctx: Value.num(D.power(a.dec(0), check_sized_int(a.dec(1), 'POWER', 2, MAX_POWER, 'POWER exponent', a.pos_of(1)), a.pos)))
 
 
 def _min(a, ctx):

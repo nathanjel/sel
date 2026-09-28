@@ -142,6 +142,21 @@ try:
 except SelError as e:
     say('error.host.hugenum', e.code)
 
+# Every public constructor holds the same rules (spec §8, review 2026-09-28):
+# the decimal form within the caps and canonical, keys checked, a malformed
+# call E_BAD_ARG -- each host through its own spelling of the constructor.
+from sel import decimal as _D   # noqa: E402
+for _name, _build in [('error.host.dec.fraccap', lambda: Value.num(_D.Dec(False, 1, 1000001))),
+                      ('error.host.dec.negscale', lambda: Value.num(_D.Dec(False, 7, -1))),
+                      ('error.host.key.utf8', lambda: Value.record(['a\ud800'], [Value.text('1')])),
+                      ('error.host.malformed', lambda: Value.int(1.5))]:
+    try:
+        _build()
+        say(_name, 'no error')
+    except SelError as e:
+        say(_name, e.code)
+say('ctor.dec.negzero', Value.num(_D.Dec(True, 0, 0)).dump())
+
 # A value nested past the cap is refused by every walk of it. Reachable from the
 # host API with no source involved at all -- set() does not refuse, because a
 # value is built from the leaf up and nothing knows how deep it will end up --

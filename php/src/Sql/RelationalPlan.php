@@ -18,17 +18,61 @@ final class JoinPlan
     /** @var string|array{raw:string} */
     public string|array $sourceTable = '';
     public ?string $sourceAlias = null;
-    public string $leftBinder = '_1';
-    public string $rightBinder = '_2';
+    /**
+     * The names the LINK gives its sides, besides `_1` and `_2` (spec §7.4).
+     * @var list<string>
+     */
+    public array $leftNames = [];
+    /** @var list<string> */
+    public array $rightNames = [];
     /** @var array<string,mixed>|null */
     public ?array $onPred = null;
     /** @var array{line:int,col:int,offset:int}|null */
     public ?array $pos = null;
 }
 
+/**
+ * A row of a joined statement as SEL has it (spec §7.4 "Joined rows"), for
+ * resolving what a read names -- see Translator::joinRows. A side is one
+ * relation's row, extended with the names its LINK gave it (keys holding
+ * itself); a joined row carries nested records, the binders and the promoted
+ * fields.
+ */
+final class RowModel
+{
+    public bool $side;
+    /** A side's relation. @var array<string,mixed> */
+    public array $relation = [];
+    /** A side's SQL qualifier. */
+    public string $table = '';
+    /** Whether a side's columns are rendered qualified. */
+    public bool $qualify = false;
+    /** A side's binder keys. @var list<string> */
+    public array $names = [];
+    /** A joined row's nested records, by key. @var array<string,RowModel> */
+    public array $nested = [];
+    /**
+     * A joined row's promoted fields, by ASCII-uppercased name.
+     * @var array<string,array{spec:array<string,mixed>,table:string,qualify:bool,optional:bool}>
+     */
+    public array $promoted = [];
+    /** Names both elements had, which the joined row drops. @var array<string,true> */
+    public array $dropped = [];
+
+    public function __construct(bool $side)
+    {
+        $this->side = $side;
+    }
+}
+
 final class RelationalPlan
 {
     public string $sourceName = '';
+    /**
+     * The variable the pipeline starts from, which names the first
+     * three-argument LINK's left side; null once a LINK has joined.
+     */
+    public ?string $rootName = null;
     /** @var array<string,mixed> */
     public array $sourceRelation = [];
     /** @var string|array{raw:string} */
@@ -95,4 +139,10 @@ final class RelationalPlan
 
     public ?int $limit = null;
     public ?int $offset = null;
+
+    /**
+     * Translator::joinRows, cached per number of joins.
+     * @var array{n:int, row:RowModel, steps:list<array{left:RowModel, right:RowModel}>}|null
+     */
+    public ?array $joinRowsCache = null;
 }

@@ -72,7 +72,7 @@ built at run time is validated when the call executes.
 | `E_DIV_ZERO` | `/` or `%` with a zero divisor |
 | `E_UTF8` | invalid UTF-8: in source, in BIN being decoded to TEXT, or a lone surrogate being encoded |
 | `E_RANGE` | a value outside its permitted range — code point above U+10FFFF or in D800–DFFF, byte outside 0–255, negative length or count |
-| `E_BAD_ARG` | an argument is well-typed but unusable: empty `SPLIT` separator, odd-length or non-hex `FROM_HEX`, malformed base64, `i` flag on a non-ASCII pattern |
+| `E_BAD_ARG` | an argument is well-typed but unusable: empty `SPLIT` separator, odd-length or non-hex `FROM_HEX`, malformed base64, `i` flag on a non-ASCII pattern; at the host boundary (§8), a constructor called with something it does not take — key and value counts that differ, a repeated list key, a malformed decimal, a float, a native value with no conversion — and `toNative` of a value with no native form |
 | `E_LEN_MISMATCH` | `BAND`/`BOR`/`BXOR` on BIN operands of different lengths |
 
 ### Explicit

@@ -13,6 +13,7 @@ from typing import Any
 from . import decimal as D
 from .errors import MAX_DEPTH
 from .eval import bytes_compare
+from .lexer import ascii_upper
 from .math_plan import compile_math_plan, is_math_op
 from .parser import Node
 from .registry import lookup
@@ -178,7 +179,7 @@ def field_refs(node: Node | None, binder: str = '_') -> list[str]:
             return
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
                 and item.idx is not None and item.idx.t == 'text'
-                and any(name.upper() == item.obj.name.upper()
+                and any(ascii_upper(name) == ascii_upper(item.obj.name)
                         for name in (binder, '_', '_1', '_2'))):
             result.append(item.idx.v)
         for child in item.args:
@@ -684,9 +685,3 @@ def optimize_ast_in_memory(ast: Node) -> Node:
 
 def optimize_ast(ast: Node) -> Node:
     return optimize_ast_in_memory(ast)
-
-
-# Camel-case aliases keep the API spelling aligned with the JS host.
-optimizeAstLogical = optimize_ast_logical
-optimizeAstInMemory = optimize_ast_in_memory
-optimizeAst = optimize_ast

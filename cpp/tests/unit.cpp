@@ -677,6 +677,39 @@ void test_host_boundary() {
     }
     selt::eq(got, std::string("t\"1\"t\"2\""), "a compiled program reads the key of each run");
   }
+  // Every public constructor (review 2026-09-28 HOST-12..20).
+  using sel::Value;
+  selt::raises("E_UTF8", [] { Value::record({"a\xff"}, {Value::text("1")}); }, "Value::record rejects a malformed key");
+  selt::raises("E_UTF8", [] {
+    Value::shaped(std::make_shared<sel::RecordShape>(std::vector<std::string>{"a\xff"}), {Value::text("1")});
+  }, "Value::shaped rejects a malformed key");
+  selt::raises("E_BAD_ARG", [] { Value::record({"a"}, {Value::text("1"), Value::text("2")}); },
+               "Value::record with more values than keys");
+  selt::raises("E_BAD_ARG", [] {
+    Value::shaped(std::make_shared<sel::RecordShape>(std::vector<std::string>{"a", "b"}), {Value::text("1")});
+  }, "Value::shaped with fewer values than keys");
+  selt::raises("E_BAD_ARG", [] {
+    Value::shaped(std::make_shared<sel::RecordShape>(std::vector<std::string>{"a", "a"}),
+                  {Value::text("1"), Value::text("2")});
+  }, "Value::shaped with a repeated key");
+  selt::raises("E_BAD_ARG", [] { Value::shaped(nullptr, {}); }, "Value::shaped without a shape");
+  selt::eq(Value::record({"a", "b", "a"}, {Value::text("1"), Value::text("2"), Value::text("3")}).dump(),
+           std::string("-{\"a\"=t\"3\", \"b\"=t\"2\"}"), "Value::record keeps a repeated key once, last value");
+  auto dec = [](bool neg, std::string digits, std::int32_t scale) {
+    sel::Dec d; d.neg = neg; d.digits = std::move(digits); d.scale = scale; return d;
+  };
+  selt::raises("E_RANGE", [&] { Value::num(dec(false, "1", 1000001)); }, "a Dec with 1,000,001 fractional digits");
+  selt::raises("E_RANGE", [&] { Value::num(dec(false, std::string(1000001, '1'), 0)); },
+               "a Dec with 1,000,001 integer digits");
+  selt::raises("E_BAD_ARG", [&] { Value::num(dec(false, "7", -1)); }, "a Dec with a negative scale");
+  selt::raises("E_BAD_ARG", [&] { Value::num(dec(false, "x", 0)); }, "a Dec whose digits are not digits");
+  {
+    sel::Dec d; d.small = true; d.mantissa = -5; d.neg = false;
+    selt::raises("E_BAD_ARG", [&] { Value::num(d); }, "a small Dec whose sign disagrees with neg");
+  }
+  selt::eq(Value::num(dec(true, "0", 0)).dump(), std::string("t\"0\""), "a negative-zero Dec is 0");
+  selt::eq(Value::num(dec(false, "007", 1)).dump(), std::string("t\"0.7\""), "a Dec loses its leading zeros");
+  selt::eq(Value::num(sel::Dec{}).dump(), std::string("t\"0\""), "a default Dec is 0");
 }
 
 }  // namespace

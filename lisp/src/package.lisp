@@ -27,6 +27,9 @@
    #:make-bin
    #:make-bool
    #:make-num
+   ;; SEL's decimal, which MAKE-NUM takes besides a string (spec §8): digits
+   ;; x 10^-scale, negative when neg. AS-DEC reads a value's.
+   #:dec #:dec-p #:dec-make #:dec-neg #:dec-digits #:dec-scale #:as-dec
    #:make-int
    #:make-list-value
    #:value-size

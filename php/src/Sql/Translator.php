@@ -320,18 +320,21 @@ final class Translator
     private function index(array $n): Fragment
     {
         $obj = $n['obj'];
-        if ($this->statementPlan !== null && $obj['t'] === 'index'
-            && ($obj['obj']['t'] ?? null) === 'var') {
-            // `_["orders"]["status"]` names a joined relation's field -- when
-            // the inner name is a row. Over a bucket's members or a projected
-            // row the inner index is itself the thing to refuse.
-            $inner = $this->binder($obj['obj']['name']);
-            if ($inner !== null && ($inner->shape === Binder::GROUP || $inner->shape === Binder::PROJECTED)) {
-                $this->node($obj);
+        if ($this->statementPlan !== null && $obj['t'] === 'index') {
+            // `_["orders"]["status"]` reads a field of a record the row
+            // carries: a side a LINK bound, or an earlier joined row (spec
+            // §7.4). The path is resolved against the keys the row has, so a
+            // name it lacks is refused where run() raises E_NO_KEY -- anything
+            // else (a bucket's members, a projected row, a relation) is the
+            // inner index's own refusal.
+            $row = $this->rowPath($obj, $n);
+            if ($row !== null) {
+                return $this->rowField($row, $obj, $this->constantIndex($n['idx']), $n);
             }
-            $qualifier = $this->constantIndex($obj['idx']);
-            $field = $this->constantIndex($n['idx']);
-            return $this->indexQualified($qualifier, $field, $n);
+            $this->node($obj);
+            refuse('E_SQL_SHAPE',
+                'only a bound name can be indexed here; SQL has no way to index '
+                . 'into the result of an expression', $n['pos']);
         }
         if ($obj['t'] !== 'var') {
             refuse('E_SQL_SHAPE',
@@ -946,13 +949,13 @@ final class Translator
             if ($relation === $plan->sourceRelation
                 && ($name === null || in_array(strtoupper($name), array_map(
                     static fn ($item): string => strtoupper((string) $item),
-                    array_filter([$plan->sourceName, $plan->sourceAlias, ...array_map(
-                        static fn ($join) => $join->leftBinder, $plan->joins)], static fn ($item): bool => $item !== null)
+                    array_filter([$plan->sourceName, $plan->sourceAlias, ...array_merge([], ...array_map(
+                        static fn ($join) => $join->leftNames, $plan->joins))], static fn ($item): bool => $item !== null)
                 ), true))) {
                 return $plan->sourceAlias ?? self::relationAlias($relation);
             }
             foreach ($plan->joins as $index => $join) {
-                $names = [$join->sourceName, $join->sourceAlias, $join->rightBinder, '_' . ($index + 2)];
+                $names = [$join->sourceName, $join->sourceAlias, ...$join->rightNames, '_' . ($index + 2)];
                 $names = array_filter($names, static fn ($item): bool => $item !== null);
                 if ($relation === $join->sourceRelation
                     && ($name === null || in_array(strtoupper($name), array_map(
@@ -967,62 +970,259 @@ final class Translator
         return self::relationAlias($relation);
     }
 
-    /** @param array<string,mixed> $n */
-    private function indexQualified(string $qualifier, string $key, array $n): Fragment
+    /**
+     * The record a path of constant indexes names, when it starts at a row
+     * binder of this statement: `_`, `_["X"]`, `A["Y"]["y"]`. Null when the
+     * path does not start at a row, for the caller to refuse as it would
+     * anyway. `$outer` is the node indexing this one: a field indexed further
+     * fails there, where run() raises, and a key the row lacks at the node
+     * itself.
+     *
+     * @param array<string,mixed> $node
+     * @param array<string,mixed> $outer
+     */
+    private function rowPath(array $node, array $outer): ?RowModel
     {
-        $plan = $this->statementPlan;
-        if ($plan === null) {
-            refuse('E_SQL_SHAPE', 'qualified relation indexing is only valid in a statement', $n['pos']);
+        if ($node['t'] === 'var') {
+            $b = $this->binder($node['name']);
+            return $b !== null && $b->shape === Binder::ROW ? $b->model : null;
         }
-        // A LINK's left binder names the LEFT side -- the pipeline's source
-        // relation -- and its right binder the joined one. Both used to be
-        // listed under the join, so a read through the left binder selected
-        // the joined table's column (review 2026-09-25 SQL-01).
-        $sources = [[
-            'names' => [$plan->sourceName, $plan->sourceAlias, self::relationAlias($plan->sourceRelation),
-                        ...array_map(static fn ($join) => $join->leftBinder, $plan->joins)],
-            'relation' => $plan->sourceRelation,
-            'table' => $plan->sourceAlias ?? self::relationAlias($plan->sourceRelation),
-        ]];
+        if ($node['t'] !== 'index') {
+            return null;
+        }
+        $inner = $this->rowPath($node['obj'], $node);
+        if ($inner === null) {
+            return null;
+        }
+        return $this->rowNested($inner, $this->constantIndex($node['idx']), $node, $outer);
+    }
+
+    /**
+     * `row[key]` where the value must be a record: a side the row carries, or
+     * the side itself under one of the names its LINK gave it.
+     *
+     * @param array<string,mixed> $n
+     * @param array<string,mixed> $outer
+     */
+    private function rowNested(RowModel $row, string $key, array $n, array $outer): RowModel
+    {
+        if ($row->side) {
+            if (in_array($key, $row->names, true)) {
+                return $row;
+            }
+        } elseif (isset($row->nested[$key])) {
+            return $row->nested[$key];
+        }
+        if (self::listKey($key) !== null) {
+            refuse('E_SQL_SHAPE', "[{$key}] asks for a row by position, and a relation has "
+                . 'no first row without an ORDER BY that nothing here can supply', $n['pos']);
+        }
+        if ($this->rowFieldSpec($row, $key) !== null) {
+            refuse('E_SQL_SHAPE', "[\"{$key}\"] is a field, which has no parts to index", $outer['pos']);
+        }
+        refuse('E_SQL_SHAPE', 'only a bound name can be indexed here; SQL has no way to index into '
+            . "the result of an expression ({$key} names no record this row carries)", $n['pos']);
+    }
+
+    /** @return array{spec:array<string,mixed>,table:string,qualify:bool,optional:bool}|null */
+    private function rowFieldSpec(RowModel $row, string $key): ?array
+    {
+        $u = strtoupper($key);
+        if ($row->side) {
+            $spec = $row->relation['fields'][$u] ?? null;
+            return $spec === null ? null
+                : ['spec' => $spec, 'table' => $row->table, 'qualify' => $row->qualify, 'optional' => false];
+        }
+        return $row->promoted[$u] ?? null;
+    }
+
+    /**
+     * `row[key]` where the value must be a column. `$path` is the node the row
+     * came from, for the message.
+     *
+     * @param array<string,mixed> $path
+     * @param array<string,mixed> $n
+     */
+    private function rowField(RowModel $row, array $path, string $key, array $n): Fragment
+    {
+        $label = $path['t'] === 'var' ? (string) $path['name'] : 'the row';
+        if (self::listKey($key) !== null) {
+            refuse('E_SQL_SHAPE', "{$label}[{$key}] asks for a row by position, and a relation has "
+                . 'no first row without an ORDER BY that nothing here can supply', $n['pos']);
+        }
+        if (($row->side && in_array($key, $row->names, true)) || (!$row->side && isset($row->nested[$key]))) {
+            refuse('E_SQL_SHAPE', "{$label}[\"{$key}\"] is a record, which is a map in SEL and not "
+                . 'one value; name the field you mean', $n['pos']);
+        }
+        $f = $this->rowFieldSpec($row, $key);
+        if ($f === null) {
+            if (!$row->side && isset($row->dropped[strtoupper($key)])) {
+                refuse('E_SQL_SHAPE', "field \"{$key}\" is ambiguous across joined relations", $n['pos']);
+            }
+            $known = array_map('strval', array_keys($row->side ? ($row->relation['fields'] ?? []) : $row->promoted));
+            sort($known, SORT_STRING);
+            refuse('E_SQL_BINDING',
+                "{$label}[\"{$key}\"] is not a field of that " . ($row->side ? 'relation' : 'joined row')
+                . ($known === [] ? '; it declares none' : '; it has ' . implode(', ', $known)), $n['pos']);
+        }
+        if ($f['optional']) {
+            // An unmatched LINK_LEFT row promotes nothing from the right (spec
+            // §7.4), so it has no such key, where the LEFT JOIN's column is
+            // NULL. Through the right binder the field is NULL in both.
+            refuse('E_SQL_SHAPE', "{$label}[\"{$key}\"] is a field of the right side of a LINK_LEFT, "
+                . 'which a row with no match does not have; read it through the right binder', $n['pos']);
+        }
+        if (isset($f['spec']['raw']) || !$f['qualify']) {
+            return $this->columnRef($f['spec']);
+        }
+        return $this->columnRef(array_merge($f['spec'], ['table' => $f['table']]));
+    }
+
+    /**
+     * The rows of a statement's joins as SEL has them (spec §7.4 "Joined
+     * rows"), for resolving what a read names. A side is one relation's row,
+     * extended with the names its LINK gave it (keys holding itself); a joined
+     * row carries the records the left element carried, the binders, and the
+     * promoted fields -- each side's scalar fields whose names, compared
+     * ASCII-case-insensitively, are not keys of the other element. A LINK's
+     * left element is the source's row for the first LINK and the previous
+     * joined row after that; its own name is the source's only for the first
+     * three-argument LINK, as the evaluator names an argument (a pipeline that
+     * already joined is not named). The right side of a LINK_LEFT promotes
+     * nothing for a row with no match, so its fields are `optional`.
+     *
+     * @return array{n:int, row:RowModel, steps:list<array{left:RowModel, right:RowModel}>}
+     */
+    private function joinRows(RelationalPlan $plan): array
+    {
+        $n = count($plan->joins);
+        if ($plan->joinRowsCache !== null && $plan->joinRowsCache['n'] === $n) {
+            return $plan->joinRowsCache;
+        }
+        $qualify = $plan->joins !== [] || $plan->sourceSubquery !== null;
+        $left = self::sideRow($plan->sourceRelation,
+            $plan->sourceAlias ?? self::relationAlias($plan->sourceRelation), $qualify, []);
+        $steps = [];
         foreach ($plan->joins as $join) {
-            $sources[] = [
-                'names' => [$join->sourceName, $join->sourceAlias, self::relationAlias($join->sourceRelation),
-                            $join->rightBinder],
-                'relation' => $join->sourceRelation,
-                'table' => $join->sourceAlias ?? self::relationAlias($join->sourceRelation),
-            ];
+            $leftNames = self::binderKeys($join->leftNames);
+            $rightNames = self::binderKeys($join->rightNames);
+            $right = self::sideRow($join->sourceRelation,
+                $join->sourceAlias ?? self::relationAlias($join->sourceRelation), $qualify, $rightNames);
+            $leftEl = self::withNames($left, $leftNames);
+            foreach ([[$leftEl, $join->leftNames], [$right, $join->rightNames]] as [$el, $names]) {
+                if (!$el->side) {
+                    continue;
+                }
+                foreach ($names as $name) {
+                    if (array_key_exists(strtoupper($name), $el->relation['fields'] ?? [])) {
+                        refuse('E_SQL_SHAPE', "{$name} names a LINK side that has a field of that name too, "
+                            . 'which SEL binds instead of the row; rename the binder', $join->pos);
+                    }
+                }
+            }
+            $row = new RowModel(false);
+            if (!$leftEl->side) {
+                $row->nested = $leftEl->nested;
+            }
+            foreach (['_1', ...$leftNames] as $k) {
+                $row->nested[$k] = $leftEl;
+            }
+            foreach (['_2', ...$rightNames] as $k) {
+                $row->nested[$k] = $right;
+            }
+            $leftKeys = array_fill_keys(array_map('strtoupper', self::rowKeys($leftEl)), true);
+            $rightKeys = array_fill_keys(array_map('strtoupper', self::rowKeys($right)), true);
+            foreach (self::scalarFields($leftEl) as [$u, $f]) {
+                if (isset($rightKeys[$u])) {
+                    $row->dropped[$u] = true;
+                } else {
+                    $row->promoted[$u] = $f;
+                }
+            }
+            foreach (self::scalarFields($right) as [$u, $f]) {
+                if (isset($leftKeys[$u])) {
+                    $row->dropped[$u] = true;
+                } else {
+                    $row->promoted[$u] = $join->type === 'LEFT' ? array_merge($f, ['optional' => true]) : $f;
+                }
+            }
+            $steps[] = ['left' => $leftEl, 'right' => $right];
+            $left = $row;
         }
-        $source = null;
-        foreach ($sources as $candidate) {
-            foreach ($candidate['names'] as $name) {
-                if ($name !== null && strtoupper((string) $name) === strtoupper($qualifier)) {
-                    $source = $candidate;
-                    break 2;
+        $plan->joinRowsCache = ['n' => $n, 'row' => $left, 'steps' => $steps];
+        return $plan->joinRowsCache;
+    }
+
+    /**
+     * @param array<string,mixed> $relation
+     * @param list<string> $names
+     */
+    private static function sideRow(array $relation, string $table, bool $qualify, array $names): RowModel
+    {
+        $row = new RowModel(true);
+        $row->relation = $relation;
+        $row->table = $table;
+        $row->qualify = $qualify;
+        $row->names = $names;
+        return $row;
+    }
+
+    /**
+     * A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
+     *
+     * @param list<string> $names
+     * @return list<string>
+     */
+    private static function binderKeys(array $names): array
+    {
+        $out = [];
+        foreach ($names as $name) {
+            foreach ([$name, strtolower($name)] as $k) {
+                if (!in_array($k, $out, true)) {
+                    $out[] = $k;
                 }
             }
         }
-        if ($source === null) {
-            // A qualifier names a relation by its binding name, its table, its
-            // alias or a binder the join predicate declared, and nothing else:
-            // a position (`_[1]["amount"]`) or a stray name is the shape the
-            // row does not have, E_SQL_SHAPE as C++ and Lisp always said
-            // (SEL-0043). It used to be E_SQL_BINDING "unknown joined
-            // relation" here, the accident of the alias lookup.
-            if (self::listKey($qualifier) !== null) {
-                refuse('E_SQL_SHAPE', "[{$qualifier}] asks for a row by position, and a relation has "
-                    . 'no first row without an ORDER BY that nothing here can supply', $n['pos']);
+        return $out;
+    }
+
+    /** @param list<string> $names */
+    private static function withNames(RowModel $row, array $names): RowModel
+    {
+        $out = clone $row;
+        if ($row->side) {
+            $out->names = $names;
+            return $out;
+        }
+        foreach ($names as $k) {
+            $out->nested[$k] = $out;
+        }
+        return $out;
+    }
+
+    /** @return list<string> */
+    private static function rowKeys(RowModel $row): array
+    {
+        $keys = $row->side
+            ? [...array_keys($row->relation['fields'] ?? []), ...$row->names]
+            : [...array_keys($row->nested), ...array_keys($row->promoted)];
+        return array_map('strval', $keys);
+    }
+
+    /** @return list<array{0:string, 1:array{spec:array<string,mixed>,table:string,qualify:bool,optional:bool}}> */
+    private static function scalarFields(RowModel $row): array
+    {
+        $out = [];
+        if (!$row->side) {
+            foreach ($row->promoted as $u => $f) {
+                $out[] = [(string) $u, $f];
             }
-            refuse('E_SQL_SHAPE', 'only a bound name can be indexed here; SQL has no way to index into '
-                . "the result of an expression ({$qualifier} names no relation of this statement)", $n['pos']);
+            return $out;
         }
-        $field = $source['relation']['fields'][strtoupper($key)] ?? null;
-        if ($field === null) {
-            refuse('E_SQL_BINDING', "{$qualifier}[\"{$key}\"] is not a field of that relation", $n['pos']);
+        foreach ($row->relation['fields'] ?? [] as $u => $spec) {
+            $out[] = [(string) $u, ['spec' => $spec, 'table' => $row->table, 'qualify' => $row->qualify, 'optional' => false]];
         }
-        if (isset($field['raw'])) {
-            return $this->columnRef($field);
-        }
-        return $this->columnRef(array_merge($field, ['table' => $source['table']]));
+        return $out;
     }
 
     private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,
@@ -1392,6 +1592,10 @@ final class Translator
                 // no break: refuse throws
             case Binder::ROW:
                 $rel = $b->payload;
+                if ($b->model !== null && !$b->model->side) {
+                    refuse('E_SQL_SHAPE', "{$n['name']} is a joined row, which is a map in SEL and not "
+                        . 'one value; name the field you mean', $n['pos']);
+                }
                 // The guard `IN` got and nothing else did. A row of a relation
                 // with more than one field is a MAP in SEL, and a map is not the
                 // value of one of its fields: `ANY(ITEMS, _ $== "AB-1000")` is []
@@ -1416,6 +1620,10 @@ final class Translator
                 $field = $rel['fields'][$scalar];
                 if (isset($field['raw']) || $this->statementPlan === null) {
                     return $this->columnRef($field);
+                }
+                if ($b->model !== null) {
+                    return $this->columnRef($b->model->qualify
+                        ? array_merge($field, ['table' => $b->model->table]) : $field);
                 }
                 return $this->columnRef(array_merge($field, [
                     'table' => $this->relationTableAlias($rel, $n['name']),
@@ -1483,31 +1691,10 @@ final class Translator
                     . 'no first row without an ORDER BY that nothing here can supply',
                     $n['pos']);
             }
-            $field = strtoupper($key);
-            if ($b->joined && $this->statementPlan !== null && $this->statementPlan->joins !== []) {
-                $matches = [];
-                $sources = [[
-                    'relation' => $this->statementPlan->sourceRelation,
-                    'label' => $this->statementPlan->sourceName,
-                ]];
-                foreach ($this->statementPlan->joins as $join) {
-                    $sources[] = ['relation' => $join->sourceRelation, 'label' => $join->sourceName];
-                }
-                foreach ($sources as $source) {
-                    $candidate = $source['relation']['fields'][$field] ?? null;
-                    if ($candidate !== null) {
-                        $matches[] = array_merge($candidate, [
-                            'table' => $this->relationTableAlias($source['relation'], $source['label']),
-                        ]);
-                    }
-                }
-                if (count($matches) > 1) {
-                    refuse('E_SQL_SHAPE', "field \"{$key}\" is ambiguous across joined relations", $n['pos']);
-                }
-                if (count($matches) === 1) {
-                    return $this->columnRef($matches[0]);
-                }
+            if ($b->model !== null) {
+                return $this->rowField($b->model, ['t' => 'var', 'name' => $name], $key, $n);
             }
+            $field = strtoupper($key);
             if (!isset($b->payload['fields'][$field])) {
                 $known = array_keys($b->payload['fields']);
                 sort($known);
@@ -1885,12 +2072,13 @@ final class Translator
         }
 
         $row = Binder::row($src['relation']);
-        // The row of a joined statement: a field read through it resolves across
-        // the sides (ambiguous when both have it), whatever the binder is called.
-        // Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
-        // after a LINK resolve to the left side where `run()` raises E_NO_KEY.
-        if ($this->statementPlan !== null && $this->statementPlan->joins !== []) {
-            $row->joined = true;
+        // The row of the statement: after a LINK the joined row, whose
+        // promoted fields and nested records a read resolves against, whatever
+        // the binder is called. Gating that on the name `_` let `MAP(r,
+        // RECORD("name", r["name"]))` after a LINK resolve to the left side
+        // where `run()` raises E_NO_KEY.
+        if ($this->statementPlan !== null && $src['relation'] === $this->statementPlan->sourceRelation) {
+            $row->model = $this->joinRows($this->statementPlan)['row'];
         }
         $kBinder = Binder::none('a row of a relation has no key: SQL rows are '
                   . 'unordered and unkeyed unless the schema says otherwise, and '
@@ -1913,25 +2101,28 @@ final class Translator
         }
     }
 
-    /** @param callable():Fragment $render */
+    /**
+     * A LINK's predicate sees `_`/`_1` as its left element and `_2` as its
+     * right, plus the names the LINK gives them (spec §7.4) and nothing else:
+     * a relation's name outside those, its alias or its table is not a binder
+     * (review 2026-09-28 SQL-07), and the left element of a later LINK is the
+     * joined row so far, not the source (SQL-05).
+     *
+     * @param callable():Fragment $render
+     */
     private function withJoinBinders(RelationalPlan $plan, JoinPlan $join, callable $render): Fragment
     {
+        $step = $this->joinRows($plan)['steps'][array_search($join, $plan->joins, true)];
         $left = Binder::row($plan->sourceRelation);
+        $left->model = $step['left'];
         $right = Binder::row($join->sourceRelation);
-        $frame = [
-            '_' => $left,
-            '_1' => $left,
-            $plan->sourceName => $left,
-            '_2' => $right,
-            $join->leftBinder => $left,
-            $join->rightBinder => $right,
-            $join->sourceName => $right,
-        ];
-        if ($plan->sourceAlias !== null) {
-            $frame[$plan->sourceAlias] = $left;
+        $right->model = $step['right'];
+        $frame = ['_' => $left, '_1' => $left, '_2' => $right];
+        foreach ($join->leftNames as $name) {
+            $frame[$name] = $left;
         }
-        if ($join->sourceAlias !== null) {
-            $frame[$join->sourceAlias] = $right;
+        foreach ($join->rightNames as $name) {
+            $frame[$name] = $right;
         }
         $this->frames[] = $frame;
         try {
@@ -2814,28 +3005,18 @@ final class Translator
      * SEL has no key, and which made a derived table over a join name columns
      * it did not have (finding Y, lanes).
      *
-     * @return list<array{name:string, spec:array<string,mixed>, owner:array<string,mixed>}>
+     * @return list<array{name:string, spec:array<string,mixed>, table:string}>
      */
     private function joinedRowFields(RelationalPlan $plan): array
     {
-        $entries = static function (?array $rel): array {
-            $out = [];
-            foreach ($rel['fields'] ?? [] as $name => $spec) {
-                $out[] = ['name' => (string) $name, 'spec' => $spec, 'owner' => $rel];
+        // A field an unmatched LINK_LEFT row lacks is not a column of the row.
+        $out = [];
+        foreach ($this->joinRows($plan)['row']->promoted as $name => $f) {
+            if (!$f['optional']) {
+                $out[] = ['name' => (string) $name, 'spec' => $f['spec'], 'table' => $f['table']];
             }
-            return $out;
-        };
-        $acc = $entries($plan->sourceRelation);
-        foreach ($plan->joins as $join) {
-            $right = $entries($join->sourceRelation);
-            $leftNames = array_map(static fn (array $f): string => strtoupper($f['name']), $acc);
-            $rightNames = array_map(static fn (array $f): string => strtoupper($f['name']), $right);
-            $acc = array_merge(
-                array_values(array_filter($acc, static fn (array $f): bool => !in_array(strtoupper($f['name']), $rightNames, true))),
-                array_values(array_filter($right, static fn (array $f): bool => !in_array(strtoupper($f['name']), $leftNames, true))),
-            );
         }
-        return $acc;
+        return $out;
     }
 
     private function outputFieldType(RelationalPlan $plan, string $name): string
@@ -2923,6 +3104,8 @@ final class Translator
         $derived->sourceTable = '';
         $derived->sourceAlias = $alias;
         $derived->sourceSubquery = $plan;
+        // Still named after the pipeline's variable, until a LINK has joined.
+        $derived->rootName = $plan->joins !== [] ? null : $plan->rootName;
         if ($plan->bucket !== null) {
             $derived->bucket = 'sealed';
         }
@@ -3073,6 +3256,7 @@ final class Translator
 
         $plan = new RelationalPlan();
         $plan->sourceName = $curr['name'];
+        $plan->rootName = $curr['name'];
         $plan->sourceRelation = $b;
         $plan->sourceTable = $b['from'];
         $plan->sourceAlias = $b['alias'] ?? null;
@@ -3362,6 +3546,18 @@ final class Translator
 
                 case 'LINK':
                 case 'LINK_LEFT':
+                    // The steps before the LINK refuse first, as written: their
+                    // keys (a sort's, a bucket's) are otherwise checked only
+                    // when the statement is rendered, after this LINK and the
+                    // steps after it were analysed, which reported a later
+                    // step's refusal where run() raises at the earlier one.
+                    // Lisp has done this since review 2026-09-25 SQL-03; the
+                    // widened SQL fuzzer found the other hosts did not (review
+                    // 2026-09-28 SQL-10). The result is discarded.
+                    if ($plan->orderBy !== [] || $plan->projections !== null
+                        || $plan->selectCols !== null || $plan->groupBy !== null) {
+                        $this->compileStatement($plan);
+                    }
                     $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     if (count($args) !== 3 && count($args) !== 5) {
                         refuse('E_ARITY', "{$name} takes 3 or 5 arguments", $step['pos']);
@@ -3384,16 +3580,38 @@ final class Translator
                         if (!Constants::isBinderName($args[2]) || !Constants::isBinderName($args[3])) {
                             refuse('E_SQL_SHAPE', 'join binders must be bare names', $args[2]['pos']);
                         }
-                        $join->leftBinder = $args[2]['name'];
-                        $join->rightBinder = $args[3]['name'];
+                        $join->leftNames = [$args[2]['name']];
+                        $join->rightNames = [$args[3]['name']];
                         $join->onPred = $args[4];
                     } else {
-                        $join->leftBinder = $plan->sourceAlias ?? '_1';
-                        $join->rightBinder = $join->sourceAlias ?? '_2';
+                        // The evaluator names a three-argument LINK's sides
+                        // after the variable their pipeline starts from,
+                        // unless an earlier LINK is in the way (spec §7.4).
+                        $join->leftNames = $plan->joins === [] && $plan->rootName !== null ? [$plan->rootName] : [];
+                        $join->rightNames = [$rightNode['name']];
                         $join->onPred = $args[2];
                     }
+                    // The SQL alias of a table the binding leaves unaliased:
+                    // the five-argument form's right binder, `_2` otherwise.
+                    // An alias, not a SEL name.
                     if ($join->sourceAlias === null) {
-                        $join->sourceAlias = $join->rightBinder;
+                        $join->sourceAlias = count($args) === 5 ? $join->rightNames[0] : '_2';
+                    }
+                    // One table alias per occurrence: a relation joined a
+                    // second time under an alias the statement already uses
+                    // (a self-join, or chaining back to an aliased relation)
+                    // rendered the alias twice, which the server rejects
+                    // (review 2026-09-28 SQL-09). The program stays in memory.
+                    $open = [$plan->sourceAlias ?? self::relationAlias($plan->sourceRelation)];
+                    foreach ($plan->joins as $j) {
+                        $open[] = $j->sourceAlias;
+                    }
+                    foreach ($open as $alias) {
+                        if (strtoupper((string) $alias) === strtoupper((string) $join->sourceAlias)) {
+                            refuse('E_SQL_SHAPE', "{$rightNode['name']} would be joined under the table alias "
+                                . "{$join->sourceAlias}, which this statement already uses; bind the relation "
+                                . 'a second time under another alias', $rightNode['pos']);
+                        }
                     }
                     $join->pos = $step['pos'];
                     $plan->joins[] = $join;
@@ -3640,7 +3858,7 @@ final class Translator
                         $parts[] = ', ';
                     }
                     $first = false;
-                    $parts[] = $this->emit->column($this->relationTableAlias($f['owner']), $f['spec']['column'] ?? $f['name']);
+                    $parts[] = $this->emit->column($f['table'], $f['spec']['column'] ?? $f['name']);
                 }
             } else {
                 if ($plan->sourceAlias !== null) {

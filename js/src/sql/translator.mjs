@@ -411,18 +411,18 @@ export class Translator {
   // reach inside a value SQL has no way to look inside.
   index(n) {
     const obj = n.obj;
-    if (this.statementPlan !== null && obj && obj.t === 'index'
-        && obj.obj && obj.obj.t === 'var') {
-      // `_["orders"]["status"]` names a joined relation's field -- when the
-      // inner name is a row. Over a bucket's members or a projected row
-      // the inner index is itself the thing to refuse.
-      const inner = this.binder(obj.obj.name);
-      if (inner !== null && (inner.shape === Binder.GROUP || inner.shape === Binder.PROJECTED)) {
-        this.node(obj);
-      }
-      const qualifier = this.constantIndex(obj.idx);
-      const field = this.constantIndex(n.idx);
-      return this.indexQualified(qualifier, field, n);
+    if (this.statementPlan !== null && obj && obj.t === 'index') {
+      // `_["orders"]["status"]` reads a field of a record the row carries: a
+      // side a LINK bound, or an earlier joined row (spec §7.4). The path is
+      // resolved against the keys the row has, so a name it lacks is refused
+      // where run() raises E_NO_KEY -- anything else (a bucket's members, a
+      // projected row, a relation) is the inner index's own refusal.
+      const row = this.rowPath(obj, n);
+      if (row !== null) return this.rowField(row, obj, this.constantIndex(n.idx), n);
+      this.node(obj);
+      refuse('E_SQL_SHAPE',
+        'only a bound name can be indexed here; SQL has no way to index into the '
+        + 'result of an expression', n.pos);
     }
     if (obj.t !== 'var') {
       refuse('E_SQL_SHAPE',
@@ -471,63 +471,150 @@ export class Translator {
       `${obj.name} is bound as a column, which has no parts to index`, n.pos);
   }
 
-  indexQualified(qualifier, key, n) {
-    const plan = this.statementPlan;
-    // A LINK's left binder names the LEFT side -- the pipeline's source
-    // relation -- and its right binder the joined one. Both used to be listed
-    // under the join, so a read through the left binder selected the joined
-    // table's column (review 2026-09-25 SQL-01).
-    const sources = [{
-      names: [plan.sourceName, plan.sourceAlias, relationAlias(plan.sourceRelation),
-        ...(plan.joins ?? []).map((join) => join.leftBinder)],
-      relation: plan.sourceRelation,
-      table: plan.sourceAlias ?? relationAlias(plan.sourceRelation),
-    }];
-    for (const join of plan.joins ?? []) {
-      sources.push({
-        names: [join.sourceName, join.sourceAlias, relationAlias(join.sourceRelation), join.rightBinder],
-        relation: join.sourceRelation,
-        table: join.sourceAlias ?? relationAlias(join.sourceRelation),
-      });
+  // The record a path of constant indexes names, when it starts at a row
+  // binder of this statement: `_`, `_["X"]`, `A["Y"]["y"]`. Null when the path
+  // does not start at a row, for the caller to refuse as it would anyway.
+  // `outer` is the node indexing this one: a field indexed further fails
+  // there, where run() raises, and a key the row lacks at the node itself.
+  rowPath(node, outer) {
+    if (node.t === 'var') {
+      const b = this.binder(node.name);
+      return b !== null && b.shape === Binder.ROW && b.model ? b.model : null;
     }
-    const source = sources.find((item) => item.names.some((name) => name !== null
-      && name !== undefined && asciiUpper(String(name)) === asciiUpper(qualifier)));
-    if (!source) {
-      // A qualifier names a relation by its binding name, its table, its alias
-      // or a binder the join predicate declared, and nothing else: a position
-      // (`_[1]["amount"]`) or a stray name is the shape the row does not
-      // have, E_SQL_SHAPE as C++ and Lisp always said (SEL-0043). It used to
-      // be E_SQL_BINDING "unknown joined relation" here, the accident of the
-      // alias lookup.
-      if (listKey(qualifier) !== null) {
-        refuse('E_SQL_SHAPE',
-          `[${qualifier}] asks for a row by position, and a relation has no first row `
-          + 'without an ORDER BY that nothing here can supply', n.pos);
-      }
+    if (node.t !== 'index') return null;
+    const inner = this.rowPath(node.obj, node);
+    if (inner === null) return null;
+    return this.rowNested(inner, this.constantIndex(node.idx), node, outer);
+  }
+
+  // `row[key]` where the value must be a record: a side the row carries, or
+  // the side itself under one of the names its LINK gave it.
+  rowNested(row, key, n, outer) {
+    if (row.side) {
+      if (row.names.includes(key)) return row;
+    } else if (row.nested.has(key)) {
+      return row.nested.get(key);
+    }
+    if (listKey(key) !== null) {
       refuse('E_SQL_SHAPE',
-        'only a bound name can be indexed here; SQL has no way to index into the '
-        + `result of an expression (${qualifier} names no relation of this statement)`, n.pos);
+        `[${key}] asks for a row by position, and a relation has no first row `
+        + 'without an ORDER BY that nothing here can supply', n.pos);
     }
-    const field = source.relation.fields?.[asciiUpper(key)] ?? null;
-    if (!field) {
-      refuse('E_SQL_BINDING', `${qualifier}["${key}"] is not a field of that relation`, n.pos);
+    if (this.rowFieldSpec(row, key) !== null) {
+      refuse('E_SQL_SHAPE', `["${key}"] is a field, which has no parts to index`, outer.pos);
     }
-    if (field.raw !== undefined) return this.columnRef(field);
-    return this.columnRef({ ...field, table: source.table });
+    refuse('E_SQL_SHAPE',
+      'only a bound name can be indexed here; SQL has no way to index into the '
+      + `result of an expression (${key} names no record this row carries)`, n.pos);
+  }
+
+  rowFieldSpec(row, key) {
+    const u = asciiUpper(key);
+    if (row.side) {
+      const spec = row.relation.fields?.[u] ?? null;
+      return spec === null ? null : { spec, table: row.table, qualify: row.qualify, optional: false };
+    }
+    return row.promoted.get(u) ?? null;
+  }
+
+  // `row[key]` where the value must be a column. `path` is the node the row
+  // came from, for the message.
+  rowField(row, path, key, n) {
+    const label = path.t === 'var' ? path.name : 'the row';
+    if (listKey(key) !== null) {
+      refuse('E_SQL_SHAPE',
+        `${label}[${key}] asks for a row by position, and a relation has no first `
+        + 'row without an ORDER BY that nothing here can supply', n.pos);
+    }
+    if ((row.side && row.names.includes(key)) || (!row.side && row.nested.has(key))) {
+      refuse('E_SQL_SHAPE', `${label}["${key}"] is a record, which is a map in SEL and not one value; `
+        + 'name the field you mean', n.pos);
+    }
+    const f = this.rowFieldSpec(row, key);
+    if (f === null) {
+      if (!row.side && row.dropped.has(asciiUpper(key))) {
+        refuse('E_SQL_SHAPE', `field "${key}" is ambiguous across joined relations`, n.pos);
+      }
+      const known = row.side ? Object.keys(row.relation.fields ?? {}).sort() : [...row.promoted.keys()].sort();
+      const tail = known.length === 0 ? '; it declares none' : `; it has ${known.join(', ')}`;
+      refuse('E_SQL_BINDING',
+        `${label}["${key}"] is not a field of that ${row.side ? 'relation' : 'joined row'}${tail}`, n.pos);
+    }
+    if (f.optional) {
+      // An unmatched LINK_LEFT row promotes nothing from the right (spec
+      // §7.4), so it has no such key, where the LEFT JOIN's column is NULL.
+      // Through the right binder the field is NULL in both.
+      refuse('E_SQL_SHAPE',
+        `${label}["${key}"] is a field of the right side of a LINK_LEFT, which a row with no match `
+        + 'does not have; read it through the right binder', n.pos);
+    }
+    if (f.spec.raw !== undefined || !f.qualify) return this.columnRef(f.spec);
+    return this.columnRef({ ...f.spec, table: f.table });
+  }
+
+  // The rows of a statement's joins as SEL has them (spec §7.4 "Joined
+  // rows"), for resolving what a read names. A side is one relation's row,
+  // extended with the names its LINK gave it (keys holding itself); a joined
+  // row carries the records the left element carried, the binders, and the
+  // promoted fields -- each side's scalar fields whose names, compared
+  // ASCII-case-insensitively, are not keys of the other element. A LINK's left
+  // element is the source's row for the first LINK and the previous joined
+  // row after that; its own name is the source's only for the first
+  // three-argument LINK, as the evaluator names an argument (a pipeline that
+  // already joined is not named). The right side of a LINK_LEFT promotes
+  // nothing for a row with no match, so its fields are `optional`.
+  joinRows(plan) {
+    const n = plan.joins?.length ?? 0;
+    if (plan.joinRowsCache?.n === n) return plan.joinRowsCache;
+    const qualify = Boolean(plan.joins?.length || plan.sourceSubquery);
+    let left = { side: true, relation: plan.sourceRelation, table: plan.sourceAlias ?? relationAlias(plan.sourceRelation), qualify, names: [] };
+    const steps = [];
+    for (const join of plan.joins ?? []) {
+      const leftNames = binderKeys(join.leftNames);
+      const rightNames = binderKeys(join.rightNames);
+      const right = { side: true, relation: join.sourceRelation, table: join.sourceAlias ?? relationAlias(join.sourceRelation), qualify, names: rightNames };
+      const leftEl = withNames(left, leftNames);
+      for (const [el, names] of [[leftEl, join.leftNames], [right, join.rightNames]]) {
+        if (!el.side) continue;
+        for (const name of names) {
+          if (Object.hasOwn(el.relation.fields ?? {}, asciiUpper(name))) {
+            refuse('E_SQL_SHAPE', `${name} names a LINK side that has a field of that name too, `
+              + 'which SEL binds instead of the row; rename the binder', join.pos ?? null);
+          }
+        }
+      }
+      const row = { side: false, nested: new Map(), promoted: new Map(), dropped: new Set() };
+      if (!leftEl.side) for (const [k, v] of leftEl.nested) row.nested.set(k, v);
+      for (const k of ['_1', ...leftNames]) row.nested.set(k, leftEl);
+      for (const k of ['_2', ...rightNames]) row.nested.set(k, right);
+      const leftKeys = new Set(rowKeys(leftEl).map(asciiUpper));
+      const rightKeys = new Set(rowKeys(right).map(asciiUpper));
+      for (const [u, f] of scalarFields(leftEl)) {
+        if (rightKeys.has(u)) row.dropped.add(u); else row.promoted.set(u, f);
+      }
+      for (const [u, f] of scalarFields(right)) {
+        if (leftKeys.has(u)) row.dropped.add(u);
+        else row.promoted.set(u, join.type === 'LEFT' ? { ...f, optional: true } : f);
+      }
+      steps.push({ left: leftEl, right });
+      left = row;
+    }
+    plan.joinRowsCache = { n, row: left, steps };
+    return plan.joinRowsCache;
   }
 
   relationTableAlias(relation, name = null) {
     const plan = this.statementPlan;
     if (plan !== null) {
       if (relation === plan.sourceRelation
-          && (name === null || [plan.sourceName, plan.sourceAlias, ...(plan.joins ?? []).map((join) => join.leftBinder)]
+          && (name === null || [plan.sourceName, plan.sourceAlias, ...(plan.joins ?? []).flatMap((join) => join.leftNames)]
             .some((item) => item !== null && item !== undefined
               && asciiUpper(String(item)) === asciiUpper(String(name))))) {
         return plan.sourceAlias ?? relationAlias(relation);
       }
       for (let index = 0; index < (plan.joins ?? []).length; index += 1) {
         const join = plan.joins[index];
-        const names = [join.sourceName, join.sourceAlias, join.rightBinder, `_${index + 2}`];
+        const names = [join.sourceName, join.sourceAlias, ...join.rightNames, `_${index + 2}`];
         if (relation === join.sourceRelation
             && (name === null || names.some((item) => item !== null && item !== undefined
               && asciiUpper(String(item)) === asciiUpper(String(name))))) {
@@ -1163,6 +1250,10 @@ export class Translator {
     }
     if (b.shape === Binder.ROW) {
       const rel = b.payload;
+      if (b.model && !b.model.side) {
+        refuse('E_SQL_SHAPE',
+          `${n.name} is a joined row, which is a map in SEL and not one value; name the field you mean`, n.pos);
+      }
       // The guard `IN` got and nothing else did. A row of a relation with more
       // than one field is a MAP in SEL, and a map is not the value of one of its
       // fields: `ANY(ITEMS, _ $== "AB-1000")` is [] in SEL, because comparing a
@@ -1185,6 +1276,7 @@ export class Translator {
       }
       const field = rel.fields[scalar];
       if (field.raw !== undefined || this.statementPlan === null) return this.columnRef(field);
+      if (b.model) return this.columnRef(b.model.qualify ? { ...field, table: b.model.table } : field);
       return this.columnRef({ ...field, table: this.relationTableAlias(rel, n.name) });
     }
     refuse('E_SQL_SHAPE', String(b.reason), n.pos);
@@ -1227,21 +1319,8 @@ export class Translator {
           `${name}[${key}] asks for a row by position, and a relation has no first `
           + 'row without an ORDER BY that nothing here can supply', n.pos);
       }
+      if (b.model) return this.rowField(b.model, { t: 'var', name }, key, n);
       const field = asciiUpper(key);
-      if (b.joined && this.statementPlan !== null && this.statementPlan.joins?.length) {
-        const matches = [];
-        const sources = [{ relation: this.statementPlan.sourceRelation, label: this.statementPlan.sourceName },
-          ...this.statementPlan.joins.map((join) => ({ relation: join.sourceRelation, label: join.sourceName }))];
-        for (const source of sources) {
-          const candidate = source.relation.fields?.[field];
-          if (candidate) matches.push({ ...candidate,
-            table: this.relationTableAlias(source.relation, source.label) });
-        }
-        if (matches.length > 1) {
-          refuse('E_SQL_SHAPE', `field "${key}" is ambiguous across joined relations`, n.pos);
-        }
-        if (matches.length === 1) return this.columnRef(matches[0]);
-      }
       if (!Object.hasOwn(b.payload.fields, field)) {
         const known = Object.keys(b.payload.fields).sort();
         const tail = known.length === 0 ? '; it declares none' : `; it has ${known.join(', ')}`;
@@ -1507,11 +1586,14 @@ export class Translator {
     }
 
     const row = Binder.row(src.relation);
-    // The row of a joined statement: a field read through it resolves across
-    // the sides (ambiguous when both have it), whatever the binder is called.
-    // Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
-    // after a LINK resolve to the left side where `run()` raises E_NO_KEY.
-    if (this.statementPlan !== null && this.statementPlan.joins?.length) row.joined = true;
+    // The row of the statement: after a LINK the joined row, whose promoted
+    // fields and nested records a read resolves against, whatever the binder
+    // is called. Gating that on the name `_` let `MAP(r, RECORD("name",
+    // r["name"]))` after a LINK resolve to the left side where `run()` raises
+    // E_NO_KEY.
+    if (this.statementPlan !== null && src.relation === this.statementPlan.sourceRelation) {
+      row.model = this.joinRows(this.statementPlan).row;
+    }
     const frame = new Map([
       [binderName, row],
       ['_K', Binder.none('a row of a relation has no key: SQL rows are unordered '
@@ -1533,16 +1615,20 @@ export class Translator {
     }
   }
 
+  // A LINK's predicate sees `_`/`_1` as its left element and `_2` as its
+  // right, plus the names the LINK gives them (spec §7.4) and nothing else:
+  // a relation's name outside those, its alias or its table is not a binder
+  // (review 2026-09-28 SQL-07), and the left element of a later LINK is the
+  // joined row so far, not the source (SQL-05).
   withJoinBinders(plan, join, render) {
+    const step = this.joinRows(plan).steps[plan.joins.indexOf(join)];
     const left = Binder.row(plan.sourceRelation);
+    left.model = step.left;
     const right = Binder.row(join.sourceRelation);
-    const frame = new Map([
-      ['_', left], ['_1', left], [plan.sourceName, left],
-      ['_2', right], [join.leftBinder, left], [join.rightBinder, right],
-      [join.sourceName, right],
-    ]);
-    if (plan.sourceAlias) frame.set(plan.sourceAlias, left);
-    if (join.sourceAlias) frame.set(join.sourceAlias, right);
+    right.model = step.right;
+    const frame = new Map([['_', left], ['_1', left], ['_2', right]]);
+    for (const name of join.leftNames) frame.set(name, left);
+    for (const name of join.rightNames) frame.set(name, right);
     this.frames.push(frame);
     try {
       return render();
@@ -2036,19 +2122,9 @@ export class Translator {
   // SEL has no key, and which made a derived table over a join name columns
   // it did not have (finding Y, lanes).
   joinedRowFields(plan) {
-    const entries = (rel) => Object.entries(rel?.fields ?? {})
-      .map(([name, spec]) => ({ name, spec, owner: rel }));
-    let acc = entries(plan.sourceRelation);
-    for (const join of plan.joins ?? []) {
-      const right = entries(join.sourceRelation);
-      const leftNames = new Set(acc.map((f) => asciiUpper(f.name)));
-      const rightNames = new Set(right.map((f) => asciiUpper(f.name)));
-      acc = [
-        ...acc.filter((f) => !rightNames.has(asciiUpper(f.name))),
-        ...right.filter((f) => !leftNames.has(asciiUpper(f.name))),
-      ];
-    }
-    return acc;
+    // A field an unmatched LINK_LEFT row lacks is not a column of the row.
+    return [...this.joinRows(plan).row.promoted.entries()].filter(([, f]) => !f.optional)
+      .map(([name, f]) => ({ name, spec: f.spec, table: f.table }));
   }
 
   outputFieldType(plan, name) {
@@ -2104,6 +2180,8 @@ export class Translator {
     derived.sourceTable = '';
     derived.sourceAlias = alias;
     derived.sourceSubquery = plan;
+    // Still named after the pipeline's variable, until a LINK has joined.
+    derived.rootName = plan.joins?.length ? null : (plan.rootName ?? null);
     if (plan.bucket !== null) derived.bucket = 'sealed';
     return derived;
   }
@@ -2226,6 +2304,7 @@ export class Translator {
 
     let plan = new RelationalPlan();
     plan.sourceName = curr.name;
+    plan.rootName = curr.name;
     plan.sourceRelation = b;
     plan.sourceTable = b.from;
     plan.sourceAlias = b.alias ?? null;
@@ -2501,6 +2580,16 @@ export class Translator {
 
         case 'LINK':
         case 'LINK_LEFT': {
+          // The steps before the LINK refuse first, as written: their keys (a
+          // sort's, a bucket's) are otherwise checked only when the statement
+          // is rendered, after this LINK and the steps after it were analysed,
+          // which reported a later step's refusal where run() raises at the
+          // earlier one. Lisp has done this since review 2026-09-25 SQL-03;
+          // the widened SQL fuzzer found the other hosts did not (review
+          // 2026-09-28 SQL-10).
+          if (plan.orderBy.length || plan.projections || plan.selectCols || plan.groupBy) {
+            this.compileStatement(plan);
+          }
           plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
           if (args.length !== 3 && args.length !== 5) {
             refuse('E_ARITY', `${name} takes 3 or 5 arguments`, step.pos);
@@ -2523,15 +2612,31 @@ export class Translator {
             if (!constants.isBinderName(args[2]) || !constants.isBinderName(args[3])) {
               refuse('E_SQL_SHAPE', 'join binders must be bare names', args[2].pos);
             }
-            join.leftBinder = args[2].name;
-            join.rightBinder = args[3].name;
+            join.leftNames = [args[2].name];
+            join.rightNames = [args[3].name];
             join.onPred = args[4];
           } else {
-            join.leftBinder = plan.sourceAlias ?? '_1';
-            join.rightBinder = join.sourceAlias ?? '_2';
+            // The evaluator names a three-argument LINK's sides after the
+            // variable their pipeline starts from, unless an earlier LINK is
+            // in the way (spec §7.4).
+            join.leftNames = plan.joins.length === 0 && plan.rootName !== null ? [plan.rootName] : [];
+            join.rightNames = [rightNode.name];
             join.onPred = args[2];
           }
-          if (join.sourceAlias === null) join.sourceAlias = join.rightBinder;
+          // The SQL alias of a table the binding leaves unaliased: the five-argument
+          // form's right binder, `_2` otherwise. An alias, not a SEL name.
+          if (join.sourceAlias === null) join.sourceAlias = args.length === 5 ? join.rightNames[0] : '_2';
+          // One table alias per occurrence: a relation joined a second time
+          // under the alias it already has (a self-join, or a chain back to it)
+          // rendered the alias twice, which the server rejects as ambiguous
+          // (review 2026-09-28 SQL-09). The program stays in memory.
+          {
+            const open = [plan.sourceAlias ?? relationAlias(plan.sourceRelation), ...plan.joins.map((j) => j.sourceAlias)];
+            if (open.some((alias) => asciiUpper(String(alias)) === asciiUpper(String(join.sourceAlias)))) {
+              refuse('E_SQL_SHAPE', `${rightNode.name} would be joined under the table alias ${join.sourceAlias}, `
+                + 'which this statement already uses; bind the relation a second time under another alias', rightNode.pos);
+            }
+          }
           join.pos = step.pos;
           plan.joins.push(join);
           break;
@@ -2769,7 +2874,7 @@ export class Translator {
         for (const f of fields) {
           if (!first) parts.push(', ');
           first = false;
-          parts.push(this.emit.column(this.relationTableAlias(f.owner), f.spec?.column ?? f.name));
+          parts.push(this.emit.column(f.table, f.spec?.column ?? f.name));
         }
       } else {
         if (plan.sourceAlias !== null) {
@@ -2932,6 +3037,32 @@ function aggShape(n) {
 
 // The alias a relation binding renders under — its own, or the table name when it
 // declares none. The same rule Bindings.checkAliases applies.
+// A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
+function binderKeys(names) {
+  const out = [];
+  for (const name of names) {
+    for (const k of [name, name.replace(/[A-Z]/g, (c) => c.toLowerCase())]) if (!out.includes(k)) out.push(k);
+  }
+  return out;
+}
+
+function withNames(row, names) {
+  if (row.side) return { ...row, names };
+  const out = { ...row, nested: new Map(row.nested) };
+  for (const k of names) out.nested.set(k, out);
+  return out;
+}
+
+function rowKeys(row) {
+  return row.side ? [...Object.keys(row.relation.fields ?? {}), ...row.names] : [...row.nested.keys(), ...row.promoted.keys()];
+}
+
+function scalarFields(row) {
+  if (!row.side) return [...row.promoted.entries()];
+  return Object.entries(row.relation.fields ?? {})
+    .map(([u, spec]) => [u, { spec, table: row.table, qualify: row.qualify, optional: false }]);
+}
+
 function relationAlias(rel) {
   const alias = rel.alias ?? null;
   if (typeof alias === 'string' && alias !== '') return alias;

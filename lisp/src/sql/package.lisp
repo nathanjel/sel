@@ -54,8 +54,8 @@
    #:join-plan-source-relation
    #:join-plan-source-table
    #:join-plan-source-alias
-   #:join-plan-left-binder
-   #:join-plan-right-binder
+   #:join-plan-left-names
+   #:join-plan-right-names
    #:join-plan-on-pred
    #:join-plan-pos
 

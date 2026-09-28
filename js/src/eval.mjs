@@ -8,6 +8,7 @@ import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BOOL } from './value.mjs';
 import { bytesCompare } from './utf8.mjs';
 import { OpCode } from './math_plan.mjs';
+import { checkSizedInt, MAX_SCALE, MAX_POWER } from './builtins/number.mjs';
 
 // Exported so the SQL translator can say "as deep as the evaluator counts"
 // rather than repeating 200, the same way python/sel/sql does.
@@ -191,20 +192,12 @@ export function evalMathPlan(plan, ctx) {
         scratchpad[step.dst] = D.trunc(scratchpad[step.src1]);
         break;
       case OpCode.ROUND: {
-        const d2 = scratchpad[step.src2];
-        if (!D.isInteger(d2)) fail('E_NOT_INT', 'ROUND argument 2 must be a whole number', step.auxPos);
-        const n = D.toSafeInt(d2);
-        if (n < 0) fail('E_RANGE', 'ROUND argument 2 must not be negative', step.auxPos);
-        if (n > 1000000) fail('E_RANGE', `ROUND scale ${n} exceeds the maximum of 1000000`, step.auxPos);
+        const n = checkSizedInt(scratchpad[step.src2], 'ROUND', 2, MAX_SCALE, 'ROUND scale', step.auxPos);
         scratchpad[step.dst] = D.round(scratchpad[step.src1], n, step.pos);
         break;
       }
       case OpCode.POWER: {
-        const d2 = scratchpad[step.src2];
-        if (!D.isInteger(d2)) fail('E_NOT_INT', 'POWER argument 2 must be a whole number', step.auxPos);
-        const n = D.toSafeInt(d2);
-        if (n < 0) fail('E_RANGE', 'POWER argument 2 must not be negative', step.auxPos);
-        if (n > 100000) fail('E_RANGE', `POWER exponent ${n} exceeds the maximum of 100000`, step.auxPos);
+        const n = checkSizedInt(scratchpad[step.src2], 'POWER', 2, MAX_POWER, 'POWER exponent', step.auxPos);
         scratchpad[step.dst] = D.power(scratchpad[step.src1], n, step.pos);
         break;
       }

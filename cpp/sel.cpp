@@ -167,13 +167,6 @@ void encode_cp(std::string& out, char32_t c) {
   }
 }
 
-std::string encode_utf8(const CodePoints& cps) {
-  std::string out;
-  out.reserve(cps.size());
-  for (char32_t c : cps) encode_cp(out, c);
-  return out;
-}
-
 std::string encode_utf8(std::span<const char32_t> cps) {
   std::string out;
   out.reserve(cps.size());
@@ -1289,6 +1282,7 @@ struct Internals {
     v.p_->mutable_coll().storage.reserve(reserve_size);
     return v;
   }
+  static Value shaped(std::shared_ptr<const RecordShape> shape, std::vector<Value> storage);
   static Value from_dec(Dec d) {
     Value v;
     v.p_->kind = Kind::Text;
@@ -1479,8 +1473,40 @@ void Value::destroy(Impl* p) {
   }
 }
 
+// A Dec from host code (spec §8; review 2026-09-28 HOST-13, HOST-14): any of its
+// three forms -- the small mantissa, the digit string, the limbs -- must be a
+// decimal, and the value is rebuilt canonical (leading zeros go, a negative zero
+// loses its sign) and within the digit caps. The interpreter's own decimals go
+// through Internals::from_dec, unchecked.
 Value Value::num(const Dec& d) {
-  return Internals::from_dec(d);
+  auto bad = [](const std::string& why) -> Value {
+    throw SelError("E_BAD_ARG", "not a decimal: " + why, Pos{});
+  };
+  if (d.scale < 0) return bad("the scale is negative");
+  if (d.scale > MAX_FRAC_DIGITS) {
+    throw SelError("E_RANGE", "number has more than " + std::to_string(MAX_FRAC_DIGITS) + " fractional digits",
+                   Pos{});
+  }
+  std::string digits;
+  if (d.small) {
+    if ((d.mantissa < 0) != d.neg && d.mantissa != 0) return bad("the mantissa's sign disagrees with neg");
+    const __uint128_t mag = d.mantissa < 0 ? static_cast<__uint128_t>(-(d.mantissa))
+                                           : static_cast<__uint128_t>(d.mantissa);
+    digits = dec_digits_from_magnitude(mag);
+  } else if (!d.digits.empty()) {
+    for (const char ch : d.digits) {
+      if (ch < '0' || ch > '9') return bad("the digits are not ASCII digits");
+    }
+    digits = d.digits;
+  } else if (!d.limbs.empty()) {
+    for (const std::uint32_t limb : d.limbs) {
+      if (limb >= BASE_10E9) return bad("a limb is not below 10^9");
+    }
+    digits = limbs_to_string(d.limbs);
+  } else {
+    digits = "0";
+  }
+  return Internals::from_dec(dec_guard(dec_make(d.neg, std::move(digits), d.scale), Pos{}));
 }
 
 Value Value::num(std::shared_ptr<const Dec> d) {
@@ -1493,7 +1519,7 @@ namespace {
 Value make_text(std::string utf8) { return Internals::raw(Kind::Text, std::move(utf8), false); }
 Value make_bin(std::string bytes) { return Internals::raw(Kind::Bin, std::move(bytes), false); }
 Value make_num(const Dec& d) {
-  return Value::num(d);
+  return Internals::from_dec(d);
 }
 Value make_num(Dec&& d) {
   return Internals::from_dec(std::move(d));
@@ -1544,8 +1570,15 @@ Value Value::list(std::vector<Value> values) {
 }
 
 Value Value::record(std::vector<std::string> keys, std::vector<Value> values) {
+  // Keys and values pair up, and every key is text (spec §8; review
+  // 2026-09-28 HOST-12, HOST-17): a record from host code is checked here
+  // rather than failing later, in a dump or an INDEXES, far from the input.
   if (keys.size() != values.size()) {
-    throw std::invalid_argument("SEL record needs one value per key");
+    throw SelError("E_BAD_ARG", std::to_string(keys.size()) + " key(s) and " + std::to_string(values.size()) +
+                   " value(s) do not pair up", Pos{});
+  }
+  for (const std::string& key : keys) {
+    if (!sel::is_valid_utf8(key)) throw SelError("E_UTF8", "key is not valid UTF-8", Pos{});
   }
   bool duplicate = false;
   if (keys.size() <= 16) {
@@ -1572,14 +1605,30 @@ Value Value::record(std::vector<std::string> keys, std::vector<Value> values) {
     for (std::size_t i = 0; i < keys.size(); ++i) out.set(keys[i], values[i]);
     return out;
   }
-  return shaped(intern_record_shape(std::move(keys)), std::move(values));
+  return Internals::shaped(intern_record_shape(std::move(keys)), std::move(values));
 }
 
+// A shape from host code is checked like a key list: text, each key once, one
+// slot per key (spec §8; review 2026-09-28 HOST-12, HOST-17, HOST-18). The
+// interpreter's own shapes go through Internals::shaped.
 Value Value::shaped(std::shared_ptr<const RecordShape> shape, std::vector<Value> storage) {
-  if (!shape || shape->keys.size() != storage.size()) {
-    throw std::invalid_argument("SEL shaped value needs one slot per record key");
+  if (!shape) throw SelError("E_BAD_ARG", "a shaped value needs a shape", Pos{});
+  if (shape->keys.size() != storage.size()) {
+    throw SelError("E_BAD_ARG", std::to_string(shape->keys.size()) + " key(s) and " +
+                   std::to_string(storage.size()) + " value(s) do not pair up", Pos{});
   }
-  Value v(make_collection_impl());
+  std::unordered_set<std::string_view> seen;
+  for (const std::string& key : shape->keys) {
+    if (!sel::is_valid_utf8(key)) throw SelError("E_UTF8", "key is not valid UTF-8", Pos{});
+    if (!seen.insert(key).second) {
+      throw SelError("E_BAD_ARG", "a record shape cannot hold the key \"" + key + "\" twice", Pos{});
+    }
+  }
+  return Internals::shaped(std::move(shape), std::move(storage));
+}
+
+Value Internals::shaped(std::shared_ptr<const RecordShape> shape, std::vector<Value> storage) {
+  Value v(Value::make_collection_impl());
   v.p_->scalar_computed = true;
   v.p_->mutable_coll().shape = std::move(shape);
   v.p_->mutable_coll().storage = std::move(storage);
@@ -3529,7 +3578,7 @@ Value eval_dispatch(const Node& node, Context& ctx) {
   switch (node.t) {
     case NT::Num: {
       if (node.dec) {
-        return Value::num(*node.dec);
+        return Internals::from_dec(*node.dec);
       }
       return Value::num(node.s);
     }
@@ -3714,7 +3763,6 @@ CodePoints cps_of(const std::string& s) { return decode_utf8(s); }
 // 0-based code point index of `needle` in `hay`, or -1.
 long index_of_cp(const CodePoints& hay, const CodePoints& needle, long from) {
   const long n = static_cast<long>(needle.size());
-  if (n == 0) return -1;
   // `from` comes from a user-supplied count and can be enormous; returning
   // early keeps `i + n` below the overflow that UBSan flags.
   if (from < 0 || from > static_cast<long>(hay.size())) return -1;
@@ -3886,7 +3934,7 @@ Value ensure_row_table_alias(const Value& row, const std::string& table) {
     storage.insert(storage.end(), old_storage.begin(), old_storage.end());
     storage.push_back(row);
     if (plan->append_lower) storage.push_back(row);
-    return Value::shaped(plan->destination, std::move(storage));
+    return Internals::shaped(plan->destination, std::move(storage));
   }
   Value out = Value::none();
   for (const auto& [key, value] : row.entries()) out.set(key, value);
@@ -5178,7 +5226,7 @@ Value shape_record(const Value& record) {
     keys.push_back(key);
     values.push_back(value);
   }
-  return Value::shaped(intern_record_shape(std::move(keys)), std::move(values));
+  return Internals::shaped(intern_record_shape(std::move(keys)), std::move(values));
 }
 
 void register_structure() {
@@ -5216,7 +5264,7 @@ void register_structure() {
                   std::vector<Value> values;
                   values.reserve(rec.size());
                   for (const auto& entry : rec.entries()) values.push_back(entry.second);
-                  return Value::shaped(a.record_shape(), std::move(values));
+                  return Internals::shaped(a.record_shape(), std::move(values));
                 }
                 return shape_record(rec);
               }});

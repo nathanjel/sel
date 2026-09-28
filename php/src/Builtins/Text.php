@@ -23,9 +23,6 @@ final class Text
     private static function indexOfCp(array $hay, array $needle, int $from): int
     {
         $n = count($needle);
-        if ($n === 0) {
-            return -1;
-        }
         $limit = count($hay) - $n;
         for ($i = $from; $i <= $limit; $i++) {
             $ok = true;

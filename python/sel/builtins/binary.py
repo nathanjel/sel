@@ -130,7 +130,7 @@ def _crc32(a, ctx):
 define('CRC32', 1, 1, fn=_crc32)
 
 define('BTL', 1, 1,
-       fn=lambda a, ctx: Value.list([Value.int(b) for b in a.bytes(0)]))
+       fn=lambda a, ctx: Value._list_owned([Value.int(b) for b in a.bytes(0)]))
 
 
 def _ltb(a, ctx):

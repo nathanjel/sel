@@ -757,10 +757,14 @@ occur in the left. This is decided for each pair from its own two elements, in
 each element's own field order: elements of one side need not share a shape,
 and no row takes its keys from another. A *nested record* is a field whose
 value is a record with at least one field; every other field — text, a
-number, `BOOL`, `BIN`, `NULL`, a list — is a scalar field. The left binders are `_1`, the name given in the
-five-argument form, and — when the argument is a bare name, or a pipeline whose
-source is one — that name and its ASCII lowercase; the right binders are `_2`
-and likewise. A binder holds the element as `pred` saw it, which for a named
+number, `BOOL`, `BIN`, `NULL`, a list — is a scalar field. The left binders are `_1` and a name with its
+ASCII lowercase: in the five-argument form the name given there, and nothing
+else; in the three-argument form the argument's own name, when it is a bare
+name or a pipeline whose source is one with no `LINK` on the way to it (the
+left argument of a second `LINK` in a pipeline has already been joined, and has
+no name). The right binders are `_2` and likewise. Outside these, a relation's
+name inside `pred` is the relation itself, a list, and the joined row has no key
+for it. A binder holds the element as `pred` saw it, which for a named
 argument is the element extended with the name and its lowercase as keys
 holding the element (the lowercase only where the element has no such key,
 and neither when the element already has a field of the name itself, which it
@@ -1037,8 +1041,28 @@ one constructor:
   would be.
 - **The boundary copies.** A constructor and `fromNative` copy what they are
   given, and `toNative` returns data the host owns: changing the host's string,
-  byte array or map afterwards never changes a `Value`, and changing what
-  `toNative` returned never changes the `Value` it came from.
+  byte array, map or list afterwards never changes a `Value`, and changing what
+  `toNative` returned — its keys included — never changes the `Value` it came
+  from.
+- **Keys and values pair up.** A constructor that takes keys and values side
+  by side is `E_BAD_ARG` when their counts differ. A key given twice for a
+  record keeps its first position and takes its last value, as `RECORD` does
+  (§7.4); a list's keys are distinct, and a repeated one is `E_BAD_ARG`.
+- **A decimal is a number.** A constructor that takes the host's own decimal
+  form rather than a string canonicalises it as `Value.num` does a string (a
+  negative zero loses its sign) and obeys the digit caps (`E_RANGE`); one that
+  is not a decimal at all — a negative scale, a mantissa that is not a
+  non-negative whole number — is `E_BAD_ARG`.
+- **A malformed call is `E_BAD_ARG`.** An argument of a kind a constructor
+  does not take — a float, a non-integer for `Value.int`, a native value
+  `fromNative` has no conversion for — raises `E_BAD_ARG`, a SEL error like
+  every other boundary failure, never the host's own exception.
+
+These rules bind every public constructor, not only the ones listed above.
+Each host also builds a record or a list in one call — from keys and values
+side by side, from entries, from a prepared shape, or from native rows — and
+takes a number in its own decimal form; [the host API guide](../docs/usage/README.md#constructors)
+lists them per host.
 
 **`toNative` and `fromNative` are inverses.** `fromNative(toNative(v))` dumps
 exactly as `v` does, for every `v` `toNative` accepts: every key survives as

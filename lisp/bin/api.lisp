@@ -121,6 +121,19 @@
   (handler-case (sel:make-num (make-string 2000001 :initial-element #\1))
     (sel:sel-error (e) (say "error.host.hugenum" (sel:sel-error-code e))))
 
+  ;; Every public constructor holds the same rules (spec §8, review 2026-09-28):
+  ;; the decimal form within the caps and canonical, keys checked, a malformed
+  ;; call E_BAD_ARG -- each host through its own spelling of the constructor.
+  (loop for (name . build)
+          in (list (cons "error.host.dec.fraccap" (lambda () (sel:make-num (sel:dec-make nil 1 1000001))))
+                   (cons "error.host.dec.negscale" (lambda () (sel:make-num (sel:dec-make nil 7 -1))))
+                   (cons "error.host.key.utf8"
+                         (lambda () (sel:from-native (list (cons (coerce (list #\a (code-char #xD800)) 'string) "1")))))
+                   (cons "error.host.malformed" (lambda () (sel:make-int 3/2))))
+        do (handler-case (progn (funcall build) (say name "no error"))
+             (sel:sel-error (e) (say name (sel:sel-error-code e)))))
+  (say "ctor.dec.negzero" (sel:value-dump (sel:make-num (sel:dec-make t 0 0))))
+
   ;; A value nested past the cap is refused by every walk of it. Reachable from the
   ;; host API with no source involved at all -- set() does not refuse, because a
   ;; value is built from the leaf up and nothing knows how deep it will end up --

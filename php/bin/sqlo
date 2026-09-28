@@ -943,6 +943,27 @@ function run_cross(PDO $pdo, string $dialect, bool $verbose, string $label = '')
     $refused = 0;
     $bad = [];
     foreach ($programs as $i => $src) {
+        // A program named "refused: ..." is one run() rejects over the fixture:
+        // every translator must refuse it too. The four SQL defects of review
+        // 2026-09-28 were all SQL for such a program, which this oracle, reading
+        // only programs SEL answers, could not see (TEST-13).
+        if (str_starts_with($names[$i], 'refused: ')) {
+            try {
+                Sel::compile($src)->run($context);
+                $bad[] = [$names[$i], 'SEL answers this program over the fixture; it is not a refusal case'];
+                continue;
+            } catch (SelError $e) {
+            }
+            foreach ($answers as $impl => $lines) {
+                $statement = $lines[$i];
+                if ($statement === '' || $statement[0] === '!' || $statement === '-') {
+                    $refused++;
+                    continue;
+                }
+                $bad[] = [$names[$i], "{$impl}: translates a program run() raises {$e->code} for: {$statement}"];
+            }
+            continue;
+        }
         try {
             $sel = Sel::compile($src)->run($context)->toNative();
         } catch (SelError $e) {

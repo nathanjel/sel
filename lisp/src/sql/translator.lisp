@@ -30,6 +30,9 @@
   (statement-plan nil)
   (in-where nil :type boolean))
 
+(defstruct (source (:constructor %source (shape elements relation filters scalar-rule)))
+  (shape :static) (elements '()) (relation nil) (filters '()) (scalar-rule nil))
+
 (defun list-key (k)
   "The 1-based list position a key names, or NIL when it names none.
 
@@ -213,71 +216,29 @@ known before the query runs" (snode-pos idx))))
 
 (defun translate-index (tr n)
   (let ((obj (sel::node-l n)))
-    ;; Check for nested index: e.g. _["o"]["id"]
-    (when (and (not (clist-p obj))
-               (eq (snode-kind obj) :index)
-               (let ((sub-l (sel::node-l obj)))
-                 (and sub-l (not (clist-p sub-l)) (eq (snode-kind sub-l) :var))))
-      (let* ((row-var (sel::node-l obj))
-             (bound (find-binder tr (sel::node-s row-var))))
-        ;; ... when the inner name is a row. Over a bucket's members or a
-        ;; projected row the inner index is itself the thing to refuse.
-        (when (and bound (member (binder-shape bound) '(:group :projected)))
-          (walk-node tr obj))
-        (when (and bound (eq (binder-shape bound) :row))
-          (let* ((table-alias (constant-index (sel::node-r obj)))
-                 (col-name (constant-index (sel::node-r n)))
-                 (plan (translator-statement-plan tr)))
-            (when plan
-              (let ((match-table nil)
-                    (match-field nil))
-                (cond
-                  ;; A qualifier names a relation by its binding name, its
-                  ;; table, its alias or a binder the join predicate declared
-                  ;; -- never the positional `_1`, which this host alone
-                  ;; accepted (SEL-0043).
-                  ((or (string-equal table-alias (relational-plan-source-alias plan))
-                       (string-equal table-alias (relational-plan-source-name plan))
-                       (string-equal table-alias (relational-plan-source-table plan))
-                       (and (relational-plan-source-subquery plan)
-                            (or (string-equal table-alias (relational-plan-source-alias (relational-plan-source-subquery plan)))
-                                (string-equal table-alias (relational-plan-source-name (relational-plan-source-subquery plan)))))
-                       (some (lambda (j) (and (join-plan-left-binder j)
-                                              (string-equal table-alias (join-plan-left-binder j))))
-                             (relational-plan-joins plan)))
-                   (setf match-table (or (relational-plan-source-alias plan) (relational-plan-source-table plan)))
-                   (let* ((uc (sel::ascii-upcase col-name))
-                          (f (assoc uc (getf (relational-plan-source-relation plan) :fields) :test #'equal)))
-                     (when f (setf match-field (cdr f)))))
-                  (t
-                   (dolist (j (relational-plan-joins plan))
-                     (when (or (string-equal table-alias (join-plan-source-alias j))
-                               (string-equal table-alias (join-plan-source-name j))
-                               (string-equal table-alias (join-plan-source-table j))
-                               (and (join-plan-left-binder j) (string-equal table-alias (join-plan-left-binder j)))
-                               (and (join-plan-right-binder j) (string-equal table-alias (join-plan-right-binder j))))
-                       (setf match-table (or (join-plan-source-alias j) (join-plan-source-table j)))
-                       (let* ((uc (sel::ascii-upcase col-name))
-                              (f (assoc uc (getf (join-plan-source-relation j) :fields) :test #'equal)))
-                         (when f (setf match-field (cdr f))))
-                       (return)))))
-                (when match-table
-                  ;; A qualified read of a field the relation does not have is
-                  ;; E_SQL_BINDING, as in the other four hosts -- it used to be
-                  ;; rendered as a column the table lacks (found by the SQL
-                  ;; fuzzer's link-binder family, review 2026-09-25 TEST-05).
-                  (unless match-field
-                    (refuse "E_SQL_BINDING"
-                            (format nil "~a[\"~a\"] is not a field of that relation" table-alias col-name)
-                            (snode-pos n)))
-                  (return-from translate-index (column-ref tr (qualified-by match-field match-table))))))))))
+    (when (and (translator-statement-plan tr)
+               (not (clist-p obj))
+               (eq (snode-kind obj) :index))
+      ;; `_["orders"]["status"]` reads a field of a record the row carries: a
+      ;; side a LINK bound, or an earlier joined row (spec §7.4). The path is
+      ;; resolved against the keys the row has, so a name it lacks is refused
+      ;; where run() raises E_NO_KEY -- anything else (a bucket's members, a
+      ;; projected row, a relation) is the inner index's own refusal.
+      (let ((row (row-path tr obj n)))
+        (when row
+          (return-from translate-index
+            (row-field tr row "the row" (constant-index (sel::node-r n)) n))))
+      (walk-node tr obj)
+      (refuse "E_SQL_SHAPE"
+              (format nil "only a bound name can be indexed here; SQL has no way to index ~
+into the result of an expression") (snode-pos n)))
 
     ;; A PARENTHESISED variable still has kind :var -- the parser sets only a
     ;; GROUPED flag -- so (C)[1] reaches the same path as C[1].
     (unless (eq (snode-kind obj) :var)
       (refuse "E_SQL_SHAPE"
-              "only a bound name can be indexed here; SQL has no way to index ~
-into the result of an expression" (snode-pos n)))
+              (format nil "only a bound name can be indexed here; SQL has no way to index ~
+into the result of an expression") (snode-pos n)))
     (let ((name (sel::node-s obj))
           (bound (find-binder tr (sel::node-s obj))))
       ;; On the binder path the key is computed INSIDE the call, so
@@ -321,6 +282,221 @@ row its binder gives you" name)
                      (format nil "~a is bound as a column, which has no parts to ~
 index" name)
                      (snode-pos n))))))))
+
+;;; --- joined rows ----------------------------------------------------------
+;;;
+;;; The rows of a statement's joins as SEL has them (spec §7.4 "Joined rows"),
+;;; for resolving what a read names. A side is one relation's row, extended
+;;; with the names its LINK gave it (keys holding itself); a joined row carries
+;;; the records the left element carried, the binders, and the promoted fields
+;;; -- each side's scalar fields whose names, compared ASCII-case-insensitively,
+;;; are not keys of the other element.
+
+(defstruct (row-side (:constructor make-row-side (relation table qualify names)))
+  "One relation's row. NAMES are the keys under which it holds itself."
+  relation table qualify (names '()))
+
+(defstruct (joined-row (:constructor make-joined-row ()))
+  "A LINK's row: NESTED is an alist of exact key -> record (a ROW-SIDE or a
+JOINED-ROW), PROMOTED an alist of upcased field name -> ROW-FIELD-INFO, in the
+order the evaluator promotes them, DROPPED the upcased names both sides had."
+  (nested '()) (promoted '()) (dropped '()))
+
+(defstruct (row-field-info (:constructor make-row-field-info (spec table qualify optional)))
+  "A scalar field of a row: its column SPEC, the TABLE alias it renders under
+when QUALIFY, and OPTIONAL when an unmatched LINK_LEFT row lacks it."
+  spec table qualify optional)
+
+(defun ascii-downcase-name (s)
+  (map 'string (lambda (c) (if (char<= #\A c #\Z) (code-char (+ (char-code c) 32)) c)) s))
+
+(defun alist-put (alist key value)
+  "ALIST with KEY set to VALUE: in place of an existing entry, else appended --
+the insertion order a JS Map keeps."
+  (if (assoc key alist :test #'equal)
+      (mapcar (lambda (cell) (if (equal (car cell) key) (cons key value) cell)) alist)
+      (append alist (list (cons key value)))))
+
+(defun binder-keys (names)
+  "A binder's keys: its name and that name's ASCII lowercase (spec §7.4)."
+  (let ((out '()))
+    (dolist (name names (nreverse out))
+      (dolist (k (list name (ascii-downcase-name name)))
+        (pushnew k out :test #'equal)))))
+
+(defun row-with-names (row names)
+  (if (row-side-p row)
+      (make-row-side (row-side-relation row) (row-side-table row) (row-side-qualify row) names)
+      (let ((out (copy-joined-row row)))
+        (setf (joined-row-nested out) (copy-list (joined-row-nested row)))
+        (dolist (k names out)
+          (setf (joined-row-nested out) (alist-put (joined-row-nested out) k out))))))
+
+(defun row-keys (row)
+  (if (row-side-p row)
+      (append (mapcar #'car (getf (row-side-relation row) :fields)) (row-side-names row))
+      (append (mapcar #'car (joined-row-nested row)) (mapcar #'car (joined-row-promoted row)))))
+
+(defun row-scalar-fields (row)
+  (if (row-side-p row)
+      (mapcar (lambda (cell)
+                (cons (car cell) (make-row-field-info (cdr cell) (row-side-table row)
+                                                      (row-side-qualify row) nil)))
+              (getf (row-side-relation row) :fields))
+      (joined-row-promoted row)))
+
+(defun join-rows (plan)
+  "The models of PLAN's rows, as (JOIN-COUNT ROW STEPS): ROW is the statement's
+row, STEPS each join's (LEFT . RIGHT) elements. A LINK's left element is the
+source's row for the first LINK and the previous joined row after that; its
+own name is the source's only for the first three-argument LINK, as the
+evaluator names an argument (a pipeline that already joined is not named). The
+right side of a LINK_LEFT promotes nothing for a row with no match, so its
+fields are OPTIONAL. Cached per number of joins."
+  (let* ((joins (relational-plan-joins plan))
+         (n (length joins))
+         (cache (relational-plan-join-rows-cache plan)))
+    (when (and cache (= (first cache) n))
+      (return-from join-rows cache))
+    (flet ((own (alias) (and (stringp alias) (plusp (length alias)) alias)))
+      (let* ((qualify (not (null (or joins (relational-plan-source-subquery plan)))))
+             (src-rel (relational-plan-source-relation plan))
+             (left (make-row-side src-rel
+                                  (or (own (relational-plan-source-alias plan)) (relation-alias src-rel))
+                                  qualify '()))
+             (steps '()))
+        (dolist (j joins)
+          (let* ((left-names (binder-keys (join-plan-left-names j)))
+                 (right-names (binder-keys (join-plan-right-names j)))
+                 (right-rel (join-plan-source-relation j))
+                 (right (make-row-side right-rel
+                                       (or (own (join-plan-source-alias j)) (relation-alias right-rel))
+                                       qualify right-names))
+                 (left-el (row-with-names left left-names)))
+            (loop for (el . names) in (list (cons left-el (join-plan-left-names j))
+                                            (cons right (join-plan-right-names j)))
+                  when (row-side-p el)
+                    do (dolist (name names)
+                         (when (assoc (sel::ascii-upcase name) (getf (row-side-relation el) :fields)
+                                      :test #'equal)
+                           (refuse "E_SQL_SHAPE"
+                                   (format nil "~a names a LINK side that has a field of that ~
+name too, which SEL binds instead of the row; rename the binder" name)
+                                   (join-plan-pos j)))))
+            (let ((row (make-joined-row)))
+              (unless (row-side-p left-el)
+                (setf (joined-row-nested row) (copy-list (joined-row-nested left-el))))
+              (dolist (k (cons "_1" left-names))
+                (setf (joined-row-nested row) (alist-put (joined-row-nested row) k left-el)))
+              (dolist (k (cons "_2" right-names))
+                (setf (joined-row-nested row) (alist-put (joined-row-nested row) k right)))
+              (let ((left-keys (mapcar #'sel::ascii-upcase (row-keys left-el)))
+                    (right-keys (mapcar #'sel::ascii-upcase (row-keys right)))
+                    (promoted '())
+                    (dropped '()))
+                (dolist (cell (row-scalar-fields left-el))
+                  (if (member (car cell) right-keys :test #'equal)
+                      (pushnew (car cell) dropped :test #'equal)
+                      (push cell promoted)))
+                (dolist (cell (row-scalar-fields right))
+                  (if (member (car cell) left-keys :test #'equal)
+                      (pushnew (car cell) dropped :test #'equal)
+                      (push (if (eq (join-plan-type j) :left)
+                                (let ((f (copy-row-field-info (cdr cell))))
+                                  (setf (row-field-info-optional f) t)
+                                  (cons (car cell) f))
+                                cell)
+                            promoted)))
+                (setf (joined-row-promoted row) (nreverse promoted)
+                      (joined-row-dropped row) dropped))
+              (push (cons left-el right) steps)
+              (setf left row))))
+        (setf (relational-plan-join-rows-cache plan) (list n left (nreverse steps)))))))
+
+(defun row-path (tr node outer)
+  "The record a path of constant indexes names, when it starts at a row binder
+of this statement: `_`, `_[\"X\"]`, `A[\"Y\"][\"y\"]`. NIL when the path does
+not start at a row, for the caller to refuse as it would anyway. OUTER is the
+node indexing this one: a field indexed further fails there, where run()
+raises, and a key the row lacks at the node itself."
+  (when (clist-p node) (return-from row-path nil))
+  (case (snode-kind node)
+    (:var (let ((b (find-binder tr (sel::node-s node))))
+            (and b (eq (binder-shape b) :row) (binder-model b))))
+    (:index (let ((inner (row-path tr (sel::node-l node) node)))
+              (and inner
+                   (row-nested inner (constant-index (sel::node-r node)) node outer))))
+    (t nil)))
+
+(defun row-nested (row key n outer)
+  "`row[key]` where the value must be a record: a side the row carries, or the
+side itself under one of the names its LINK gave it."
+  (if (row-side-p row)
+      (when (member key (row-side-names row) :test #'equal)
+        (return-from row-nested row))
+      (let ((cell (assoc key (joined-row-nested row) :test #'equal)))
+        (when cell (return-from row-nested (cdr cell)))))
+  (when (list-key key)
+    (refuse "E_SQL_SHAPE"
+            (format nil "[~a] asks for a row by position, and a relation has no first ~
+row without an ORDER BY that nothing here can supply" key)
+            (snode-pos n)))
+  (when (row-field-spec row key)
+    (refuse "E_SQL_SHAPE" (format nil "[\"~a\"] is a field, which has no parts to index" key)
+            (snode-pos outer)))
+  (refuse "E_SQL_SHAPE"
+          (format nil "only a bound name can be indexed here; SQL has no way to index ~
+into the result of an expression (~a names no record this row carries)" key)
+          (snode-pos n)))
+
+(defun row-field-spec (row key)
+  (let ((u (sel::ascii-upcase key)))
+    (if (row-side-p row)
+        (let ((cell (assoc u (getf (row-side-relation row) :fields) :test #'equal)))
+          (and cell (make-row-field-info (cdr cell) (row-side-table row) (row-side-qualify row) nil)))
+        (cdr (assoc u (joined-row-promoted row) :test #'equal)))))
+
+(defun row-field (tr row label key n)
+  "`row[key]` where the value must be a column. LABEL names the row for the
+message: the binder's name, or \"the row\"."
+  (when (list-key key)
+    (refuse "E_SQL_SHAPE"
+            (format nil "~a[~a] asks for a row by position, and a relation has no first ~
+row without an ORDER BY that nothing here can supply" label key)
+            (snode-pos n)))
+  (when (if (row-side-p row)
+            (member key (row-side-names row) :test #'equal)
+            (assoc key (joined-row-nested row) :test #'equal))
+    (refuse "E_SQL_SHAPE"
+            (format nil "~a[\"~a\"] is a record, which is a map in SEL and not one value; ~
+name the field you mean" label key)
+            (snode-pos n)))
+  (let ((f (row-field-spec row key)))
+    (unless f
+      (when (and (joined-row-p row)
+                 (member (sel::ascii-upcase key) (joined-row-dropped row) :test #'equal))
+        (refuse "E_SQL_SHAPE" (format nil "field \"~a\" is ambiguous across joined relations" key)
+                (snode-pos n)))
+      (let ((known (sort (mapcar #'car (if (row-side-p row)
+                                           (getf (row-side-relation row) :fields)
+                                           (joined-row-promoted row)))
+                         #'string<)))
+        (refuse "E_SQL_BINDING"
+                (format nil "~a[\"~a\"] is not a field of that ~a~a" label key
+                        (if (row-side-p row) "relation" "joined row")
+                        (if known (format nil "; it has ~{~a~^, ~}" known) "; it declares none"))
+                (snode-pos n))))
+    (when (row-field-info-optional f)
+      ;; An unmatched LINK_LEFT row promotes nothing from the right (spec
+      ;; §7.4), so it has no such key, where the LEFT JOIN's column is NULL.
+      ;; Through the right binder the field is NULL in both.
+      (refuse "E_SQL_SHAPE"
+              (format nil "~a[\"~a\"] is a field of the right side of a LINK_LEFT, which a ~
+row with no match does not have; read it through the right binder" label key)
+              (snode-pos n)))
+    (column-ref tr (if (row-field-info-qualify f)
+                       (qualified-by (row-field-info-spec f) (row-field-info-table f))
+                       (row-field-info-spec f)))))
 
 (defun collated-key (tr f)
   "A group key, rendered as the GROUP BY expression itself -- wherever it
@@ -448,7 +624,13 @@ and not one value; name the field you mean" (sel::node-s n))
     (:row
      (let* ((rel (binder-payload b))
             (fields (getf rel :fields))
-            (name (sel::node-s n)))
+            (name (sel::node-s n))
+            (model (binder-model b)))
+       (when (joined-row-p model)
+         (refuse "E_SQL_SHAPE"
+                 (format nil "~a is a joined row, which is a map in SEL and not one value; ~
+name the field you mean" name)
+                 (snode-pos n)))
        ;; The multi-field check comes FIRST, so a two-field relation that
        ;; declares a scalar still refuses as multi-field.
        (when (> (length fields) 1)
@@ -464,7 +646,9 @@ a map in SEL and not one value; name the field you mean" name (length fields))
 which of its fields a bare reference means; give the binding a \"scalar\", or ~
 index the field you want" name)
                    (snode-pos n)))
-         (column-ref tr (cdr cell)))))
+         (column-ref tr (if (and model (row-side-qualify model))
+                            (qualified-by (cdr cell) (row-side-table model))
+                            (cdr cell))))))
     ;; How `_K` inside a relation body reports "a row of a relation has no key"
     ;; rather than being reported as an unbound variable.
     (:none (refuse "E_SQL_SHAPE" (binder-reason b) (snode-pos n)))
@@ -509,35 +693,12 @@ SUM(~a, _[~s])" name key name key)
                (format nil "~a[~a] asks for a row by position, and a relation has ~
 no first row without an ORDER BY that nothing here can supply" name key)
                (snode-pos n)))
+     (when (binder-model b)
+       (return-from index-binder (row-field tr (binder-model b) name key n)))
      (let* ((plan (translator-statement-plan tr))
             (uc-key (sel::ascii-upcase key)))
        (let* ((fields (getf (binder-payload b) :fields))
               (cell (assoc uc-key fields :test #'equal)))
-         (when (binder-joined b)
-           (when (and cell plan (relational-plan-joins plan))
-             (dolist (j (relational-plan-joins plan))
-               (let* ((j-fields (getf (join-plan-source-relation j) :fields))
-                      (j-cell (assoc uc-key j-fields :test #'equal)))
-                 (when j-cell
-                   (refuse "E_SQL_SHAPE"
-                           (format nil "column '~a' is ambiguous across joined tables; qualify with table alias" key)
-                           (snode-pos n))))))
-           (unless cell
-             (when (and plan (relational-plan-joins plan))
-               (let ((matches '()))
-                 (dolist (j (relational-plan-joins plan))
-                   (let* ((j-fields (getf (join-plan-source-relation j) :fields))
-                          (j-cell (assoc uc-key j-fields :test #'equal)))
-                     (when j-cell
-                       (push (qualified-by (cdr j-cell)
-                                           (or (join-plan-source-alias j) (join-plan-source-table j)))
-                             matches))))
-                 (when (= (length matches) 1)
-                   (return-from index-binder (column-ref tr (first matches))))
-                 (when (> (length matches) 1)
-                   (refuse "E_SQL_SHAPE"
-                           (format nil "column '~a' is ambiguous across joined tables; qualify with table alias" key)
-                           (snode-pos n)))))))
          (unless cell
            (refuse "E_SQL_BINDING"
                    (format nil "~a[~s] is not a field of that relation~a" name key
@@ -546,10 +707,9 @@ no first row without an ORDER BY that nothing here can supply" name key)
                                        (sort (mapcar #'car fields) #'string<))
                                "; it declares none"))
                    (snode-pos n)))
-         ;; In a joined statement a row's own field renders under the alias
-         ;; its relation renders under -- the joined row's source, or the `_1`
-         ;; / `_2` side a join predicate names -- like the other side's fields
-         ;; above; a row of a single relation is left as the binding declared it.
+         ;; A row of another relation (no model): in a joined statement its
+         ;; field renders under the alias its relation renders under; a row
+         ;; of a single relation is left as the binding declared it.
          (column-ref tr (if (and plan (relational-plan-joins plan))
                             (qualified-by (cdr cell) (joined-relation-alias plan (binder-payload b)))
                             (cdr cell))))))
@@ -1485,9 +1645,6 @@ bind it as a column, or convert it before translating" pos))
                   (cons (car cell) (binder-node (value-node tr (cdr cell) spec pos))))
                 (sel:value-entries v)))))
 
-(defstruct (source (:constructor %source (shape elements relation filters scalar-rule)))
-  (shape :static) (elements '()) (relation nil) (filters '()) (scalar-rule nil))
-
 (defun classify (tr src)
   "THE SHAPE CLASSIFIER. Branch order is exactly the other hosts'."
   (when (eq (snode-kind src) :call)
@@ -1607,43 +1764,24 @@ resolves to the key -- which is what the evaluator does."
     (unwind-protect (funcall render) (pop (translator-frames tr)))))
 
 (defun with-join-binders (tr plan j render)
-  (let* ((left-rel (relational-plan-source-relation plan))
-         (right-rel (join-plan-source-relation j))
-         (left-row (binder-row left-rel))
-         (right-row (binder-row right-rel))
+  "A LINK's predicate sees `_`/`_1` as its left element and `_2` as its right,
+plus the names the LINK gives them (spec §7.4) and nothing else: a relation's
+name outside those, its alias or its table is not a binder (review 2026-09-28
+SQL-07), and the left element of a later LINK is the joined row so far, not
+the source (SQL-05)."
+  (let* ((step (nth (position j (relational-plan-joins plan)) (third (join-rows plan))))
+         (left-row (binder-row (relational-plan-source-relation plan)))
+         (right-row (binder-row (join-plan-source-relation j)))
          (frame '()))
+    (setf (binder-model left-row) (car step)
+          (binder-model right-row) (cdr step))
+    (setf frame (frame-set frame "_" left-row))
     (setf frame (frame-set frame "_1" left-row))
     (setf frame (frame-set frame "_2" right-row))
-    (setf frame (frame-set frame "_" left-row))
-    (when (relational-plan-source-alias plan)
-      (setf frame (frame-set frame (relational-plan-source-alias plan) left-row)))
-    (when (relational-plan-source-table plan)
-      (setf frame (frame-set frame (relational-plan-source-table plan) left-row)))
-    (when (relational-plan-source-name plan)
-      (setf frame (frame-set frame (relational-plan-source-name plan) left-row)))
-    (when (join-plan-source-alias j)
-      (setf frame (frame-set frame (join-plan-source-alias j) right-row)))
-    (when (join-plan-source-table j)
-      (setf frame (frame-set frame (join-plan-source-table j) right-row)))
-    (when (join-plan-source-name j)
-      (setf frame (frame-set frame (join-plan-source-name j) right-row)))
-    (when (join-plan-left-binder j)
-      (setf frame (frame-set frame (join-plan-left-binder j) left-row)))
-    (when (join-plan-right-binder j)
-      (setf frame (frame-set frame (join-plan-right-binder j) right-row)))
-    ;; Also make all joined tables available in scope
-    (let ((idx 2))
-      (dolist (other-j (relational-plan-joins plan))
-        (unless (eq other-j j)
-          (incf idx)
-          (let ((other-row (binder-row (join-plan-source-relation other-j))))
-            (setf frame (frame-set frame (format nil "_~d" idx) other-row))
-            (when (join-plan-source-alias other-j)
-              (setf frame (frame-set frame (join-plan-source-alias other-j) other-row)))
-            (when (join-plan-source-table other-j)
-              (setf frame (frame-set frame (join-plan-source-table other-j) other-row)))
-            (when (join-plan-source-name other-j)
-              (setf frame (frame-set frame (join-plan-source-name other-j) other-row)))))))
+    (dolist (name (join-plan-left-names j))
+      (setf frame (frame-set frame name left-row)))
+    (dolist (name (join-plan-right-names j))
+      (setf frame (frame-set frame name right-row)))
     (push frame (translator-frames tr))
     (unwind-protect (funcall render) (pop (translator-frames tr)))))
 
@@ -1666,13 +1804,14 @@ and a subquery reusing its own alias shadows the outer row rather than comparing
 against it; the correlation names the alias, so it cannot be renamed here" alias))))))
     (let ((row (binder-row (source-relation src)))
           (frame '()))
-      ;; The row of a joined statement: a field read through it resolves across
-      ;; the sides (ambiguous when both have it), whatever the binder is called.
-      ;; Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
-      ;; after a LINK resolve to the left side where `run()` raises E_NO_KEY.
+      ;; The row of the statement: after a LINK the joined row, whose promoted
+      ;; fields and nested records a read resolves against, whatever the
+      ;; binder is called. Gating that on the name `_` let `MAP(r,
+      ;; RECORD("name", r["name"]))` after a LINK resolve to the left side
+      ;; where `run()` raises E_NO_KEY.
       (let ((plan (translator-statement-plan tr)))
-        (when (and plan (relational-plan-joins plan))
-          (setf (binder-joined row) t)))
+        (when (and plan (eq (source-relation src) (relational-plan-source-relation plan)))
+          (setf (binder-model row) (second (join-rows plan)))))
       (setf frame (frame-set frame binder-name row))
       ;; The statement binds the name given and nothing else, as the
       ;; evaluator does -- `MAP(g, _["x"])` leaves `_` undefined (review
@@ -2128,30 +2267,15 @@ SQL counterpart" (snode-pos e)))
 
 (defun joined-row-fields (plan)
   "The fields of a joined row that SQL can carry (spec §7.4 \"Joined rows\"):
-the promoted ones -- a side's fields whose names, compared
-ASCII-case-insensitively, do not occur on the other side -- accumulated join
-by join as the evaluator promotes them. The binders (`_1`, `_2`, the
-relations' names) are nested records with no column, and a name both sides
-carry is E_NO_KEY in SEL; neither is projected, so a read of either over the
-derived table is refused where `run()` raises. `SELECT o.*` was the row
-before: the left table's columns, which a continuation read where SEL has no
-key, and which made a derived table over a join name columns it did not have
-(finding Y, lanes). Each entry is (NAME SPEC OWNER): the field's upcased name,
-its spec plist and the relation it belongs to."
-  (flet ((entries (rel)
-           (mapcar (lambda (f) (list (car f) (cdr f) rel)) (getf rel :fields))))
-    (let ((acc (entries (relational-plan-source-relation plan))))
-      (dolist (j (relational-plan-joins plan) acc)
-        (let* ((right (entries (join-plan-source-relation j)))
-               (left-names (mapcar (lambda (f) (sel::ascii-upcase (first f))) acc))
-               (right-names (mapcar (lambda (f) (sel::ascii-upcase (first f))) right)))
-          (setf acc (append
-                     (remove-if (lambda (f) (member (sel::ascii-upcase (first f)) right-names
-                                                    :test #'equal))
-                                acc)
-                     (remove-if (lambda (f) (member (sel::ascii-upcase (first f)) left-names
-                                                    :test #'equal))
-                                right))))))))
+the promoted ones of JOIN-ROWS' model. The binders (`_1`, `_2`, the LINK's
+names) are nested records with no column, a name both sides carry is E_NO_KEY
+in SEL, and a field an unmatched LINK_LEFT row lacks is not a column of the
+row; none is projected, so a read of one over the derived table is refused
+where `run()` raises. Each entry is (NAME SPEC TABLE): the field's upcased
+name, its spec plist and the alias its relation renders under."
+  (loop for (name . f) in (joined-row-promoted (second (join-rows plan)))
+        unless (row-field-info-optional f)
+          collect (list name (row-field-info-spec f) (row-field-info-table f))))
 
 (defun joined-relation-alias (plan rel)
   "The alias REL renders under in PLAN's FROM clause: the plan's own for its
@@ -2254,6 +2378,8 @@ dialect's CANON kind -- the map entry's ret, NUM or TEXT."
      :source-table sub-alias
      :source-alias sub-alias
      :source-subquery plan
+     ;; Still named after the pipeline's variable, until a LINK has joined.
+     :root-name (if (relational-plan-joins plan) nil (relational-plan-root-name plan))
      :bucket (and (relational-plan-bucket plan) :sealed))))
 
 (defun record-fields (node)
@@ -2429,6 +2555,7 @@ can say about a bucket on its own."
         (let* ((spec (binding-spec b))
                (plan (make-relational-plan
                       :source-name name
+                      :root-name name
                       :source-relation spec
                       :source-table (getf spec :from)
                       :source-alias (getf spec :alias)
@@ -2577,30 +2704,65 @@ can say about a bucket on its own."
                          (unless (eq (binding-kind right-b) :relation)
                            (refuse "E_SQL_SHAPE" (format nil "~a is not a relation binding" right-name) (snode-pos right-node)))
                          (let* ((right-spec (binding-spec right-b))
-                                left-binder right-binder pred)
+                                left-names right-names pred)
                            (cond
                              ((= (length step-args) 3)
-                              (setf left-binder (or (relational-plan-source-alias plan) "_1")
-                                    right-binder (or (getf right-spec :alias) "_2")
+                              ;; The evaluator names a three-argument LINK's
+                              ;; sides after the variable their pipeline starts
+                              ;; from, unless an earlier LINK is in the way
+                              ;; (spec §7.4).
+                              (setf left-names (if (and (null (relational-plan-joins plan))
+                                                        (relational-plan-root-name plan))
+                                                   (list (relational-plan-root-name plan))
+                                                   '())
+                                    right-names (list right-name)
                                     pred (third step-args)))
                              ((= (length step-args) 5)
                               (unless (is-binder-name (third step-args))
                                 (refuse "E_SQL_SHAPE" (format nil "the left binder of ~a must be a bare name" sname) (snode-pos (third step-args))))
                               (unless (is-binder-name (fourth step-args))
                                 (refuse "E_SQL_SHAPE" (format nil "the right binder of ~a must be a bare name" sname) (snode-pos (fourth step-args))))
-                              (setf left-binder (sel::node-s (third step-args))
-                                    right-binder (sel::node-s (fourth step-args))
+                              (setf left-names (list (sel::node-s (third step-args)))
+                                    right-names (list (sel::node-s (fourth step-args)))
                                     pred (fifth step-args))))
                            (let ((j-plan (make-join-plan
                                           :type (if is-left :left :inner)
                                           :source-name right-name
                                           :source-relation right-spec
                                           :source-table (getf right-spec :from)
-                                          :source-alias (or (getf right-spec :alias) right-binder)
-                                          :left-binder left-binder
-                                          :right-binder right-binder
+                                          ;; The SQL alias of a table the binding
+                                          ;; leaves unaliased: the five-argument
+                                          ;; form's right binder, `_2` otherwise.
+                                          ;; An alias, not a SEL name.
+                                          :source-alias (or (getf right-spec :alias)
+                                                            (if (= (length step-args) 5)
+                                                                (first right-names)
+                                                                "_2"))
+                                          :left-names left-names
+                                          :right-names right-names
                                           :on-pred pred
                                           :pos pos)))
+                             ;; One table alias per occurrence: a relation joined
+                             ;; again under an alias the statement already uses
+                             ;; (a self-join, or a chain back to an aliased
+                             ;; relation) rendered it twice, which the server
+                             ;; rejects (review 2026-09-28 SQL-09). The program
+                             ;; stays in memory.
+                             (let ((open (cons (let ((a (relational-plan-source-alias plan)))
+                                                 (if (null a)
+                                                     (relation-alias (relational-plan-source-relation plan))
+                                                     a))
+                                               (mapcar #'join-plan-source-alias (relational-plan-joins plan))))
+                                   (alias (join-plan-source-alias j-plan)))
+                               (when (some (lambda (a) (and (stringp a) (stringp alias)
+                                                            (string= (sel::ascii-upcase a)
+                                                                     (sel::ascii-upcase alias))))
+                                           open)
+                                 (refuse "E_SQL_SHAPE"
+                                         (format nil "~a would be joined under the table alias ~a, which ~
+this statement already uses; bind the relation a second time under another alias"
+                                                 right-name alias)
+                                         (snode-pos right-node))))
                              (setf (relational-plan-joins plan)
                                    (append (relational-plan-joins plan) (list j-plan))))))))))
 
@@ -2842,7 +3004,7 @@ field is on both sides, and the binders are nested records")
                      (unless first (push ", " parts))
                      (setf first nil)
                      (push (emit-column (translator-dialect tr)
-                                        (joined-relation-alias plan (third f))
+                                        (third f)
                                         (or (getf (second f) :column) (first f)))
                            parts)))))
 

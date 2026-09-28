@@ -18,3 +18,17 @@ ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["a
 ORDERS .> FILTER(_["amount"] > 4) .> MAP(RECORD("n", _["name"]))
 ### bucket over a join
 ORDERS .> LINK(CUSTOMERS, L, R, L["customer_id"] == R["id"]) .> BUCKET(_["R"]["name"], RECORD("k", _K, "n", COUNT(_)))
+### _1 and _2 are keys of the joined row (review 2026-09-28 SQL-07)
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("n", _["_2"]["name"], "a", _["_1"]["amount"]))
+### a LINK_LEFT's right side through its binder, NULL where nothing matched
+ORDERS .> LINK_LEFT(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> MAP(RECORD("n", _["C"]["name"], "a", _["amount"]))
+### a relation joined again under its alias (review 2026-09-28 SQL-09)
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> LINK(CUSTOMERS, A, B, A["customer_id"] == B["id"]) .> MAP(RECORD("n", _["B"]["name"], "a", _["amount"]))
+### refused: an alias is not a key of the row (review 2026-09-28 SQL-07)
+ORDERS .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["o"]["amount"]))
+### refused: a relation's name after a five-argument LINK
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> MAP(RECORD("n", _["CUSTOMERS"]["name"]))
+### refused: a relation's name inside a five-argument predicate
+ORDERS .> LINK(CUSTOMERS, O, C, ORDERS["customer_id"] == C["id"]) .> MAP(RECORD("a", _["amount"]))
+### refused: a later LINK's left binder is the joined row, which has no shared name (review 2026-09-28 SQL-05)
+ORDERS .> LINK(CUSTOMERS, O, C, O["customer_id"] == C["id"]) .> LINK(CUSTOMERS, A, B, A["id"] == B["id"]) .> MAP(RECORD("a", _["amount"]))

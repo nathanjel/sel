@@ -65,6 +65,174 @@ std::string join_sorted(const std::vector<std::string>& xs) {
   return out;
 }
 
+// --- joined rows (spec §7.4) ---------------------------------------------------
+
+// One relation, as this layer tells relations apart: by what it renders as.
+bool same_relation(const RelationSpec& a, const RelationSpec& b) {
+  return a.from == b.from && a.alias == b.alias && a.from_is_raw == b.from_is_raw;
+}
+
+bool contains(const std::vector<std::string>& xs, const std::string& x) {
+  return std::find(xs.begin(), xs.end(), x) != xs.end();
+}
+
+// A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
+std::vector<std::string> binder_keys(const std::vector<std::string>& names) {
+  std::vector<std::string> out;
+  for (const std::string& name : names) {
+    std::string lower = name;
+    for (char& c : lower) {
+      if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    for (const std::string& k : {name, lower}) {
+      if (!contains(out, k)) out.push_back(k);
+    }
+  }
+  return out;
+}
+
+// Assign, keeping an existing key's position -- what a JS Map's set does.
+template <typename V>
+void ordered_set(std::vector<std::pair<std::string, V>>& xs, const std::string& k, V v) {
+  for (auto& [key, value] : xs) {
+    if (key == k) { value = std::move(v); return; }
+  }
+  xs.emplace_back(k, std::move(v));
+}
+
+// The record `row[key]` holds, when it holds one: a side under one of the
+// names its LINK gave it, or a record a joined row carries. Null otherwise.
+RowModelPtr nested_of(const RowModelPtr& row, const std::string& key) {
+  if (row->side) return contains(row->names, key) ? row : nullptr;
+  if (contains(row->self_names, key)) return row;
+  for (const auto& [k, v] : row->nested) {
+    if (k == key) return v;
+  }
+  return nullptr;
+}
+
+std::optional<RowField> row_field_spec(const RowModel& row, const std::string& key) {
+  const std::string u = ascii_upper(key);
+  if (row.side) {
+    const ColumnSpec* spec = row.relation->field(u);
+    if (!spec) return std::nullopt;
+    return RowField{*spec, row.table, row.qualify, false};
+  }
+  for (const auto& [k, f] : row.promoted) {
+    if (k == u) return f;
+  }
+  return std::nullopt;
+}
+
+// The row extended with the names a LINK gives it: a side's names replace
+// its own, and a joined row gains keys holding itself.
+RowModelPtr with_names(const RowModelPtr& row, const std::vector<std::string>& names) {
+  auto out = std::make_shared<RowModel>(*row);
+  if (row->side) {
+    out->names = names;
+  } else {
+    // A name the row already carried as a record now holds the row itself.
+    for (const std::string& k : names) {
+      std::erase_if(out->nested, [&](const auto& kv) { return kv.first == k; });
+      if (!contains(out->self_names, k)) out->self_names.push_back(k);
+    }
+  }
+  return out;
+}
+
+std::vector<std::string> row_keys(const RowModel& row) {
+  std::vector<std::string> out;
+  if (row.side) {
+    for (const auto& [k, spec] : row.relation->fields) { (void)spec; out.push_back(k); }
+    out.insert(out.end(), row.names.begin(), row.names.end());
+  } else {
+    for (const auto& [k, v] : row.nested) { (void)v; out.push_back(k); }
+    out.insert(out.end(), row.self_names.begin(), row.self_names.end());
+    for (const auto& [k, f] : row.promoted) { (void)f; out.push_back(k); }
+  }
+  return out;
+}
+
+std::vector<std::pair<std::string, RowField>> scalar_fields(const RowModel& row) {
+  if (!row.side) return row.promoted;
+  std::vector<std::pair<std::string, RowField>> out;
+  for (const auto& [u, spec] : row.relation->fields) {
+    out.emplace_back(u, RowField{spec, row.table, row.qualify, false});
+  }
+  return out;
+}
+
+// The rows of a statement's joins as SEL has them (spec §7.4 "Joined rows"),
+// for resolving what a read names. A LINK's left element is the source's row
+// for the first LINK and the previous joined row after that; its own name is
+// the source's only for the first three-argument LINK, as the evaluator names
+// an argument (a pipeline that already joined is not named). The right side of
+// a LINK_LEFT promotes nothing for a row with no match, so its fields are
+// `optional`. Rebuilt on every call: the models are small, and a Binder holds
+// the ones it was given for as long as it needs them.
+JoinRows join_rows(const RelationalPlan& plan) {
+  const bool qualify = !plan.joins.empty() || plan.source_subquery != nullptr;
+  const auto side = [&](const RelationSpec& rel, const std::optional<std::string>& alias,
+                        std::vector<std::string> names) {
+    auto out = std::make_shared<RowModel>();
+    out->side = true;
+    out->relation = std::make_shared<RelationSpec>(rel);
+    out->table = alias.value_or(relation_alias(rel));
+    out->qualify = qualify;
+    out->names = std::move(names);
+    return out;
+  };
+  JoinRows result;
+  RowModelPtr left = side(plan.source_relation, plan.source_alias, {});
+  for (const RelationalJoin& join : plan.joins) {
+    const std::vector<std::string> left_names = binder_keys(join.left_names);
+    const std::vector<std::string> right_names = binder_keys(join.right_names);
+    const RowModelPtr right = side(join.source_relation, join.source_alias, right_names);
+    const RowModelPtr left_el = with_names(left, left_names);
+    for (const auto& [el, names] : {std::pair{left_el, &join.left_names},
+                                    std::pair{right, &join.right_names}}) {
+      if (!el->side) continue;
+      for (const std::string& name : *names) {
+        if (el->relation->field(ascii_upper(name))) {
+          refuse("E_SQL_SHAPE",
+                 name + " names a LINK side that has a field of that name too, which "
+                        "SEL binds instead of the row; rename the binder",
+                 join.pos);
+        }
+      }
+    }
+    auto row = std::make_shared<RowModel>();
+    if (!left_el->side) {
+      row->nested = left_el->nested;
+      // The keys that held the left element itself still do.
+      for (const std::string& k : left_el->self_names) ordered_set(row->nested, k, left_el);
+    }
+    ordered_set(row->nested, std::string("_1"), left_el);
+    for (const std::string& k : left_names) ordered_set(row->nested, k, left_el);
+    ordered_set(row->nested, std::string("_2"), right);
+    for (const std::string& k : right_names) ordered_set(row->nested, k, right);
+    std::set<std::string> left_keys, right_keys;
+    for (const std::string& k : row_keys(*left_el)) left_keys.insert(ascii_upper(k));
+    for (const std::string& k : row_keys(*right)) right_keys.insert(ascii_upper(k));
+    for (const auto& [u, f] : scalar_fields(*left_el)) {
+      if (right_keys.count(u)) row->dropped.insert(u);
+      else ordered_set(row->promoted, u, f);
+    }
+    for (auto [u, f] : scalar_fields(*right)) {
+      if (left_keys.count(u)) {
+        row->dropped.insert(u);
+      } else {
+        if (join.type == "LEFT") f.optional = true;
+        ordered_set(row->promoted, u, f);
+      }
+    }
+    result.steps.push_back({left_el, right});
+    left = row;
+  }
+  result.row = left;
+  return result;
+}
+
 }  // namespace
 
 // --- binders -----------------------------------------------------------------
@@ -387,79 +555,23 @@ std::string Translator::constant_index(const SNode& idx) {
 
 Fragment Translator::index(const SNode& n) {
   const SNode& obj = *n.l();
-  // A joined SEL row exposes both its ordinary fields and the nested table
-  // records used by the reference hosts: _["orders"]["id"]. The inner index
-  // is a qualifier, not a runtime lookup. Resolve it against the relational
-  // plan so the emitted SQL names the owning relation directly; treating it
-  // as an index into the left relation would stop hybrid planning at the first
-  // multi-table projection.
-  // A numeric inner key takes the same path: over a bucket's members or a
-  // projected row it is refused at the inner index like the other four hosts
-  // do, instead of falling out to the outer one (SEL-0043).
-  if (obj.t() == SNode::T::Index && obj.l() && obj.l()->t() == SNode::T::Var &&
-      obj.r() && (obj.r()->t() == SNode::T::Text || obj.r()->t() == SNode::T::Num) &&
-      statement_plan_) {
-    // ... when the inner name is a row. Over a bucket's members or a
-    // projected row the inner index is itself the thing to refuse.
-    if (const Binder* inner = binder(obj.l()->s())) {
-      if (inner->shape() == Binder::Shape::Group || inner->shape() == Binder::Shape::Projected) {
-        node(n.l());
-      }
+  if (statement_plan_ && obj.t() == SNode::T::Index) {
+    // `_["orders"]["status"]` reads a field of a record the row carries: a
+    // side a LINK bound, or an earlier joined row (spec §7.4). The path is
+    // resolved against the keys the row has, so a name it lacks is refused
+    // where run() raises E_NO_KEY -- anything else (a bucket's members, a
+    // projected row, a relation) is the inner index's own refusal. The
+    // relation's binding name, table or alias used to be accepted as the
+    // qualifier too, and a later LINK's left binder read as the source
+    // (review 2026-09-28 SQL-05..08).
+    if (const RowModelPtr row = row_path(obj, n)) {
+      return row_field(row, "the row", constant_index(*n.r()), n);
     }
-    const std::string qualifier = obj.r()->s();
-    const auto same_name = [&](std::string_view candidate) {
-      return ascii_upper(qualifier) == ascii_upper(candidate);
-    };
-    const RelationSpec* relation = nullptr;
-    // A qualifier names a relation by its binding name, its table, its alias
-    // or a binder the join predicate declared -- never by the positional
-    // `_`, `_1`, `_2`, which this host alone accepted and the other four plan
-    // in memory (SEL-0043).
-    // A LINK's left binder names the LEFT side -- the pipeline's source
-    // relation -- and its right binder the joined one. Both used to be matched
-    // against the join, so a read through the left binder selected the joined
-    // table's column (review 2026-09-25 SQL-01).
-    const bool names_a_left_binder = std::any_of(
-        statement_plan_->joins.begin(), statement_plan_->joins.end(),
-        [&](const RelationalJoin& join) { return same_name(join.left_binder); });
-    if (same_name(statement_plan_->source_name) ||
-        same_name(statement_plan_->source_relation.from) ||
-        (statement_plan_->source_alias && same_name(*statement_plan_->source_alias)) ||
-        names_a_left_binder) {
-      relation = &statement_plan_->source_relation;
-    } else {
-      for (std::size_t i = 0; i < statement_plan_->joins.size(); ++i) {
-        const RelationalJoin& join = statement_plan_->joins[i];
-        if (same_name(join.source_name) || same_name(join.source_relation.from) ||
-            (join.source_alias && same_name(*join.source_alias)) ||
-            same_name(join.right_binder)) {
-          relation = &join.source_relation;
-          break;
-        }
-      }
-    }
-    if (relation) {
-      const std::string key = constant_index(*n.r());
-      if (list_key(key)) {
-        refuse("E_SQL_SHAPE",
-               qualifier + "[" + key + "] asks for a row by position, and a "
-                       "joined relation has no positional field",
-               n.pos());
-      }
-      const ColumnSpec* field = relation->field(ascii_upper(key));
-      if (!field) {
-        refuse("E_SQL_BINDING",
-               qualifier + "[\"" + key + "\"] is not a field of that relation",
-               n.pos());
-      }
-      // The qualifier's whole point is to name the relation, so the column
-      // is qualified by the alias it renders under, join or no join, as the
-      // other four hosts spell it (SEL-0043); a RAW binding stays verbatim.
-      if (field->is_raw) return column_ref(*field);
-      ColumnSpec qualified = *field;
-      qualified.table = relation_table_alias(*relation);
-      return column_ref(qualified);
-    }
+    node(n.l());
+    refuse("E_SQL_SHAPE",
+           "only a bound name can be indexed here; SQL has no way to index into "
+           "the result of an expression",
+           n.pos());
   }
   // A PARENTHESISED variable still has t == Var -- the parser sets only a
   // `grouped` flag -- so `(C)[1]` reaches the same path as `C[1]`.
@@ -590,6 +702,93 @@ Fragment Translator::collated_key(const Fragment& f) const {
   return out;
 }
 
+// The record a path of constant indexes names, when it starts at a row
+// binder of this statement: `_`, `_["X"]`, `A["Y"]["y"]`. Null when the path
+// does not start at a row, for the caller to refuse as it would anyway.
+// `outer` is the node indexing this one: a field indexed further fails
+// there, where run() raises, and a key the row lacks at the node itself.
+RowModelPtr Translator::row_path(const SNode& node, const SNode& outer) {
+  if (node.t() == SNode::T::Var) {
+    const Binder* b = binder(node.s());
+    return b && b->shape() == Binder::Shape::Row ? b->model() : nullptr;
+  }
+  if (node.t() != SNode::T::Index) return nullptr;
+  const RowModelPtr inner = row_path(*node.l(), node);
+  if (!inner) return nullptr;
+  return row_nested(inner, constant_index(*node.r()), node, outer);
+}
+
+// `row[key]` where the value must be a record: a side the row carries, or
+// the side itself under one of the names its LINK gave it.
+RowModelPtr Translator::row_nested(const RowModelPtr& row, const std::string& key,
+                                   const SNode& n, const SNode& outer) {
+  if (RowModelPtr nested = nested_of(row, key)) return nested;
+  if (list_key(key)) {
+    refuse("E_SQL_SHAPE",
+           "[" + key + "] asks for a row by position, and a relation has no first row "
+                       "without an ORDER BY that nothing here can supply",
+           n.pos());
+  }
+  if (row_field_spec(*row, key)) {
+    refuse("E_SQL_SHAPE", "[\"" + key + "\"] is a field, which has no parts to index",
+           outer.pos());
+  }
+  refuse("E_SQL_SHAPE",
+         "only a bound name can be indexed here; SQL has no way to index into the "
+         "result of an expression (" + key + " names no record this row carries)",
+         n.pos());
+}
+
+// `row[key]` where the value must be a column. `label` names the row for the
+// message: the binder, or "the row" for a nested record.
+Fragment Translator::row_field(const RowModelPtr& row, const std::string& label,
+                               const std::string& key, const SNode& n) {
+  if (list_key(key)) {
+    refuse("E_SQL_SHAPE",
+           label + "[" + key + "] asks for a row by position, and a relation has no "
+                               "first row without an ORDER BY that nothing here can supply",
+           n.pos());
+  }
+  if (nested_of(row, key)) {
+    refuse("E_SQL_SHAPE",
+           label + "[\"" + key + "\"] is a record, which is a map in SEL and not one "
+                                 "value; name the field you mean",
+           n.pos());
+  }
+  const std::optional<RowField> f = row_field_spec(*row, key);
+  if (!f) {
+    if (!row->side && row->dropped.count(ascii_upper(key))) {
+      refuse("E_SQL_SHAPE", "field \"" + key + "\" is ambiguous across joined relations",
+             n.pos());
+    }
+    std::vector<std::string> known;
+    if (row->side) {
+      for (const auto& [k, spec] : row->relation->fields) { (void)spec; known.push_back(k); }
+    } else {
+      for (const auto& [k, field] : row->promoted) { (void)field; known.push_back(k); }
+    }
+    refuse("E_SQL_BINDING",
+           label + "[\"" + key + "\"] is not a field of that " +
+               (row->side ? "relation" : "joined row") +
+               (known.empty() ? "; it declares none" : "; it has " + join_sorted(known)),
+           n.pos());
+  }
+  if (f->optional) {
+    // An unmatched LINK_LEFT row promotes nothing from the right (spec
+    // §7.4), so it has no such key, where the LEFT JOIN's column is NULL.
+    // Through the right binder the field is NULL in both.
+    refuse("E_SQL_SHAPE",
+           label + "[\"" + key + "\"] is a field of the right side of a LINK_LEFT, which a "
+                                 "row with no match does not have; read it through the "
+                                 "right binder",
+           n.pos());
+  }
+  if (f->spec.is_raw || !f->qualify) return column_ref(f->spec);
+  ColumnSpec qualified = f->spec;
+  qualified.table = f->table;
+  return column_ref(qualified);
+}
+
 Fragment Translator::from_binder(const Binder& b, const SNode& n) {
   switch (b.shape()) {
     case Binder::Shape::Node:
@@ -654,6 +853,12 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
              n.pos());
     case Binder::Shape::Row: {
       const RelationSpec& rel = b.as_row();
+      if (b.model() && !b.model()->side) {
+        refuse("E_SQL_SHAPE",
+               n.s() + " is a joined row, which is a map in SEL and not one value; "
+                       "name the field you mean",
+               n.pos());
+      }
       // The multi-field check comes FIRST, so a two-field relation that
       // declares a scalar still refuses as multi-field.
       if (rel.fields.size() > 1) {
@@ -672,6 +877,12 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
                        "fields a bare reference means; give the binding a "
                        "\"scalar\", or index the field you want",
                n.pos());
+      }
+      if (const RowModelPtr& model = b.model(); model && !field->is_raw && statement_plan_) {
+        if (!model->qualify) return column_ref(*field);
+        ColumnSpec qualified = *field;
+        qualified.table = model->table;
+        return column_ref(qualified);
       }
       return relation_column(rel, *field);
     }
@@ -737,32 +948,9 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
                                 "nothing here can supply",
              n.pos());
     }
+    if (b.model()) return row_field(b.model(), name, key, n);
     const RelationSpec& rel = b.as_row();
     std::string field = ascii_upper(key);
-    // A joined row has a field only where exactly one side has it (spec §7.4
-    // "Joined rows"): a name both sides carry is E_NO_KEY in SEL, so it is
-    // refused here BEFORE the left relation's own field is consulted -- the
-    // left side's column was returned first, and `_["name"]` after a join
-    // translated where run() raises (review 2026-09-15 finding W2, d1). As in
-    // the other hosts, the lookup across the sides is for the row binder
-    // with_row marks as joined -- whatever it is called -- and never for the
-    // LINK predicate's own binders (with_join_binders), which are one side each.
-    if (b.joined() && statement_plan_ && !statement_plan_->joins.empty()) {
-      std::vector<std::pair<const RelationSpec*, const ColumnSpec*>> matches;
-      if (const ColumnSpec* c = statement_plan_->source_relation.field(field)) {
-        matches.emplace_back(&statement_plan_->source_relation, c);
-      }
-      for (const RelationalJoin& join : statement_plan_->joins) {
-        if (const ColumnSpec* c = join.source_relation.field(field)) {
-          matches.emplace_back(&join.source_relation, c);
-        }
-      }
-      if (matches.size() > 1) {
-        refuse("E_SQL_SHAPE", "field \"" + key + "\" is ambiguous across joined relations",
-               n.pos());
-      }
-      if (matches.size() == 1) return relation_column(*matches[0].first, *matches[0].second);
-    }
     // A derived table's fields carry the alias the projection gave them
     // (ensure_derived), so a read through any spelling of the name renders
     // that column, as in the other hosts -- not the spelling itself.
@@ -795,10 +983,7 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
 
 std::string Translator::relation_table_alias(const RelationSpec& rel) {
   if (statement_plan_) {
-    const auto same = [&rel](const RelationSpec& other) {
-      return rel.from == other.from && rel.alias == other.alias &&
-             rel.from_is_raw == other.from_is_raw;
-    };
+    const auto same = [&rel](const RelationSpec& other) { return same_relation(rel, other); };
     if (same(statement_plan_->source_relation)) {
       return statement_plan_->source_alias.value_or(relation_alias(rel));
     }
@@ -2290,11 +2475,15 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
     }
   }
   Binder row = Binder::row(src.relation);
-  // The row of a joined statement: a field read through it resolves across
-  // the sides (ambiguous when both have it), whatever the binder is called.
-  // Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
-  // after a LINK resolve to the left side where `run()` raises E_NO_KEY.
-  if (statement_plan_ && !statement_plan_->joins.empty()) row.set_joined(true);
+  // The row of the statement: after a LINK the joined row, whose promoted
+  // fields and nested records a read resolves against, whatever the binder
+  // is called. Gating that on the name `_` let `MAP(r, RECORD("name",
+  // r["name"]))` after a LINK resolve to the left side where `run()` raises
+  // E_NO_KEY. The statement's source is recognised as relation_table_alias
+  // recognises a relation, by what it renders as.
+  if (statement_plan_ && same_relation(*src.relation, statement_plan_->source_relation)) {
+    row.set_model(join_rows(*statement_plan_).row);
+  }
   std::vector<std::pair<std::string, Binder>> frame;
   frame_set(frame, binder_name, row);
   frame_set(frame, "_K",
@@ -2369,18 +2558,23 @@ Fragment Translator::with_projected(const Source& src, const std::string& binder
 Fragment Translator::with_join_binders(const RelationalPlan& plan,
                                        const RelationalJoin& join,
                                        const std::function<Fragment()>& render) {
+  // A LINK's predicate sees `_`/`_1` as its left element and `_2` as its
+  // right, plus the names the LINK gives them (spec §7.4) and nothing else:
+  // a relation's name outside those, its alias or its table is not a binder
+  // (review 2026-09-28 SQL-07), and the left element of a later LINK is the
+  // joined row so far, not the source (SQL-05).
+  const JoinRows rows = join_rows(plan);
+  const JoinRows::Step& step = rows.steps[static_cast<std::size_t>(&join - plan.joins.data())];
   std::vector<std::pair<std::string, Binder>> frame;
-  const Binder left = Binder::row(std::make_shared<RelationSpec>(plan.source_relation));
-  const Binder right = Binder::row(std::make_shared<RelationSpec>(join.source_relation));
+  Binder left = Binder::row(std::make_shared<RelationSpec>(plan.source_relation));
+  left.set_model(step.left);
+  Binder right = Binder::row(std::make_shared<RelationSpec>(join.source_relation));
+  right.set_model(step.right);
   frame_set(frame, "_", left);
   frame_set(frame, "_1", left);
-  frame_set(frame, plan.source_name, left);
-  if (plan.source_alias) frame_set(frame, *plan.source_alias, left);
   frame_set(frame, "_2", right);
-  frame_set(frame, join.left_binder, left);
-  frame_set(frame, join.right_binder, right);
-  frame_set(frame, join.source_name, right);
-  if (join.source_alias) frame_set(frame, *join.source_alias, right);
+  for (const std::string& name : join.left_names) frame_set(frame, name, left);
+  for (const std::string& name : join.right_names) frame_set(frame, name, right);
   frames_.push_back(std::move(frame));
   struct Pop {
     std::vector<Frame>* f;
@@ -2643,36 +2837,17 @@ bool Translator::plan_has_rows_above(const RelationalPlan& plan) const {
 // it did not have (finding Y, lanes).
 struct JoinedRowField {
   std::string name;          // ASCII-upper, as the relation keys it
-  const ColumnSpec* spec;
-  const RelationSpec* owner;
+  ColumnSpec spec;
+  std::string table;
 };
 
+// A field an unmatched LINK_LEFT row lacks is not a column of the row.
 std::vector<JoinedRowField> joined_row_fields(const RelationalPlan& plan) {
-  const auto entries = [](const RelationSpec& rel) {
-    std::vector<JoinedRowField> out;
-    for (const auto& [name, spec] : rel.fields) out.push_back({name, &spec, &rel});
-    return out;
-  };
-  const auto names_of = [](const std::vector<JoinedRowField>& fields) {
-    std::set<std::string> out;
-    for (const JoinedRowField& f : fields) out.insert(ascii_upper(f.name));
-    return out;
-  };
-  std::vector<JoinedRowField> acc = entries(plan.source_relation);
-  for (const RelationalJoin& join : plan.joins) {
-    const std::vector<JoinedRowField> right = entries(join.source_relation);
-    const std::set<std::string> left_names = names_of(acc);
-    const std::set<std::string> right_names = names_of(right);
-    std::vector<JoinedRowField> next;
-    for (const JoinedRowField& f : acc) {
-      if (!right_names.count(ascii_upper(f.name))) next.push_back(f);
-    }
-    for (const JoinedRowField& f : right) {
-      if (!left_names.count(ascii_upper(f.name))) next.push_back(f);
-    }
-    acc = std::move(next);
+  std::vector<JoinedRowField> out;
+  for (const auto& [name, f] : join_rows(plan).row->promoted) {
+    if (!f.optional) out.push_back({name, f.spec, f.table});
   }
-  return acc;
+  return out;
 }
 
 std::vector<std::string> Translator::output_field_names(const RelationalPlan& plan) const {
@@ -2758,6 +2933,8 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
   derived.source_relation.from = alias;
   derived.source_relation.alias = alias;
   derived.source_subquery = std::move(inner);
+  // Still named after the pipeline's variable, until a LINK has joined.
+  if (derived.source_subquery->joins.empty()) derived.root_name = derived.source_subquery->root_name;
   if (derived.source_subquery->bucket != RelationalPlan::Bucket::None) {
     derived.bucket = RelationalPlan::Bucket::Sealed;
   }
@@ -2850,6 +3027,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
 
   RelationalPlan plan;
   plan.source_name = curr->s();
+  plan.root_name = curr->s();
   const RelationSpec& rel = b.as_relation();
   plan.source_relation = rel;
   plan.source_from_raw = rel.from_is_raw;
@@ -3111,6 +3289,17 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       added.insert(added.end(), plan.order_by.begin(), plan.order_by.end());
       plan.order_by = std::move(added);
     } else if (name == "LINK" || name == "LINK_LEFT") {
+      // The steps before the LINK refuse first, as written: their keys (a
+      // sort's, a bucket's) are otherwise checked only when the statement is
+      // rendered, after this LINK and the steps after it were analysed, which
+      // reported a later step's refusal where run() raises at the earlier
+      // one. Lisp has done this since review 2026-09-25 SQL-03; the widened
+      // SQL fuzzer found the other hosts did not (review 2026-09-28 SQL-10).
+      // The fragment is discarded: its parameters are never placed, and the
+      // statement renders these steps again anyway.
+      if (!plan.order_by.empty() || plan.projections || plan.select_cols || plan.group_by) {
+        (void)compile_statement(plan);
+      }
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);
       if (args.size() != 3 && args.size() != 5) {
@@ -3137,15 +3326,40 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         if (!is_binder_name(*args[2]) || !is_binder_name(*args[3])) {
           refuse("E_SQL_SHAPE", "join binders must be bare names", args[2]->pos());
         }
-        join.left_binder = args[2]->s();
-        join.right_binder = args[3]->s();
+        join.left_names = {args[2]->s()};
+        join.right_names = {args[3]->s()};
         join.on_pred = args[4];
       } else {
-        join.left_binder = plan.source_alias.value_or("_1");
-        join.right_binder = join.source_alias.value_or("_2");
+        // The evaluator names a three-argument LINK's sides after the
+        // variable their pipeline starts from, unless an earlier LINK is in
+        // the way (spec §7.4).
+        if (plan.joins.empty() && plan.root_name) join.left_names = {*plan.root_name};
+        join.right_names = {right_node->s()};
         join.on_pred = args[2];
       }
-      if (!join.source_alias) join.source_alias = join.right_binder;
+      // The SQL alias of a table the binding leaves unaliased: the
+      // five-argument form's right binder, `_2` otherwise. An alias, not a
+      // SEL name.
+      if (!join.source_alias) join.source_alias = args.size() == 5 ? join.right_names[0] : "_2";
+      // One table alias per occurrence: a relation joined a second time under
+      // an alias the statement already uses (a self-join, or a chain back to
+      // an aliased relation) rendered it twice, which the server rejects
+      // (review 2026-09-28 SQL-09). The program stays in memory.
+      {
+        std::vector<std::string> open{plan.source_alias.value_or(relation_alias(plan.source_relation))};
+        for (const RelationalJoin& j : plan.joins) {
+          if (j.source_alias) open.push_back(*j.source_alias);
+        }
+        const std::string mine = ascii_upper(*join.source_alias);
+        if (std::any_of(open.begin(), open.end(),
+                        [&](const std::string& a) { return ascii_upper(a) == mine; })) {
+          refuse("E_SQL_SHAPE",
+                 right_node->s() + " would be joined under the table alias " + *join.source_alias +
+                     ", which this statement already uses; bind the relation a second time "
+                     "under another alias",
+                 right_node->pos());
+        }
+      }
       join.pos = step->pos();
       plan.joins.push_back(std::move(join));
     }
@@ -3393,8 +3607,8 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     for (const JoinedRowField& f : fields) {
       if (!first) add_sql(", ");
       first = false;
-      const std::string column = f.spec->column.empty() ? f.name : f.spec->column;
-      add_sql(emit_.column(relation_table_alias(*f.owner), column));
+      const std::string column = f.spec.column.empty() ? f.name : f.spec.column;
+      add_sql(emit_.column(f.table, column));
     }
   } else {
     if (plan.source_alias && !plan.source_alias->empty()) {

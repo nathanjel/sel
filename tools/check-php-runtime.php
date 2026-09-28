@@ -123,6 +123,53 @@ $expect('a compiled program reads the key of each run', function () {
     $p = \Sel\Sel::compile('A[K]'); $A = Value::fromNative(['x' => '1', 'y' => '2']);
     return $p->run(['A' => $A, 'K' => 'x'])->dump() . $p->run(['A' => $A, 'K' => 'y'])->dump() === 't"1"t"2"';
 });
+// --- every public constructor (spec/SPEC.md §8, review 2026-09-28 HOST-12..20) --
+$one = Value::text('1'); $two = Value::text('2');
+// HOST-12: keys given side by side are checked like any other text.
+foreach ([
+    'shaped' => fn() => Value::shaped(["a\xff"], [$one]),
+    'record' => fn() => Value::record(["a\xff"], [$one]),
+    'fromEntries' => fn() => Value::fromEntries([["a\xff", $one]]),
+    'list with keys' => fn() => Value::list([$one], ["a\xff"]),
+    'RecordShape::intern' => fn() => Value::fromShape(\Sel\RecordShape::intern(["a\xff"]), [$one]),
+    'the first row of fromNativeRows' => fn() => Value::fromNativeRows([["a\xff" => 1]]),
+] as $what => $f) {
+    $expect("$what rejects an invalid UTF-8 key", fn() => $code($f) === 'E_UTF8');
+}
+// HOST-13 / HOST-14: the decimal form is a number within the caps, canonical.
+$expect('num of a decimal with 1,000,001 fractional digits is E_RANGE', fn() =>
+    $code(fn() => Value::num(['neg' => false, 'digits' => '1', 'scale' => 1000001])) === 'E_RANGE');
+$expect('num of a decimal with 1,000,001 integer digits is E_RANGE', fn() =>
+    $code(fn() => Value::num(['neg' => false, 'digits' => str_repeat('1', 1000001), 'scale' => 0])) === 'E_RANGE');
+$expect('num of a decimal canonicalises -0 and leading zeros', fn() =>
+    Value::num(['neg' => true, 'digits' => '000', 'scale' => 0])->dump() . Value::num(['neg' => false, 'digits' => '007', 'scale' => 1])->dump() === 't"0"t"0.7"');
+foreach ([['neg' => false, 'digits' => 'x', 'scale' => 0], ['neg' => false, 'digits' => '7', 'scale' => -1],
+          ['neg' => false, 'digits' => '', 'scale' => 0], ['digits' => '1', 'scale' => 0], 5] as $bad) {
+    $expect('num of the malformed decimal ' . json_encode($bad) . ' is E_BAD_ARG', fn() => $code(fn() => Value::num($bad)) === 'E_BAD_ARG');
+}
+// HOST-17: keys and values pair up.
+foreach ([
+    'shaped' => fn() => Value::shaped(['a'], [$one, $two]),
+    'record' => fn() => Value::record(['a', 'b'], [$one]),
+    'fromShape' => fn() => Value::fromShape(\Sel\RecordShape::intern(['a']), []),
+    'list with keys' => fn() => Value::list([$one], ['1', '2']),
+] as $what => $f) {
+    $expect("$what with counts that differ is E_BAD_ARG", fn() => $code($f) === 'E_BAD_ARG');
+}
+// HOST-18: a repeated key is RECORD's last write in its first position; a list's is refused.
+$expect('shaped keeps a repeated key once', fn() =>
+    Value::shaped(['a', 'b', 'a'], [$one, $two, $two])->dump() === '-{"a"=t"2", "b"=t"2"}');
+$expect('a list with a repeated key is E_BAD_ARG', fn() => $code(fn() => Value::list([$one, $two], ['5', '5'])) === 'E_BAD_ARG');
+$expect('a shape with a repeated key is E_BAD_ARG', fn() => $code(fn() => \Sel\RecordShape::intern(['a', 'a'])) === 'E_BAD_ARG');
+// HOST-20: a malformed call is E_BAD_ARG, never the host's own exception.
+foreach ([
+    'fromNative(1.5)' => fn() => Value::fromNative(1.5),
+    'fromNative(an object)' => fn() => Value::fromNative(new \stdClass()),
+    'list(["1"])' => fn() => Value::list(['1']),
+    'record(["a"], ["1"])' => fn() => Value::record(['a'], ['1']),
+] as $what => $f) {
+    $expect("$what is E_BAD_ARG", fn() => $code($f) === 'E_BAD_ARG');
+}
 if ($boundary) {
     fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");
     exit(1);

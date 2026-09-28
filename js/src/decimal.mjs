@@ -77,7 +77,7 @@ function make(neg, digits, scale) {
 // here, so POWER — repeated squaring over mul — trips on an intermediate and the
 // enormous value is never allocated: without that, nesting POWER three deep
 // exhausted the host's memory before any check could run.
-function guard(d, pos) {
+export function guard(d, pos) {
   if (d.scale > MAX_FRAC_DIGITS) {
     fail('E_RANGE', `number has more than ${MAX_FRAC_DIGITS} fractional digits`, pos);
   }

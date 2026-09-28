@@ -31,8 +31,9 @@ tools/check.sh                                    # ALL GREEN, full roster
 SEL_IMPLS="$SEL_IMPLS python-wheel" tools/check.sh # and through the built wheel
 tools/oracle-db.sh                                # the map, against real servers
 tools/oracle-db.sh run python3 tools/mutate-sql.py # every mutation, none skipped
-tools/check-version.sh 0.8.1                      # every manifest agrees
+tools/check-version.sh 0.9.1                      # every manifest agrees
 tools/check-package-docs.sh                       # user docs only, in every package
+tools/check-cpp-package.sh                        # the C++ package builds as a consumer gets it
 tools/check-usage.sh                              # the SQL examples, every host, real servers
 ```
 
@@ -69,8 +70,8 @@ Then tag. Every registry below either reads the tag or is told the version by
 hand, and they must agree:
 
 ```
-git tag -a v0.8.1 -m "SEL 0.8.1"
-git push origin v0.8.1
+git tag -a v0.9.1 -m "SEL 0.9.1"
+git push origin v0.9.1
 ```
 
 **Never re-tag or move an existing tag.** Upstream registries forbid republishing under an existing version: Packagist blocks re-tagged releases with `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`, while npm and PyPI permanently refuse file uploads for already-published versions. If a defect or correction is needed after pushing a tag, always bump to the next patch version.
@@ -78,17 +79,17 @@ git push origin v0.8.1
 Versions live in six manifests. Keep them in step:
 
 ```
-package.json                     "version": "0.8.1"
-pyproject.toml                   version = "0.8.1"
-cpp/conanfile.py                 version = "0.8.1"
-cpp/vcpkg.json                   "version-semver": "0.8.1"
-cpp/CMakeLists.txt               project(... VERSION 0.8.1 ...)
-lisp/sel-lang.asd                :version "0.8.1"
+package.json                     "version": "0.9.1"
+pyproject.toml                   version = "0.9.1"
+cpp/conanfile.py                 version = "0.9.1"
+cpp/vcpkg.json                   "version-semver": "0.9.1"
+cpp/CMakeLists.txt               project(... VERSION 0.9.1 ...)
+lisp/sel-lang.asd                :version "0.9.1"
 ```
 
 `python/sel/__init__.py` carries `__version__`, `CHANGELOG.md`'s top heading
 carries the version being released, and `composer.json` carries
-`extra.branch-alias.dev-main` (`0.8.x-dev`). All are checked against the release
+`extra.branch-alias.dev-main` (`0.9.x-dev`). All are checked against the release
 version by `tools/check-version.sh`, so they are places fewer to remember rather
 than more — and a release whose notes or branch alias were never updated fails
 the check before the tag is cut.
@@ -207,7 +208,7 @@ Packagist infers release versions from git tags, but it reads `extra.branch-alia
 ```json
   "extra": {
     "branch-alias": {
-      "dev-main": "0.8.x-dev"
+      "dev-main": "0.9.x-dev"
     }
   }
 ```
@@ -220,7 +221,7 @@ Never delete, move, or re-tag an existing release tag. Packagist explicitly trac
 
 > `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`
 
-Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.8.2`) rather than moving `v0.8.1`.
+Once a tag is pushed, it must be treated as immutable. If any fix or correction is needed post-release, cut a new patch release (e.g. `0.9.2`) rather than moving `v0.9.1`.
 
 ---
 
@@ -294,7 +295,7 @@ profile would only make the package unusable out of the box.
 To publish, either upload to your own remote:
 
 ```
-conan upload sel-lang/0.8.1 -r <remote> --confirm
+conan upload sel-lang/0.9.1 -r <remote> --confirm
 ```
 
 or open a pull request against
@@ -330,7 +331,9 @@ Where each package manager stands:
 | plain CMake / copy the files | n/a | vendored |
 
 The vendored copy is the default everywhere, on purpose. It is what keeps "copy
-`sel.hpp`, `sel_ast.hpp`, `sel.cpp` and `third_party/srell/` and compile" true
+`sel.hpp`, `sel_ast.hpp`, the generated `sel_limits.hpp`, `sel_math_ops.hpp` and
+`sel_builtin_manifest.hpp`, `sel.cpp`, `sel_optimizer.cpp` (which `sel.cpp`
+includes) and `third_party/srell/`, and compile `sel.cpp`" true
 — and, with `sel_sql*.{hpp,cpp}` added, the same for the SQL layer — it is the only
 option for Conan, and it removes any chance of a resolver quietly selecting a
 different engine version — which would not be a build difference, it would be a

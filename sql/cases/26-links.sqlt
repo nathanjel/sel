@@ -465,7 +465,7 @@ statement
 --- source
 R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["ß"]["VAL"]))
 --- error
-E_SQL_SHAPE 1:72
+E_SQL_SHAPE 1:67
 ===
 ### name: link.binder.long-s-is-not-an-s
 --- dialect
@@ -478,7 +478,7 @@ statement
 --- source
 R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["ſS"]["VAL"]))
 --- error
-E_SQL_SHAPE 1:73
+E_SQL_SHAPE 1:67
 ===
 
 ### name: link.binder.a-field-the-relation-lacks-is-refused

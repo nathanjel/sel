@@ -117,3 +117,73 @@ def test_compiled_program_reads_the_computed_key_of_each_run():
     a = Value.from_native({'x': '1', 'y': '2'})
     assert p.run({'A': a, 'L': ['x']}).dump() == '-{"1"=t"1"}'
     assert p.run({'A': a, 'L': ['y']}).dump() == '-{"1"=t"2"}'
+
+
+# --- every public constructor (review 2026-09-28 HOST-12..20) -------------
+
+ONE, TWO = Value.text('1'), Value.text('2')
+
+
+@pytest.mark.parametrize('build', [
+    lambda: Value.shaped(['a\ud800'], [ONE]),
+    lambda: Value.record(['a\ud800'], [ONE]),
+    lambda: Value.from_entries([('a\ud800', ONE)]),
+    lambda: Value.list([ONE], ['a\ud800']),
+])
+def test_keys_given_side_by_side_are_checked(build):
+    assert code_of(build) == 'E_UTF8'
+
+
+def test_decimal_form_obeys_the_caps():
+    from sel import decimal as D
+    assert code_of(Value.num, D.Dec(False, 1, 1000001)) == 'E_RANGE'
+    assert code_of(Value.num, D.Dec(False, 10 ** 1000000, 0)) == 'E_RANGE'
+
+
+@pytest.mark.parametrize('parts', [(False, 7, -1), (False, -5, 0), (False, True, 0), (False, '1', 0)])
+def test_a_malformed_decimal_is_e_bad_arg(parts):
+    from sel import decimal as D
+    assert code_of(Value.num, D.Dec(*parts)) == 'E_BAD_ARG'
+
+
+def test_a_negative_zero_decimal_is_zero():
+    from sel import decimal as D
+    assert Value.num(D.Dec(True, 0, 0)).dump() == 't"0"'
+
+
+def test_constructors_copy_the_lists_they_are_given():
+    keys, values = ['a', 'b'], [ONE, TWO]
+    rec, shaped, lst = Value.record(keys, values), Value.shaped(keys, values), Value.list(values, ['5', '7'])
+    keys[0], values[0] = 'z', TWO
+    values.append(ONE)
+    assert rec.dump() + shaped.dump() + lst.dump() == '-{"a"=t"1", "b"=t"2"}' * 2 + '-{"5"=t"1", "7"=t"2"}'
+
+
+@pytest.mark.parametrize('build', [
+    lambda: Value.record(['a', 'b'], [ONE]),
+    lambda: Value.record(['a'], [ONE, TWO]),
+    lambda: Value.shaped(['a'], [ONE, TWO]),
+    lambda: Value.list([ONE], ['1', '2']),
+    lambda: Value.list([ONE, TWO], ['5', '5']),
+])
+def test_keys_and_values_pair_up(build):
+    assert code_of(build) == 'E_BAD_ARG'
+
+
+def test_a_repeated_record_key_is_the_last_write_in_its_first_position():
+    assert Value.record(['a', 'b', 'a'], [ONE, TWO, TWO]).dump() == '-{"a"=t"2", "b"=t"2"}'
+    assert Value.shaped(['a', 'a'], [ONE, TWO]).dump() == '-{"a"=t"2"}'
+
+
+@pytest.mark.parametrize('byte', [True, False])
+def test_a_boolean_is_not_a_byte(byte):
+    assert code_of(Value.bin, [byte]) == 'E_RANGE'
+
+
+@pytest.mark.parametrize('build', [
+    lambda: Value.int(1.5), lambda: Value.int(True), lambda: Value.text(5), lambda: Value.bin(5),
+    lambda: Value.list(['1']), lambda: Value.record(['a'], ['1']), lambda: Value.from_native(0.5),
+    lambda: Value.from_native(object()),
+])
+def test_a_malformed_call_is_e_bad_arg(build):
+    assert code_of(build) == 'E_BAD_ARG'

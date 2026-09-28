@@ -357,17 +357,20 @@ class Translator:
         would have to reach inside a value SQL has no way to look inside.
         """
         obj = n.obj
-        if (self.statement_plan is not None and obj is not None
-                and obj.t == 'index' and obj.obj is not None and obj.obj.t == 'var'):
-            # `_["orders"]["status"]` names a joined relation's field -- when
-            # the inner name is a row. Over a bucket's members or a projected
-            # row the inner index is itself the thing to refuse.
-            inner = self._binder(obj.obj.name)
-            if inner is not None and inner.shape in (Binder.GROUP, Binder.PROJECTED):
-                self._node(obj)
-            qualifier = self._constant_index(obj.idx)
-            field = self._constant_index(n.idx)
-            return self._index_qualified(qualifier, field, n)
+        if self.statement_plan is not None and obj is not None and obj.t == 'index':
+            # `_["orders"]["status"]` reads a field of a record the row
+            # carries: a side a LINK bound, or an earlier joined row (spec
+            # §7.4). The path is resolved against the keys the row has, so a
+            # name it lacks is refused where run() raises E_NO_KEY -- anything
+            # else (a bucket's members, a projected row, a relation) is the
+            # inner index's own refusal.
+            row = self._row_path(obj, n)
+            if row is not None:
+                return self._row_field(row, obj, self._constant_index(n.idx), n)
+            self._node(obj)
+            refuse('E_SQL_SHAPE',
+                   'only a bound name can be indexed here; SQL has no way to index '
+                   'into the result of an expression', n.pos)
         if obj.t != 'var':
             refuse('E_SQL_SHAPE',
                    'only a bound name can be indexed here; SQL has no way to index '
@@ -409,62 +412,154 @@ class Translator:
         refuse('E_SQL_SHAPE',
                f'{obj.name} is bound as a column, which has no parts to index', n.pos)
 
-    def _index_qualified(self, qualifier: str, key: str, n: Node) -> Fragment:
-        plan = self.statement_plan
-        # A LINK's left binder names the LEFT side -- the pipeline's source
-        # relation -- and its right binder the joined one. Both used to be
-        # listed under the join, so a read through the left binder selected
-        # the joined table's column (review 2026-09-25 SQL-01).
-        sources = [{
-            'names': [plan.source_name, plan.source_alias, _relation_alias(plan.source_relation)]
-                     + [join.left_binder for join in plan.joins],
-            'relation': plan.source_relation,
-            'table': plan.source_alias or _relation_alias(plan.source_relation),
-        }]
-        for join in plan.joins:
-            sources.append({
-                'names': [join.source_name, join.source_alias,
-                          _relation_alias(join.source_relation),
-                          join.right_binder],
-                'relation': join.source_relation,
-                'table': join.source_alias or _relation_alias(join.source_relation),
-            })
-        source = next((item for item in sources
-                       if any(name is not None and ascii_upper(str(name)) == ascii_upper(qualifier)
-                              for name in item['names'])), None)
-        if source is None:
-            # A qualifier names a relation by its binding name, its table, its
-            # alias or a binder the join predicate declared, and nothing else:
-            # a position (`_[1]["amount"]`) or a stray name is the shape the
-            # row does not have, E_SQL_SHAPE as C++ and Lisp always said
-            # (SEL-0043). It used to be E_SQL_BINDING "unknown joined
-            # relation" here, the accident of the alias lookup.
-            if _list_key(qualifier) is not None:
-                refuse('E_SQL_SHAPE',
-                       f'[{qualifier}] asks for a row by position, and a relation has no '
-                       'first row without an ORDER BY that nothing here can supply', n.pos)
+    def _row_path(self, node: Node, outer: Node) -> dict[str, Any] | None:
+        """The record a path of constant indexes names, when it starts at a row
+        binder of this statement: ``_``, ``_["X"]``, ``A["Y"]["y"]``. None when
+        the path does not start at a row, for the caller to refuse as it would
+        anyway. ``outer`` is the node indexing this one: a field indexed further
+        fails there, where run() raises, and a key the row lacks at the node
+        itself."""
+        if node.t == 'var':
+            b = self._binder(node.name)
+            return b.model if b is not None and b.shape == Binder.ROW and b.model else None
+        if node.t != 'index':
+            return None
+        inner = self._row_path(node.obj, node)
+        if inner is None:
+            return None
+        return self._row_nested(inner, self._constant_index(node.idx), node, outer)
+
+    def _row_nested(self, row: dict[str, Any], key: str, n: Node, outer: Node) -> dict[str, Any]:
+        """``row[key]`` where the value must be a record: a side the row
+        carries, or the side itself under one of the names its LINK gave it."""
+        if row['side']:
+            if key in row['names']:
+                return row
+        elif key in row['nested']:
+            return row['nested'][key]
+        if _list_key(key) is not None:
             refuse('E_SQL_SHAPE',
-                   'only a bound name can be indexed here; SQL has no way to index into '
-                   f'the result of an expression ({qualifier} names no relation of this statement)',
-                   n.pos)
-        field = (source['relation'].get('fields') or {}).get(ascii_upper(key))
-        if field is None:
-            refuse('E_SQL_BINDING', f'{qualifier}["{key}"] is not a field of that relation', n.pos)
-        if field.get('raw') is not None:
-            return self._column_ref(field)
-        return self._column_ref({**field, 'table': source['table']})
+                   f'[{key}] asks for a row by position, and a relation has no first row '
+                   'without an ORDER BY that nothing here can supply', n.pos)
+        if self._row_field_spec(row, key) is not None:
+            refuse('E_SQL_SHAPE', f'["{key}"] is a field, which has no parts to index', outer.pos)
+        refuse('E_SQL_SHAPE',
+               'only a bound name can be indexed here; SQL has no way to index into the '
+               f'result of an expression ({key} names no record this row carries)', n.pos)
+
+    def _row_field_spec(self, row: dict[str, Any], key: str) -> dict[str, Any] | None:
+        u = ascii_upper(key)
+        if row['side']:
+            spec = (row['relation'].get('fields') or {}).get(u)
+            if spec is None:
+                return None
+            return {'spec': spec, 'table': row['table'], 'qualify': row['qualify'], 'optional': False}
+        return row['promoted'].get(u)
+
+    def _row_field(self, row: dict[str, Any], path: Node, key: str, n: Node) -> Fragment:
+        """``row[key]`` where the value must be a column. ``path`` is the node
+        the row came from, for the message."""
+        label = path.name if path.t == 'var' else 'the row'
+        if _list_key(key) is not None:
+            refuse('E_SQL_SHAPE',
+                   f'{label}[{key}] asks for a row by position, and a relation has no first '
+                   'row without an ORDER BY that nothing here can supply', n.pos)
+        if (row['side'] and key in row['names']) or (not row['side'] and key in row['nested']):
+            refuse('E_SQL_SHAPE', f'{label}["{key}"] is a record, which is a map in SEL and not one '
+                   'value; name the field you mean', n.pos)
+        f = self._row_field_spec(row, key)
+        if f is None:
+            if not row['side'] and ascii_upper(key) in row['dropped']:
+                refuse('E_SQL_SHAPE', f'field "{key}" is ambiguous across joined relations', n.pos)
+            known = (sorted((row['relation'].get('fields') or {}).keys()) if row['side']
+                     else sorted(row['promoted'].keys()))
+            tail = '; it declares none' if not known else f"; it has {', '.join(known)}"
+            what = 'relation' if row['side'] else 'joined row'
+            refuse('E_SQL_BINDING', f'{label}["{key}"] is not a field of that {what}{tail}', n.pos)
+        if f['optional']:
+            # An unmatched LINK_LEFT row promotes nothing from the right (spec
+            # §7.4), so it has no such key, where the LEFT JOIN's column is
+            # NULL. Through the right binder the field is NULL in both.
+            refuse('E_SQL_SHAPE',
+                   f'{label}["{key}"] is a field of the right side of a LINK_LEFT, which a row '
+                   'with no match does not have; read it through the right binder', n.pos)
+        if f['spec'].get('raw') is not None or not f['qualify']:
+            return self._column_ref(f['spec'])
+        return self._column_ref({**f['spec'], 'table': f['table']})
+
+    def _join_rows(self, plan: RelationalPlan) -> dict[str, Any]:
+        """The rows of a statement's joins as SEL has them (spec §7.4 "Joined
+        rows"), for resolving what a read names. A side is one relation's row,
+        extended with the names its LINK gave it (keys holding itself); a joined
+        row carries the records the left element carried, the binders, and the
+        promoted fields -- each side's scalar fields whose names, compared
+        ASCII-case-insensitively, are not keys of the other element. A LINK's
+        left element is the source's row for the first LINK and the previous
+        joined row after that; its own name is the source's only for the first
+        three-argument LINK, as the evaluator names an argument (a pipeline that
+        already joined is not named). The right side of a LINK_LEFT promotes
+        nothing for a row with no match, so its fields are ``optional``."""
+        n = len(plan.joins)
+        cache = plan.join_rows_cache
+        if cache is not None and cache['n'] == n:
+            return cache
+        qualify = bool(plan.joins or plan.source_subquery)
+        left: dict[str, Any] = {
+            'side': True, 'relation': plan.source_relation,
+            'table': plan.source_alias or _relation_alias(plan.source_relation),
+            'qualify': qualify, 'names': []}
+        steps: list[dict[str, Any]] = []
+        for join in plan.joins:
+            left_names = _binder_keys(join.left_names)
+            right_names = _binder_keys(join.right_names)
+            right = {'side': True, 'relation': join.source_relation,
+                     'table': join.source_alias or _relation_alias(join.source_relation),
+                     'qualify': qualify, 'names': right_names}
+            left_el = _with_names(left, left_names)
+            for el, names in ((left_el, join.left_names), (right, join.right_names)):
+                if not el['side']:
+                    continue
+                for name in names:
+                    if ascii_upper(name) in (el['relation'].get('fields') or {}):
+                        refuse('E_SQL_SHAPE', f'{name} names a LINK side that has a field of that '
+                               'name too, which SEL binds instead of the row; rename the binder',
+                               join.pos)
+            row: dict[str, Any] = {'side': False, 'nested': {}, 'promoted': {}, 'dropped': set()}
+            if not left_el['side']:
+                row['nested'].update(left_el['nested'])
+            for k in ['_1', *left_names]:
+                row['nested'][k] = left_el
+            for k in ['_2', *right_names]:
+                row['nested'][k] = right
+            left_keys = {ascii_upper(k) for k in _row_keys(left_el)}
+            right_keys = {ascii_upper(k) for k in _row_keys(right)}
+            for u, f in _scalar_fields(left_el):
+                if u in right_keys:
+                    row['dropped'].add(u)
+                else:
+                    row['promoted'][u] = f
+            for u, f in _scalar_fields(right):
+                if u in left_keys:
+                    row['dropped'].add(u)
+                else:
+                    row['promoted'][u] = {**f, 'optional': True} if join.type == 'LEFT' else f
+            steps.append({'left': left_el, 'right': right})
+            left = row
+        plan.join_rows_cache = {'n': n, 'row': left, 'steps': steps}
+        return plan.join_rows_cache
 
     def _relation_table_alias(self, relation: dict[str, Any], name: str | None = None) -> str:
         plan = self.statement_plan
         if plan is not None:
-            source_names = [plan.source_name, plan.source_alias] + [join.left_binder for join in plan.joins]
+            source_names = [plan.source_name, plan.source_alias] + [
+                name for join in plan.joins for name in join.left_names]
             if relation is plan.source_relation and (name is None or any(
                     item is not None and ascii_upper(str(item)) == ascii_upper(str(name))
                     for item in source_names)):
                 return plan.source_alias or _relation_alias(relation)
             for index, join in enumerate(plan.joins):
                 names = [join.source_name, join.source_alias,
-                         join.right_binder, f'_{index + 2}']
+                         *join.right_names, f'_{index + 2}']
                 if relation is join.source_relation and (name is None or any(
                         item is not None and ascii_upper(str(item)) == ascii_upper(str(name))
                         for item in names)):
@@ -1127,6 +1222,10 @@ class Translator:
                    'and not one value; name the field you mean', n.pos)
         if b.shape == Binder.ROW:
             rel = b.payload
+            if b.model and not b.model['side']:
+                refuse('E_SQL_SHAPE',
+                       f'{n.name} is a joined row, which is a map in SEL and not one value; '
+                       'name the field you mean', n.pos)
             # The guard `IN` got and nothing else did. A row of a relation with
             # more than one field is a MAP in SEL, and a map is not the value of
             # one of its fields: `ANY(ITEMS, _ $== "AB-1000")` is [] in SEL,
@@ -1148,6 +1247,9 @@ class Translator:
             field = rel['fields'][scalar]
             if field.get('raw') is not None or self.statement_plan is None:
                 return self._column_ref(field)
+            if b.model:
+                return self._column_ref({**field, 'table': b.model['table']}
+                                        if b.model['qualify'] else field)
             return self._column_ref({**field, 'table': self._relation_table_alias(rel, n.name)})
         refuse('E_SQL_SHAPE', str(b.reason), n.pos)
 
@@ -1185,21 +1287,9 @@ class Translator:
                        f'{name}[{key}] asks for a row by position, and a relation has '
                        'no first row without an ORDER BY that nothing here can supply',
                        n.pos)
+            if b.model:
+                return self._row_field(b.model, Node('var', n.pos, name=name), key, n)
             field = ascii_upper(key)
-            if b.joined and self.statement_plan is not None and self.statement_plan.joins:
-                matches = []
-                sources = [(self.statement_plan.source_relation, self.statement_plan.source_name)]
-                sources.extend((join.source_relation, join.source_name)
-                               for join in self.statement_plan.joins)
-                for relation, label in sources:
-                    candidate = (relation.get('fields') or {}).get(field)
-                    if candidate is not None:
-                        matches.append({**candidate,
-                                        'table': self._relation_table_alias(relation, label)})
-                if len(matches) > 1:
-                    refuse('E_SQL_SHAPE', f'field "{key}" is ambiguous across joined relations', n.pos)
-                if len(matches) == 1:
-                    return self._column_ref(matches[0])
             if field not in b.payload['fields']:
                 known = sorted(b.payload['fields'])
                 tail = ('; it declares none' if not known
@@ -1450,12 +1540,13 @@ class Translator:
                            src.get('pos'))
 
         row = Binder.row(src['relation'])
-        # The row of a joined statement: a field read through it resolves across
-        # the sides (ambiguous when both have it), whatever the binder is called.
-        # Gating that on the name `_` let `MAP(r, RECORD("name", r["name"]))`
-        # after a LINK resolve to the left side where `run()` raises E_NO_KEY.
-        if self.statement_plan is not None and self.statement_plan.joins:
-            row.joined = True
+        # The row of the statement: after a LINK the joined row, whose promoted
+        # fields and nested records a read resolves against, whatever the
+        # binder is called. Gating that on the name `_` let `MAP(r,
+        # RECORD("name", r["name"]))` after a LINK resolve to the left side
+        # where `run()` raises E_NO_KEY.
+        if self.statement_plan is not None and src['relation'] is self.statement_plan.source_relation:
+            row.model = self._join_rows(self.statement_plan)['row']
         k_binder = Binder.none('a row of a relation has no key: SQL rows are '
                                'unordered and unkeyed unless the schema says '
                                'otherwise, and guessing which column is the key '
@@ -1517,21 +1608,22 @@ class Translator:
 
     def _with_join_binders(self, plan: RelationalPlan, join: JoinPlan,
                            render: Callable[[], Fragment]) -> Fragment:
+        """A LINK's predicate sees ``_``/``_1`` as its left element and ``_2``
+        as its right, plus the names the LINK gives them (spec §7.4) and nothing
+        else: a relation's name outside those, its alias or its table is not a
+        binder (review 2026-09-28 SQL-07), and the left element of a later LINK
+        is the joined row so far, not the source (SQL-05)."""
+        step = self._join_rows(plan)['steps'][next(
+            i for i, item in enumerate(plan.joins) if item is join)]
         left = Binder.row(plan.source_relation)
+        left.model = step['left']
         right = Binder.row(join.source_relation)
-        frame = {
-            '_': left,
-            '_1': left,
-            plan.source_name: left,
-            '_2': right,
-            join.left_binder: left,
-            join.right_binder: right,
-            join.source_name: right,
-        }
-        if plan.source_alias:
-            frame[plan.source_alias] = left
-        if join.source_alias:
-            frame[join.source_alias] = right
+        right.model = step['right']
+        frame = {'_': left, '_1': left, '_2': right}
+        for name in join.left_names:
+            frame[name] = left
+        for name in join.right_names:
+            frame[name] = right
         self.frames.append(frame)
         try:
             return render()
@@ -2016,18 +2108,10 @@ class Translator:
         which made a derived table over a join name columns it did not have
         (finding Y, lanes).
         """
-        def entries(rel):
-            return [{'name': name, 'spec': spec, 'owner': rel}
-                    for name, spec in ((rel or {}).get('fields') or {}).items()]
-
-        acc = entries(plan.source_relation)
-        for join in plan.joins:
-            right = entries(join.source_relation)
-            left_names = {ascii_upper(f['name']) for f in acc}
-            right_names = {ascii_upper(f['name']) for f in right}
-            acc = ([f for f in acc if ascii_upper(f['name']) not in right_names]
-                   + [f for f in right if ascii_upper(f['name']) not in left_names])
-        return acc
+        # A field an unmatched LINK_LEFT row lacks is not a column of the row.
+        return [{'name': name, 'spec': f['spec'], 'table': f['table']}
+                for name, f in self._join_rows(plan)['row']['promoted'].items()
+                if not f['optional']]
 
     def _output_field_type(self, plan: RelationalPlan, name: str) -> str:
         # Only a direct field read proves that the SQL output retains the
@@ -2088,6 +2172,8 @@ class Translator:
         derived.source_table = ''
         derived.source_alias = alias
         derived.source_subquery = plan
+        # Still named after the pipeline's variable, until a LINK has joined.
+        derived.root_name = None if plan.joins else plan.root_name
         if plan.bucket is not None:
             derived.bucket = 'sealed'
         return derived
@@ -2168,6 +2254,7 @@ class Translator:
 
         plan = RelationalPlan()
         plan.source_name = curr.name
+        plan.root_name = curr.name
         plan.source_relation = source_binding
         plan.source_table = source_binding.get('from')
         plan.source_alias = source_binding.get('alias')
@@ -2373,6 +2460,16 @@ class Translator:
                 plan.order_by = added + plan.order_by[:before]
 
             elif name in ('LINK', 'LINK_LEFT'):
+                # The steps before the LINK refuse first, as written: their keys
+                # (a sort's, a bucket's) are otherwise checked only when the
+                # statement is rendered, after this LINK and the steps after it
+                # were analysed, which reported a later step's refusal where
+                # run() raises at the earlier one. Lisp has done this since
+                # review 2026-09-25 SQL-03; the widened SQL fuzzer found the
+                # other hosts did not (review 2026-09-28 SQL-10).
+                if (plan.order_by or plan.projections is not None
+                        or plan.select_cols is not None or plan.group_by is not None):
+                    self.compile_statement(plan)
                 plan = self._ensure_derived(plan, self._plan_has_rows_above)
                 if len(args) not in (3, 5):
                     refuse('E_ARITY', f'{name} takes 3 or 5 arguments', step.pos)
@@ -2392,15 +2489,35 @@ class Translator:
                     if (not _constants.is_binder_name(args[2])
                             or not _constants.is_binder_name(args[3])):
                         refuse('E_SQL_SHAPE', 'join binders must be bare names', args[2].pos)
-                    join.left_binder = args[2].name
-                    join.right_binder = args[3].name
+                    join.left_names = [args[2].name]
+                    join.right_names = [args[3].name]
                     join.on_pred = args[4]
                 else:
-                    join.left_binder = plan.source_alias or '_1'
-                    join.right_binder = join.source_alias or '_2'
+                    # The evaluator names a three-argument LINK's sides after
+                    # the variable their pipeline starts from, unless an
+                    # earlier LINK is in the way (spec §7.4).
+                    join.left_names = ([plan.root_name]
+                                       if not plan.joins and plan.root_name is not None else [])
+                    join.right_names = [right_node.name]
                     join.on_pred = args[2]
+                # The SQL alias of a table the binding leaves unaliased: the
+                # five-argument form's right binder, `_2` otherwise. An alias,
+                # not a SEL name.
                 if join.source_alias is None:
-                    join.source_alias = join.right_binder
+                    join.source_alias = join.right_names[0] if len(args) == 5 else '_2'
+                # One table alias per occurrence: a relation joined a second
+                # time under an alias the statement already uses (a self-join,
+                # or chaining back to an aliased relation) would render the
+                # alias twice, which the server rejects (review 2026-09-28
+                # SQL-09). The program stays in memory.
+                open_aliases = [plan.source_alias or _relation_alias(plan.source_relation),
+                                *(j.source_alias for j in plan.joins)]
+                if any(ascii_upper(str(alias)) == ascii_upper(str(join.source_alias))
+                       for alias in open_aliases):
+                    refuse('E_SQL_SHAPE',
+                           f'{right_node.name} would be joined under the table alias '
+                           f'{join.source_alias}, which this statement already uses; bind the '
+                           'relation a second time under another alias', right_node.pos)
                 join.pos = step.pos
                 plan.joins.append(join)
 
@@ -2545,8 +2662,7 @@ class Translator:
                     if index:
                         parts.append(', ')
                     spec = f['spec'] or {}
-                    parts.append(self.emit.column(self._relation_table_alias(f['owner']),
-                                                 spec.get('column', f['name'])))
+                    parts.append(self.emit.column(f['table'], spec.get('column', f['name'])))
             else:
                 parts.append(self.emit.ident(plan.source_alias) + '.*'
                              if plan.source_alias else '*')
@@ -2679,6 +2795,42 @@ def _agg_shape(n: Node) -> tuple[str, Node]:
                    n.args[1].pos)
         return n.args[1].name, n.args[2]
     return '_', n.args[1]
+
+
+def _binder_keys(names: list[str]) -> list[str]:
+    """A binder's keys: its name and that name's ASCII lowercase (spec §7.4)."""
+    out: list[str] = []
+    for name in names:
+        for k in (name, _ascii_lower(name)):
+            if k not in out:
+                out.append(k)
+    return out
+
+
+def _ascii_lower(text: str) -> str:
+    return ''.join(chr(ord(c) + 32) if 'A' <= c <= 'Z' else c for c in text)
+
+
+def _with_names(row: dict[str, Any], names: list[str]) -> dict[str, Any]:
+    if row['side']:
+        return {**row, 'names': names}
+    out = {**row, 'nested': dict(row['nested'])}
+    for k in names:
+        out['nested'][k] = out
+    return out
+
+
+def _row_keys(row: dict[str, Any]) -> list[str]:
+    if row['side']:
+        return [*(row['relation'].get('fields') or {}).keys(), *row['names']]
+    return [*row['nested'].keys(), *row['promoted'].keys()]
+
+
+def _scalar_fields(row: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    if not row['side']:
+        return list(row['promoted'].items())
+    return [(u, {'spec': spec, 'table': row['table'], 'qualify': row['qualify'], 'optional': False})
+            for u, spec in (row['relation'].get('fields') or {}).items()]
 
 
 def _relation_alias(rel: dict[str, Any]) -> str:

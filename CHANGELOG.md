@@ -10,6 +10,194 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.9.1 — 2026-09-28
+
+0.9.0 was prepared and never released: a second review found gaps in it, and
+its fixes ship here with everything 0.9.0 was to carry. There is no 0.9.0
+package or tag.
+
+Two external reviews of all five hosts, worked through: every finding
+validated on every host, a test or oracle written for each confirmed one
+before the fix, then fixed everywhere. Most of the defects gave the same
+wrong answer on every host, which is why the differential fuzzers never saw
+them; the new cases assert values, not agreement.
+
+  - **Incompatible changes.**
+    - **Host values are checked and copied at the boundary** (spec §8):
+      - Text and record keys with invalid UTF-8 raise E_UTF8 in every host.
+        In JS that includes a lone surrogate; record keys were not checked
+        anywhere before.
+      - Bytes outside 0..255 raise E_RANGE: JS `Value.bin` used to wrap them,
+        and Lisp `make-bin` raised a CL `type-error`.
+      - A native integer longer than the decimal digit cap raises E_RANGE in
+        JS, Python and Lisp.
+      - JS and Lisp copy what they are given and what `toNative` returns, so
+        changing a caller's buffer or string no longer changes a value.
+    - **Every public constructor holds those rules**, not only the ones §8
+      names, and the ones it did not name are now documented
+      ([Constructors](docs/usage/README.md#constructors)):
+      - Keys given as a list are checked: JS `shaped` and `fromEntries`;
+        PHP `record`, `shaped`, `fromEntries`, list keys, `RecordShape::intern`
+        and the first row of `fromNativeRows`; Python `record`, `shaped`,
+        `from_entries` and list keys; C++ `record` and `shaped`.
+      - Keys and values that do not pair up raise E_BAD_ARG. Python used to
+        fail later with an `IndexError` or keep the extra values, JS
+        `shaped` dropped them, and PHP and C++ threw their own exceptions.
+      - A key given twice for a record keeps its first position and takes its
+        last value, as `RECORD` does; `shaped` used to build a record holding
+        the key twice. A list's keys must be distinct.
+      - The decimal form of `Value.num` (a `Dec`, a JS decimal record, a PHP
+        array) obeys the digit caps and is canonicalised: a negative zero
+        loses its sign and PHP/C++ digit strings lose their leading zeros.
+        A malformed one is E_BAD_ARG; C++ threw `std::length_error` and Lisp
+        a CL error on a negative scale.
+      - JS `fromNative` and a run context hold the integer digit cap for a
+        bigint, as `Value.int` did.
+      - Python `Value.bin` refuses a boolean byte (`[True]` was `b01`).
+      - Python `record`, `shaped` and `list` (and its keys) and Lisp
+        `make-list-value` copy the list or vector they are given; Lisp
+        `to-native` returns copies of the keys and `value-set` stores a copy,
+        where changing one renamed the key in every value of that shape.
+      - JS `fromEntries(entries, true)` keeps the keys instead of
+        renumbering them.
+    - **A malformed constructor call is E_BAD_ARG** in every host, a
+      `SelError` like every other boundary failure: a float in
+      `fromNative`, a non-integer for `Value.int`, a native value with no
+      conversion. JS threw `TypeError`/`RangeError`, PHP
+      `InvalidArgumentException`, Python `TypeError`, C++
+      `std::invalid_argument`, Lisp a CL `error`. PHP's and C++'s declared
+      parameter types are still enforced by the language itself.
+    - **Lisp exports SEL's decimal:** `dec`, `dec-make`, `dec-neg`,
+      `dec-digits`, `dec-scale` and `as-dec`, so `make-num`'s decimal form
+      is reachable.
+    - **SQL: a row is qualified only by a key it has** (spec §7.4). A
+      relation's SQL alias or table name, and its binding name after a
+      five-argument LINK or with no LINK at all, were accepted as qualifiers
+      (`_["o"]["amount"]`) where `run()` raises E_NO_KEY; they are refused now.
+      `_["_1"]` and `_["_2"]`, which are keys of the joined row, now translate.
+    - **`toNative` refuses what `fromNative` could not read back.** A value
+      with its own scalar and a child named `"_"` raises E_BAD_ARG. Before,
+      JS, PHP and Python dropped the scalar and Lisp wrote two `"_"` keys.
+      JS gives an own `"__proto__"` key a real property instead of setting
+      the prototype.
+    - **Lisp `FALSE` is `:false`** in `to-native` and `from-native`. It was
+      `NIL`, the same as NULL, so `FALSE` came back as NULL.
+    - **PHP `toNative` keeps the keys of a sparse list**
+      (`FILTER(LIST(1,2,3), _ > 1)` exports keys 2 and 3). A record keyed
+      `"0".."n-1"` still exports as a packed array; spec §8 names that one
+      exception.
+    - **Some hybrid plans split.** The optimizer no longer moves a step across
+      another step that can raise (see below). A pipeline whose MAP or FILTER
+      used to be reordered around such a step now runs partly in memory.
+      For example, a FILTER after a MAP that calls `REPEAT` used to be pushed
+      down; the MAP is now left where it was written.
+    - **Removed:** JS `RecordShape.aliasCache` and the `RecordShapeAlias`
+      type, deprecated in 0.8.0 for this release. PHP `JoinPlan::$kind`,
+      `getKind()` and `setKind()` are also gone; `$type` was always the one
+      the translator read.
+  - **The C++ package compiles for a consumer.** The CMake install left out
+    `sel_limits.hpp`, which `sel.hpp` includes, and the Conan recipe exported
+    neither the generated headers nor `sel_optimizer.cpp`, which `sel.cpp`
+    includes, so 0.8.1's installed and Conan packages did not build. Both now
+    carry every file the build needs; the "copy the files" instructions list
+    them too. A new gate layer, `tools/check-cpp-package.sh`, builds the files
+    the Conan recipe exports, installs them, and links `cpp/test_package`
+    against the install.
+  - **Joins match the way the comparison compares** (spec §7.4). Every host's
+    equijoin key path disagreed with its own `==`/`$==`:
+    - BIN against TEXT (and, in four hosts, BIN against BIN) never matched.
+    - `"bad" == 1` returned no rows instead of E_NOT_NUM.
+    - BOOL keys matched or silently dropped instead of raising E_NOT_BIN.
+    Keys now go through the comparator's coercions, and a rejected key raises
+    the comparison's error, in operator order, with the sides swapped too.
+  - **Optimizer rewrites keep errors.** Three rewrites could hide an error the
+    written order raises, on every host:
+    - swapping MAP or SORT with FILTER;
+    - moving MAP after TOP_BY or SORT_BY;
+    - fusing FILTER+FILTER, which reported the second filter's error first.
+    Each now crosses only steps that cannot raise. The SQL planner keeps the
+    field-read rules it had.
+  - **Case folding is ASCII everywhere the language defines case.**
+    - In JS and Python, joined rows no longer merge `ß` with `SS` or `ſ` with
+      `s`; in Lisp, `é` with `É`.
+    - JS and Python refuse `"deſc"` as a sort direction.
+    - The JS and Python SQL translators no longer accept `ß` as a binder
+      named `SS`.
+    - C++ uses its own ASCII helpers instead of `std::toupper`.
+  - **Python:**
+    - A computed index (`R[K]`, `A[_]`) could return a field cached from an
+      earlier evaluation, even across runs of one compiled program, and
+      skipped the index expression (and its errors) entirely.
+    - Assignment shared nested scalar leaves, so after `B = A`, `B[1]["k"] = "v"`
+      also changed `A`.
+    - `TOP`, `TOP_DESC` and `TOP_BY` renumbered a sparse list's `_K`.
+  - **PHP:** FILTER and `fromEntries` compared a record's first key to its
+    position with `(int)`, so keys like `"1x"`, `"01"` or `"1e0"` became `"1"`.
+  - **SQL translation:**
+    - The translator models a joined row as spec §7.4 describes it: the sides
+      its binders hold, the rows an earlier LINK carried, and the promoted
+      fields. In a chain of LINKs a later LINK's left binder (`A`, `_1`, `_`)
+      was read as the pipeline's source relation, so `A["id"]`, which is
+      E_NO_KEY when both earlier relations have `id`, joined on the first
+      one's column; it is refused now, and a field only the right relation of
+      the first join has resolves to it instead of being refused.
+    - After LINK_LEFT a field only the right side has (`_["sv"]`) is refused:
+      a row with no match does not have it, where the LEFT JOIN's column is
+      NULL. Through the right binder (`_["Y"]["sv"]`) it still translates.
+    - A refused qualifier is reported where `run()` raises: at the inner
+      index for a key the row lacks, at the outer one for a field indexed
+      further.
+    - A relation joined a second time under the table alias it already has
+      (a self-join, or a chain back to it) rendered that alias twice, which
+      the server rejects; it is refused now and runs in memory.
+    - The steps before a LINK refuse first, as `run()` raises: JS, PHP,
+      Python and C++ reported a later step's refusal (Lisp already did this).
+    - The SQL fuzzer's joins now read shared, left-only and right-only names
+      and qualify rows by binder, relation and alias names; the cross-host
+      oracle checks that every translator refuses programs `run()` rejects.
+    - A LINK's left explicit binder read the right table in JS, PHP, Python
+      and C++, and a FILTER through it filtered the wrong column.
+    - Lisp rendered a read of a field its relation lacks as a column instead
+      of refusing it with E_SQL_BINDING.
+    - Lisp reported a LINK's refusal before an earlier step's.
+  - **Depth:**
+    - JS and Lisp structural hashing now raises E_DEPTH on an over-deep
+      value (DEDUPE, DISTINCT and BUCKET counted it).
+    - C++ DISTINCT shares DEDUPE's hashed code instead of comparing every
+      pair.
+  - **Spec text:**
+    - §8 gains the boundary rules above, and says they bind every public
+      constructor.
+    - §7.4 says which names a LINK binds in each form: the five-argument form
+      only the names it gives, and a three-argument LINK the source's name
+      only when no LINK comes before it in the pipeline.
+    - §7.4 and `spec/builtins.json` give `TOP_BY(list, [binder,] key, [dir,] n)`,
+      the signature every host and the suite already used.
+  - **Tests and oracles:**
+    - Conformance cases for every confirmed finding.
+    - `link.binder.*` / `link.refusal.*` SQL cases, and `47-link-rows.sqlt`:
+      chains of joins, qualifiers and LINK_LEFT reads, each expectation taken
+      from `run()` on sample rows.
+    - A cross-host SQL oracle: `sql/oracle/cross.selc` over two relations,
+      each host's `sqlfuzz … statement` mode, and `php/bin/sqlo cross`.
+    - Generator families for the review's constructs, with counters that
+      must not be zero.
+    - A join model with Unicode names, BIN/TEXT keys and predicted errors.
+    - A pipeline pass in the join-filter oracle.
+    - Host-boundary assertions in every host's runtime or unit lane, for
+      every public constructor, and numbered `check-api` probes for them.
+  - **Cleanups, no behaviour change:**
+    - redundant null checks and dead optimizer branches;
+    - one body for GET/PATH, for `??`/`???` and for column/raw binding
+      options;
+    - unused imports and helpers;
+    - a translator flag that was written and never read;
+    - two doc comments that had drifted away from their functions.
+
+Lanes: 1073 conformance cases in every host; 1065 SQL translation cases in
+every host; 222 mutations caught, none survived. The seven database-backed
+examples agree across all five hosts on PostgreSQL 17, MariaDB 11.8 and SQLite.
+
 ## 0.8.1 — 2026-09-24
 
 The documentation, rebuilt, and the two API additions it led to: an
