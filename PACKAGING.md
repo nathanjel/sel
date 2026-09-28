@@ -90,13 +90,59 @@ lisp/sel-lang.asd                :version "0.9.1"
 `python/sel/__init__.py` carries `__version__`, `CHANGELOG.md`'s top heading
 carries the version being released, and `composer.json` carries
 `extra.branch-alias.dev-main` (`0.9.x-dev`). All are checked against the release
-version by `tools/check-version.sh`, so they are places fewer to remember rather
+version by `tools/check-version.sh` (which also holds the pinned `sel-lang@X` CDN
+URLs and `sel-lang/X` Conan references in `README.md` and
+`docs/usage/README.md` to it), so they are places fewer to remember rather
 than more — and a release whose notes or branch alias were never updated fails
 the check before the tag is cut.
 
 `composer.json` deliberately carries **no** `version` field — Packagist infers
 release versions from git tags, and hard-coding it there is a known way to
 publish a lie.
+
+## GitHub release and CDN
+
+After the tag and the registries (PyPI, npm; Packagist follows the tag by
+itself), the release page gets one file per host:
+
+```
+tools/release-assets.sh 0.9.1              # dist/release-0.9.1/ and its NOTES.md, to look over
+tools/release-assets.sh 0.9.1 --publish    # the same, then gh release create v0.9.1 with them
+```
+
+The script needs the pushed tag, the npm tarball in `dist/npm/`, the browser
+bundles in `dist/` and the wheel and sdist in `dist/python/`. It refuses when
+`js/src`, `python/sel` or a manifest differs from the tag, and when the
+CHANGELOG has no entry for the version. What it makes:
+
+| File | For |
+|---|---|
+| `sel-lang-0.9.1-js-npm.tar.gz` | the npm package, renamed to say so; `npm install ./…tar.gz` installs it |
+| `sel-lang-0.9.1-js-bundle.mjs`, `…js-bundle.min.mjs` | the standalone browser modules, `dist/sel.mjs` and `dist/sel.min.mjs` |
+| `sel_lang-0.9.1-py3-none-any.whl`, `sel_lang-0.9.1.tar.gz` | the wheel and sdist, under their standard names: pip reads the version and tags from the file name |
+| `sel-lang-0.9.1-php-source.tar.gz` | `php/src` and `composer.json` |
+| `sel-lang-0.9.1-cpp-source.tar.gz` | the library sources, `third_party/srell`, `test_package` and the CMake, Conan and vcpkg manifests |
+| `sel-lang-0.9.1-lisp-source.tar.gz` | `lisp/sel-lang.asd` and `lisp/src` |
+
+The source tarballs are `git archive` of the tag, so they carry exactly what
+the tag does, `LICENSE`, `README.md` and `CHANGELOG.md` included. Every archive
+is a `.tar.gz`: one archive format keeps the page readable. Each file is uploaded
+with a label naming its host and what to do with it, and the notes open with a
+"Which file do I want?" table (each registry's command, then the file here)
+followed by the version's CHANGELOG entry. The table's minimum versions are
+read from `composer.json`, `pyproject.toml` and `package.json`.
+
+**The CDN needs nothing.** jsDelivr and unpkg mirror every public npm package,
+and the npm package carries both browser bundles (`files` in `package.json`), so
+the moment `npm publish` succeeds the browser import exists:
+
+```js
+import { evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.1/dist/sel.min.mjs';
+```
+
+A versioned URL never changes. Check it answers `200` with a JavaScript content
+type, and that its bytes are `dist/sel.min.mjs`'s. The release notes, the README's
+install section and [Using SEL](docs/usage/README.md#installing) all give it.
 
 ---
 
@@ -177,6 +223,11 @@ The package is ESM-only (`"type": "module"`) and exposes one entry point plus th
 ```js
 import { compile, evaluate, Value, SelError } from 'sel-lang';
 ```
+
+`dist/sel.mjs` and `dist/sel.min.mjs`, the standalone browser bundles (no SQL
+layer), ship in the package as `sel-lang/bundle` and `sel-lang/bundle.min`, which
+is also what the CDNs serve (see "GitHub release and CDN" above). Run
+`npm run build` before `npm pack`, or they are last release's.
 
 `sideEffects` lists `js/src/builtins/*.mjs`, because those modules register
 themselves in the function table and a bundler that tree-shook them would leave

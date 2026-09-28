@@ -157,6 +157,15 @@ vcpkg install sel-lang            # or: conan install --requires sel-lang/0.9.1
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
 ```
 
+In a browser, with nothing to install, from the jsDelivr (or unpkg) copy of the
+npm package — a standalone module, without the SQL layer:
+
+```html
+<script type="module">
+  import { evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.1/dist/sel.min.mjs';
+</script>
+```
+
 Or copy `python/sel/`, `js/src/` or `php/src/` into a project — no package
 manager, no build step. [Using SEL](docs/usage/README.md#installing) has the
 imports for each host, and [PACKAGING.md](PACKAGING.md) the registries.

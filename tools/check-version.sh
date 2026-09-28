@@ -81,6 +81,21 @@ if [ -n "$first" ]; then
   fi
 fi
 
+# The install instructions pin the version where a reader copies it: the CDN
+# URL (sel-lang@X) and the Conan reference (sel-lang/X). A release that bumped
+# the manifests and not these would send a browser to the previous version.
+if [ -n "$first" ]; then
+  for f in README.md docs/usage/README.md; do
+    for pinned in $(grep -o 'sel-lang[@/][0-9][0-9.]*[0-9]' "$f" | sort -u); do
+      if [ "${pinned#sel-lang?}" != "$first" ]; then
+        printf '  %-24s %s\n' "$f" "$pinned"
+        echo "    ^ expected sel-lang${pinned:8:1}$first" >&2
+        status=1
+      fi
+    done
+  done
+fi
+
 if [ "$status" -eq 0 ]; then
   echo "versions agree: $first"
 else

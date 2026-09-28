@@ -56,6 +56,12 @@ npm install sel-lang                 # or copy js/src/ into your project
 import { compile, evaluate, Value, SelError } from 'sel-lang';  // any ESM runtime
 import { Sql, Binding } from 'sel-lang/sql';                     // the SQL layer
 ```
+```html
+<!-- In a browser, nothing to install: the standalone bundle from a CDN (no SQL layer) -->
+<script type="module">
+  import { compile, evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.1/dist/sel.min.mjs';
+</script>
+```
 
 </details>
 <details>
