@@ -212,18 +212,24 @@ a right element for which `pred` is `TRUE`, in left order and then right order.
 Inside `pred`, `_1` is the left element and `_2` the right; the five-argument form
 `LINK(left, right, L, R, pred)` names them.
 
-A **joined row** holds each side under its binder names — and under the name of
-the relation, when the argument is a plain variable — followed by the fields of
-both sides that are not ambiguous:
+A **joined row** holds each side under its binder names, followed by the fields
+of both sides that are not ambiguous. The binder names are `_1` and `_2`, and,
+each with its lowercase: in the five-argument form the two names it gives, and
+nothing else; in the three-argument form the relation's own name, when the
+argument is a plain variable (a pipeline that already joined has none):
 
 ```sel
 O = LIST(RECORD("oid", 1, "cid", 7), RECORD("oid", 2, "cid", 8)); C = LIST(RECORD("cid", 7, "name", "Ann")); O .> LINK(C, _1["cid"] == _2["cid"]) .> MAP(_["oid"] & ":" & _["name"]) .> JOIN(" ")  => 1:Ann
 O = LIST(RECORD("oid", 1, "cid", 7), RECORD("oid", 2, "cid", 8)); C = LIST(RECORD("cid", 7, "name", "Ann")); O .> LINK(C, X, Y, X["cid"] == Y["cid"]) .> MAP(_["Y"]["name"]) .> JOIN("")  => Ann
+O = LIST(RECORD("oid", 1, "cid", 7), RECORD("oid", 2, "cid", 8)); C = LIST(RECORD("cid", 7, "name", "Ann")); O .> LINK(C, _1["cid"] == _2["cid"]) .> MAP(_["_2"]["name"] & _["c"]["name"]) .> JOIN("")  => AnnAnn
 ```
 
 A field both sides carry — the join key above — is not promoted, because it
-would be ambiguous; read it through a binder. `LINK_LEFT` also keeps every left
-element that matched nothing, with a right side whose fields are all `NULL`:
+would be ambiguous; read it through a binder. In a chain of `LINK`s, a later
+`LINK`'s left binder is the joined row so far, so it reads the fields that row
+promoted. `LINK_LEFT` also keeps every left element that matched nothing, with a
+right side whose fields are all `NULL`; such a row promotes nothing from the
+right, so read the right side through its binder:
 
 ```sel
 O = LIST(RECORD("oid", 1, "cid", 7), RECORD("oid", 2, "cid", 8)); C = LIST(RECORD("cid", 7, "name", "Ann")); O .> LINK_LEFT(C, X, Y, X["cid"] == Y["cid"]) .> MAP(_["oid"] & ":" & (_["Y"]["name"] ?? "-")) .> JOIN(" ")  => 1:Ann 2:-

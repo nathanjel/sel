@@ -132,14 +132,15 @@ that need them. The layers run in parallel and report in a fixed order.
 | **Unit tests** | the layers under the suite — decimal, UTF-8, values — where one bug would otherwise surface as a hundred confusing conformance failures |
 | **Differential fuzz** | random programs through every host, comparing values, codes and positions; about a third are invalid on purpose, because agreeing on *where* a rule failed is part of the promise |
 | **Decimal oracle** | every decimal core against Python's `decimal`: cores written from one spec by one hand would agree with each other and still be wrong |
-| **Host API parity** | the same probes through each host's own binding — kinds, predicates, errors, `dependencies()`, host functions — diffed; every other layer goes through `compile().run()` and could not see an API drift |
+| **Host API parity** | the same probes through each host's own binding — kinds, predicates, errors, `dependencies()`, host functions, what every constructor accepts and refuses — diffed; every other layer goes through `compile().run()` and could not see an API drift |
 | **End to end** | one rule set through each host's API: identical results, identical `dependencies()` |
 | **Worked examples** | every program under `examples/`, in every language, printing byte-identical output, which must also equal the transcript the documentation quotes |
 | **Database examples** | the SQL examples in every host against real PostgreSQL, MariaDB and SQLite (`tools/check-usage.sh`), each also checking the database's rows against an in-memory run |
 | **Documentation** | every `expr => result` example in the documentation executed by every host; every code block quoted from an example byte-identical to that example; every link and anchor resolving |
 | **Generated artifacts, manifests, versions** | nothing generated is stale, every host accepts exactly the arities the manifest declares, every package manifest carries the same version |
+| **The C++ package** | the files the Conan recipe exports, built and installed, and a consumer compiled against the install — the one C++ layer that works outside `cpp/`, where every header is at hand |
 | **SQL translation** | `sql/cases/*.sqlt` through every host, asserting the *exact* SQL string; the dialect map rebuilt through each host's public registration API and diffed against itself |
-| **SQL against a database** | the same expressions evaluated by SEL and by real MariaDB, MySQL, PostgreSQL and SQLite — the only layer that asks whether the SQL *means* what SEL means |
+| **SQL against a database** | the same expressions evaluated by SEL and by real MariaDB, MySQL, PostgreSQL and SQLite — the only layer that asks whether the SQL *means* what SEL means; every host's statements run against a shared fixture, and a program SEL refuses must be refused by every translator |
 | **SQL mutations** | the SQL layer broken about a hundred and sixty ways on purpose; every break must be caught by some check |
 | **Relational models** | `LINK` and `FILTER`-after-`LINK` against executable models of the specification's rules, over generated data |
 

@@ -711,10 +711,16 @@ The planner refuses rather than guesses, so each of these is a pipeline that run
 correctly in memory, not a wrong answer — but knowing them helps a pipeline stay
 in SQL:
 
-- A `LINK`'s left key must be a field of the pipeline's *first* relation: chain
-  joins from a hub table (`LINES .> LINK(ORDERS …) .> LINK(PRODUCTS …)`), not
-  along a path (`… .> LINK(CATEGORIES, X, K, X["category_id"] …)` where
-  `category_id` came from the second relation).
+- A row is qualified by the keys it has: its binders (`_["O"]["amount"]`,
+  `_["_2"]["name"]`), never a relation's SQL alias or table name, and after a
+  five-argument `LINK` not the relation's own name. Anything else is refused,
+  as `run()` raises `E_NO_KEY` for it.
+- After a `LINK_LEFT`, read a field only the right side has through the right
+  binder (`_["C"]["name"]`, `NULL` where nothing matched). The promoted
+  `_["name"]` is refused, because a row that matched nothing does not have it.
+- A relation joined a second time under the alias its binding gives it — a
+  self-join, or a chain back to it — is refused: SQL would see one alias twice.
+  Bind the relation a second time under another alias.
 - A group key of several fields (`BUCKET(RECORD("a", …, "b", …), proj)`) groups
   in SQL, but its parts cannot be projected from `_K`; group by one field, or
   project the parts in memory.
